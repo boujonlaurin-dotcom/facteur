@@ -53,7 +53,6 @@ class ContentService:
             "html_content": content.html_content,
             "audio_url": content.audio_url,
             "content_quality": content.content_quality,
-            "extraction_attempted_at": content.extraction_attempted_at,
             "content_type": content.content_type,
             "duration_seconds": content.duration_seconds,
             "published_at": content.published_at,

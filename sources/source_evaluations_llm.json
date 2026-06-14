@@ -1,0 +1,2696 @@
+{
+  "generated_at": "2026-06-14",
+  "model": "claude-opus-4-8 (5 sous-agents WebSearch + MCP read-only), nouveau schéma",
+  "_note": "Run complet 150 cibles, NOUVEAU schéma (reliability dérivée + 4 justifs + sources_consulted). Relu/validé avant apply (bias_origin=llm). reliability_score ABSENT (dérivé). Apply gated (creds write PO). | Re-run 2026-06-14 : 9 sources captées re-générées sous rubrique « capture actionnariale » (ligne propriétaire vs pénalité indép seule).",
+  "evaluations": [
+    {
+      "source_id": "82880279-c9d2-4fb8-bde2-de0595228660",
+      "name": "55 degrés à l'ombre (CarbonCutter)",
+      "description": "Newsletter Substack éditée par CarbonCutter qui faisait le point une fois par mois sur l'actualité du changement climatique pour les organisations. Elle adoptait un ton accessible et engagé sur la décarbonation et l'adaptation. Fait moins connu : la newsletter a cessé sa publication, comme l'indique son dernier numéro intitulé « La fin de 55 degrés à l'ombre ».",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.6,
+      "score_ux": 0.8,
+      "confidence": 0.6,
+      "bias_rationale": "Newsletter thématique climat/décarbonation, l'angle est le sujet plus qu'une ligne partisane.",
+      "independence_rationale": "Émanation d'une entreprise (CarbonCutter), donc liée à son activité commerciale de conseil climat.",
+      "rigor_rationale": "Veille de vulgarisation pour organisations, sérieuse mais sans appareil scientifique formel.",
+      "ux_rationale": "Format Substack épuré, lecture confortable et sans publicité.",
+      "sources_consulted": [
+        "https://55degresalombre.substack.com/feed"
+      ]
+    },
+    {
+      "source_id": "e9fccff0-be0c-4061-8648-a3f929af472f",
+      "name": "7 jours sur Terre",
+      "description": "Média francophone indépendant de géopolitique, histoire et science fondé par Benjamin Tremblay, diffusé principalement sur YouTube et en podcast. Financé par sa communauté, il revendique une approche factuelle et sans agenda partisan. Fait moins connu : malgré cette revendication d'indépendance, certains spectateurs lui reprochent un cadrage parfois favorable aux positions occidentales/américaines sur les sujets internationaux.",
+      "bias_stance": "center",
+      "score_independence": 0.7,
+      "score_rigor": 0.6,
+      "score_ux": 0.7,
+      "confidence": 0.5,
+      "bias_rationale": "Se veut sans agenda partisan, avec un cadrage géopolitique parfois perçu comme pro-occidental.",
+      "independence_rationale": "Financé par sa communauté, sans groupe média ni parti, mais sans rédaction étoffée vérifiable.",
+      "rigor_rationale": "Vulgarisation géopolitique soignée mais à titres sensationnalistes et sans appareil de sources visible.",
+      "ux_rationale": "Vidéos YouTube accessibles et gratuites, format long mais clair.",
+      "sources_consulted": [
+        "https://www.7jourssurterre.com/",
+        "https://www.youtube.com/channel/UCRDafCFB27KOBXvgc6kgS0A"
+      ]
+    },
+    {
+      "source_id": "d3f98b4c-1b87-4c47-b9d8-d4641644851d",
+      "name": "Access42 (Blog)",
+      "description": "Blog de la coopérative française Access42 (Scop reconnue d'utilité sociale), spécialisée dans l'accessibilité numérique : audit, conseil et formation depuis 2014. Les contenus sont des ressources techniques pointues sur le RGAA et les bonnes pratiques d'accessibilité, à destination des professionnels du web. Fait moins connu : Access42 a co-rédigé le Référentiel Général d'Accessibilité pour les Administrations (RGAA), qu'elle commente ensuite sur son blog.",
+      "bias_stance": "specialized",
+      "score_independence": 0.75,
+      "score_rigor": 0.85,
+      "score_ux": 0.75,
+      "confidence": 0.7,
+      "bias_rationale": "Blog technique d'expertise accessibilité numérique, aucun angle politique.",
+      "independence_rationale": "Coopérative indépendante, mais blog adossé à son activité commerciale de conseil et formation.",
+      "rigor_rationale": "Expertise reconnue (co-rédaction du RGAA), contenu technique précis et sourcé.",
+      "ux_rationale": "Site exemplaire en accessibilité et lisibilité, sans publicité intrusive.",
+      "sources_consulted": [
+        "https://access42.net/",
+        "https://fr.linkedin.com/company/access42"
+      ]
+    },
+    {
+      "source_id": "4a099327-cb07-47a4-9f19-6e2e680aca6d",
+      "name": "Actualités VIDAL",
+      "description": "Fil d'actualités du site VIDAL, base de référence française sur les médicaments éditée depuis 1914 et utilisée par les professionnels de santé. Le contenu couvre médicaments, alertes sanitaires et études cliniques. Fait moins connu : la base de données VIDAL est accréditée par la Haute Autorité de santé depuis 2008, ses monographies ayant été validées institutionnellement via la « commission Alexandre » créée par Simone Veil.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.85,
+      "score_ux": 0.7,
+      "confidence": 0.65,
+      "bias_rationale": "Source médicale technique sans orientation politique, l'angle est le médicament.",
+      "independence_rationale": "Référentiel commercial dont les données proviennent des laboratoires, mais sous accréditation HAS.",
+      "rigor_rationale": "Référentiel certifié HAS, validé institutionnellement et tenu à jour pour les soignants.",
+      "ux_rationale": "Site professionnel dense mais structuré, lecture correcte.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Dictionnaire_Vidal",
+        "https://www.vidal.fr/medicaments.html"
+      ]
+    },
+    {
+      "source_id": "e7722404-66e1-4998-adff-94d1ccc89104",
+      "name": "Agentic Systems (Blog)",
+      "description": "Blog Substack consacré à la conception, au développement et au déploiement d'agents autonomes (IA agentique) pour des applications d'entreprise. Au moment de l'évaluation, le flux ne contenait qu'une publication d'amorçage (« Coming soon »). Fait moins connu : faute de contenu publié vérifiable, sa ligne et sa rigueur réelles restent indéterminables.",
+      "bias_stance": "specialized",
+      "score_independence": null,
+      "score_rigor": null,
+      "score_ux": null,
+      "confidence": 0.3,
+      "bias_rationale": "Blog technique sur l'IA agentique, thématique sans orientation politique.",
+      "independence_rationale": "Aucun contenu publié ne permet d'évaluer son indépendance.",
+      "rigor_rationale": "Flux quasi vide (« Coming soon »), rigueur non évaluable.",
+      "ux_rationale": "Substack standard mais sans corpus à juger.",
+      "sources_consulted": [
+        "https://agenticsystems.substack.com/feed"
+      ]
+    },
+    {
+      "source_id": "dfeb88d0-7285-459d-a6e3-2604a71e3f4a",
+      "name": "All About Beer",
+      "description": "Magazine américain dédié à la culture de la bière (actualités, critiques, podcasts, formation), publié sous le nom All About Beer depuis 1979. Il couvre l'industrie brassicole et la culture craft aux États-Unis. Fait moins connu : titre historique du secteur, il a connu plusieurs reprises éditoriales et est passé à une publication essentiellement en ligne après l'arrêt de sa version papier.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.6,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Magazine thématique sur la bière, sans orientation politique.",
+      "independence_rationale": "Média spécialisé proche de l'industrie brassicole qu'il couvre, financé par ce secteur.",
+      "rigor_rationale": "Contenu éditorial et critique sérieux pour un magazine de niche, sans prétention d'investigation.",
+      "ux_rationale": "Site de magazine lisible avec publicité d'usage.",
+      "sources_consulted": [
+        "https://allaboutbeer.com/feed/"
+      ]
+    },
+    {
+      "source_id": "e76ae1b1-c003-4877-9f23-4623cff1a046",
+      "name": "Ars Technica",
+      "description": "Site américain de référence sur les technologies, la science et la politique numérique, fondé en 1998 et détenu depuis 2008 par Condé Nast (Advance Publications). Il est reconnu pour son journalisme tech approfondi et son ton factuel. Fait moins connu : malgré le rachat par Condé Nast, la rédaction décrit une gestion « hands off », l'éditeur n'intervenant ni sur la ligne ni sur les sujets.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.85,
+      "score_ux": 0.8,
+      "confidence": 0.7,
+      "bias_rationale": "Média tech/science factuel à biais minimal selon les agrégateurs de fiabilité.",
+      "independence_rationale": "Propriété de Condé Nast mais avec une rédaction décrite comme éditorialement autonome.",
+      "rigor_rationale": "Journalisme technologique approfondi et crédible, avec analyse et reporting de qualité.",
+      "ux_rationale": "Site lisible, bien structuré, publicité présente mais maîtrisée.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Ars_Technica",
+        "https://mediabiasfactcheck.com/ars-technica/"
+      ]
+    },
+    {
+      "source_id": "d3d78ff8-745c-47f4-82fe-c94c69eed845",
+      "name": "ARTE",
+      "description": "Chaîne franco-allemande de service public à vocation européenne, née en 1991, dont la chaîne YouTube diffuse documentaires, reportages et contenus culturels. Financée à 95 % par la redevance audiovisuelle française et allemande, elle revendique une forte indépendance éditoriale. Fait moins connu : sa structure binationale (Arte France, Arte Deutschland, GEIE Arte) protège sa ligne, aucun gouvernement ne pouvant peser seul sur les programmes.",
+      "bias_stance": "center",
+      "score_independence": 0.85,
+      "score_rigor": 0.85,
+      "score_ux": 0.85,
+      "confidence": 0.7,
+      "bias_rationale": "Chaîne culturelle de service public, équilibrée et factuelle sans orientation partisane marquée.",
+      "independence_rationale": "Financée par la redevance et de structure binationale, à l'abri des pressions d'un actionnaire ou d'un État.",
+      "rigor_rationale": "Production documentaire et journalistique de service public, exigeante et vérifiée.",
+      "ux_rationale": "Vidéos YouTube gratuites, soignées et sans publicité agressive.",
+      "sources_consulted": [
+        "https://pole-franco-allemand.de/fr/arte-la-chaine-culturelle-franco-allemande-a-vocation-europeenne/",
+        "https://www.youtube.com/feeds/videos.xml?channel_id=UCwI-JbGNsojunnHbFAc0M4Q"
+      ]
+    },
+    {
+      "source_id": "b0e1431f-2817-4429-a83f-d56d3a26951a",
+      "name": "Assemblée nationale",
+      "description": "Flux officiel de l'Assemblée nationale française diffusant les documents parlementaires : textes adoptés, propositions de loi, rapports d'information. C'est une source primaire institutionnelle, sans ligne éditoriale. Fait moins connu : ces documents parlementaires sont des sources brutes et faisant foi, antérieures à tout traitement journalistique de l'actualité législative.",
+      "bias_stance": "center",
+      "score_independence": 0.9,
+      "score_rigor": 0.95,
+      "score_ux": 0.5,
+      "confidence": 0.75,
+      "bias_rationale": "Source institutionnelle officielle diffusant des documents bruts, sans orientation éditoriale.",
+      "independence_rationale": "Émanation directe de l'institution parlementaire, sans groupe privé ni annonceur.",
+      "rigor_rationale": "Documents primaires faisant foi, d'une exactitude institutionnelle maximale.",
+      "ux_rationale": "Intitulés administratifs arides et peu accessibles au grand public.",
+      "sources_consulted": [
+        "http://www2.assemblee-nationale.fr/feeds/detail/documents-parlementaires"
+      ]
+    },
+    {
+      "source_id": "7270eb4c-5a08-48c9-9ba2-7e221bf7b023",
+      "name": "Atlantico",
+      "description": "Site français d'actualité et de débat à la ligne libérale-conservatrice clairement classée à droite, qui décrypte l'actualité via un réseau de contributeurs experts. Il s'inscrit dans un écosystème de plateformes de droite (aux côtés de L'Incorrect, Boulevard Voltaire). Fait moins connu : en 2024, l'expert roumain en marketing politique numérique Lucian Despoiu est devenu actionnaire majoritaire, les fondateurs invoquant un pacte protégeant l'indépendance de la rédaction.",
+      "bias_stance": "right",
+      "score_independence": 0.45,
+      "score_rigor": 0.5,
+      "score_ux": 0.55,
+      "confidence": 0.65,
+      "bias_rationale": "Ligne libérale-conservatrice assumée, classée à droite et insérée dans un écosystème de droite.",
+      "independence_rationale": "Actionnaire majoritaire spécialiste du marketing politique, indépendance de la rédaction revendiquée mais discutée.",
+      "rigor_rationale": "Format de tribunes d'opinion et de décryptages polémiques plus que de reportage vérifié.",
+      "ux_rationale": "Site d'actualité lisible mais chargé en publicité et contenus sponsorisés.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Atlantico",
+        "https://www.strategies.fr/actualites/medias/LQ5500308C/un-specialiste-roumain-du-marketing-politique-prend-le-controle-d-atlantico.html"
+      ]
+    },
+    {
+      "source_id": "b1b7459e-1e4f-4d4f-8df4-9fe475e10578",
+      "name": "Au Microb'scope (The French Virologist)",
+      "description": "Newsletter Substack de vulgarisation santé tenue par un docteur en virologie (The French Virologist), qui décrypte virus, toxiques et idées reçues médicales avec des guides sourcés. Elle revendique une approche pratique et accessible face aux infos santé contradictoires. Fait moins connu : son positionnement de « newsletter santé #1 en France » sur Substack repose sur l'autorité scientifique de son auteur plus que sur une rédaction.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.75,
+      "score_ux": 0.8,
+      "confidence": 0.6,
+      "bias_rationale": "Newsletter de vulgarisation scientifique santé, sans orientation politique.",
+      "independence_rationale": "Newsletter d'auteur indépendante autopubliée, sans groupe ni annonceurs.",
+      "rigor_rationale": "Contenu sourcé d'un docteur en virologie, sérieux mais à ton léger et sans relecture par les pairs.",
+      "ux_rationale": "Format Substack épuré et plaisant, sans publicité.",
+      "sources_consulted": [
+        "https://thefrenchvirologist.substack.com/feed"
+      ]
+    },
+    {
+      "source_id": "0c271c95-7510-48cb-99d4-2efd84744706",
+      "name": "Basket Session",
+      "description": "Média français spécialisé dans la NBA et le basket, qui couvre actualités, analyses et rumeurs de la ligue américaine. Le ton est passionné et editorialisé, tourné vers les fans. Fait moins connu : Basket Session est l'un des plus anciens sites francophones dédiés à la NBA, présent depuis le milieu des années 2000.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.65,
+      "bias_rationale": "Média sport spécialisé NBA, sans orientation politique.",
+      "independence_rationale": "Site sportif indépendant vivant de la publicité et de l'affiliation propres au secteur.",
+      "rigor_rationale": "Couverture sérieuse et informée mais editorialisée, mêlant info et opinion.",
+      "ux_rationale": "Site de média sport correct, avec publicité d'usage.",
+      "sources_consulted": [
+        "https://www.basketsession.com/rss"
+      ]
+    },
+    {
+      "source_id": "6e27afbc-92ec-4450-82cf-58d106e2ebe5",
+      "name": "Basket USA",
+      "description": "Média français de référence sur la NBA et le basket américain, qui publie news, lives, résultats, stats et interviews. Il s'adresse aux passionnés de basket francophones. Fait moins connu : malgré son thème stocké « tech », il s'agit d'un pur média sportif, avec un fort volet interviews de joueurs français en NBA.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.65,
+      "score_ux": 0.6,
+      "confidence": 0.65,
+      "bias_rationale": "Média sport spécialisé basket, sans orientation politique.",
+      "independence_rationale": "Site sportif indépendant financé par publicité et affiliation du secteur.",
+      "rigor_rationale": "Couverture suivie et fiable de la NBA, avec interviews originales, mais editorialisée.",
+      "ux_rationale": "Site de média sport lisible, avec publicité courante.",
+      "sources_consulted": [
+        "https://www.basketusa.com/feed/"
+      ]
+    },
+    {
+      "source_id": "d6281a69-8031-44f0-be37-3661ea9cf3ad",
+      "name": "Basketball-Reference (Sports Reference)",
+      "description": "Blog du réseau Sports Reference, base de données statistiques de référence sur le sport américain (basket, football, baseball), dont la devise est « We Democratize Sports Data ». Les billets annoncent enrichissements et corrections des données historiques. Fait moins connu : Sports Reference est utilisé comme référence statistique par de nombreux médias et analystes sportifs professionnels dans le monde.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.9,
+      "score_ux": 0.7,
+      "confidence": 0.65,
+      "bias_rationale": "Source de données statistiques sportives, sans orientation politique.",
+      "independence_rationale": "Plateforme de données indépendante, neutre vis-à-vis des ligues qu'elle documente.",
+      "rigor_rationale": "Données historiques rigoureusement vérifiées et corrigées, référence du secteur.",
+      "ux_rationale": "Tables denses mais claires ; le blog reste lisible.",
+      "sources_consulted": [
+        "https://www.sports-reference.com/blog/feed/"
+      ]
+    },
+    {
+      "source_id": "74c74a3b-d314-45f9-b135-180cc54f5d6c",
+      "name": "BBC 6 Minute English",
+      "description": "Podcast pédagogique d'apprentissage de l'anglais produit par le service BBC Learning English, qui propose chaque semaine un sujet et le vocabulaire associé en six minutes. Il s'appuie sur la rigueur éditoriale et le service public de la BBC. Fait moins connu : BBC Learning English diffuse des contenus d'anglais langue étrangère depuis les années 1940, d'abord par la radio mondiale.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.9,
+      "score_ux": 0.85,
+      "confidence": 0.7,
+      "bias_rationale": "Contenu pédagogique d'apprentissage linguistique, sans orientation politique.",
+      "independence_rationale": "Adossé à la BBC, financée par la redevance et dotée d'une charte d'indépendance.",
+      "rigor_rationale": "Production éditoriale soignée d'un service public reconnu pour ses standards.",
+      "ux_rationale": "Format court, clair et gratuit, sans publicité.",
+      "sources_consulted": [
+        "https://podcasts.files.bbci.co.uk/p02pc9tn.rss"
+      ]
+    },
+    {
+      "source_id": "e838523c-da4b-415e-bdd9-985e4cada0ac",
+      "name": "BBC News (Climat)",
+      "description": "Fil thématique « Climat » de BBC News, service d'information du diffuseur public britannique, couvrant changement climatique, météo extrême et environnement. La BBC est tenue à une charte d'impartialité et de service public. Fait moins connu : la BBC s'appuie sur une unité spécialisée science et environnement, et a révisé ses lignes éditoriales sur le climat pour cesser de donner une fausse parité aux thèses climatosceptiques.",
+      "bias_stance": "center",
+      "score_independence": 0.75,
+      "score_rigor": 0.9,
+      "score_ux": 0.85,
+      "confidence": 0.7,
+      "bias_rationale": "Service public britannique à charte d'impartialité, factuel et équilibré.",
+      "independence_rationale": "Financée par la redevance et encadrée par une charte, malgré des pressions politiques récurrentes au Royaume-Uni.",
+      "rigor_rationale": "Standards de vérification élevés et unité science/environnement dédiée.",
+      "ux_rationale": "Site clair, rapide et lisible, sans publicité agressive.",
+      "sources_consulted": [
+        "https://feeds.bbci.co.uk/news/topics/cmj34zmwm1zt/rss.xml"
+      ]
+    },
+    {
+      "source_id": "e446c0b6-d460-422f-bb47-41cbf0cbf373",
+      "name": "BDM (Blog du Modérateur)",
+      "description": "Média français de référence pour les professionnels du digital, lancé en 2007 et édité par le groupe HelloWork (ex-RegionsJob). Il couvre réseaux sociaux, IA, SEO, marketing digital et nouveaux outils. Fait moins connu : adossé à HelloWork, plateforme d'emploi utilisée par des millions de professionnels, BDM combine ligne média et logique de communauté professionnelle.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.65,
+      "score_ux": 0.65,
+      "confidence": 0.65,
+      "bias_rationale": "Média tech/digital professionnel, sans orientation politique.",
+      "independence_rationale": "Détenu par le groupe HelloWork, dont l'activité emploi/marketing peut colorer les sujets.",
+      "rigor_rationale": "Information sectorielle fiable et à jour, mais souvent proche du relais produit et de l'actualité des outils.",
+      "ux_rationale": "Site lisible et bien organisé, avec publicité d'usage.",
+      "sources_consulted": [
+        "https://www.blogdumoderateur.com/a-propos/",
+        "https://www.hellowork-group.com/en/our-media-for-digital-professionals/"
+      ]
+    },
+    {
+      "source_id": "57fdd2a2-85a3-491d-a92f-2460c5267843",
+      "name": "Beer Magazine",
+      "description": "Beer Magazine est un magazine numérique anglophone consacré à la bière sous toutes ses facettes, de la culture brassicole à la dégustation. La ligne est purement thématique et de loisir, sans dimension politique. Fait moins connu : la publication fonctionne par numéros téléchargeables et s'adresse à une niche d'amateurs et de homebrewers plutôt qu'à un large public d'actualité.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.5,
+      "score_ux": 0.55,
+      "confidence": 0.55,
+      "bias_rationale": "Magazine de niche sur la bière, aucun angle politique.",
+      "independence_rationale": "Petit éditeur indépendant, mais contenu lié à l'écosystème commercial de la bière.",
+      "rigor_rationale": "Contenu lifestyle et passion plus que journalisme vérifié et sourcé.",
+      "ux_rationale": "Diffusion par numéros à télécharger, publication peu fréquente.",
+      "sources_consulted": [
+        "https://thebeermag.com/",
+        "https://magazine.feedspot.com/beer_magazines/"
+      ]
+    },
+    {
+      "source_id": "b05851ea-048a-4029-a538-be80dc547dc8",
+      "name": "BeerAdvocate",
+      "description": "Média et communauté américaine de référence sur la bière (« Respect Beer »), fondée en 1996, mêlant articles, notes et avis de consommateurs. Elle a longtemps fait autorité dans le classement collaboratif des bières. Fait moins connu : son barème de notation communautaire a été l'un des plus influents du monde craft avant l'essor d'applications comme Untappd.",
+      "bias_stance": "specialized",
+      "score_independence": 0.65,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Média/communauté thématique sur la bière, sans orientation politique.",
+      "independence_rationale": "Plateforme indépendante mais dépendante de la publicité et de l'écosystème brassicole.",
+      "rigor_rationale": "Mélange d'articles éditoriaux sérieux et d'avis d'utilisateurs non vérifiés.",
+      "ux_rationale": "Site ancien et chargé en publicité, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://www.beeradvocate.com/articles/feed"
+      ]
+    },
+    {
+      "source_id": "d0edae5f-9c1e-404d-ae63-99256f4dff1f",
+      "name": "BeerNews",
+      "description": "Site français d'actualité brassicole couvrant brasseries, houblon, business de la bière et design packaging, des lagers aux IPA. Il relaie lancements, tendances et données du marché de la bière en France. Fait moins connu : son contenu repose largement sur les communiqués et annonces des brasseries, ce qui en fait autant un relais sectoriel qu'un média d'analyse.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.55,
+      "score_ux": 0.65,
+      "confidence": 0.6,
+      "bias_rationale": "Média thématique sur la bière, sans orientation politique.",
+      "independence_rationale": "Proche de l'industrie brassicole qu'il couvre, fonctionnant beaucoup sur communiqués.",
+      "rigor_rationale": "Information sectorielle utile mais souvent reprise de sources promotionnelles.",
+      "ux_rationale": "Site de niche correct et lisible, publicité limitée.",
+      "sources_consulted": [
+        "https://beernews.fr/rss/"
+      ]
+    },
+    {
+      "source_id": "f88f4548-eca5-4c85-92c7-301d8434c701",
+      "name": "BFMTV",
+      "description": "BFMTV est la principale chaîne d'information en continu française, doublée d'un site d'actualité généraliste à très fort volume. Depuis 2024, elle appartient à CMA Media, pôle médias de l'armateur CMA CGM dirigé par Rodolphe Saadé, qui détient aussi RMC, La Tribune, La Provence et Brut. Fait moins connu, l'Arcom a autorisé ce rachat en exigeant des engagements formels renforcés sur l'indépendance des rédactions vis à vis de l'actionnaire.",
+      "bias_stance": "center",
+      "score_independence": 0.2,
+      "score_rigor": 0.55,
+      "score_ux": 0.45,
+      "confidence": 0.8,
+      "bias_rationale": "Propriété d'un conglomérat (CMA CGM / Saadé) qui n'impose pas de ligne partisane documentée sur l'info nationale, donc bias_stance maintenu à center et capture traitée par la seule pénalité d'indépendance.",
+      "independence_rationale": "Captée par le groupe CMA CGM, dont l'emprise actionnariale a conduit l'Arcom à exiger des garanties d'indépendance rédactionnelle, d'où une indépendance basse.",
+      "rigor_rationale": "Couverture factuelle continue mais format chaud propice aux approximations et aux rectifications, sans ligne militante.",
+      "ux_rationale": "Site dense, chargé en publicités et en contenus auto-play qui dégradent le confort de lecture.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/BFM_TV",
+        "https://www.franceinfo.fr/economie/medias/bfmtv-et-rmc-passent-officiellement-aux-mains-de-l-armateur-cma-cgm_6640443.html",
+        "https://www.strategies.fr/actualites/medias/LQ3260119C/l-arcom-autorise-le-rachat-de-bfm-et-rmc-mais-exige-des-engagements-sur-l-independance-redactionnelle.html"
+      ]
+    },
+    {
+      "source_id": "dd1aac97-fde9-4009-8b55-63cbf281ac4a",
+      "name": "Bière Magazine",
+      "description": "Magazine français consacré à la culture et à l'actualité de la bière (brasseries, nouveautés, histoire, dégustation). Il s'adresse aux amateurs et professionnels du secteur brassicole. Fait moins connu : au-delà des nouveautés produits, il publie aussi des chroniques historiques sur la bière, comme l'origine du nom « Guinness Book ».",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.55,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Magazine thématique sur la bière, sans orientation politique.",
+      "independence_rationale": "Média de niche proche de l'industrie brassicole et de ses annonceurs.",
+      "rigor_rationale": "Contenu éditorial et historique correct, mais souvent calé sur l'actualité des marques.",
+      "ux_rationale": "Site de magazine classique, lisible, avec publicité d'usage.",
+      "sources_consulted": [
+        "https://bieremagazine.fr/?feed=rss2"
+      ]
+    },
+    {
+      "source_id": "41b2f545-042f-4e82-9e3f-5f96cdfe79c4",
+      "name": "BLAST, Le souffle de l'info",
+      "description": "Média français indépendant d'actualité et d'investigation fondé en 2021 par le journaliste Denis Robert, présent en web TV et site, financé exclusivement par ses sociétaires, abonnés et donateurs. Sa ligne est classée à gauche et revendique un contrepied des « médias mainstream ». Fait moins connu : il repose sur environ 1 900 sociétaires et plus de 18 000 abonnés, et garde la majorité de ses contenus en accès libre.",
+      "bias_stance": "left",
+      "score_independence": 0.9,
+      "score_rigor": 0.6,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Ligne classée à gauche, militante et explicitement en rupture avec les médias dominants.",
+      "independence_rationale": "Financé uniquement par sociétaires, abonnés et dons, sans actionnaire industriel ni publicité.",
+      "rigor_rationale": "Vraie capacité d'enquête mais ton militant et titres à charge qui pèsent sur la neutralité factuelle.",
+      "ux_rationale": "Vidéos YouTube et site largement gratuits, lecture confortable.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Blast_(web_TV)",
+        "https://www.blast-info.fr/"
+      ]
+    },
+    {
+      "source_id": "729bb32f-d3d6-472c-bdad-a650a6bee6ad",
+      "name": "Blog d'OCTO Technology",
+      "description": "Blog technique du cabinet de conseil et de réalisation IT OCTO Technology (groupe Accenture), où ses consultants publient sur l'architecture logicielle, la data, l'IA et les pratiques agiles. C'est un blog d'entreprise à visée d'expertise et de marque employeur. Fait moins connu : OCTO Technology a été racheté par Accenture en 2016, ce qui adosse ce blog à un grand groupe de conseil international.",
+      "bias_stance": "specialized",
+      "score_independence": 0.4,
+      "score_rigor": 0.7,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Blog technique d'ingénierie logicielle, sans orientation politique.",
+      "independence_rationale": "Blog d'entreprise (OCTO/Accenture), au service de l'expertise et de la marque du cabinet.",
+      "rigor_rationale": "Contenus d'experts techniques solides, mais avec un angle promotionnel inhérent.",
+      "ux_rationale": "Blog d'entreprise propre et lisible, sans publicité tierce.",
+      "sources_consulted": [
+        "https://blog.octo.com/feed"
+      ]
+    },
+    {
+      "source_id": "8af447c7-2694-4e91-92cd-f8f0f8d5e8ff",
+      "name": "Blog de Hugging Face",
+      "description": "Blog officiel de Hugging Face, plateforme américaine de référence pour le partage de modèles et jeux de données d'IA open source. Les billets, souvent techniques, présentent recherches, outils et tutoriels de machine learning. Fait moins connu : Hugging Face héberge la plus grande communauté ouverte de modèles d'IA (le « GitHub du machine learning »), ce qui donne à son blog un rôle d'influence dans l'écosystème.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.8,
+      "score_ux": 0.75,
+      "confidence": 0.65,
+      "bias_rationale": "Blog technique d'IA open source, sans orientation politique.",
+      "independence_rationale": "Blog d'entreprise promouvant sa propre plateforme et son écosystème.",
+      "rigor_rationale": "Contenus techniques rigoureux et souvent issus de la recherche appliquée, mais orientés produit.",
+      "ux_rationale": "Blog propre et bien mis en page, code lisible, sans publicité.",
+      "sources_consulted": [
+        "https://huggingface.co/blog/feed.xml"
+      ]
+    },
+    {
+      "source_id": "38719a0e-d29b-48da-bcc4-28beec5b39a5",
+      "name": "Boulevard Voltaire",
+      "description": "Site d'actualité français d'extrême droite lancé en 2012 par Dominique Jamet et le couple Robert et Emmanuelle Ménard, aujourd'hui constitué en association et dirigé par Gabrielle Cluzel. Sa ligne est polémique, identitaire et nationaliste. Fait moins connu : ses fondateurs ont quitté la rédaction (Robert Ménard en 2014, Dominique Jamet en 2016, ce dernier en désaccord avec le durcissement de la ligne éditoriale).",
+      "bias_stance": "right",
+      "score_independence": 0.4,
+      "score_rigor": 0.3,
+      "score_ux": 0.45,
+      "confidence": 0.7,
+      "bias_rationale": "Site classé d'extrême droite, à la ligne identitaire et nationaliste assumée.",
+      "independence_rationale": "Structure associative sans grand groupe, mais militante et liée à une mouvance politique.",
+      "rigor_rationale": "Contenu d'opinion et de tribunes à charge, faible vérification factuelle.",
+      "ux_rationale": "Site d'actualité chargé en publicité et en encarts, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Boulevard_Voltaire_(site_web)",
+        "https://www.bvoltaire.fr/qui-sommes-nous/"
+      ]
+    },
+    {
+      "source_id": "45c2d5ef-3b84-4ae8-948f-8ef4ef3a8e90",
+      "name": "Brain Dump (Julia)",
+      "description": "Newsletter Substack personnelle francophone tenue par Julia, créatrice de contenu d'environ 35 ans, mêlant lifestyle, recommandations culturelles, jeux et réflexions intimes. Son ton revendique l'esprit Skyblog des débuts du web, un univers personnel sans prétention journalistique. Fait moins connu : elle publie en parallèle une newsletter professionnelle dédiée aux freelances et entrepreneurs, distincte de ce journal de bord.",
+      "bias_stance": "specialized",
+      "score_independence": 0.95,
+      "score_rigor": null,
+      "score_ux": 0.85,
+      "confidence": 0.7,
+      "bias_rationale": "Newsletter personnelle lifestyle sans angle politique, l'angle est le vécu et les goûts de l'autrice.",
+      "independence_rationale": "Publication individuelle auto-éditée sur Substack, sans actionnaire ni annonceur.",
+      "rigor_rationale": "Contenu intime et subjectif, non journalistique, donc rigueur factuelle non pertinente à évaluer.",
+      "ux_rationale": "Format Substack lisible et épuré, sans publicité intrusive.",
+      "sources_consulted": [
+        "https://juliabraindump.substack.com/",
+        "https://substack.com/@idontthinkifeel"
+      ]
+    },
+    {
+      "source_id": "77fca6c5-de87-4ea9-8809-05fdf4462f58",
+      "name": "Brewers Association",
+      "description": "Organisation professionnelle américaine à but non lucratif (501(c)(6)) qui fédère et défend les brasseurs artisanaux indépendants des États-Unis, avec plus de 4 000 brasseries membres. Son fil d'actualité couvre la réglementation, le marché et les bonnes pratiques de la filière craft beer. Fait moins connu : elle organise le Great American Beer Festival et la World Beer Cup, et édite les revues The New Brewer et Zymurgy.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.7,
+      "score_ux": 0.75,
+      "confidence": 0.75,
+      "bias_rationale": "Source thématique sur le brassage artisanal, sans orientation politique, mais avec un parti pris assumé pour les brasseurs indépendants.",
+      "independence_rationale": "Association de filière qui défend les intérêts de ses membres brasseurs, ce qui colore son traitement (advocacy plus que neutralité).",
+      "rigor_rationale": "Communications factuelles et données sectorielles solides, mais ligne orientée vers la promotion du craft beer.",
+      "ux_rationale": "Site institutionnel propre, lecture claire et sans publicité agressive.",
+      "sources_consulted": [
+        "https://www.brewersassociation.org/",
+        "https://en.wikipedia.org/wiki/Brewers_Association"
+      ]
+    },
+    {
+      "source_id": "ac064e4f-fc8d-42f5-acb4-6167fdddbd9a",
+      "name": "Brewing Industry Guide",
+      "description": "Magazine professionnel américain consacré à la filière brassicole, édité par l'équipe de Craft Beer & Brewing (beerandbrewing.com), destiné aux brasseurs et aux acteurs de l'industrie. Il couvre la production, le contrôle qualité, le marketing et les ingrédients comme le houblon et le malt. Fait moins connu : c'est le pendant B2B et technique de la revue grand public Craft Beer & Brewing, ciblant les professionnels plutôt que les amateurs.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.7,
+      "score_ux": 0.75,
+      "confidence": 0.6,
+      "bias_rationale": "Publication thématique B2B sur le brassage, sans orientation politique.",
+      "independence_rationale": "Média sectoriel financé par la publicité et les annonceurs de la filière brassicole.",
+      "rigor_rationale": "Contenu technique et professionnel orienté pratique, fiable sur son domaine.",
+      "ux_rationale": "Format magazine pro lisible, publicité présente mais cohérente avec le secteur.",
+      "sources_consulted": [
+        "https://www.brewingindustryguide.com",
+        "https://www.beerandbrewing.com/dictionary/ipHKELFWI3"
+      ]
+    },
+    {
+      "source_id": "64196964-ce8a-427c-94cf-9bbe40b8211f",
+      "name": "By the Numbers (Hannah Ritchie, Sustainability by Numbers)",
+      "description": "Newsletter Substack de Hannah Ritchie, chercheuse et data scientist deputy editor d'Our World in Data, qui utilise données et recherche pour analyser énergie, climat, alimentation et développement durable. Son approche est empirique, factuelle et résolument anti-catastrophiste. Fait moins connu : elle est l'autrice du livre Not the End of the World et reçoit ici les chiffres plus opinionés ou exploratoires qu'elle n'inclut pas dans Our World in Data.",
+      "bias_stance": "specialized",
+      "score_independence": 0.9,
+      "score_rigor": 0.9,
+      "score_ux": 0.85,
+      "confidence": 0.8,
+      "bias_rationale": "Analyse data-driven de la durabilité par une scientifique, l'angle est la donnée et non une ligne politique.",
+      "independence_rationale": "Newsletter individuelle auto-éditée, adossée à la réputation académique d'Our World in Data, sans annonceur.",
+      "rigor_rationale": "Méthode quantitative rigoureuse, sources et données systématiquement citées par une data scientist reconnue.",
+      "ux_rationale": "Format Substack clair, graphiques soignés, sans publicité.",
+      "sources_consulted": [
+        "https://www.sustainabilitybynumbers.com/",
+        "https://ourworldindata.org/team/hannah-ritchie",
+        "https://hannahritchie.substack.com/p/welcome-to-sustainability-without"
+      ]
+    },
+    {
+      "source_id": "cea9eeac-34d1-4a0f-93b7-13469c3e2679",
+      "name": "Canard Réfractaire",
+      "description": "Média militant et indépendant français créé en 2018 par Yohan Pavec, basé à Guingamp, diffusant enquêtes et analyses d'actualité sur YouTube. Sa ligne est résolument à gauche et anti-système, financée par le don et le crowdfunding pour garantir son indépendance. Fait moins connu : il revendique avoir refusé un rachat par le groupe Bolloré, qu'il présente comme un acte de résistance face à la concentration des médias.",
+      "bias_stance": "left",
+      "score_independence": 0.85,
+      "score_rigor": 0.45,
+      "score_ux": 0.6,
+      "confidence": 0.75,
+      "bias_rationale": "Ligne militante de gauche assumée, titres pro-insoumis et anti-système (immigration, résistance, abattre le système médiatique).",
+      "independence_rationale": "Financé par dons et crowdfunding, sans actionnaire, refus revendiqué d'un rachat Bolloré.",
+      "rigor_rationale": "Contenu militant et engagé, plus orienté opinion et mobilisation que vérification factuelle stricte.",
+      "ux_rationale": "Format YouTube accessible mais titres très putaclic (majuscules, émojis) qui nuisent à la sobriété.",
+      "sources_consulted": [
+        "https://www.youtube.com/channel/UCWGsN59FON3vOtXCozQPsZQ",
+        "https://www.instagram.com/lecanardrefractaire/"
+      ]
+    },
+    {
+      "source_id": "306614d1-04ce-400b-aca3-28abf612a1f8",
+      "name": "Cerveau & Psycho",
+      "description": "Magazine mensuel français de vulgarisation en psychologie et neurosciences, lancé en 2003 et édité par le groupe Pour la Science, dirigé en rédaction par Sébastien Bohler, docteur en neurosciences. Il adapte des articles de Scientific American Mind et de l'édition allemande Gehirn & Geist. Fait moins connu : le groupe Pour la Science est la filiale française du groupe scientifique Spektrum/Scientific American, ce qui lui donne accès à un réseau international de contenus.",
+      "bias_stance": "specialized",
+      "score_independence": 0.65,
+      "score_rigor": 0.8,
+      "score_ux": 0.8,
+      "confidence": 0.75,
+      "bias_rationale": "Magazine de vulgarisation scientifique (psycho, neurosciences) sans orientation politique.",
+      "independence_rationale": "Édité par un groupe de presse spécialisé adossé à Scientific American, financement par abonnements et ventes.",
+      "rigor_rationale": "Contenu validé scientifiquement, adapté de publications de référence, bonne fiabilité méthodologique.",
+      "ux_rationale": "Magazine soigné, lecture confortable, paywall présent mais non agressif.",
+      "sources_consulted": [
+        "https://www.cerveauetpsycho.fr/rss.xml",
+        "https://boutique.groupepourlascience.fr/",
+        "https://direct-editeurs.fr/magazine/13252_cerveau--psycho_144"
+      ]
+    },
+    {
+      "source_id": "3213a0f9-31a6-4d90-9737-19cdfbfa32d2",
+      "name": "Chaleur Humaine",
+      "description": "Chaleur Humaine est un podcast hebdomadaire du quotidien Le Monde, animé par le journaliste Nabil Wakim, consacré aux enjeux climatiques et aux solutions individuelles et collectives. Chaque épisode invite un expert pour décrypter un thème (élevage, énergie, biodiversité, transports) sur un ton pédagogique et orienté solutions. Fait moins connu, le format s'est prolongé en newsletter interactive et en livre adaptant dix-huit épisodes, et Nabil Wakim fut auparavant chef du service politique du Monde.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.75,
+      "score_ux": 0.85,
+      "confidence": 0.8,
+      "bias_rationale": "Verticale thématique apolitique (climat, science, solutions) d'un grand média, l'angle reste le sujet et non une orientation partisane.",
+      "independence_rationale": "Adossé au groupe Le Monde, à l'actionnariat diversifié (Niel, Pigasse, pôle d'indépendance), avec une rédaction reconnue pour son autonomie.",
+      "rigor_rationale": "Format d'entretien d'experts appuyé sur le travail de la rédaction du Monde, factuel et sourcé, sans démentis notables.",
+      "ux_rationale": "Podcast gratuit, sans publicité intrusive, accessible sur toutes les plateformes et prolongé par une newsletter.",
+      "sources_consulted": [
+        "https://podcasts.apple.com/us/podcast/chaleur-humaine/id1622382158",
+        "https://csoluble.media/epsode/chaleur-humaine-le-podcast-du-monde-qui-nous-rafraichit-les-idees-avec-nabil-wakim/"
+      ]
+    },
+    {
+      "source_id": "fcf88bb7-19db-4016-a7e5-a6d3bc0a6df0",
+      "name": "chiantifique",
+      "description": "Chaîne YouTube francophone dont le contenu n'a pas pu être identifié de manière fiable (titres très cryptiques comme driver, the cassos, triso). La nature exacte (vulgarisation, humour, essai) reste indéterminée faute de sources vérifiables. Aucune information éditoriale solide n'a pu être recoupée pour caractériser cette source.",
+      "bias_stance": "unknown",
+      "score_independence": null,
+      "score_rigor": null,
+      "score_ux": null,
+      "confidence": 0.3,
+      "bias_rationale": "Aucune information vérifiable trouvée sur la ligne ou le contenu réel de la chaîne.",
+      "independence_rationale": "Chaîne YouTube individuelle présumée indépendante mais non documentée.",
+      "rigor_rationale": "Impossible d'évaluer la rigueur faute de contenu identifiable.",
+      "ux_rationale": "Format YouTube standard, mais nature du contenu trop incertaine pour juger.",
+      "sources_consulted": [
+        "https://www.youtube.com/feeds/videos.xml?channel_id=UCMvoiKViapveshs4AnlBMbA"
+      ]
+    },
+    {
+      "source_id": "cbf0248b-d4f8-449f-a8f7-84ec6ad32d12",
+      "name": "Christophe André (blog)",
+      "description": "Blog personnel du psychiatre et auteur Christophe André, pionnier de la méditation de pleine conscience en France et longtemps praticien à l'hôpital Sainte-Anne. Il y publie des billets de psychologie positive, de bien-être et de développement personnel. Fait moins connu : il a contribué à introduire les thérapies basées sur la pleine conscience (MBCT) dans le milieu hospitalier français au début des années 2000.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.6,
+      "score_ux": 0.8,
+      "confidence": 0.7,
+      "bias_rationale": "Blog de bien-être et psychologie sans orientation politique, l'angle est le sujet.",
+      "independence_rationale": "Blog d'auteur autoédité, sans groupe ni annonceurs pesant sur le contenu.",
+      "rigor_rationale": "Contenu de vulgarisation personnelle et réflexive, pas un travail scientifique sourcé.",
+      "ux_rationale": "Site d'auteur simple et lisible, sans publicité intrusive.",
+      "sources_consulted": [
+        "https://www.christopheandre.com/feed/"
+      ]
+    },
+    {
+      "source_id": "109e1208-f2b2-49c5-b733-2810dd4dd87f",
+      "name": "Chut! magazine",
+      "description": "Magazine trimestriel français indépendant fondé en 2018 par Aurore Bisicchia et Sophie Comte, consacré à l'observation critique de la transformation numérique de la société. Sa ligne croise une analyse multidimensionnelle de l'impact des technologies et la mise en avant des femmes du secteur du numérique. Fait moins connu : il est entièrement développé sur fonds propres, sans actionnaire, avec un modèle diversifié (abonnements, ventes, crowdfunding, partenariats éditoriaux).",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.7,
+      "score_ux": 0.8,
+      "confidence": 0.7,
+      "bias_rationale": "Magazine thématique sur le numérique et la société, angle critique sur la tech sans ligne partisane gauche-droite.",
+      "independence_rationale": "Média indépendant sans actionnaire, développé sur fonds propres avec financement diversifié.",
+      "rigor_rationale": "Démarche d'observation critique sérieuse, mais format magazine plus réflexif qu'investigation factuelle dure.",
+      "ux_rationale": "Magazine papier et web soigné, direction artistique colorée, sans publicité intrusive.",
+      "sources_consulted": [
+        "https://chut.media/",
+        "https://fr.wikipedia.org/wiki/Chut!_magazine"
+      ]
+    },
+    {
+      "source_id": "7baa8eb8-df2e-422c-be12-94e8057af26c",
+      "name": "Citrini Research",
+      "description": "Newsletter de recherche financière sur Substack, fondée en 2023 par James Van Geelen, spécialisée dans l'investissement thématique en actions et le trading global macro avec une approche cross-asset. Elle couvre l'IA, la robotique, la défense, les GLP-1 et la politique budgétaire. Fait moins connu : l'équipe s'est élargie à plus de dix analystes et la recherche a anticipé des tendances structurelles sur des valeurs comme Nvidia ou Eli Lilly avant qu'elles ne deviennent consensuelles.",
+      "bias_stance": "specialized",
+      "score_independence": 0.75,
+      "score_rigor": 0.7,
+      "score_ux": 0.8,
+      "confidence": 0.7,
+      "bias_rationale": "Recherche financière thématique, l'angle est l'investissement et la macro, sans orientation politique.",
+      "independence_rationale": "Recherche indépendante auto-éditée, financée par abonnements, mais positions de marché de l'auteur à considérer.",
+      "rigor_rationale": "Analyse argumentée et structurée, track record d'anticipation, mais nature spéculative inhérente au domaine.",
+      "ux_rationale": "Format Substack clair, recherche dense mais bien organisée, sans publicité.",
+      "sources_consulted": [
+        "https://www.citriniresearch.com/",
+        "https://www.citrini.com/company"
+      ]
+    },
+    {
+      "source_id": "31af28bd-7d05-4c64-af96-9ee47fee6f5e",
+      "name": "Contexte",
+      "description": "Pure player français de presse professionnelle fondé en 2013 par trois anciens d'Euractiv, spécialisé dans le suivi des politiques publiques et de la fabrique de la loi à Paris et Bruxelles. Détenu à 98 % par ses salariés, sans publicité ni partenariat, il est financé uniquement par les abonnements. Fait moins connu : sa transparence est radicale (charte déontologique et résultats publiés) et son lectorat est surtout professionnel (1 300 organisations, 12 000 lecteurs en 2023).",
+      "bias_stance": "center",
+      "score_independence": 0.95,
+      "score_rigor": 0.9,
+      "score_ux": 0.8,
+      "confidence": 0.8,
+      "bias_rationale": "Information factuelle et experte sur les politiques publiques, sans orientation partisane marquée.",
+      "independence_rationale": "Détenu à 98 % par ses salariés, sans publicité ni partenariat, financé exclusivement par abonnements.",
+      "rigor_rationale": "Journalisme d'expertise institutionnelle reconnu, transparence déontologique radicale.",
+      "ux_rationale": "Interface professionnelle sobre, paywall premium mais lecture sans publicité.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Contexte_(m%C3%A9dia)",
+        "https://about.contexte.com/eu/home",
+        "https://www.contexte.com/eu/"
+      ]
+    },
+    {
+      "source_id": "39d25bd0-6f9e-4e69-93f3-ed8b57ffc2bf",
+      "name": "Contretemps",
+      "description": "Revue française de critique communiste fondée en 2001 par le philosophe trotskiste Daniel Bensaïd, articulant théorie marxiste et luttes sociales et politiques contemporaines. Sa ligne est radicalement à gauche, anticapitaliste et critique de l'ordre établi. Fait moins connu : initialement revue papier publiée chez Syllepse puis Textuel, elle s'est prolongée en version web (contretemps.eu) qui en est aujourd'hui le principal support.",
+      "bias_stance": "left",
+      "score_independence": 0.85,
+      "score_rigor": 0.55,
+      "score_ux": 0.7,
+      "confidence": 0.8,
+      "bias_rationale": "Revue marxiste de critique communiste fondée par Daniel Bensaïd, ligne anticapitaliste clairement à gauche.",
+      "independence_rationale": "Revue intellectuelle indépendante portée par un collectif militant, sans grand groupe.",
+      "rigor_rationale": "Textes théoriques exigeants mais explicitement engagés et orientés, plus essai militant qu'information neutre.",
+      "ux_rationale": "Site web lisible et sobre, articles longs sans publicité intrusive.",
+      "sources_consulted": [
+        "https://www.contretemps.eu/",
+        "https://fr.wikipedia.org/wiki/Contretemps"
+      ]
+    },
+    {
+      "source_id": "07be81f0-a929-41dd-9ed6-826d55cfe2b7",
+      "name": "Coop-médias",
+      "description": "Coopérative citoyenne française qui réunit des médias indépendants, mouvements associatifs, entreprises de l'ESS et citoyens pour défendre une information vue comme bien commun. Elle fédère des titres engagés majoritairement à gauche comme Blast, Basta, Politis, Reporterre, Mediacités ou StreetPress. Fait moins connu : elle est présidée par Julien Noé, cofondateur d'Enercoop, et structure une logique coopérative inspirée de l'économie sociale et solidaire.",
+      "bias_stance": "alternative",
+      "score_independence": 0.9,
+      "score_rigor": 0.65,
+      "score_ux": 0.7,
+      "confidence": 0.65,
+      "bias_rationale": "Méta-acteur fédérant des médias indépendants engagés, plutôt à gauche mais sans ligne partisane unique, logique critique non partisane.",
+      "independence_rationale": "Structure coopérative citoyenne par nature détachée des grands groupes, financée par ses sociétaires.",
+      "rigor_rationale": "Plateforme d'organisation et de plaidoyer plus que média d'information propre, rigueur portée par les titres membres.",
+      "ux_rationale": "Site institutionnel simple et lisible, sans publicité.",
+      "sources_consulted": [
+        "https://www.coop-medias.org/",
+        "https://basta.media/lancement-de-coopmedias-cooperative-citoyenne-de-medias-independants"
+      ]
+    },
+    {
+      "source_id": "6fae4ff2-ac2b-4506-bc85-5c788f62a506",
+      "name": "Craft Beer & Brewing",
+      "description": "Magazine américain consacré à la bière artisanale et au brassage maison (beerandbrewing.com), destiné autant aux amateurs qu'aux brasseurs, avec recettes, podcasts et techniques. Le ton est passionné, pratique et orienté découverte. Fait moins connu : il édite aussi le Brewing Industry Guide, son pendant professionnel B2B ciblant les acteurs de la filière plutôt que le grand public.",
+      "bias_stance": "specialized",
+      "score_independence": 0.65,
+      "score_rigor": 0.7,
+      "score_ux": 0.8,
+      "confidence": 0.65,
+      "bias_rationale": "Média thématique sur la bière et le brassage, sans orientation politique.",
+      "independence_rationale": "Magazine spécialisé financé par abonnements et annonceurs de la filière brassicole.",
+      "rigor_rationale": "Contenu pratique et technique fiable sur son domaine, ton enthousiaste mais sérieux.",
+      "ux_rationale": "Site clair avec recettes et podcasts bien structurés, publicité présente mais mesurée.",
+      "sources_consulted": [
+        "https://beerandbrewing.com",
+        "https://www.beerandbrewing.com/dictionary/ipHKELFWI3"
+      ]
+    },
+    {
+      "source_id": "92a33ad2-fdcc-43b2-83dc-03d6b95c1199",
+      "name": "Cuisiner (Le Journal des Femmes)",
+      "description": "Rubrique cuisine du Journal des Femmes, magazine en ligne édité par CCM Benchmark, filiale du Groupe Figaro lui-même contrôlé par le groupe Dassault. Le contenu est grand public, optimisé SEO, axé recettes, astuces et bons plans alimentaires. Fait moins connu : le Journal des Femmes a été lancé en 2003 par les fondateurs de Benchmark Group avant d'être racheté par le Groupe Figaro pour 120 millions d'euros en 2015.",
+      "bias_stance": "specialized",
+      "score_independence": 0.3,
+      "score_rigor": 0.4,
+      "score_ux": 0.35,
+      "confidence": 0.7,
+      "bias_rationale": "Contenu thématique cuisine et lifestyle, sans orientation politique.",
+      "independence_rationale": "Édité par CCM Benchmark, filiale du Groupe Figaro (Dassault), modèle fortement adossé à un grand groupe et à la publicité.",
+      "rigor_rationale": "Contenu SEO de masse, peu d'exigence éditoriale, articles formatés pour le référencement.",
+      "ux_rationale": "Publicité très intrusive et lecture encombrée typiques des sites SEO grand public.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Le_Journal_des_femmes",
+        "https://fr.wikipedia.org/wiki/CCM_Benchmark"
+      ]
+    },
+    {
+      "source_id": "cef495e0-8541-40a8-b6bd-692707b95bad",
+      "name": "Cybernetica",
+      "description": "Newsletter française fondée vers 2024 par Tariq Krim, entrepreneur et pionnier du web (Netvibes, Jolicloud), consacrée à l'analyse critique de l'IA, de la souveraineté numérique et des mutations technologiques. Elle s'adresse à une communauté de plusieurs milliers de décideurs hebdomadaires. Fait moins connu : Krim, ancien membre du Conseil national du numérique, y défend une vision souverainiste de l'autonomie cognitive et technologique européenne.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.7,
+      "score_ux": 0.8,
+      "confidence": 0.7,
+      "bias_rationale": "Newsletter thématique IA et souveraineté numérique, l'angle est la technologie et non une ligne partisane gauche-droite.",
+      "independence_rationale": "Newsletter individuelle auto-éditée par Tariq Krim, sans grand groupe ni annonceur.",
+      "rigor_rationale": "Analyse experte et informée, mais ton éditorialisant et thèses souverainistes assumées.",
+      "ux_rationale": "Format newsletter clair et sans publicité, lecture confortable.",
+      "sources_consulted": [
+        "https://www.cybernetica.fr/",
+        "https://www.cybernetica.fr/a-propos/"
+      ]
+    },
+    {
+      "source_id": "c46b2db5-455b-4049-89f1-5edfb894a833",
+      "name": "Data & IA (Blog)",
+      "description": "Blog français de vulgarisation consacré à l'intelligence artificielle et à la data (data-ia.fr), publiant des articles grand public sur les applications de l'IA dans la santé, le cinéma ou la science. La ligne est descriptive et plutôt enthousiaste vis-à-vis des technologies. Fait moins connu : son éditeur et son modèle économique restent peu documentés, ce qui limite l'évaluation de son indépendance.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.45,
+      "score_ux": 0.55,
+      "confidence": 0.5,
+      "bias_rationale": "Blog thématique de vulgarisation IA, sans orientation politique.",
+      "independence_rationale": "Blog indépendant présumé mais éditeur peu documenté, donc indépendance incertaine.",
+      "rigor_rationale": "Vulgarisation grand public au ton enthousiaste, peu de mise en perspective critique des annonces tech.",
+      "ux_rationale": "Blog WordPress standard, lisibilité correcte mais peu d'informations sur l'expérience.",
+      "sources_consulted": [
+        "https://www.data-ia.fr/",
+        "https://www.data-ia.fr/index.php/feed/"
+      ]
+    },
+    {
+      "source_id": "6b7b1820-c447-4d75-9d9f-fd1e2c627fe3",
+      "name": "David Bessis",
+      "description": "Newsletter Substack du mathématicien français David Bessis, qui écrit sur les mathématiques et la cognition humaine en anglais. Ancien chercheur en algèbre et topologie, il est l'auteur de Mathematica, A Secret World of Intuition and Curiosity, exploration de l'expérience vécue du raisonnement mathématique. Fait moins connu : il a quitté une position académique permanente pour écrire son livre et a fondé entre-temps une startup d'IA.",
+      "bias_stance": "specialized",
+      "score_independence": 0.95,
+      "score_rigor": 0.85,
+      "score_ux": 0.8,
+      "confidence": 0.75,
+      "bias_rationale": "Newsletter thématique sur les mathématiques et la cognition, sans orientation politique.",
+      "independence_rationale": "Publication individuelle auto-éditée par un auteur reconnu, sans annonceur.",
+      "rigor_rationale": "Auteur mathématicien de haut niveau, raisonnement structuré et exigeant, même si le format reste personnel et essayiste.",
+      "ux_rationale": "Format Substack lisible et épuré, sans publicité.",
+      "sources_consulted": [
+        "https://davidbessis.substack.com/about",
+        "https://davidbessis.substack.com/p/the-fall-of-the-theorem-economy"
+      ]
+    },
+    {
+      "source_id": "562aa0d7-b1b5-4e43-a53b-50e415ba7cd5",
+      "name": "Developpez.com",
+      "description": "Plus grande communauté francophone de développeurs et professionnels IT, fondée comme club d'entraide proposant gratuitement forums, tutoriels, cours et un magazine PDF sans publicité. Son équipe éditoriale repose sur plus de 900 bénévoles, du chef de rubrique au modérateur. Fait moins connu : elle revendique 2,2 millions de lecteurs et fonctionne aussi comme hébergeur gratuit pour la communauté.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.65,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Communauté thématique IT et développement, sans orientation politique.",
+      "independence_rationale": "Communauté bénévole sans grand groupe, magazine sans publicité, mais reprend largement des dépêches et communiqués.",
+      "rigor_rationale": "Contenu technique solide, mais le fil d'actualité agrège et traduit beaucoup de sources externes avec un éditorial inégal.",
+      "ux_rationale": "Site dense et un peu daté mais sans publicité agressive, lecture correcte.",
+      "sources_consulted": [
+        "https://www.developpez.com/quisommesnous/",
+        "https://www.developpez.com/"
+      ]
+    },
+    {
+      "source_id": "45dda47e-94f3-46d8-b5b0-30be3fb4a23e",
+      "name": "DevOps.com",
+      "description": "Média tech américain B2B fondé en 2013, publié par Techstrong Group (ex-MediaOps), spécialisé dans le DevOps, la cybersécurité, le cloud-native et la transformation numérique. Son modèle repose largement sur la génération de leads et les contenus sponsorisés pour les professionnels IT. Fait moins connu : Techstrong Group est en cours d'acquisition par The Futurum Group, et l'éditeur opère aussi Security Boulevard et Cloud Native Now.",
+      "bias_stance": "specialized",
+      "score_independence": 0.45,
+      "score_rigor": 0.6,
+      "score_ux": 0.55,
+      "confidence": 0.65,
+      "bias_rationale": "Média thématique tech (DevOps, cybersécurité), sans orientation politique.",
+      "independence_rationale": "Modèle économique fortement adossé à la génération de leads, aux sponsors et aux contenus de marque.",
+      "rigor_rationale": "Couverture sectorielle informée mais teintée de contenus sponsorisés et de communication d'éditeurs.",
+      "ux_rationale": "Site dense en publicité et contenus promotionnels, lecture parfois alourdie.",
+      "sources_consulted": [
+        "https://techstronggroup.com/about/",
+        "https://devops.com/welcome-to-techstrong-group/"
+      ]
+    },
+    {
+      "source_id": "ec547736-ccf1-4d59-bc4f-1e75429ac66d",
+      "name": "Diable Positif",
+      "description": "Chaîne YouTube francophone d'essais vidéo et d'analyses critiques de société, qui examine les mécanismes par lesquels les humains dégradent leur propre existence (immigration, démocratie, travail, médias). Le ton est réflexif et engagé sans affiliation partisane claire. Fait moins connu : le créateur produit aussi des séries d'animation et finance la chaîne via Tipeee, Patreon et KissKissBankBank.",
+      "bias_stance": "alternative",
+      "score_independence": 0.8,
+      "score_rigor": 0.5,
+      "score_ux": 0.6,
+      "confidence": 0.55,
+      "bias_rationale": "Essais vidéo critiques sur la société, pensée engagée mais sans ligne partisane gauche-droite clairement identifiable.",
+      "independence_rationale": "Chaîne individuelle financée par le don (Tipeee, Patreon), sans grand groupe.",
+      "rigor_rationale": "Format essai personnel et argumentatif, subjectif plus que vérification factuelle systématique.",
+      "ux_rationale": "Format YouTube standard, contenu long et travaillé, pas de publicité intrusive propre.",
+      "sources_consulted": [
+        "https://www.youtube.com/@diablepositif",
+        "https://podcastaddict.com/kalee-vision/episode/116949185"
+      ]
+    },
+    {
+      "source_id": "2bf4987f-449c-4263-910f-6cd97efbfb34",
+      "name": "Durendal1 (Le Cinéma de Durendal)",
+      "description": "Chaîne YouTube de critique cinématographique tenue par Timothée Fontaine, alias Durendal, l'un des critiques ciné francophones les plus suivis, avec ses vlogs et son émission Pourquoi J'ai Raison et Vous Avez Tort. Le contenu est subjectif, axé sur les sorties de films et la pop culture. Fait moins connu : il s'est d'abord fait connaître au début des années 2000 avec ses MP3 sagas et le site Le Démon du Rire avant de se consacrer au cinéma.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.5,
+      "score_ux": 0.65,
+      "confidence": 0.7,
+      "bias_rationale": "Critique cinéma et pop culture, l'angle est le sujet culturel sans orientation politique.",
+      "independence_rationale": "Créateur individuel indépendant financé par sa communauté, sans grand groupe.",
+      "rigor_rationale": "Critique assumée comme subjective et personnelle, ce n'est pas de l'information factuelle.",
+      "ux_rationale": "Format vlog YouTube standard, lecture correcte sans publicité intrusive propre.",
+      "sources_consulted": [
+        "https://www.youtube.com/channel/UCcliHNE38fJ4n4gYYB0TCQw",
+        "https://youtube.fandom.com/fr/wiki/Durendal"
+      ]
+    },
+    {
+      "source_id": "10dc7d25-bc68-462e-a50e-d3fedee99b1d",
+      "name": "Estadão (O Estado de S. Paulo)",
+      "description": "O Estado de S. Paulo, surnommé Estadão, est l'un des principaux quotidiens brésiliens, fondé en 1875 et contrôlé par la famille Mesquita via le Grupo Estado. Sa ligne éditoriale est de centre droit, marquée par le libéralisme économique et le conservatisme libéral. Fait moins connu, ses positions libérales lui ont valu de nombreux conflits avec le pouvoir, notamment la censure de sa rédaction sous la dictature militaire.",
+      "bias_stance": "center-right",
+      "score_independence": 0.6,
+      "score_rigor": 0.7,
+      "score_ux": 0.55,
+      "confidence": 0.75,
+      "bias_rationale": "Alignement éditorial de centre droit, libéral économiquement et conservateur, documenté de longue date.",
+      "independence_rationale": "Quotidien familial indépendant contrôlé par la famille Mesquita, sans capture par un grand conglomérat extérieur.",
+      "rigor_rationale": "Grand quotidien de référence brésilien à la tradition d'enquête établie, malgré une coloration éditoriale libérale.",
+      "ux_rationale": "Site dense en publicités et paywall présent, expérience de lecture moyenne.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/O_Estado_de_S._Paulo",
+        "https://pt.wikipedia.org/wiki/Grupo_Estado"
+      ]
+    },
+    {
+      "source_id": "776b9266-266f-4ce6-b06a-53760227fd1a",
+      "name": "Ex Libris (Alexis Bonon)",
+      "description": "Newsletter littéraire et créative française d'Alexis Bonon, romancier, scénariste et producteur, qui décortique les mécanismes de l'écriture de fiction un samedi sur deux. Le contenu est pédagogique, dédié aux apprentis auteurs. Fait moins connu : Bonon a publié son premier roman en 2020 sous le pseudonyme Gaspard Saint-Jean et anime aussi un feuilleton et un programme de coaching à l'écriture.",
+      "bias_stance": "specialized",
+      "score_independence": 0.95,
+      "score_rigor": null,
+      "score_ux": 0.85,
+      "confidence": 0.7,
+      "bias_rationale": "Newsletter thématique sur l'écriture de fiction, sans orientation politique.",
+      "independence_rationale": "Publication individuelle auto-éditée gratuite, sans annonceur.",
+      "rigor_rationale": "Contenu pédagogique et créatif, pas de prétention informationnelle factuelle à évaluer.",
+      "ux_rationale": "Format Substack clair et gratuit, lecture confortable sans publicité.",
+      "sources_consulted": [
+        "https://alexisbonon.substack.com/about",
+        "https://alexisbonon.substack.com/"
+      ]
+    },
+    {
+      "source_id": "a30cf95b-c297-4733-b4c1-5c26c3f8e6a9",
+      "name": "Famille Chrétienne",
+      "description": "Famille Chrétienne est un hebdomadaire catholique français fondé en 1978, édité par EDIFA au sein du groupe Média-Participations. Sa ligne éditoriale est ouvertement catholique et conservatrice, en phase avec les valeurs de ses propriétaires. Fait moins connu, le cofondateur du titre, Rémy Montagne, père de l'actuel patron de Média-Participations Vincent Montagne, était une figure de la droite conservatrice et un opposant déclaré à la loi Veil sur l'avortement.",
+      "bias_stance": "right",
+      "score_independence": 0.4,
+      "score_rigor": 0.5,
+      "score_ux": 0.6,
+      "confidence": 0.8,
+      "bias_rationale": "Le propriétaire (famille Montagne / Média-Participations) imprime une ligne catholique conservatrice assumée au titre, qu'il a cofondé, ce qui justifie un classement selon cette ligne partisane plutôt qu'une simple pénalité d'indépendance.",
+      "independence_rationale": "Détenu par le groupe Média-Participations, propriété de la famille Montagne, qui en oriente la ligne, ce qui limite l'indépendance rédactionnelle.",
+      "rigor_rationale": "Couverture confessionnelle de l'actualité avec un prisme militant catholique sur les sujets de société (euthanasie, famille), sans sanctions réglementaires mais à factualité orientée.",
+      "ux_rationale": "Site lisible et structuré, présence publicitaire modérée et paywall non agressif.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Famille_chr%C3%A9tienne",
+        "https://www.media-participations.com/fr/entite/49-famille-chretienne",
+        "https://fr.wikipedia.org/wiki/Vincent_Montagne",
+        "https://www.cath.ch/tag/famille-chretienne/"
+      ]
+    },
+    {
+      "source_id": "979884e4-282f-43ec-ac5e-77d0094b6509",
+      "name": "Fireship",
+      "description": "Chaîne YouTube tech créée en 2017 par le développeur américain Jeff Delaney, connue pour ses tutoriels ultra-condensés (100 Seconds of Code) et sa revue d'actualité tech (The Code Report) au ton humoristique et rythmé. Elle couvre JavaScript, le développement web et les tendances IA. Fait moins connu : elle dépasse les 4 millions d'abonnés et prolonge la chaîne par la plateforme de cours fireship.io.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.65,
+      "score_ux": 0.8,
+      "confidence": 0.75,
+      "bias_rationale": "Chaîne thématique de développement et d'actualité tech, sans orientation politique.",
+      "independence_rationale": "Créateur individuel indépendant, monétisation par cours et YouTube, parfois sponsors ponctuels.",
+      "rigor_rationale": "Contenu technique fiable mais format très condensé et ton humoristique qui simplifie l'actualité.",
+      "ux_rationale": "Vidéos courtes et très lisibles, montage soigné, sans publicité intrusive propre.",
+      "sources_consulted": [
+        "https://www.youtube.com/@Fireship",
+        "https://youtube.fandom.com/wiki/Fireship"
+      ]
+    },
+    {
+      "source_id": "c73dbcac-160f-4e81-82c7-1de42b098c74",
+      "name": "France Hydrogène",
+      "description": "Association loi 1901 qui fédère plus de 460 acteurs de la filière hydrogène française (grands groupes, PME, startups, laboratoires, collectivités) sur toute la chaîne de valeur. Interlocutrice privilégiée des pouvoirs publics, elle agit comme structure de plaidoyer pour développer et défendre les intérêts du secteur. Fait moins connu : elle s'appelait auparavant Afhypac et s'organise désormais en douze délégations régionales.",
+      "bias_stance": "specialized",
+      "score_independence": 0.3,
+      "score_rigor": 0.6,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Source thématique sur la filière hydrogène, sans orientation politique partisane.",
+      "independence_rationale": "Association de filière et lobby qui défend explicitement les intérêts de ses membres industriels.",
+      "rigor_rationale": "Communications factuelles et chiffrées mais orientées vers la promotion de l'hydrogène, parti pris sectoriel.",
+      "ux_rationale": "Site institutionnel propre et lisible, sans publicité.",
+      "sources_consulted": [
+        "https://www.france-hydrogene.org/groupes-de-travail/",
+        "https://ecoentreprises-france.fr/nos-membres/francehydrogene/"
+      ]
+    },
+    {
+      "source_id": "ec765de2-835c-4e57-a192-19d6e0b18d75",
+      "name": "FrenchWeb",
+      "description": "Média français de l'écosystème tech et startups (FW.MEDIA), édité par Decode Media de Richard Menneveux, couvrant l'innovation, les levées de fonds et la French Tech. Le ton est pro-innovation et orienté entrepreneuriat. Fait moins connu : Menneveux, pionnier du web passé par Club Internet, a fondé Decode Media en 2008 et produit aussi le Journal des RH et des séries documentaires sur les entrepreneurs.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.6,
+      "score_ux": 0.65,
+      "confidence": 0.65,
+      "bias_rationale": "Média thématique tech et startups, sans orientation politique.",
+      "independence_rationale": "Média spécialisé dépendant de la publicité, des événements et des partenariats avec l'écosystème qu'il couvre.",
+      "rigor_rationale": "Couverture informée de la tech mais ton promotionnel et proche des acteurs couverts, peu de regard critique.",
+      "ux_rationale": "Site avec publicité et contenus partenaires, lecture correcte mais commerciale.",
+      "sources_consulted": [
+        "https://www.frenchweb.fr/richard-menneveux",
+        "https://muckrack.com/richard-menneveux"
+      ]
+    },
+    {
+      "source_id": "f4a1a3a3-d704-4283-a12d-dc0941b9d5b8",
+      "name": "Futurism",
+      "description": "Site américain d'actualité science et technologie fondé en 2017 et racheté en 2021 par Recurrent Ventures, couvrant l'IA, l'espace et les innovations sur un ton souvent sensationnaliste. Il revendique une indépendance éditoriale vis-à-vis de sa maison mère. Fait moins connu : Media Bias/Fact Check le classe à gauche du centre avec une crédibilité moyenne, en raison de quelques fact-checks échoués et de titres accrocheurs.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.45,
+      "score_ux": 0.5,
+      "confidence": 0.65,
+      "bias_rationale": "Média thématique science et tech, MBFC le situe légèrement à gauche mais l'angle reste majoritairement le sujet technologique.",
+      "independence_rationale": "Propriété de Recurrent Ventures (fonds), indépendance éditoriale revendiquée mais adossement à un groupe média à but lucratif.",
+      "rigor_rationale": "Crédibilité moyenne selon MBFC, titres sensationnalistes et quelques fact-checks échoués.",
+      "ux_rationale": "Site chargé en publicité et titres putaclic, expérience de lecture moyenne.",
+      "sources_consulted": [
+        "https://mediabiasfactcheck.com/futurism/",
+        "https://en.wikipedia.org/wiki/Futurism_(website)",
+        "https://futurism.com/about"
+      ]
+    },
+    {
+      "source_id": "83440dbe-f0e8-4f47-9f9d-c71ae4dd8277",
+      "name": "Gamekult",
+      "description": "Média français spécialisé dans le jeu vidéo, lancé en 2000 et reconnu pour son journalisme d'enquête sur l'industrie et son modèle par abonnement (environ 12 000 abonnés). Fait moins connu : racheté par Reworld Media en 2022 après son passage chez TF1/Unify, sa rédaction historique a démissionné en bloc en dénonçant un contexte hostile à l'indépendance de la presse.",
+      "bias_stance": "specialized",
+      "score_independence": 0.4,
+      "score_rigor": 0.6,
+      "score_ux": 0.45,
+      "confidence": 0.7,
+      "bias_rationale": "Média thématique jeu vidéo, sans orientation politique.",
+      "independence_rationale": "Racheté par Reworld Media en 2022, départ de la rédaction historique dénonçant l'atteinte à l'indépendance.",
+      "rigor_rationale": "Historiquement reconnu pour son journalisme d'enquête, mais qualité incertaine depuis le départ de la rédaction et la reprise Reworld.",
+      "ux_rationale": "Risque de multiplication de la publicité sous Reworld, modèle d'abonnement historique fragilisé.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Gamekult",
+        "https://www.cbnews.fr/medias/image-apres-son-rachat-reworld-media-gamekult-voit-sa-redaction-annoncer-son-depart-72796",
+        "https://snj.fr/le-snj-soutient-la-redaction-de-gamekult-face-reworld/1869"
+      ]
+    },
+    {
+      "source_id": "9421cb6c-ee83-4178-8fcb-a160e4c1600e",
+      "name": "Gestion de la douleur en Thérapie Manuelle",
+      "description": "Blog professionnel français tenu par le kinésithérapeute Laurent Fabre, consacré à l'analyse critique des pratiques de thérapie manuelle et d'ostéopathie à la lumière des neurosciences de la douleur. La ligne est résolument basée sur les preuves (modèle biopsychosocial, déboulonnage de mythes anatomiques) et s'adresse aux thérapeutes. Fait moins connu : il déconstruit des notions enseignées de longue date comme le « parasympathique sacré », qu'il qualifie de mythe.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.8,
+      "score_ux": 0.55,
+      "confidence": 0.7,
+      "bias_rationale": "Blog thématique santé/sciences sans orientation politique, angle = méthodologie scientifique.",
+      "independence_rationale": "Blog individuel auto-édité sur WordPress, sans groupe ni annonceur identifié.",
+      "rigor_rationale": "Démarche explicitement evidence-based, citations de littérature et critique des pratiques non prouvées.",
+      "ux_rationale": "Plateforme WordPress sobre mais articles très denses et au format inégal.",
+      "sources_consulted": [
+        "https://gestiondeladouleurenthrapiemanuelle.wordpress.com/",
+        "https://gestiondeladouleurenthrapiemanuelle.wordpress.com/author/chocololof/"
+      ]
+    },
+    {
+      "source_id": "dece268b-9bc3-4fc7-9643-d00b9ebc02c7",
+      "name": "Google Research Blog",
+      "description": "Blog officiel de recherche de Google (division Google Research, Alphabet Inc.), où l'entreprise publie ses avancées en intelligence artificielle, apprentissage automatique et santé numérique. Il s'agit d'une communication corporate de premier plan, rigoureuse sur le plan technique mais non indépendante de son éditeur. Fait moins connu : c'est une source primaire des travaux fréquemment relayés par la presse tech, ce qui en fait une vitrine d'influence autant qu'un journal scientifique.",
+      "bias_stance": "specialized",
+      "score_independence": 0.2,
+      "score_rigor": 0.75,
+      "score_ux": 0.8,
+      "confidence": 0.75,
+      "bias_rationale": "Source thématique tech/science, l'angle est le sujet et non une orientation politique.",
+      "independence_rationale": "Blog corporate d'Alphabet promouvant ses propres recherches et produits, donc structurellement non indépendant.",
+      "rigor_rationale": "Contenu adossé à des publications scientifiques relues, mais sélectionné pour servir l'image de l'éditeur.",
+      "ux_rationale": "Interface claire et épurée, sans publicité ni paywall.",
+      "sources_consulted": [
+        "https://research.google/blog/",
+        "https://en.wikipedia.org/wiki/Google_Research"
+      ]
+    },
+    {
+      "source_id": "7de95df5-8579-4154-b36c-3f885c085140",
+      "name": "GreenIT.fr",
+      "description": "Site et communauté français de référence sur le numérique responsable, la sobriété numérique et l'écoconception, fondé en 2004 par l'expert indépendant Frédéric Bordage. La ligne est militante pour la réduction de l'empreinte environnementale du numérique, sur une base technique et méthodologique. Fait moins connu : la communauté GreenIT.fr a forgé l'expression même de « sobriété numérique », aujourd'hui passée dans le vocabulaire public et institutionnel.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.75,
+      "score_ux": 0.6,
+      "confidence": 0.7,
+      "bias_rationale": "Source thématique tech/environnement, militante sur la sobriété numérique mais sans axe partisan gauche-droite.",
+      "independence_rationale": "Porté par un expert indépendant et une communauté, sans rattachement à un grand groupe média.",
+      "rigor_rationale": "Approche méthodologique et chiffrée (référentiels, mesures d'impact), reconnue par l'ADEME.",
+      "ux_rationale": "Site de contenu correct, publicité limitée, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://www.greenit.fr/equipe/",
+        "https://communication-responsable.ademe.fr/frederic-bordage-numerique-responsable"
+      ]
+    },
+    {
+      "source_id": "84753de9-9cb4-4739-9412-0c1c72a2d848",
+      "name": "Grégoire Simpson",
+      "description": "Chaîne YouTube de vulgarisation en sciences sociales animée par Grégoire Simpson, diplômé de sociologie et science politique, qui analyse des questions de société (jeux vidéo, sexualité, faits divers) sous un angle sociologique et critique. La ligne est engagée et réflexive, mobilisant films, mèmes et littérature scientifique. Fait moins connu : son travail a fait l'objet d'un entretien académique publié dans la revue Genèses sur la vulgarisation des sciences sociales en ligne.",
+      "bias_stance": "alternative",
+      "score_independence": 0.8,
+      "score_rigor": 0.6,
+      "score_ux": 0.65,
+      "confidence": 0.65,
+      "bias_rationale": "Pensée critique en sciences sociales, engagée mais non strictement partisane gauche-droite.",
+      "independence_rationale": "Créateur indépendant financé par sa chaîne, sans groupe média.",
+      "rigor_rationale": "Appuie ses essais sur des références sociologiques, mais format vidéo d'opinion à la factualité variable.",
+      "ux_rationale": "Vidéos YouTube travaillées, expérience standard de la plateforme.",
+      "sources_consulted": [
+        "https://shs.cairn.info/revue-geneses-2025-3-page-119?tab=resume",
+        "https://wp.unil.ch/biss/gregoire-simpson-la-sociologie-a-portee-des-medias-sociaux/"
+      ]
+    },
+    {
+      "source_id": "7528ebd4-8a14-4670-8722-638da09d723e",
+      "name": "Génération Do It Yourself (GDIY)",
+      "description": "Podcast français leader sur l'entrepreneuriat fondé par Matthieu Stefani, proposant de longs entretiens sans montage avec entrepreneurs, athlètes et artistes pour décortiquer leurs trajectoires. La ligne est pro-entrepreneuriat et développement personnel, sans orientation politique. Fait moins connu : autour du podcast, Stefani a bâti une holding (Stefani & Co.) avec des participations dans des médias, la tech et l'immobilier, pour jusqu'à 700 000 écoutes mensuelles.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": null,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Podcast d'entretiens sur l'entrepreneuriat et la réussite, sans ligne politique.",
+      "independence_rationale": "Production indépendante de son créateur, mais adossée à une holding aux participations diverses.",
+      "rigor_rationale": "Format conversationnel valorisant l'invité, non journalistique, rigueur factuelle non évaluable.",
+      "ux_rationale": "Podcast très populaire, écoute confortable sur toutes plateformes.",
+      "sources_consulted": [
+        "https://www.gdiy.fr/",
+        "https://www.gdiy.fr/matthieu-stefani-en/"
+      ]
+    },
+    {
+      "source_id": "1025e562-9bfa-4090-9cd0-c4a0add1eee2",
+      "name": "H2-mobile.fr",
+      "description": "Site d'information français spécialisé dans la mobilité hydrogène, lancé en 2019 et dirigé par Michaël Torregrossa, fondateur d'Automobile-Propre.com. Il couvre l'actualité des véhicules et infrastructures à hydrogène avec une visée pédagogique et plutôt promotionnelle de la filière. Fait moins connu : le site est soutenu par des acteurs de l'écosystème (dont l'ADEME), ce qui nuance son indépendance vis-à-vis de la filière qu'il couvre.",
+      "bias_stance": "specialized",
+      "score_independence": 0.45,
+      "score_rigor": 0.55,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Source thématique mobilité/énergie sans orientation politique, l'angle est le sujet hydrogène.",
+      "independence_rationale": "Soutenu par des acteurs de la filière hydrogène, posture promotionnelle qui limite l'indépendance.",
+      "rigor_rationale": "Contenu factuel et pédagogique mais sans distance critique marquée vis-à-vis de la technologie promue.",
+      "ux_rationale": "Site lisible avec publicité modérée, expérience correcte.",
+      "sources_consulted": [
+        "https://www.h2-mobile.fr/pages/h2-mobile-a-propos/",
+        "https://www.automobile-propre.com/breves/h2-mobile-un-site-internet-dedie-a-la-mobilite-hydrogene/"
+      ]
+    },
+    {
+      "source_id": "dcea9ddc-f61a-41bb-baf8-f4c15a5f884f",
+      "name": "Happinez",
+      "description": "Magazine français de bien-être, spiritualité et développement personnel, édition française d'une licence néerlandaise lancée en 2014 et éditée par le groupe Oracom. Sa ligne « mindstyle » mêle psychologie, sagesse et art de vivre, en visant principalement un lectorat féminin de plus de 30 ans. Fait moins connu : Oracom édite aussi d'autres titres bien-être (Feel Good, Simple Things), constituant un pôle thématique cohérent autour du développement personnel.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.4,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Magazine thématique lifestyle/spiritualité sans orientation politique.",
+      "independence_rationale": "Édité par un groupe de presse commercial (Oracom), financement par ventes et publicité.",
+      "rigor_rationale": "Contenu inspirationnel et de développement personnel, sans exigence de factualité journalistique.",
+      "ux_rationale": "Magazine soigné, mise en page agréable, ton accessible.",
+      "sources_consulted": [
+        "https://www.happinez.fr/magazine/",
+        "https://etre-optimiste.fr/magazine-happinez/"
+      ]
+    },
+    {
+      "source_id": "9d93d883-72a4-43ac-813d-002df717af30",
+      "name": "HugoDécrypte",
+      "description": "Média d'information en ligne fondé en 2015 par Hugo Travers, devenu la principale référence d'actualité des moins de 30 ans en France via de courtes vidéos sur YouTube, Instagram et TikTok. La ligne se veut pédagogique et tendant vers la neutralité, tout en assumant un intérêt pour des sujets jugés sous-médiatisés. Fait moins connu : il est désormais à égalité avec TF1 comme marque d'info de référence des moins de 35 ans, devant Le Monde et Franceinfo.",
+      "bias_stance": "center",
+      "score_independence": 0.7,
+      "score_rigor": 0.6,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Traitement généraliste se revendiquant tendant vers la neutralité, sans ligne partisane nette.",
+      "independence_rationale": "Média indépendant fondé par son créateur, financé par monétisation et partenariats de marque.",
+      "rigor_rationale": "Travail journalistique de synthèse correct mais format court et vulgarisé limitant la profondeur.",
+      "ux_rationale": "Formats vidéo soignés et accessibles, bonne expérience sur les plateformes sociales.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/HugoD%C3%A9crypte_(m%C3%A9dia)",
+        "https://www.strategies.fr/actualites/medias/LQ5157542C/hugodecrypte-et-gaspard-g-les-nouveaux-visages-de-linformation.html"
+      ]
+    },
+    {
+      "source_id": "eaf3fbdf-1aee-462f-b5a9-21fcc0aacc7d",
+      "name": "IA News (by Korben)",
+      "description": "Site d'actualité francophone dédié à l'intelligence artificielle pour les professionnels et le machine learning, rattaché à l'univers Korben. Le contenu récent relève largement de la reprise de communiqués d'éditeurs B2B (Rubrik, Camunda, Zoom, Saviynt), ce qui en fait davantage un agrégateur promotionnel qu'un média d'enquête. Fait moins connu : sa ligne éditoriale s'apparente à du contenu de relations presse industrialisé plutôt qu'à du journalisme tech original.",
+      "bias_stance": "specialized",
+      "score_independence": 0.35,
+      "score_rigor": 0.35,
+      "score_ux": 0.55,
+      "confidence": 0.55,
+      "bias_rationale": "Source thématique IA/tech sans orientation politique.",
+      "independence_rationale": "Modèle largement fondé sur la reprise de communiqués d'éditeurs, faible distance éditoriale.",
+      "rigor_rationale": "Contenu proche du publi-rédactionnel, peu de vérification ou d'analyse indépendante.",
+      "ux_rationale": "Site de news standard avec publicité, lisibilité correcte sans plus.",
+      "sources_consulted": [
+        "https://korben.info/categories/intelligence-artificielle/actualites-ia/",
+        "https://korben.info/journal-ia-niche.html"
+      ]
+    },
+    {
+      "source_id": "d9f6d30c-126d-46b0-9e9f-eeac10b661c9",
+      "name": "ID, l'Info Durable",
+      "description": "Média français lancé en 2017 et spécialisé dans le développement durable, la RSE et la finance responsable, associant l'information à des solutions concrètes. La ligne est résolument pro-transition écologique, orientée solutions. Fait moins connu : au-delà de son site grand public, l'éditeur exploite une offre payante de veille destinée aux professionnels de la finance durable.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.55,
+      "bias_rationale": "Média thématique développement durable, angle = le sujet écologie/RSE plus qu'une ligne partisane.",
+      "independence_rationale": "Société de presse privée indépendante, mais modèle mêlant offres pro et partenariats.",
+      "rigor_rationale": "Information factuelle orientée solutions, sans signal de sanction ou de démentis.",
+      "ux_rationale": "Site d'actualité classique, lecture correcte avec publicité modérée.",
+      "sources_consulted": [
+        "https://www.linfodurable.fr/qui-sommes-nous",
+        "https://www.linfodurable.fr/"
+      ]
+    },
+    {
+      "source_id": "7a3ef027-6a37-4ce6-8c74-19592241e6da",
+      "name": "IGN France",
+      "description": "Édition française d'IGN, média international de référence consacré au jeu vidéo, au cinéma et à la pop culture, propriété du groupe américain Ziff Davis. La couverture mêle actualités, tests et bandes-annonces, avec une part importante de contenu traduit ou adapté de la rédaction anglophone. Fait moins connu : IGN appartient à Ziff Davis, conglomérat média qui possède aussi de nombreux autres sites tech et gaming, posant la question de l'uniformisation éditoriale.",
+      "bias_stance": "specialized",
+      "score_independence": 0.4,
+      "score_rigor": 0.55,
+      "score_ux": 0.45,
+      "confidence": 0.65,
+      "bias_rationale": "Média thématique jeu vidéo et divertissement, aucun angle politique.",
+      "independence_rationale": "Filiale d'un grand groupe média (Ziff Davis), forte dépendance à la publicité et aux annonceurs du secteur.",
+      "rigor_rationale": "Tests et actualités d'industrie corrects mais ligne proche des éditeurs de jeux qu'elle couvre.",
+      "ux_rationale": "Site lourd en publicités et contenus sponsorisés, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://fr.ign.com/feed.xml",
+        "https://en.wikipedia.org/wiki/IGN_(magazine)"
+      ]
+    },
+    {
+      "source_id": "1ae8c581-9458-4221-bcc4-7664b1fdde72",
+      "name": "Journal du Net (JDN)",
+      "description": "Média professionnel français spécialisé dans la digitalisation de l'économie (tech, business, marketing), publié par CCM Benchmark et propriété du groupe Le Figaro depuis 2015. Il s'adresse aux dirigeants et décideurs avec un mélange d'actualités, d'analyses et de contenus de marque. Fait moins connu : CCM Benchmark, son éditeur, publie aussi L'Internaute, le Journal des Femmes et Comment ça marche, ce qui en fait un pôle d'audience massif du groupe Figaro.",
+      "bias_stance": "specialized",
+      "score_independence": 0.45,
+      "score_rigor": 0.6,
+      "score_ux": 0.5,
+      "confidence": 0.65,
+      "bias_rationale": "Média thématique économie/tech professionnelle, sans orientation politique marquée.",
+      "independence_rationale": "Propriété du groupe Le Figaro (Dassault), modèle fortement publicitaire et publi-rédactionnel.",
+      "rigor_rationale": "Information professionnelle factuelle mais part notable de contenus sponsorisés et de reprises.",
+      "ux_rationale": "Site dense en publicités, navigation correcte mais chargée.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Le_Journal_du_Net",
+        "https://fr.wikipedia.org/wiki/CCM_Benchmark"
+      ]
+    },
+    {
+      "source_id": "b1b5eda2-2bac-441b-8158-b473d90a8a3d",
+      "name": "Korben",
+      "description": "Blog tech français créé par Manuel Dorne (Korben) en 2004, qui vulgarise actualité numérique, cybersécurité, IA, Linux et open-source avec un ton direct et accessible. Le site est financé par ses lecteurs (Patreon) et des partenariats éditoriaux. Fait moins connu : depuis l'été 2025 toute publicité programmatique, traceurs et compteurs ont été retirés au profit du seul soutien direct des lecteurs.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.6,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Blog tech sans orientation politique, angle thématique (numérique, geek).",
+      "independence_rationale": "Financé directement par les lecteurs via Patreon, sans régie publicitaire depuis 2025.",
+      "rigor_rationale": "Vulgarisation sérieuse mais ton de veille/opinion personnelle, pas de process rédactionnel formel.",
+      "ux_rationale": "Lecture propre sans pub programmatique ni traceurs depuis 2025, quelques liens d'affiliation.",
+      "sources_consulted": [
+        "https://korben.info/",
+        "https://korben.info/faq-korben/",
+        "https://www.patreon.com/korben/about"
+      ]
+    },
+    {
+      "source_id": "e1fbbd50-434a-42f7-8528-14f4300b3896",
+      "name": "L'Argumentarium",
+      "description": "Chaîne YouTube française de vulgarisation à l'interface science-politique, qui mobilise l'esprit critique et la zététique pour traiter des sujets de société, d'agriculture et de philosophie des sciences. La ligne se veut fiable et objective, dans la mouvance des debunkers francophones. Fait moins connu : elle s'est notamment penchée sur des controverses agricoles comme les mégabassines et les modèles agronomiques, à la croisée de la science et du débat public.",
+      "bias_stance": "alternative",
+      "score_independence": 0.8,
+      "score_rigor": 0.65,
+      "score_ux": 0.65,
+      "confidence": 0.6,
+      "bias_rationale": "Pensée critique et zététique non partisane, l'angle est la méthode plus qu'une ligne gauche-droite.",
+      "independence_rationale": "Créateur indépendant sur YouTube, sans rattachement à un groupe média.",
+      "rigor_rationale": "Démarche sceptique sourcée, mais format vidéo d'auteur à la rigueur variable selon les sujets.",
+      "ux_rationale": "Vidéos pédagogiques de bonne facture, expérience YouTube standard.",
+      "sources_consulted": [
+        "https://www.youtube.com/@LArgumentarium",
+        "https://theconversation.com/zeteticiens-et-autres-debunkers-qui-sont-ces-vulgarisateurs-2-0-139768"
+      ]
+    },
+    {
+      "source_id": "82a69592-7c3e-4d22-9a9a-655d365cf6f1",
+      "name": "L'Humanité",
+      "description": "L'Humanité est un quotidien français fondé en 1904 par Jean Jaurès, longtemps organe officiel du Parti communiste français et toujours très proche du PCF. Sa ligne éditoriale est clairement à gauche, militante sur les enjeux sociaux et anticapitalistes. Fait moins connu, son capital a été ouvert en 2001 à ses sociétés de lecteurs et d'amis ainsi qu'à des investisseurs privés dont TF1 et Hachette, et le titre n'est plus formellement l'organe du PCF.",
+      "bias_stance": "left",
+      "score_independence": 0.6,
+      "score_rigor": 0.6,
+      "score_ux": 0.55,
+      "confidence": 0.8,
+      "bias_rationale": "Ligne historiquement communiste, ouvertement à gauche et militante sur les questions sociales et anticapitalistes.",
+      "independence_rationale": "Financée en partie par ses associations de lecteurs et d'amis et soutenue par les aides à la presse, avec une indépendance revendiquée mais une proximité assumée avec le PCF.",
+      "rigor_rationale": "Travail journalistique réel mais lecture explicitement engagée de l'actualité, ce qui colore la sélection et le traitement des faits.",
+      "ux_rationale": "Site fonctionnel mais publicité présente et paywall sur une partie des contenus.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/L'Humanit%C3%A9",
+        "https://fr-academic.com/dic.nsf/frwiki/795544"
+      ]
+    },
+    {
+      "source_id": "eb931b2a-51bb-44d9-a126-85cb792ad6ef",
+      "name": "L'Hémicycle",
+      "description": "Revue française indépendante consacrée à la politique et au débat parlementaire, créée en 1999 sur le modèle des publications de Capitol Hill (The Hill, Roll Call) et refondée en 2019 sous la direction d'Éric Revel et David Revault d'Allonnes. Sa ligne est analytique et rigoureuse, adossée à des partenariats académiques (CEVIPOF, Public Sénat, Harris Interactive). Fait moins connu : elle compte dans ses contributeurs des figures comme Mazarine Pingeot, donnant une couleur littéraire à l'analyse politique.",
+      "bias_stance": "center",
+      "score_independence": 0.7,
+      "score_rigor": 0.7,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Couverture institutionnelle et analytique de la vie parlementaire, sans ligne partisane affichée.",
+      "independence_rationale": "Revue se revendiquant indépendante, mais dépendante de partenariats institutionnels pour son modèle.",
+      "rigor_rationale": "Analyses fouillées et signatures journalistiques reconnues, exigence éditoriale élevée.",
+      "ux_rationale": "Site sobre, lecture confortable, publicité limitée.",
+      "sources_consulted": [
+        "https://lhemicycle.com/a-propos-de-lhemicycle/",
+        "https://fr.wikipedia.org/wiki/H%C3%A9micycle"
+      ]
+    },
+    {
+      "source_id": "ae1e5e0f-dd3c-40e7-86dd-31cd14710002",
+      "name": "L'Équipe",
+      "description": "Quotidien sportif français de référence, propriété des Éditions Philippe Amaury (groupe Amaury, également organisateur du Tour de France via ASO). Il couvre l'ensemble des disciplines avec résultats, directs et analyses, sur un positionnement strictement sportif. Fait moins connu : son indépendance est parfois questionnée sur les sujets touchant à des partenaires commerciaux du groupe, comme la discrétion observée sur les difficultés du diffuseur DAZN.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.7,
+      "score_ux": 0.55,
+      "confidence": 0.7,
+      "bias_rationale": "Média thématique sport sans orientation politique.",
+      "independence_rationale": "Propriété familiale Amaury, organisatrice d'épreuves sportives qu'il couvre, d'où des conflits d'intérêts ponctuels.",
+      "rigor_rationale": "Rédaction sportive solide et reconnue, vérification généralement sérieuse.",
+      "ux_rationale": "Site et app fonctionnels mais publicité présente et paywall sur une partie des contenus.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Groupe_Amaury",
+        "https://www.ojim.fr/lequipe-avis-de-gros-temps-pour-le-groupe-amaury/"
+      ]
+    },
+    {
+      "source_id": "aefef65e-d233-49bf-9823-8b23a5acd0f8",
+      "name": "La Déferlante",
+      "description": "Revue trimestrielle française consacrée aux féminismes et au genre, fondée en 2020 dans la foulée de #MeToo et dirigée par des femmes (journalistes, chercheuses, militantes). Média indépendant, à but non lucratif, sans publicité, financé par ses abonnements et ses lectrices. Fait moins connu : en 2023, des autrices de premier plan comme Annie Ernaux, Mona Chollet et Pénélope Bagieu sont entrées au capital de la publication.",
+      "bias_stance": "left",
+      "score_independence": 0.95,
+      "score_rigor": 0.65,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Revue militante féministe, ligne clairement à gauche sur les questions de société.",
+      "independence_rationale": "Média à but non lucratif sans publicité, financé par les lectrices, indépendance structurelle forte.",
+      "rigor_rationale": "Croise savoirs académiques, journalistiques et militants, mais traitement explicitement engagé.",
+      "ux_rationale": "Revue en accès ouvert, sans publicité, lecture soignée.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/La_D%C3%A9ferlante_(magazine)",
+        "https://reporterre.net/La-Deferlante-une-nouvelle-revue-feministe-et-independante"
+      ]
+    },
+    {
+      "source_id": "fb5425ee-73d7-4b53-abfc-24782b8b0f90",
+      "name": "La Martingale (podcast)",
+      "description": "Premier podcast français de finances personnelles, lancé en 2019 par l'entrepreneur Matthieu Stefani, qui reçoit chaque semaine des experts pour décrypter l'investissement, l'épargne et la gestion de patrimoine. La ligne est pédagogique et tournée vers la performance financière, avec un public d'investisseurs particuliers. Fait moins connu : son fondateur est aussi un entrepreneur impliqué dans plusieurs sociétés (Orso Media, OVNI Capital), ce qui peut créer des proximités avec les sujets et invités traités.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.5,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Podcast thématique finances personnelles, sans orientation politique.",
+      "independence_rationale": "Porté par un entrepreneur du secteur financier, risque de proximité avec invités et produits évoqués.",
+      "rigor_rationale": "Vulgarisation utile mais contenu d'opinion d'experts, sans contradiction systématique.",
+      "ux_rationale": "Podcast bien produit, écoute confortable sur les plateformes.",
+      "sources_consulted": [
+        "https://lamartingale.io/",
+        "https://www.linkedin.com/company/lamartingalepodcast/"
+      ]
+    },
+    {
+      "source_id": "141e2166-f216-4dc1-95de-a0b5393052c5",
+      "name": "La Salamandre",
+      "description": "Revue naturaliste franco-suisse fondée en 1983 par Julien Perrot, qui la dirige toujours, éditée par une maison indépendante à but non lucratif basée à Neuchâtel et Toulouse. Entièrement dédiée à faire connaître et aimer la nature, elle se distingue par ses illustrations, sa photographie et l'absence totale de publicité. Fait moins connu : elle décline trois magazines selon les âges (dont La Petite Salamandre dès 4 ans) et fédère environ 26 000 abonnés.",
+      "bias_stance": "specialized",
+      "score_independence": 0.9,
+      "score_rigor": 0.75,
+      "score_ux": 0.85,
+      "confidence": 0.7,
+      "bias_rationale": "Revue thématique nature/écologie sans orientation politique partisane.",
+      "independence_rationale": "Maison d'édition indépendante à but non lucratif, sans publicité ni groupe propriétaire.",
+      "rigor_rationale": "Contenu naturaliste documenté et soigné, validé par des spécialistes.",
+      "ux_rationale": "Absence de publicité, qualité d'illustration et de lecture remarquable.",
+      "sources_consulted": [
+        "https://www.salamandre.org/a-propos/le-projet/",
+        "https://fr.wikipedia.org/wiki/La_Salamandre_(revue)"
+      ]
+    },
+    {
+      "source_id": "16f70be9-504a-4e45-bee4-9635799a53d1",
+      "name": "Last Week Tonight with John Oliver",
+      "description": "Chaîne YouTube officielle de l'émission satirique américaine Last Week Tonight with John Oliver, diffusée par HBO (groupe Warner Bros. Discovery). Le programme mêle humour et journalisme d'investigation approfondi sur des sujets de société et de politique, avec une orientation clairement progressiste. Fait moins connu : malgré son format comique, ses enquêtes longues sont régulièrement saluées et ont parfois eu des effets concrets sur le débat public et la régulation aux États-Unis.",
+      "bias_stance": "center-left",
+      "score_independence": 0.5,
+      "score_rigor": 0.7,
+      "score_ux": 0.75,
+      "confidence": 0.65,
+      "bias_rationale": "Orientation progressiste assumée sur les sujets politiques et de société américains.",
+      "independence_rationale": "Produit par HBO (Warner Bros. Discovery), donc adossé à un grand groupe média.",
+      "rigor_rationale": "Enquêtes documentées et vérifiées malgré le ton satirique, fact-checking soigné.",
+      "ux_rationale": "Vidéos longues de haute qualité de production, accès libre sur YouTube.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Last_Week_Tonight_with_John_Oliver",
+        "https://www.youtube.com/channel/UC3XTzVzaHQEd30rQbuvCtTQ"
+      ]
+    },
+    {
+      "source_id": "cc556582-b64e-4601-b073-da4128df61b4",
+      "name": "Latent Space",
+      "description": "Newsletter et podcast technique anglophone de référence pour les ingénieurs en IA (« AI Engineer »), lancé en 2023 et animé par Alessio Fanelli et swyx (Shawn Wang), développeur indépendant. La ligne est pointue et orientée praticiens, avec interviews exclusives des grands labos (OpenAI, Anthropic, Google) et synthèses d'actualité quotidiennes. Fait moins connu : son segment automatisé AINews agrège l'actualité IA à très haut volume, au risque d'inclure des contenus peu filtrés.",
+      "bias_stance": "specialized",
+      "score_independence": 0.75,
+      "score_rigor": 0.7,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Média thématique ingénierie IA sans orientation politique.",
+      "independence_rationale": "Newsletter indépendante portée par ses auteurs, mais proximité avec l'écosystème VC et les labos couverts.",
+      "rigor_rationale": "Analyses techniques solides et interviews de première main, mais une partie du contenu est agrégée automatiquement.",
+      "ux_rationale": "Format Substack lisible, sans publicité intrusive.",
+      "sources_consulted": [
+        "https://www.latent.space/about",
+        "https://www.latent.space/podcast"
+      ]
+    },
+    {
+      "source_id": "ef43e6c7-ee5c-4f94-9b89-bebb751529c2",
+      "name": "LCP - Assemblée nationale",
+      "description": "Chaîne de télévision publique de l'Assemblée nationale française, lancée en 2000, qui forme avec Public Sénat La Chaîne parlementaire. Elle diffuse débats, auditions et programmes civiques avec une mission de service public et une impartialité garantie par la loi. Fait moins connu : sous la responsabilité des assemblées d'élus, elle n'est pas soumise au contrôle de l'Arcom, contrairement à la plupart des chaînes.",
+      "bias_stance": "center",
+      "score_independence": 0.7,
+      "score_rigor": 0.75,
+      "score_ux": 0.65,
+      "confidence": 0.65,
+      "bias_rationale": "Chaîne parlementaire à mission d'impartialité, sans ligne partisane assumée.",
+      "independence_rationale": "Financée et placée sous la responsabilité de l'Assemblée nationale, indépendance éditoriale garantie par la loi mais tutelle institutionnelle.",
+      "rigor_rationale": "Diffusion de sources primaires (débats, auditions) et programmes vérifiés, factualité élevée.",
+      "ux_rationale": "Vidéos accessibles librement sur YouTube, sans publicité.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/LCP_-_Assembl%C3%A9e_nationale",
+        "https://lcp.fr/la-chaine/qui-sommes-nous-14428"
+      ]
+    },
+    {
+      "source_id": "65f25a34-0eeb-41f0-a621-c94d291d0515",
+      "name": "Le 1 hebdo",
+      "description": "Le 1 hebdo est un hebdomadaire français fondé en 2014 par Éric Fottorino, ancien directeur du Monde, qui traite chaque semaine une seule question d'actualité à travers des regards croisés d'écrivains, chercheurs, artistes et journalistes. Sa sensibilité est intellectuelle et de centre gauche, dans une logique de pluralité des points de vue. Fait moins connu, la holding Artémis de François Pinault est entrée en 2024 à hauteur de 40 pour cent du capital, la famille Fottorino et les cofondateurs conservant la majorité et la direction éditoriale.",
+      "bias_stance": "center-left",
+      "score_independence": 0.6,
+      "score_rigor": 0.75,
+      "score_ux": 0.8,
+      "confidence": 0.7,
+      "bias_rationale": "Format de regards croisés à sensibilité intellectuelle de centre gauche, sans militantisme affiché.",
+      "independence_rationale": "Capital ouvert à 40 pour cent à Artémis (Pinault), conglomérat sans ligne partisane imposée, mais Fottorino et les fondateurs gardent 60 pour cent et la main éditoriale, ce qui préserve une bonne indépendance.",
+      "rigor_rationale": "Contenus signés par des chercheurs, écrivains et experts dans un format réflexif et soigné, à forte exigence intellectuelle.",
+      "ux_rationale": "Objet éditorial épuré et lisible, sans publicité intrusive, pensé comme une expérience de lecture.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Le_1",
+        "https://le1hebdo.fr/",
+        "https://www.jeanmarcmorandini.com/article-565594-la-societe-artemis-qui-possede-le-magazine-le-point-et-holding-de-la-famille-pinault-est-entree-au-capital-de-l-hebdomadaire-le-1-a-hauteur-de-40.html"
+      ]
+    },
+    {
+      "source_id": "3dfb64db-d97a-40cf-9796-73cf732c1ece",
+      "name": "Le Blog du Hacker",
+      "description": "Blog français de vulgarisation en cybersécurité et protection de la vie privée, tenu par Michel Kartner, qui publie tutoriels, alertes et un MOOC gratuit sur la sécurité informatique. Sa devise : « Ce qui est sécurisé à 99 % n'est pas sécurisé. » Fait moins connu : derrière le terme « hacker », il promeut une approche éthique et défensive de la sécurité, à destination du grand public et non du piratage.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.65,
+      "score_ux": 0.65,
+      "confidence": 0.6,
+      "bias_rationale": "Blog technique de cybersécurité, sans orientation politique.",
+      "independence_rationale": "Blog d'auteur indépendant, monétisé par formations et affiliation.",
+      "rigor_rationale": "Vulgarisation sérieuse et pédagogique, sans appareil de recherche formel.",
+      "ux_rationale": "Site lisible mais chargé en encarts promotionnels et affiliation.",
+      "sources_consulted": [
+        "https://www.leblogduhacker.fr/feed/"
+      ]
+    },
+    {
+      "source_id": "118d25fd-74d7-45bb-a778-ff1ac8f143c8",
+      "name": "Le Code a changé",
+      "description": "Podcast original de France Inter créé en 2020 par le journaliste Xavier de La Porte, qui explore la façon dont le numérique bouleverse nos vies (écrans, IA, traces en ligne, hyperconnexion). Produit par le service public, il mêle reportages et entretiens dans une approche réflexive et accessible. Fait moins connu : il a dépassé les 6 millions de téléchargements, signe de l'appétit du public pour une lecture critique mais non technophobe du numérique.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.75,
+      "score_ux": 0.8,
+      "confidence": 0.65,
+      "bias_rationale": "Podcast thématique numérique/société, sans orientation politique partisane.",
+      "independence_rationale": "Produit par Radio France (service public), indépendance éditoriale mais financement public.",
+      "rigor_rationale": "Travail journalistique soigné, intervenants experts et angle documenté.",
+      "ux_rationale": "Podcast bien produit, écoute confortable, sans publicité.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Xavier_de_La_Porte",
+        "https://www.radiofrance.fr/franceinter/podcasts/le-code-a-change"
+      ]
+    },
+    {
+      "source_id": "0310ed47-e8a0-4be1-934a-2c0739c463b6",
+      "name": "Le Monde Informatique",
+      "description": "Site d'actualité francophone dédié à l'informatique professionnelle, créé en 1981 par le groupe américain IDG et aujourd'hui édité par IT News Info. Il couvre tendances et actualités IT (cloud, sécurité, réseaux, logiciels) à destination des décideurs et professionnels du secteur. Fait moins connu : pionnier de la presse informatique en France, il a abandonné le papier en 2007 avant de relancer un magazine imprimé en 2020.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.6,
+      "score_ux": 0.5,
+      "confidence": 0.65,
+      "bias_rationale": "Média thématique informatique professionnelle, aucun angle politique.",
+      "independence_rationale": "Adossé à un groupe de presse tech (IDG/IT News Info), modèle publicitaire B2B.",
+      "rigor_rationale": "Information professionnelle factuelle mais part de reprises de communiqués et de contenus partenaires.",
+      "ux_rationale": "Site dense, publicité présente, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Le_Monde_informatique",
+        "https://www.lemondeinformatique.fr/"
+      ]
+    },
+    {
+      "source_id": "ed124cfb-d1a5-4147-886f-c62adc8f512d",
+      "name": "Le Nouvel Obs",
+      "description": "Le Nouvel Obs, anciennement Le Nouvel Observateur puis L'Obs, est un hebdomadaire d'actualité français de sensibilité sociale-démocrate, intégré au groupe Le Monde. Sa ligne éditoriale est classée au centre gauche, ouverte à l'ensemble de la gauche. Fait moins connu, lors de son rachat en 2014 par le trio Niel, Bergé et Pigasse, le maintien de la ligne social-démocrate figurait parmi les conditions explicites de la cession.",
+      "bias_stance": "center-left",
+      "score_independence": 0.55,
+      "score_rigor": 0.7,
+      "score_ux": 0.65,
+      "confidence": 0.8,
+      "bias_rationale": "Ligne social-démocrate revendiquée et historiquement classée au centre gauche, ouverte à toute la gauche.",
+      "independence_rationale": "Filiale du groupe Le Monde détenu par Niel et Pigasse via Le Monde libre, tempéré par un pôle d'indépendance détenu par les salariés.",
+      "rigor_rationale": "Rédaction professionnelle aux standards d'un hebdo d'actualité établi, pratiquant enquête et vérification.",
+      "ux_rationale": "Site moderne mais publicité présente et paywall limitant l'accès aux articles longs.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/L'Obs",
+        "https://en.wikipedia.org/wiki/Le_Nouvel_Obs",
+        "https://la-rem.eu/2014/03/les-actionnaires-du-monde-reprennent-le-nouvel-observateur/"
+      ]
+    },
+    {
+      "source_id": "aff12f97-2cd3-486b-afbd-280b0f97a22e",
+      "name": "Le Plongeoir",
+      "description": "Newsletter Substack française de prospective qui propose de « plonger 15 minutes dans le futur » pour comprendre comment construire un monde plus durable et désirable. La ligne est optimiste et orientée solutions (logement, féminisme, effets rebond), à mi-chemin entre essai et veille. Fait moins connu : son format irrégulier et son ton personnel en font davantage un espace de réflexion d'auteur qu'un média d'actualité.",
+      "bias_stance": "alternative",
+      "score_independence": 0.85,
+      "score_rigor": 0.5,
+      "score_ux": 0.7,
+      "confidence": 0.5,
+      "bias_rationale": "Newsletter de prospective engagée sur la transition, sans axe partisan clair, ton réflexif.",
+      "independence_rationale": "Newsletter d'auteur auto-publiée sur Substack, sans groupe ni publicité identifiés.",
+      "rigor_rationale": "Contenu de réflexion personnelle et de veille, sans démarche journalistique systématique.",
+      "ux_rationale": "Format Substack épuré et confortable à lire.",
+      "sources_consulted": [
+        "https://leplongeoir.substack.com/"
+      ]
+    },
+    {
+      "source_id": "41497cf6-4b3d-4959-a7dd-33f501f867b4",
+      "name": "Le Point",
+      "description": "Le Point est un hebdomadaire d'actualité français fondé en 1972, détenu depuis 1997 par la holding Artémis de François Pinault. Sa ligne éditoriale est libérale et conservatrice, classée au centre droit voire à droite. Fait moins connu, son propriétaire Artémis contrôle aussi Kering, Christie's et le Stade Rennais, et est récemment entré au capital de l'hebdomadaire Le 1.",
+      "bias_stance": "center-right",
+      "score_independence": 0.45,
+      "score_rigor": 0.7,
+      "score_ux": 0.65,
+      "confidence": 0.8,
+      "bias_rationale": "Ligne libérale-conservatrice assumée, classée à droite, sans que l'actionnaire impose une ligne aussi marquée que les titres bollorisés, d'où center-right.",
+      "independence_rationale": "Détenu par Artémis (Pinault), grand groupe d'investissement, ce qui pèse sur l'indépendance même sans ligne partisane dictée.",
+      "rigor_rationale": "Rédaction professionnelle aux standards d'un grand hebdo, enquêtes et vérification solides malgré une coloration éditoriale libérale.",
+      "ux_rationale": "Site correct mais publicité présente et paywall limitant l'accès aux articles.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Le_Point",
+        "https://www.acrimed.org/+-Le-groupe-Artemis-Pinault-+",
+        "https://en.wikipedia.org/wiki/Groupe_Art%C3%A9mis"
+      ]
+    },
+    {
+      "source_id": "583ac86a-3e28-4a89-a3d3-9b9375b9b8f9",
+      "name": "Le Réveilleur",
+      "description": "Chaîne YouTube française de vulgarisation scientifique sur l'environnement et le climat, créée en 2015 par Rodolphe Meyer, ingénieur et docteur en sciences de l'environnement (analyse du cycle de vie). La ligne est rigoureuse et factuelle, chaque affirmation étant systématiquement sourcée par la littérature académique. Fait moins connu : il fait relire ses sujets par des spécialistes avant publication pour minimiser les approximations, pratique rare sur la plateforme.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.9,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Média thématique science de l'environnement, l'angle est la rigueur scientifique et non une ligne politique.",
+      "independence_rationale": "Créateur indépendant financé par sa communauté (Ulule/Tipeee), sans groupe média.",
+      "rigor_rationale": "Sourçage académique systématique et relecture par des spécialistes, exigence méthodologique élevée.",
+      "ux_rationale": "Vidéos longues et denses mais soignées, expérience YouTube standard.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Rodolphe_Meyer",
+        "https://www.sfen.org/rgn/youtuber-reveilleur-science/"
+      ]
+    },
+    {
+      "source_id": "d068dd35-8942-4878-92e2-b7b90451a01b",
+      "name": "Lenny's Newsletter",
+      "description": "Newsletter et podcast anglophone très suivis sur le product management, la croissance et la carrière, animés par Lenny Rachitsky, ancien chef de produit chez Airbnb. La ligne est pratique et fondée sur des entretiens avec des leaders produit et fondateurs de la tech. Fait moins connu : devenue l'une des newsletters payantes les plus rentables de Substack, elle illustre le modèle du média individuel d'expertise monétisé directement par ses abonnés.",
+      "bias_stance": "specialized",
+      "score_independence": 0.75,
+      "score_rigor": 0.6,
+      "score_ux": 0.75,
+      "confidence": 0.6,
+      "bias_rationale": "Média thématique product/tech/carrière, sans orientation politique.",
+      "independence_rationale": "Newsletter d'auteur indépendante financée par abonnements, mais immersion forte dans l'écosystème startup/VC.",
+      "rigor_rationale": "Conseils étayés par retours d'expérience et interviews, mais contenu d'opinion sectorielle plus que journalistique.",
+      "ux_rationale": "Format Substack soigné et lisible, sans publicité intrusive.",
+      "sources_consulted": [
+        "https://www.lennysnewsletter.com/",
+        "https://www.lennysnewsletter.com/about"
+      ]
+    },
+    {
+      "source_id": "d6872074-bc36-4561-b5e2-5b5dc670dfef",
+      "name": "Les Jours",
+      "description": "Média français indépendant en ligne, fondé en 2016 par d'anciens journalistes de Libération, qui raconte l'actualité sous forme de séries au long cours (« obsessions »). Sans publicité et entièrement financé par ses abonnés, ses cofondateurs en détiennent près de 90 % du capital. Fait moins connu : il est devenu membre fondateur de la coopérative Coop-médias, créée pour défendre financièrement la liberté de la presse indépendante.",
+      "bias_stance": "center-left",
+      "score_independence": 0.9,
+      "score_rigor": 0.8,
+      "score_ux": 0.75,
+      "confidence": 0.65,
+      "bias_rationale": "Journalisme d'enquête sensible aux sujets sociaux et de justice, sensibilité de centre-gauche sans militantisme partisan.",
+      "independence_rationale": "Sans publicité, détenu à près de 90 % par ses cofondateurs et financé par les abonnés, indépendance forte.",
+      "rigor_rationale": "Journalisme d'enquête au long cours, vérifié et documenté, signé par des journalistes confirmés.",
+      "ux_rationale": "Site sans publicité, lecture en séries confortable, paywall pour les abonnés.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Les_Jours",
+        "https://lesjours.fr/les-jours-c-quoi/media-independant"
+      ]
+    },
+    {
+      "source_id": "60b6b0e1-97f4-489d-9b4e-8f91a73d66bf",
+      "name": "Les Lueurs",
+      "description": "Podcast d'entretiens inspirants créé par Jonathan Langlois, qui reçoit des personnalités (chefs, scientifiques, artistes) autour de leur cheminement intérieur et de moments de vie transformateurs. La ligne est introspective et grand public, sans angle politique. Fait moins connu : chaque invité est sélectionné selon une grille éditoriale exigeant un vrai parcours de transformation personnelle.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": null,
+      "score_ux": 0.7,
+      "confidence": 0.6,
+      "bias_rationale": "Podcast d'inspiration personnelle sans orientation politique, angle = le sujet (parcours de vie).",
+      "independence_rationale": "Production indépendante portée par son créateur, hors grand groupe média.",
+      "rigor_rationale": "Format conversationnel inspirant, non journalistique, rigueur factuelle non évaluable.",
+      "ux_rationale": "Podcast standard distribué sur plateformes, écoute confortable sans intrusion.",
+      "sources_consulted": [
+        "https://www.fondationnotredame.fr/media/interview-de-jonathan-langlois",
+        "https://www.podcastics.com/podcast/les-lueurs/"
+      ]
+    },
+    {
+      "source_id": "39a541b1-aaea-45ae-86d7-0738d7c87ce7",
+      "name": "Les recettes de Virginie",
+      "description": "Blog culinaire personnel proposant des recettes de cuisine familiale simples et gourmandes. Le contenu est strictement gastronomique, sans dimension d'actualité ni orientation politique. Fait moins connu : le thème stocké en base (tech) est erroné, la source relève en réalité de la cuisine domestique.",
+      "bias_stance": "specialized",
+      "score_independence": null,
+      "score_rigor": null,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Blog de recettes de cuisine, aucun contenu politique ou d'actualité.",
+      "independence_rationale": "Blog personnel sans information vérifiable sur le modèle économique.",
+      "rigor_rationale": "Contenu lifestyle culinaire, la notion de rigueur journalistique ne s'applique pas.",
+      "ux_rationale": "Blog de recettes classique, lecture simple présumée correcte.",
+      "sources_consulted": [
+        "https://www.lesrecettesdevirginie.com/rss"
+      ]
+    },
+    {
+      "source_id": "4a7d45c4-4892-4ea0-9344-ff87155e78fe",
+      "name": "LIMIT",
+      "description": "Média YouTube de vulgarisation sur les limites planétaires, le climat et les enjeux de civilisation, mêlant pédagogie scientifique et divertissement. La ligne est engagée sur l'écologie mais centrée sur la vulgarisation des données plutôt que sur le militantisme partisan. Fait moins connu : la chaîne fédère plusieurs créateurs, dont Swann Périssé, autour d'un format associant humour et science.",
+      "bias_stance": "alternative",
+      "score_independence": 0.7,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.55,
+      "bias_rationale": "Ligne écologiste engagée hors axe partisan classique, pensée critique sur le modèle de civilisation.",
+      "independence_rationale": "Média indépendant de créateurs, sans adossement à un grand groupe.",
+      "rigor_rationale": "Vulgarisation appuyée sur des données scientifiques mais ton militant et titres accrocheurs.",
+      "ux_rationale": "Format YouTube grand public, accessible mais soumis aux contraintes de la plateforme.",
+      "sources_consulted": [
+        "https://www.youtube.com/@LIMITMEDIA",
+        "https://bonpote.com/les-chaines-youtube-indispensables-sur-lenvironnement-et-le-climat/"
+      ]
+    },
+    {
+      "source_id": "04731468-8d2b-44d4-a6a7-eb6d3ec581f5",
+      "name": "Maddyness",
+      "description": "Média français de référence sur les startups, l'innovation et l'économie de demain, lancé en 2012. La ligne est pro-entrepreneuriat et tech, sans orientation politique marquée. Fait moins connu : son capital a été ouvert à l'investisseur Marc Menasé, figure de la tech française, pour financer son expansion sectorielle et internationale.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.65,
+      "bias_rationale": "Média spécialisé startups/innovation, angle thématique économique sans ligne partisane.",
+      "independence_rationale": "Capital ouvert à un investisseur tech (Marc Menasé) et modèle partenarial avec l'écosystème.",
+      "rigor_rationale": "Couverture business sérieuse mais largement reprise de communication startups.",
+      "ux_rationale": "Site d'actualité moderne, lecture correcte avec publicité présente.",
+      "sources_consulted": [
+        "https://www.maddyness.com/",
+        "https://www.2cfinance.net/en/maddyness-the-media-for-french-startups-opens-its-capital-to-marc-menase/"
+      ]
+    },
+    {
+      "source_id": "254c28c4-f935-4f76-831b-4b39c6240adc",
+      "name": "Makery",
+      "description": "Média en ligne créé en 2014 et consacré aux fablabs, makers, biohacklabs et communautés créatives du mouvement DIY, animé par la rédactrice en chef Annick Rivoire. La ligne est culturelle et exploratoire, sans orientation politique. Fait moins connu : après le retrait d'un investisseur, le média a dû se réinventer avec le soutien du ministère de la Culture et du réseau européen Feral Labs.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Média thématique culture maker/DIY et arts numériques, sans angle politique.",
+      "independence_rationale": "Petite structure indépendante, soutenue par fonds publics (ministère de la Culture) après défaillance d'un investisseur.",
+      "rigor_rationale": "Reportages de terrain sur les labs, contenu spécialisé sans signal de défaut de fiabilité.",
+      "ux_rationale": "Site éditorial sobre, contenus longs, lecture correcte.",
+      "sources_consulted": [
+        "https://www.makery.info/en/",
+        "http://www.makery.info/en/2014/06/07/bienvenue-sur-makery-info-le-media-de-tous-les-labs/"
+      ]
+    },
+    {
+      "source_id": "73ff2900-4f01-427d-a592-4512a5f5bb1a",
+      "name": "Misterfox",
+      "description": "Chaîne YouTube d'Hugo Amizet (Misterfox), créateur français spécialisé dans le doublage et le cinéma, avec des formats d'analyse comme Parlons VF. Le contenu est culturel et sans orientation politique. Fait moins connu : actif depuis une quinzaine d'années, il a débuté sur Dailymotion puis Voxmakers avant de migrer vers YouTube et Twitch.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Chaîne culturelle sur le doublage et le cinéma, sans ligne politique.",
+      "independence_rationale": "Créateur indépendant financé par sa communauté (Ulule), sans groupe média.",
+      "rigor_rationale": "Analyses documentées sur son domaine de niche, registre passionné non journalistique.",
+      "ux_rationale": "Format YouTube grand public, accessible mais soumis aux contraintes de la plateforme.",
+      "sources_consulted": [
+        "https://www.youtube.com/@Misterfox",
+        "https://www.ulule.com/misterfox/"
+      ]
+    },
+    {
+      "source_id": "42d90408-a1f3-43ad-87bb-100b5a333f97",
+      "name": "MIT Technology Review",
+      "description": "Magazine américain de référence sur les technologies et leurs implications, propriété à but non lucratif du MIT mais éditorialement indépendant de l'institut. La ligne est rigoureuse et factuelle, adossée au code déontologique de la Society of Professional Journalists. Fait moins connu : bien que plusieurs membres de son conseil soient des dirigeants du MIT, sa couverture ne favorise pas les technologies issues de l'institut.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.9,
+      "score_ux": 0.6,
+      "confidence": 0.75,
+      "bias_rationale": "Magazine tech/science, angle = le sujet, sans orientation politique partisane.",
+      "independence_rationale": "Entité à but non lucratif détenue par le MIT mais éditorialement indépendante de l'institut.",
+      "rigor_rationale": "Standards journalistiques élevés (code SPJ), vérification et droit de réponse systématiques.",
+      "ux_rationale": "Site de magazine avec paywall partiel, lecture soignée mais accès limité.",
+      "sources_consulted": [
+        "https://www.technologyreview.com/editorial-guidelines/",
+        "https://en.wikipedia.org/wiki/MIT_Technology_Review",
+        "https://mediabiasfactcheck.com/mit-technology-review/"
+      ]
+    },
+    {
+      "source_id": "c0693783-960e-4ff8-9b4b-8fdeb225466c",
+      "name": "Next (ex Next INpact)",
+      "description": "Média français indépendant spécialisé dans le numérique et les nouvelles technologies, fondé en 2000 (ex PC INpact puis Next INpact) et financé par abonnement depuis 2009. Le site n'affiche aucune publicité ni outil de suivi, garantissant son indépendance éditoriale. Fait moins connu : ce flux correspond à son podcast d'entretiens, le média ayant changé de propriétaire en 2023 (holding oui.do/things) après la cession par son fondateur.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.8,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Média tech/numérique, angle thématique sans orientation politique partisane.",
+      "independence_rationale": "Sans publicité ni traceurs, financé par abonnement, modèle protégé de la course à l'audience.",
+      "rigor_rationale": "Journalisme tech fouillé et exigeant, reconnu pour la qualité de ses enquêtes numériques.",
+      "ux_rationale": "Contenus sans pub ni traceur, lecture confortable mais une partie réservée aux abonnés.",
+      "sources_consulted": [
+        "https://next.ink/qui-sommes-nous/",
+        "https://fr.wikipedia.org/wiki/Next_INpact"
+      ]
+    },
+    {
+      "source_id": "22b5d56b-18b3-41c0-ba42-aff1af89f5fc",
+      "name": "Notion Everything",
+      "description": "Newsletter Substack animée par Pascio, ambassadeur officiel Notion, qui partage ressources, astuces et templates pour l'outil de productivité Notion. Le contenu est utilitaire et commercial, sans dimension d'actualité ni orientation politique. Fait moins connu : son auteur a vendu plus de 250 000 templates en trois ans, le contenu servant aussi à promouvoir ses produits payants.",
+      "bias_stance": "specialized",
+      "score_independence": 0.4,
+      "score_rigor": null,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Newsletter productivité dédiée à un logiciel (Notion), sans orientation politique.",
+      "independence_rationale": "Contenu de créateur lié à l'écosystème Notion et à la vente de ses propres templates.",
+      "rigor_rationale": "Contenu pratique/tutoriel et promotionnel, hors champ du journalisme factuel.",
+      "ux_rationale": "Newsletter Substack lisible, mais teneur largement promotionnelle.",
+      "sources_consulted": [
+        "https://notioneverything.substack.com/",
+        "https://www.notion.com/@iampascio"
+      ]
+    },
+    {
+      "source_id": "bea8e1b7-2241-4eda-a39a-faa69fa804d3",
+      "name": "Objectif Bière",
+      "description": "Blog indépendant des Hauts-de-France consacré à la bière artisanale, proposant visites de brasseries, dégustations et chroniques. La ligne se revendique objective et sans articles sponsorisés. Fait moins connu : son auteur, webdesigner spécialisé en photographie de bière, visite et photographie lui-même chaque brasserie présentée et rédige sans assistance d'IA.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Blog thématique sur la bière artisanale, aucun angle politique.",
+      "independence_rationale": "Blog personnel se revendiquant sans articles sponsorisés ni partenariats commerciaux.",
+      "rigor_rationale": "Chroniques de dégustation fondées sur visites de terrain, registre amateur passionné.",
+      "ux_rationale": "Blog soigné avec photographies personnelles, lecture confortable.",
+      "sources_consulted": [
+        "https://www.objectif-biere.com/",
+        "https://www.instagram.com/objectifbiere/"
+      ]
+    },
+    {
+      "source_id": "b3f925b1-bf7b-4b9b-bf29-63e82f07e963",
+      "name": "Parlons Climat",
+      "description": "Organisation française d'intérêt général qui étudie l'opinion des Français sur l'écologie et conseille sur la manière de mieux communiquer sur le climat, cofondée par Lucas Francou Damesin. Le blog diffuse études d'opinion et analyses sur l'adhésion à la transition écologique. Fait moins connu : ses travaux sont soutenus par des fondations comme la European Climate Foundation et la fondation Daniel et Nina Carasso, en lien avec Destin Commun.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.7,
+      "score_ux": 0.6,
+      "confidence": 0.55,
+      "bias_rationale": "Organisation d'études d'opinion sur l'écologie, angle = la communication climat, non partisan.",
+      "independence_rationale": "Association financée par des fondations dédiées à la transition, hors logique d'actionnaire industriel.",
+      "rigor_rationale": "Production fondée sur des méthodologies quantitatives d'enquête d'opinion.",
+      "ux_rationale": "Blog institutionnel sobre, lecture correcte sans publicité.",
+      "sources_consulted": [
+        "https://www.parlonsclimat.org/a-propos",
+        "https://www.parlonsclimat.org/"
+      ]
+    },
+    {
+      "source_id": "fcfdbbda-a57c-4445-b3b4-c0477cef7e0d",
+      "name": "Pascal Boniface (IRIS)",
+      "description": "Blog du géopolitologue Pascal Boniface, fondateur et directeur de l'Institut de relations internationales et stratégiques (IRIS), proposant analyses et entretiens sur les relations internationales. La ligne est une analyse géopolitique critique, non partisane sur l'axe gauche-droite. Fait moins connu : ses positions critiques sur la politique israélienne lui ont valu des campagnes hostiles et une mise à l'écart progressive des grands plateaux télévisés.",
+      "bias_stance": "alternative",
+      "score_independence": 0.7,
+      "score_rigor": 0.7,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Analyse géopolitique critique et engagée, hors axe partisan classique gauche-droite.",
+      "independence_rationale": "Voix individuelle adossée à l'IRIS qu'il a fondé, sans tutelle d'un groupe média.",
+      "rigor_rationale": "Spécialiste reconnu des relations internationales, mais registre d'analyse d'opinion personnelle.",
+      "ux_rationale": "Blog WordPress sobre, lecture simple sans publicité intrusive.",
+      "sources_consulted": [
+        "https://www.iris-france.org/en/produit/est-il-permis-de-critiquer-israel-2/",
+        "https://www.letemps.ch/opinions/pascal-boniface-destruction-intellectuelle-massive"
+      ]
+    },
+    {
+      "source_id": "01ad2315-9418-4911-800d-a36c7ff7bc95",
+      "name": "Physiotutors",
+      "description": "Plateforme internationale d'éducation en kinésithérapie fondée par Andreas Heck et Kai Sigel, deux physiothérapeutes formés à Amsterdam, proposant cours, vidéos et podcasts fondés sur les preuves (evidence-based). Le contenu est strictement clinique et professionnel, sans orientation politique. Fait moins connu : le projet est né alors que ses fondateurs étaient encore étudiants, partant du constat que la formation en kinésithérapie devait être modernisée.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.8,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Plateforme thématique de formation en kinésithérapie, sans angle politique.",
+      "independence_rationale": "Entreprise privée d'edtech indépendante vivant de la vente de ses formations.",
+      "rigor_rationale": "Contenu revendiqué evidence-based, adossé aux guidelines cliniques récentes.",
+      "ux_rationale": "Plateforme d'apprentissage soignée, partie des contenus en accès payant.",
+      "sources_consulted": [
+        "https://www.physiotutors.com/about/",
+        "https://www.physiotutors.com/"
+      ]
+    },
+    {
+      "source_id": "e6a87c97-22dc-470b-bec7-99aea5d610b5",
+      "name": "Politis",
+      "description": "Hebdomadaire généraliste français ancré à gauche, dans l'écologie politique et les mouvements sociaux, revendiquant une indépendance totale. La ligne est clairement engagée à gauche, sans censure actionnariale. Fait moins connu : devenu une société coopérative (SCIC) en 2024, son capital est ouvert aux lecteurs et soutiens, ce qui consolide son indépendance économique et éditoriale.",
+      "bias_stance": "left",
+      "score_independence": 0.9,
+      "score_rigor": 0.7,
+      "score_ux": 0.6,
+      "confidence": 0.75,
+      "bias_rationale": "Ligne assumée à gauche (écologie politique, mouvements sociaux), militante non équivoque.",
+      "independence_rationale": "Coopérative (SCIC) détenue par ses lecteurs et journalistes, sans actionnaire industriel.",
+      "rigor_rationale": "Journalisme engagé sérieux mais à forte tonalité d'opinion assumée.",
+      "ux_rationale": "Site d'hebdomadaire avec partie réservée aux abonnés, lecture correcte.",
+      "sources_consulted": [
+        "https://www.politis.fr/a-propos-de-politis/",
+        "https://www.politis.fr/articles/2025/09/pourquoi-politis-est-devenu-une-cooperative/"
+      ]
+    },
+    {
+      "source_id": "019833de-600e-47fa-ad79-98358a833a51",
+      "name": "PsykoCouac",
+      "description": "Chaîne YouTube de vulgarisation en psychologie créée par Pierre Bordaberry, docteur en psychologie cognitive, qui explique troubles et mécanismes mentaux avec une touche d'humour. La ligne est scientifique et pédagogique, sans orientation politique. Fait moins connu : sa démarche vise explicitement à combattre la stigmatisation des troubles mentaux en abordant ces sujets de manière décontractée mais sérieuse.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.7,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Chaîne de vulgarisation en psychologie, angle = le sujet scientifique, sans politique.",
+      "independence_rationale": "Créateur indépendant, docteur en psychologie, sans adossement à un groupe.",
+      "rigor_rationale": "Contenu appuyé sur une expertise académique en psychologie cognitive.",
+      "ux_rationale": "Format YouTube grand public, accessible mais soumis aux contraintes de la plateforme.",
+      "sources_consulted": [
+        "https://www.youtube.com/c/PsykoCouac",
+        "https://www.julienbesse.com/post/le-psy-derri%C3%A8re-la-cha%C3%AEne-psykocouac-pierre-bordaberry"
+      ]
+    },
+    {
+      "source_id": "58add1a9-47e3-464b-9aaf-f8876aeb9633",
+      "name": "QG - Le média libre",
+      "description": "Média en ligne indépendant créé en 2019 par la journaliste Aude Lancelin (ex-L'Obs, ex-Marianne), entièrement financé par ses abonnés, sans publicité ni actionnaire industriel. La ligne se revendique de gauche alternative et offre une tribune aux voix divergentes. Fait moins connu : Aude Lancelin a fondé QG après avoir conclu que rien de décisif ne pouvait plus s'accomplir dans des rédactions abîmées par les intérêts privés et les agendas de partis.",
+      "bias_stance": "left",
+      "score_independence": 0.85,
+      "score_rigor": 0.5,
+      "score_ux": 0.6,
+      "confidence": 0.65,
+      "bias_rationale": "Ligne revendiquée de gauche alternative, fortement engagée et critique des pouvoirs établis.",
+      "independence_rationale": "Financé exclusivement par ses abonnés, sans pub, actionnaire industriel ni subvention.",
+      "rigor_rationale": "Média de débat et d'opinion à forte charge militante, factualité variable selon les invités.",
+      "ux_rationale": "Plateforme vidéo/podcast en accès partiel abonnés, lecture correcte.",
+      "sources_consulted": [
+        "https://qg.media/manifeste/",
+        "https://fr.linkedin.com/company/qg-le-media-libre/"
+      ]
+    },
+    {
+      "source_id": "99122774-0ff9-43a6-90fe-fbcc18493efd",
+      "name": "r/Analytics",
+      "description": "Subreddit consacré au web analytics, à la data et à l'analyse business, où les membres discutent méthodes, outils et parcours professionnels. C'est un forum communautaire d'échange technique, pas une rédaction. Fait moins connu : comme tous les subreddits, sa qualité repose entièrement sur la modération bénévole et le vote des membres, sans ligne éditoriale.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.4,
+      "score_ux": 0.5,
+      "confidence": 0.6,
+      "bias_rationale": "Forum technique sur la data et l'analytics, sans orientation politique.",
+      "independence_rationale": "Communauté Reddit autonome, sans groupe média ni annonceur direct.",
+      "rigor_rationale": "Contenu généré par les utilisateurs, expertise réelle mais non vérifiée éditorialement.",
+      "ux_rationale": "Fil Reddit brut, lecture correcte mais sans mise en forme éditoriale.",
+      "sources_consulted": [
+        "https://www.reddit.com/r/Analytics/.rss"
+      ]
+    },
+    {
+      "source_id": "beefa05c-dc08-460e-aac5-f57a2fac6628",
+      "name": "r/france",
+      "description": "Subreddit communautaire francophone consacré à la France, aux Français et à la francophonie, où s'échangent discussions et liens sur l'actualité, la politique, l'économie et la tech. Le contenu est agrégé et modéré par la communauté, sans ligne éditoriale unique. Fait moins connu : les publications relaient surtout des articles de presse tiers, la fiabilité dépendant donc des sources partagées par les membres.",
+      "bias_stance": "alternative",
+      "score_independence": 0.7,
+      "score_rigor": 0.4,
+      "score_ux": 0.5,
+      "confidence": 0.55,
+      "bias_rationale": "Communauté d'agrégation hors axe partisan, ligne déterminée par les membres, classée alternative.",
+      "independence_rationale": "Communauté bénévole sans actionnaire, mais hébergée sur la plateforme Reddit.",
+      "rigor_rationale": "Contenu agrégé non vérifié, fiabilité tributaire des sources tierces partagées.",
+      "ux_rationale": "Fil Reddit dense, navigation fonctionnelle mais bruitée par les commentaires.",
+      "sources_consulted": [
+        "https://www.reddit.com/r/france/",
+        "https://mariedolle.substack.com/p/le-fabuleux-destin-de-reddit"
+      ]
+    },
+    {
+      "source_id": "ada97c7c-8854-430a-9059-598dede75381",
+      "name": "r/jackass (The Jackass Vault)",
+      "description": "Communauté Reddit (r/jackass) dédiée à la franchise américaine de cascades et de canulars Jackass, née de la série MTV créée en 2000 par Johnny Knoxville, Jeff Tremaine et Spike Jonze. Le contenu est du fan-content communautaire (discussions, archives, hommages), sans ligne éditoriale ni vocation d'actualité. Fait moins connu : ce flux n'est pas un média mais un fil d'agrégation communautaire de fans, sans rédaction.",
+      "bias_stance": "alternative",
+      "score_independence": null,
+      "score_rigor": null,
+      "score_ux": null,
+      "confidence": 0.55,
+      "bias_rationale": "Communauté de fans hors axe gauche-droite, aucune ligne éditoriale.",
+      "independence_rationale": "Fil communautaire Reddit sans rédaction ni modèle économique journalistique évaluable.",
+      "rigor_rationale": "Contenu généré par les utilisateurs, non vérifié, sans démarche journalistique.",
+      "ux_rationale": "Flux Reddit brut, qualité et lisibilité variables selon les posts.",
+      "sources_consulted": [
+        "https://www.reddit.com/r/jackass/"
+      ]
+    },
+    {
+      "source_id": "a12a834a-80c2-4651-925b-7bda09bc9175",
+      "name": "r/reggae",
+      "description": "Subreddit communautaire anglophone dédié à la musique reggae sous toutes ses formes (roots, rocksteady, ska, dancehall, dub). Le contenu est agrégé par les membres (partages de titres, mixes, découvertes), sans ligne éditoriale ni dimension d'actualité politique. Fait moins connu : la communauté fonctionne surtout comme un espace de partage musical et de recommandations entre passionnés.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": null,
+      "score_ux": 0.5,
+      "confidence": 0.55,
+      "bias_rationale": "Communauté thématique autour de la musique reggae, sans orientation politique.",
+      "independence_rationale": "Communauté bénévole sans actionnaire, hébergée sur la plateforme Reddit.",
+      "rigor_rationale": "Partages musicaux et discussions de fans, hors champ de l'information factuelle.",
+      "ux_rationale": "Fil Reddit fonctionnel, navigation correcte mais bruitée.",
+      "sources_consulted": [
+        "https://www.reddit.com/r/reggae/"
+      ]
+    },
+    {
+      "source_id": "b8294fe5-e6c6-4c26-998a-3d8ba7ab9006",
+      "name": "r/rss",
+      "description": "Subreddit communautaire anglophone consacré à la technologie RSS, aux lecteurs de flux et aux outils de veille. Le contenu est agrégé par les membres (astuces, projets, comparaisons d'outils), sans ligne éditoriale ni orientation politique. Fait moins connu : ce flux n'agrège qu'un volume très faible de publications, la communauté restant de niche.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": null,
+      "score_ux": 0.5,
+      "confidence": 0.55,
+      "bias_rationale": "Communauté technique sur la technologie RSS et la veille, sans orientation politique.",
+      "independence_rationale": "Communauté bénévole sans actionnaire, hébergée sur la plateforme Reddit.",
+      "rigor_rationale": "Échanges techniques et projets entre amateurs, hors champ de l'information factuelle.",
+      "ux_rationale": "Fil Reddit fonctionnel, navigation correcte mais bruitée.",
+      "sources_consulted": [
+        "https://www.reddit.com/r/rss/"
+      ]
+    },
+    {
+      "source_id": "2abbc78c-f5cb-487d-9bb6-0809718ab33a",
+      "name": "r/startup",
+      "description": "Subreddit communautaire anglophone dédié à l'apprentissage des outils et compétences pour bâtir une startup, par l'échange d'expériences entre fondateurs. Le contenu est agrégé et modéré par la communauté, sans ligne éditoriale ni orientation politique. Fait moins connu : les publications relèvent souvent de retours d'expérience personnels et d'autopromotion, la qualité variant fortement d'un fil à l'autre.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.4,
+      "score_ux": 0.5,
+      "confidence": 0.55,
+      "bias_rationale": "Communauté thématique sur l'entrepreneuriat, sans orientation politique.",
+      "independence_rationale": "Communauté bénévole sans actionnaire, hébergée sur la plateforme Reddit.",
+      "rigor_rationale": "Contenu de témoignages et conseils non vérifiés, mêlé d'autopromotion.",
+      "ux_rationale": "Fil Reddit fonctionnel mais bruité par le spam et l'autopromotion.",
+      "sources_consulted": [
+        "https://www.reddit.com/r/startup/"
+      ]
+    },
+    {
+      "source_id": "ea103d6b-474e-49bd-8e25-4b77774a5406",
+      "name": "r/ViewAskewniverse (All things Kevin Smith)",
+      "description": "Subreddit communautaire dédié au cinéaste Kevin Smith et à son « ViewAskewniverse » (Clerks, Mallrats, Jay et Bob), où les fans échangent autour de ses films, podcasts et interviews. C'est un forum de discussion entre passionnés, pas un média. Fait moins connu : le nom « View Askew » vient de View Askew Productions, la société fondée par Kevin Smith et Scott Mosier en 1994.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.3,
+      "score_ux": 0.5,
+      "confidence": 0.6,
+      "bias_rationale": "Forum de fans de cinéma sans orientation politique, l'angle est le sujet.",
+      "independence_rationale": "Communauté Reddit autonome, sans groupe média ni annonceur direct.",
+      "rigor_rationale": "Contenu généré par les utilisateurs, opinions et discussions sans vérification éditoriale.",
+      "ux_rationale": "Fil Reddit brut, lisibilité variable et hors interface native parfois pauvre.",
+      "sources_consulted": [
+        "https://www.reddit.com/r/ViewAskewniverse/.rss"
+      ]
+    },
+    {
+      "source_id": "08e92cb8-3dc2-4c98-b752-fa9f0369fd4b",
+      "name": "RealGM",
+      "description": "Site américain d'actualité basket (NBA, NCAA, EuroLeague) créé en 2000, réputé pour ses news, rumeurs de transferts, stats et forums. La ligne est strictement sportive, sans orientation politique. Fait moins connu : le Sports Business Journal l'a qualifié de l'une des voix indépendantes les plus influentes du basket.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.6,
+      "score_ux": 0.5,
+      "confidence": 0.6,
+      "bias_rationale": "Site d'actualité basket, angle = le sport, sans orientation politique.",
+      "independence_rationale": "Voix indépendante reconnue du basket, sans adossement à une ligue ou un grand groupe.",
+      "rigor_rationale": "Mélange d'informations vérifiées et de rumeurs de transferts par nature spéculatives.",
+      "ux_rationale": "Site dense avec publicité, lisibilité moyenne typique des sites de stats sportives.",
+      "sources_consulted": [
+        "https://basketball.realgm.com/",
+        "https://en.wikipedia.org/wiki/RealGM"
+      ]
+    },
+    {
+      "source_id": "cc4a899b-7079-43b3-957c-1e6f4dd26253",
+      "name": "Redessiner le monde",
+      "description": "Newsletter Substack de Matthieu Dardaillon, cofondateur de Ticket for Change et Ashoka Fellow, partageant réflexions et clés pour agir dans un monde en grande transition. La ligne relève de l'entrepreneuriat à impact et de l'écologie positive, dans une posture engagée non partisane. Fait moins connu : son auteur copréside la Convention des Entreprises pour le Climat et compte plus de 15 000 abonnés.",
+      "bias_stance": "alternative",
+      "score_independence": 0.7,
+      "score_rigor": null,
+      "score_ux": 0.6,
+      "confidence": 0.55,
+      "bias_rationale": "Réflexion engagée sur la transition et l'entrepreneuriat à impact, hors axe partisan classique.",
+      "independence_rationale": "Newsletter personnelle indépendante, liée à l'écosystème entrepreneuriat à impact de l'auteur.",
+      "rigor_rationale": "Contenu de réflexion personnelle et de développement, non journalistique.",
+      "ux_rationale": "Newsletter Substack lisible, illustrée, lecture confortable.",
+      "sources_consulted": [
+        "https://matthieudardaillon.substack.com/about",
+        "https://www.linkedin.com/in/matthieu-dardaillon-a62b3828/"
+      ]
+    },
+    {
+      "source_id": "2cb53520-5701-4ffa-8379-24657e615405",
+      "name": "Reggae.fr",
+      "description": "Webzine français dédié depuis près de trois décennies à la culture reggae, dancehall, roots, ragga et dub, proposant actualités, interviews, chroniques et webradio. Le contenu est strictement musical et culturel, sans orientation politique. Fait moins connu : le site couvre largement la scène reggae locale française et africaine, au-delà des grands noms jamaïcains.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.6,
+      "score_ux": 0.5,
+      "confidence": 0.6,
+      "bias_rationale": "Webzine thématique sur la musique reggae/dancehall, sans orientation politique.",
+      "independence_rationale": "Média de niche indépendant porté par sa communauté, hors grand groupe.",
+      "rigor_rationale": "Chroniques et interviews spécialisées, registre culturel passionné non journalistique.",
+      "ux_rationale": "Site de webzine ancien, lisibilité moyenne et publicité présente.",
+      "sources_consulted": [
+        "https://reggae.fr/",
+        "https://reggae.fr/news/"
+      ]
+    },
+    {
+      "source_id": "f23d0563-8718-4573-b282-80e1ac4d5c7c",
+      "name": "Revue Scepticisme scientifique (Comité Para)",
+      "description": "Revue scientifique francophone éditée par le Comité Para, organisation belge sceptique fondée en 1949 pour l'analyse critique des parasciences. La ligne relève de la zététique et de l'esprit critique, sans orientation politique. Fait moins connu : la revue, lancée en 2022, applique un processus d'évaluation par les pairs avant publication en accès libre.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.8,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Revue de scepticisme scientifique et d'esprit critique, sans orientation politique.",
+      "independence_rationale": "Éditée par une association sceptique sans but lucratif, hors groupe média ou intérêt commercial.",
+      "rigor_rationale": "Articles soumis à évaluation par les pairs selon des exigences de rigueur et de clarté.",
+      "ux_rationale": "Revue en ligne en accès libre, lecture académique sobre.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Comit%C3%A9_Para",
+        "https://revue.comitepara.be/comite-editorial/"
+      ]
+    },
+    {
+      "source_id": "0c44295f-8925-46eb-ac16-56e554cef3e2",
+      "name": "Revue Silence",
+      "description": "Mensuel français publié à Lyon depuis 1982 par une association indépendante, sans publicité ni quasi aucune subvention, financé à 90 % par les ventes. La ligne porte un projet de transformation de la société vers la décroissance et l'écologie sociale, abordant les sujets au prisme du féminisme, du post-colonialisme et de la non-violence. Fait moins connu : la revue a contribué depuis plus de 35 ans à diffuser en France l'idée de décroissance.",
+      "bias_stance": "left",
+      "score_independence": 0.95,
+      "score_rigor": 0.6,
+      "score_ux": 0.5,
+      "confidence": 0.7,
+      "bias_rationale": "Ligne militante d'écologie sociale, décroissance et anticapitalisme, clairement à gauche.",
+      "independence_rationale": "Association indépendante sans pub ni quasi subvention, financée à 90 % par les ventes.",
+      "rigor_rationale": "Contenu engagé et militant assumé, à forte tonalité d'opinion plus que factuelle.",
+      "ux_rationale": "Revue papier/web militante au design sobre, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://www.revuesilence.net/",
+        "https://www.zeste.coop/en/soutenez-la-revue-independante-silence"
+      ]
+    },
+    {
+      "source_id": "0434a27f-2e27-4515-b824-361d3cf64422",
+      "name": "Rue89 Strasbourg",
+      "description": "Média local indépendant de Strasbourg fondé en 2012, détenu à 100 % par ses cofondateurs et journalistes, spécialisé dans l'enquête et le reportage de terrain. La ligne est engagée en faveur de l'environnement, contre les injustices et pour la transparence politique. Fait moins connu : sans lien capitalistique avec le groupe éditant L'Obs et sa rubrique Rue89, son indépendance est confortée par une entrée minoritaire de Mediapart à son capital.",
+      "bias_stance": "center-left",
+      "score_independence": 0.85,
+      "score_rigor": 0.75,
+      "score_ux": 0.6,
+      "confidence": 0.7,
+      "bias_rationale": "Ligne engagée (environnement, justice sociale, transparence) progressiste mais ancrée dans l'enquête factuelle locale.",
+      "independence_rationale": "Capital détenu par journalistes et médias indépendants, financé surtout par ses abonnés.",
+      "rigor_rationale": "Enquêtes de terrain documentées ayant abouti à des condamnations judiciaires.",
+      "ux_rationale": "Site local avec édition augmentée pour abonnés, lecture correcte et publicité modérée.",
+      "sources_consulted": [
+        "https://www.rue89strasbourg.com/qui-sommes-nous",
+        "https://www.rue89strasbourg.com/mediapart-capital-rue89strasbourg-independance-192255",
+        "https://fr.wikipedia.org/wiki/Rue89_Strasbourg"
+      ]
+    },
+    {
+      "source_id": "42dd5aca-c491-4754-b6df-2e84f7e3e6c8",
+      "name": "Science Étonnante",
+      "description": "Blog et newsletter de vulgarisation scientifique de David Louapre, docteur en physique (ENS Lyon), prolongement de sa chaîne YouTube de plus d'un million d'abonnés. La ligne est non politique, centrée sur la physique, les maths, la biologie et l'informatique, avec un fort souci de rigueur. Fait moins connu : Louapre a reçu la Médaille de la médiation scientifique du CNRS en 2023 et a longtemps travaillé comme chercheur chez Saint-Gobain.",
+      "bias_stance": "specialized",
+      "score_independence": 0.9,
+      "score_rigor": 0.9,
+      "score_ux": 0.85,
+      "confidence": 0.9,
+      "bias_rationale": "Vulgarisation scientifique sans angle politique, par sujet (physique, maths, bio).",
+      "independence_rationale": "Créateur indépendant auto-édité, sans groupe de presse ni emprise actionnariale.",
+      "rigor_rationale": "Docteur en physique primé (Société française de physique, Académie des sciences, CNRS), rigueur reconnue.",
+      "ux_rationale": "Substack lisible, sans pub intrusive ni paywall agressif.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/David_Louapre",
+        "https://scienceetonnante.com/"
+      ]
+    },
+    {
+      "source_id": "0a24f9a4-15ed-4e25-8441-db6d20563421",
+      "name": "Science4All",
+      "description": "Chaîne YouTube de vulgarisation en mathématiques, IA et théorie de l'information animée par Lê Nguyên Hoang, docteur en maths (Polytechnique). La ligne est scientifique et didactique, avec un engagement assumé pour l'éthique de l'IA et la sûreté algorithmique. Fait moins connu : Hoang est le fondateur de l'association Tournesol, qui développe un système de recommandation collaboratif et transparent en alternative aux algorithmes des plateformes.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.85,
+      "score_ux": 0.8,
+      "confidence": 0.85,
+      "bias_rationale": "Vulgarisation maths/IA, angle = le sujet et non une orientation politique partisane.",
+      "independence_rationale": "Créateur indépendant ; quelques liens institutionnels (conseil éthique Orange) mais pas de captation éditoriale.",
+      "rigor_rationale": "Docteur en mathématiques, contenu sourcé et méthodique sur l'IA et l'information.",
+      "ux_rationale": "Format YouTube long et dense, propre mais parfois technique pour le grand public.",
+      "sources_consulted": [
+        "https://www.science4all.org/about/",
+        "https://wiki.tournesol.app/wiki/User:Le_science4all"
+      ]
+    },
+    {
+      "source_id": "b4012b94-f101-47f7-89c9-f947fd2ebcf6",
+      "name": "Scilabus",
+      "description": "Chaîne YouTube de vulgarisation scientifique de Viviane Lalande, ingénieure et docteure en génie mécanique (Polytechnique Montréal), qui décrypte des phénomènes du quotidien par l'expérimentation. La ligne est non politique, pédagogique et fondée sur la démonstration empirique. Fait moins connu : créée en 2013, la chaîne s'accompagne d'un second canal, Sci+, dédié aux coulisses et aux conseils de communication scientifique.",
+      "bias_stance": "specialized",
+      "score_independence": 0.9,
+      "score_rigor": 0.85,
+      "score_ux": 0.85,
+      "confidence": 0.85,
+      "bias_rationale": "Vulgarisation expérimentale sans orientation politique, l'angle est le sujet scientifique.",
+      "independence_rationale": "Créatrice indépendante vivant de sa production vidéo, sans groupe de presse.",
+      "rigor_rationale": "Docteure en génie mécanique, démarche expérimentale et méthodique revendiquée.",
+      "ux_rationale": "Vidéos soignées et accessibles, sans pub intrusive notable.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Viviane_Lalande",
+        "https://www.scilabus.com/"
+      ]
+    },
+    {
+      "source_id": "8e2b3d65-5ea0-4f75-894c-3836272d9532",
+      "name": "Shake Up",
+      "description": "ShakeUp est un organisme français de formation continue pour kinésithérapeutes et ostéopathes, spécialisé dans la prise en charge de la douleur selon une approche biopsychosociale fondée sur les données scientifiques. Son blog relaie ces contenus de littératie en santé (douleur chronique, triage, accès direct). Fait moins connu : la structure articule son programme phare « Parlons Douleur » avec des formations universitaires (TCC, ACT, mindfulness) destinées aux professionnels de santé.",
+      "bias_stance": "specialized",
+      "score_independence": 0.65,
+      "score_rigor": 0.75,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Contenu santé thématique (kinésithérapie/douleur) sans orientation politique.",
+      "independence_rationale": "Organisme de formation commercial ; le blog sert aussi sa propre offre payante.",
+      "rigor_rationale": "Approche revendiquée evidence-based et biopsychosociale, cohérente avec l'état de l'art en douleur.",
+      "ux_rationale": "Blog correct mais orienté promotion des formations, expérience moyenne.",
+      "sources_consulted": [
+        "https://www.shake-up.org/",
+        "https://www.shake-up.org/parlonsdouleur"
+      ]
+    },
+    {
+      "source_id": "a2ffeb47-1e7e-4965-9232-712410e66238",
+      "name": "Snowball Innovation",
+      "description": "Snowball Innovation est un petit collectif suisse basé à Lausanne, dédié à l'innovation sociale, à l'entrepreneuriat durable et à l'économie collaborative, qui édite un blog en anglais sur ces thèmes. Le ton est associatif et militant pro-coopératif, sans angle partisan classique. Fait moins connu : la structure a notamment porté le réseau coopératif de freelances Partico et l'annuaire Green-Pages.ch des entreprises suisses écoresponsables.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.5,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Niche entrepreneuriat social/coworking sans ligne politique partisane affirmée.",
+      "independence_rationale": "Petite structure indépendante, mais le blog promeut ses propres projets.",
+      "rigor_rationale": "Billets de réflexion d'opinion plutôt que journalisme sourcé et vérifié.",
+      "ux_rationale": "Blog WordPress basique, publication irrégulière, lisibilité moyenne.",
+      "sources_consulted": [
+        "http://snowball.ch/about/",
+        "http://snowball.ch/define-sharing-sharing-economy/"
+      ]
+    },
+    {
+      "source_id": "26b05d76-4fda-45d2-b5ec-4548c8c77650",
+      "name": "Society",
+      "description": "Society est un magazine d'actualité et de reportages bimensuel édité par So Press, le groupe indépendant de Franck Annese (So Foot, So Film). La ligne mêle grands reportages, récits et faits divers avec une plume narrative, plutôt progressiste mais sans militantisme partisan marqué. Fait moins connu : l'actionnariat de So Press inclut d'anciens footballeurs et dirigeants du sport comme Vikash Dhorasoo et Édouard Cissé, et les numéros sur l'affaire Dupont de Ligonnès se sont écoulés à 400 000 exemplaires.",
+      "bias_stance": "center-left",
+      "score_independence": 0.8,
+      "score_rigor": 0.75,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Reportage narratif à sensibilité progressiste, sans ligne partisane militante.",
+      "independence_rationale": "Groupe So Press indépendant, capital détenu par des fondateurs et figures du sport, pas un grand groupe média.",
+      "rigor_rationale": "Reportage long format soigné, mais registre récit plus que fact-checking dur.",
+      "ux_rationale": "Site correct ; contenu premium parfois derrière abonnement payant.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Society_(magazine)",
+        "https://fr.wikipedia.org/wiki/Franck_Annese"
+      ]
+    },
+    {
+      "source_id": "ce7b713c-55a9-4f77-9fb9-bf11a4c42f4f",
+      "name": "StreetPress",
+      "description": "StreetPress est un média en ligne français fondé en 2009 par Jonathan Myara, spécialisé dans le journalisme d'enquête sur les banlieues, les discriminations et l'extrême droite. Sa ligne est ouvertement de gauche et engagée contre les violences policières et la montée de l'extrême droite. Fait moins connu : entièrement financé par ses lecteurs avec un budget d'environ 600 000 euros par an, il a été soutenu par le Fonds pour une presse libre et multiplie les révélations sur les réseaux d'extrême droite.",
+      "bias_stance": "left",
+      "score_independence": 0.9,
+      "score_rigor": 0.7,
+      "score_ux": 0.7,
+      "confidence": 0.85,
+      "bias_rationale": "Ligne éditoriale de gauche revendiquée, engagée contre l'extrême droite et les violences policières.",
+      "independence_rationale": "Financé par ses lecteurs, sans actionnaire industriel, fort de son indépendance revendiquée.",
+      "rigor_rationale": "Enquêtes documentées et révélations confirmées, mais angle militant assumé sur le traitement.",
+      "ux_rationale": "Site lisible, articles enquête longs, sans paywall agressif.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/StreetPress",
+        "https://soutenir.streetpress.com/"
+      ]
+    },
+    {
+      "source_id": "4d3c2f81-9b84-4687-a30d-3c23a0204218",
+      "name": "Tech_Sama",
+      "description": "Tech_Sama est une chaîne YouTube tech française lancée en 2016 par Aurélien Sama, centrée sur le hardware PC, le gaming, les smartphones et l'actualité technologique hebdomadaire. La ligne est spécialisée et orientée conseil d'achat, sans angle politique. Fait moins connu : Aurélien Sama a démarré sur une chaîne gaming Minecraft avant de coprésenter l'émission high-tech « On n'est pas des IENCLI » sur la RTBF belge.",
+      "bias_stance": "specialized",
+      "score_independence": 0.65,
+      "score_rigor": 0.65,
+      "score_ux": 0.7,
+      "confidence": 0.75,
+      "bias_rationale": "Chaîne hardware/gaming, angle = le produit, aucune orientation politique.",
+      "independence_rationale": "Créateur indépendant mais modèle dépendant des partenariats et liens d'affiliation tech.",
+      "rigor_rationale": "Tests hardware réputés sérieux et transparents dans l'écosystème francophone.",
+      "ux_rationale": "Format YouTube standard, présence d'annonces et de placements produits.",
+      "sources_consulted": [
+        "https://www.youtube.com/techsama",
+        "https://www.celside-magazine.com/fr-fr/meilleurs-youtubeurs-ameliorer-ordinateur/"
+      ]
+    },
+    {
+      "source_id": "7275defc-06f1-433d-bd12-24b30adf0a11",
+      "name": "TechCrunch",
+      "description": "TechCrunch est un média technologique américain fondé en 2005, référence sur les startups, le capital-risque et l'actualité de la tech. Sa ligne est spécialisée, factuelle et orientée industrie, sans coloration politique marquée. Fait moins connu : après être passé d'AOL à Yahoo puis Apollo Global, il a été racheté en 2025 par le fonds Regent, et a perdu une grande partie de son encadrement éditorial historique lors de ces transitions.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.7,
+      "score_ux": 0.65,
+      "confidence": 0.75,
+      "bias_rationale": "Couverture tech/startups par sujet, sans ligne politique partisane.",
+      "independence_rationale": "Propriété d'un fonds de private equity (Regent) après Yahoo/Apollo, indépendance éditoriale sous tension.",
+      "rigor_rationale": "Standards de reporting tech solides historiquement, mais départs de rédaction récents fragilisent la profondeur.",
+      "ux_rationale": "Site dense en publicités et trackers, lisibilité correcte mais chargée.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/TechCrunch",
+        "https://www.thewrap.com/yahoo-sells-techcrunch-regent/"
+      ]
+    },
+    {
+      "source_id": "f765725b-8906-4336-aecc-430d0aaa4ea0",
+      "name": "Techmeme",
+      "description": "Techmeme est un agrégateur d'actualité technologique américain fondé en 2005 par Gabe Rivera, qui rassemble sur une page unique les nouvelles tech essentielles du moment. Il combine algorithmes de crawl et éditeurs humains, et reprend les titres tels qu'ils sont écrits par les sources d'origine. Fait moins connu : le site est intégralement autofinancé par Rivera sans aucun investisseur, ce qui en fait un agrégateur particulièrement indépendant.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.7,
+      "score_ux": 0.7,
+      "confidence": 0.8,
+      "bias_rationale": "Agrégateur tech neutre qui reprend les titres des sources, sans ligne politique propre.",
+      "independence_rationale": "Autofinancé par son fondateur, sans investisseur ni groupe de presse.",
+      "rigor_rationale": "Curation éditoriale humaine sérieuse, mais la fiabilité dépend des sources tierces agrégées.",
+      "ux_rationale": "Interface austère mais épurée et rapide, peu de publicité.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Techmeme",
+        "https://contently.com/2012/11/29/the-art-and-science-of-how-techmeme-curates-news/"
+      ]
+    },
+    {
+      "source_id": "14a9dc97-8e96-4001-bd93-1cf3cbbd6690",
+      "name": "Techologie",
+      "description": "Podcast bimestriel qui interroge le rôle des technologies face aux enjeux écologiques, animé par Richard Hanna et des coopérateurs de Fairness. La ligne croise critique tech et sobriété numérique, dans une logique de réflexion engagée non partisane. Fait moins connu : le podcast est publié sous licence Creative Commons, dans une démarche cohérente avec son discours de sobriété.",
+      "bias_stance": "alternative",
+      "score_independence": 0.8,
+      "score_rigor": 0.6,
+      "score_ux": 0.6,
+      "confidence": 0.55,
+      "bias_rationale": "Réflexion critique sur tech et écologie, pensée engagée hors axe partisan classique.",
+      "independence_rationale": "Podcast porté par une coopérative (Fairness) sous licence libre, sans groupe média.",
+      "rigor_rationale": "Entretiens d'experts sérieux mais registre de réflexion engagée plutôt que factuel.",
+      "ux_rationale": "Podcast indépendant en accès libre, écoute confortable.",
+      "sources_consulted": [
+        "https://podcasts-francais.fr/podcast/techologie",
+        "https://open.spotify.com/show/4UWIXYVgM4SHzDLHarxFqs"
+      ]
+    },
+    {
+      "source_id": "f6555b65-2a56-4343-9f8b-d3d17c3b5b3b",
+      "name": "The Athletic",
+      "description": "The Athletic est un média sportif américain sur abonnement, lancé en 2016 et racheté par le New York Times en 2022 pour 550 millions de dollars. Il propose une couverture sportive nationale et locale fouillée, sans angle politique. Fait moins connu : après le rachat, le New York Times a supprimé son propre service des sports et confié toute sa couverture sportive aux quelque 400 journalistes de The Athletic.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.8,
+      "score_ux": 0.6,
+      "confidence": 0.8,
+      "bias_rationale": "Couverture sportive spécialisée, sans orientation politique.",
+      "independence_rationale": "Propriété du New York Times Company, adossé à un grand groupe média.",
+      "rigor_rationale": "Journalisme sportif approfondi et réputé, fort sur l'enquête et le décryptage.",
+      "ux_rationale": "Contenu derrière paywall sur abonnement, lecture limitée pour les non-abonnés.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/The_Athletic",
+        "https://www.businesswire.com/news/home/20220106005684/en/The-New-York-Times-Company-to-Acquire-The-Athletic"
+      ]
+    },
+    {
+      "source_id": "e057c963-840e-46df-908a-25986eaf35b6",
+      "name": "The Athletic (NBA)",
+      "description": "Section NBA de The Athletic, le média sportif américain sur abonnement détenu par le New York Times depuis 2022. Elle offre une couverture quotidienne et approfondie du basket professionnel, sans coloration politique. Fait moins connu : The Athletic compte parmi les plus grosses rédactions sportives au monde et a absorbé la couverture sportive du New York Times après le démantèlement de son service des sports.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.8,
+      "score_ux": 0.6,
+      "confidence": 0.8,
+      "bias_rationale": "Couverture NBA spécialisée, sans orientation politique.",
+      "independence_rationale": "Propriété du New York Times Company, adossé à un grand groupe média.",
+      "rigor_rationale": "Journalisme NBA détaillé et expert, réputé pour la qualité de son analyse.",
+      "ux_rationale": "Contenu sur abonnement derrière paywall, accès restreint sans compte.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/The_Athletic",
+        "https://www.businesswire.com/news/home/20220106005684/en/The-New-York-Times-Company-to-Acquire-The-Athletic"
+      ]
+    },
+    {
+      "source_id": "44c007e0-a787-4df2-a03b-5613f2e3026a",
+      "name": "The Conversation",
+      "description": "The Conversation est un réseau international de médias en ligne à but non lucratif, fondé à Melbourne en 2011, qui publie des analyses écrites par des universitaires et éditées par des journalistes professionnels. Sa ligne revendique l'analyse experte plutôt que l'opinion, et les articles sont diffusés sous licence Creative Commons. Fait moins connu : le réseau ne vend aucune publicité et se finance par les universités partenaires, des fondations et des dons, ce qui sous-tend son indépendance.",
+      "bias_stance": "center",
+      "score_independence": 0.85,
+      "score_rigor": 0.85,
+      "score_ux": 0.8,
+      "confidence": 0.8,
+      "bias_rationale": "Analyse académique factuelle, équilibrée et sans ligne partisane affichée.",
+      "independence_rationale": "Modèle non lucratif sans publicité, financé par universités et fondations, contrôle éditorial indépendant.",
+      "rigor_rationale": "Contenu signé par des chercheurs et relu par des journalistes, exigence factuelle élevée.",
+      "ux_rationale": "Site clair, sans publicité ni paywall, articles librement réutilisables.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/The_Conversation_(website)",
+        "https://www.niemanlab.org/2016/02/the-conversation-expands-across-the-u-s-freshly-funded-by-university-members-and-foundations/"
+      ]
+    },
+    {
+      "source_id": "f25aa1a4-e272-49ec-b735-abbbd43ff89b",
+      "name": "The Gradient",
+      "description": "The Gradient est un magazine numérique anglophone sur l'intelligence artificielle et le machine learning, fondé en 2017 par des étudiants et chercheurs du Stanford AI Lab. Il publie des analyses techniques accessibles et des tribunes sur les tendances et enjeux de l'IA, sans angle politique. Fait moins connu : la publication, animée bénévolement par des chercheurs, prolonge son travail par un podcast et une newsletter dédiés à l'actualité de la recherche.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.8,
+      "score_ux": 0.75,
+      "confidence": 0.75,
+      "bias_rationale": "Publication thématique IA/ML, l'angle est le sujet et non une orientation politique.",
+      "independence_rationale": "Projet indépendant porté par des chercheurs bénévoles, sans groupe de presse ni annonceur dominant.",
+      "rigor_rationale": "Articles techniques signés par des spécialistes, contenu sourcé et exigeant.",
+      "ux_rationale": "Plateforme lisible (Substack/web), longue forme, sans pub intrusive.",
+      "sources_consulted": [
+        "https://thegradient.pub/about/",
+        "https://thegradientpub.substack.com/"
+      ]
+    },
+    {
+      "source_id": "b47ca67f-f55d-456f-ae23-09f917fbba39",
+      "name": "The Stack",
+      "description": "The Stack est une publication tech B2B britannique destinée aux dirigeants du numérique (CIO, CTO), proposant interviews, enquêtes et analyses sur la cybersécurité, le cloud et la politique technologique. La ligne est spécialisée et orientée entreprise, sans angle politique. Fait moins connu : malgré la mention « by Humanloop » accolée au flux, la publication est un média tech indépendant et distinct de la société d'IA Humanloop.",
+      "bias_stance": "specialized",
+      "score_independence": 0.65,
+      "score_rigor": 0.7,
+      "score_ux": 0.7,
+      "confidence": 0.65,
+      "bias_rationale": "Publication tech entreprise spécialisée, sans orientation politique.",
+      "independence_rationale": "Média B2B indépendant, mais modèle dépendant des annonceurs et événements du secteur.",
+      "rigor_rationale": "Articles tech professionnels et interviews sourcées, reporting sérieux sur la cyber et le cloud.",
+      "ux_rationale": "Site clair orienté professionnels, lecture correcte.",
+      "sources_consulted": [
+        "https://www.thestack.technology/",
+        "https://techcrunch.com/2025/08/13/anthropic-nabs-humanloop-team-as-competition-for-enterprise-ai-talent-heats-up/"
+      ]
+    },
+    {
+      "source_id": "45835ae2-3c91-41aa-b660-759de58239eb",
+      "name": "The Verge",
+      "description": "The Verge est un média technologique américain lancé en 2011 et opéré par Vox Media, couvrant l'actualité tech, les sciences, la culture numérique et les tests de produits. La ligne est spécialisée, avec un ton incarné et parfois critique des grandes plateformes, sans parti pris politique marqué. Fait moins connu : créé par d'anciens d'Engadget autour de Nilay Patel, le site a remporté cinq Webby Awards dès sa première année d'existence.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.75,
+      "score_ux": 0.65,
+      "confidence": 0.75,
+      "bias_rationale": "Couverture tech par sujet, ton critique des plateformes mais sans ligne politique partisane.",
+      "independence_rationale": "Filiale de Vox Media (investisseurs dont NBC Universal), adossé à un groupe média.",
+      "rigor_rationale": "Reporting et tests tech soignés, réputation éditoriale solide.",
+      "ux_rationale": "Site riche mais chargé en publicités et éléments multimédias, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/The_Verge",
+        "https://en.wikipedia.org/wiki/Vox_Media"
+      ]
+    },
+    {
+      "source_id": "ee20befb-ced3-4f22-87bd-c829c89d70d9",
+      "name": "ThePrimeagen",
+      "description": "ThePrimeagen est la chaîne YouTube et Twitch de Michael Paulson, ancien ingénieur Netflix devenu créateur de contenu à plein temps autour de la programmation, des fondamentaux du développement logiciel et de l'éditeur Vim/Neovim. La ligne est spécialisée et pédagogique, sans dimension politique. Fait moins connu : il raconte ouvertement son parcours « de la méthamphétamine à Netflix », rétabli grâce à la discipline et à l'apprentissage du code.",
+      "bias_stance": "specialized",
+      "score_independence": 0.75,
+      "score_rigor": 0.7,
+      "score_ux": 0.65,
+      "confidence": 0.75,
+      "bias_rationale": "Contenu programmation/développement, l'angle est le sujet technique, pas la politique.",
+      "independence_rationale": "Créateur indépendant vivant de sa communauté et de partenariats (Frontend Masters, Boot.dev).",
+      "rigor_rationale": "Expertise technique reconnue (ex-Netflix), contenu pratique mais format live et opinions personnelles.",
+      "ux_rationale": "Format YouTube/streaming long et bavard, présence de promos partenaires.",
+      "sources_consulted": [
+        "https://youtube.fandom.com/wiki/ThePrimeagen",
+        "https://www.youtube.com/@ThePrimeagen"
+      ]
+    },
+    {
+      "source_id": "659cf9e0-428c-49e6-a262-f5be575706b2",
+      "name": "TLDR",
+      "description": "TLDR est une suite de newsletters quotidiennes gratuites fondée en 2018 par Dan Ni, qui résume en quelques minutes l'actualité tech, IA et startups via des liens curés assortis de résumés de deux ou trois phrases. La ligne est spécialisée et neutre, sans angle politique. Fait moins connu : l'ensemble dépasse 7 millions d'abonnés et génère un chiffre d'affaires à huit chiffres entièrement issu de la publicité.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.6,
+      "score_ux": 0.8,
+      "confidence": 0.75,
+      "bias_rationale": "Agrégateur tech/startups neutre, sans orientation politique.",
+      "independence_rationale": "Indépendant de tout groupe de presse, mais modèle 100 pour cent publicitaire avec sponsors intégrés.",
+      "rigor_rationale": "Résumés de curation fiables mais brefs ; la profondeur dépend des sources tierces reliées.",
+      "ux_rationale": "Format newsletter concis et lisible, encarts sponsorisés clairement balisés.",
+      "sources_consulted": [
+        "https://tldr.tech/",
+        "https://news.ycombinator.com/item?id=45618463"
+      ]
+    },
+    {
+      "source_id": "78151255-96bf-4be3-a0df-2b9c12e77332",
+      "name": "Towards Data Science",
+      "description": "Towards Data Science est une publication anglophone fondée en 2016, longtemps la plus grande communauté de Medium sur la data science, le machine learning et l'IA, devenue publication indépendante en 2025. La ligne est spécialisée et technique, sans dimension politique. Fait moins connu : après une bascule vers des URLs Medium, l'équipe a quitté la plateforme pour son propre site WordPress en accès libre sans paywall.",
+      "bias_stance": "specialized",
+      "score_independence": 0.65,
+      "score_rigor": 0.65,
+      "score_ux": 0.75,
+      "confidence": 0.7,
+      "bias_rationale": "Publication data science/IA spécialisée, sans orientation politique.",
+      "independence_rationale": "Désormais indépendante, mais reposant sur des contributions ouvertes plutôt qu'une rédaction salariée.",
+      "rigor_rationale": "Articles techniques de contributeurs, qualité variable car peu de relecture éditoriale uniforme.",
+      "ux_rationale": "Site lisible et désormais sans paywall, articles longs bien mis en forme.",
+      "sources_consulted": [
+        "https://towardsdatascience.com/towards-data-science-is-launching-as-an-independent-publication/",
+        "https://ranggakd.medium.com/regarding-towards-data-science-medium-publication-7b9130e6eec7"
+      ]
+    },
+    {
+      "source_id": "ba341bbb-2570-4dea-babf-5e17f1db52e0",
+      "name": "TrashTalk",
+      "description": "TrashTalk est un média français spécialisé dans l'actualité NBA et basket (news, rumeurs, transferts, résultats), au ton décontracté et communautaire. La ligne est purement sportive, sans angle politique. Fait moins connu : sa monétisation repose fortement sur la publicité et les liens d'affiliation, ce qui pèse sur l'expérience de lecture.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.55,
+      "score_ux": 0.3,
+      "confidence": 0.75,
+      "bias_rationale": "Média NBA/basket spécialisé, sans orientation politique.",
+      "independence_rationale": "Média indépendant mais modèle économique très dépendant de la pub et de l'affiliation.",
+      "rigor_rationale": "Couverture réactive et passionnée, registre commentaire et rumeur plus que vérification rigoureuse.",
+      "ux_rationale": "Publicité et affiliation intrusives, lisibilité faible (ancrage rubrique mauvaise UX).",
+      "sources_consulted": [
+        "https://trashtalk.co/",
+        "https://www.youtube.com/c/TrashTalkprod"
+      ]
+    },
+    {
+      "source_id": "98d979ca-f10f-48d7-a072-c52be076a63d",
+      "name": "Télérama",
+      "description": "Télérama est un hebdomadaire culturel français fondé en 1947, consacré aux programmes télé, au cinéma, à la littérature et aux arts, intégré au groupe Le Monde. Sa ligne éditoriale est progressiste et de centre gauche, ses critiques privilégiant les œuvres engagées sur les inégalités, l'histoire ou l'environnement. Fait moins connu, le titre est né d'un héritage chrétien via les Publications de la Vie Catholique et son fondateur Georges Montaron.",
+      "bias_stance": "center-left",
+      "score_independence": 0.55,
+      "score_rigor": 0.7,
+      "score_ux": 0.7,
+      "confidence": 0.8,
+      "bias_rationale": "Critique culturelle à valeurs progressistes affichées, classée au centre gauche.",
+      "independence_rationale": "Filiale du groupe Le Monde (Niel, Pigasse), tempéré par les dispositifs d'indépendance du groupe.",
+      "rigor_rationale": "Critiques exigeantes et travail éditorial soigné sur un périmètre culturel, sans sanctions ni démentis notables.",
+      "ux_rationale": "Site lisible et bien organisé, publicité modérée mais paywall sur une partie des contenus.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/T%C3%A9l%C3%A9rama",
+        "https://en.wikipedia.org/wiki/Groupe_Le_Monde",
+        "https://www.causeur.fr/telerama-champion-du-progressisme-188647"
+      ]
+    },
+    {
+      "source_id": "fc6fc6b4-eb66-4af4-b528-00c88ed8eade",
+      "name": "Underscore_",
+      "description": "Underscore_ est un talk-show YouTube et Twitch sur la tech, la cybersécurité, le hacking et l'IA, lancé en 2021 par Michaël de Marliave, alias Micode, créateur tech français suivi par plus d'un million d'abonnés. La ligne est spécialisée, pédagogique et orientée enquête numérique, sans dimension politique. Fait moins connu : Underscore_ prolonge la chaîne Micode Enquêtes, dédiée aux investigations longues sur les affaires du net et la cybercriminalité.",
+      "bias_stance": "specialized",
+      "score_independence": 0.75,
+      "score_rigor": 0.7,
+      "score_ux": 0.7,
+      "confidence": 0.75,
+      "bias_rationale": "Talk-show tech/cybersécurité spécialisé, sans orientation politique.",
+      "independence_rationale": "Production indépendante de créateurs, financée par communauté et partenariats, sans groupe média.",
+      "rigor_rationale": "Décryptages techniques réputés sérieux et documentés, format débat avec invités experts.",
+      "ux_rationale": "Format vidéo long mais soigné, présence de placements et partenariats.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Micode",
+        "https://www.it-connect.fr/top-10-des-chaines-youtube-francophones-2023-admin-systeme-reseau-et-cybersecurite/"
+      ]
+    },
+    {
+      "source_id": "f092a7c5-1cb0-42b0-ae88-2d1bd61b5cab",
+      "name": "VentureBeat",
+      "description": "VentureBeat est un média technologique américain fondé en 2006 à San Francisco, axé sur l'IA, l'infrastructure data et la sécurité d'entreprise, avec news, analyses et interviews. La ligne est spécialisée et orientée industrie, sans angle politique. Fait moins connu : en 2025, VentureBeat a essaimé sa branche jeux vidéo GamesBeat en société indépendante pour se recentrer sur l'intelligence artificielle d'entreprise.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.7,
+      "score_ux": 0.6,
+      "confidence": 0.75,
+      "bias_rationale": "Couverture tech/IA spécialisée, sans orientation politique.",
+      "independence_rationale": "Média indépendant mais modèle dépendant de la publicité et des événements sponsorisés.",
+      "rigor_rationale": "Reporting tech professionnel et interviews sourcées, standards de fiabilité corrects.",
+      "ux_rationale": "Site chargé en publicités et trackers, lisibilité moyenne.",
+      "sources_consulted": [
+        "https://venturebeat.com/",
+        "https://variety.com/2025/gaming/news/gamesbeat-spins-off-from-venturebeat-gina-joseph-dean-takahashi-1236373682/"
+      ]
+    },
+    {
+      "source_id": "ec6b16a1-0cb1-4d1d-8d65-8fba03ff7cac",
+      "name": "Veritasium",
+      "description": "Veritasium est une chaîne YouTube anglophone de vulgarisation scientifique animée par Derek Muller, docteur en physique de l'éducation, comptant plus de quinze millions d'abonnés. La ligne est non politique, centrée sur la physique, l'ingénierie et le contre-intuitif scientifique, avec une production très soignée. Fait moins connu : le nom vient du latin veritas, et la thèse de Muller portait précisément sur l'efficacité des vidéos pédagogiques en sciences.",
+      "bias_stance": "specialized",
+      "score_independence": 0.7,
+      "score_rigor": 0.85,
+      "score_ux": 0.85,
+      "confidence": 0.85,
+      "bias_rationale": "Vulgarisation scientifique sans orientation politique, l'angle est le sujet.",
+      "independence_rationale": "Créateur indépendant ; vidéos sponsorisées ponctuelles clairement signalées (mention AD).",
+      "rigor_rationale": "Docteur en physique de l'éducation, contenu scientifique rigoureux et vérifié.",
+      "ux_rationale": "Production vidéo de très haute qualité, sponsors intégrés mais transparents.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Veritasium",
+        "https://www.youtube.com/@veritasium"
+      ]
+    },
+    {
+      "source_id": "7f234639-ee5a-4969-87ee-7f7ef0b3dbe0",
+      "name": "Vert",
+      "description": "Vert est un média en ligne français indépendant et gratuit, créé en 2020 par les journalistes Loup Espargilière et Juliette Quef, consacré à l'écologie et au climat. La ligne est écologiste assumée, à la fois revue de presse et outil pédagogique, sans catastrophisme. Fait moins connu : détenu à 100 pour cent par ses deux fondateurs et 0 pour cent par des industriels, il tire en 2025 environ 90 pour cent de ses revenus des dons d'individus.",
+      "bias_stance": "left",
+      "score_independence": 0.95,
+      "score_rigor": 0.75,
+      "score_ux": 0.75,
+      "confidence": 0.8,
+      "bias_rationale": "Ligne écologiste militante assumée, sensibilité de gauche sur le climat et l'environnement.",
+      "independence_rationale": "Détenu à 100 pour cent par ses fondateurs et financé par les dons, sans actionnaire industriel.",
+      "rigor_rationale": "Journalisme écolo documenté et sourcé, mais traitement engagé sur la cause climatique.",
+      "ux_rationale": "Site clair en accès libre, sans paywall ni publicité intrusive.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Vert_(m%C3%A9dia)",
+        "https://vert.eco/qui-sommes-nous/"
+      ]
+    },
+    {
+      "source_id": "76e66315-eb79-49b7-b91a-e66c63540f16",
+      "name": "Vertige Media",
+      "description": "Vertige Media est un média français indépendant et gratuit consacré à l'escalade, qu'il traite comme un fait social, culturel et politique au-delà de la seule performance. La ligne est engagée pour une pratique inclusive et respectueuse de l'environnement, hors logique purement commerciale. Fait moins connu : il publie cinq articles gratuits par semaine et fonctionne par dons pour échapper à la dépendance aux marques et aux annonceurs.",
+      "bias_stance": "specialized",
+      "score_independence": 0.85,
+      "score_rigor": 0.7,
+      "score_ux": 0.75,
+      "confidence": 0.7,
+      "bias_rationale": "Média de niche escalade ; angle social/politique mais centré sur le sujet sportif, pas partisan.",
+      "independence_rationale": "Média indépendant financé par les dons, échappant à la dépendance aux marques et milliardaires.",
+      "rigor_rationale": "Enquêtes et reportages documentés sur la grimpe, avec un parti pris éditorial assumé.",
+      "ux_rationale": "Site soigné en accès libre, sans paywall ni publicité intrusive.",
+      "sources_consulted": [
+        "https://www.vertigemedia.fr/manifeste",
+        "https://www.vertigemedia.fr/soutenir"
+      ]
+    },
+    {
+      "source_id": "370cdf89-ef53-4387-9908-adc15b855298",
+      "name": "Voxe",
+      "description": "Voxe est un média associatif français diffusé via la newsletter quotidienne « La Quotidienne », qui résume chaque matin l'actualité économique, sociale et politique à destination des 18-35 ans, et particulièrement des jeunes femmes. La ligne se veut pédagogique et civique, à sensibilité progressiste sur les enjeux d'engagement et d'égalité. Fait moins connu : Voxe était à l'origine un chatbot Facebook Messenger d'aide au débat public avant de devenir une newsletter d'empowerment.",
+      "bias_stance": "center-left",
+      "score_independence": 0.75,
+      "score_rigor": 0.65,
+      "score_ux": 0.8,
+      "confidence": 0.65,
+      "bias_rationale": "Newsletter civique à visée d'engagement, sensibilité progressiste sur l'égalité et l'empowerment.",
+      "independence_rationale": "Structure associative indépendante, financée par abonnements de collectivités et formations.",
+      "rigor_rationale": "Résumés d'actualité vulgarisés et pédagogiques plutôt qu'enquête journalistique dure.",
+      "ux_rationale": "Format newsletter quotidien concis et agréable à lire.",
+      "sources_consulted": [
+        "https://www.frenchweb.fr/voxe-org-veut-aider-les-jeunes-a-sinformer-pour-mieux-sengager/301387",
+        "https://www.paris.fr/pages/voxe-reconcilie-les-jeunes-avec-la-politique-6641"
+      ]
+    },
+    {
+      "source_id": "d56e41b6-67a8-4b55-bf6e-c752f6125182",
+      "name": "Wired",
+      "description": "Wired est un magazine technologique américain lancé en 1993 et détenu depuis 1998 par Condé Nast (groupe Advance Publications), couvrant la tech, la culture numérique, la science et la sécurité. Sa ligne penche à gauche, avec un regard souvent critique sur les figures tech de droite. Fait moins connu : fondé par le libertarien Louis Rossetto, le magazine a vu son ADN éditorial façonné par le courant techno-utopiste de Stewart Brand et Kevin Kelly.",
+      "bias_stance": "center-left",
+      "score_independence": 0.5,
+      "score_rigor": 0.75,
+      "score_ux": 0.55,
+      "confidence": 0.8,
+      "bias_rationale": "Ligne tech penchant à gauche, critique récurrente des figures tech conservatrices (notations Ad Fontes/AllSides).",
+      "independence_rationale": "Propriété de Condé Nast (Advance Publications), adossé à un grand groupe média.",
+      "rigor_rationale": "Reportages et enquêtes tech approfondis, généralement fiables et bien sourcés.",
+      "ux_rationale": "Site chargé en publicités et paywall, lecture vite limitée pour les non-abonnés.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Wired_(magazine)",
+        "https://mediabiasfactcheck.com/wired-magazine/"
+      ]
+    },
+    {
+      "source_id": "9b90c578-13c0-41fd-9cae-6775e894285d",
+      "name": "À rebondissements !",
+      "description": "Newsletter Substack de Gabrielle Piot-Kodama consacrée à l'effet rebond, ce phénomène où des gains d'efficacité écologique sont annulés par une hausse de la consommation. Elle mêle explications pédagogiques, exemples et pistes de solutions sur l'économie circulaire et la sobriété. Fait moins connu : l'effet rebond qu'elle vulgarise a été théorisé dès 1865 par l'économiste William Stanley Jevons à propos du charbon.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.6,
+      "score_ux": 0.8,
+      "confidence": 0.6,
+      "bias_rationale": "Newsletter thématique d'écologie et de consommation, l'angle est le sujet.",
+      "independence_rationale": "Newsletter d'autrice indépendante autopubliée, sans groupe ni annonceurs.",
+      "rigor_rationale": "Vulgarisation sérieuse et pédagogique mais sans appareil académique formel.",
+      "ux_rationale": "Format Substack épuré et agréable, sans publicité.",
+      "sources_consulted": [
+        "https://gabriellepiotkodama.substack.com/feed"
+      ]
+    },
+    {
+      "source_id": "2cb97f81-47cf-4bb9-a926-694278a5ee56",
+      "name": "Élucid",
+      "description": "Média en ligne français fondé en 2021 par Olivier Berruyer (ex-blog Les Crises), consacré à l'économie, la politique, l'environnement et la société dans le temps long. Détenu à 100 % par ses collaborateurs et sans publicité, il défend une ligne hétérodoxe très critique du néolibéralisme. Fait moins connu : il est classé par des analyses académiques aux côtés de Frédéric Lordon et Jacques Sapir dans la mouvance souverainiste et hétérodoxe.",
+      "bias_stance": "alternative",
+      "score_independence": 0.85,
+      "score_rigor": 0.55,
+      "score_ux": 0.7,
+      "confidence": 0.7,
+      "bias_rationale": "Ligne hétérodoxe et souverainiste très critique du néolibéralisme, hors axe gauche-droite classique mais militante.",
+      "independence_rationale": "Détenu à 100 % par ses collaborateurs, sans publicité, financé par abonnements.",
+      "rigor_rationale": "Analyses documentées mais fortement orientées et thèses critiques assumées, opinion lourde.",
+      "ux_rationale": "Site lisible et soigné, accès partiellement payant mais sans publicité intrusive.",
+      "sources_consulted": [
+        "https://elucid.media/elucid-c-est-quoi",
+        "https://fr.wikipedia.org/wiki/Olivier_Berruyer",
+        "https://force-citoyenne.fr/elucid-decryptage-dun-media-independant-et-de-son-orientation-politique/"
+      ]
+    }
+  ]
+}
