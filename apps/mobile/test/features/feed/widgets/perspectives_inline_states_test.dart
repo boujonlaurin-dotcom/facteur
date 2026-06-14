@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/detail/screens/content_detail_screen.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart'
     show PerspectiveData, PerspectivesResponse, TokenSpan;
+import 'package:facteur/features/feed/widgets/coverage_comparison_card.dart';
 import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
+// sourceDomain vide → la carte utilise le fallback (pas d'Image.network en test).
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
       title: 'Titre $name',
       url: 'https://example.com/$name',
@@ -18,69 +19,30 @@ Perspective _p(String name, {String bias = 'center'}) => Perspective(
       biasStance: bias,
     );
 
-class _ScrollablePerspectivesHost extends StatefulWidget {
-  final ScrollController controller;
-
-  const _ScrollablePerspectivesHost({required this.controller});
-
-  @override
-  State<_ScrollablePerspectivesHost> createState() =>
-      _ScrollablePerspectivesHostState();
-}
-
-class _ScrollablePerspectivesHostState
-    extends State<_ScrollablePerspectivesHost> {
-  bool _isExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      controller: widget.controller,
-      child: Column(
-        children: [
-          const SizedBox(height: 500),
-          PerspectivesInlineSection(
-            status: PerspectivesSectionStatus.ready,
-            perspectives: [_p('A'), _p('B', bias: 'left')],
-            biasDistribution: const {'left': 1, 'center': 1},
-            contentId: 'test-content-id',
-            sourceName: 'Test',
-            isExpanded: _isExpanded,
-            onToggle: () => setState(() => _isExpanded = !_isExpanded),
-          ),
-          const SizedBox(height: 700),
-        ],
-      ),
-    );
-  }
-}
-
 Future<void> _pumpInline(
   WidgetTester tester, {
   required PerspectivesSectionStatus status,
   List<Perspective> perspectives = const [],
-  bool isExpanded = false,
-  PerspectivesAnalysisState analysisState = PerspectivesAnalysisState.idle,
-  String? analysisText,
-  required VoidCallback onToggle,
+  String? divergenceLevel,
+  VoidCallback? onOpenAnalysis,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
         theme: FacteurTheme.lightTheme,
         home: Scaffold(
-          body: SizedBox(
-            width: 390,
-            child: PerspectivesInlineSection(
-              status: status,
-              perspectives: perspectives,
-              biasDistribution: const {'left': 1, 'center': 1, 'right': 1},
-              contentId: 'test-content-id',
-              sourceName: 'Test',
-              analysisState: analysisState,
-              analysisText: analysisText,
-              isExpanded: isExpanded,
-              onToggle: onToggle,
+          body: SingleChildScrollView(
+            child: SizedBox(
+              width: 390,
+              child: PerspectivesInlineSection(
+                status: status,
+                perspectives: perspectives,
+                biasDistribution: const {'left': 1, 'center': 1, 'right': 1},
+                contentId: 'test-content-id',
+                sourceName: 'Test',
+                divergenceLevel: divergenceLevel,
+                onOpenAnalysis: onOpenAnalysis,
+              ),
             ),
           ),
         ),
@@ -91,35 +53,18 @@ Future<void> _pumpInline(
 }
 
 void main() {
-  final caret = PhosphorIcons.caretDown(PhosphorIconsStyle.regular);
-
-  testWidgets('loading shows header shimmer without caret or body', (
-    tester,
-  ) async {
-    var toggleCount = 0;
-
-    await _pumpInline(
-      tester,
-      status: PerspectivesSectionStatus.loading,
-      isExpanded: true,
-      onToggle: () => toggleCount++,
-    );
+  testWidgets('loading : libellé + shimmer, pas de carrousel ni CTA',
+      (tester) async {
+    await _pumpInline(tester, status: PerspectivesSectionStatus.loading);
 
     expect(find.text('Couverture médiatique'), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsOneWidget);
-    expect(find.byIcon(caret), findsNothing);
-    expect(find.textContaining("marquent l'angle éditorial"), findsNothing);
-    expect(find.text('CET ARTICLE'), findsNothing);
-
-    await tester.tap(find.text('Couverture médiatique'));
-    expect(toggleCount, 0);
+    expect(find.byType(CoverageComparisonCard), findsNothing);
+    expect(find.text('Analyse Facteur'), findsNothing);
   });
 
   test('partial empty response keeps perspectives status loading', () {
-    expect(
-      resolvePerspectivesStatus(null),
-      PerspectivesSectionStatus.loading,
-    );
+    expect(resolvePerspectivesStatus(null), PerspectivesSectionStatus.loading);
     expect(
       resolvePerspectivesStatus(
         PerspectivesResponse(
@@ -162,143 +107,69 @@ void main() {
     );
   });
 
-  testWidgets('empty fades out after delay without caret and is not tappable', (
-    tester,
-  ) async {
-    var toggleCount = 0;
-
-    await _pumpInline(
-      tester,
-      status: PerspectivesSectionStatus.empty,
-      onToggle: () => toggleCount++,
-    );
+  testWidgets('empty fades out after delay then collapses', (tester) async {
+    await _pumpInline(tester, status: PerspectivesSectionStatus.empty);
 
     expect(find.text('Couverture médiatique (0)'), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsNothing);
-    expect(find.byIcon(caret), findsNothing);
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
       0.28,
     );
 
-    await tester.tap(find.text('Couverture médiatique (0)'));
-    expect(toggleCount, 0);
-
-    // Pause de lecture : le bandeau reste visible
+    // Pause de lecture : le bandeau reste visible.
     await tester.pump(const Duration(milliseconds: 1999));
     expect(find.text('Couverture médiatique (0)'), findsOneWidget);
 
-    // Timer 2000 ms → fading + slide démarrent
+    // Timer 2000 ms → fading + slide démarrent.
     await tester.pump(const Duration(milliseconds: 1));
     expect(
       tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
       0,
     );
 
-    // Collapse après la durée du slide (650 ms) + AnimatedSize (250 ms)
+    // Collapse après le slide (650 ms) + AnimatedSize (250 ms).
     await tester.pump(const Duration(milliseconds: 650));
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text('Couverture médiatique (0)'), findsNothing);
   });
 
-  testWidgets('ready keeps caret and toggles on tap', (tester) async {
-    var toggleCount = 0;
-
-    await _pumpInline(
-      tester,
-      status: PerspectivesSectionStatus.ready,
-      perspectives: [_p('A')],
-      onToggle: () => toggleCount++,
-    );
-
-    expect(find.text('Couverture médiatique (1)'), findsOneWidget);
-    expect(find.byType(CoverageSpectrumBar), findsOneWidget);
-    expect(find.byIcon(caret), findsOneWidget);
-
-    await tester.tap(find.text('Couverture médiatique (1)'));
-    expect(toggleCount, 1);
-  });
-
-  testWidgets('opening coverage keeps the reader scroll offset',
+  testWidgets('ready : carrousel de cartes + carte CTA, pas de caret',
       (tester) async {
-    final controller = ScrollController();
-    addTearDown(controller.dispose);
-
-    await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          theme: FacteurTheme.lightTheme,
-          home: Scaffold(
-            body: _ScrollablePerspectivesHost(controller: controller),
-          ),
-        ),
-      ),
+    await _pumpInline(
+      tester,
+      status: PerspectivesSectionStatus.ready,
+      perspectives: [_p('A'), _p('B', bias: 'left')],
     );
-    await tester.pump();
-    controller.jumpTo(300);
-    await tester.pump();
-    final offsetBeforeTap = controller.offset;
+    await tester.pump(const Duration(seconds: 1));
 
-    await tester.tap(find.text('Couverture médiatique (2)'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Titre A', findRichText: true), findsOneWidget);
-    expect(controller.offset, offsetBeforeTap);
+    expect(find.text('Couverture médiatique (2)'), findsOneWidget);
+    expect(find.byType(CoverageSpectrumBar), findsOneWidget);
+    expect(find.byType(CoverageComparisonCard), findsNWidgets(2));
+    // Carte CTA Analyse en fin de carrousel.
+    expect(find.text('Analyse Facteur'), findsOneWidget);
+    // Le disclaimer Mistral n'est plus inline (il vit dans le bottom sheet).
+    expect(find.textContaining('Mistral'), findsNothing);
   });
 
-  testWidgets(
-    'expanded ready puts variants above analysis and removes ref block',
-    (tester) async {
-      await _pumpInline(
-        tester,
-        status: PerspectivesSectionStatus.ready,
-        perspectives: [
-          _p('A'),
-          _p('B', bias: 'left'),
-        ],
-        isExpanded: true,
-        analysisState: PerspectivesAnalysisState.done,
-        analysisText: 'Synthèse test',
-        onToggle: () {},
-      );
-
-      final analysisTop =
-          tester.getTopLeft(find.text('Analyse Facteur').first).dy;
-      final firstVariantTop =
-          tester.getTopLeft(find.text('Titre A', findRichText: true)).dy;
-
-      expect(firstVariantTop, lessThan(analysisTop));
-      expect(find.text('CET ARTICLE'), findsNothing);
-      expect(
-        find.text(
-          'Analyse générée par Mistral Large · l\'IA peut faire des erreurs.',
-        ),
-        findsOneWidget,
-      );
-    },
-  );
-
-  testWidgets('expanded ready body has no gradient halo', (tester) async {
+  testWidgets('ready : tap sur la carte CTA déclenche onOpenAnalysis',
+      (tester) async {
+    var opened = 0;
     await _pumpInline(
       tester,
       status: PerspectivesSectionStatus.ready,
       perspectives: [_p('A')],
-      isExpanded: true,
-      onToggle: () {},
+      onOpenAnalysis: () => opened++,
     );
+    await tester.pump(const Duration(seconds: 1));
 
-    final gradientDecorations = tester
-        .widgetList<Container>(find.byType(Container))
-        .map((container) => container.decoration)
-        .whereType<BoxDecoration>()
-        .where((decoration) => decoration.gradient != null);
-
-    expect(gradientDecorations, isEmpty);
+    await tester.ensureVisible(find.text('Lancer'));
+    await tester.tap(find.text('Lancer'));
+    expect(opened, 1);
   });
 
-  testWidgets('PivotWashTitle washes the reader title pivot when expanded', (
-    tester,
-  ) async {
+  testWidgets('PivotWashTitle washes the reader title pivot when expanded',
+      (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: FacteurTheme.lightTheme,
