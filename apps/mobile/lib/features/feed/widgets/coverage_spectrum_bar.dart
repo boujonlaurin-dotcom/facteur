@@ -4,7 +4,9 @@ import '../../../config/theme.dart';
 const _radius = BorderRadius.all(Radius.circular(2));
 
 /// Spectrum bar pour le bandeau hi-fi `cm-panel-inline` de la Couverture
-/// médiatique : 5 segments distincts L/CL/C/CR/R, taille fixe 96×9 px.
+/// médiatique : 5 segments distincts L/CL/C/CR/R, hauteur fixe 8 px,
+/// **largeur déléguée au parent** (proto v4 : la barre s'étire dans un
+/// `Flexible(ConstrainedBox(min70/max150))` côté header).
 ///
 /// Diffère du [`BiasSpectrumBar`](../../digest/widgets/bias_spectrum_bar.dart)
 /// qui merge en 3 segments (Gauche/Centre/Droite) et est utilisé dans le
@@ -44,11 +46,10 @@ class CoverageSpectrumBar extends StatelessWidget {
     ).where((segment) => segment.count > 0).toList();
 
     return SizedBox(
-      width: 96,
-      height: 9,
+      height: 8,
       child: Row(
         // stretch : sans ça, le DecoratedBox sans enfant reçoit une contrainte
-        // cross-axis loose (0..9) et se peint à hauteur 0 → invisible. cf.
+        // cross-axis loose (0..8) et se peint à hauteur 0 → invisible. cf.
         // coverage_spectrum_visible_test.dart.
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: List.generate(visibleSegments.length, (i) {
@@ -57,7 +58,7 @@ class CoverageSpectrumBar extends StatelessWidget {
             flex: segment.count,
             child: Padding(
               padding: EdgeInsets.only(
-                right: i == visibleSegments.length - 1 ? 0 : 1,
+                right: i == visibleSegments.length - 1 ? 0 : 2,
               ),
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -107,8 +108,7 @@ class _CoverageSpectrumBarShimmerState extends State<CoverageSpectrumBarShimmer>
     final highlightColor = Colors.white.withValues(alpha: 0.72);
 
     return SizedBox(
-      width: 96,
-      height: 9,
+      height: 8,
       child: ClipRRect(
         borderRadius: _radius,
         child: AnimatedBuilder(

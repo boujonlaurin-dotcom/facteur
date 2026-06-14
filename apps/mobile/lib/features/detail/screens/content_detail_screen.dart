@@ -305,6 +305,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   PerspectivesSectionStatus get _perspectivesStatus =>
       resolvePerspectivesStatus(_perspectivesResponse);
 
+  /// Le wash du titre de référence se déclenche quand la couverture est prête
+  /// (la section est désormais toujours dépliée — plus de toggle).
+  bool get _showPivot =>
+      _perspectivesStatus == PerspectivesSectionStatus.ready;
+
   List<Perspective> get _inlinePerspectives {
     final response = _perspectivesResponse;
     if (response == null) return const <Perspective>[];
@@ -324,15 +329,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         .toList();
   }
 
-  // Perspectives analysis state (lifted from inline section)
-  PerspectivesAnalysisState _perspectivesAnalysisState =
-      PerspectivesAnalysisState.idle;
-  String? _perspectivesAnalysisText;
-  final GlobalKey _analysisZoneKey = GlobalKey();
-
-  // Perspectives section state
-  Set<String> _perspectivesSelectedSegments = {};
-  bool _perspectivesExpanded = false;
+  // État réactif du bottom sheet « Analyse Facteur ». Le sheet écoute ce
+  // notifier pour refléter loading → done/error sans rebuild de l'écran.
+  final ValueNotifier<AnalysisSheetData> _analysisSheetData =
+      ValueNotifier(const AnalysisSheetData());
 
   /// `true` lorsqu'on lit une "autre source" (perspective) : URL seule, pas de
   /// Content backend ⇒ pas de fetch / perspectives / tracking.
@@ -846,30 +846,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _bridgeEndOffset = (max - 8).clamp(0.0, max);
 
     _offsetsComputed = true;
-  }
-
-  /// Shared handler for the inline "Couverture médiatique" toggle.
-  void _onPerspectivesToggle() {
-    HapticFeedback.lightImpact();
-    setState(() {
-      _perspectivesExpanded = !_perspectivesExpanded;
-    });
-  }
-
-  /// Toggles a perspectives bias-bar segment filter. Mirrors the logic in
-  /// [_PerspectivesInlineSectionState._onSegmentTapInternal].
-  void _onPerspectivesSegmentTap(String key) {
-    setState(() {
-      final current = _perspectivesSelectedSegments;
-      if (current.contains(key)) {
-        _perspectivesSelectedSegments =
-            current.length == 1 ? {} : (Set.from(current)..remove(key));
-      } else {
-        _perspectivesSelectedSegments = current.isEmpty || current.length == 3
-            ? {key}
-            : (Set.from(current)..add(key));
-      }
-    });
   }
 
   /// Exit WebView mode and return to in-app article reading.
@@ -1419,6 +1395,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _articleLayerUnmountTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
     _perspectivesRefetchTimer?.cancel();
+    _analysisSheetData.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _perspectivesPulseController?.dispose();
@@ -1675,8 +1652,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         setState(() {
           _perspectivesResponse = response;
           _perspectivesLoading = false;
-          if (response.perspectives.isEmpty) _perspectivesExpanded = false;
         });
+        // Prefill : si le back renvoie déjà l'analyse cachée, on seed le sheet
+        // en `done` → ouverture immédiate sans 2ᵉ appel.
+        final cached = response.analysis;
+        if (cached != null && cached.trim().isNotEmpty) {
+          _analysisSheetData.value = AnalysisSheetData(
+            state: PerspectivesAnalysisState.done,
+            text: cached,
+          );
+        }
         if (response.partial) {
           _schedulePerspectivesPartialRefetch(content.id);
         }
@@ -1692,7 +1677,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             biasDistribution: const {},
           );
           _perspectivesLoading = false;
-          _perspectivesExpanded = false;
         });
       }
     }
@@ -1707,49 +1691,53 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
-  /// Request Facteur analysis for the perspectives section.
-  /// Called by the floating button in the article reader.
+  /// Request Facteur analysis for the perspectives section. Les transitions
+  /// loading → done/error sont reflétées dans `_analysisSheetData` (le bottom
+  /// sheet l'écoute). Réutilisé comme `onRetry` du sheet.
   Future<void> _requestPerspectivesAnalysis() async {
     final contentId = _perspectivesResponse?.perspectives.isNotEmpty == true
         ? _content?.id
         : null;
     if (contentId == null) return;
 
-    setState(
-      () => _perspectivesAnalysisState = PerspectivesAnalysisState.loading,
+    _analysisSheetData.value = const AnalysisSheetData(
+      state: PerspectivesAnalysisState.loading,
     );
-
-    // Scroll to analysis zone so the user can see the progress
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _analysisZoneKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
-          alignment: 0.8,
-        );
-      }
-    });
 
     try {
       final repository = ref.read(feedRepositoryProvider);
       final result = await repository.analyzePerspectives(contentId);
       if (!mounted) return;
-      setState(() {
-        _perspectivesAnalysisText = result;
-        _perspectivesAnalysisState = result != null
+      _analysisSheetData.value = AnalysisSheetData(
+        state: result != null
             ? PerspectivesAnalysisState.done
-            : PerspectivesAnalysisState.error;
-      });
+            : PerspectivesAnalysisState.error,
+        text: result,
+      );
     } catch (e) {
       debugPrint('Error requesting perspectives analysis: $e');
       if (!mounted) return;
-      setState(
-        () => _perspectivesAnalysisState = PerspectivesAnalysisState.error,
+      _analysisSheetData.value = const AnalysisSheetData(
+        state: PerspectivesAnalysisState.error,
       );
     }
+  }
+
+  /// Ouvre le bottom sheet « Analyse Facteur ». Si l'état est encore `idle`,
+  /// c'est qu'il n'y avait pas d'analyse cachée (sinon le prefill de
+  /// [_fetchPerspectives] aurait déjà seedé `done`) → on lance la requête.
+  /// Le sheet réagit ensuite aux transitions du notifier.
+  void _openPerspectivesAnalysis() {
+    HapticFeedback.mediumImpact();
+    if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
+      _requestPerspectivesAnalysis();
+    }
+    showAnalysisBottomSheet(
+      context: context,
+      data: _analysisSheetData,
+      perspectives: _inlinePerspectives,
+      onRetry: _requestPerspectivesAnalysis,
+    );
   }
 
   @override
@@ -3031,18 +3019,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               PivotWashTitle(
                                 key: ValueKey(
                                   'article-title-wash-'
-                                  '$_perspectivesExpanded-'
+                                  '$_showPivot-'
                                   '${_perspectivesResponse?.referencePivot?.start}-'
                                   '${_perspectivesResponse?.referencePivot?.end}',
                                 ),
                                 title: content.title,
-                                pivot: _perspectivesExpanded
+                                pivot: _showPivot
                                     ? _perspectivesResponse?.referencePivot
                                     : null,
                                 textStyle: textTheme.displayLarge?.copyWith(
                                   fontSize: 24,
                                 ),
-                                animate: _perspectivesExpanded,
+                                animate: _showPivot,
                               ),
                               const SizedBox(height: FacteurSpacing.space2),
                               if (readingTime != null) ...[
@@ -3109,20 +3097,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                       'low',
                               divergenceLevel:
                                   _perspectivesResponse?.divergenceLevel,
-                              externalSelectedSegments:
-                                  _perspectivesSelectedSegments,
-                              onSegmentTap: _onPerspectivesSegmentTap,
-                              onClearSegments: () {
-                                setState(
-                                  () => _perspectivesSelectedSegments = {},
-                                );
-                              },
-                              analysisState: _perspectivesAnalysisState,
-                              analysisText: _perspectivesAnalysisText,
-                              onRequestAnalysis: _requestPerspectivesAnalysis,
-                              analysisZoneKey: _analysisZoneKey,
-                              isExpanded: _perspectivesExpanded,
-                              onToggle: _onPerspectivesToggle,
+                              onOpenAnalysis: _openPerspectivesAnalysis,
                             ),
                           ),
                           if (_perspectivesStatus !=
@@ -3622,18 +3597,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       PivotWashTitle(
                         key: ValueKey(
                           'article-title-wash-alt-'
-                          '$_perspectivesExpanded-'
+                          '$_showPivot-'
                           '${_perspectivesResponse?.referencePivot?.start}-'
                           '${_perspectivesResponse?.referencePivot?.end}',
                         ),
                         title: content.title,
-                        pivot: _perspectivesExpanded
+                        pivot: _showPivot
                             ? _perspectivesResponse?.referencePivot
                             : null,
                         textStyle: textTheme.displayLarge?.copyWith(
                           fontSize: 24,
                         ),
-                        animate: _perspectivesExpanded,
+                        animate: _showPivot,
                       ),
                       if (readingTime != null)
                         Row(
@@ -3684,17 +3659,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     comparisonQuality:
                         _perspectivesResponse?.comparisonQuality ?? 'low',
                     divergenceLevel: _perspectivesResponse?.divergenceLevel,
-                    externalSelectedSegments: _perspectivesSelectedSegments,
-                    onSegmentTap: _onPerspectivesSegmentTap,
-                    onClearSegments: () {
-                      setState(() => _perspectivesSelectedSegments = {});
-                    },
-                    analysisState: _perspectivesAnalysisState,
-                    analysisText: _perspectivesAnalysisText,
-                    onRequestAnalysis: _requestPerspectivesAnalysis,
-                    analysisZoneKey: _analysisZoneKey,
-                    isExpanded: _perspectivesExpanded,
-                    onToggle: _onPerspectivesToggle,
+                    onOpenAnalysis: _openPerspectivesAnalysis,
                   ),
                   if (_perspectivesStatus != PerspectivesSectionStatus.empty)
                     Padding(

@@ -5,17 +5,25 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 
 void main() {
+  // La barre délègue sa largeur au parent → hôte à largeur bornée (comme le
+  // header qui l'enveloppe dans un Flexible(ConstrainedBox(min70/max150))).
   Widget host(Map<String, int> distribution) {
     return MaterialApp(
       theme: FacteurTheme.lightTheme,
       home: Scaffold(
-        body: Center(child: CoverageSpectrumBar(distribution: distribution)),
+        body: Center(
+          child: SizedBox(
+            width: 150,
+            child: CoverageSpectrumBar(distribution: distribution),
+          ),
+        ),
       ),
     );
   }
 
   group('CoverageSpectrumBar', () {
-    testWidgets('rend 5 segments distincts à taille fixe 96x9', (tester) async {
+    testWidgets('hauteur fixe 8, largeur déléguée, 5 segments distincts',
+        (tester) async {
       await tester.pumpWidget(host(const {
         'left': 1,
         'center-left': 1,
@@ -33,10 +41,10 @@ void main() {
             )
             .first,
       );
-      expect(sized.width, 96);
-      expect(sized.height, 9);
+      expect(sized.height, 8);
+      // Largeur non fixée par la barre (déléguée au parent).
+      expect(sized.width, isNull);
 
-      // 5 Expanded inside the inner Row (un par segment).
       expect(
         find.descendant(
           of: find.byType(CoverageSpectrumBar),
