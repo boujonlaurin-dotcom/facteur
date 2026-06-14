@@ -132,9 +132,11 @@ class StreakService:
                 opened_dates.add(event_date)
                 continue
 
-            if event.event_type == "content_interaction":
-                if event.event_data.get("action") != "read":
-                    continue
+            if (
+                event.event_type == "content_interaction"
+                and event.event_data.get("action") != "read"
+            ):
+                continue
 
             # Reading implies the app was opened, even for historical days
             # recorded before `session_start` became the streak source.

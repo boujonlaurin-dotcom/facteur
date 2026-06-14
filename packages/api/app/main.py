@@ -9,12 +9,12 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 # Ceinture + bretelles : un timeout socket par défaut empêche un appel synchrone
-# (urllib via feedparser, trafilatura, libs tierces) de bloquer indéfiniment un
+# (urllib via feedparser et libs tierces) de bloquer indéfiniment un
 # thread de l'executor par défaut quand l'upstream stalle byte-par-byte.
 # 30 s couvre largement les RSS/HTML lents tout en garantissant qu'aucun
 # `run_in_executor(...)` ne reste vivant au-delà même si `asyncio.wait_for`
 # cancel sa coroutine. Cf. docs/bugs/bug-infinite-load-requests.md (thread
-# poisoning avéré sur trafilatura et landmine sur feedparser.parse(url)).
+# poisoning observé sur des appels réseau tiers et feedparser.parse(url)).
 socket.setdefaulttimeout(30)
 
 # Bornes du startup digest catchup. Cf. docs/bugs/bug-infinite-load-requests.md :
@@ -130,7 +130,6 @@ def _get_alembic_head() -> str:
 # Drop predictable RSS fetch noise saturating Sentry quota (sources rate-limit
 # our crawler — expected, not actionable). Metric preserved via Railway log.
 _RSS_NOISE_LOGGERS = (
-    "trafilatura",
     "feedparser",
     "app.workers.rss_sync",
     "app.services.rss_parser",

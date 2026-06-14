@@ -15,8 +15,8 @@ le résultat est figé en colonnes sur `GrillePuzzle`.
 import asyncio
 import re
 from dataclasses import dataclass
-from functools import lru_cache
 from datetime import UTC, date, datetime, timedelta
+from functools import lru_cache
 from uuid import UUID
 
 import structlog
