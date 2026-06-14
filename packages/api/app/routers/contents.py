@@ -36,6 +36,7 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
+
 @router.get(
     "/{content_id}",
     status_code=status.HTTP_200_OK,

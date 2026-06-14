@@ -30,15 +30,18 @@ class PersonalizationLayer(BaseScoringLayer):
         score = 0.0
 
         # 1. Source mutée → gros malus
-        if hasattr(context, "muted_sources") and context.muted_sources:
-            if content.source_id in context.muted_sources:
-                score += self.MUTED_SOURCE_MALUS
-                context.add_reason(
-                    content.id,
-                    self.name,
-                    self.MUTED_SOURCE_MALUS,
-                    "Tu vois moins de cette source",
-                )
+        if (
+            hasattr(context, "muted_sources")
+            and context.muted_sources
+            and content.source_id in context.muted_sources
+        ):
+            score += self.MUTED_SOURCE_MALUS
+            context.add_reason(
+                content.id,
+                self.name,
+                self.MUTED_SOURCE_MALUS,
+                "Tu vois moins de cette source",
+            )
 
         # 2. Thème muté → malus modéré
         # Priorité au thème article ML (plus précis que le thème source)
