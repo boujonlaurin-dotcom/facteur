@@ -87,6 +87,33 @@ class TestOnboardingAnswersParsing:
 
         assert answers.preferred_sources == []
 
+    def test_deep_axes_fields_parsed(self):
+        """independence_pref + swipe_liked/disliked parsent en snake_case."""
+        liked = [str(uuid4()), str(uuid4())]
+        data = {
+            "objective": "noise",
+            "approach": "detailed",
+            "independence_pref": "independent",
+            "swipe_liked": liked,
+            "swipe_disliked": [str(uuid4())],
+        }
+
+        answers = OnboardingAnswers.model_validate(data)
+
+        assert answers.independence_pref == "independent"
+        assert answers.swipe_liked == liked
+        assert len(answers.swipe_disliked) == 1
+
+    def test_deep_axes_optional_backward_compat(self):
+        """Un payload sans les nouveaux champs reste valide (défauts sains)."""
+        data = {"objective": "noise", "approach": "direct"}
+
+        answers = OnboardingAnswers.model_validate(data)
+
+        assert answers.independence_pref is None
+        assert answers.swipe_liked == []
+        assert answers.swipe_disliked == []
+
 
 @pytest.mark.asyncio
 async def test_save_onboarding_creates_user_sources():

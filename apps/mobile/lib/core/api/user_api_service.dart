@@ -100,6 +100,7 @@ class UserApiService {
       'approach': answers.approach ?? 'detailed',
       'perspective': answers.perspective,
       'response_style': answers.responseStyle ?? 'nuanced',
+      'independence_pref': answers.independencePref,
       'content_recency': answers.contentRecency ?? 'recent',
       'gamification_enabled': answers.gamificationEnabled ?? true,
       'weekly_goal': answers.dailyArticleCount ?? 5,
@@ -109,6 +110,8 @@ class UserApiService {
       'preferred_sources': answers.preferredSources,
       'format_preference': answers.formatPreference,
       'personal_goal': answers.personalGoal,
+      'swipe_liked': answers.swipeLiked,
+      'swipe_disliked': answers.swipeDisliked,
     };
   }
 

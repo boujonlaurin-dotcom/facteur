@@ -1,8 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Onboarding",
+      "summary": "Questions d'intro recentrées sur ce qui distingue les médias (profondeur, indépendance), et un tri express de quelques sources pour affiner tes suggestions."
+    },
+    {
       "tag": "Corrections",
       "summary": "Saisie d'un sujet plus fluide à l'onboarding, fermeture évidente de la modal Favoris, et navigation des lettres de progression fiabilisée."
+    },
+    {
       "tag": "Grille",
       "summary": "Le mot du jour vient d'un vrai titre de l'actu, et on te montre où il se cachait."
     },

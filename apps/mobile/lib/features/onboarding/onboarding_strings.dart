@@ -69,13 +69,26 @@ class OnboardingStrings {
   static const String q2Option35_44 = '35 - 44 ans';
   static const String q2Option45_plus = '45 ans et plus';
 
-  // Q4: Approach
-  static const String q4Title = 'Vous préférez...';
+  // Q4: Approach → axe "Profondeur" (ré-aiguillé v6).
+  // Cible la profondeur des SOURCES, pas seulement la longueur d'un article.
+  // Valeurs inchangées : direct / detailed.
+  static const String q4Title = 'Vous préférez des sources qui...';
   static const String q4Subtitle = '';
-  static const String q4DirectLabel = 'Aller droit au but';
-  static const String q4DirectSubtitle = 'L\'essentiel, rapidement';
-  static const String q4DetailedLabel = 'Prendre le temps';
-  static const String q4DetailedSubtitle = 'Explorer en profondeur';
+  static const String q4DirectLabel = 'Vont à l\'essentiel';
+  static const String q4DirectSubtitle = 'L\'actu, claire et rapide';
+  static const String q4DetailedLabel = 'Creusent le sujet';
+  static const String q4DetailedSubtitle = 'Analyses et enquêtes de fond';
+
+  // Q5b: Indépendance (nouvelle question v6). Cadrée comme un GOÛT de sourcing,
+  // pas un jugement de fiabilité. Valeurs : established / independent.
+  static const String qIndependenceTitle = 'Côté médias, vous penchez pour...';
+  static const String qIndependenceSubtitle = '';
+  static const String qIndependenceEstablishedLabel = 'Les références établies';
+  static const String qIndependenceEstablishedSubtitle =
+      'Les grands médias installés';
+  static const String qIndependenceIndependentLabel = 'Les indépendants';
+  static const String qIndependenceIndependentSubtitle =
+      'Les pure-players qui sortent du lot';
 
   // Q5: Perspective
   static const String q5Title = 'Vous préférez avoir...';
@@ -85,13 +98,24 @@ class OnboardingStrings {
   static const String q5DetailsLabel = 'Dans le détail';
   static const String q5DetailsSubtitle = 'Aller en profondeur';
 
-  // Q6: Response Style
-  static const String q6Title = 'Quand vous lisez, vous aimez...';
-  static const String q6Subtitle = '';
-  static const String q6DecisiveLabel = 'Des avis tranchés';
-  static const String q6DecisiveSubtitle = 'Pour des opinions claires';
-  static const String q6NuancedLabel = 'Toutes les perspectives';
-  static const String q6NuancedSubtitle = 'Voir tous les angles';
+  // Swipe désambiguateur (Q9c bis, v6) : quelques sources étalées sur les axes
+  // (profondeur, indépendance, perspective) que l'utilisateur trie d'un geste.
+  // Glisser à droite = ça m'intéresse ; gauche = pas pour moi.
+  static const String swipeTitle = 'Lesquels vous tentent ?';
+  static const String swipeSubtitle =
+      'Glissez à droite ceux qui vous parlent, à gauche les autres. '
+      'On ajuste vos suggestions en direct.';
+  static const String swipeLikeHint = 'Ça m\'intéresse';
+  static const String swipeSkipHint = 'Pas pour moi';
+  static const String swipeDoneButton = 'Voir mes sources';
+  static const String swipeProgress = 'Carte %d sur %d';
+
+  // Étiquettes "pôle" affichées sur les cartes de swipe (1 à 2 tags max).
+  static const String swipePoleDeep = 'Analyse de fond';
+  static const String swipePoleMainstream = 'Actu directe';
+  static const String swipePoleIndependent = 'Indépendant';
+  static const String swipePoleEstablished = 'Référence';
+  static const String swipePolePerspective = 'Autre angle';
 
   // Q8: Gamification
   static const String q8Title =
