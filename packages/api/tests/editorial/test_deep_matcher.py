@@ -400,6 +400,7 @@ def _make_pivot_content(
     theme: str | None = "economy",
     entities: list[str] | None = None,
     cluster_id=None,
+    description: str | None = "Le gouvernement détaille le calendrier de la réforme.",
 ):
     """An opened article used as the pivot for match_for_content."""
     c = MagicMock()
@@ -409,6 +410,7 @@ def _make_pivot_content(
     c.theme = theme
     c.entities = entities or []
     c.cluster_id = cluster_id
+    c.description = description
     return c
 
 
@@ -541,7 +543,10 @@ class TestMatchForContent:
         load_mock.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_no_llm_falls_back_to_jaccard(self):
+    async def test_no_llm_returns_none(self):
+        """Anti-faux-positif : sans arbitre sémantique (LLM indisponible), la
+        surface reader 1:1 s'abstient plutôt que de promouvoir un top Jaccard
+        non vérifié. (Le flux digest, lui, garde le fallback.)"""
         pool = [_make_deep_content("Best Jaccard match")]
         llm = MagicMock()
         llm.is_ready = False
@@ -553,9 +558,76 @@ class TestMatchForContent:
         ):
             result = await matcher.match_for_content(_make_pivot_content())
 
-        assert result is not None
-        assert result.content_id == pool[0].id
+        assert result is None
         llm.chat_json.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_llm_exception_returns_none(self):
+        """On LLM error, the reader path drops the card (no Jaccard fallback)."""
+        pool = [_make_deep_content("Analyse de fond")]
+        llm = MagicMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(side_effect=RuntimeError("LLM down"))
+
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        with (
+            patch.object(matcher, "_load_deep_articles", AsyncMock(return_value=pool)),
+            patch.object(matcher, "_expand_query", AsyncMock(return_value=set())),
+            patch.object(matcher, "_prefilter", return_value=[(pool[0], 0.5)]),
+        ):
+            result = await matcher.match_for_content(_make_pivot_content())
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_pivot_excerpt_passed_to_llm(self):
+        """The opened article's title + description reach the LLM arbiter so it
+        judges the « même sujet » on substance, not just topic keywords."""
+        pool = [_make_deep_content("Modèle par répartition")]
+        captured: dict = {}
+
+        async def fake_chat_json(*, user_message, **kwargs):
+            captured["user_message"] = user_message
+            return {"selected_index": 0, "reason": "ok"}
+
+        llm = MagicMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(side_effect=fake_chat_json)
+
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        pivot = _make_pivot_content(
+            title="Réforme des retraites",
+            description="Le gouvernement détaille le calendrier.",
+        )
+        with (
+            patch.object(matcher, "_load_deep_articles", AsyncMock(return_value=pool)),
+            patch.object(matcher, "_expand_query", AsyncMock(return_value=set())),
+            patch.object(matcher, "_prefilter", return_value=[(pool[0], 0.5)]),
+        ):
+            await matcher.match_for_content(pivot)
+
+        assert "Article ouvert par le lecteur" in captured["user_message"]
+        assert "Le gouvernement détaille le calendrier." in captured["user_message"]
+
+    @pytest.mark.asyncio
+    async def test_llm_evaluate_no_fallback_drops_unverified_pick(self):
+        """allow_fallback=False (reader path): malformed LLM output → None,
+        instead of the permissive Jaccard fallback the digest flow keeps."""
+        article = _make_deep_content("Candidate")
+        llm = MagicMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(return_value=None)  # malformed / empty
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+
+        dropped = await matcher._llm_evaluate(
+            _make_topic(), [(article, 0.5)], allow_fallback=False
+        )
+        kept = await matcher._llm_evaluate(
+            _make_topic(), [(article, 0.5)], allow_fallback=True
+        )
+
+        assert dropped is None
+        assert kept is not None  # digest flow unchanged
 
 
 class TestFallbackPick:

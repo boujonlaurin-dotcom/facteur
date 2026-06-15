@@ -290,22 +290,40 @@ class DeepMatcher:
             )
             return None
 
+        # Donne à l'arbitre LLM le contenu réel de l'article ouvert (titre +
+        # extrait de description), pas seulement ses topics : juger le « même
+        # sujet » sur le fond réduit les faux positifs. N'entre PAS dans le
+        # Jaccard (le prefilter reste piloté par label+topics) pour ne pas
+        # dégrader le recall en gonflant l'union de tokens du pivot.
+        pivot_excerpt = (
+            " — ".join(
+                p for p in (label, (content.description or "").strip()[:500]) if p
+            )
+            or None
+        )
+
         if self._llm.is_ready:
             try:
-                return await self._llm_evaluate(pseudo_topic, candidates)
+                return await self._llm_evaluate(
+                    pseudo_topic,
+                    candidates,
+                    pivot_excerpt=pivot_excerpt,
+                    allow_fallback=False,
+                )
             except Exception as e:
                 logger.warning(
                     "deep_matcher.content_llm_failed",
                     content_id=str(content.id),
                     error=str(e),
                 )
-                return self._fallback_pick(
-                    candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
-                )
+                # Anti-faux-positif : sur erreur LLM, pas de carte plutôt qu'un
+                # fallback Jaccard hors-sujet non vérifié (surface reader 1:1).
+                return None
 
-        return self._fallback_pick(
-            candidates, min_score=self.FALLBACK_MIN_SCORE_NO_LLM
-        )
+        # Pas d'arbitre sémantique (LLM indisponible) → on s'abstient : le
+        # prefilter Jaccard seul ne garantit pas un vrai « pas de recul ».
+        logger.info("deep_matcher.content_no_llm_skip", content_id=str(content.id))
+        return None
 
     @staticmethod
     def _entity_names(content: Content) -> set[str]:
@@ -429,8 +447,21 @@ class DeepMatcher:
         self,
         topic: SelectedTopic,
         candidates: list[tuple[Content, float]],
+        pivot_excerpt: str | None = None,
+        allow_fallback: bool = True,
     ) -> MatchedDeepArticle | None:
-        """Pass 2: LLM picks best deep article from candidates."""
+        """Pass 2: LLM picks best deep article from candidates.
+
+        ``pivot_excerpt`` (optional) is the real content of the pivot article
+        (title + description excerpt) handed to the LLM so it judges the
+        "same subject" on substance, not just topic keywords.
+
+        ``allow_fallback`` controls what happens when the LLM call is
+        unusable (malformed JSON / out-of-range index): the topic/digest flow
+        keeps the permissive Jaccard fallback (``True``), but the reader 1:1
+        flow passes ``False`` so an unverified pick is dropped (anti
+        faux-positif) — better no card than a hors-sujet one.
+        """
         if not candidates:
             return None
 
@@ -441,6 +472,13 @@ class DeepMatcher:
             f"\n    {(c.description or '')[:200]}"
             for i, (c, _score) in enumerate(candidates)
         )
+        if pivot_excerpt:
+            user_message = (
+                f"Article ouvert par le lecteur :\n{pivot_excerpt}\n\n"
+                f"Candidats :\n{candidates_text}"
+            )
+        else:
+            user_message = candidates_text
 
         prompt_cfg = self._config.deep_matching_prompt
         system = prompt_cfg.system.format(
@@ -450,7 +488,7 @@ class DeepMatcher:
 
         raw = await self._llm.chat_json(
             system=system,
-            user_message=candidates_text,
+            user_message=user_message,
             model=prompt_cfg.model,
             temperature=prompt_cfg.temperature,
             max_tokens=prompt_cfg.max_tokens,
@@ -458,6 +496,8 @@ class DeepMatcher:
 
         if not raw or not isinstance(raw, dict):
             # Malformed JSON — exception-like, use permissive threshold.
+            if not allow_fallback:
+                return None
             return self._fallback_pick(
                 candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
             )
@@ -485,6 +525,8 @@ class DeepMatcher:
                 candidates_count=len(candidates),
             )
             # Invalid index — exception-like, use permissive threshold.
+            if not allow_fallback:
+                return None
             return self._fallback_pick(
                 candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
             )
