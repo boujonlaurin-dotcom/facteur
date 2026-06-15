@@ -1663,10 +1663,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _perspectivesResponse = response;
           _perspectivesLoading = false;
         });
-        // Un seul refetch one-shot couvre perspectives partielles ET le matching
-        // deep « Pas de recul » encore en cours (deep_pending) ; on ne double
-        // pas l'appel (LLM-coûteux). Voir _schedulePerspectivesPartialRefetch.
-        if (response.partial || response.deepPending) {
         // Prefill : si le back renvoie déjà l'analyse cachée, on seed le sheet
         // en `done` → ouverture immédiate sans 2ᵉ appel.
         final cached = response.analysis;
@@ -1676,7 +1672,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             text: cached,
           );
         }
-        if (response.partial) {
+        // Un seul refetch one-shot couvre perspectives partielles ET le matching
+        // deep « Pas de recul » encore en cours (deep_pending) ; on ne double
+        // pas l'appel (LLM-coûteux). Voir _schedulePerspectivesPartialRefetch.
+        if (response.partial || response.deepPending) {
           _schedulePerspectivesPartialRefetch(content.id);
         }
         _maybeTriggerPerspectivesCta();
@@ -3532,6 +3531,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     onTap: () =>
                         _openDeepReco(_perspectivesResponse!.deepRecommendation!),
                   ),
+                ],
+
                 // ── Perspectives section (fin du reader) ───────────────────
                 // Bande frostée encastrée (hairline fine + teinte quasi-
                 // invisible) ; large respiration au-dessus pour la détacher.
