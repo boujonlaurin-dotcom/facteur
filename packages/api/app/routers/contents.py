@@ -1082,6 +1082,17 @@ async def _attach_highlight_spans(
       `semantic_equiv`, otherwise `"spacy"`. Bubbled up to the response
       header `X-Bias-Annotation-Source` for debugging.
     """
+    # DÉSACTIVÉ (T1) : le highlighting des biais n'est plus affiché côté app.
+    # Court-circuit en tête → aucun span renvoyé (titres rendus en plain par le
+    # front) et plus aucun calcul LLM/spaCy serve-time. Neutralise les 3 sites
+    # d'appel d'un coup. Le header `X-Bias-Annotation-Source` reste valide
+    # ("spacy"). Réactivation triviale = retirer ce bloc. La logique d'origine
+    # est conservée intégralement ci-dessous.
+    for p in perspectives_dicts:
+        p["highlight_spans"] = []
+        p["shared_tokens"] = []
+    return (None, "spacy")
+
     try:
         svc = get_title_annotation_service()
         # Skip the cluster cache lookup when the content isn't clustered —

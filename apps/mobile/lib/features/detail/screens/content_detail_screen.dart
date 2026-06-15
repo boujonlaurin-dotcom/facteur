@@ -24,15 +24,12 @@ import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
-import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/repositories/user_interests_repository.dart'
-    show FavoriteCapReachedException;
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/premium_source_connection.dart';
 import '../../sources/widgets/premium_web_view.dart';
@@ -308,11 +305,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   PerspectivesSectionStatus get _perspectivesStatus =>
       resolvePerspectivesStatus(_perspectivesResponse);
 
+  /// Le wash du titre de référence se déclenche quand la couverture est prête
+  /// (la section est désormais toujours dépliée — plus de toggle).
+  bool get _showPivot =>
+      _perspectivesStatus == PerspectivesSectionStatus.ready;
+
   List<Perspective> get _inlinePerspectives {
     final response = _perspectivesResponse;
     if (response == null) return const <Perspective>[];
     return response.perspectives
         .map(
+          // DÉSACTIVÉ (T1) : highlighting biais retiré → on n'alimente plus
+          // highlightSpans / sharedTokens (défaut const []) ⇒ titres plain dans
+          // le carrousel de couverture et le bottom sheet.
           (PerspectiveData p) => Perspective(
             title: p.title,
             url: p.url,
@@ -320,22 +325,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             sourceDomain: p.sourceDomain,
             biasStance: p.biasStance,
             publishedAt: p.publishedAt,
-            highlightSpans: p.highlightSpans,
-            sharedTokens: p.sharedTokens,
           ),
         )
         .toList();
   }
 
-  // Perspectives analysis state (lifted from inline section)
-  PerspectivesAnalysisState _perspectivesAnalysisState =
-      PerspectivesAnalysisState.idle;
-  String? _perspectivesAnalysisText;
-  final GlobalKey _analysisZoneKey = GlobalKey();
-
-  // Perspectives section state
-  Set<String> _perspectivesSelectedSegments = {};
-  bool _perspectivesExpanded = false;
+  // État réactif du bottom sheet « Analyse Facteur ». Le sheet écoute ce
+  // notifier pour refléter loading → done/error sans rebuild de l'écran.
+  final ValueNotifier<AnalysisSheetData> _analysisSheetData =
+      ValueNotifier(const AnalysisSheetData());
 
   /// `true` lorsqu'on lit une "autre source" (perspective) : URL seule, pas de
   /// Content backend ⇒ pas de fetch / perspectives / tracking.
@@ -853,31 +851,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _bridgeEndOffset = (max - 8).clamp(0.0, max);
 
     _offsetsComputed = true;
-  }
-
-  /// Shared handler for the inline "Couverture médiatique" toggle.
-  void _onPerspectivesToggle() {
-    HapticFeedback.lightImpact();
-    setState(() {
-      _perspectivesExpanded = !_perspectivesExpanded;
-    });
-  }
-
-  /// Toggles a perspectives bias-bar segment filter. Mirrors the logic in
-  /// [_PerspectivesInlineSectionState._onSegmentTapInternal].
-  void _onPerspectivesSegmentTap(String key) {
-    setState(() {
-      final current = _perspectivesSelectedSegments;
-      if (current.contains(key)) {
-        _perspectivesSelectedSegments = current.length == 1
-            ? {}
-            : (Set.from(current)..remove(key));
-      } else {
-        _perspectivesSelectedSegments = current.isEmpty || current.length == 3
-            ? {key}
-            : (Set.from(current)..add(key));
-      }
-    });
   }
 
   /// Exit WebView mode and return to in-app article reading.
@@ -1430,6 +1403,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _articleLayerUnmountTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
     _perspectivesRefetchTimer?.cancel();
+    _analysisSheetData.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _perspectivesPulseController?.dispose();
@@ -1686,8 +1660,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         setState(() {
           _perspectivesResponse = response;
           _perspectivesLoading = false;
-          if (response.perspectives.isEmpty) _perspectivesExpanded = false;
         });
+        // Prefill : si le back renvoie déjà l'analyse cachée, on seed le sheet
+        // en `done` → ouverture immédiate sans 2ᵉ appel.
+        final cached = response.analysis;
+        if (cached != null && cached.trim().isNotEmpty) {
+          _analysisSheetData.value = AnalysisSheetData(
+            state: PerspectivesAnalysisState.done,
+            text: cached,
+          );
+        }
         if (response.partial) {
           _schedulePerspectivesPartialRefetch(content.id);
         }
@@ -1703,7 +1685,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             biasDistribution: const {},
           );
           _perspectivesLoading = false;
-          _perspectivesExpanded = false;
         });
       }
     }
@@ -1718,49 +1699,53 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
-  /// Request Facteur analysis for the perspectives section.
-  /// Called by the floating button in the article reader.
+  /// Request Facteur analysis for the perspectives section. Les transitions
+  /// loading → done/error sont reflétées dans `_analysisSheetData` (le bottom
+  /// sheet l'écoute). Réutilisé comme `onRetry` du sheet.
   Future<void> _requestPerspectivesAnalysis() async {
     final contentId = _perspectivesResponse?.perspectives.isNotEmpty == true
         ? _content?.id
         : null;
     if (contentId == null) return;
 
-    setState(
-      () => _perspectivesAnalysisState = PerspectivesAnalysisState.loading,
+    _analysisSheetData.value = const AnalysisSheetData(
+      state: PerspectivesAnalysisState.loading,
     );
-
-    // Scroll to analysis zone so the user can see the progress
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _analysisZoneKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
-          alignment: 0.8,
-        );
-      }
-    });
 
     try {
       final repository = ref.read(feedRepositoryProvider);
       final result = await repository.analyzePerspectives(contentId);
       if (!mounted) return;
-      setState(() {
-        _perspectivesAnalysisText = result;
-        _perspectivesAnalysisState = result != null
+      _analysisSheetData.value = AnalysisSheetData(
+        state: result != null
             ? PerspectivesAnalysisState.done
-            : PerspectivesAnalysisState.error;
-      });
+            : PerspectivesAnalysisState.error,
+        text: result,
+      );
     } catch (e) {
       debugPrint('Error requesting perspectives analysis: $e');
       if (!mounted) return;
-      setState(
-        () => _perspectivesAnalysisState = PerspectivesAnalysisState.error,
+      _analysisSheetData.value = const AnalysisSheetData(
+        state: PerspectivesAnalysisState.error,
       );
     }
+  }
+
+  /// Ouvre le bottom sheet « Analyse Facteur ». Si l'état est encore `idle`,
+  /// c'est qu'il n'y avait pas d'analyse cachée (sinon le prefill de
+  /// [_fetchPerspectives] aurait déjà seedé `done`) → on lance la requête.
+  /// Le sheet réagit ensuite aux transitions du notifier.
+  void _openPerspectivesAnalysis() {
+    HapticFeedback.mediumImpact();
+    if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
+      _requestPerspectivesAnalysis();
+    }
+    showAnalysisBottomSheet(
+      context: context,
+      data: _analysisSheetData,
+      perspectives: _inlinePerspectives,
+      onRetry: _requestPerspectivesAnalysis,
+    );
   }
 
   @override
@@ -2399,6 +2384,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ? InterestState.followed
             : InterestState.unfollowed);
 
+    // Tous les sujets + entités regroupés en une seule balise « X sujets »
+    // (B1) — fini la 2e ligne de chips au-dessus du titre.
+    final subjectCount = content.topics.length + content.entities.length;
+
     // ColoredBox fills the status bar area; SafeArea pushes content below it
     final headerContent = ColoredBox(
       color: colors.backgroundPrimary,
@@ -2432,23 +2421,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 ),
                 const SizedBox(width: 4),
 
-                // Source logo + name + gear: tappable → filter feed by source
+                // CTA source unique : logo + nom + étoile (indicateur) + heure,
+                // le tout tappable → ouvre directement la modal source (plus de
+                // roue dentée, plus de filtre feed ; le suivi / favori se font
+                // dans la modal). Balise « X sujets » séparée à droite.
                 Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _SourceBadgeNudge(
+                  child: _SourceBadgeNudge(
+                    child: Row(
+                      children: [
+                        Flexible(
                           child: GestureDetector(
-                            onTap: () {
-                              ref
-                                  .read(feedProvider.notifier)
-                                  .setSource(content.source.id);
-                              ref
-                                  .read(feedScrollTriggerProvider.notifier)
-                                  .state++;
-                              context.pop(_content);
-                            },
-                            onLongPress: () => TopicChip.showArticleSheet(
+                            onTap: () => TopicChip.showArticleSheet(
                               context,
                               content,
                               initialSection: ArticleSheetSection.source,
@@ -2507,18 +2490,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                               ),
                                             ),
                                           ),
-                                          // Bias dot
-                                          if (content.source.biasStance !=
-                                              'unknown') ...[
-                                            const SizedBox(width: 6),
-                                            Container(
-                                              width: 7,
-                                              height: 7,
-                                              decoration: BoxDecoration(
-                                                color: content.source
-                                                    .getBiasColor(),
-                                                shape: BoxShape.circle,
-                                              ),
+                                          // Étoile = indicateur non-cliquable
+                                          // accolé au nom (favori = pleine
+                                          // primary, suivi = creuse tertiary,
+                                          // non-suivi = rien). Le tap est géré
+                                          // par le GestureDetector parent →
+                                          // ouvre la modal source (le suivi /
+                                          // favori s'y font désormais).
+                                          if (effectiveState ==
+                                                  InterestState.favorite ||
+                                              effectiveState ==
+                                                  InterestState.followed) ...[
+                                            const SizedBox(width: 5),
+                                            Icon(
+                                              effectiveState ==
+                                                      InterestState.favorite
+                                                  ? PhosphorIcons.star(
+                                                      PhosphorIconsStyle.fill,
+                                                    )
+                                                  : PhosphorIcons.star(
+                                                      PhosphorIconsStyle.regular,
+                                                    ),
+                                              size: 14,
+                                              color: effectiveState ==
+                                                      InterestState.favorite
+                                                  ? colors.primary
+                                                  : colors.textTertiary,
                                             ),
                                           ],
                                           // Editorial badge (digest articles)
@@ -2595,15 +2592,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               ],
                             ),
                           ),
-                        ), // _SourceBadgeNudge
-                      ),
-                      const SizedBox(width: 8),
-                      _SourceFollowAction(
-                        sourceId: content.source.id,
-                        state: effectiveState,
-                        colors: colors,
-                      ),
-                    ],
+                        ),
+                        // B1 : tous les sujets regroupés en une balise compacte,
+                        // après le CTA source unique (logo + nom + étoile).
+                        if (subjectCount > 0) ...[
+                          const SizedBox(width: 6),
+                          _SubjectsCountChip(
+                            count: subjectCount,
+                            onTap: () =>
+                                TopicChip.showArticleSheet(context, content),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
 
@@ -2883,18 +2884,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               PivotWashTitle(
                                 key: ValueKey(
                                   'article-title-wash-'
-                                  '$_perspectivesExpanded-'
+                                  '$_showPivot-'
                                   '${_perspectivesResponse?.referencePivot?.start}-'
                                   '${_perspectivesResponse?.referencePivot?.end}',
                                 ),
                                 title: content.title,
-                                pivot: _perspectivesExpanded
+                                pivot: _showPivot
                                     ? _perspectivesResponse?.referencePivot
                                     : null,
                                 textStyle: textTheme.displayLarge?.copyWith(
                                   fontSize: 24,
                                 ),
-                                animate: _perspectivesExpanded,
+                                animate: _showPivot,
                               ),
                               const SizedBox(height: FacteurSpacing.space2),
                               if (readingTime != null) ...[
@@ -2923,78 +2924,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ),
 
-                        // ZONE 1b: Perspectives section, framed by dividers.
-                        if (_showPerspectivesBand) ...[
-                          if (_perspectivesStatus !=
-                              PerspectivesSectionStatus.empty)
-                            Container(
-                              color: colors.backgroundPrimary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: FacteurSpacing.space4,
-                              ),
-                              child: Divider(
-                                color: colors.textTertiary.withValues(
-                                  alpha: 0.3,
-                                ),
-                                height: 1,
-                                thickness: 1,
-                              ),
-                            ),
-                          Container(
-                            color: colors.backgroundPrimary,
-                            child: PerspectivesInlineSection(
-                              key: _perspectivesKey,
-                              status: _perspectivesStatus,
-                              perspectives: _inlinePerspectives,
-                              biasDistribution:
-                                  _perspectivesResponse?.biasDistribution ??
-                                  const {},
-                              keywords:
-                                  _perspectivesResponse?.keywords ?? const [],
-                              sourceBiasStance:
-                                  _perspectivesResponse?.sourceBiasStance ??
-                                  'unknown',
-                              sourceName: _content?.source.name ?? '',
-                              contentId: widget.contentId,
-                              comparisonQuality:
-                                  _perspectivesResponse?.comparisonQuality ??
-                                  'low',
-                              divergenceLevel:
-                                  _perspectivesResponse?.divergenceLevel,
-                              externalSelectedSegments:
-                                  _perspectivesSelectedSegments,
-                              onSegmentTap: _onPerspectivesSegmentTap,
-                              onClearSegments: () {
-                                setState(
-                                  () => _perspectivesSelectedSegments = {},
-                                );
-                              },
-                              analysisState: _perspectivesAnalysisState,
-                              analysisText: _perspectivesAnalysisText,
-                              onRequestAnalysis: _requestPerspectivesAnalysis,
-                              analysisZoneKey: _analysisZoneKey,
-                              isExpanded: _perspectivesExpanded,
-                              onToggle: _onPerspectivesToggle,
-                            ),
-                          ),
-                          if (_perspectivesStatus !=
-                              PerspectivesSectionStatus.empty)
-                            Container(
-                              color: colors.backgroundPrimary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: FacteurSpacing.space4,
-                              ),
-                              child: Divider(
-                                color: colors.textTertiary.withValues(
-                                  alpha: 0.3,
-                                ),
-                                height: 1,
-                                thickness: 1,
-                              ),
-                            ),
-                          const SizedBox(height: FacteurSpacing.space4),
-                        ],
-
                         // ZONE 2: Article body — _articleKey scopes scroll-bridge
                         // measurement to the body, excluding header + perspectives.
                         Container(
@@ -3017,6 +2946,39 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                         if (isPartial && _contentResolved)
                           _buildPartialArticleInlineButton(context),
+
+                        // ZONE 2b: Perspectives section, after the article body
+                        // and its optional "Article complet" CTA. Bande frostée
+                        // encastrée (hairline fine + teinte quasi-invisible) ;
+                        // large respiration au-dessus pour détacher du texte.
+                        if (_showPerspectivesBand) ...[
+                          const SizedBox(height: FacteurSpacing.space8),
+                          Container(
+                            color: colors.backgroundPrimary,
+                            child: PerspectivesInlineSection(
+                              key: _perspectivesKey,
+                              status: _perspectivesStatus,
+                              perspectives: _inlinePerspectives,
+                              biasDistribution:
+                                  _perspectivesResponse?.biasDistribution ??
+                                      const {},
+                              keywords:
+                                  _perspectivesResponse?.keywords ?? const [],
+                              sourceBiasStance:
+                                  _perspectivesResponse?.sourceBiasStance ??
+                                      'unknown',
+                              sourceName: _content?.source.name ?? '',
+                              contentId: widget.contentId,
+                              comparisonQuality:
+                                  _perspectivesResponse?.comparisonQuality ??
+                                      'low',
+                              divergenceLevel:
+                                  _perspectivesResponse?.divergenceLevel,
+                              onOpenAnalysis: _openPerspectivesAnalysis,
+                            ),
+                          ),
+                          const SizedBox(height: FacteurSpacing.space4),
+                        ],
 
                         // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
                         // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
@@ -3477,18 +3439,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       PivotWashTitle(
                         key: ValueKey(
                           'article-title-wash-alt-'
-                          '$_perspectivesExpanded-'
+                          '$_showPivot-'
                           '${_perspectivesResponse?.referencePivot?.start}-'
                           '${_perspectivesResponse?.referencePivot?.end}',
                         ),
                         title: content.title,
-                        pivot: _perspectivesExpanded
+                        pivot: _showPivot
                             ? _perspectivesResponse?.referencePivot
                             : null,
                         textStyle: textTheme.displayLarge?.copyWith(
                           fontSize: 24,
                         ),
-                        animate: _perspectivesExpanded,
+                        animate: _showPivot,
                       ),
                       if (readingTime != null)
                         Row(
@@ -3510,59 +3472,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ],
                   ),
                 ),
-
-                // ── Perspectives section (avant l'article) ─────────────────
-                if (_showPerspectivesBand) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  if (_perspectivesStatus != PerspectivesSectionStatus.empty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4,
-                      ),
-                      child: Divider(
-                        color: colors.textTertiary.withValues(alpha: 0.3),
-                        height: 1,
-                        thickness: 1,
-                      ),
-                    ),
-                  PerspectivesInlineSection(
-                    key: _perspectivesKey,
-                    status: _perspectivesStatus,
-                    perspectives: _inlinePerspectives,
-                    biasDistribution:
-                        _perspectivesResponse?.biasDistribution ?? const {},
-                    keywords: _perspectivesResponse?.keywords ?? const [],
-                    sourceBiasStance:
-                        _perspectivesResponse?.sourceBiasStance ?? 'unknown',
-                    sourceName: _content?.source.name ?? '',
-                    contentId: widget.contentId,
-                    comparisonQuality:
-                        _perspectivesResponse?.comparisonQuality ?? 'low',
-                    divergenceLevel: _perspectivesResponse?.divergenceLevel,
-                    externalSelectedSegments: _perspectivesSelectedSegments,
-                    onSegmentTap: _onPerspectivesSegmentTap,
-                    onClearSegments: () {
-                      setState(() => _perspectivesSelectedSegments = {});
-                    },
-                    analysisState: _perspectivesAnalysisState,
-                    analysisText: _perspectivesAnalysisText,
-                    onRequestAnalysis: _requestPerspectivesAnalysis,
-                    analysisZoneKey: _analysisZoneKey,
-                    isExpanded: _perspectivesExpanded,
-                    onToggle: _onPerspectivesToggle,
-                  ),
-                  if (_perspectivesStatus != PerspectivesSectionStatus.empty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4,
-                      ),
-                      child: Divider(
-                        color: colors.textTertiary.withValues(alpha: 0.3),
-                        height: 1,
-                        thickness: 1,
-                      ),
-                    ),
-                ],
 
                 const SizedBox(height: FacteurSpacing.space4),
 
@@ -3598,6 +3507,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),
+
+                // ── Perspectives section (fin du reader) ───────────────────
+                // Bande frostée encastrée (hairline fine + teinte quasi-
+                // invisible) ; large respiration au-dessus pour la détacher.
+                if (_showPerspectivesBand) ...[
+                  const SizedBox(height: FacteurSpacing.space8),
+                  PerspectivesInlineSection(
+                    key: _perspectivesKey,
+                    status: _perspectivesStatus,
+                    perspectives: _inlinePerspectives,
+                    biasDistribution:
+                        _perspectivesResponse?.biasDistribution ?? const {},
+                    keywords: _perspectivesResponse?.keywords ?? const [],
+                    sourceBiasStance:
+                        _perspectivesResponse?.sourceBiasStance ?? 'unknown',
+                    sourceName: _content?.source.name ?? '',
+                    contentId: widget.contentId,
+                    comparisonQuality:
+                        _perspectivesResponse?.comparisonQuality ?? 'low',
+                    divergenceLevel: _perspectivesResponse?.divergenceLevel,
+                    onOpenAnalysis: _openPerspectivesAnalysis,
+                  ),
+                  const SizedBox(height: FacteurSpacing.space4),
+                ],
 
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
@@ -3868,201 +3801,45 @@ class _PremiumConnectBanner extends StatelessWidget {
   }
 }
 
-/// Action de suivi/favori affichée dans le header du reader.
-///
-/// 3 états visuels dispatchés sur l'[InterestState] live de la source :
-/// - `unfollowed` / `hidden` → chip "Suivre +" (tap = passer en `followed`).
-/// - `followed` → étoile creuse (tap = passer en `favorite`).
-/// - `favorite` → étoile pleine (tap = redescendre en `followed`).
-class _SourceFollowAction extends ConsumerStatefulWidget {
-  final String sourceId;
-  final InterestState state;
-  final FacteurColors colors;
-
-  const _SourceFollowAction({
-    required this.sourceId,
-    required this.state,
-    required this.colors,
-  });
-
-  @override
-  ConsumerState<_SourceFollowAction> createState() =>
-      _SourceFollowActionState();
-}
-
-class _SourceFollowActionState extends ConsumerState<_SourceFollowAction> {
-  bool _busy = false;
-
-  Future<void> _apply(
-    InterestState next, {
-    required String successMessage,
-    required String errorMessage,
-  }) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    HapticFeedback.lightImpact();
-    try {
-      await ref
-          .read(userSourcesStateProvider.notifier)
-          .setSourceState(widget.sourceId, next);
-      if (!mounted) return;
-      NotificationService.showSuccess(successMessage, context: context);
-    } on FavoriteCapReachedException catch (e) {
-      if (!mounted) return;
-      NotificationService.showError(
-        'Maximum ${e.cap} favoris atteints',
-        context: context,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      NotificationService.showError(errorMessage, context: context);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    switch (widget.state) {
-      case InterestState.followed:
-        return _StarToggle(
-          colors: widget.colors,
-          filled: false,
-          busy: _busy,
-          onTap: () => _apply(
-            InterestState.favorite,
-            successMessage: 'Source ajoutée à vos favoris',
-            errorMessage: 'Impossible d\'ajouter aux favoris',
-          ),
-        );
-      case InterestState.favorite:
-        return _StarToggle(
-          colors: widget.colors,
-          filled: true,
-          busy: _busy,
-          onTap: () => _apply(
-            InterestState.followed,
-            successMessage: 'Source retirée de vos favoris',
-            errorMessage: 'Impossible de retirer des favoris',
-          ),
-        );
-      case InterestState.unfollowed:
-      case InterestState.hidden:
-        return _FollowChip(
-          colors: widget.colors,
-          busy: _busy,
-          onTap: () => _apply(
-            InterestState.followed,
-            successMessage: 'Source ajoutée à votre veille',
-            errorMessage: 'Impossible de suivre la source',
-          ),
-        );
-    }
-  }
-}
-
-/// Chip "Suivre +" — apparence inchangée par rapport à la première version.
-class _FollowChip extends StatelessWidget {
-  final FacteurColors colors;
-  final bool busy;
+/// Balise compacte regroupant tous les sujets/entités de l'article (B1).
+/// Remplace l'ancien Wrap de chips au-dessus du titre ; tap → fiche article.
+class _SubjectsCountChip extends StatelessWidget {
+  final int count;
   final VoidCallback onTap;
 
-  const _FollowChip({
-    required this.colors,
-    required this.busy,
-    required this.onTap,
-  });
+  const _SubjectsCountChip({required this.count, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: colors.backgroundSecondary,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: colors.textTertiary.withValues(alpha: 0.3),
-          width: 1,
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final label = count == 1 ? '1 sujet' : '$count sujets';
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: colors.textTertiary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
         ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: busy ? null : onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (busy)
-                SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    valueColor: AlwaysStoppedAnimation(colors.textSecondary),
-                  ),
-                )
-              else
-                Icon(Icons.add, size: 14, color: colors.textSecondary),
-              const SizedBox(width: 4),
-              Text(
-                'Suivre',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.tag(PhosphorIconsStyle.regular),
+              size: 11,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bouton étoile (creuse → favori, pleine → favori actif) du design system.
-class _StarToggle extends StatelessWidget {
-  final FacteurColors colors;
-  final bool filled;
-  final bool busy;
-  final VoidCallback onTap;
-
-  const _StarToggle({
-    required this.colors,
-    required this.filled,
-    required this.busy,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = colors;
-    final iconColor = filled ? c.primary : c.textSecondary;
-    return Material(
-      color: Colors.transparent,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: busy ? null : onTap,
-        customBorder: const CircleBorder(),
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: busy
-              ? SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    valueColor: AlwaysStoppedAnimation(iconColor),
-                  ),
-                )
-              : Icon(
-                  filled
-                      ? PhosphorIcons.star(PhosphorIconsStyle.fill)
-                      : PhosphorIcons.star(PhosphorIconsStyle.regular),
-                  size: 18,
-                  color: iconColor,
-                ),
+            ),
+          ],
         ),
       ),
     );
