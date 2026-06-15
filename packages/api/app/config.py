@@ -133,6 +133,10 @@ class Settings(BaseSettings):
     usage_tracking_enabled: bool = True  # kill-switch insert api_usage_events
     pool_alert_threshold_pct: int = 80  # seuil alerte sonde pool périodique (%)
 
+    # Gouvernance coût (PR-S3). Les caps Brave/Mistral search sont désormais
+    # lus depuis api_usage_events (persistant). TTL du cache du COUNT mensuel.
+    cost_budget_cache_ttl_s: int = 120
+
     # GitHub (app update feature)
     github_token: str = ""
     github_repo: str = "boujonlaurin-dotcom/facteur"

@@ -286,7 +286,8 @@ class DeepMatcher:
         )
         if not candidates:
             logger.info(
-                "deep_matcher.content_no_candidates", content_id=str(content.id)
+                "deep_matcher.content_no_candidates",
+                content_id=str(content.id),
             )
             return None
 
