@@ -25,42 +25,42 @@ API_KEY = get_settings().youtube_api_key
 NEW_CHANNELS = [
     {
         "name": "Osons Causer", "channel_id": "UCVeMw72tepFl1Zt5fvf9QKQ",
-        "theme": "politics", "granular_topics": ["democracy", "social-justice", "institutions"],
+        "theme": "politics", "granular_topics": ["politics", "inequality"],
         "description": "Décryptage politique et citoyen. Analyses des institutions, mouvements sociaux et enjeux démocratiques.",
     },
     {
         "name": "Chez Anatole", "channel_id": "UCNn9eZpA6X2VCRzkUHwxgyg",
-        "theme": "culture", "granular_topics": ["philosophy", "social-justice", "democracy"],
+        "theme": "culture", "granular_topics": ["philosophy", "inequality", "politics"],
         "description": "Philosophie et sciences sociales. Réflexions de fond sur les inégalités, la justice et la société.",
     },
     {
         "name": "Monsieur Phi", "channel_id": "UCqA8H22FwgBVcF3GJpp0MQw",
-        "theme": "culture", "granular_topics": ["philosophy", "applied-science", "democracy"],
+        "theme": "culture", "granular_topics": ["philosophy", "science", "politics"],
         "description": "Philosophie analytique et logique. Analyses rigoureuses des arguments, biais cognitifs et éthique.",
     },
     {
         "name": "Stupid Economics", "channel_id": "UCyJDHgrsUKuWLe05GvC2lng",
-        "theme": "economy", "granular_topics": ["economy", "finance", "applied-science"],
+        "theme": "economy", "granular_topics": ["economy", "finance", "science"],
         "description": "Vulgarisation économique. Décryptage des mécanismes économiques, politiques monétaires et inégalités.",
     },
     {
         "name": "AprèsLaBière", "channel_id": "UCX8dmzDECYUAlEanzSqQXBA",
-        "theme": "culture", "granular_topics": ["philosophy", "social-justice"],
+        "theme": "culture", "granular_topics": ["philosophy", "inequality"],
         "description": "Philosophie politique accessible. Réflexions sur la société, les médias et les rapports de pouvoir.",
     },
     {
         "name": "La Fabrique Sociale", "channel_id": "UCJfgnn1fhvp0GH-e-FVepcg",
-        "theme": "culture", "granular_topics": ["social-justice", "democracy", "philosophy"],
+        "theme": "culture", "granular_topics": ["inequality", "politics", "philosophy"],
         "description": "Sciences sociales et sociologie. Analyses des structures sociales, discriminations et mobilisations.",
     },
     {
         "name": "Hygiène Mentale", "channel_id": "UCMFcMhePnH4onVHt2-ItPZw",
-        "theme": "science", "granular_topics": ["applied-science", "fundamental-research", "data-privacy"],
+        "theme": "science", "granular_topics": ["science", "privacy"],
         "description": "Esprit critique et zététique. Analyse des biais cognitifs, méthode scientifique et désinformation.",
     },
     {
         "name": "Fouloscopie", "channel_id": "UCLXDNUOO3EQ80VmD9nQBHPg",
-        "theme": "science", "granular_topics": ["applied-science", "fundamental-research"],
+        "theme": "science", "granular_topics": ["science"],
         "description": "Science des foules et comportements collectifs. Physique sociale, simulations et dynamiques de groupe.",
     },
 ]

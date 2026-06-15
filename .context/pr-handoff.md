@@ -1,97 +1,40 @@
-feat(onboarding): refonte sources — swipe de calibration + biais « sources productives » + badge format (Story 2.8)
+feat(onboarding): sources spécialisées par sujet — re-mapping taxonomie 51-slugs + badge « Spécialisé en X » (Epic 12)
 
-Refonte du parcours sources de l'onboarding, livrée en **1 PR groupée** (backend + mobile) vers `main`. Le swipe devient le cœur du parcours, la calibration agit au niveau pôle, et l'onboarding **favorise les sources productives** (volume de publication réel) tout en rendant le **format** (vidéo, podcast, Reddit) lisible d'un coup d'œil. Additif, **aucune migration Alembic** (champ `articles_30d` purement calculé).
+Aligne le vocabulaire des `granular_topics` des **sources** sur la taxonomie **51-slugs** des users/articles et garantit, dans l'écran de reco onboarding, **≥1 source spécialisée visible par sujet sélectionné** (badge « Spécialisé en X »). Livré en **1 PR groupée** (backend data + mobile UI) vers `main`. Additif, **aucune migration Alembic** (`granular_topics`/`is_curated` existent déjà → backfill data gaté PO).
+
+## Problème
+
+Le recommender d'onboarding score `source.granularTopics ∩ user.selectedSubtopics`, mais les deux vivaient dans des **taxonomies incompatibles** : sources en ancien vocab (`social-justice`, `energy-transition`, `data-privacy`…), users/articles en 51-slugs (`inequality`, `energy`, `privacy`…). Résultat : le bonus « spécialiste » ne se déclenchait quasi jamais (~35/51 subtopics sans source curée correspondante) → pas d'effet « wow ». Le catalogue curé (66/296 actives) était aussi trop mince.
 
 ## Ce que ça change (user-visible)
 
-- **Tout le monde swipe.** Question d'intent « curieux / je connais » retirée. Après les sous-thèmes → directement le swipe, non skippable (set vide = auto-skip).
-- **Swipe satisfaisant + cliquable.** Carte suivie au drag (rotation + translation), fling hors écran au seuil, retour élastique sinon ; tap carte → fiche source. Nudge « Touchez pour explorer » sur la 1ère carte.
-- **Sources les plus actives mises en avant.** Le recommander biaise vers les sources qui publient vraiment (volume 30 j), en matched/préselection **et** dans le deck de swipe (tiebreaker volume puis audience).
-- **Format visible.** Badge discret YouTube / Podcast / Vidéo / Reddit sur les cartes de swipe, les recos d'onboarding et la fiche source (jamais pour les articles, format implicite).
-- **Titre + compteur humanisés.** Titre « Quels médias suivre ? » ; compteur à 3 paliers (« Premières cartes » → « On affine » → « Encore quelques-unes »).
-- **« Ce qu'on retient » en bas.** Les chips du haut deviennent une phrase inline discrète sous le deck (« On retient pour ta sélection : … »), qui s'allume quand un pôle passe net-positif.
-- **Calibration en direct (signal pôle).** Votes agrégés par pôle (fond / actu directe / indépendant / référence) → repondèrent toutes les sources du pôle (±2/vote, capé ±4), en plus du `+5/-4` par source swipée.
+- **Un spécialiste par sujet, dès l'inscription.** Chaque sous-sujet choisi obtient au moins une carte « 🎯 Spécialisé en {sujet} », en tête des suggestions et pré-cochée.
+- **Cartes spécialistes distinctes par sujet** (quand la data le permet), libellés FR via `getTopicLabel` (51 slugs couverts).
 
 ## Technique (additif, sans migration)
 
-- **Backend** : `SourceResponse.articles_30d` (calculé, défaut 0). `SourceService` enrichit les réponses curées (`get_all_sources` + `get_curated_sources`) via **un unique GROUP BY batché** (jamais d'appel par source), réutilisant l'index composite existant `ix_contents_source_published` (source_id, published_at). Le custom reste à 0 (hors-scope). Aucune colonne DB, aucune migration, toujours 1 head Alembic.
-- **Mobile** : `Source.articles30d` (porté depuis le JSON) + `Source.getTypeIcon()` ; nouveau widget partagé `SourceTypeBadge` (masqué pour les articles). Recommander : `_volumeBonus` (+2 ≥90/30j, +1 ≥20/30j, 0 sinon — sous le match thème `+3`) et tiebreaker `byVolumeThenFollowers` sur `buildSpanningSet`. `articles30d == 0` = no-op (rétro-compatible).
-- Réutilise `SourceDetailModal`, `buildSpanningSet`, le scoring thème/fiabilité existant.
+### Backend / data
+- **`scripts/retag_and_promote_sources.py`** (nouveau, scaffolding CLI dry-run/`--apply`/`--allow-prod`/backup JSON repris d'`apply_source_evaluations.py`) :
+  - **A1 — dérivation `granular_topics`** : sur 90 j, agrège `unnest(contents.topics)` par topic ; `share = n_topic / n_total` ; retient si `n ≥ MIN_COUNT(4)` **et** `share ≥ MIN_SHARE(0.10)`, capé `TOP_K(6)`, **ordonné par share desc** (1er = spécialité dominante = badge). Dérivation vide → on **conserve** les slugs déjà valides et purge l'ancien vocab (jamais de wipe d'un vrai spécialiste mince).
+  - **A2 — promotion catalogue** : `is_active ∧ ¬is_curated ∧ bias≠unknown ∧ reliability∈{medium,high} ∧ articles_30d ≥ 20` → `is_curated=true`.
+  - Sorties : mutation DB gatée + backup JSON ; `--write-csv` régénère `granular_topics`/`Status` de `sources_master.csv` (diff relisible PO, ajoute les promues) ; **audit de couverture** 51 subtopics (≥1 spécialiste partout).
+- **`scripts/validate_taxonomy.py`** : supprime le `VALID_TOPICS` local (ancien vocab) → importe `VALID_TOPIC_SLUGS` (51) + `VALID_THEMES` (9) canoniques. Ferme l'Epic 12 côté sources.
+- **`scripts/_backfill_new_yt.py` + `backfill_youtube_deep.py`** : `granular_topics` hardcodés re-mappés en 51-slugs (sinon ré-introduisaient l'ancien vocab au prochain seed).
+- **NE TOUCHE PAS `secondary_themes`** (vocab macro-thème, consommé par le pipeline digest). Aucune logique digest ne matche sur `granular_topics`.
 
-## Vérification
+### Mobile / UI
+- **`source_recommender.dart`** : `RecommendationTagType.specialist` ; badge « Spécialisé en X » quand `granularTopics.first ∈ selectedSubtopics` (pas de double chip thème). **Garantie de couverture** `_computeSpecialists` : pour chaque subtopic non couvert par un spécialiste dominant de `matched`, tire le meilleur spécialiste curé restant (dominant → score → fiabilité → volume) ; nouveau champ `SourceRecommendation.specialists` (disjoint, inclus dans `preselectedIds`).
+- **`sources_question.dart`** : spécialistes placés **en tête** des suggestions (survivent au cap 18) + dédup par id.
+- **`source_recommendation_card.dart`** : rendu du chip spécialiste (préfixe 🎯, teinte primary).
 
-- **Backend** : `pytest` ciblé sources/onboarding → **49 passed** (dont 2 nouveaux : `articles_30d` peuplé par le GROUP BY, fenêtre 30 j, 0 sans contenu). Alembic : 1 head, aucune migration ajoutée. `ruff check` OK.
-- **Mobile** : `flutter analyze` → **0 erreur** sur les fichiers touchés (warnings `withOpacity` pré-existants). `flutter test test/features/onboarding/ test/features/sources/{widgets,models}/` → **147 passed** (recommander volume + tiebreaker, badge type, compteur humanisé, phrase inline, absence des chips du haut).
-- NB : suite mobile complète a ~27 échecs pré-existants (Hive/Supabase non init, hors CI) — non liés.
+## Apply prod (gaté PO, étape séparée post-merge)
 
-## Follow-up (PR2, hors scope)
-
-- Page « Vos sources, sur mesure » : 4 blocs numérotés, 15-20 suggestions dont ~8-10 pré-cochées, « pourquoi » plus visible + tag « Similaire à », proxy volume mainstream.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-# Volet « Pas de recul » (deep reco) dans le reader — backend + mobile
-
-## Résumé
-Réactive le moteur « Pas de recul » (désactivé au post-unification cleanup) et
-l'expose **par article ouvert** : l'endpoint `GET /contents/{id}/perspectives`
-renvoie une recommandation d'article de fond (`deep_recommendation`), et le
-reader la rend tout en bas, sous la « Couverture médiatique ». Premier étage de
-la dimension « deep » de l'app. **Aucune migration Alembic.**
-
-## Changements — Backend
-- **`deep_matcher.py`** : nouvelle méthode `match_for_content(content)` — variante
-  reader de `match_for_topics`. Dérive un pseudo-angle depuis l'article ouvert
-  (titre + topics + theme), réutilise tel quel `_load_deep_articles` / `_prefilter`
-  / `_expand_query` / `_llm_evaluate` / `_fallback_pick`. Exclut l'article ouvert
-  **et** tout article du même cluster (pas une autre dépêche du même évènement).
-  Helper `_entity_names` tolérant aux deux formats d'entités (JSON & `name:type`).
-- **`routers/contents.py`** : cache dédié `_deep_reco_cache` (TTL 2h) + sentinelle
-  `_DEEP_NO_MATCH` + garde in-flight. Le matching tourne en **background**
-  (`_compute_deep_reco_background`) car il fait 2 appels LLM — on ne bloque pas
-  l'ouverture du reader, exactement comme le pattern partiel/refresh des
-  perspectives. `deep_recommendation` (dict|null) + `deep_pending` (bool) sont
-  attachés aux 3 chemins de retour (cache hit / snapshot digest / live) et
-  préservés à travers le refresh background.
-- **`editorial_prompts.yaml`** : prompt `deep_matching` décommenté. **`config.py`** :
-  commentaire TODO nettoyé.
-
-## Changements — Mobile
-- **`feed_repository.dart`** : modèle `DeepRecommendation` + champs
-  `deepRecommendation` / `deepPending` sur `PerspectivesResponse` (+ parsing JSON,
-  rétro-compatible : clés absentes ⇒ `null` / `false`).
-- **`deep_recommendation_card.dart`** (nouveau) : carte « Pas de recul »
-  (médaillon 🔭, titre, raison de match, source ; tap → ouvre l'article dans le
-  reader). Palette dérivée des tokens `colors.*` ⇒ cohérent clair/sombre/oled.
-- **`content_detail_screen.dart`** : rendu de la carte en bas du reader (gardé par
-  `deep_recommendation != null && !_isExternal`), `_openDeepReco()` (push route
-  `content/:id`), et refetch one-shot étendu à `deepPending` (pas de double appel
-  LLM-coûteux).
-
-## Contrat API (nouveaux champs de la réponse perspectives)
-```
-deep_recommendation: {
-  content_id, title, url, thumbnail_url, content_type,
-  source_id, source_name, source_logo_url, published_at,
-  match_reason, description
-} | null
-deep_pending: bool   # true = matching en cours en background → mobile doit refetch
-```
+`cd packages/api && python3 scripts/retag_and_promote_sources.py --write-csv` (dry-run lecture prod → diff CSV + audit), revue PO, puis `--apply --allow-prod`. Backup JSON conservé. La reco prod en bénéficie aussi (subtopics users prod déjà en 51-slugs), sans régression de matching attendue.
 
 ## Tests
-- `tests/editorial/test_deep_matcher.py` : `TestMatchForContent` (sélection LLM,
-  exclusion self, exclusion même cluster, pool vide, pivot maigre, fallback no-LLM)
-  + `TestEntityNames`. **25/25 verts.**
-- `tests/routers/test_contents_deep_reco.py` (nouveau) : helpers `_deep_reco_to_dict`,
-  `_apply_deep_from_cache`, `_attach_deep_recommendation`. **8/8 verts.**
-- `deep_recommendation_card_test.dart` (nouveau) + `feed_repository_perspectives_test.dart`
-  (étendu : parsing `deep_recommendation` / `deep_pending`).
-- 1 seul head Alembic, aucune migration.
+- **Backend** : `tests/scripts/test_retag_and_promote_sources.py` (19 tests purs) — dérivation (seuils, ordre par share, top-K, vocab 51), résolution conservatrice, promotion, audit couverture, régénération CSV.
+- **Mobile** : `source_recommender_test.dart` (+5 tests) — badge dominant, pas de badge sur subtopic non dominant, garantie hors-matched, pas de doublon, cartes distinctes par sujet.
+- `validate_taxonomy` importe 51 slugs + 9 thèmes (vérifié). `flutter analyze` propre sur les fichiers touchés.
 
-## Vérif manuelle suggérée (avant merge)
-`uvicorn` local + `curl /contents/{id}/perspectives` → `deep_pending:true` au 1er
-appel, puis `deep_recommendation` peuplé au 2e (article avec sujet couvert par une
-source `source_tier='deep'`) ; `null` sur un fait divers.
-
-## Suite
-- Chantier curation deep (séparé) : labelliser plus de sources `source_tier='deep'`
-  + chaînes YouTube + reportages.
+## Changelog
+Entrée `unreleased` : `{ "tag": "Sources", "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription." }`

@@ -52,7 +52,7 @@ DEEP_YOUTUBE_CHANNELS = [
         "handle": "@LeReworkeilleur",
         "channel_id": "UCNovJemYKcdKt7PDdptJZfQ",
         "theme": "environment",
-        "granular_topics": ["climate", "energy-transition", "applied-science"],
+        "granular_topics": ["climate", "energy", "science"],
         "description": "Analyses approfondies sur l'énergie et le climat. Vulgarisation scientifique rigoureuse et sourcée.",
     },
     {
@@ -60,7 +60,7 @@ DEEP_YOUTUBE_CHANNELS = [
         "handle": "@Heureka",
         "channel_id": "UC7sXGI8p8PvKosLWagkK9wQ",
         "theme": "economy",
-        "granular_topics": ["finance", "economy", "applied-science"],
+        "granular_topics": ["finance", "economy", "science"],
         "description": "Vulgarisation économique et financière. Décryptage des mécanismes économiques avec rigueur analytique.",
     },
     {
@@ -68,7 +68,7 @@ DEEP_YOUTUBE_CHANNELS = [
         "handle": "@Science4All",
         "channel_id": "UC0NCbj8CxzeCGIF6sODJ-7A",
         "theme": "science",
-        "granular_topics": ["fundamental-research", "applied-science", "data-privacy"],
+        "granular_topics": ["science", "privacy"],
         "description": "Mathématiques, IA et science. Analyses de fond sur les implications sociétales de la technologie.",
     },
     {
@@ -76,7 +76,7 @@ DEEP_YOUTUBE_CHANNELS = [
         "handle": "@MrBidouille",
         "channel_id": "UCSULDz1yaHLVQWHpm4g_GHA",
         "theme": "tech",
-        "granular_topics": ["energy-transition", "applied-science", "cleantech"],
+        "granular_topics": ["energy", "science"],
         "description": "Vulgarisation technique et industrielle. Énergie, infrastructures et innovations technologiques.",
     },
     {
@@ -84,7 +84,7 @@ DEEP_YOUTUBE_CHANNELS = [
         "handle": "@Philoxime",
         "channel_id": "UCdKTlsmvczkdvGjiLinQwmw",
         "theme": "culture",
-        "granular_topics": ["philosophy", "democracy", "social-justice"],
+        "granular_topics": ["philosophy", "politics", "inequality"],
         "description": "Philosophie politique et éthique appliquée. Analyses de fond sur la démocratie et la justice sociale.",
     },
     {
@@ -92,7 +92,7 @@ DEEP_YOUTUBE_CHANNELS = [
         "handle": "@ScienceEtonnante",
         "channel_id": "UCaNlbnghtwlsGF-KzAFThqA",
         "theme": "science",
-        "granular_topics": ["fundamental-research", "applied-science"],
+        "granular_topics": ["science"],
         "description": "Vulgarisation scientifique de haut niveau. Physique, mathématiques et sciences cognitives.",
     },
     {
@@ -100,7 +100,7 @@ DEEP_YOUTUBE_CHANNELS = [
         "handle": "@ethiqueettac",
         "channel_id": None,  # Will resolve via API
         "theme": "culture",
-        "granular_topics": ["philosophy", "social-justice"],
+        "granular_topics": ["philosophy", "inequality"],
         "description": "Éthique appliquée et questions de société. Réflexions philosophiques accessibles sur les enjeux contemporains.",
     },
 ]

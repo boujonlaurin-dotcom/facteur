@@ -219,15 +219,17 @@ class SourceRecommendationCard extends StatelessWidget {
 
     final prefix = switch (tag.type) {
       RecommendationTagType.topic => '',
+      RecommendationTagType.specialist => '\u{1F3AF} ', // \ud83c\udfaf
       RecommendationTagType.antiBruit => '\u{1F507} ',
       RecommendationTagType.fiable => '\u2713 ',
       RecommendationTagType.serein => '\u2600 ',
       RecommendationTagType.similar => '\u2248 ', // \u2248
     };
 
-    // Les chips \u00ab pourquoi \u00bb (similaire / fiable / anti-bruit) ressortent en
-    // teinte primary ; les tags purement th\u00e9matiques restent neutres.
+    // Les chips \u00ab pourquoi \u00bb (sp\u00e9cialiste / similaire / fiable / anti-bruit)
+    // ressortent en teinte primary ; les tags purement th\u00e9matiques restent neutres.
     final highlighted = switch (tag.type) {
+      RecommendationTagType.specialist ||
       RecommendationTagType.similar ||
       RecommendationTagType.fiable ||
       RecommendationTagType.antiBruit =>

@@ -1,7 +1,6 @@
 import asyncio
 import os
 import sys
-from typing import Set
 
 from dotenv import load_dotenv
 from sqlalchemy import select, func
@@ -13,34 +12,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.models.source import Source
 from app.database import async_session_maker, init_db
 
+# --- TAXONOMY CONSTANTS (source de vérité unique — Epic 12 taxonomy alignment) ---
+#
+# Plus de vocab local : on importe les MÊMES slugs que les users/articles. Les
+# `granular_topics` des sources doivent vivre dans la taxonomie 51-slugs (sinon
+# le recommender d'onboarding ne matche jamais les spécialités, cf.
+# scripts/retag_and_promote_sources.py). Le `theme` source reste sur les
+# 9 macro-thèmes de topic_theme_mapper.
+from app.services.ml.classification_service import VALID_TOPIC_SLUGS as VALID_TOPICS
+from app.services.ml.topic_theme_mapper import VALID_THEMES
+
 # Load .env
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
-
-# --- TAXONOMY CONSTANTS (From PRD) ---
-
-VALID_THEMES: Set[str] = {
-    "tech", "society", "environment", "economy", "politics", 
-    "culture", "science", "international"
-}
-
-VALID_TOPICS: Set[str] = {
-    # tech (12)
-    "ai", "llm", "crypto", "web3", "space", "biotech", "quantum", "cybersecurity", "robotics", "gaming", "cleantech", "data-privacy",
-    # society (10)
-    "social-justice", "feminism", "lgbtq", "immigration", "health", "education", "urbanism", "housing", "work-reform", "justice-system",
-    # environment (8)
-    "climate", "biodiversity", "energy-transition", "pollution", "circular-economy", "agriculture", "oceans", "forests",
-    # economy (8)
-    "macro", "finance", "startups", "venture-capital", "labor-market", "inflation", "trade", "taxation",
-    # politics (5)
-    "elections", "institutions", "local-politics", "activism", "democracy",
-    # culture (4)
-    "philosophy", "art", "cinema", "media-critics",
-    # science (2)
-    "fundamental-research", "applied-science",
-    # international (1)
-    "geopolitics"
-}
 
 async def validate_taxonomy():
     print("🔍 Starting Taxonomy Validation...")

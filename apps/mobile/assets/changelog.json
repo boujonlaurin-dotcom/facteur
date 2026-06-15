@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Sources",
+      "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription."
+    },
+    {
       "tag": "Notifications",
       "summary": "Ton Essentiel du jour arrive maintenant par notification, même app fermée : un rappel fiable le matin pour ton moment de lecture."
     },

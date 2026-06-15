@@ -448,4 +448,125 @@ void main() {
       expect(ids.indexOf('b'), lessThan(ids.indexOf('a')));
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Badge « spécialiste » + garantie de couverture (Epic 12 / re-tag sources).
+  // ─────────────────────────────────────────────────────────────────────────
+  group('SourceRecommender — spécialiste & garantie de couverture', () {
+    Source spec(
+      String id, {
+      required List<String> topics,
+      String reliability = 'high',
+      String? theme,
+    }) =>
+        Source(
+          id: id,
+          name: 'Source $id',
+          type: SourceType.article,
+          isCurated: true,
+          reliabilityScore: reliability,
+          theme: theme,
+          granularTopics: topics,
+        );
+
+    bool hasSpecialistTag(RecommendedSource r) =>
+        r.tags.any((t) => t.type == RecommendationTagType.specialist);
+
+    test('spécialité dominante ∈ sujets → badge « Spécialisé en X »', () {
+      final sources = [spec('ai', topics: ['ai', 'tech'], theme: 'tech')];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const ['ai'],
+        allSources: sources,
+      );
+
+      final card = reco.matched.firstWhere((r) => r.source.id == 'ai');
+      expect(hasSpecialistTag(card), isTrue);
+      expect(
+        card.tags
+            .firstWhere((t) => t.type == RecommendationTagType.specialist)
+            .label,
+        'Spécialisé en Intelligence artificielle',
+      );
+    });
+
+    test('subtopic non dominant → pas de badge spécialiste sur cette source', () {
+      // 'ai' n'est PAS la spécialité dominante (tech l'est) → la carte garde un
+      // tag thème « IA » mais aucun badge spécialiste.
+      final sources = [spec('s', topics: ['tech', 'ai'], theme: 'tech')];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const ['ai'],
+        allSources: sources,
+      );
+
+      final card = reco.matched.firstWhere((r) => r.source.id == 's');
+      expect(hasSpecialistTag(card), isFalse);
+    });
+
+    test('garantie : un spécialiste hors-matched est remonté dans specialists',
+        () {
+      // 15 sources tech (score 4) saturent matched ; le spécialiste factcheck
+      // (score 2) en serait exclu → la garantie de couverture le rapatrie.
+      final sources = [
+        for (var i = 0; i < 15; i++) spec('tech-$i', topics: const [], theme: 'tech'),
+        spec('fc', topics: const ['factcheck'], reliability: 'unknown'),
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const ['factcheck'],
+        allSources: sources,
+      );
+
+      expect(reco.matched.any((r) => r.source.id == 'fc'), isFalse,
+          reason: 'le spécialiste de faible score ne rentre pas dans matched');
+      final fc = reco.specialists.firstWhere((r) => r.source.id == 'fc');
+      expect(hasSpecialistTag(fc), isTrue);
+      expect(
+        fc.tags
+            .firstWhere((t) => t.type == RecommendationTagType.specialist)
+            .label,
+        'Spécialisé en Fact-checking',
+      );
+      // Pré-coché pour l'effet « wow ».
+      expect(reco.preselectedIds, contains('fc'));
+    });
+
+    test('spécialiste déjà dominant dans matched → pas de doublon', () {
+      final sources = [spec('ai', topics: const ['ai'], theme: 'tech')];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const ['ai'],
+        allSources: sources,
+      );
+
+      expect(reco.matched.any((r) => r.source.id == 'ai'), isTrue);
+      expect(hasSpecialistTag(reco.matched.first), isTrue);
+      // Déjà couvert par matched → aucun gap-filler.
+      expect(reco.specialists, isEmpty);
+    });
+
+    test('chaque subtopic obtient une carte spécialiste distincte', () {
+      // Deux sujets « pauvres » non couverts par matched ; deux spécialistes
+      // distincts disponibles → une carte chacun.
+      final sources = [
+        for (var i = 0; i < 15; i++) spec('tech-$i', topics: const [], theme: 'tech'),
+        spec('fc', topics: const ['factcheck'], reliability: 'unknown'),
+        spec('rel', topics: const ['relationships'], reliability: 'unknown'),
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const ['factcheck', 'relationships'],
+        allSources: sources,
+      );
+
+      final specialistIds = reco.specialists.map((r) => r.source.id).toSet();
+      expect(specialistIds, containsAll(<String>['fc', 'rel']));
+    });
+  });
 }
