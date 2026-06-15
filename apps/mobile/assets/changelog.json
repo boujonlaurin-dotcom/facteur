@@ -14,7 +14,15 @@
     },
     {
       "tag": "Onboarding",
-      "summary": "Questions d'intro recentrées sur ce qui distingue les médias (profondeur, indépendance), et un tri express de quelques sources pour affiner tes suggestions."
+      "summary": "Tri des sources plus clair et plus fluide : carte lisible, un seul tampon, et un temps « on affine » en fin de tri."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et suggestions plus pertinentes."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Calibre tes suggestions d'un geste : un tri tactile de quelques médias, vivant et explorable, qui ajuste tout ton feed en direct."
     },
     {
       "tag": "Corrections",

@@ -24,6 +24,9 @@ enum RecommendationTagType {
 
   /// Low-anxiety theme — shown when user selected "anxiety" objective
   serein,
+
+  /// Raccroche la reco à une source aimée au swipe ("Similaire à {nom}")
+  similar,
 }
 
 /// A visual tag badge on a recommendation card.
@@ -105,7 +108,11 @@ class SourceRecommender {
   /// - [independencePref] : `established` (références) | `independent`
   ///   (pure-players) ;
   /// - [swipeLiked]/[swipeDisliked] : IDs triés au swipe désambiguateur —
-  ///   signal *révélé* qui repondère le scoring (boost / malus) avant le reveal.
+  ///   signal *révélé* qui repondère le scoring de deux façons : (1) boost/malus
+  ///   fort sur la source swipée elle-même (`+5/-4`) ; (2) signal *généralisé*
+  ///   par pôle d'axe — les votes sont agrégés par pôle (fond / actu directe /
+  ///   indépendant / référence) et appliqués à **toutes** les sources du même
+  ///   pôle (pas seulement les 5 swipées), capé pour ne pas écraser le déclaratif.
   static SourceRecommendation recommend({
     required List<String> selectedThemes,
     required List<String> selectedSubtopics,
@@ -124,6 +131,11 @@ class SourceRecommender {
     final likedSet = swipeLiked.toSet();
     final dislikedSet = swipeDisliked.toSet();
 
+    // Signal *révélé* agrégé par pôle d'axe : classe chaque source swipée dans
+    // son/ses pôle(s) intrinsèque(s) et somme +1 (liké) / -1 (rejeté). Ce net
+    // par pôle est ensuite appliqué à toutes les sources du même pôle.
+    final poleVotes = _aggregatePoleVotes(curated, likedSet, dislikedSet);
+
     // Score all sources
     final scored = <String, int>{};
     final tagResults = <String, _ScoreResult>{};
@@ -140,6 +152,7 @@ class SourceRecommender {
         independencePref: independencePref,
         swipeLiked: likedSet,
         swipeDisliked: dislikedSet,
+        poleVotes: poleVotes,
       );
       scored[source.id] = result.score;
       tagResults[source.id] = result;
@@ -205,11 +218,64 @@ class SourceRecommender {
             ))
         .toList();
 
+    // Tag « Similaire à {nom} » : raccroche chaque reco (matched / perspective /
+    // gems) à la meilleure source aimée AU SWIPE partageant thème + (tier ou
+    // biais). Pas le catalogue (déjà replié), pas les sources déjà suivies.
+    final likedSources =
+        curated.where((s) => likedSet.contains(s.id)).toList();
+
+    List<RecommendedSource> withSimilarTag(List<RecommendedSource> list) {
+      if (likedSources.isEmpty) return list;
+      return list.map((r) {
+        final tag = _similarTag(r.source, likedSources);
+        if (tag == null) return r;
+        return RecommendedSource(
+          source: r.source,
+          category: r.category,
+          tags: [tag, ...r.tags],
+          reason: r.reason,
+          score: r.score,
+        );
+      }).toList();
+    }
+
     return SourceRecommendation(
-      matched: matchedSources,
-      perspective: perspectiveSources,
-      gems: gemSources,
+      matched: withSimilarTag(matchedSources),
+      perspective: withSimilarTag(perspectiveSources),
+      gems: withSimilarTag(gemSources),
       catalog: catalogRecommended,
+    );
+  }
+
+  /// Cherche la meilleure source aimée au swipe « similaire » à [s] : partage un
+  /// thème (principal ou secondaire) **et** (même `sourceTier` **ou** même
+  /// `biasStance` connu). Départage par `followerCount` desc. Renvoie le tag
+  /// `'Similaire à {nom}'` ou `null` si aucune ancre.
+  static RecommendationTag? _similarTag(
+    Source s,
+    List<Source> likedSources,
+  ) {
+    Set<String> themesOf(Source x) => {
+          if (x.theme != null) x.theme!,
+          ...x.secondaryThemes,
+        };
+
+    final sThemes = themesOf(s);
+    Source? best;
+    for (final liked in likedSources) {
+      if (liked.id == s.id) continue;
+      if (sThemes.intersection(themesOf(liked)).isEmpty) continue;
+      final sameTierOrBias = s.sourceTier == liked.sourceTier ||
+          (s.biasStance != 'unknown' && s.biasStance == liked.biasStance);
+      if (!sameTierOrBias) continue;
+      if (best == null || liked.followerCount > best.followerCount) {
+        best = liked;
+      }
+    }
+    if (best == null) return null;
+    return RecommendationTag(
+      label: 'Similaire à ${best.name}',
+      type: RecommendationTagType.similar,
     );
   }
 
@@ -224,6 +290,7 @@ class SourceRecommender {
     String? independencePref,
     Set<String> swipeLiked = const {},
     Set<String> swipeDisliked = const {},
+    Map<SwipeAxisPole, int> poleVotes = const {},
   }) {
     int score = 0;
     String bestReason = '';
@@ -317,6 +384,18 @@ class SourceRecommender {
       score += 5;
     } else if (swipeDisliked.contains(source.id)) {
       score -= 4;
+    }
+
+    // Signal pôle *généralisé* : applique le net de chaque pôle de la source
+    // (±2 par vote net), capé à ±4 au total pour ne pas écraser le déclaratif.
+    // Rend la calibration « vraie » : aimer une source de fond booste TOUTES
+    // les sources de fond, pas seulement la carte swipée.
+    if (poleVotes.isNotEmpty) {
+      int poleBoost = 0;
+      for (final pole in _polesForSource(source)) {
+        poleBoost += (poleVotes[pole] ?? 0) * 2;
+      }
+      score += poleBoost.clamp(-4, 4);
     }
 
     // --- Objective-based tags ---
@@ -424,11 +503,12 @@ class SourceRecommender {
     }).toList();
   }
 
-  /// Construit un "spanning set" pour le swipe désambiguateur : au plus
-  /// [maxCards] sources, **1 par pôle d'axe**, choisies parmi le curé matchant
-  /// les thèmes de l'utilisateur et délibérément étalées (fond / actu directe /
-  /// indépendant / référence / perspective). Chaque carte sonde un pôle, si
-  /// bien qu'un swipe devient un vote sur cet axe.
+  /// Construit un "spanning set" pour le swipe de calibration : au plus
+  /// [maxCards] sources (~8-10), **[perPole] par pôle d'axe** (round-robin),
+  /// choisies parmi le curé matchant les thèmes de l'utilisateur et délibérément
+  /// étalées (fond / actu directe / indépendant / référence / perspective).
+  /// Plusieurs cartes par pôle = meilleure calibration (le signal par pôle est
+  /// agrégé au reveal).
   ///
   /// Dégrade proprement : sur les thèmes pauvres, on complète depuis le
   /// catalogue large (sources les plus suivies) ; un pôle sans candidat est
@@ -437,7 +517,8 @@ class SourceRecommender {
     required List<String> selectedThemes,
     required List<String> selectedSubtopics,
     required List<Source> allSources,
-    int maxCards = 5,
+    int maxCards = 10,
+    int perPole = 2,
   }) {
     final curated = allSources.where((s) => s.isCurated).toList();
     if (curated.isEmpty) return const [];
@@ -491,38 +572,50 @@ class SourceRecommender {
       result.add(SpanningSource(source: candidates.first, pole: pole));
     }
 
-    // 1. Indépendant : forte indépendance ou posture alternative/spécialisée.
-    pick(
-      SwipeAxisPole.independent,
-      (s) =>
-          (s.scoreIndependence ?? 0) >= 0.6 ||
-          s.biasStance == 'alternative' ||
-          s.biasStance == 'specialized',
-      (a, b) =>
-          (b.scoreIndependence ?? 0).compareTo(a.scoreIndependence ?? 0),
-    );
-    // 2. Fond : tier deep.
-    pick(SwipeAxisPole.deep, (s) => s.sourceTier == 'deep', byFollowers);
-    // 3. Référence établie : fiabilité haute + faible indépendance.
-    pick(
-      SwipeAxisPole.established,
-      (s) =>
-          s.reliabilityScore == 'high' && (s.scoreIndependence ?? 1) <= 0.5,
-      (a, b) =>
-          (a.scoreIndependence ?? 1).compareTo(b.scoreIndependence ?? 1),
-    );
-    // 4. Actu directe : tier mainstream.
-    pick(
-      SwipeAxisPole.mainstream,
-      (s) => s.sourceTier == 'mainstream',
-      byFollowers,
-    );
-    // 5. Perspective : bord opposé à la majorité matchée.
-    pick(
-      SwipeAxisPole.perspective,
-      (s) => targetPerspectiveBiases.contains(s.biasStance),
-      byFollowers,
-    );
+    // Un "picker" par pôle, appelés en round-robin sur [perPole] tours : on
+    // remplit d'abord 1 par pôle (set bien étalé), puis on approfondit.
+    final pickers = <void Function()>[
+      // 1. Indépendant : forte indépendance ou posture alternative/spécialisée.
+      () => pick(
+            SwipeAxisPole.independent,
+            (s) =>
+                (s.scoreIndependence ?? 0) >= 0.6 ||
+                s.biasStance == 'alternative' ||
+                s.biasStance == 'specialized',
+            (a, b) =>
+                (b.scoreIndependence ?? 0).compareTo(a.scoreIndependence ?? 0),
+          ),
+      // 2. Fond : tier deep.
+      () => pick(SwipeAxisPole.deep, (s) => s.sourceTier == 'deep', byFollowers),
+      // 3. Référence établie : fiabilité haute + faible indépendance.
+      () => pick(
+            SwipeAxisPole.established,
+            (s) =>
+                s.reliabilityScore == 'high' &&
+                (s.scoreIndependence ?? 1) <= 0.5,
+            (a, b) =>
+                (a.scoreIndependence ?? 1).compareTo(b.scoreIndependence ?? 1),
+          ),
+      // 4. Actu directe : tier mainstream.
+      () => pick(
+            SwipeAxisPole.mainstream,
+            (s) => s.sourceTier == 'mainstream',
+            byFollowers,
+          ),
+      // 5. Perspective : bord opposé à la majorité matchée.
+      () => pick(
+            SwipeAxisPole.perspective,
+            (s) => targetPerspectiveBiases.contains(s.biasStance),
+            byFollowers,
+          ),
+    ];
+
+    for (var round = 0; round < perPole; round++) {
+      for (final p in pickers) {
+        if (result.length >= maxCards) break;
+        p();
+      }
+    }
 
     // Complète si des pôles manquaient (thèmes pauvres) avec les sources
     // matchées restantes les plus suivies (pôle neutre = actu directe).
@@ -539,6 +632,48 @@ class SourceRecommender {
     }
 
     return result;
+  }
+
+  /// Pôle(s) d'axe *intrinsèque(s)* d'une source — utilisé pour généraliser le
+  /// signal du swipe à toutes les sources d'un même pôle. Une source peut
+  /// appartenir à plusieurs pôles (ex. fond + indépendant).
+  ///
+  /// Le pôle `perspective` est *relatif* (bord opposé à la majorité matchée) et
+  /// n'est donc pas classé ici : on le laisse à la section perspective dédiée.
+  static Set<SwipeAxisPole> _polesForSource(Source s) {
+    final poles = <SwipeAxisPole>{};
+    if (s.sourceTier == 'deep') poles.add(SwipeAxisPole.deep);
+    if (s.sourceTier == 'mainstream') poles.add(SwipeAxisPole.mainstream);
+    if ((s.scoreIndependence ?? 0) >= 0.6 ||
+        s.biasStance == 'alternative' ||
+        s.biasStance == 'specialized') {
+      poles.add(SwipeAxisPole.independent);
+    }
+    if (s.reliabilityScore == 'high' && (s.scoreIndependence ?? 1) <= 0.5) {
+      poles.add(SwipeAxisPole.established);
+    }
+    return poles;
+  }
+
+  /// Agrège les votes du swipe par pôle d'axe : +1 par source likée, -1 par
+  /// source rejetée, réparti sur chacun de ses pôles intrinsèques.
+  static Map<SwipeAxisPole, int> _aggregatePoleVotes(
+    List<Source> sources,
+    Set<String> liked,
+    Set<String> disliked,
+  ) {
+    if (liked.isEmpty && disliked.isEmpty) return const {};
+    final votes = <SwipeAxisPole, int>{};
+    for (final s in sources) {
+      final delta = liked.contains(s.id)
+          ? 1
+          : (disliked.contains(s.id) ? -1 : 0);
+      if (delta == 0) continue;
+      for (final pole in _polesForSource(s)) {
+        votes[pole] = (votes[pole] ?? 0) + delta;
+      }
+    }
+    return votes;
   }
 
   /// Biais "opposés" à la majorité d'un ensemble de sources (pour le pôle

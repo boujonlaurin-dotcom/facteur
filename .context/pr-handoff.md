@@ -1,35 +1,30 @@
-feat(onboarding): préférences « profondes » ré-aiguillées + swipe désambiguateur (Story 2.8)
+feat(onboarding): swipe de calibration inconditionnel + signal pôle généralisé (Story 2.8 suite)
 
-Recentre les questions d'intro de l'onboarding sur les axes qui distinguent les **sources d'un même thème**, et les **câble enfin** au recommender (jusqu'ici `approach`/`response_style` étaient collectés mais jamais utilisés). Additif, **aucune migration**.
+Le swipe devient le **cœur** du parcours sources : tout le monde swipe, la physique est satisfaisante, les cartes sont cliquables, et le signal calibre **pour de vrai** (au niveau pôle, pas juste les cartes swipées). La question d'intent « curieux / je connais » disparaît. Additif, **aucune migration**.
 
-## Ce que ça change
+## Ce que ça change (user-visible)
 
-- **Profondeur** (ré-aiguillage de `approach`) : sources qui vont à l'essentiel (`direct`) vs qui creusent (`detailed`).
-- **Indépendance** (nouvelle question) : références établies vs indépendants. Cadré comme un **goût**, pas un jugement de fiabilité.
-- **Posture (ex-`response_style`) RETIRÉE** du parcours (décision PO : ne discrimine pas, presque tout le monde veut voir les perspectives). Le signal de perspective vient désormais du seul swipe (carte « autre angle »).
-- **Swipe désambiguateur** : page active (parcours « curieux » ; sautée si « je connais déjà »), cartes étalées sur les axes (fond / actu / indépendant / référence / perspective) ; chaque swipe = vote *révélé* qui repondère le recommender. Sources likées **pré-sélectionnées** au reveal.
+- **Tout le monde swipe.** Question d'intent retirée. Après les sous-thèmes → directement le swipe, **non skippable** (dégrade gracieusement : set vide = auto-skip).
+- **Swipe satisfaisant + cliquable.** Carte custom suivie au drag (rotation + translation), **fling** hors écran au-delà du seuil, **retour élastique** sinon. Boutons d'action = même fling programmatique. Tap carte → fiche source (`SourceDetailModal`). Nudge « Touchez pour explorer » sur la 1ère carte. Badges LIKE / NON pendant le drag.
+- **Calibration en direct.** ~8-10 cartes (2 par pôle, round-robin) au lieu de 5. Rangée de chips « On retient : » qui s'allume quand un pôle passe net-positif.
+- **Signal pôle → recommander (calibration *vraie*).** Votes agrégés par pôle (fond / actu directe / indépendant / référence) → repondèrent **toutes** les sources du pôle (±2 par vote net, capé ±4), en plus du `+5/-4` par source swipée. Aimer une source de fond booste désormais toutes les sources de fond.
+- **Copy Indépendance recadrée** (moins biaisée) : « Les grands médias institutionnels » / « Installés, connus de tous » vs « Des médias plus spécialisés » / « Moins connus, souvent indépendants ».
+- **Page sources** simplifiée à une variante unique (branche « knows » retirée).
 
-## Câblage & stockage (additif, sans migration)
+## Technique (additif, sans migration)
 
-- `SourceRecommender.recommend()` reçoit `depthPref`, `independencePref`, `swipeLiked`, `swipeDisliked` → deltas de score (réutilise le scoring thème/fiabilité existant) + `buildSpanningSet()` pour le swipe.
-- `score_independence`/`bias_stance`/`source_tier` déjà sérialisés côté API (aucun champ source ajouté).
-- Backend : `OnboardingAnswers` gagne `independence_pref`/`swipe_liked`/`swipe_disliked` (optionnels, payload sans eux reste valide) ; `save_onboarding` persiste `independence_pref` + agrégats `swipe_liked_count`/`swipe_disliked_count` (≤ 100 car., aucune migration).
-- Version onboarding Hive **5 → 6** (réindexation d'enums).
-
-## Changements connexes (heads-up review)
-
-- **Fix d'un `changelog.json` malformé pré-existant** sur `main` (entrée « Corrections » du #842 fusionnée avec « Grille » sans séparateur → JSON invalide, `json.decode` cassé). Corrigé + entrée `Onboarding` ajoutée.
-- **Feed filters** : la priorisation « Rester serein » lisait `responseStyle == 'nuanced' || perspective == 'big_picture'` (deux signaux désormais morts) → re-câblée sur l'objectif vivant `anxiety`.
+- `sourcesIntent` conservé dans le modèle (compat reprise Hive, figé `curious`, hors `toJson()`). **Bump Hive `_currentVersion` 6 → 7** (réindexation enum Section 3 → wipe des positions sauvegardées).
+- **Aucun changement DB / Alembic / endpoint** — tout est calculé côté Flutter.
+- Réutilise `SourceDetailModal`, `buildSpanningSet`, le scoring thème/fiabilité existant. Nettoyage : strings d'intent morts + `trackOnboardingSourcesIntent` retirés.
 
 ## Vérification
 
-- Backend : `pytest` ciblé → **17 passed** (parsing, persistance, backward-compat sans les nouveaux champs).
-- Mobile : `flutter analyze` → **0 erreur** ; `flutter test test/features/onboarding/ test/features/feed/personalized_filters_provider_test.dart` → **64 passed**.
-- Swipe bâti sur `Dismissible` (built-in) → **aucune dépendance ajoutée**.
+- `flutter analyze` : **0 erreur** sur les fichiers touchés (warnings `withOpacity` pré-existants, style aligné).
+- `flutter test test/features/onboarding/` → **55 passed** (provider, swipe, sources, recommender, signal pôle).
+- NB : suite mobile complète a ~27 échecs pré-existants (Hive/Supabase non init, hors CI) — non liés.
 
-## Follow-ups explicites (hors scope, cf. story 2.8)
+## Follow-up (PR2, hors scope)
 
-- Intégrer les axes dans les pillars du feed serveur + persister l'affinité par source issue du swipe.
-- Backfill `tone` via le pipeline d'évals (futur axe « ton »).
+- Page « Vos sources, sur mesure » : 4 blocs numérotés, 15-20 suggestions dont ~8-10 pré-cochées, « pourquoi » plus visible + tag « Similaire à », proxy volume mainstream.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

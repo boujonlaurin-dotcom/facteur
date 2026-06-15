@@ -83,12 +83,14 @@ class OnboardingStrings {
   // pas un jugement de fiabilité. Valeurs : established / independent.
   static const String qIndependenceTitle = 'Côté médias, vous penchez pour...';
   static const String qIndependenceSubtitle = '';
-  static const String qIndependenceEstablishedLabel = 'Les références établies';
+  static const String qIndependenceEstablishedLabel =
+      'Les grands médias institutionnels';
   static const String qIndependenceEstablishedSubtitle =
-      'Les grands médias installés';
-  static const String qIndependenceIndependentLabel = 'Les indépendants';
+      'Installés, connus de tous';
+  static const String qIndependenceIndependentLabel =
+      'Des médias plus spécialisés';
   static const String qIndependenceIndependentSubtitle =
-      'Les pure-players qui sortent du lot';
+      'Moins connus, souvent indépendants';
 
   // Q5: Perspective
   static const String q5Title = 'Vous préférez avoir...';
@@ -109,13 +111,31 @@ class OnboardingStrings {
   static const String swipeSkipHint = 'Pas pour moi';
   static const String swipeDoneButton = 'Voir mes sources';
   static const String swipeProgress = 'Carte %d sur %d';
+  // Nudge discret sur la 1ère carte (disparaît au 1er geste).
+  static const String swipeTapHint = 'Touchez pour explorer';
+  // Profil révélé en direct : rangée de chips « voici ce qu'on retient ».
+  static const String swipeProfileLabel = 'On retient :';
 
   // Étiquettes "pôle" affichées sur les cartes de swipe (1 à 2 tags max).
   static const String swipePoleDeep = 'Analyse de fond';
-  static const String swipePoleMainstream = 'Actu directe';
+  static const String swipePoleMainstream = 'Actu en continu';
   static const String swipePoleIndependent = 'Indépendant';
   static const String swipePoleEstablished = 'Référence';
   static const String swipePolePerspective = 'Autre angle';
+
+  // Bloc d'infos intrinsèques sur la carte (Tendance + Fiabilité).
+  static const String swipeBiasPrefix = 'Tendance : ';
+  static const String swipeReliabilityPrefix = 'Fiabilité : ';
+  static const String swipeReliabilityHigh = 'Élevée';
+  static const String swipeReliabilityMedium = 'Moyenne';
+  static const String swipeReliabilityLow = 'Limitée';
+  static const String swipeReliabilityUnknown = 'Non évaluée';
+
+  // Moment de calibration en fin de tri + micro-indice pendant les swipes.
+  static const String swipeRefiningTitle = 'On affine vos sources…';
+  static const String swipeRefiningSubtitle =
+      'On ajuste les suggestions à vos goûts.';
+  static const String swipeCalibratingHint = 'On affine…';
 
   // Q8: Gamification
   static const String q8Title =
@@ -175,26 +195,23 @@ class OnboardingStrings {
   static const String personalizeSereinCta =
       'Personnaliser mon mode serein';
 
-  // Q9c: Intent sources (routage de la page sources)
-  static const String sourcesIntentTitle =
-      'Avec quels médias préférez-vous partir ?';
-  static const String sourcesIntentCuriousLabel = 'Plutôt curieux';
-  static const String sourcesIntentCuriousSubtitle =
-      'Découvrir des médias selon mes thèmes';
-  static const String sourcesIntentKnowsLabel =
-      'Repartir de ce que je connais';
-  static const String sourcesIntentKnowsSubtitle =
-      'Je sais déjà quels médias je suis';
-
-  // Q10: Page sources adaptative
+  // Q10: Page sources « sur mesure »
   static const String sourcesSuggestionsTitle = 'Nos suggestions pour vous';
   static const String sourcesAlreadyFollowTitle =
       'Vous suivez déjà un média ?';
-  static const String sourcesKnowsTitle =
-      'Quels médias suivez-vous déjà ?';
-  static const String sourcesGuideMeTitle = 'Ou laissez-vous guider';
   static const String sourcesSeeAllCatalog = 'Voir tout le catalogue';
-  static const String sourcesSeeMore = 'Voir plus';
+
+  // Q10: en-têtes des 4 blocs « sur mesure » (①②③④).
+  static const String sourcesBlockSuggestionsTitle = 'Suggestions sur mesure';
+  static const String sourcesBlockHabitualTitle = 'Vos médias habituels';
+  static const String sourcesBlockHabitualSubtitle =
+      'Ajoutez les médias que vous suivez déjà.';
+  static const String sourcesBlockCatalogTitle = 'Explorer le catalogue';
+  static const String sourcesBlockCatalogSubtitle =
+      'Parcourez toutes les sources disponibles.';
+  static const String sourcesBlockSubscriptionsTitle = 'Vos abonnements presse';
+  static const String sourcesBlockSubscriptionsSubtitle =
+      'Connectez vos abonnements payants pour lire les articles en entier.';
 
   // Preuve instantanée à l'ajout (Wow #1)
   static const String sourceProofConnected = 'Connecté';

@@ -66,7 +66,7 @@ void main() {
     );
   }
 
-  testWidgets('rend le titre et une carte source', (tester) async {
+  testWidgets('rend le titre et les boutons d\'action', (tester) async {
     final container = makeContainer([
       _src('main', tier: 'mainstream'),
       _src('deep', tier: 'deep'),
@@ -76,44 +76,59 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(OnboardingStrings.swipeTitle), findsOneWidget);
-    // Au moins une carte du spanning set est rendue.
-    expect(find.byType(Dismissible), findsOneWidget);
+    // La carte du dessus + ses boutons d'action (like / pas pour moi).
+    expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+    // Nudge « touchez pour explorer » sur la 1ère carte.
+    expect(find.text(OnboardingStrings.swipeTapHint), findsOneWidget);
+    // Bloc d'infos intrinsèques clair (Tendance + Fiabilité) sur la carte du dessus.
+    expect(find.text(OnboardingStrings.swipeBiasPrefix), findsWidgets);
+    expect(find.text(OnboardingStrings.swipeReliabilityPrefix), findsWidgets);
   });
 
-  testWidgets('like (carte unique) enregistre le vote et avance vers sources',
+  testWidgets('like (carte unique) : fling, vote enregistré, avance vers sources',
       (tester) async {
     final container = makeContainer([_src('solo', tier: 'mainstream')]);
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
-    await tester
-        .tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
-    await tester.pump();
+    await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
+    await tester.pump(); // démarre le fling
+    await tester.pump(const Duration(milliseconds: 400)); // fling terminé → vote
 
+    // Dernière carte triée → moment « on affine vos sources » (overlay ~1,4 s).
+    expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1500)); // refining → completeSwipe
     expect(container.read(onboardingProvider).answers.swipeLiked,
         equals(['solo']));
 
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 350)); // transition completeSwipe
     expect(
       container.read(onboardingProvider).currentQuestionIndex,
       Section3Question.sources.index,
     );
   });
 
-  testWidgets('skip (carte unique) enregistre le rejet et avance vers sources',
+  testWidgets('skip (carte unique) : fling, rejet enregistré, avance vers sources',
       (tester) async {
     final container = makeContainer([_src('solo', tier: 'mainstream')]);
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithIcon(InkWell, Icons.close_rounded));
-    await tester.pump();
+    await tester.pump(); // démarre le fling
+    await tester.pump(const Duration(milliseconds: 400)); // fling terminé → vote
 
+    // Dernière carte triée → moment « on affine vos sources » (overlay ~1,4 s).
+    expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1500)); // refining → completeSwipe
     expect(container.read(onboardingProvider).answers.swipeDisliked,
         equals(['solo']));
     expect(container.read(onboardingProvider).answers.swipeLiked, isEmpty);
 
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 350)); // transition completeSwipe
     expect(
       container.read(onboardingProvider).currentQuestionIndex,
       Section3Question.sources.index,

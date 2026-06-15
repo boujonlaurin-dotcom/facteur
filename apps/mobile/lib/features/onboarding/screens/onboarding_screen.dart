@@ -14,7 +14,6 @@ import 'questions/media_concentration_screen.dart';
 import 'questions/themes_question.dart';
 import 'questions/subtopics_question.dart';
 import 'questions/sources_question.dart';
-import 'questions/sources_intent_question.dart';
 import 'questions/swipe_disambiguator_question.dart';
 import 'questions/finalize_question.dart';
 import 'questions/intro_screen.dart';
@@ -201,7 +200,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   /// Section 3 : Source Preferences
-  /// (Themes → Subtopics → Intent → Sources → [Mode serein] → Finalize)
+  /// (Themes → Subtopics → Swipe → Sources → [Mode serein] → Finalize)
   Widget _buildSection3Content(OnboardingState state) {
     final question = state.currentSection3Question;
 
@@ -211,9 +210,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
       case Section3Question.subtopics:
         return const SubtopicsQuestion(key: ValueKey('subtopics'));
-
-      case Section3Question.sourcesIntent:
-        return const SourcesIntentQuestion(key: ValueKey('sources_intent'));
 
       case Section3Question.swipe:
         return const SwipeDisambiguatorQuestion(key: ValueKey('swipe'));

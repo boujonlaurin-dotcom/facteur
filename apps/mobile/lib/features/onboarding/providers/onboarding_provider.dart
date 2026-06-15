@@ -22,7 +22,9 @@ class OnboardingAnswers {
   // Section 3
   final List<String>? themes;
   final List<String>? subtopics;
-  final String? sourcesIntent; // curious, knows (local uniquement, hors API)
+  // Conservé pour la compat reprise Hive (v7 : question retirée, figé à
+  // 'curious'). Local uniquement, jamais dans toJson() (hors payload API).
+  final String? sourcesIntent;
   final List<String>? preferredSources;
   final String? formatPreference; // short, long, audio, video
   final String? personalGoal; // culture, work, conversations, learning
@@ -191,15 +193,15 @@ enum Section2Question {
 }
 
 /// Questions de la Section 3 (Source Preferences)
-/// Ordre : Thèmes → Subtopics → Intent sources → Sources → [Mode serein] → Finalize
-/// `digestMode` n'apparaît que si l'objectif « anxiety » est coché (mode serein
-/// conditionnel, placé juste avant le final).
+/// Ordre : Thèmes → Subtopics → Swipe → Sources → [Mode serein] → Finalize
+/// La question d'intent (« curieux / je connais ») a été retirée (v7) : tout le
+/// monde passe par le swipe de calibration. `digestMode` n'apparaît que si
+/// l'objectif « anxiety » est coché (mode serein conditionnel, avant le final).
 enum Section3Question {
   themes, // Q9: Vos thèmes préférés (cloud pur)
   subtopics, // Q9b: Affine tes centres d'intérêt (cards structurées)
-  sourcesIntent, // Q9c: Avec quels médias préférez-vous partir ? (curious/knows)
-  swipe, // Q9c bis: désambiguateur (conditionnel : parcours « curieux » seul)
-  sources, // Q10: Page sources adaptative (suggestions / recherche selon intent)
+  swipe, // Q9c: swipe de calibration (inconditionnel, cœur du parcours)
+  sources, // Q10: Page sources « sur mesure » (suggestions pré-cochées)
   digestMode, // Mode serein (conditionnel : objectif « anxiety » uniquement)
   finalize, // Écran de finalisation
 }
@@ -238,15 +240,10 @@ class OnboardingState {
 
   /// Séquence active des questions de la Section 3 :
   /// - `digestMode` est retiré quand le mode serein n'est pas proposé (pas
-  ///   d'objectif anxiety) ;
-  /// - `swipe` (désambiguateur) est retiré sur le parcours « je connais déjà »
-  ///   (`sourcesIntent == 'knows'`) — il ne sert qu'au parcours « curieux ».
+  ///   d'objectif anxiety). Le swipe est désormais inconditionnel (v7).
   List<Section3Question> get section3Sequence =>
       Section3Question.values.where((q) {
         if (q == Section3Question.digestMode && !hasAnxietyObjective) {
-          return false;
-        }
-        if (q == Section3Question.swipe && answers.sourcesIntent == 'knows') {
           return false;
         }
         return true;
@@ -324,12 +321,12 @@ class OnboardingState {
       case OnboardingSection.sourcePreferences:
         // Thèmes + sous-thèmes ne sont plus skippables (décision PO) : ces deux
         // étapes structurent toute la perso et ont déjà un gate « >=1 sélection »
-        // côté bouton Continuer. L'intent sources, le swipe désambiguateur et le
-        // mode digest gardent un défaut sain et restent passables.
+        // côté bouton Continuer. Le swipe de calibration est désormais
+        // obligatoire (v7, « tout le monde swipe ») : il dégrade gracieusement
+        // (set vide → auto-skip) et n'a donc pas besoin d'un « Passer ». Seul le
+        // mode digest garde un défaut sain et reste passable.
         final q = currentSection3Question;
-        return q == Section3Question.sourcesIntent ||
-            q == Section3Question.swipe ||
-            q == Section3Question.digestMode;
+        return q == Section3Question.digestMode;
     }
   }
 
@@ -369,7 +366,9 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // v6 : posture (responseStyle) retirée de la Section 2 → remplacée par
   // l'axe Indépendance ; étape `swipe` insérée en Section 3. Les index d'enum
   // changent à nouveau → bump obligatoire pour wiper les positions sauvegardées.
-  static const int _currentVersion = 6;
+  // v7 : question `sourcesIntent` retirée (swipe inconditionnel). Les index
+  // d'enum Section 3 changent encore → bump pour wiper les positions Hive.
+  static const int _currentVersion = 7;
 
   /// Charge les réponses sauvegardées en cas de reprise
   Future<void> _loadSavedAnswers() async {
@@ -651,34 +650,16 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       case OnboardingSection.sourcePreferences:
         switch (state.currentSection3Question) {
           case Section3Question.themes:
-            // pas de thèmes → saut direct intent (pas de subtopics sans thème)
+            // pas de thèmes → saut direct swipe (pas de subtopics sans thème)
             state = state.copyWith(
               answers: state.answers.copyWith(themes: const []),
-              currentQuestionIndex: Section3Question.sourcesIntent.index,
+              currentQuestionIndex: Section3Question.swipe.index,
             );
             _saveAnswers();
           case Section3Question.subtopics:
             state = state.copyWith(
               answers: state.answers.copyWith(subtopics: const []),
-              currentQuestionIndex: Section3Question.sourcesIntent.index,
-            );
-            _saveAnswers();
-          case Section3Question.sourcesIntent:
-            // défaut PO : variante « curieux » (suggestions guidées) → le
-            // parcours curieux passe par le swipe désambiguateur.
-            state = state.copyWith(
-              answers: state.answers.copyWith(sourcesIntent: 'curious'),
               currentQuestionIndex: Section3Question.swipe.index,
-            );
-            _saveAnswers();
-          case Section3Question.swipe:
-            // Passer le swipe : aucun vote, on enchaîne sur la page sources.
-            state = state.copyWith(
-              answers: state.answers.copyWith(
-                swipeLiked: const [],
-                swipeDisliked: const [],
-              ),
-              currentQuestionIndex: Section3Question.sources.index,
             );
             _saveAnswers();
           case Section3Question.digestMode:
@@ -687,6 +668,9 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
               currentQuestionIndex: Section3Question.finalize.index,
             );
             _saveAnswers();
+          // Le swipe est inconditionnel (v7) → jamais « Passer » (cf.
+          // isSkippable). Le set vide auto-avance via completeSwipe.
+          case Section3Question.swipe:
           case Section3Question.sources:
           case Section3Question.finalize:
             break;
@@ -725,7 +709,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
-  /// Sélectionne les sous-thèmes (Q9b) → Intent sources
+  /// Sélectionne les sous-thèmes (Q9b) → Swipe de calibration
   void selectSubtopics(List<String> subtopics) {
     state = state.copyWith(
       answers: state.answers.copyWith(subtopics: subtopics),
@@ -735,28 +719,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section3Question.sourcesIntent.index,
-        isTransitioning: false,
-      );
-    });
-  }
-
-  /// Sélectionne l'intent sources (Q9c : curious / knows).
-  /// - `curious` → étape swipe désambiguateur (puis page sources) ;
-  /// - `knows` → directement la page sources (le swipe est sauté, l'utilisateur
-  ///   part de ses propres médias).
-  void selectSourcesIntent(String intent) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(sourcesIntent: intent),
-      isTransitioning: true,
-    );
-    _saveAnswers();
-
-    Future.delayed(const Duration(milliseconds: 300), () {
-      state = state.copyWith(
-        currentQuestionIndex: intent == 'knows'
-            ? Section3Question.sources.index
-            : Section3Question.swipe.index,
+        currentQuestionIndex: Section3Question.swipe.index,
         isTransitioning: false,
       );
     });
