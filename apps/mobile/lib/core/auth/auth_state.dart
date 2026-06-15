@@ -9,6 +9,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../features/auth/utils/auth_error_messages.dart';
 import '../services/posthog_service.dart';
+import '../services/server_push_service.dart';
 import '../services/widget_service.dart';
 import 'session_refresher.dart';
 
@@ -361,6 +362,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       ),
     );
     final expiredUserId = state.user?.id;
+    await ServerPushService.instance.revokeCurrentDevice().timeout(
+      const Duration(seconds: 2),
+      onTimeout: () {},
+    );
     await _supabase.auth.signOut().timeout(
       const Duration(seconds: 3),
       onTimeout: () {},
@@ -375,6 +380,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     debugPrint('AuthStateNotifier: signOut() explicitly called. TRACE:');
     debugPrint(StackTrace.current.toString());
     final signedOutUserId = state.user?.id;
+    await ServerPushService.instance.revokeCurrentDevice();
     await _supabase.auth.signOut();
     final box = await Hive.openBox<dynamic>('auth_prefs');
     await box.delete('remember_me'); // Reset preference on sign out

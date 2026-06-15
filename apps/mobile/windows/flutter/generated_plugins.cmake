@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
+  firebase_core
   flutter_inappwebview_windows
   flutter_secure_storage_windows
   flutter_timezone
