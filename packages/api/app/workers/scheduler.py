@@ -14,6 +14,7 @@ from app.jobs.digest_generation_job import (
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_language import recompute_source_language
 from app.services.observability.cost_budget import log_budget_projection
+from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 
