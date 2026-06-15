@@ -975,6 +975,60 @@ class TabCounts {
   }
 }
 
+/// « Pas de recul » deep recommendation surfaced at the bottom of the reader.
+///
+/// Renvoyé par `GET /contents/{id}/perspectives` via la clé `deep_recommendation`
+/// (objet ou `null`). Le matching tourne en background côté backend ; tant qu'il
+/// n'est pas résolu, `PerspectivesResponse.deepPending` vaut `true` et cet objet
+/// est `null` (le mobile refetch alors).
+class DeepRecommendation {
+  final String contentId;
+  final String title;
+  final String? url;
+  final String? thumbnailUrl;
+  final String contentType;
+  final String? sourceId;
+  final String sourceName;
+  final String? sourceLogoUrl;
+
+  /// Date de publication ISO 8601 (peut être `null`).
+  final String? publishedAt;
+
+  /// Raison éditoriale du match (« pourquoi ce pas de recul »). Peut être vide.
+  final String matchReason;
+  final String? description;
+
+  const DeepRecommendation({
+    required this.contentId,
+    required this.title,
+    this.url,
+    this.thumbnailUrl,
+    this.contentType = 'article',
+    this.sourceId,
+    this.sourceName = '',
+    this.sourceLogoUrl,
+    this.publishedAt,
+    this.matchReason = '',
+    this.description,
+  });
+
+  factory DeepRecommendation.fromJson(Map<String, dynamic> json) {
+    return DeepRecommendation(
+      contentId: json['content_id']?.toString() ?? '',
+      title: (json['title'] as String?) ?? '',
+      url: json['url'] as String?,
+      thumbnailUrl: json['thumbnail_url'] as String?,
+      contentType: (json['content_type'] as String?) ?? 'article',
+      sourceId: json['source_id']?.toString(),
+      sourceName: (json['source_name'] as String?) ?? '',
+      sourceLogoUrl: json['source_logo_url'] as String?,
+      publishedAt: json['published_at'] as String?,
+      matchReason: (json['match_reason'] as String?) ?? '',
+      description: json['description'] as String?,
+    );
+  }
+}
+
 /// Response from perspectives API
 class PerspectivesResponse {
   final List<PerspectiveData> perspectives;
@@ -994,6 +1048,14 @@ class PerspectivesResponse {
   /// `null` si le back n'a trouvé aucun verbe ou si déploiement back en retard.
   final TokenSpan? referencePivot;
 
+  /// « Pas de recul » : article de fond recommandé, ou `null` (pas de match ou
+  /// matching encore en cours, cf. [deepPending]).
+  final DeepRecommendation? deepRecommendation;
+
+  /// `true` = le matching deep tourne en background côté backend ; le mobile
+  /// doit refetch. `false` = état résolu (objet présent ou `null` définitif).
+  final bool deepPending;
+
   PerspectivesResponse({
     required this.perspectives,
     required this.keywords,
@@ -1006,6 +1068,8 @@ class PerspectivesResponse {
     this.partial = false,
     this.divergenceLevel,
     this.referencePivot,
+    this.deepRecommendation,
+    this.deepPending = false,
   });
 
   factory PerspectivesResponse.fromJson(Map<String, dynamic> json) {
@@ -1041,6 +1105,12 @@ class PerspectivesResponse {
       partial: (json['partial'] as bool?) ?? false,
       divergenceLevel: json['divergence_level'] as String?,
       referencePivot: TokenSpan.fromJsonOrNull(json['reference_pivot']),
+      deepRecommendation: json['deep_recommendation'] is Map
+          ? DeepRecommendation.fromJson(
+              json['deep_recommendation'] as Map<String, dynamic>,
+            )
+          : null,
+      deepPending: (json['deep_pending'] as bool?) ?? false,
     );
   }
 }

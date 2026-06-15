@@ -25,6 +25,7 @@ import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../../config/routes.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
@@ -39,6 +40,7 @@ import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
 import '../widgets/article_tags_row.dart';
 import '../widgets/audio_player_widget.dart';
+import '../widgets/deep_recommendation_card.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
@@ -1661,6 +1663,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _perspectivesResponse = response;
           _perspectivesLoading = false;
         });
+        // Un seul refetch one-shot couvre perspectives partielles ET le matching
+        // deep « Pas de recul » encore en cours (deep_pending) ; on ne double
+        // pas l'appel (LLM-coûteux). Voir _schedulePerspectivesPartialRefetch.
+        if (response.partial || response.deepPending) {
         // Prefill : si le back renvoie déjà l'analyse cachée, on seed le sheet
         // en `done` → ouverture immédiate sans 2ᵉ appel.
         final cached = response.analysis;
@@ -1688,6 +1694,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         });
       }
     }
+  }
+
+  /// Ouvre l'article de fond « Pas de recul » dans le reader. Le handler de
+  /// route `content/:id` (re)fetch le Content depuis l'id, donc pas d'`extra`.
+  void _openDeepReco(DeepRecommendation reco) {
+    if (reco.contentId.isEmpty) return;
+    context.push('${RoutePaths.flaner}/content/${reco.contentId}');
   }
 
   void _schedulePerspectivesPartialRefetch(String contentId) {
@@ -3508,6 +3521,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
+                // ── « Pas de recul » (deep reco) ────────────────────────────
+                // Carte d'analyse de fond surfacée tout en bas du reader.
+                // Silencieux tant que deep_pending && reco null (calcul en cours).
+                if (_perspectivesResponse?.deepRecommendation != null &&
+                    !_isExternal) ...[
+                  const SizedBox(height: FacteurSpacing.space4),
+                  DeepRecommendationCard(
+                    reco: _perspectivesResponse!.deepRecommendation!,
+                    onTap: () =>
+                        _openDeepReco(_perspectivesResponse!.deepRecommendation!),
+                  ),
                 // ── Perspectives section (fin du reader) ───────────────────
                 // Bande frostée encastrée (hairline fine + teinte quasi-
                 // invisible) ; large respiration au-dessus pour la détacher.

@@ -1,31 +1,66 @@
-feat(observabilité): instrumentation API externes + sonde pool + résumé digest (scaling WP-E)
+# Volet « Pas de recul » (deep reco) dans le reader — backend + mobile
 
-Enabler scaling **purement additif** (aucun impact user-facing, aucun changement de comportement métier). Phase 1 de l'investigation scaling 200 users — *mesurer avant de remédier*. Débloque WP-D (quotas/coûts Mistral), WP-B (digest), WP-A (pool). Doc : `docs/maintenance/maintenance-observabilite-scaling.md`.
+## Résumé
+Réactive le moteur « Pas de recul » (désactivé au post-unification cleanup) et
+l'expose **par article ouvert** : l'endpoint `GET /contents/{id}/perspectives`
+renvoie une recommandation d'article de fond (`deep_recommendation`), et le
+reader la rend tout en bas, sous la « Couverture médiatique ». Premier étage de
+la dimension « deep » de l'app. **Aucune migration Alembic.**
 
-## Volet 1 — Tracking persistant des appels API externes
-- Nouvelle table append-only **`api_usage_events`** (`provider`, `model`, `call_site`, `user_id`, `status`, `latency_ms`, `created_at` + 2 index). Pas de contrainte d'unicité → zéro hot-row contention.
-- Recorder best-effort **`record_api_call`** (`app/services/observability/usage_recorder.py`) : session courte dédiée (`safe_async_session`), jamais bloquant, ne lève jamais, gated par le kill-switch `usage_tracking_enabled`.
-- 6 call sites instrumentés en `try/finally` (capte aussi `error`/`rate_limited`) : `classification_pass1`, `good_news_pass2`, `editorial` (chokepoint unique curation/pipeline/deep/perspective), `veille_suggester`, `smart_search_mistral`, `smart_search_brave`. Compteurs in-memory veille existants **laissés en place** (pas de rebranchement d'enforcement → WP-D).
+## Changements — Backend
+- **`deep_matcher.py`** : nouvelle méthode `match_for_content(content)` — variante
+  reader de `match_for_topics`. Dérive un pseudo-angle depuis l'article ouvert
+  (titre + topics + theme), réutilise tel quel `_load_deep_articles` / `_prefilter`
+  / `_expand_query` / `_llm_evaluate` / `_fallback_pick`. Exclut l'article ouvert
+  **et** tout article du même cluster (pas une autre dépêche du même évènement).
+  Helper `_entity_names` tolérant aux deux formats d'entités (JSON & `name:type`).
+- **`routers/contents.py`** : cache dédié `_deep_reco_cache` (TTL 2h) + sentinelle
+  `_DEEP_NO_MATCH` + garde in-flight. Le matching tourne en **background**
+  (`_compute_deep_reco_background`) car il fait 2 appels LLM — on ne bloque pas
+  l'ouverture du reader, exactement comme le pattern partiel/refresh des
+  perspectives. `deep_recommendation` (dict|null) + `deep_pending` (bool) sont
+  attachés aux 3 chemins de retour (cache hit / snapshot digest / live) et
+  préservés à travers le refresh background.
+- **`editorial_prompts.yaml`** : prompt `deep_matching` décommenté. **`config.py`** :
+  commentaire TODO nettoyé.
 
-## Volet 2 — Résumé de run digest always-on
-- `compute_digest_coverage(session, target_date)` factorisé depuis le watchdog (source unique de la couverture, partagée scheduler ↔ job).
-- Log always-on `digest_run_summary` (`duration_seconds`, `total_users`, `success`, `failed`, `coverage_pct`) + `coverage_pct` ajouté à l'event PostHog `digest_generated`. Couverture lue dans une session dédiée best-effort. Aucune nouvelle table.
+## Changements — Mobile
+- **`feed_repository.dart`** : modèle `DeepRecommendation` + champs
+  `deepRecommendation` / `deepPending` sur `PerspectivesResponse` (+ parsing JSON,
+  rétro-compatible : clés absentes ⇒ `null` / `false`).
+- **`deep_recommendation_card.dart`** (nouveau) : carte « Pas de recul »
+  (médaillon 🔭, titre, raison de match, source ; tap → ouvre l'article dans le
+  reader). Palette dérivée des tokens `colors.*` ⇒ cohérent clair/sombre/oled.
+- **`content_detail_screen.dart`** : rendu de la carte en bas du reader (gardé par
+  `deep_recommendation != null && !_isExternal`), `_openDeepReco()` (push route
+  `content/:id`), et refetch one-shot étendu à `deepPending` (pas de double appel
+  LLM-coûteux).
 
-## Volet 3 — Sonde pool périodique + métrique idle-in-tx
-- `read_pool_stats(engine)` factorisé (`app/observability/pool_stats.py`), réutilisé par `/api/health/pool` (comportement inchangé) **et** par la nouvelle sonde.
-- Job APScheduler `_pool_health_probe` (interval 5 min) : alerte `db_pool_pressure_high` + `sentry_sdk.capture_message(level="warning")` au seuil `pool_alert_threshold_pct` (défaut 80).
-- `zombie_session_sweeper` émet désormais `db_idle_in_transaction_swept{count}` always-on (idle-in-tx requêtable même à 0).
+## Contrat API (nouveaux champs de la réponse perspectives)
+```
+deep_recommendation: {
+  content_id, title, url, thumbnail_url, content_type,
+  source_id, source_name, source_logo_url, published_at,
+  match_reason, description
+} | null
+deep_pending: bool   # true = matching en cours en background → mobile doit refetch
+```
 
-## Config (kill-switches)
-`usage_tracking_enabled: bool = True` · `pool_alert_threshold_pct: int = 80`.
+## Tests
+- `tests/editorial/test_deep_matcher.py` : `TestMatchForContent` (sélection LLM,
+  exclusion self, exclusion même cluster, pool vide, pivot maigre, fallback no-LLM)
+  + `TestEntityNames`. **25/25 verts.**
+- `tests/routers/test_contents_deep_reco.py` (nouveau) : helpers `_deep_reco_to_dict`,
+  `_apply_deep_from_cache`, `_attach_deep_recommendation`. **8/8 verts.**
+- `deep_recommendation_card_test.dart` (nouveau) + `feed_repository_perspectives_test.dart`
+  (étendu : parsing `deep_recommendation` / `deep_pending`).
+- 1 seul head Alembic, aucune migration.
 
-## Migration
-`au01_api_usage_events`, `down_revision = gr02_grille_featured_article` (head courant ; `vf02` du plan était dépassé depuis #784). **1 seul head** confirmé via `alembic heads`. Additive pure (CREATE TABLE + 2 index), rollback trivial. `upgrade head` + `downgrade -1` rejoués sur **DB vide** → OK.
+## Vérif manuelle suggérée (avant merge)
+`uvicorn` local + `curl /contents/{id}/perspectives` → `deep_pending:true` au 1er
+appel, puis `deep_recommendation` peuplé au 2e (article avec sujet couvert par une
+source `source_tier='deep'`) ; `null` sur un fait divers.
 
-## Tests & VERIFY
-- Nouveaux : `tests/test_usage_recorder.py` (kill-switch, best-effort never-raises, coercition user_id, call_site inconnu), `tests/test_pool_observability.py` (`read_pool_stats` saturé/ok/NullPool + sonde alerte/quiet/registration).
-- Non-régression : `tests/ml/`, `tests/editorial/`, `tests/workers/`, `tests/test_digest_generation_job.py`, `tests/test_health_pool.py`, `tests/services/search/` → **tout vert** (~355 tests sur les modules touchés).
-- Intégration live (Postgres) : 1 ligne/appel écrite (Mistral + Brave), kill-switch ⇒ 0 insert, requête WP-D `GROUP BY provider, model, day` OK.
-
-## Risques & rollback
-Write amplification négligeable (append-only + best-effort + flag, ~3k/j). Rollback à chaud : `usage_tracking_enabled=False` (sans redéploiement schéma) ou `alembic downgrade -1`. Pas de changelog user (PR backend sans impact visible).
+## Suite
+- Chantier curation deep (séparé) : labelliser plus de sources `source_tier='deep'`
+  + chaînes YouTube + reportages.
