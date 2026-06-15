@@ -22,7 +22,7 @@ Du point de vue data, cela implique :
 | ORM | SQLAlchemy 2.0 | 20+ tables, mapped columns |
 | Migrations | Alembic (47 fichiers) | Tracking DDL, exécution manuelle via Supabase SQL Editor |
 | Classification | Mistral API (mistral-small-latest) | Tagging topics + sérénité, ~3000 articles/h |
-| Extraction | trafilatura + readability-lxml | Contenu full-text pour lecture in-app |
+| Lecture in-app | Contenu HTML fourni par RSS | Aucun téléchargement du corps d'article |
 | Scheduler | APScheduler (AsyncIO) | 4 jobs cron + 1 worker continu |
 | Logging | structlog | JSON structuré |
 | Monitoring | Sentry | Exception tracking |

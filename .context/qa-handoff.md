@@ -1,60 +1,77 @@
-# QA Handoff — Modes d'affichage des articles (Story 10.1, finalisation)
+# QA Handoff — Fiche source v3 (endpoint `/profile` unifié + fréquence + cartes article cliquables)
 
-> Rempli par l'agent dev. Input de /validate-feature.
+> Rempli par l'agent dev après VERIFY. Input de `/validate-feature` (agent QA Chrome).
 
 ## Feature développée
-Différenciation réelle des 3 modes d'affichage (Normal / Minimaliste / Ludique) : le minimaliste révèle plus d'articles par section (le fit peut monter au-dessus du top 3 nominal, plafond 7) avec titres jusqu'à 5 lignes ; le ludique met l'image en élément principal (pleine largeur en haut de carte, hauteur fixe 170, fontScale 1.05, titres 3 lignes). Bonus : le CTA « Tout lire » de bas de section est remplacé par un banner cliquable (chevron accent + « +X » gris dans le titre) et les chips de thème des tuiles de l'Essentiel sont retirées.
+La fiche source (bottom sheet) devient un vrai signal produit : un endpoint unifié
+`GET /sources/{id}/profile` alimente en un seul appel la couverture par thèmes, le volume
+30 jours, la **fréquence de publication** (nouveau chip horloge dans le header) et les
+**3 articles récents** rendus en carte standard `FluxContinuArticleCard` (cliquables →
+reader, read-sync, aperçu en appui long). L'évaluation reste reléguée, repliée.
 
 ## PR associée
-À créer via /go (base main).
+<!-- À compléter après ouverture : gh pr view --web -->
+Branche : `boujonlaurin-dotcom/source-profile-endpoint` (base `main`).
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Tournée (Flux Continu) | / (home) | Modifié (cartes, banners, fit) |
-| Profil → Affichage des articles | /profile (bottom sheet) | Existant (sélecteur de mode) |
-| Page thème / source (deep-dive) | /flux-continu/theme/:key | Modifié (accès via tap banner) |
-| Flâner (banner large) | page Flâner | Inchangé attendu (pas de chevron) |
+| Fiche source (bottom sheet `SourceDetailModal`) | ouverte depuis Sources, Flâner, reader (chip source), thèmes, pépites, onboarding | Modifié |
+| Reader article (`ContentDetailScreen`) | `/flux-continu/content/:id` | Cible du tap sur une carte article (existant) |
 
 ## Scénarios de test
 
-### Scénario 1 : Mode minimaliste — plus d'articles
+### Scénario 1 : Happy path — source active riche
 **Parcours** :
-1. Profil → « Affichage des articles » → Minimaliste → valider
-2. Revenir sur la Tournée
-**Résultat attendu** : cartes texte seul compactes ; les sections (Bonnes Nouvelles incluse) affichent plus de 3 articles si l'écran le permet (jusqu'à 7) ; titres longs jusqu'à 5 lignes ; aucune carte ne déborde de l'écran (filet `[fit-net]` silencieux).
+1. Ouvrir la fiche d'une source qui publie beaucoup (ex. Le Monde) via l'onglet Sources ou une chip source dans le reader.
+2. Observer le header.
+3. Faire défiler jusqu'aux sections « Couverture par thèmes » et « Derniers articles ».
+4. Taper sur une carte article.
+**Résultat attendu** :
+- Header : nom + domaine + signal « Suivi par N lecteurs » **et** chip horloge fréquence (ex. « ~100/jour », « quelques-uns/semaine »).
+- Couverture : barres par thème (label + barre + %), caption « N articles publiés sur la période ».
+- Derniers articles : jusqu'à 3 cartes `FluxContinuArticleCard` (logo source, titre, méta), alignées avec le reste de la fiche.
+- Tap sur une carte → ouvre le reader de l'article ; au retour, la carte porte le badge « lu » (read-sync).
+- Appui long sur une carte → aperçu (preview overlay).
 
-### Scénario 2 : Mode ludique — image en haut
+### Scénario 2 : Edge case — source fraîche / sans articles / éval absente
 **Parcours** :
-1. Profil → « Affichage des articles » → Ludique → valider
-2. Parcourir la Tournée
-**Résultat attendu** : cartes régulières avec image pleine largeur en haut (type carrousel) et texte dessous ; textes à peine plus gros que Normal (1.05) ; titres max 3 lignes ; badge play conservé sur les vidéos ; hero Essentiel inchangé structurellement.
+1. Ouvrir une source très récente (peu d'historique) → vérifier que la fréquence n'est pas sous-estimée (fenêtre clampée à l'âge réel).
+2. Ouvrir une source sans contenu → section articles = carte « Aucun article récent. », couverture masquée.
+3. Ouvrir une source non évaluée → bloc « Évaluation Facteur » affiche « Pas encore évaluée », reste repliée.
 
-### Scénario 3 : Carte ludique avec image cassée (cas d'erreur)
+### Scénario 3 : Cas d'erreur — `/profile` injoignable (fallback gracieux)
 **Parcours** :
-1. En mode ludique, trouver un article dont la vignette 404 (ou couper le réseau après le 1er rendu)
-**Résultat attendu** : la carte retombe sur le layout texte standard (pas d'espace vide de 170px, pas d'image grise cassée).
+1. Couper le réseau (ou simuler une 5xx) puis ouvrir une fiche source.
+**Résultat attendu** : la sheet ne bloque **jamais**. Fallback statique = header (sans chip
+fréquence) + évaluation + réglages (si suivie) + gestion + actions. Couverture / articles /
+fréquence masqués. Aucun spinner infini, aucun crash.
 
-### Scénario 4 : Banner cliquable (Bonus 1)
+### Scénario 4 : Mode smart-search inchangé (non-régression)
 **Parcours** :
-1. Sur la Tournée, taper le banner d'une section thème, source, veille, Actus du jour et Bonnes Nouvelles
-2. Taper l'étoile favorite d'une section favorite, puis le bouton réglages (tune) de la veille
-**Résultat attendu** : tap banner → ouvre la page « tout lire » de la section ; chevron « > » fin couleur accent après le titre + « +X » gris si articles cachés ; plus aucun bouton « Tout lire » en bas de section ; l'étoile ouvre « Composer ma Tournée » (pas la navigation) ; le tune ouvre la config veille ; le banner large de la page Flâner n'a ni chevron ni tap.
-
-### Scénario 5 : Essentiel allégé (Bonus 2)
-**Parcours** :
-1. Observer la carte « Ton Essentiel » (lead + médiums)
-**Résultat attendu** : plus de balises de thème (« Technologie », etc.) sur les tuiles ; le badge « Actu du jour » reste sur le lead concerné ; les tuiles médiums montrent source + titre.
+1. Depuis « Ajouter une source » (smart-search), ouvrir la fiche d'un résultat.
+**Résultat attendu** : comportement v2 intact — couverture via `/coverage`, articles en carte
+minimale (non cliquable), pas de chip fréquence, pas de FluxContinuArticleCard.
 
 ## Critères d'acceptation
-- [ ] Minimaliste : > 3 articles/section sur écran standard ; titres 5 lignes max
-- [ ] Ludique : image pleine largeur en haut, fontScale 1.05, titres 3 lignes, fallback image cassée
-- [ ] Banner cliquable sur les 5 types de sections, chevron + « +X », étoile/tune indépendants
-- [ ] Plus de bouton « Lire plus » en bas des sections
-- [ ] Plus de chips de thème dans l'Essentiel
-- [ ] Aucun débordement de carte dans les 3 modes (logs `[fit-net]` propres)
+- [ ] Chip fréquence visible et cohérent avec le volume réel (mode normal, source connue).
+- [ ] 3 cartes article standard cliquables → reader + read-sync + preview appui long.
+- [ ] Couverture par thèmes : barres + % + caption corrects.
+- [ ] Évaluation repliée par défaut, « à titre indicatif ».
+- [ ] Fallback statique sur erreur réseau (jamais de blocage).
+- [ ] Mode smart-search non régressé (cartes minimales, pas de chip).
+- [ ] 8 call sites de `SourceDetailModal` intacts (constructeur inchangé).
 
-## Vérifications déjà faites (dev)
-- `flutter analyze` : 0 erreur.
-- `flutter test test/features/flux_continu/ test/features/settings/` : 245/245 verts.
-- Suite complète : retour exact à la baseline (23 échecs pré-existants Hive/Supabase, hors périmètre).
+## Zones de risque
+- **Couplage `FluxContinuArticleCard` dans une sheet scrollable** : vérifier que le swipe
+  horizontal (swipe-to-open) ne crée pas de conflit avec le scroll vertical de la sheet, et
+  que tap → reader fonctionne. Si effet de bord, préférer un flag `interactive:false` plutôt
+  qu'un fork (cf. plan).
+- **Navigation depuis la sheet** : le tap pousse le reader sur le root navigator
+  (`RouteNames.contentDetail`) ; la sheet doit rester vivante dessous (retour OK).
+- Alignement visuel des cartes (padding +4px pour compenser les 12px internes de la carte).
+
+## Dépendances
+- Backend : `GET /api/sources/{source_id}/profile` (nouveau, auth requise). Aucune migration DB.
+- Endpoints `/coverage` et `/recent-items` conservés (autres consommateurs).
+- Providers mobile : `sourceProfileProvider` (nouveau, autoDispose) ; `sourceRecentArticlesProvider` supprimé ; `sourceCoverageProvider` conservé (smart-search).

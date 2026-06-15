@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/my_interests/models/user_sources_state.dart';
 import 'package:facteur/features/my_interests/providers/user_sources_state_provider.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/smart_search_result.dart';
 import 'package:facteur/features/sources/models/source_coverage.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/features/sources/models/source_profile.dart';
 import 'package:facteur/features/sources/providers/sources_providers.dart';
 import 'package:facteur/features/sources/widgets/source_detail_modal.dart';
 
@@ -34,10 +39,28 @@ const _emptyState = UserSourcesState(
   favoriteCap: 5,
 );
 
+Content _article(String id, String title, {String? theme}) {
+  return Content(
+    id: id,
+    title: title,
+    url: 'https://example.com/$id',
+    contentType: ContentType.article,
+    publishedAt: DateTime(2026, 6, 14),
+    topics: theme != null ? [theme] : const [],
+    source: Source(id: 's', name: 'Le Monde', type: SourceType.article),
+  );
+}
+
+/// Mode normal : la fiche s'alimente du profil unifié [sourceProfileProvider].
+/// [profileError] simule une panne réseau (→ fallback statique).
+/// [recentItems] non-null bascule en mode smart-search (couverture via
+/// [sourceCoverageProvider], cartes minimales préchargées).
 Widget _wrap({
   required Source source,
+  SourceProfile? profile,
+  Object? profileError,
   SourceCoverage? coverage,
-  List<SmartSearchRecentItem>? recentArticles,
+  List<SmartSearchRecentItem>? recentItems,
   bool? isSelectedOverride,
   UserSourcesState state = _emptyState,
 }) {
@@ -46,13 +69,15 @@ Widget _wrap({
       userSourcesProvider.overrideWith(() => _FakeUserSourcesNotifier([source])),
       userSourcesStateProvider
           .overrideWith(() => _FakeUserSourcesStateNotifier(state)),
+      displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
       sourceCoverageProvider(source.id).overrideWith(
         (_) async =>
             coverage ?? const SourceCoverage(periodLabel: '', totalCount: 0),
       ),
-      sourceRecentArticlesProvider(source.id).overrideWith(
-        (_) async => recentArticles ?? const <SmartSearchRecentItem>[],
-      ),
+      sourceProfileProvider(source.id).overrideWith((_) async {
+        if (profileError != null) throw profileError;
+        return profile ?? const SourceProfile();
+      }),
     ],
     child: MaterialApp(
       theme: FacteurTheme.lightTheme,
@@ -62,6 +87,7 @@ Widget _wrap({
           onToggleTrust: () {},
           onToggleMute: () {},
           isSelectedOverride: isSelectedOverride,
+          recentItems: recentItems,
         ),
       ),
     ),
@@ -69,6 +95,10 @@ Widget _wrap({
 }
 
 void main() {
+  setUpAll(() {
+    GoogleFonts.config.allowRuntimeFetching = false;
+  });
+
   group('SourceDetailModal — header & layout', () {
     testWidgets('renders name, domain, follower signal and description',
         (tester) async {
@@ -89,6 +119,19 @@ void main() {
       expect(find.text('Quotidien de référence.'), findsOneWidget);
       // Follower count uses narrow no-break space thousands separator.
       expect(find.textContaining('lecteurs'), findsOneWidget);
+    });
+
+    testWidgets('frequency chip rendered from profile (header signals)',
+        (tester) async {
+      final source =
+          Source(id: 's1', name: 'Le Monde', type: SourceType.article);
+      // 60 articles, fenêtre 30 j → 2/jour → « quelques-uns/jour ».
+      const profile = SourceProfile(articles30d: 60);
+
+      await tester.pumpWidget(_wrap(source: source, profile: profile));
+      await tester.pumpAndSettle();
+
+      expect(find.text('quelques-uns/jour'), findsOneWidget);
     });
   });
 
@@ -196,42 +239,21 @@ void main() {
     });
   });
 
-  group('SourceDetailModal — cas Le Pli (pas d\'articles / pas de scores)',
-      () {
-    testWidgets('shows "Pas encore évaluée" and articles empty-state',
+  group('SourceDetailModal — couverture (mode normal, profil unifié)', () {
+    testWidgets('renders coverage bars + caption derived from articles_30d',
         (tester) async {
-      final source = Source(
-        id: 'pli',
-        name: 'Le Pli',
-        type: SourceType.article,
-        // no reliability, no scores
-      );
-
-      await tester.pumpWidget(_wrap(source: source, recentArticles: const []));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Pas encore évaluée'), findsOneWidget);
-      expect(find.text('Derniers articles'), findsOneWidget);
-      expect(find.text('Rien publié ces 7 derniers jours.'), findsOneWidget);
-    });
-  });
-
-  group('SourceDetailModal — couverture', () {
-    testWidgets('renders coverage bars + caption when rows present',
-        (tester) async {
-      final source = Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
-      const coverage = SourceCoverage(
-        periodLabel: '30 derniers jours',
-        totalCount: 3012,
-        caption: '3 012 articles publiés sur la période',
-        rows: [
-          CoverageRow(theme: 'politics', count: 1024, pct: 34),
-          CoverageRow(theme: 'economy', count: 660, pct: 22),
-          CoverageRow(theme: 'autres', count: 630, pct: 21),
+      final source =
+          Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
+      const profile = SourceProfile(
+        articles30d: 3012,
+        themeDistribution: [
+          ThemeShare(theme: 'politics', count: 1024, share: 0.34),
+          ThemeShare(theme: 'economy', count: 660, share: 0.22),
+          ThemeShare(theme: 'autres', count: 630, share: 0.21),
         ],
       );
 
-      await tester.pumpWidget(_wrap(source: source, coverage: coverage));
+      await tester.pumpWidget(_wrap(source: source, profile: profile));
       await tester.pumpAndSettle();
 
       expect(find.text('Couverture par thèmes'), findsOneWidget);
@@ -239,46 +261,117 @@ void main() {
       expect(find.text('Politique'), findsOneWidget);
       expect(find.text('Économie'), findsOneWidget);
       expect(find.text('Autres'), findsOneWidget);
+      // Caption derived client-side, aligned with backend copy (U+202F milliers).
       expect(
-          find.text('3 012 articles publiés sur la période'), findsOneWidget);
+        find.text('3\u202F012 articles publiés sur la période'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('hides coverage section when rows empty', (tester) async {
+    testWidgets('hides coverage section when theme_distribution empty',
+        (tester) async {
       final source = Source(id: 'x', name: 'X', type: SourceType.article);
-      await tester.pumpWidget(_wrap(
-        source: source,
-        coverage: const SourceCoverage(
-          periodLabel: '30 derniers jours',
-          totalCount: 0,
-          rows: [],
-        ),
-      ));
+      await tester.pumpWidget(
+        _wrap(source: source, profile: const SourceProfile(articles30d: 0)),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('Couverture par thèmes'), findsNothing);
     });
   });
 
-  group('SourceDetailModal — articles & réglages conditionnels', () {
-    testWidgets('renders up to 3 article cards with theme tag', (tester) async {
-      final source = Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
+  group('SourceDetailModal — articles (mode normal, cartes cliquables)', () {
+    testWidgets('renders up to 3 FluxContinuArticleCard from recent_articles',
+        (tester) async {
+      final source =
+          Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
+      final profile = SourceProfile(
+        recentArticles: [
+          _article('a', 'Article A', theme: 'politics'),
+          _article('b', 'Article B', theme: 'economy'),
+          _article('c', 'Article C'),
+          _article('d', 'Article D'),
+        ],
+      );
+
+      await tester.pumpWidget(_wrap(source: source, profile: profile));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Derniers articles'), findsOneWidget);
+      expect(find.text('Article A'), findsOneWidget);
+      expect(find.text('Article B'), findsOneWidget);
+      expect(find.text('Article C'), findsOneWidget);
+      // Only 3 shown (4th dropped).
+      expect(find.text('Article D'), findsNothing);
+    });
+
+    testWidgets('empty recent_articles → neutral empty card', (tester) async {
+      final source = Source(id: 'x', name: 'X', type: SourceType.article);
+      await tester.pumpWidget(
+        _wrap(source: source, profile: const SourceProfile()),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Aucun article récent.'), findsOneWidget);
+    });
+  });
+
+  group('SourceDetailModal — fallback réseau (/profile en erreur)', () {
+    testWidgets('error → header + éval restent, couverture/articles masqués',
+        (tester) async {
+      final source = Source(
+        id: 'monde',
+        name: 'Le Monde',
+        type: SourceType.article,
+        reliabilityScore: 'high',
+      );
+
+      await tester.pumpWidget(
+        _wrap(source: source, profileError: Exception('network down')),
+      );
+      await tester.pumpAndSettle();
+
+      // La fiche ne bloque jamais : identité + éval toujours là.
+      expect(find.text('Le Monde'), findsOneWidget);
+      expect(find.text('Évaluation Facteur'), findsOneWidget);
+      // Sections data-dépendantes masquées.
+      expect(find.text('Couverture par thèmes'), findsNothing);
+      expect(find.text('Derniers articles'), findsNothing);
+    });
+  });
+
+  group('SourceDetailModal — mode smart-search (recentItems préchargés)', () {
+    testWidgets('renders minimal article cards + coverage from provider',
+        (tester) async {
+      final source =
+          Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
+      const coverage = SourceCoverage(
+        periodLabel: '30 derniers jours',
+        totalCount: 100,
+        caption: '100 articles publiés sur la période',
+        rows: [CoverageRow(theme: 'politics', count: 100, pct: 100)],
+      );
       final recent = [
         const SmartSearchRecentItem(title: 'Article A', theme: 'politics'),
-        const SmartSearchRecentItem(title: 'Article B', theme: 'economy'),
+        const SmartSearchRecentItem(title: 'Article B'),
         const SmartSearchRecentItem(title: 'Article C'),
         const SmartSearchRecentItem(title: 'Article D'),
       ];
 
-      await tester.pumpWidget(_wrap(source: source, recentArticles: recent));
+      await tester.pumpWidget(
+        _wrap(source: source, coverage: coverage, recentItems: recent),
+      );
       await tester.pumpAndSettle();
 
+      expect(find.text('Politique'), findsWidgets);
       expect(find.text('Article A'), findsOneWidget);
       expect(find.text('Article B'), findsOneWidget);
       expect(find.text('Article C'), findsOneWidget);
-      // Only 3 shown.
       expect(find.text('Article D'), findsNothing);
     });
+  });
 
+  group('SourceDetailModal — réglages conditionnels', () {
     testWidgets('settings (priority pill) hidden when NOT followed',
         (tester) async {
       final notFollowed =
