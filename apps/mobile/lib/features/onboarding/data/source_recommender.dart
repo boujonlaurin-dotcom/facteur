@@ -16,6 +16,10 @@ enum RecommendationTagType {
   /// Theme or subtopic match (e.g., "Tech", "IA")
   topic,
 
+  /// Spécialité dominante de la source ∈ sujets choisis ("Spécialisé en {X}").
+  /// Cœur de l'effet « wow » : ≥1 spécialiste visible par sujet sélectionné.
+  specialist,
+
   /// Deep analysis source — shown when user selected "noise" objective
   antiBruit,
 
@@ -61,8 +65,15 @@ class SourceRecommendation {
   final List<RecommendedSource> gems;
   final List<RecommendedSource> catalog;
 
+  /// Spécialistes ajoutés par la garantie de couverture : pour chaque subtopic
+  /// sélectionné non encore couvert par un spécialiste présent dans [matched],
+  /// le meilleur spécialiste curé du pool (badge « Spécialisé en {X} »).
+  /// Disjoint de [matched]/[perspective]/[gems]/[catalog].
+  final List<RecommendedSource> specialists;
+
   /// IDs that should be pre-selected.
   Set<String> get preselectedIds => {
+        ...specialists.map((r) => r.source.id),
         ...matched.map((r) => r.source.id),
         ...gems.map((r) => r.source.id),
       };
@@ -72,6 +83,7 @@ class SourceRecommendation {
     required this.perspective,
     required this.gems,
     required this.catalog,
+    this.specialists = const [],
   });
 }
 
@@ -215,6 +227,20 @@ class SourceRecommender {
       usedIds.add(r.source.id);
     }
 
+    // 3bis. Garantie de couverture : ≥1 spécialiste visible par subtopic choisi.
+    // Pour chaque subtopic non déjà couvert par un spécialiste dominant présent
+    // dans `matched`, tire le meilleur spécialiste curé restant du pool.
+    final specialistSources = _computeSpecialists(
+      selectedSubtopics: selectedSubtopics,
+      matched: matchedSources,
+      allCurated: curated,
+      usedIds: usedIds,
+      scored: scored,
+    );
+    for (final r in specialistSources) {
+      usedIds.add(r.source.id);
+    }
+
     // 4. Catalog: everything else, alphabetical
     final catalogSources = curated
         .where((s) => !usedIds.contains(s.id))
@@ -255,7 +281,75 @@ class SourceRecommender {
       perspective: withSimilarTag(perspectiveSources),
       gems: withSimilarTag(gemSources),
       catalog: catalogRecommended,
+      specialists: withSimilarTag(specialistSources),
     );
+  }
+
+  /// Garantit ≥1 carte « spécialiste » par subtopic sélectionné. Un subtopic est
+  /// déjà couvert si une source de [matched] le porte comme **spécialité
+  /// dominante** (`granularTopics.first`). Pour chaque subtopic restant, choisit
+  /// le meilleur spécialiste curé non encore utilisé qui **contient** ce subtopic
+  /// (dominant d'abord, puis meilleur score, fiabilité, volume). Une source n'est
+  /// tirée que pour un seul subtopic (cartes distinctes -> chaque sujet a la
+  /// sienne quand la data le permet).
+  static List<RecommendedSource> _computeSpecialists({
+    required List<String> selectedSubtopics,
+    required List<RecommendedSource> matched,
+    required List<Source> allCurated,
+    required Set<String> usedIds,
+    required Map<String, int> scored,
+  }) {
+    if (selectedSubtopics.isEmpty) return const [];
+
+    final covered = <String>{};
+    for (final r in matched) {
+      final gt = r.source.granularTopics;
+      if (gt.isNotEmpty && selectedSubtopics.contains(gt.first)) {
+        covered.add(gt.first);
+      }
+    }
+
+    final taken = <String>{...usedIds};
+    final result = <RecommendedSource>[];
+
+    for (final sub in selectedSubtopics) {
+      if (covered.contains(sub)) continue;
+      final candidates = allCurated
+          .where((s) => !taken.contains(s.id) && s.granularTopics.contains(sub))
+          .toList()
+        ..sort((a, b) {
+          final ad = a.granularTopics.isNotEmpty && a.granularTopics.first == sub
+              ? 1
+              : 0;
+          final bd = b.granularTopics.isNotEmpty && b.granularTopics.first == sub
+              ? 1
+              : 0;
+          if (ad != bd) return bd - ad; // spécialité dominante d'abord
+          final byScore = (scored[b.id] ?? 0).compareTo(scored[a.id] ?? 0);
+          if (byScore != 0) return byScore;
+          final aRel = a.reliabilityScore == 'high' ? 1 : 0;
+          final bRel = b.reliabilityScore == 'high' ? 1 : 0;
+          if (aRel != bRel) return bRel - aRel;
+          return b.articles30d.compareTo(a.articles30d);
+        });
+      if (candidates.isEmpty) continue;
+      final best = candidates.first;
+      taken.add(best.id);
+      covered.add(sub);
+      result.add(RecommendedSource(
+        source: best,
+        category: SourceCategory.matched,
+        tags: [
+          RecommendationTag(
+            label: 'Spécialisé en ${getTopicLabel(sub)}',
+            type: RecommendationTagType.specialist,
+          ),
+        ],
+        reason: 'Parce que vous suivez ${getTopicLabel(sub)}',
+        score: scored[best.id] ?? 0,
+      ));
+    }
+    return result;
   }
 
   /// Cherche la meilleure source aimée au swipe « similaire » à [s] : partage un
@@ -338,6 +432,20 @@ class SourceRecommender {
       }
     }
 
+    // Badge « spécialiste » : la spécialité *dominante* (1er granularTopic, =
+    // top share après le re-tag backend) ∈ sujets choisis. Cœur de l'effet wow.
+    final String? specialistSlug =
+        source.granularTopics.isNotEmpty &&
+                subtopics.contains(source.granularTopics.first)
+            ? source.granularTopics.first
+            : null;
+    if (specialistSlug != null) {
+      tags.add(RecommendationTag(
+        label: 'Spécialisé en ${getTopicLabel(specialistSlug)}',
+        type: RecommendationTagType.specialist,
+      ));
+    }
+
     // Granular topics match subtopics (+2 each)
     for (final gt in source.granularTopics) {
       if (subtopics.contains(gt)) {
@@ -346,6 +454,9 @@ class SourceRecommender {
           bestReasonScore = 2;
           bestReason = getTopicLabel(gt);
         }
+        // La spécialité dominante est déjà badgée « Spécialisé en X » : on ne
+        // double pas avec un tag thème générique.
+        if (gt == specialistSlug) continue;
         // Add subtopic tag (prefer over theme if more specific)
         if (tags.where((t) => t.type == RecommendationTagType.topic).length < 2) {
           tags.add(RecommendationTag(

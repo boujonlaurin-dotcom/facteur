@@ -109,19 +109,23 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     return b.source.followerCount.compareTo(a.source.followerCount);
   }
 
-  /// Jusqu'à `_suggestionsLimit` suggestions : matched triées score desc puis
-  /// volume-proxy ; sans thèmes (ou sans match), tri volume-proxy sur tout le
-  /// pool.
+  /// Jusqu'à `_suggestionsLimit` suggestions : les **spécialistes garantis** en
+  /// tête (≥1 par sujet choisi, badge « Spécialisé en X ») pour qu'ils survivent
+  /// au cap, puis matched triées score desc + volume-proxy ; sans thèmes (ou sans
+  /// match), tri volume-proxy sur tout le pool.
   List<RecommendedSource> _computeSuggestions(
     SourceRecommendation reco, {
     required bool hasThemes,
   }) {
-    if (hasThemes && reco.matched.isNotEmpty) {
+    final specialists = reco.specialists;
+    if (hasThemes && (reco.matched.isNotEmpty || specialists.isNotEmpty)) {
       final sorted = [...reco.matched]..sort((a, b) {
           final byScore = b.score.compareTo(a.score);
           return byScore != 0 ? byScore : _byVolumeProxy(a, b);
         });
-      return sorted.take(_suggestionsLimit).toList();
+      return _dedupById([...specialists, ...sorted])
+          .take(_suggestionsLimit)
+          .toList();
     }
 
     final pool = [
@@ -130,16 +134,30 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       ...reco.gems,
       ...reco.catalog,
     ]..sort(_byVolumeProxy);
-    return pool.take(_suggestionsLimit).toList();
+    return _dedupById([...specialists, ...pool])
+        .take(_suggestionsLimit)
+        .toList();
+  }
+
+  /// Dédoublonne par `source.id` en conservant le premier passage (les
+  /// spécialistes garantis, placés en tête, priment).
+  static List<RecommendedSource> _dedupById(List<RecommendedSource> list) {
+    final seen = <String>{};
+    final out = <RecommendedSource>[];
+    for (final r in list) {
+      if (seen.add(r.source.id)) out.add(r);
+    }
+    return out;
   }
 
   /// Catalogue complet (toutes catégories confondues) pour « Voir tout ».
-  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) => [
+  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) => _dedupById([
+        ...reco.specialists,
         ...reco.matched,
         ...reco.perspective,
         ...reco.gems,
         ...reco.catalog,
-      ];
+      ]);
 
   void _toggleSource(String sourceId) {
     HapticFeedback.lightImpact();

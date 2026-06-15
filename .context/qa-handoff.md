@@ -1,77 +1,73 @@
-# QA Handoff — Fiche source v3 (endpoint `/profile` unifié + fréquence + cartes article cliquables)
+# QA Handoff — Onboarding sources : re-mapping taxonomie + badge « Spécialisé en X »
 
 > Rempli par l'agent dev après VERIFY. Input de `/validate-feature` (agent QA Chrome).
 
 ## Feature développée
-La fiche source (bottom sheet) devient un vrai signal produit : un endpoint unifié
-`GET /sources/{id}/profile` alimente en un seul appel la couverture par thèmes, le volume
-30 jours, la **fréquence de publication** (nouveau chip horloge dans le header) et les
-**3 articles récents** rendus en carte standard `FluxContinuArticleCard` (cliquables →
-reader, read-sync, aperçu en appui long). L'évaluation reste reléguée, repliée.
+
+Pendant l'onboarding, l'écran de reco sources devient « wow » : chaque sujet (subtopic)
+sélectionné obtient **au moins une source spécialisée visible**, badgée « Spécialisé en X ».
+Côté backend, un script aligne le vocabulaire des `granular_topics` des sources sur la
+taxonomie 51-slugs des users/articles (re-dérivée du contenu réellement publié) et élargit
+le catalogue curé. Côté mobile, le recommender ajoute un badge spécialiste sur la spécialité
+dominante d'une source, **et** une garantie de couverture qui rapatrie le meilleur spécialiste
+curé pour tout sujet choisi non couvert (carte distincte par sujet, pré-cochée).
+
+> ⚠️ La partie data (re-tag + promotion en base) est **gatée PO** et tourne séparément
+> (`scripts/retag_and_promote_sources.py --apply --allow-prod`) après merge. La validation QA
+> ci-dessous porte sur l'**UI mobile** (badge + visibilité). Sur l'env staging, l'effet plein
+> n'apparaît qu'une fois la base re-taggée ; le badge et la garantie restent testables avec
+> les `granular_topics` déjà présents.
 
 ## PR associée
-<!-- À compléter après ouverture : gh pr view --web -->
-Branche : `boujonlaurin-dotcom/source-profile-endpoint` (base `main`).
+<!-- gh pr view --web après /go -->
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Fiche source (bottom sheet `SourceDetailModal`) | ouverte depuis Sources, Flâner, reader (chip source), thèmes, pépites, onboarding | Modifié |
-| Reader article (`ContentDetailScreen`) | `/flux-continu/content/:id` | Cible du tap sur une carte article (existant) |
+| Onboarding — Sources (« sur mesure ») | flow onboarding, étape sources | Modifié |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — source active riche
+### Scénario 1 : Happy path — sujet avec spécialiste
 **Parcours** :
-1. Ouvrir la fiche d'une source qui publie beaucoup (ex. Le Monde) via l'onglet Sources ou une chip source dans le reader.
-2. Observer le header.
-3. Faire défiler jusqu'aux sections « Couverture par thèmes » et « Derniers articles ».
-4. Taper sur une carte article.
-**Résultat attendu** :
-- Header : nom + domaine + signal « Suivi par N lecteurs » **et** chip horloge fréquence (ex. « ~100/jour », « quelques-uns/semaine »).
-- Couverture : barres par thème (label + barre + %), caption « N articles publiés sur la période ».
-- Derniers articles : jusqu'à 3 cartes `FluxContinuArticleCard` (logo source, titre, méta), alignées avec le reste de la fiche.
-- Tap sur une carte → ouvre le reader de l'article ; au retour, la carte porte le badge « lu » (read-sync).
-- Appui long sur une carte → aperçu (preview overlay).
+1. Lancer l'onboarding, choisir des thèmes (ex. Tech, Société) puis des sous-sujets variés
+   (ex. `IA`, `Climat`).
+2. Passer le swipe de calibration, arriver sur l'écran « ① Suggestions sur mesure ».
+**Résultat attendu** : pour chaque sous-sujet choisi qui dispose d'un spécialiste curé, une
+carte porte un chip teinté primary **« 🎯 Spécialisé en {sujet} »** (ex. « Spécialisé en
+Intelligence artificielle »). Ces cartes apparaissent **en tête** des suggestions et sont
+**pré-cochées**.
 
-### Scénario 2 : Edge case — source fraîche / sans articles / éval absente
+### Scénario 2 : Edge case — sujets « pauvres »
 **Parcours** :
-1. Ouvrir une source très récente (peu d'historique) → vérifier que la fréquence n'est pas sous-estimée (fenêtre clampée à l'âge réel).
-2. Ouvrir une source sans contenu → section articles = carte « Aucun article récent. », couverture masquée.
-3. Ouvrir une source non évaluée → bloc « Évaluation Facteur » affiche « Pas encore évaluée », reste repliée.
+1. Refaire l'onboarding en choisissant des sous-sujets réputés minces
+   (ex. `Fact-checking`, `Relations et amour`, `Jeux vidéo`).
+**Résultat attendu** : au moins une carte « Spécialisé en X » remonte pour chacun **quand la
+data le permet** (cartes distinctes par sujet). Si aucun spécialiste curé n'existe pour un
+sujet sur l'env testé, pas de carte fantôme et pas d'erreur — dégradation propre.
 
-### Scénario 3 : Cas d'erreur — `/profile` injoignable (fallback gracieux)
+### Scénario 3 : Pas de doublon / cohérence des chips
 **Parcours** :
-1. Couper le réseau (ou simuler une 5xx) puis ouvrir une fiche source.
-**Résultat attendu** : la sheet ne bloque **jamais**. Fallback statique = header (sans chip
-fréquence) + évaluation + réglages (si suivie) + gestion + actions. Couverture / articles /
-fréquence masqués. Aucun spinner infini, aucun crash.
-
-### Scénario 4 : Mode smart-search inchangé (non-régression)
-**Parcours** :
-1. Depuis « Ajouter une source » (smart-search), ouvrir la fiche d'un résultat.
-**Résultat attendu** : comportement v2 intact — couverture via `/coverage`, articles en carte
-minimale (non cliquable), pas de chip fréquence, pas de FluxContinuArticleCard.
+1. Choisir un sujet dont la source dominante matche (ex. une source dont la spécialité
+   dominante est exactement le sujet choisi).
+**Résultat attendu** : la carte montre **un seul** chip « Spécialisé en X » (pas de double
+chip « X » thème + « Spécialisé en X »). La source n'apparaît pas deux fois.
 
 ## Critères d'acceptation
-- [ ] Chip fréquence visible et cohérent avec le volume réel (mode normal, source connue).
-- [ ] 3 cartes article standard cliquables → reader + read-sync + preview appui long.
-- [ ] Couverture par thèmes : barres + % + caption corrects.
-- [ ] Évaluation repliée par défaut, « à titre indicatif ».
-- [ ] Fallback statique sur erreur réseau (jamais de blocage).
-- [ ] Mode smart-search non régressé (cartes minimales, pas de chip).
-- [ ] 8 call sites de `SourceDetailModal` intacts (constructeur inchangé).
+- [ ] ≥1 carte « Spécialisé en {sujet} » visible par sous-sujet sélectionné (quand un
+      spécialiste curé existe).
+- [ ] Le badge utilise le bon libellé FR (`getTopicLabel`) pour les 51 slugs.
+- [ ] Les cartes spécialistes sont en tête des suggestions et pré-cochées.
+- [ ] Pas de doublon de carte ni de double chip thème+spécialiste.
+- [ ] Console sans erreur, pas de requête 4xx/5xx inattendue.
 
 ## Zones de risque
-- **Couplage `FluxContinuArticleCard` dans une sheet scrollable** : vérifier que le swipe
-  horizontal (swipe-to-open) ne crée pas de conflit avec le scroll vertical de la sheet, et
-  que tap → reader fonctionne. Si effet de bord, préférer un flag `interactive:false` plutôt
-  qu'un fork (cf. plan).
-- **Navigation depuis la sheet** : le tap pousse le reader sur le root navigator
-  (`RouteNames.contentDetail`) ; la sheet doit rester vivante dessous (retour OK).
-- Alignement visuel des cartes (padding +4px pour compenser les 12px internes de la carte).
+- Spécialité dominante = `granularTopics.first` : dépend de l'ordre (par share desc) écrit par
+  le re-tag backend. Sur un env non encore re-taggé, l'ordre vient du seed CSV.
+- Cap des suggestions (`_suggestionsLimit = 18`) : les spécialistes sont placés en tête pour
+  survivre au cap — vérifier qu'ils ne sont jamais tronqués.
 
 ## Dépendances
-- Backend : `GET /api/sources/{source_id}/profile` (nouveau, auth requise). Aucune migration DB.
-- Endpoints `/coverage` et `/recent-items` conservés (autres consommateurs).
-- Providers mobile : `sourceProfileProvider` (nouveau, autoDispose) ; `sourceRecentArticlesProvider` supprimé ; `sourceCoverageProvider` conservé (smart-search).
+- Aucune nouvelle API. Sérialisation existante `granular_topics` / `articles_30d`
+  (`schemas/source.py`, `routers/sources.py`). Pas de migration Alembic.
+- Effet data complet conditionné à l'apply prod gaté PO du script de re-tag/promotion.
