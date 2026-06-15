@@ -91,6 +91,7 @@ from app.routers import (
     notification_preferences,
     personalization,
     progress,
+    push_devices,
     sources,
     streaks,
     subscription,
@@ -490,6 +491,7 @@ app.include_router(
     prefix="/api/notification-preferences",
     tags=["NotificationPreferences"],
 )
+app.include_router(push_devices.router, prefix="/api/devices", tags=["PushDevices"])
 app.include_router(
     personalization.router,
     prefix="/api/users/personalization",
