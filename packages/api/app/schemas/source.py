@@ -1,11 +1,13 @@
 """Schemas source."""
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.enums import SourceType
+from app.schemas.content import ContentResponse
 
 ContentTypeFilter = Literal["article", "youtube", "reddit", "podcast"]
 
@@ -313,3 +315,32 @@ class CoverageResponse(BaseModel):
     total_count: int
     caption: str
     rows: list[CoverageRow] = []
+
+
+class ThemeShare(BaseModel):
+    """Part d'un thème dans la couverture d'une source (fiche source v3).
+
+    `theme` reste la clé brute backend (mapping label/couleur côté front).
+    `share` ∈ [0, 1] = `count / total` ; le mobile dérive le pourcentage.
+    """
+
+    theme: str
+    count: int
+    share: float
+
+
+class SourceProfileResponse(BaseModel):
+    """Profil unifié d'une source pour la fiche v3.
+
+    Regroupe en une réponse l'identité de la source, sa couverture par thèmes
+    sur 30 jours (`theme_distribution` + `articles_30d`), la date du plus
+    ancien contenu connu (`oldest_content_at`, hors fenêtre, pour clamper le
+    calcul de fréquence côté mobile) et ses articles les plus récents
+    (`Content` complets → carte cliquable standard).
+    """
+
+    source: SourceResponse
+    recent_articles: list[ContentResponse] = []
+    theme_distribution: list[ThemeShare] = []
+    articles_30d: int = 0
+    oldest_content_at: datetime | None = None
