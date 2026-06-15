@@ -575,7 +575,9 @@ class DigestGenerationJob:
         """
         try:
             from app.services.grille_matcher import apply_hybrid_word
+            from app.services.grille_seed import ensure_daily_puzzle
 
+            await ensure_daily_puzzle(session, target_date)
             matched = await apply_hybrid_word(
                 session, target_date, editorial_ctx_pour_vous
             )

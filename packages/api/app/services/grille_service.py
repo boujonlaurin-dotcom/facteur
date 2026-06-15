@@ -134,9 +134,9 @@ class GrilleService:
 
     async def get_today(self, user_id: str) -> GrilleTodayResponse:
         puzzle_date = today_paris()
-        puzzle = await self._get_puzzle(puzzle_date)
-        if puzzle is None:
-            raise PuzzleNotFound(puzzle_date.isoformat())
+        from app.services.grille_seed import ensure_daily_puzzle
+
+        puzzle = await ensure_daily_puzzle(self.db, puzzle_date)
 
         game = await self._get_or_create_game(user_id, puzzle_date)
         finished = game.status != STATUS_IN_PROGRESS

@@ -233,10 +233,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
             # Best-effort : un échec ici ne doit pas dégrader le reste de l'API.
             try:
                 from app.database import safe_async_session
-                from app.services.grille_seed import seed_puzzles
+                from app.services.grille_seed import ensure_daily_puzzle, seed_puzzles
+                from app.utils.time import today_paris
 
                 async with safe_async_session() as _seed_db:
                     created, updated = await seed_puzzles(_seed_db)
+                    await ensure_daily_puzzle(_seed_db, today_paris())
                     await _seed_db.commit()
                 logger.info("lifespan_grille_seeded", created=created, updated=updated)
             except Exception as seed_exc:

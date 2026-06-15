@@ -84,13 +84,14 @@ async def apply_hybrid_word(
     )
     if game_exists is not None:
         logger.warning(
-            "grille_hybrid_skip_game_in_progress",
+            "grille_hybrid_skipped_game_started",
             target_date=str(target_date),
         )
         return False
 
     selection = await select_daily_word(session, target_date, editorial_ctx)
     if selection is None:
+        logger.info("grille_hybrid_no_candidate", target_date=str(target_date))
         return False
 
     puzzle.word = selection.word
