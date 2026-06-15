@@ -1,8 +1,18 @@
 {
   "unreleased": [
     {
+      "tag": "Couverture médiatique",
+      "summary": "La couverture médiatique reste affichée sous l'article : compare les titres dans un carrousel, et « Analyse Facteur » remonte une synthèse neutre en un tap. Présentation allégée et plus lisible, qui se détache mieux de l'article."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "En-tête d'article épuré : un tap sur la source ouvre sa fiche, et les titres comparés s'affichent plus sobrement."
+    },
+    {
       "tag": "Corrections",
       "summary": "Saisie d'un sujet plus fluide à l'onboarding, fermeture évidente de la modal Favoris, et navigation des lettres de progression fiabilisée."
+    },
+    {
       "tag": "Grille",
       "summary": "Le mot du jour vient d'un vrai titre de l'actu, et on te montre où il se cachait."
     },
