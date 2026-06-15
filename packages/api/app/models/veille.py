@@ -1,33 +1,24 @@
 """Modèles SQLAlchemy pour « Ma veille »."""
 
-from datetime import date, datetime
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    Date,
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     SmallInteger,
     String,
     Text,
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
-
-
-class VeilleFrequency(StrEnum):
-    """Cadence de livraison d'une veille."""
-
-    WEEKLY = "weekly"
-    BIWEEKLY = "biweekly"
-    MONTHLY = "monthly"
 
 
 class VeilleStatus(StrEnum):
@@ -53,25 +44,11 @@ class VeilleSourceKind(StrEnum):
     NICHE = "niche"
 
 
-class VeilleGenerationState(StrEnum):
-    """État de génération d'une livraison."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-
-
 class VeilleConfig(Base):
     """Config de veille d'un user — partial UNIQUE garantit 1 ACTIVE par user."""
 
     __tablename__ = "veille_configs"
     __table_args__ = (
-        Index(
-            "ix_veille_configs_next_scheduled",
-            "next_scheduled_at",
-            postgresql_where=text("status = 'active'"),
-        ),
         Index("ix_veille_configs_user_id", "user_id"),
         Index(
             "uq_veille_configs_user_active",
@@ -91,22 +68,8 @@ class VeilleConfig(Base):
     )
     theme_id: Mapped[str] = mapped_column(String(50), nullable=False)
     theme_label: Mapped[str] = mapped_column(String(120), nullable=False)
-    frequency: Mapped[str] = mapped_column(String(20), nullable=False)
-    day_of_week: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    delivery_hour: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, server_default=text("7")
-    )
-    timezone: Mapped[str] = mapped_column(
-        Text, nullable=False, server_default=text("'Europe/Paris'")
-    )
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'active'")
-    )
-    last_delivered_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    next_scheduled_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
@@ -119,7 +82,6 @@ class VeilleConfig(Base):
     )
 
     purpose: Mapped[str | None] = mapped_column(Text, nullable=True)
-    purpose_other: Mapped[str | None] = mapped_column(Text, nullable=True)
     editorial_brief: Mapped[str | None] = mapped_column(Text, nullable=True)
     preset_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -188,18 +150,25 @@ class VeilleSource(Base):
     )
 
 
-class VeilleDelivery(Base):
-    """Livraison périodique de veille."""
+class VeilleKeyword(Base):
+    """Mot-clé/angle rattaché à une veille_config — matché ILIKE sur title+desc.
 
-    __tablename__ = "veille_deliveries"
+    Chaque mot-clé peut être rattaché à un angle (`veille_topic_id`) — c'est
+    alors la grappe de cet angle — ou rester **global** à la config
+    (`veille_topic_id IS NULL`). L'unique sur le triplet autorise la même clé
+    sous deux angles distincts (dédoublonnage fonctionnel géré côté API).
+    """
+
+    __tablename__ = "veille_keywords"
     __table_args__ = (
         UniqueConstraint(
             "veille_config_id",
-            "target_date",
-            name="uq_veille_deliveries_config_target",
+            "veille_topic_id",
+            "keyword",
+            name="uq_veille_keywords",
         ),
-        Index("ix_veille_deliveries_target_date", "target_date"),
-        Index("ix_veille_deliveries_state", "generation_state"),
+        Index("ix_veille_keywords_config", "veille_config_id"),
+        Index("ix_veille_keywords_topic", "veille_topic_id"),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -210,35 +179,15 @@ class VeilleDelivery(Base):
         ForeignKey("veille_configs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    target_date: Mapped[date] = mapped_column(Date, nullable=False)
-    items: Mapped[list[dict]] = mapped_column(
-        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    veille_topic_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("veille_topics.id", ondelete="CASCADE"),
+        nullable=True,
     )
-    generation_state: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=text("'pending'")
-    )
-    attempts: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, server_default=text("0")
-    )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    version: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, server_default=text("1")
-    )
-    generated_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    keyword: Mapped[str] = mapped_column(String(80), nullable=False)
+    position: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=text("now()"),
-        onupdate=text("now()"),
     )

@@ -13,6 +13,7 @@ import httpx
 import structlog
 
 from app.config import get_settings
+from app.services.observability.usage_recorder import track_api_call
 
 logger = structlog.get_logger()
 
@@ -56,10 +57,17 @@ class EditorialLLMClient:
         model: str = "mistral-large-latest",
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        *,
+        call_site: str = "editorial",
     ) -> dict | list | None:
         """Send a message to Mistral and parse JSON response.
 
         Returns parsed JSON (dict or list) on success, None on failure.
+
+        `call_site` is the single chokepoint label propagated to
+        `api_usage_events` — callers passing through this client override it
+        (e.g. "veille_suggester", "smart_search_mistral"); default "editorial"
+        covers curation/pipeline/deep/perspective.
         """
         if not self._ready:
             logger.warning("editorial_llm.not_ready")
@@ -80,83 +88,89 @@ class EditorialLLMClient:
         _RETRYABLE_STATUSES = (429, 500, 502, 503)
         max_retries = 2
 
-        for attempt in range(max_retries + 1):
-            try:
-                response = await client.post(MISTRAL_API_URL, json=payload)
-                response.raise_for_status()
+        async with track_api_call("mistral", call_site, model=model) as _call:
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await client.post(MISTRAL_API_URL, json=payload)
+                    response.raise_for_status()
 
-                data = response.json()
-                text = data["choices"][0]["message"]["content"]
+                    data = response.json()
+                    text = data["choices"][0]["message"]["content"]
 
-                # Strip markdown code fences if present
-                text = text.strip()
-                if text.startswith("```"):
-                    lines = text.split("\n")
-                    text = "\n".join(
-                        lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-                    )
+                    # Strip markdown code fences if present
                     text = text.strip()
+                    if text.startswith("```"):
+                        lines = text.split("\n")
+                        text = "\n".join(
+                            lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+                        )
+                        text = text.strip()
 
-                parsed = json.loads(text)
+                    parsed = json.loads(text)
 
-                logger.info(
-                    "editorial_llm.success",
-                    model=model,
-                    attempt=attempt + 1,
-                    prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
-                    completion_tokens=data.get("usage", {}).get("completion_tokens"),
-                )
-                return parsed
-
-            except httpx.HTTPStatusError as e:
-                if (
-                    e.response.status_code in _RETRYABLE_STATUSES
-                    and attempt < max_retries
-                ):
-                    wait = 3 * (attempt + 1)  # 3s, 6s
-                    logger.warning(
-                        "editorial_llm.retrying",
+                    logger.info(
+                        "editorial_llm.success",
+                        model=model,
                         attempt=attempt + 1,
-                        wait_s=wait,
+                        prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
+                        completion_tokens=data.get("usage", {}).get(
+                            "completion_tokens"
+                        ),
+                    )
+                    _call.status = "ok"
+                    return parsed
+
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 429:
+                        _call.status = "rate_limited"
+                    if (
+                        e.response.status_code in _RETRYABLE_STATUSES
+                        and attempt < max_retries
+                    ):
+                        wait = 3 * (attempt + 1)  # 3s, 6s
+                        logger.warning(
+                            "editorial_llm.retrying",
+                            attempt=attempt + 1,
+                            wait_s=wait,
+                            status_code=e.response.status_code,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    logger.error(
+                        "editorial_llm.http_error",
                         status_code=e.response.status_code,
+                        body=e.response.text[:500],
+                        attempts_exhausted=attempt + 1,
                     )
-                    await asyncio.sleep(wait)
-                    continue
-                logger.error(
-                    "editorial_llm.http_error",
-                    status_code=e.response.status_code,
-                    body=e.response.text[:500],
-                    attempts_exhausted=attempt + 1,
-                )
-                return None
-            except httpx.TimeoutException:
-                if attempt < max_retries:
-                    wait = 3 * (attempt + 1)
-                    logger.warning(
-                        "editorial_llm.timeout_retrying",
-                        attempt=attempt + 1,
-                        wait_s=wait,
+                    return None
+                except httpx.TimeoutException:
+                    if attempt < max_retries:
+                        wait = 3 * (attempt + 1)
+                        logger.warning(
+                            "editorial_llm.timeout_retrying",
+                            attempt=attempt + 1,
+                            wait_s=wait,
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    logger.error(
+                        "editorial_llm.timeout_exhausted",
+                        attempts_exhausted=attempt + 1,
                     )
-                    await asyncio.sleep(wait)
-                    continue
-                logger.error(
-                    "editorial_llm.timeout_exhausted",
-                    attempts_exhausted=attempt + 1,
-                )
-                return None
-            except json.JSONDecodeError as e:
-                # No retry for parse errors — LLM returned bad JSON
-                logger.error(
-                    "editorial_llm.json_parse_error",
-                    error=str(e),
-                    raw_text=text[:500] if "text" in dir() else "no_text",
-                )
-                return None
-            except Exception as e:
-                logger.error("editorial_llm.unexpected_error", error=str(e))
-                return None
+                    return None
+                except json.JSONDecodeError as e:
+                    # No retry for parse errors — LLM returned bad JSON
+                    logger.error(
+                        "editorial_llm.json_parse_error",
+                        error=str(e),
+                        raw_text=text[:500] if "text" in dir() else "no_text",
+                    )
+                    return None
+                except Exception as e:
+                    logger.error("editorial_llm.unexpected_error", error=str(e))
+                    return None
 
-        return None
+            return None
 
     async def chat_text(
         self,
@@ -165,10 +179,13 @@ class EditorialLLMClient:
         model: str = "mistral-large-latest",
         temperature: float = 0.4,
         max_tokens: int = 300,
+        *,
+        call_site: str = "editorial",
     ) -> str | None:
         """Send a message to Mistral and return plain text response.
 
-        Returns raw text string on success, None on failure.
+        Returns raw text string on success, None on failure. See `chat_json`
+        for `call_site` semantics (single chokepoint label for usage tracking).
         """
         if not self._ready:
             logger.warning("editorial_llm.not_ready")
@@ -185,31 +202,35 @@ class EditorialLLMClient:
             ],
         }
 
-        try:
-            response = await client.post(MISTRAL_API_URL, json=payload)
-            response.raise_for_status()
+        async with track_api_call("mistral", call_site, model=model) as _call:
+            try:
+                response = await client.post(MISTRAL_API_URL, json=payload)
+                response.raise_for_status()
 
-            data = response.json()
-            text = data["choices"][0]["message"]["content"].strip()
+                data = response.json()
+                text = data["choices"][0]["message"]["content"].strip()
 
-            logger.info(
-                "editorial_llm.chat_text_success",
-                model=model,
-                prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
-                completion_tokens=data.get("usage", {}).get("completion_tokens"),
-            )
-            return text
+                logger.info(
+                    "editorial_llm.chat_text_success",
+                    model=model,
+                    prompt_tokens=data.get("usage", {}).get("prompt_tokens"),
+                    completion_tokens=data.get("usage", {}).get("completion_tokens"),
+                )
+                _call.status = "ok"
+                return text
 
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "editorial_llm.http_error",
-                status_code=e.response.status_code,
-                body=e.response.text[:500],
-            )
-            return None
-        except Exception as e:
-            logger.error("editorial_llm.chat_text_error", error=str(e))
-            return None
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    _call.status = "rate_limited"
+                logger.error(
+                    "editorial_llm.http_error",
+                    status_code=e.response.status_code,
+                    body=e.response.text[:500],
+                )
+                return None
+            except Exception as e:
+                logger.error("editorial_llm.chat_text_error", error=str(e))
+                return None
 
     async def close(self) -> None:
         """Close the underlying httpx client."""

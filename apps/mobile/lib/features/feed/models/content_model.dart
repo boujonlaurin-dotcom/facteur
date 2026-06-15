@@ -109,16 +109,6 @@ class Content {
   final DateTime? noteUpdatedAt;
   final bool isFollowedSource; // Feed fallback: source suivie par l'utilisateur
 
-  // Epic 11: Cluster fields (populated by FeedRepository when clusters are present)
-  // DEADCODE: Feature "X autres articles" masquée (encombrement / utilité actuelle). Conservé pour mémoire.
-  /*
-  final String? clusterTopic;
-  final int clusterHiddenCount;
-  final List<String> clusterHiddenIds;
-  final List<Content> clusterHiddenArticles;
-  final List<KeywordOverflowSource> clusterSources;
-  */
-
   // Epic 12: Source overflow (populated by FeedRepository from diversification)
   final int sourceOverflowCount;
 
@@ -148,6 +138,17 @@ class Content {
   // Editorial badge from digest (actu, pas_de_recul, pepite, coup_de_coeur)
   final String? editorialBadge;
 
+  /// Langue ISO du contenu ("fr","en",...). `null` ⇒ traité comme `fr`
+  /// (convention back-end Phase 4). Forward-compat : non encore consommé
+  /// par l'UI.
+  final String? language;
+
+  /// Bloc de curation veille (`GET /api/veille/feed`) : `"sources"` (Bloc A
+  /// « Tes sources ») ou `"elargie"` (Bloc B « Couverture élargie »). `null`
+  /// hors section veille. Le rendu de la section veille dérive un en-tête léger
+  /// à chaque transition de ce champ. Backward-safe (nullable).
+  final String? veilleGroup;
+
   Content({
     required this.id,
     required this.title,
@@ -172,14 +173,6 @@ class Content {
     this.noteText,
     this.noteUpdatedAt,
     this.isFollowedSource = false,
-    // DEADCODE: Feature masquée
-    /*
-    this.clusterTopic,
-    this.clusterHiddenCount = 0,
-    this.clusterHiddenIds = const [],
-    this.clusterHiddenArticles = const [],
-    this.clusterSources = const [],
-    */
     this.sourceOverflowCount = 0,
     this.topicOverflowCount = 0,
     this.topicOverflowLabel,
@@ -199,6 +192,8 @@ class Content {
     this.keywordOverflowSources = const [],
     this.keywordOverflowIsCustomTopic = false,
     this.editorialBadge,
+    this.language,
+    this.veilleGroup,
   });
 
   bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
@@ -259,14 +254,6 @@ class Content {
       noteText: null,
       noteUpdatedAt: null,
       isFollowedSource: isFollowedSource,
-      // DEADCODE: Feature masquée
-      /*
-      clusterTopic: clusterTopic,
-      clusterHiddenCount: clusterHiddenCount,
-      clusterHiddenIds: clusterHiddenIds,
-      clusterHiddenArticles: clusterHiddenArticles,
-      clusterSources: clusterSources,
-      */
       sourceOverflowCount: sourceOverflowCount,
       topicOverflowCount: topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel,
@@ -286,6 +273,8 @@ class Content {
       keywordOverflowSources: keywordOverflowSources,
       keywordOverflowIsCustomTopic: keywordOverflowIsCustomTopic,
       editorialBadge: editorialBadge,
+      language: language,
+      veilleGroup: veilleGroup,
     );
   }
 
@@ -338,6 +327,8 @@ class Content {
             ? DateTime.tryParse(json['note_updated_at'] as String)
             : null,
         isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
+        language: json['language'] as String?,
+        veilleGroup: json['group'] as String?,
       );
     } catch (e, stack) {
       // ignore: avoid_print
@@ -378,14 +369,6 @@ class Content {
     String? noteText,
     DateTime? noteUpdatedAt,
     bool? isFollowedSource,
-    // DEADCODE: Feature masquée
-    /*
-    String? clusterTopic,
-    int? clusterHiddenCount,
-    List<String>? clusterHiddenIds,
-    List<Content>? clusterHiddenArticles,
-    List<KeywordOverflowSource>? clusterSources,
-    */
     int? sourceOverflowCount,
     int? topicOverflowCount,
     String? topicOverflowLabel,
@@ -405,6 +388,8 @@ class Content {
     List<KeywordOverflowSource>? keywordOverflowSources,
     bool? keywordOverflowIsCustomTopic,
     String? editorialBadge,
+    String? language,
+    String? veilleGroup,
   }) {
     return Content(
       id: id ?? this.id,
@@ -430,15 +415,6 @@ class Content {
       noteText: noteText ?? this.noteText,
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
       isFollowedSource: isFollowedSource ?? this.isFollowedSource,
-      // DEADCODE: Feature masquée
-      /*
-      clusterTopic: clusterTopic ?? this.clusterTopic,
-      clusterHiddenCount: clusterHiddenCount ?? this.clusterHiddenCount,
-      clusterHiddenIds: clusterHiddenIds ?? this.clusterHiddenIds,
-      clusterHiddenArticles:
-          clusterHiddenArticles ?? this.clusterHiddenArticles,
-      clusterSources: clusterSources ?? this.clusterSources,
-      */
       sourceOverflowCount: sourceOverflowCount ?? this.sourceOverflowCount,
       topicOverflowCount: topicOverflowCount ?? this.topicOverflowCount,
       topicOverflowLabel: topicOverflowLabel ?? this.topicOverflowLabel,
@@ -471,6 +447,8 @@ class Content {
       keywordOverflowIsCustomTopic:
           keywordOverflowIsCustomTopic ?? this.keywordOverflowIsCustomTopic,
       editorialBadge: editorialBadge ?? this.editorialBadge,
+      language: language ?? this.language,
+      veilleGroup: veilleGroup ?? this.veilleGroup,
     );
   }
 

@@ -21,7 +21,7 @@ class StreakNotifier extends AsyncNotifier<StreakModel> {
   FutureOr<StreakModel> build() async {
     final authState = ref.watch(authStateProvider);
     if (!authState.isAuthenticated) {
-      return StreakModel(
+      return const StreakModel(
         currentStreak: 0,
         longestStreak: 0,
         weeklyCount: 0,
@@ -36,7 +36,7 @@ class StreakNotifier extends AsyncNotifier<StreakModel> {
     final repository = ref.read(streakRepositoryProvider);
     final streak = await repository.getStreak();
     // Push streak to home screen widget
-    WidgetService.updateWidget(streak: streak);
+    unawaited(WidgetService.updateWidget(streak: streak));
     return streak;
   }
 

@@ -87,8 +87,8 @@ class _InactiveChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 11),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: colors.surface,
@@ -97,17 +97,21 @@ class _InactiveChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Mes thèmes',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: colors.textPrimary,
-                  fontWeight: FontWeight.w500),
+            Flexible(
+              child: Text(
+                'Mes thèmes',
+                style: TextStyle(
+                    fontSize: 12.5,
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w500),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             Icon(
               PhosphorIcons.caretDown(PhosphorIconsStyle.bold),
-              size: 10,
+              size: 11,
               color: colors.textSecondary,
             ),
           ],
@@ -144,8 +148,8 @@ class _ActiveChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 28,
-        padding: const EdgeInsets.only(left: 10),
+        height: 34,
+        padding: const EdgeInsets.only(left: 11),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(FacteurRadius.full),
           color: bg,
@@ -158,7 +162,7 @@ class _ActiveChip extends StatelessWidget {
               child: Text(
                 name,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                   color: labelColor,
                 ),
@@ -173,7 +177,7 @@ class _ActiveChip extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
                 child: Icon(
                   PhosphorIcons.x(PhosphorIconsStyle.bold),
-                  size: 13,
+                  size: 14,
                   color: iconColor,
                 ),
               ),

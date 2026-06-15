@@ -5,7 +5,7 @@ import 'package:facteur/features/veille/models/veille_config.dart';
 void main() {
   group('VeillePreset.fromJson', () {
     test('parses full payload including sources', () {
-      final preset = VeillePreset.fromJson({
+      final preset = VeillePreset.fromJson(const {
         'slug': 'ia_agentique',
         'label': 'Outils IA agentique',
         'accroche': 'Les derniers outils IA',
@@ -33,7 +33,7 @@ void main() {
     });
 
     test('handles missing optional fields with safe defaults', () {
-      final preset = VeillePreset.fromJson({
+      final preset = VeillePreset.fromJson(const {
         'slug': 's',
         'label': 'L',
         'accroche': 'A',

@@ -32,9 +32,40 @@ class MockContent:
         self.title = title
         self.source = source or MockSource()
         self.source_id = self.source.id
+        # One domain per source — feeds _extract_domain() in the topic
+        # clustering used by the hot carousel (multi-source check).
+        self.url = f"https://src-{self.source.id.hex[:8]}.example.com/{self.id.hex}"
         self.entities = entities or []
         self.content_type = content_type
         self.published_at = published_at or datetime.now(UTC)
+        self.theme = None
+
+
+def _make_story_articles(
+    topic: str,
+    n: int,
+    entity: str | None = None,
+    published_at=None,
+):
+    """N articles covering the same story (titles that Jaccard-cluster).
+
+    Digits are stripped by normalize_title, so the trailing index keeps the
+    token set identical across articles. Each article gets its own source
+    (distinct domain) so the cluster passes the multi-source check.
+    """
+    articles = [
+        MockContent(
+            title=f"{topic} {i}",
+            source=MockSource(name=f"Source {topic} {i}"),
+            published_at=published_at,
+        )
+        for i in range(n)
+    ]
+    if entity:
+        entity_json = json.dumps({"name": entity, "type": "PERSON"})
+        for a in articles:
+            a.entities = [entity_json]
+    return articles
 
 
 def _make_entity_group(
@@ -113,18 +144,19 @@ def _setup_service():
 
 class TestBuildCarouselsHot:
     @pytest.mark.asyncio
-    async def test_hot_carousel_from_entity_overflow(self):
+    async def test_hot_carousel_from_topic_cluster(self):
         service = _setup_service()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine",
+            5,
+            entity="Trump",
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 4, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
-        result_feed = [MockContent(title="Other article")]
+        result_feed = [MockContent(title="Un sujet sans aucun rapport ici")]
         result, carousels = await service._build_carousels(result_feed, pre_regroup_map)
 
         assert len(carousels) == 1
@@ -134,59 +166,76 @@ class TestBuildCarouselsHot:
         assert c["emoji"] == "\U0001f50d"
         # Hot base position is 29 (cadence GNews ~6, business order)
         assert c["position"] == 29
-        assert len(c["items"]) == 5  # rep + 4 hidden
+        assert len(c["items"]) == 5
         assert len(c["badges"]) == len(c["items"])
         assert c["badges"][0]["code"] == "actu_chaude"
 
     @pytest.mark.asyncio
-    async def test_hot_carousel_works_with_2_hidden(self):
-        """Min 3 items = rep + 2 hidden → should create carousel."""
+    async def test_hot_carousel_works_with_3_articles(self):
+        """Min 3 clustered articles → should create carousel."""
         service = _setup_service()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title="Trump 1"), MockContent(title="Trump 2")]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Grève des contrôleurs aériens dans toute la France", 3
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 2, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         result, carousels = await service._build_carousels([], pre_regroup_map)
         assert len(carousels) == 1
-        assert len(carousels[0]["items"]) == 3  # rep + 2 hidden
+        assert len(carousels[0]["items"]) == 3
 
     @pytest.mark.asyncio
-    async def test_hot_carousel_requires_min_2_hidden(self):
-        """1 hidden + rep = 2 items < MIN_CAROUSEL_ITEMS(3) → no carousel."""
+    async def test_hot_carousel_requires_min_3_articles(self):
+        """2 clustered articles < MIN_CAROUSEL_ITEMS(3) → no carousel."""
         service = _setup_service()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title="Trump 1")]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Grève des contrôleurs aériens dans toute la France", 2
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 1, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         result, carousels = await service._build_carousels([], pre_regroup_map)
         assert len(carousels) == 0
 
     @pytest.mark.asyncio
-    async def test_representative_included_in_carousel(self):
+    async def test_hot_carousel_requires_multi_source(self):
+        """A single source covering one story 4 times is not hot news."""
         service = _setup_service()
-        rep = MockContent(title="Trump main")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(3)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
-
-        service.entity_overflow = [
-            _make_entity_group("trump", 3, rep, hidden)
+        source = MockSource(name="Mono Source")
+        story = [
+            MockContent(
+                title=f"Grève des contrôleurs aériens dans toute la France {i}",
+                source=source,
+            )
+            for i in range(4)
         ]
+        pre_regroup_map = {a.id: a for a in story}
+
+        service.entity_overflow = []
+        service.keyword_overflow = []
+
+        _, carousels = await service._build_carousels([], pre_regroup_map)
+        assert carousels == []
+
+    @pytest.mark.asyncio
+    async def test_hot_title_without_dominant_entity(self):
+        """No entity shared by >= 2 articles → plain 'Actu chaude' title."""
+        service = _setup_service()
+        story = _make_story_articles(
+            "Grève des contrôleurs aériens dans toute la France", 3
+        )
+        pre_regroup_map = {a.id: a for a in story}
+
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
         assert len(carousels) == 1
-        item_ids = {item.id for item in carousels[0]["items"]}
-        assert rep.id in item_ids
+        assert carousels[0]["title"] == "Actu chaude"
 
 
 class TestBuildCarouselsFavorite:
@@ -228,43 +277,34 @@ class TestBuildCarouselsFavorite:
 
 class TestBuildCarouselsDeep:
     @pytest.mark.asyncio
-    async def test_deep_carousel_multi_source(self):
+    async def test_only_hot_from_single_cluster(self):
         service = _setup_service()
-        rep = MockContent(title="Iran article")
-        hidden = [MockContent(title=f"Iran {i}") for i in range(3)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Téhéran reprend les négociations sur le nucléaire iranien", 4
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("iran", 3, rep, hidden, num_sources=3)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
-        # With only 1 entity group that has 3 sources, it should create
-        # hot first (highest hidden_count), and deep only if different group
-        # Since there's only 1 entity group, hot takes it, deep has no candidates
         assert len(carousels) == 1
         assert carousels[0]["carousel_type"] == "hot"
 
     @pytest.mark.asyncio
-    async def test_deep_carousel_from_second_entity_group(self):
-        """With user_id=None, only hot carousel is created (deep requires perspectives)."""
+    async def test_only_one_hot_even_with_two_clusters(self):
+        """With user_id=None, only hot carousel is created (deep is disabled,
+        and would require user_id anyway)."""
         service = _setup_service()
-        # Group 1: hot candidate (highest hidden_count)
-        rep1 = MockContent(title="Trump article")
-        hidden1 = [MockContent(title=f"Trump {i}") for i in range(5)]
+        story1 = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 6
+        )
+        story2 = _make_story_articles(
+            "Téhéran reprend les négociations sur le nucléaire iranien", 4
+        )
+        pre_regroup_map = {a.id: a for a in story1 + story2}
 
-        # Group 2: would have been deep in old code, now needs perspectives
-        rep2 = MockContent(title="Iran article")
-        hidden2 = [MockContent(title=f"Iran {i}") for i in range(3)]
-
-        all_articles = [rep1] + hidden1 + [rep2] + hidden2
-        pre_regroup_map = {a.id: a for a in all_articles}
-
-        service.entity_overflow = [
-            _make_entity_group("trump", 5, rep1, hidden1, num_sources=2),
-            _make_entity_group("iran", 3, rep2, hidden2, num_sources=3),
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
@@ -303,34 +343,34 @@ class TestBuildCarouselsBudgetAndRemoval:
     @pytest.mark.asyncio
     async def test_carousel_removes_from_feed(self):
         service = _setup_service()
-        rep = MockContent(title="Trump main")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(3)]
-        other = MockContent(title="Unrelated article")
-        pre_regroup_map = {a.id: a for a in [rep] + hidden + [other]}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 4
+        )
+        promoted = story[0]
+        other = MockContent(title="Un sujet sans aucun rapport ici")
+        pre_regroup_map = {a.id: a for a in story + [other]}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 3, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
-        result_feed = [rep, other]  # rep is in the feed
+        result_feed = [promoted, other]  # promoted is in the feed
         result, carousels = await service._build_carousels(result_feed, pre_regroup_map)
 
-        # rep should be removed from result (promoted to carousel)
+        # promoted should be removed from result (promoted to carousel)
+        assert len(carousels) == 1
         result_ids = {a.id for a in result}
-        assert rep.id not in result_ids
+        assert promoted.id not in result_ids
         assert other.id in result_ids
 
     @pytest.mark.asyncio
     async def test_badges_count_matches_items(self):
         service = _setup_service()
-        rep = MockContent(title="Article")
-        hidden = [MockContent(title=f"Art {i}") for i in range(4)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 5
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("test", 4, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
@@ -413,12 +453,12 @@ class TestBuildCarouselsNewSource:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            # 1: consumed_ids, 2: perspectives consumed_rows → empty
-            if execute_calls <= 2:
+            # 1: consumed_ids → empty
+            if execute_calls == 1:
                 return _mock_execute_result([])
-            if execute_calls == 3:
+            if execute_calls == 2:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # community (empty)
+            return _mock_execute_result([])  # quiet_sources + community (empty)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -458,11 +498,11 @@ class TestBuildCarouselsNewSource:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            if execute_calls <= 2:
-                return _mock_execute_result([])  # consumed_ids + perspectives
-            if execute_calls == 3:
+            if execute_calls == 1:
+                return _mock_execute_result([])  # consumed_ids
+            if execute_calls == 2:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # community
+            return _mock_execute_result([])  # quiet_sources + community
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -514,7 +554,7 @@ class TestBuildCarouselsCommunity:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            # 1: consumed_ids, 2: perspectives, 3: new_source → empty
+            # 1: consumed_ids, 2: new_source, 3: quiet_sources → empty
             if call_count <= 3:
                 return _mock_execute_result([])
             # 4: community query
@@ -554,7 +594,7 @@ class TestBuildCarouselsCommunity:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            # 1: consumed_ids, 2: perspectives, 3: new_source → empty
+            # 1: consumed_ids, 2: new_source, 3: quiet_sources → empty
             if call_count <= 3:
                 return _mock_execute_result([])
             # 4: community
@@ -584,7 +624,7 @@ class TestBuildCarouselsSaved:
             MockContent(title="Saved podcast", content_type="podcast"),
         ]
 
-        # All execute calls return empty (consumed_ids, perspectives, new_source, community)
+        # All execute calls return empty (consumed_ids, new_source, quiet_sources, community)
         async def mock_execute(stmt):
             return _mock_execute_result([])
 
@@ -659,12 +699,12 @@ class TestBuildCarouselsPhaseB_Integration:
         async def mock_execute(stmt):
             nonlocal execute_calls
             execute_calls += 1
-            # 1: consumed_ids, 2: perspectives → empty
-            if execute_calls <= 2:
+            # 1: consumed_ids → empty
+            if execute_calls == 1:
                 return _mock_execute_result([])
-            if execute_calls == 3:
+            if execute_calls == 2:
                 return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # community
+            return _mock_execute_result([])  # quiet_sources + community
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
         service.session.scalars = AsyncMock(
@@ -687,34 +727,32 @@ class TestBuildCarouselsPhaseB_Integration:
 class TestMinCarouselPosition:
     @pytest.mark.asyncio
     async def test_no_carousel_below_min_position(self):
-        """All carousels must have position >= MIN_CAROUSEL_POSITION."""
+        """All carousels must have position >= MIN_CAROUSEL_POSITION (4)."""
         service = _setup_service()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 5
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 4, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
         for c in carousels:
-            assert c["position"] >= 5, (
-                f"Carousel {c['carousel_type']} at position {c['position']} < 5"
+            assert c["position"] >= 4, (
+                f"Carousel {c['carousel_type']} at position {c['position']} < 4"
             )
 
     @pytest.mark.asyncio
     async def test_hot_position_unchanged_without_user_id(self):
         """Without user_id, hot carousel falls back to its business-order base."""
         service = _setup_service()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 5
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 4, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         _, carousels = await service._build_carousels([], pre_regroup_map)
@@ -740,13 +778,12 @@ class TestDailyJitter:
         """Same user_id + same day → same positions on repeated calls."""
         service = _setup_service_with_overflow_and_mocks()
         user_id = uuid4()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 5
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 4, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         _, carousels1 = await service._build_carousels(
@@ -764,13 +801,12 @@ class TestDailyJitter:
     async def test_jitter_varies_across_users(self):
         """Different user_ids on the same day may get different positions."""
         service = _setup_service_with_overflow_and_mocks()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 5
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 4, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         positions = set()
@@ -789,13 +825,12 @@ class TestDailyJitter:
         from app.services.recommendation_service import RecommendationService
 
         service = _setup_service_with_overflow_and_mocks()
-        rep = MockContent(title="Trump article")
-        hidden = [MockContent(title=f"Trump {i}") for i in range(4)]
-        pre_regroup_map = {a.id: a for a in [rep] + hidden}
+        story = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine", 5
+        )
+        pre_regroup_map = {a.id: a for a in story}
 
-        service.entity_overflow = [
-            _make_entity_group("trump", 4, rep, hidden)
-        ]
+        service.entity_overflow = []
         service.keyword_overflow = []
 
         base_hot = RecommendationService._CAROUSEL_BASE_POSITIONS["hot"]
@@ -818,75 +853,76 @@ class TestProbabilisticHotCluster:
         """With multiple eligible clusters, different seeds may select different ones."""
         from app.services.article_clustering_service import find_hot_cluster
 
-        source = MockSource(name="Source")
-        entity_json_trump = json.dumps({"name": "Trump", "type": "PERSON"})
-        entity_json_iran = json.dumps({"name": "Iran", "type": "LOCATION"})
-        entity_json_ai = json.dumps({"name": "AI", "type": "TECHNOLOGY"})
-
         now = datetime.now(UTC)
         # 3 clusters of size 5, 4, 3
-        trump_arts = [
-            MockContent(title=f"Trump {i}", source=source, published_at=now)
-            for i in range(5)
-        ]
-        for a in trump_arts:
-            a.entities = [entity_json_trump]
-
-        iran_arts = [
-            MockContent(title=f"Iran {i}", source=source, published_at=now)
-            for i in range(4)
-        ]
-        for a in iran_arts:
-            a.entities = [entity_json_iran]
-
-        ai_arts = [
-            MockContent(title=f"AI {i}", source=source, published_at=now)
-            for i in range(3)
-        ]
-        for a in ai_arts:
-            a.entities = [entity_json_ai]
-
-        all_articles = trump_arts + iran_arts + ai_arts
+        all_articles = (
+            _make_story_articles(
+                "Trump annonce des sanctions douanières contre la Chine",
+                5,
+                published_at=now,
+            )
+            + _make_story_articles(
+                "Téhéran reprend les négociations sur le nucléaire iranien",
+                4,
+                published_at=now,
+            )
+            + _make_story_articles(
+                "Une intelligence artificielle remporte un concours de mathématiques",
+                3,
+                published_at=now,
+            )
+        )
 
         # Run with many seeds — should sometimes select non-trump clusters
-        selected_entities = set()
+        selected_keys = set()
         for seed in range(100):
-            entity_key, _, articles = find_hot_cluster(
+            cluster_key, _, articles = find_hot_cluster(
                 all_articles, seed=seed,
             )
-            if entity_key:
-                selected_entities.add(entity_key)
+            if cluster_key:
+                selected_keys.add(cluster_key)
 
         # With weighted random among 3 clusters, we expect at least 2 different selections
-        assert len(selected_entities) >= 2, (
-            f"Expected variety in cluster selection, got only: {selected_entities}"
+        assert len(selected_keys) >= 2, (
+            f"Expected variety in cluster selection, got only: {selected_keys}"
         )
 
     def test_deterministic_with_same_seed(self):
         """Same seed always selects the same cluster."""
         from app.services.article_clustering_service import find_hot_cluster
 
-        source = MockSource(name="Source")
-        entity_json_a = json.dumps({"name": "Alpha", "type": "PERSON"})
-        entity_json_b = json.dumps({"name": "Beta", "type": "PERSON"})
         now = datetime.now(UTC)
-
-        arts_a = [
-            MockContent(title=f"A {i}", source=source, published_at=now)
-            for i in range(4)
-        ]
-        for a in arts_a:
-            a.entities = [entity_json_a]
-
-        arts_b = [
-            MockContent(title=f"B {i}", source=source, published_at=now)
-            for i in range(3)
-        ]
-        for a in arts_b:
-            a.entities = [entity_json_b]
-
-        all_articles = arts_a + arts_b
+        all_articles = _make_story_articles(
+            "Trump annonce des sanctions douanières contre la Chine",
+            4,
+            published_at=now,
+        ) + _make_story_articles(
+            "Téhéran reprend les négociations sur le nucléaire iranien",
+            3,
+            published_at=now,
+        )
 
         key1, _, _ = find_hot_cluster(all_articles, seed=42)
         key2, _, _ = find_hot_cluster(all_articles, seed=42)
         assert key1 == key2
+
+    def test_unrelated_articles_sharing_entity_do_not_cluster(self):
+        """Passing mentions of the same entity must not form a hot cluster
+        (the old NER-entity grouping regression: 'Actu chaude : Trump' with
+        unrelated articles)."""
+        from app.services.article_clustering_service import find_hot_cluster
+
+        now = datetime.now(UTC)
+        entity_json = json.dumps({"name": "Trump", "type": "PERSON"})
+        titles = [
+            "La réforme des retraites suspendue par le gouvernement français",
+            "Le Vendée Globe bat son record absolu de participation cette année",
+            "Une éruption volcanique majeure paralyse le trafic aérien en Islande",
+        ]
+        articles = [MockContent(title=t, published_at=now) for t in titles]
+        for a in articles:
+            a.entities = [entity_json]
+
+        cluster_key, display_name, result = find_hot_cluster(articles)
+        assert result == []
+        assert cluster_key is None

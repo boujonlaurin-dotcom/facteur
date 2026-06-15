@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_stamp.dart';
-import '../../../widgets/design/priority_slider.dart';
 import '../models/source_model.dart';
 import 'source_detail_modal.dart';
 import 'source_logo_avatar.dart';
@@ -11,18 +10,19 @@ class SourceListItem extends StatelessWidget {
   final Source source;
   final VoidCallback? onTap;
   final VoidCallback? onToggleMute;
-  final ValueChanged<double>? onWeightChanged;
-  final VoidCallback? onToggleSubscription;
-  final double? usageWeight;
+
+  /// Story 22.1 — ouvre le picker 4-états (callback optionnel).
+  /// `true` → la source est actuellement en favori (étoile pleine).
+  final VoidCallback? onPickInterestState;
+  final bool isFavorite;
 
   const SourceListItem({
     super.key,
     required this.source,
     this.onTap,
-    this.usageWeight,
     this.onToggleMute,
-    this.onWeightChanged,
-    this.onToggleSubscription,
+    this.onPickInterestState,
+    this.isFavorite = false,
   });
 
   IconData get _typeIcon {
@@ -56,8 +56,6 @@ class SourceListItem extends StatelessWidget {
             source: source,
             onToggleTrust: onTap ?? () {},
             onToggleMute: onToggleMute,
-            onToggleSubscription: onToggleSubscription,
-            usageWeight: usageWeight,
           ),
         );
       },
@@ -79,8 +77,7 @@ class SourceListItem extends StatelessWidget {
                 ? Border.all(color: Colors.transparent, width: 1.5)
                 : isTrusted
                     ? Border.all(
-                        color: colors.primary.withOpacity(0.3),
-                        width: 1.5)
+                        color: colors.primary.withOpacity(0.3), width: 1.5)
                     : Border.all(color: Colors.transparent, width: 1.5),
           ),
           child: Row(
@@ -129,8 +126,7 @@ class SourceListItem extends StatelessWidget {
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          Icon(_typeIcon,
-                              color: colors.textTertiary, size: 13),
+                          Icon(_typeIcon, color: colors.textTertiary, size: 13),
                           const SizedBox(width: 5),
                           Flexible(
                             child: Text(
@@ -150,19 +146,24 @@ class SourceListItem extends StatelessWidget {
                 ),
               ),
 
-              // Priority slider for trusted, non-muted sources
-              if (!isMuted && isTrusted && onWeightChanged != null) ...[
-                const SizedBox(width: 6),
-                PrioritySlider(
-                  key: ValueKey(source.priorityMultiplier),
-                  currentMultiplier: source.priorityMultiplier,
-                  onChanged: onWeightChanged!,
-                  usageWeight: usageWeight,
-                ),
-              ],
-
-              // "+" icon for unfollowed sources
-              if (!isMuted && !isTrusted)
+              // Source suivie : étoile (favori toggle via picker).
+              // Source non suivie : "+" pour suivre. Jamais les deux.
+              if (!isMuted && isTrusted && onPickInterestState != null)
+                IconButton(
+                  onPressed: onPickInterestState,
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: Icon(
+                    isFavorite
+                        ? PhosphorIcons.star(PhosphorIconsStyle.fill)
+                        : PhosphorIcons.star(PhosphorIconsStyle.regular),
+                    color: isFavorite ? colors.primary : colors.textTertiary,
+                    size: 18,
+                  ),
+                )
+              else if (!isMuted && !isTrusted)
                 Icon(
                   PhosphorIcons.plus(PhosphorIconsStyle.bold),
                   size: 20,

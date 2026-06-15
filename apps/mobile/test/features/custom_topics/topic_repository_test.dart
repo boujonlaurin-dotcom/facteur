@@ -122,44 +122,6 @@ void main() {
     });
   });
 
-  group('updateTopicPriority', () {
-    test('returns updated UserTopicProfile', () async {
-      when(() => mockApiClient.put(
-            'personalization/topics/uuid-1',
-            body: {'priority_multiplier': 2.0},
-            queryParameters: any(named: 'queryParameters'),
-            options: any(named: 'options'),
-          )).thenAnswer((_) async => {
-            'id': 'uuid-1',
-            'topic_name': 'IA',
-            'priority_multiplier': 2.0,
-            'composite_score': 10,
-          });
-
-      final result = await repository.updateTopicPriority('uuid-1', 2.0);
-
-      expect(result.id, 'uuid-1');
-      expect(result.priorityMultiplier, 2.0);
-      expect(result.compositeScore, 10);
-    });
-
-    test('rethrows DioException on 404 (topic not found)', () async {
-      when(() => mockApiClient.put(
-            'personalization/topics/non-existent',
-            body: {'priority_multiplier': 1.0},
-            queryParameters: any(named: 'queryParameters'),
-            options: any(named: 'options'),
-          )).thenThrow(DioException(
-        requestOptions: RequestOptions(path: ''),
-        response:
-            Response(requestOptions: RequestOptions(path: ''), statusCode: 404),
-      ));
-
-      expect(() => repository.updateTopicPriority('non-existent', 1.0),
-          throwsA(isA<DioException>()));
-    });
-  });
-
   group('unfollowTopic', () {
     test('completes without error on 200', () async {
       when(() => mockApiClient.delete(

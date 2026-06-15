@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/custom_topics/models/topic_models.dart';
 import 'package:facteur/features/custom_topics/providers/custom_topics_provider.dart';
-import 'package:facteur/features/custom_topics/providers/theme_priority_provider.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/widgets/favorite_topic_tabs.dart';
+import 'package:facteur/features/feed/widgets/filter_collapsible_panel.dart';
+import 'package:facteur/features/my_interests/models/user_interests_state.dart';
+import 'package:facteur/features/my_interests/models/user_sources_state.dart';
+import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+
+Source _source({required String id, required String name}) =>
+    Source.fallback().copyWith(id: id, name: name);
 
 UserTopicProfile _topic({
   required String id,
@@ -27,6 +34,19 @@ UserTopicProfile _topic({
     entityType: entityType,
     canonicalName: canonicalName,
     compositeScore: compositeScore,
+  );
+}
+
+CustomTopicInterest _interestFromProfile(UserTopicProfile topic) {
+  return CustomTopicInterest(
+    id: topic.id,
+    topicName: topic.name,
+    slugParent: topic.slugParent ?? topic.id,
+    state: InterestState.favorite,
+    priorityMultiplier: topic.priorityMultiplier,
+    entityType: topic.entityType,
+    canonicalName: topic.canonicalName,
+    compositeScore: topic.compositeScore,
   );
 }
 
@@ -52,94 +72,84 @@ Content _content({
 
 void main() {
   group('buildFavoriteTabModelsForTest', () {
-    test('0 favoris → only "Tous" tab', () {
+    test('0 favoris → aucun onglet (« Tous » supprimé)', () {
       final tabs = buildFavoriteTabModelsForTest(
         topics: const [],
-        themePriority: const {},
+        favorites: const [],
         items: const [],
       );
 
-      expect(tabs, hasLength(1));
-      expect(tabs.first.kind, FavoriteTabKind.tous);
-      expect(tabs.first.label, 'Tous');
-      expect(tabs.first.active, isTrue);
+      expect(tabs, isEmpty);
     });
 
-    test('2 sujets + 1 thème → 4 tabs sorted by count desc (alpha tie-break)',
-        () {
+    test(
+        '2 sujets + 1 thème favori → seuls les sujets sont des onglets '
+        '(le thème pilote la Tournée, pas un onglet Flâner)', () {
       final topics = [
         _topic(
           id: 't1',
           name: 'IA santé',
           slugParent: 'ai-health',
-          priorityMultiplier: 2.0,
         ),
         _topic(
           id: 't2',
           name: 'Trump',
           entityType: 'PERSON',
           canonicalName: 'Donald Trump',
-          priorityMultiplier: 2.0,
           compositeScore: 0.8,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {'Environnement': 2.0},
+        favorites: const [
+          CustomTopicFavoriteRef(id: 't1'),
+          CustomTopicFavoriteRef(id: 't2'),
+          ThemeFavoriteRef(slug: 'environment'),
+        ],
         items: const [],
       );
 
-      // All counts are 0 here, so the tie-break is alphabetical on label
-      // (lowercased): environnement < ia santé < trump.
+      // Le thème favori (environment) ne produit PAS d'onglet, et « Tous » est
+      // supprimé : seuls les 2 sujets épinglés sont présents. Plus de tri par
+      // count → ordre d'insertion : entités d'abord, puis sujets.
       expect(tabs.map((t) => t.kind).toList(), [
-        FavoriteTabKind.tous,
-        FavoriteTabKind.theme,
-        FavoriteTabKind.subjectTopic,
         FavoriteTabKind.subjectEntity,
+        FavoriteTabKind.subjectTopic,
       ]);
-      expect(tabs[1].label, 'Environnement');
-      expect(tabs[1].slug, 'environment');
-      expect(tabs[1].emoji, isNotEmpty);
-      expect(tabs[2].label, 'IA santé');
-      expect(tabs[3].label, 'Trump');
+      expect(tabs.any((t) => t.kind == FavoriteTabKind.theme), isFalse);
+      expect(tabs[0].label, 'Trump');
+      expect(tabs[1].label, 'IA santé');
     });
 
-    test('topics whose slugParent is a macro-theme slug are excluded', () {
-      // slugParent == "tech" matches the Technologie macro-theme apiSlug.
+    test('topic not in favorites → excluded', () {
+      // Le topic est dans la liste mais PAS dans favorites → ne doit pas apparaître.
       final topics = [
         _topic(
           id: 't1',
           name: 'Technologie raw',
           slugParent: 'tech',
-          priorityMultiplier: 2.0,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {},
+        favorites: const [],
         items: const [],
       );
 
-      // Only "Tous" should appear — the topic was filtered out.
-      expect(tabs, hasLength(1));
-      expect(tabs.first.kind, FavoriteTabKind.tous);
+      expect(tabs, isEmpty);
     });
 
     test('count = unseen items < 48h matching slug', () {
       final items = [
-        // Match topic "ai", recent + unseen → counted
         _content(id: 'c1', topics: ['ai']),
-        // Match topic "ai", recent but seen → NOT counted
         _content(id: 'c2', topics: ['ai'], status: ContentStatus.seen),
-        // Match topic "ai", unseen but too old → NOT counted
         _content(
           id: 'c3',
           topics: ['ai'],
           ageBeforeNow: const Duration(hours: 72),
         ),
-        // Wrong topic → NOT counted
         _content(id: 'c4', topics: ['climate']),
       ];
 
@@ -148,24 +158,18 @@ void main() {
           id: 't1',
           name: 'IA',
           slugParent: 'ai',
-          priorityMultiplier: 2.0,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {},
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
         items: items,
       );
 
       final iaTab =
           tabs.firstWhere((t) => t.kind == FavoriteTabKind.subjectTopic);
       expect(iaTab.count, 1);
-
-      final tousTab =
-          tabs.firstWhere((t) => t.kind == FavoriteTabKind.tous);
-      // Tous = unseen + recent: c1 + c4 = 2.
-      expect(tousTab.count, 2);
     });
 
     test('selected slug marks the matching tab as active', () {
@@ -174,13 +178,12 @@ void main() {
           id: 't1',
           name: 'IA',
           slugParent: 'ai',
-          priorityMultiplier: 2.0,
         ),
       ];
 
       final tabs = buildFavoriteTabModelsForTest(
         topics: topics,
-        themePriority: const {},
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
         items: const [],
         selectedTopicSlug: 'ai',
       );
@@ -189,10 +192,262 @@ void main() {
         tabs.firstWhere((t) => t.slug == 'ai').active,
         isTrue,
       );
-      expect(
-        tabs.firstWhere((t) => t.kind == FavoriteTabKind.tous).active,
-        isFalse,
+    });
+
+    test('source favorite → produces a source tab carrying its Source', () {
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
       );
+
+      expect(tabs.map((t) => t.kind).toList(), [
+        FavoriteTabKind.source,
+      ]);
+      final sourceTab =
+          tabs.firstWhere((t) => t.kind == FavoriteTabKind.source);
+      expect(sourceTab.label, 'Le Monde');
+      expect(sourceTab.slug, 's1');
+      expect(sourceTab.source, isNotNull);
+    });
+
+    test(
+        'source en mode Essentiel (clé dans tournee_order) → exclue des onglets '
+        'Flâner (Story 10.2)', () {
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      // La même source favorite, mais sa clé `source:s1` est dans l'ordre
+      // Tournée ⇒ mode « Essentiel » ⇒ pas d'onglet Flâner.
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+        tourneeOrder: const ['source:s1'],
+      );
+
+      expect(tabs, isEmpty);
+    });
+
+    test(
+        'thème favori avec clé theme: dans order → onglet Flâner (modèle '
+        'exclusif)', () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        items: const [],
+        order: const ['theme:tech'],
+      );
+
+      expect(tabs.map((t) => t.kind).toList(), [FavoriteTabKind.theme]);
+      final themeTab = tabs.firstWhere((t) => t.kind == FavoriteTabKind.theme);
+      expect(themeTab.slug, 'tech');
+      expect(themeTab.label, 'Technologie');
+      expect(themeTab.count, 0);
+    });
+
+    test('thème favori SANS clé dans order → pas d\'onglet (reste Essentiel)',
+        () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        items: const [],
+      );
+
+      expect(tabs, isEmpty);
+    });
+
+    test('selectedThemeSlug marque l\'onglet thème comme actif', () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        items: const [],
+        order: const ['theme:tech'],
+        selectedThemeSlug: 'tech',
+      );
+
+      expect(
+        tabs.firstWhere((t) => t.kind == FavoriteTabKind.theme).active,
+        isTrue,
+      );
+    });
+
+    test('source favorite absent from catalog → skipped', () {
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [
+          SourceFavoriteRef(sourceId: 'ghost', position: 0),
+        ],
+        sourceById: const {},
+      );
+
+      expect(tabs, isEmpty);
+    });
+
+    test('selectedSourceId marks the matching source tab as active', () {
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: const [],
+        favorites: const [],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+        selectedSourceId: 's1',
+      );
+
+      expect(
+        tabs.firstWhere((t) => t.kind == FavoriteTabKind.source).active,
+        isTrue,
+      );
+    });
+
+    test('unified order interleaves topic and source tabs', () {
+      final topics = [_topic(id: 't1', name: 'IA', slugParent: 'ai')];
+      final src = _source(id: 's1', name: 'Le Monde');
+
+      // Sans ordre custom : ordre d'insertion = sujets puis sources (plus de
+      // tri par count, qui reléguait les sources en fin de liste).
+      final defaultTabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+      );
+      expect(defaultTabs.map((t) => t.kind).toList(), [
+        FavoriteTabKind.subjectTopic,
+        FavoriteTabKind.source,
+      ]);
+
+      // Avec ordre custom plaçant la source avant le sujet.
+      final orderedTabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        items: const [],
+        sourceFavorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+        sourceById: {'s1': src},
+        order: const ['source:s1', 'topic:t1'],
+      );
+      expect(orderedTabs.map((t) => t.kind).toList(), [
+        FavoriteTabKind.source,
+        FavoriteTabKind.subjectTopic,
+      ]);
+    });
+
+    test('cappe à 10 onglets, en gardant les 10 premiers dans l\'ordre user',
+        () {
+      final topics = [
+        for (var i = 0; i < 6; i++)
+          _topic(id: 't$i', name: 'Sujet $i', slugParent: 'p$i'),
+      ];
+      final favorites = [
+        for (var i = 0; i < 6; i++) CustomTopicFavoriteRef(id: 't$i'),
+      ];
+      final sourceById = {
+        for (var i = 0; i < 6; i++)
+          's$i': _source(id: 's$i', name: 'Source $i'),
+      };
+      final sourceFavorites = [
+        for (var i = 0; i < 6; i++)
+          SourceFavoriteRef(sourceId: 's$i', position: i),
+      ];
+      // Ordre utilisateur : alterne sujet/source (12 clés).
+      final order = <String>[
+        for (var i = 0; i < 6; i++) ...['topic:t$i', 'source:s$i'],
+      ];
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: favorites,
+        items: const [],
+        sourceFavorites: sourceFavorites,
+        sourceById: sourceById,
+        order: order,
+      );
+
+      // Exactement 10 onglets = les 10 premières clés de `order`.
+      expect(tabs, hasLength(10));
+      expect(tabs.map((t) => t.label).toList(), const [
+        'Sujet 0',
+        'Source 0',
+        'Sujet 1',
+        'Source 1',
+        'Sujet 2',
+        'Source 2',
+        'Sujet 3',
+        'Source 3',
+        'Sujet 4',
+        'Source 4',
+      ]);
+      // Le surplus (11e/12e clés) est tronqué.
+      expect(tabs.any((t) => t.label == 'Sujet 5'), isFalse);
+      expect(tabs.any((t) => t.label == 'Source 5'), isFalse);
+    });
+
+    test('3 sujets + 3 sources en ordre alterné → les 6 présents, intercalés',
+        () {
+      final topics = [
+        for (var i = 0; i < 3; i++)
+          _topic(id: 't$i', name: 'Sujet $i', slugParent: 'p$i'),
+      ];
+      final favorites = [
+        for (var i = 0; i < 3; i++) CustomTopicFavoriteRef(id: 't$i'),
+      ];
+      final sourceById = {
+        for (var i = 0; i < 3; i++)
+          's$i': _source(id: 's$i', name: 'Source $i'),
+      };
+      final sourceFavorites = [
+        for (var i = 0; i < 3; i++)
+          SourceFavoriteRef(sourceId: 's$i', position: i),
+      ];
+      const order = [
+        'topic:t0',
+        'source:s0',
+        'topic:t1',
+        'source:s1',
+        'topic:t2',
+        'source:s2',
+      ];
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: favorites,
+        items: const [],
+        sourceFavorites: sourceFavorites,
+        sourceById: sourceById,
+        order: order,
+      );
+
+      expect(tabs, hasLength(6));
+      expect(tabs.map((t) => t.label).toList(), const [
+        'Sujet 0',
+        'Source 0',
+        'Sujet 1',
+        'Source 1',
+        'Sujet 2',
+        'Source 2',
+      ]);
+    });
+
+    test('aucune sélection → aucun onglet actif', () {
+      final topics = [_topic(id: 't1', name: 'IA', slugParent: 'ai')];
+
+      final tabs = buildFavoriteTabModelsForTest(
+        topics: topics,
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        items: const [],
+      );
+
+      expect(tabs.any((t) => t.active), isFalse);
     });
   });
 
@@ -200,14 +455,21 @@ void main() {
     Widget host({
       required Widget child,
       List<UserTopicProfile> topics = const [],
-      Map<String, double> themePriority = const {},
+      List<FavoriteRef> favorites = const [],
+      bool throwCustomTopics = false,
     }) {
       return ProviderScope(
         overrides: [
           customTopicsProvider.overrideWith(() {
+            if (throwCustomTopics) return _ThrowingCustomTopicsNotifier();
             return _StaticCustomTopicsNotifier(topics);
           }),
-          themePriorityProvider.overrideWith((ref) async => themePriority),
+          userInterestsProvider.overrideWith(() {
+            return _StaticUserInterestsNotifier(
+              favorites: favorites,
+              customTopics: topics.map(_interestFromProfile).toList(),
+            );
+          }),
         ],
         child: MaterialApp(
           theme: FacteurTheme.lightTheme,
@@ -222,19 +484,20 @@ void main() {
       var tabTapCalls = 0;
 
       await tester.pumpWidget(host(
+        topics: [_topic(id: 't1', name: 'IA', slugParent: 'ai')],
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
         child: FavoriteTopicTabs(
           items: const [],
+          selectedTopicSlug: 'ai',
           onTabTap: (_, __) => tabTapCalls++,
           onTapActiveTab: () => tapActiveCalls++,
-          onTapActiveTabRefresh: () => tapActiveCalls++,
           onAddFavorite: () {},
         ),
       ));
-      // Let async providers resolve.
       await tester.pumpAndSettle();
 
-      // "Tous" is the active tab when no selection is set.
-      await tester.tap(find.text('Tous'));
+      // L'onglet « IA » est actif (selectedTopicSlug) → tap = onTapActiveTab.
+      await tester.tap(find.text('IA'));
       await tester.pump();
 
       expect(tapActiveCalls, 1);
@@ -249,22 +512,118 @@ void main() {
           items: const [],
           onTabTap: (_, __) {},
           onTapActiveTab: () {},
-          onTapActiveTabRefresh: () {},
           onAddFavorite: () => addCalls++,
         ),
       ));
       await tester.pumpAndSettle();
 
-      // The + pill is the only icon in the row.
       await tester.tap(find.byType(Icon).first);
       await tester.pump();
 
       expect(addCalls, 1);
     });
+
+    testWidgets(
+        'renders favorite subjects from user interests even if custom topics fail',
+        (tester) async {
+      await tester.pumpWidget(host(
+        topics: [_topic(id: 't1', name: 'IA santé', slugParent: 'ai-health')],
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        throwCustomTopics: true,
+        child: FavoriteTopicTabs(
+          items: const [],
+          onTabTap: (_, __) {},
+          onTapActiveTab: () {},
+          onAddFavorite: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('IA santé'), findsOneWidget);
+    });
+
+    testWidgets(
+        'inactive long tab labels are ellipsized while active label is complete',
+        (tester) async {
+      const inactiveLabel = 'Nom de sujet extrêmement long et difficile';
+      const activeLabel = 'Libellé actif extrêmement long et complet';
+
+      await tester.pumpWidget(host(
+        topics: [
+          _topic(id: 't1', name: inactiveLabel, slugParent: 'inactive'),
+          _topic(id: 't2', name: activeLabel, slugParent: 'active'),
+        ],
+        favorites: const [
+          CustomTopicFavoriteRef(id: 't1'),
+          CustomTopicFavoriteRef(id: 't2'),
+        ],
+        child: FavoriteTopicTabs(
+          items: const [],
+          selectedTopicSlug: 'active',
+          onTabTap: (_, __) {},
+          onTapActiveTab: () {},
+          onAddFavorite: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      final inactiveText = tester.widget<Text>(find.text(inactiveLabel));
+      final activeText = tester.widget<Text>(find.text(activeLabel));
+      expect(inactiveText.maxLines, 1);
+      expect(inactiveText.overflow, TextOverflow.ellipsis);
+      expect(activeText.maxLines, 1);
+      expect(activeText.overflow, TextOverflow.visible);
+    });
+  });
+
+  group('FilterCollapsiblePanel', () {
+    testWidgets('funnel lives in collapsed horizontal content and expands',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: Scaffold(
+          body: FilterCollapsiblePanel(
+            activeCount: 0,
+            chipsRow: const Text('chips row'),
+            leadingTrigger: const Text('search'),
+            collapsedContentBuilder: (filterTrigger) => SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Text('Sujet épinglé'),
+                  filterTrigger,
+                ],
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      final funnel = find.byIcon(
+        PhosphorIcons.funnel(PhosphorIconsStyle.regular),
+      );
+      expect(funnel, findsOneWidget);
+      expect(
+        find.ancestor(
+          of: funnel,
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(funnel);
+      await tester.pumpAndSettle();
+
+      expect(find.text('chips row'), findsOneWidget);
+      expect(
+        find.byIcon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
+        findsOneWidget,
+      );
+    });
   });
 }
 
-/// Test-only notifier that returns a static list and skips network/cache.
 class _StaticCustomTopicsNotifier extends CustomTopicsNotifier {
   _StaticCustomTopicsNotifier(this._topics);
 
@@ -272,4 +631,31 @@ class _StaticCustomTopicsNotifier extends CustomTopicsNotifier {
 
   @override
   Future<List<UserTopicProfile>> build() async => _topics;
+}
+
+class _StaticUserInterestsNotifier extends UserInterestsNotifier {
+  _StaticUserInterestsNotifier({
+    required List<FavoriteRef> favorites,
+    required List<CustomTopicInterest> customTopics,
+  })  : _favorites = favorites,
+        _customTopics = customTopics;
+
+  final List<FavoriteRef> _favorites;
+  final List<CustomTopicInterest> _customTopics;
+
+  @override
+  Future<UserInterestsState> build() async => UserInterestsState(
+        themes: const [],
+        customTopics: _customTopics,
+        favorites: _favorites,
+        favoriteCount: _favorites.length,
+        favoriteCap: 5,
+      );
+}
+
+class _ThrowingCustomTopicsNotifier extends CustomTopicsNotifier {
+  @override
+  Future<List<UserTopicProfile>> build() async {
+    throw StateError('customTopicsProvider unavailable');
+  }
 }

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "dataset_kind": "veille_curation",
+  "generated_at": "2026-06-09T12:00:00+00:00",
+  "note": "Gold écrit à la main (pas de labelling LLM). NOW = 2026-06-09T12:00Z. published_at en heures avant NOW. Encode le repro PO (veille NBA noyée de cricket/hockey/baseball via The Athletic, source large suivie) + le contraste topic ML mort (nba) vs vivant (ai). label ∈ {relevant, off_angle}.",
+  "configs": [
+    {
+      "config_key": "nba",
+      "config_display": "Veille NBA",
+      "theme_id": "sport",
+      "theme_label": "Sport",
+      "angles": [
+        {
+          "topic_id": "nba",
+          "label": "NBA",
+          "keywords": ["nba", "playoffs", "lakers", "celtics", "lebron", "durant", "dunk"]
+        }
+      ],
+      "global_keywords": [],
+      "sources": [
+        {"source_id": "athletic", "name": "The Athletic", "kind": "curated"},
+        {"source_id": "espn", "name": "ESPN", "kind": "curated"},
+        {"source_id": "basketusa", "name": "BasketUSA", "kind": "curated"}
+      ],
+      "articles": [
+        {"id": "A1", "title": "Les Lakers s'imposent, LeBron James décisif en finale", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-09T10:00:00+00:00", "label": "relevant"},
+        {"id": "A2", "title": "NBA : Boston s'offre le derby de la conférence Est", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-09T09:00:00+00:00", "label": "relevant"},
+        {"id": "A3", "title": "Ben Stokes et Harry Brook portent l'Angleterre face à l'Australie", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-09T06:00:00+00:00", "label": "off_angle"},
+        {"id": "A4", "title": "Les Penguins dominent les Canucks en prolongation", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-09T05:00:00+00:00", "label": "off_angle"},
+        {"id": "A5", "title": "Mookie Betts et les Dodgers s'imposent encore", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-09T04:00:00+00:00", "label": "off_angle"},
+        {"id": "A6", "title": "Ryder Cup : un duel de golf indécis jusqu'au bout", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-09T03:00:00+00:00", "label": "off_angle"},
+        {"id": "A7", "title": "Le XV de France renverse l'Irlande au Tournoi", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-09T02:00:00+00:00", "label": "off_angle"},
+        {"id": "A8", "title": "La finale du basket nord-américain se rapproche", "description": "", "topics": ["sport"], "source_id": "athletic", "source_name": "The Athletic", "published_at": "2026-06-07T20:00:00+00:00", "label": "relevant"},
+        {"id": "E1", "title": "Playoffs : Durant porte son équipe vers la victoire", "description": "", "topics": ["sport"], "source_id": "espn", "source_name": "ESPN", "published_at": "2026-06-09T10:00:00+00:00", "label": "relevant"},
+        {"id": "E2", "title": "Wimbledon : la finale dames se jouera samedi", "description": "", "topics": ["sport"], "source_id": "espn", "source_name": "ESPN", "published_at": "2026-06-09T06:00:00+00:00", "label": "off_angle"},
+        {"id": "E3", "title": "Mbappé offre la victoire au Real Madrid", "description": "", "topics": ["sport"], "source_id": "espn", "source_name": "ESPN", "published_at": "2026-06-09T05:00:00+00:00", "label": "off_angle"},
+        {"id": "E4", "title": "Formule 1 : Verstappen remporte le Grand Prix", "description": "", "topics": ["sport"], "source_id": "espn", "source_name": "ESPN", "published_at": "2026-06-09T04:00:00+00:00", "label": "off_angle"},
+        {"id": "E5", "title": "Athlétisme : un nouveau record sur 100 mètres", "description": "", "topics": ["sport"], "source_id": "espn", "source_name": "ESPN", "published_at": "2026-06-09T03:00:00+00:00", "label": "off_angle"},
+        {"id": "B1", "title": "Un dunk monstrueux de Durant enflamme la salle", "description": "", "topics": ["sport"], "source_id": "basketusa", "source_name": "BasketUSA", "published_at": "2026-06-09T10:00:00+00:00", "label": "relevant"},
+        {"id": "B2", "title": "Playoffs NBA : le programme de la nuit", "description": "", "topics": ["sport"], "source_id": "basketusa", "source_name": "BasketUSA", "published_at": "2026-06-09T09:00:00+00:00", "label": "relevant"},
+        {"id": "B3", "title": "Les Celtics éliminent le Heat au game 7", "description": "", "topics": ["sport"], "source_id": "basketusa", "source_name": "BasketUSA", "published_at": "2026-06-09T08:00:00+00:00", "label": "relevant"},
+        {"id": "B4", "title": "Le MVP de la saison enfin désigné", "description": "", "topics": ["sport"], "source_id": "basketusa", "source_name": "BasketUSA", "published_at": "2026-06-07T20:00:00+00:00", "label": "relevant"},
+        {"id": "X1", "title": "NBA : un record de points battu cette nuit", "description": "", "topics": ["sport"], "source_id": "rmcsport", "source_name": "RMC Sport", "published_at": "2026-06-09T09:00:00+00:00", "label": "relevant"},
+        {"id": "X2", "title": "Tournoi de tennis : les favoris au rendez-vous", "description": "", "topics": ["sport"], "source_id": "rmcsport", "source_name": "RMC Sport", "published_at": "2026-06-09T06:00:00+00:00", "label": "off_angle"}
+      ]
+    },
+    {
+      "config_key": "ia",
+      "config_display": "Veille IA",
+      "theme_id": "tech",
+      "theme_label": "Tech",
+      "angles": [
+        {
+          "topic_id": "ai",
+          "label": "Intelligence artificielle",
+          "keywords": ["llm", "gpt", "agent", "mistral", "openai"]
+        }
+      ],
+      "global_keywords": [],
+      "sources": [
+        {"source_id": "techbroad", "name": "TechBroad", "kind": "curated"}
+      ],
+      "articles": [
+        {"id": "T1", "title": "OpenAI dévoile un nouveau LLM open source", "description": "", "topics": ["ai"], "source_id": "techbroad", "source_name": "TechBroad", "published_at": "2026-06-09T10:00:00+00:00", "label": "relevant"},
+        {"id": "T2", "title": "Les modèles de langage progressent à grande vitesse", "description": "", "topics": ["ai"], "source_id": "techbroad", "source_name": "TechBroad", "published_at": "2026-06-09T09:00:00+00:00", "label": "relevant"},
+        {"id": "T3", "title": "Un agent autonome pour automatiser l'écriture de code", "description": "", "topics": ["tech"], "source_id": "techbroad", "source_name": "TechBroad", "published_at": "2026-06-09T08:00:00+00:00", "label": "relevant"},
+        {"id": "T4", "title": "Test du smartphone pliable de l'année", "description": "", "topics": ["tech"], "source_id": "techbroad", "source_name": "TechBroad", "published_at": "2026-06-09T06:00:00+00:00", "label": "off_angle"},
+        {"id": "T5", "title": "Comparatif des consoles de jeu de 2026", "description": "", "topics": ["gaming"], "source_id": "techbroad", "source_name": "TechBroad", "published_at": "2026-06-09T05:00:00+00:00", "label": "off_angle"},
+        {"id": "T6", "title": "Les meilleures promos électroménager du moment", "description": "", "topics": ["tech"], "source_id": "techbroad", "source_name": "TechBroad", "published_at": "2026-06-09T04:00:00+00:00", "label": "off_angle"},
+        {"id": "Y1", "title": "Mistral lève des fonds record pour ses modèles", "description": "", "topics": ["ai"], "source_id": "lesechos", "source_name": "Les Échos", "published_at": "2026-06-09T09:00:00+00:00", "label": "relevant"},
+        {"id": "Y2", "title": "Bourse : le CAC 40 termine en hausse", "description": "", "topics": ["economy"], "source_id": "lesechos", "source_name": "Les Échos", "published_at": "2026-06-09T06:00:00+00:00", "label": "off_angle"}
+      ]
+    }
+  ]
+}

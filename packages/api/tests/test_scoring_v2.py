@@ -189,3 +189,40 @@ def test_personalization_layer_muted_topic(mock_content, base_context):
     score = layer.score(mock_content, base_context)
     assert score == -30.0
     assert "Tu vois moins de ai" in [r['details'] for r in base_context.reasons[mock_content.id]]
+
+
+# ─── P0: build_digest_recommendation_reason mapping ──────────────────────────
+
+
+def test_build_digest_recommendation_reason_maps_contributions():
+    """PillarScoreResult.contributions -> DigestScoreBreakdown (incl. pillar)."""
+    from app.services.recommendation.scoring_engine import PillarScoreResult
+    from app.services.recommendation.reason_builder import (
+        build_digest_recommendation_reason,
+    )
+
+    result = PillarScoreResult(
+        final_score=72.5,
+        pillar_scores={"source": 80.0, "pertinence": 50.0, "fraicheur": 40.0, "qualite": 10.0},
+        contributions=[
+            {"pillar": "source", "pillar_display": "Vos sources", "label": "Source suivie", "points": 35.0, "is_positive": True},
+            {"pillar": "fraicheur", "pillar_display": "Actualité", "label": "Récent", "points": 60.0, "is_positive": True},
+            {"pillar": "penalite", "pillar_display": "Pénalités", "label": "Source en sourdine", "points": -40.0, "is_positive": False},
+        ],
+    )
+
+    reason = build_digest_recommendation_reason(result)
+
+    # score_total est le final_score combiné, pas la somme du breakdown.
+    assert reason.score_total == 72.5
+    # Le pilier est conservé sur chaque contribution.
+    by_label = {b.label: b for b in reason.breakdown}
+    assert by_label["Source suivie"].pillar == "source"
+    assert by_label["Récent"].pillar == "fraicheur"
+    assert by_label["Source en sourdine"].pillar == "penalite"
+    assert by_label["Source en sourdine"].is_positive is False
+    # Tri par |points| décroissant : Récent (60) devant Source suivie (35).
+    labels = [b.label for b in reason.breakdown]
+    assert labels.index("Récent") < labels.index("Source suivie")
+    # Le label de tête reflète le pilier dominant (source ici, poids x score).
+    assert isinstance(reason.label, str) and reason.label

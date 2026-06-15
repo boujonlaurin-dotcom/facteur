@@ -1,14 +1,20 @@
 """Editorial digest pipeline orchestrator — Stories 10.23 + 10.24.
 
-Orchestrates: clustering → LLM curation → deep matching → writing → pépite → coup de coeur.
+Orchestrates: clustering → LLM curation → actu matching → perspective analysis.
 
 Global phase (compute_global_context): 1x per batch, shared across users.
 Per-user phase (run_for_user): actu matching only, no LLM.
+
+Note: writing/pépite/coup_de_coeur/actu_decalee stages and the "Pas de recul"
+deep_matcher integration were removed/disabled during the post-unification
+cleanup. Deep matching is preserved in `deep_matcher.py` for the next
+"Pas de recul" iteration (see TODO blocks below).
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -16,38 +22,101 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
-from sqlalchemy import or_, select
+from sqlalchemy import case as sa_case
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.content import Content
+from app.models.enums import SourceType
 from app.models.source import Source
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.actu_matcher import ActuMatcher
 from app.services.editorial.config import load_editorial_config
 from app.services.editorial.curation import CurationService, _cluster_to_une_topic
-from app.services.editorial.deep_matcher import DeepMatcher
 from app.services.editorial.llm_client import EditorialLLMClient
 from app.services.editorial.schemas import (
-    ActuDecaleeArticle,
-    CoupDeCoeurArticle,
     EditorialGlobalContext,
     EditorialPipelineResult,
     EditorialSubject,
-    PepiteArticle,
     PerspectiveSourceMini,
-    WritingOutput,
     compute_bias_distribution,
     compute_bias_highlights,
     compute_divergence_level,
 )
-from app.services.editorial.writer import EditorialWriterService
+from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import Perspective, PerspectiveService
+from app.services.title_annotation_service import (
+    TitleAnnotationService,
+    # get_title_annotation_service,  # DÉSACTIVÉ (T1) : réactiver avec la boucle LLM bias
+)
 
 logger = structlog.get_logger()
 
-# Curation oversample : on demande +N sujets de plus que la cible pour
-# absorber les échecs d'actu/deep matching et toujours servir 5 sujets.
-_SUBJECT_BUFFER = 2
+
+def _is_singleton_podcast(cluster: TopicCluster) -> bool:
+    """Vrai si le cluster n'est couvert que par un seul podcast.
+
+    Les épisodes de podcasts traitent de sujets thématiques spécifiques (ex:
+    Science CQFD) qui ne constituent pas de l'actualité multi-source. On les
+    exclut du pool LLM pour ne pas polluer le digest quotidien avec des sujets
+    de niche qui n'intéressent qu'une seule source.
+    Un cluster podcast + article reste inclus (is_multi_source=True).
+    """
+    if len(cluster.source_domains) > 1 or not cluster.contents:
+        return False
+    src = getattr(cluster.contents[0], "source", None)
+    src_type = getattr(src, "type", None) if src else None
+    try:
+        return bool(src_type) and SourceType(src_type) == SourceType.PODCAST
+    except (ValueError, TypeError):
+        return False
+
+
+def _is_non_actu_cluster(cluster: TopicCluster) -> bool:
+    """Vrai si TOUS les contenus du cluster sont des bulletins/séries/denylist.
+
+    Empêche un sujet « série éditoriale » (ex. « Philippe Jaenada, l'art de la
+    contre-enquête ») ou une source denylistée d'entrer dans le pool même s'il
+    a passé la curation. Réutilise les prédicats partagés avec l'actu_matcher.
+    Un cluster mixte (au moins un contenu d'actu chaude) reste éligible.
+    Cf. bug-actus-du-jour-ranking.md (Partie B).
+    """
+    from app.services.recommendation.filter_presets import (
+        is_denylisted_editorial_source,
+        is_news_bulletin_title,
+    )
+
+    if not cluster.contents:
+        return False
+    return all(
+        is_news_bulletin_title(getattr(c, "title", None))
+        or is_denylisted_editorial_source(c)
+        for c in cluster.contents
+    )
+
+
+# Curation oversample : on demande +buffer sujets de plus que la cible pour
+# absorber les échecs d'actu/deep matching. EDITORIAL_TARGET_SUBJECT_COUNT=5
+# permet un rollback safe au comportement pré-passage 5→10.
+_DEFAULT_TARGET_SUBJECT_COUNT = 10
+_DEFAULT_SUBJECT_BUFFER = 4
+
+
+def _read_int_env(name: str, default: int, *, floor: int = 0) -> int:
+    try:
+        return max(floor, int(os.environ.get(name, "")))
+    except ValueError:
+        return default
+
+
+def _read_target_subject_count() -> int:
+    return _read_int_env(
+        "EDITORIAL_TARGET_SUBJECT_COUNT", _DEFAULT_TARGET_SUBJECT_COUNT, floor=1
+    )
+
+
+def _read_subject_buffer() -> int:
+    return _read_int_env("EDITORIAL_SUBJECT_BUFFER", _DEFAULT_SUBJECT_BUFFER)
 
 
 class EditorialPipelineService:
@@ -70,9 +139,6 @@ class EditorialPipelineService:
         self.actu_matcher = ActuMatcher(
             actu_max_age_hours=self.config.pipeline.actu_max_age_hours
         )
-        self.deep_matcher = DeepMatcher(
-            session, self.llm, self.config, session_maker=session_maker
-        )
 
     @asynccontextmanager
     async def _short_session(self):
@@ -94,12 +160,13 @@ class EditorialPipelineService:
     ) -> EditorialGlobalContext | None:
         """Compute global editorial context (1x per batch).
 
-        This performs all LLM calls (curation + deep matching + writing + pépite)
-        and 1 DB query (coup de coeur). Result is reused for all users.
+        Performs the LLM curation + actu matching + perspective analysis steps.
+        Result is reused for all users.
 
         Args:
             contents: Recent articles for clustering (typically < 48h).
-            mode: "pour_vous" or "serein" — affects writing prompt.
+            mode: "pour_vous" or "serein" — affects À la Une selection (bonne
+                nouvelle vs trending) and cluster filtering.
 
         Returns:
             EditorialGlobalContext or None if pipeline fails.
@@ -146,10 +213,12 @@ class EditorialPipelineService:
         # Cap low-priority clusters (sport + faits divers) — applies to both
         # modes. Clusters are sorted by size desc so the largest — typically
         # the most trending — is kept. Skip the cap if the remaining non-
-        # low-priority pool would be too small to pick 5 subjects.
-        sorted_by_size = sorted(clusters, key=lambda c: len(c.source_ids), reverse=True)
+        # low-priority pool would be too small pour atteindre la cible sujets.
+        sorted_by_size = sorted(
+            clusters, key=lambda c: len(c.source_domains), reverse=True
+        )
         capped = cap_low_priority_clusters(sorted_by_size)
-        if len(capped) >= 5:
+        if len(capped) >= _read_target_subject_count():
             dropped = len(sorted_by_size) - len(capped)
             clusters = capped
             logger.info(
@@ -165,6 +234,31 @@ class EditorialPipelineService:
                 reason="insufficient_non_low_priority_pool",
                 capped_size=len(capped),
             )
+
+        # Filtre singletons-podcast : épisodes thématiques d'une seule source
+        # (ex: Science CQFD) exclus du pool — pas de l'actu multi-source.
+        # Un cluster podcast + ≥1 autre source reste inclus.
+        filtered = [c for c in clusters if not _is_singleton_podcast(c)]
+        if dropped := len(clusters) - len(filtered):
+            logger.info(
+                "editorial_pipeline.singleton_podcast_filtered",
+                dropped=dropped,
+                remaining=len(filtered),
+            )
+        clusters = filtered
+
+        # Garde d'éligibilité : écarte les clusters dont TOUS les contenus sont
+        # des bulletins/séries (« …, l'art de la contre-enquête ») ou des
+        # sources denylistées — pas de l'actu chaude. Empêche un sujet série
+        # d'entrer dans le pool même s'il a passé la curation.
+        actu_eligible = [c for c in clusters if not _is_non_actu_cluster(c)]
+        if dropped := len(clusters) - len(actu_eligible):
+            logger.info(
+                "editorial_pipeline.non_actu_cluster_filtered",
+                dropped=dropped,
+                remaining=len(actu_eligible),
+            )
+        clusters = actu_eligible
 
         # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert.
         # Cas standard : on prend parmi les clusters "trending" (≥3 sources).
@@ -183,7 +277,7 @@ class EditorialPipelineService:
             if a_la_une_pool:
                 top3 = sorted(
                     a_la_une_pool,
-                    key=lambda c: len(c.source_ids),
+                    key=lambda c: len(c.source_domains),
                     reverse=True,
                 )[:3]
                 a_la_une_topic = await self.curation.select_bonne_nouvelle(top3)
@@ -195,9 +289,9 @@ class EditorialPipelineService:
                     trending=len(trending_clusters),
                 )
         elif a_la_une_pool:
-            top3 = sorted(a_la_une_pool, key=lambda c: len(c.source_ids), reverse=True)[
-                :3
-            ]
+            top3 = sorted(
+                a_la_une_pool, key=lambda c: len(c.source_domains), reverse=True
+            )[:3]
 
             if len(top3) == 1:
                 a_la_une_topic = _cluster_to_une_topic(top3[0])
@@ -225,17 +319,19 @@ class EditorialPipelineService:
         une_time = time.time() - step_start
 
         # ÉTAPE 2: LLM curation — select remaining topics + buffer.
-        # On oversample de `_SUBJECT_BUFFER` clusters supplémentaires : si
+        # On oversample de `subject_buffer` clusters supplémentaires : si
         # actu/deep matching échoue sur un sujet (cluster sans article éligible
         # < 24h, deep_match LLM négatif), on a une réserve pour garder le
-        # digest à 5 sujets sans replonger en LLM. Cf. bug-digest-pipeline-fallbacks.md.
+        # digest à target sujets sans replonger en LLM.
+        # Cf. bug-digest-pipeline-fallbacks.md.
         step_start = time.time()
         excluded_ids = {a_la_une_topic.topic_id} if a_la_une_topic else set()
-        target_subject_count = 5
+        target_subject_count = _read_target_subject_count()
+        subject_buffer = _read_subject_buffer()
         remaining_count = (
             (target_subject_count - 1) if a_la_une_topic else target_subject_count
         )
-        oversample_count = remaining_count + _SUBJECT_BUFFER
+        oversample_count = remaining_count + subject_buffer
         selected_topics = await self.curation.select_topics(
             clusters,
             subjects_count=oversample_count,
@@ -259,38 +355,85 @@ class EditorialPipelineService:
             duration_ms=round(curation_time * 1000, 2),
         )
 
-        # ÉTAPE 3B: Deep matching (global — same deep articles for all users)
-        # Extract entities from clusters to boost deep matching accuracy
         cluster_map = {c.cluster_id: c for c in clusters}
-        cluster_entities: dict[str, set[str]] = {}
+
+        # Persiste `cluster_id` sur les Content sélectionnés — condition sine
+        # qua non pour que `_attach_highlight_spans` (router perspectives)
+        # retrouve les rows `cluster_title_annotations` écrites par l'étape
+        # 3B-bis. `cluster_signature` filtre les annotations obsolètes côté
+        # lecture si la composition change à un run ultérieur.
+        selected_content_cluster_pairs: list[tuple[UUID, UUID]] = []
+        selected_cluster_ids: set[UUID] = set()
         for topic in selected_topics:
             cluster = cluster_map.get(topic.topic_id)
-            if cluster:
-                entities: set[str] = set()
-                for content in cluster.contents:
-                    if content.entities:
-                        for e in content.entities:
-                            if e and ":" in e:
-                                entities.add(e.split(":")[0].lower().strip())
-                if entities:
-                    cluster_entities[topic.topic_id] = entities
+            if not cluster or len(cluster.contents) < 2:
+                continue
+            cluster_uuid = UUID(cluster.cluster_id)
+            selected_cluster_ids.add(cluster_uuid)
+            for c in cluster.contents:
+                selected_content_cluster_pairs.append((c.id, cluster_uuid))
 
-        step_start = time.time()
-        deep_matches = await self.deep_matcher.match_for_topics(
-            selected_topics, cluster_entities=cluster_entities
-        )
-        deep_time = time.time() - step_start
+        if selected_content_cluster_pairs:
+            async with self._short_session() as session:
+                await _persist_content_cluster_ids(
+                    session, selected_content_cluster_pairs
+                )
+            logger.info(
+                "editorial_pipeline.content_cluster_ids_persisted",
+                content_count=len(selected_content_cluster_pairs),
+                cluster_count=len(selected_cluster_ids),
+            )
 
-        deep_hit_count = sum(1 for v in deep_matches.values() if v is not None)
+        # ÉTAPE 3B-bis: LLM bias annotation pour les clusters sélectionnés.
+        # Skip silencieux si MISTRAL_API_KEY absente (fallback spaCy hors-ligne
+        # géré ailleurs). Référence = cluster.label (best title du TopicSelector).
+        llm_bias_step_start = time.time()
+        # DÉSACTIVÉ (T1) : services instanciés uniquement par la boucle ci-dessous
+        # (désormais commentée). Décommenter avec elle pour réactiver.
+        # llm_bias_service = LLMBiasAnnotationService()
+        # title_service = get_title_annotation_service()
+        llm_bias_stats = {
+            "cluster_count": 0,
+            "variants_annotated": 0,
+            "variants_skipped": 0,
+            "cache_hits": 0,
+        }
+        # DÉSACTIVÉ (T1) : le highlighting des biais (surlignage mot-à-mot des
+        # titres) n'est plus affiché côté app → on coupe l'annotation LLM bias
+        # pour supprimer tout appel Mistral du pipeline éditorial. La classe
+        # `LLMBiasAnnotationService` et `_annotate_cluster_llm_bias` restent en
+        # place : réactivation = décommenter la boucle ci-dessous. Le bloc
+        # stats/logging reste (valeurs à zéro, inoffensif).
+        # if llm_bias_service.is_ready:
+        #     for topic in selected_topics:
+        #         cluster = cluster_map.get(topic.topic_id)
+        #         if not cluster or len(cluster.contents) < 2:
+        #             continue
+        #         llm_bias_stats["cluster_count"] += 1
+        #         try:
+        #             await _annotate_cluster_llm_bias(
+        #                 cluster=cluster,
+        #                 llm_service=llm_bias_service,
+        #                 title_service=title_service,
+        #                 short_session=self._short_session,
+        #                 stats=llm_bias_stats,
+        #             )
+        #         except Exception:
+        #             logger.exception(
+        #                 "editorial_pipeline.llm_bias_failed",
+        #                 cluster_id=str(cluster.cluster_id),
+        #             )
         logger.info(
-            "editorial_pipeline.deep_matching_done",
-            hits=deep_hit_count,
-            total=len(selected_topics),
-            duration_ms=round(deep_time * 1000, 2),
+            "editorial_pipeline.llm_bias_done",
+            duration_ms=round((time.time() - llm_bias_step_start) * 1000, 2),
+            llm_version=LLMBiasAnnotationService.LLM_VERSION,
+            **llm_bias_stats,
         )
 
-        # Build subjects with deep matches
-        cluster_map_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
+        # `source_count` reflète les MÉDIAS distincts (domaines), pas les
+        # feeds : 2 flux radiofrance.fr = 1 média. Aligné sur curation.py et le
+        # fix `source_domains` (commit 2667003b). Cf. bug-actus-du-jour-ranking.md.
+        cluster_map_counts = {c.cluster_id: len(c.source_domains) for c in clusters}
         subjects = [
             EditorialSubject(
                 rank=i + 1,
@@ -298,7 +441,7 @@ class EditorialPipelineService:
                 label=topic.label,
                 selection_reason=topic.selection_reason,
                 deep_angle=topic.deep_angle,
-                deep_article=deep_matches.get(topic.topic_id),
+                deep_article=None,
                 source_count=topic.source_count
                 or cluster_map_counts.get(topic.topic_id, 0),
                 theme=topic.theme,
@@ -308,19 +451,12 @@ class EditorialPipelineService:
         ]
 
         # ÉTAPE 3A: Actu matching GLOBAL (not per-user — MVP V2)
-        # Collect deep source_ids AND content_ids to prevent actu/deep overlap
-        deep_source_ids = {
-            s.deep_article.source_id for s in subjects if s.deep_article is not None
-        }
-        deep_content_ids = {
-            s.deep_article.content_id for s in subjects if s.deep_article is not None
-        }
         step_start = time.time()
         subjects = self.actu_matcher.match_global(
             subjects=subjects,
             clusters=clusters,
-            excluded_source_ids=deep_source_ids,
-            excluded_content_ids=deep_content_ids,
+            excluded_source_ids=set(),
+            excluded_content_ids=set(),
         )
         actu_time = time.time() - step_start
         actu_hit_count = sum(1 for s in subjects if s.actu_article is not None)
@@ -332,20 +468,23 @@ class EditorialPipelineService:
         )
 
         # ÉTAPE 3A-bis: trim au target_subject_count.
-        # On a oversamplé de _SUBJECT_BUFFER ; on conserve les sujets avec au
-        # moins un actu OU un deep article, dans l'ordre, jusqu'à atteindre
-        # `target_subject_count`. Les sujets vides sont droppés ici (loggés
-        # en warning), mais le buffer permet généralement de combler.
-        # Si on retombe quand même < target, on logge en error pour visibilité.
+        # On a oversamplé de subject_buffer ; on exige qu'un sujet ait un
+        # `actu_article` (parution récente). Un sujet avec seulement un
+        # `deep_article` (parfois plusieurs jours) ne mérite pas d'être
+        # promu en article principal — sa place est sur le rail "Prendre
+        # du recul", pas dans les sujets du jour. Cf. bug-essentiel-pipeline.md.
+        # Le buffer permet généralement de combler les drops ; si on retombe
+        # quand même < target, on logge en error pour visibilité.
         empty_dropped: list[str] = []
         kept: list[EditorialSubject] = []
         for s in subjects:
-            if s.actu_article is None and s.deep_article is None:
+            if s.actu_article is None:
                 empty_dropped.append(s.label or s.topic_id)
                 logger.warning(
-                    "editorial_pipeline.subject_no_articles",
+                    "editorial_pipeline.subject_no_actu",
                     topic_id=s.topic_id,
                     label=s.label,
+                    had_deep=s.deep_article is not None,
                 )
                 continue
             kept.append(s)
@@ -412,21 +551,29 @@ class EditorialPipelineService:
             if not cluster or not cluster.contents:
                 return
 
-            representative = sorted(
+            # Most-recent-first ordering: the representative (pivot) is the
+            # freshest article, the rest are the "other sources".
+            ordered_contents = sorted(
                 cluster.contents, key=lambda c: c.published_at, reverse=True
-            )[0]
+            )
+            representative = ordered_contents[0]
 
             # Step 1 — cluster-based perspectives (source of truth).
             # Helper is shared with /contents/{id}/perspectives so the
             # endpoint returns the same merged count as this pipeline (the
             # PR #390 invariant still holds between header and bottom sheet).
-            ordered_contents = sorted(
-                cluster.contents, key=lambda c: c.published_at, reverse=True
-            )
+            # Exclure le représentatif — c'est l'article ouvert, pas une
+            # "autre source". Sans ça, perspective_count l'inclut (N) alors
+            # que l'endpoint /perspectives le retire du snapshot (N-1), d'où
+            # un off-by-one permanent card/section + une barre de biais
+            # divergente.
+            ordered_without_rep = [
+                c for c in ordered_contents if c.id != representative.id
+            ]
             try:
                 cluster_perspectives = (
                     await perspective_service.build_cluster_perspectives(
-                        ordered_contents
+                        ordered_without_rep
                     )
                 )
             except Exception:
@@ -544,8 +691,9 @@ class EditorialPipelineService:
             ]
 
             # Axe C — observability: log the composition so we can verify in
-            # prod that the cluster count, perspective count and LLM analysis
-            # describe the same media set.
+            # prod que cluster count, perspective count et LLM analysis
+            # décrivent le même media set. final_persisted_count = ce que
+            # le fast path retournera (doit toujours == perspective_count).
             logger.info(
                 "editorial_pipeline.perspectives_composition",
                 topic_id=subject.topic_id,
@@ -554,6 +702,8 @@ class EditorialPipelineService:
                 total_merged=len(merged_perspectives),
                 known_bias=len(known_perspectives),
                 unknown_bias=len(merged_perspectives) - len(known_perspectives),
+                final_persisted_count=len(subject.perspective_articles or []),
+                perspective_count=subject.perspective_count,
             )
 
             # Build perspective_sources — max 6, deduplicated by domain.
@@ -725,98 +875,10 @@ class EditorialPipelineService:
             for c in clusters
         ]
 
-        # ÉTAPES 4+5+6: Writing + Pépite + Coup de coeur (parallel)
-        step_start = time.time()
-        writer = EditorialWriterService(
-            self.session, self.llm, self.config, session_maker=self.session_maker
-        )
-
-        selected_topic_ids = {s.topic_id for s in subjects}
-        selected_content_ids: set[UUID] = set()
-        for s in subjects:
-            if s.deep_article:
-                selected_content_ids.add(s.deep_article.content_id)
-
-        # Build parallel tasks: writing + pepite + coup de coeur + (actu_decalee if serein)
-        parallel_tasks = [
-            writer.write_editorial(subjects, mode=mode),
-            writer.select_pepite(contents, selected_topic_ids, cluster_data),
-            writer.get_coup_de_coeur(selected_content_ids),
-        ]
-        if mode == "serein":
-            parallel_tasks.append(writer.select_actu_decalee(selected_content_ids))
-
-        gather_results = await asyncio.gather(*parallel_tasks, return_exceptions=True)
-
-        writing_raw = gather_results[0]
-        pepite_raw = gather_results[1]
-        coup_de_coeur_raw = gather_results[2]
-        actu_decalee_raw = gather_results[3] if mode == "serein" else None
-
-        # Handle writing result — inject texts into subjects
-        writing_result: WritingOutput | None = None
-        if isinstance(writing_raw, WritingOutput):
-            writing_result = writing_raw
-            topic_map = {sw.topic_id: sw for sw in writing_result.subjects}
-            for i, s in enumerate(subjects):
-                sw = topic_map.get(s.topic_id)
-                if not sw and i < len(writing_result.subjects):
-                    # Positional fallback: LLM may have modified the UUID
-                    sw = writing_result.subjects[i]
-                    logger.warning(
-                        "editorial_pipeline.topic_id_mismatch_positional_fallback",
-                        expected=s.topic_id,
-                        got=writing_result.subjects[i].topic_id,
-                    )
-                if sw:
-                    s.intro_text = sw.intro_text
-                    s.transition_text = sw.transition_text
-        elif isinstance(writing_raw, Exception):
-            logger.error("editorial_pipeline.writing_exception", error=str(writing_raw))
-
-        # Handle pépite
-        pepite: PepiteArticle | None = None
-        if isinstance(pepite_raw, PepiteArticle):
-            pepite = pepite_raw
-        elif isinstance(pepite_raw, Exception):
-            logger.error("editorial_pipeline.pepite_exception", error=str(pepite_raw))
-
-        # Handle coup de coeur
-        coup_de_coeur: CoupDeCoeurArticle | None = None
-        if isinstance(coup_de_coeur_raw, CoupDeCoeurArticle):
-            coup_de_coeur = coup_de_coeur_raw
-        elif isinstance(coup_de_coeur_raw, Exception):
-            logger.error(
-                "editorial_pipeline.coup_de_coeur_exception",
-                error=str(coup_de_coeur_raw),
-            )
-
-        # Handle actu décalée (serein mode only)
-        actu_decalee: ActuDecaleeArticle | None = None
-        if isinstance(actu_decalee_raw, ActuDecaleeArticle):
-            actu_decalee = actu_decalee_raw
-        elif isinstance(actu_decalee_raw, Exception):
-            logger.error(
-                "editorial_pipeline.actu_decalee_exception",
-                error=str(actu_decalee_raw),
-            )
-
-        writing_time = time.time() - step_start
-        logger.info(
-            "editorial_pipeline.writing_done",
-            has_writing=writing_result is not None,
-            has_pepite=pepite is not None,
-            has_coup_de_coeur=coup_de_coeur is not None,
-            has_actu_decalee=actu_decalee is not None,
-            duration_ms=round(writing_time * 1000, 2),
-        )
-
         total_time = time.time() - start
         logger.info(
             "editorial_pipeline.global_context_ready",
             subjects=len(subjects),
-            deep_hits=deep_hit_count,
-            has_editorial_text=writing_result is not None,
             total_ms=round(total_time * 1000, 2),
         )
 
@@ -824,12 +886,6 @@ class EditorialPipelineService:
             subjects=subjects,
             cluster_data=cluster_data,
             generated_at=datetime.now(UTC),
-            header_text=writing_result.header_text if writing_result else None,
-            closure_text=writing_result.closure_text if writing_result else None,
-            cta_text=writing_result.cta_text if writing_result else None,
-            pepite=pepite,
-            coup_de_coeur=coup_de_coeur,
-            actu_decalee=actu_decalee,
         )
 
     def run_for_user(
@@ -873,14 +929,111 @@ class EditorialPipelineService:
                 "total_subjects": len(subjects),
                 "matching_ms": round(total_time * 1000, 2),
             },
-            header_text=global_ctx.header_text,
-            closure_text=global_ctx.closure_text,
-            cta_text=global_ctx.cta_text,
-            pepite=global_ctx.pepite,
-            coup_de_coeur=global_ctx.coup_de_coeur,
-            actu_decalee=global_ctx.actu_decalee,
         )
 
     async def close(self) -> None:
         """Cleanup resources."""
         await self.llm.close()
+
+
+async def _persist_content_cluster_ids(
+    session: AsyncSession,
+    pairs: list[tuple[UUID, UUID]],
+) -> None:
+    """UPDATE bulk `contents.cluster_id` pour les articles d'un run.
+
+    Idempotent : ré-applique le même `cluster_id` si déjà set. Les anciennes
+    valeurs sont écrasées — au prochain run, `cluster_signature` côté CTA
+    invalide les annotations dont la composition a changé.
+    """
+    if not pairs:
+        return
+    when_clauses = dict(pairs)
+    stmt = (
+        update(Content)
+        .where(Content.id.in_(when_clauses.keys()))
+        .values(cluster_id=sa_case(when_clauses, value=Content.id))
+    )
+    await session.execute(stmt)
+    await session.commit()
+
+
+async def _annotate_cluster_llm_bias(
+    *,
+    cluster: TopicCluster,
+    llm_service: LLMBiasAnnotationService,
+    title_service: TitleAnnotationService,
+    short_session,
+    stats: dict[str, int],
+) -> None:
+    """Annote tous les variants d'un cluster avec le LLM bias service.
+
+    Pré-condition assurée ici : `get_or_compute_cluster_annotations` crée
+    les rows spaCy (UPDATE-only de `write_llm_annotations` exige des rows
+    existantes). Skip variant self-référent (`title == cluster.label`)
+    et utilise le cache si la signature est stable.
+    """
+    ref_title = cluster.label or ""
+    if not ref_title:
+        return
+
+    cluster_id_uuid = UUID(cluster.cluster_id)
+    signature = title_service.compute_cluster_signature(
+        [c.id for c in cluster.contents]
+    )
+    # Garde nécessaire : si tous les variants partagent le titre du best
+    # title (cluster artificiel à doublons), `expected == 0` et len(cached)
+    # est trivialement ≥ 0 — sans la garde on incrémenterait à tort.
+    expected = sum(1 for c in cluster.contents if c.title and c.title != ref_title)
+    if expected == 0:
+        return
+
+    async with short_session() as session:
+        cached = await title_service.get_llm_annotations(
+            session, cluster_id_uuid, LLMBiasAnnotationService.LLM_VERSION, signature
+        )
+        if len(cached) >= expected:
+            stats["cache_hits"] += 1
+            return
+
+        # `write_llm_annotations` est UPDATE-only — pré-condition PR 3 :
+        # les rows `cluster_title_annotations` doivent exister avec
+        # `strong_tokens` (spaCy). On les garantit ici juste avant l'écriture.
+        await title_service.get_or_compute_cluster_annotations(session, cluster_id_uuid)
+
+        annotations: dict[UUID, dict] = {}
+        for variant in cluster.contents:
+            if not variant.title or variant.title == ref_title:
+                continue
+            if variant.id in cached:
+                continue
+            peers = [
+                c.title for c in cluster.contents if c.id != variant.id and c.title
+            ][:3]
+            stance = getattr(variant.source, "bias_stance", None)
+            bias_stance = getattr(stance, "value", stance) or "unknown"
+            result = await llm_service.annotate_variant(
+                ref_title=ref_title,
+                variant_title=variant.title,
+                bias_stance=bias_stance,
+                peers=peers,
+            )
+            if result is None:
+                stats["variants_skipped"] += 1
+                logger.warning(
+                    "editorial_pipeline.llm_bias_variant_skipped",
+                    cluster_id=str(cluster.cluster_id),
+                    content_id=str(variant.id),
+                )
+                continue
+            annotations[variant.id] = result
+            stats["variants_annotated"] += 1
+
+        if annotations:
+            await title_service.write_llm_annotations(
+                session,
+                cluster_id_uuid,
+                LLMBiasAnnotationService.LLM_VERSION,
+                signature,
+                annotations,
+            )

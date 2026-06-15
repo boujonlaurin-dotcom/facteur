@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/auth/auth_state.dart';
 import 'digest_provider.dart';
 
 /// Global serein toggle state — shared between Digest and Feed.
@@ -23,6 +24,12 @@ class SereinToggleState {
 
 final sereinToggleProvider =
     StateNotifierProvider<SereinToggleNotifier, SereinToggleState>((ref) {
+  // Rebuild a fresh notifier (back to isLoading:true) whenever the
+  // authenticated user changes — logout, then a different account on the same
+  // device. Otherwise the initFromApi guard below would block the next user's
+  // server preference from ever applying and they'd inherit the previous
+  // user's toggle.
+  ref.watch(authStateProvider.select((s) => s.user?.id));
   return SereinToggleNotifier(ref);
 });
 
@@ -31,8 +38,14 @@ class SereinToggleNotifier extends StateNotifier<SereinToggleState> {
 
   SereinToggleNotifier(this._ref) : super(const SereinToggleState());
 
-  /// Called once when /digest/both returns to sync with server preference.
+  /// Sync with the server preference returned by /digest/both.
+  ///
+  /// Only syncs on the FIRST load (while still [isLoading]). Once the toggle
+  /// has stabilised, a digest re-fetch (scroll, navigation to Actus du jour,
+  /// stale-fallback refresh) must NEVER overwrite the user's current choice —
+  /// otherwise serein silently flips back OFF mid-session.
   void initFromApi(bool sereinEnabled) {
+    if (!state.isLoading) return;
     state = SereinToggleState(enabled: sereinEnabled, isLoading: false);
   }
 

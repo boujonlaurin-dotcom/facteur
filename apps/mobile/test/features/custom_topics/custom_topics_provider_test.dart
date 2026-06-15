@@ -189,67 +189,6 @@ void main() {
     });
   });
 
-  group('updatePriority', () {
-    test('updates priority optimistically then syncs server response',
-        () async {
-      when(() => mockRepo.getTopics()).thenAnswer((_) async => mockTopics);
-      when(() => mockRepo.updateTopicPriority('t1', 2.0)).thenAnswer(
-          (_) async => const UserTopicProfile(
-              id: 't1',
-              name: 'IA',
-              priorityMultiplier: 2.0,
-              compositeScore: 10));
-
-      await container.read(customTopicsProvider.future);
-      final notifier = container.read(customTopicsProvider.notifier);
-
-      await notifier.updatePriority('t1', 2.0);
-
-      // After server sync: priority updated and composite_score synced
-      final topics = container.read(customTopicsProvider).value!;
-      final updated = topics.firstWhere((t) => t.id == 't1');
-      expect(updated.priorityMultiplier, 2.0);
-      expect(updated.compositeScore, 10);
-    });
-
-    test('rolls back on API error', () async {
-      when(() => mockRepo.getTopics()).thenAnswer((_) async => mockTopics);
-      when(() => mockRepo.updateTopicPriority(any(), any()))
-          .thenThrow(Exception('Server error'));
-
-      await container.read(customTopicsProvider.future);
-      final notifier = container.read(customTopicsProvider.notifier);
-
-      await expectLater(
-        () => notifier.updatePriority('t1', 3.0),
-        throwsException,
-      );
-
-      // Rollback: original priority restored
-      final topics = container.read(customTopicsProvider).value!;
-      final rolled = topics.firstWhere((t) => t.id == 't1');
-      expect(rolled.priorityMultiplier, 1.0);
-    });
-
-    test('does not affect other topics when updating one', () async {
-      when(() => mockRepo.getTopics()).thenAnswer((_) async => mockTopics);
-      when(() => mockRepo.updateTopicPriority('t1', 0.5)).thenAnswer(
-          (_) async => const UserTopicProfile(
-              id: 't1', name: 'IA', priorityMultiplier: 0.5));
-
-      await container.read(customTopicsProvider.future);
-      final notifier = container.read(customTopicsProvider.notifier);
-
-      await notifier.updatePriority('t1', 0.5);
-
-      final topics = container.read(customTopicsProvider).value!;
-      // t2 should be unchanged
-      final t2 = topics.firstWhere((t) => t.id == 't2');
-      expect(t2.priorityMultiplier, 1.5);
-      expect(t2.name, 'Climate');
-    });
-  });
-
   group('isFollowed', () {
     test('returns true for existing topic (case-insensitive)', () async {
       when(() => mockRepo.getTopics()).thenAnswer((_) async => mockTopics);

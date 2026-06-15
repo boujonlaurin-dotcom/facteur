@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../../core/api/notification_preferences_api_service.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/services/push_notification_service.dart';
+import '../../../core/services/server_push_service.dart';
 
 /// État des préférences de notifications
 @immutable
@@ -112,11 +113,13 @@ class NotificationsSettingsNotifier
   static const _kGoodNewsEnabled = 'notif_good_news_enabled';
   static const _kGoodNewsTimeSlot = 'notif_good_news_time_slot';
   static const _kNotifVeilleEnabled = 'notif_veille_enabled';
+  static const kGoodNewsTeasers = 'notif_good_news_teasers';
 
   Future<Box<dynamic>> _box() => Hive.openBox<dynamic>(_boxName);
 
   Future<void> _loadFromHive() async {
     final box = await _box();
+    if (!mounted) return;
     state = NotificationsSettings(
       pushEnabled: box.get(_kPush, defaultValue: false) as bool,
       preset: NotifPresetX.fromWire(box.get(_kPreset) as String?),
@@ -125,11 +128,9 @@ class NotificationsSettingsNotifier
       refusalCount: box.get(_kRefusalCount, defaultValue: 0) as int,
       lastRefusalAt: _readDate(box, _kLastRefusalAt),
       lastRenudgeAt: _readDate(box, _kLastRenudgeAt),
-      renudgeShownCount:
-          box.get(_kRenudgeShownCount, defaultValue: 0) as int,
+      renudgeShownCount: box.get(_kRenudgeShownCount, defaultValue: 0) as int,
       emailDigestEnabled: box.get(_kEmailDigest, defaultValue: false) as bool,
-      goodNewsEnabled:
-          box.get(_kGoodNewsEnabled, defaultValue: false) as bool,
+      goodNewsEnabled: box.get(_kGoodNewsEnabled, defaultValue: false) as bool,
       goodNewsTimeSlot: NotifTimeSlotX.fromWire(
         box.get(_kGoodNewsTimeSlot) as String?,
       ),
@@ -178,6 +179,7 @@ class NotificationsSettingsNotifier
         renudgeShownCount: dto.renudgeShownCount,
         notifVeilleEnabled: dto.notifVeilleEnabled,
       );
+      if (!mounted) return;
       state = fresh;
       await _persist(fresh);
       await _drainPendingSync();
@@ -225,8 +227,19 @@ class NotificationsSettingsNotifier
     await push.cancelDigestNotification();
     await push.cancelWeeklyCommunityPick();
     await push.cancelGoodNewsNotification();
+    final box = await _box();
+    final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
+    final serverRegistered = box.get(
+      ServerPushService.serverRegisteredKey,
+      defaultValue: false,
+    ) as bool;
     if (state.pushEnabled) {
-      await push.scheduleDailyDigestNotification(timeSlot: state.timeSlot);
+      if (!serverRegistered) {
+        await push.scheduleDailyDigestNotification(
+          timeSlot: state.timeSlot,
+          variant: NotifVariant.variantA,
+        );
+      }
       if (state.preset == NotifPreset.curieux) {
         await push.scheduleWeeklyCommunityPick();
       }
@@ -234,8 +247,34 @@ class NotificationsSettingsNotifier
     if (state.goodNewsEnabled) {
       await push.scheduleDailyGoodNewsNotification(
         timeSlot: state.goodNewsTimeSlot,
+        teasers: goodNewsTeasers.isEmpty ? null : goodNewsTeasers,
       );
     }
+  }
+
+  /// Lecture défensive d'une liste de teasers persistée. Hive rend des
+  /// `List<dynamic>` ; on filtre aux `String` pour éviter un crash de cast.
+  /// Statique + publique : `main.dart` (cold start) lit la même box sans
+  /// dupliquer la logique de cast défensif.
+  static List<String> readTeasers(Box<dynamic> box, String key) {
+    final raw = box.get(key);
+    if (raw is! List) return const [];
+    return raw.whereType<String>().toList(growable: false);
+  }
+
+  /// Les teasers Essentiel sont désormais construits côté serveur à partir du
+  /// digest exact du jour. On purge l'ancienne persistance locale.
+  Future<void> syncDigestTeasers({
+    required List<String> essentielTeasers,
+    required List<String> goodNewsTeasers,
+    required bool sereinEnabled,
+  }) async {
+    final box = await _box();
+    await box.delete('notif_essentiel_teasers');
+    if (goodNewsTeasers.isNotEmpty) {
+      await box.put(kGoodNewsTeasers, goodNewsTeasers);
+    }
+    await _reschedule();
   }
 
   /// Persiste, replanifie, sync backend.
@@ -251,7 +290,7 @@ class NotificationsSettingsNotifier
       final pushService = PushNotificationService();
       final granted = await pushService.requestPermission();
       if (!granted) return;
-      await pushService.requestExactAlarmPermission();
+      await ServerPushService.instance.initAndRegister();
     }
     await _commit(state.copyWith(pushEnabled: value));
   }

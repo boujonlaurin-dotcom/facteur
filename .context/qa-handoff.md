@@ -1,91 +1,77 @@
-# QA Handoff — Veille `/suggestions/sources` : savepoint + timeouts + retry mobile
+# QA Handoff — Fiche source v3 (endpoint `/profile` unifié + fréquence + cartes article cliquables)
+
+> Rempli par l'agent dev après VERIFY. Input de `/validate-feature` (agent QA Chrome).
 
 ## Feature développée
-Hotfix critique sur le bug "loading infini" perçu en Step 3 de l'onboarding veille (PYTHON-3P/3Q : 13 occurrences en 3 h, 2 users). Trois corrections backend (savepoint par candidat, timeouts par candidat + global LLM, sentry capture) + une correction mobile (réintroduction du bouton « Réessayer » perdu dans PR2 #562).
+La fiche source (bottom sheet) devient un vrai signal produit : un endpoint unifié
+`GET /sources/{id}/profile` alimente en un seul appel la couverture par thèmes, le volume
+30 jours, la **fréquence de publication** (nouveau chip horloge dans le header) et les
+**3 articles récents** rendus en carte standard `FluxContinuArticleCard` (cliquables →
+reader, read-sync, aperçu en appui long). L'évaluation reste reléguée, repliée.
 
 ## PR associée
-À créer après /go (cible : `main`).
+<!-- À compléter après ouverture : gh pr view --web -->
+Branche : `boujonlaurin-dotcom/source-profile-endpoint` (base `main`).
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Step 3 — Sources | `/veille/config` (step 3) | Modifié (bouton Réessayer dans `_MockSourcesFallback`) |
+| Fiche source (bottom sheet `SourceDetailModal`) | ouverte depuis Sources, Flâner, reader (chip source), thèmes, pépites, onboarding | Modifié |
+| Reader article (`ContentDetailScreen`) | `/flux-continu/content/:id` | Cible du tap sur une carte article (existant) |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — sources arrivent normalement
+### Scénario 1 : Happy path — source active riche
 **Parcours** :
-1. App connectée, sans veille active.
-2. Aller sur `/veille/config` → Step 1 (thème) → choisir « Tech ».
-3. Step 2 (topics) → choisir 2-3 topics.
-4. Step 2 → tap « Continuer ».
-5. Animation halo Step 2→3.
+1. Ouvrir la fiche d'une source qui publie beaucoup (ex. Le Monde) via l'onglet Sources ou une chip source dans le reader.
+2. Observer le header.
+3. Faire défiler jusqu'aux sections « Couverture par thèmes » et « Derniers articles ».
+4. Taper sur une carte article.
 **Résultat attendu** :
-- Le serveur répond en < 25 s (timeouts en place).
-- Step 3 affiche la liste rankée par pertinence (8-12 sources).
-- Aucun spinner infini.
+- Header : nom + domaine + signal « Suivi par N lecteurs » **et** chip horloge fréquence (ex. « ~100/jour », « quelques-uns/semaine »).
+- Couverture : barres par thème (label + barre + %), caption « N articles publiés sur la période ».
+- Derniers articles : jusqu'à 3 cartes `FluxContinuArticleCard` (logo source, titre, méta), alignées avec le reste de la fiche.
+- Tap sur une carte → ouvre le reader de l'article ; au retour, la carte porte le badge « lu » (read-sync).
+- Appui long sur une carte → aperçu (preview overlay).
 
-### Scénario 2 : Backend hang sur un domaine bad
+### Scénario 2 : Edge case — source fraîche / sans articles / éval absente
 **Parcours** :
-1. Reproduire localement avec un candidat URL qui hang (ex : `binge.audio/feed/`).
-2. Lancer `/api/veille/suggestions/sources`.
-**Résultat attendu** :
-- Backend skip le candidat après 8 s (`source_suggester.candidate_timeout` log).
-- Les autres candidats sont ingérés normalement.
-- Réponse 200 sous 25 s.
+1. Ouvrir une source très récente (peu d'historique) → vérifier que la fréquence n'est pas sous-estimée (fenêtre clampée à l'âge réel).
+2. Ouvrir une source sans contenu → section articles = carte « Aucun article récent. », couverture masquée.
+3. Ouvrir une source non évaluée → bloc « Évaluation Facteur » affiche « Pas encore évaluée », reste repliée.
 
-### Scénario 3 : Backend 503 (PendingRollbackError simulé) — fallback mobile
+### Scénario 3 : Cas d'erreur — `/profile` injoignable (fallback gracieux)
 **Parcours** :
-1. Backend down ou throw 503 sur `/suggestions/sources`.
-2. Step 3 mounted → spinner pendant ~30 s (timeout Dio) puis erreur API.
-**Résultat attendu** :
-- Mock fallback affiché avec message « Suggestions indisponibles, conserve ta sélection. ».
-- **Bouton « Réessayer » présent et cliquable** (régression PR2 #562 corrigée).
-- Tap « Réessayer » → relance la requête (`refreshKeepingChecked`).
-- Si backend toujours KO → reste sur le mock fallback ; si recovery → liste rankée affichée.
+1. Couper le réseau (ou simuler une 5xx) puis ouvrir une fiche source.
+**Résultat attendu** : la sheet ne bloque **jamais**. Fallback statique = header (sans chip
+fréquence) + évaluation + réglages (si suivie) + gestion + actions. Couverture / articles /
+fréquence masqués. Aucun spinner infini, aucun crash.
 
-### Scénario 4 : LLM Mistral timeout (> 20 s)
+### Scénario 4 : Mode smart-search inchangé (non-régression)
 **Parcours** :
-1. Configurer un délai artificiel sur le serveur mock LLM ou couper Mistral API.
-2. Appeler `/suggestions/sources`.
-**Résultat attendu** :
-- Backend bascule sur `_fallback` (sources curées du thème).
-- Réponse 200 avec `sources` non-vide (relevance_score=null).
-- Log `source_suggester.llm_timeout` émis.
-
-### Scénario 5 : Une violation de contrainte ne poison plus la session
-**Parcours** :
-1. LLM produit 3 candidats dont un avec un `name` > 200 chars (violation `String(200)`).
-2. Backend ingère.
-**Résultat attendu** :
-- Le candidat fautif est skippé via SAVEPOINT rollback.
-- Les 2 autres candidats sont ingérés et committés.
-- `db.commit()` final ne lève pas `PendingRollbackError`.
-- Le candidat fautif est remonté à Sentry via `sentry_sdk.capture_exception`.
+1. Depuis « Ajouter une source » (smart-search), ouvrir la fiche d'un résultat.
+**Résultat attendu** : comportement v2 intact — couverture via `/coverage`, articles en carte
+minimale (non cliquable), pas de chip fréquence, pas de FluxContinuArticleCard.
 
 ## Critères d'acceptation
-- [ ] **Backend** : `pytest tests/test_veille_source_ingestion.py` → tests verts (incluant 3 nouveaux : `test_session_recovers_from_integrity_error`, `test_slow_candidate_is_skipped`, `test_llm_timeout_falls_back_to_curated`).
-- [ ] **Mobile** : `flutter test test/features/veille/screens/step3_sources_screen_test.dart` → 1 test vert (bouton Réessayer présent + cliquable + déclenche fetch).
-- [ ] **Sentry** : zéro nouvelle occurrence PYTHON-3P 24 h après merge en prod.
-- [ ] **Supabase** : `SELECT count(*) FROM sources WHERE created_at > NOW() - INTERVAL '24 hours' AND is_curated = false` > 0 (preuve qu'au moins une ingestion réussit).
-- [ ] **E2E mobile** : flow complet onboarding veille → Step 3 affiche des sources réelles (pas le mock fallback) sur thème `tech` avec topics IA.
+- [ ] Chip fréquence visible et cohérent avec le volume réel (mode normal, source connue).
+- [ ] 3 cartes article standard cliquables → reader + read-sync + preview appui long.
+- [ ] Couverture par thèmes : barres + % + caption corrects.
+- [ ] Évaluation repliée par défaut, « à titre indicatif ».
+- [ ] Fallback statique sur erreur réseau (jamais de blocage).
+- [ ] Mode smart-search non régressé (cartes minimales, pas de chip).
+- [ ] 8 call sites de `SourceDetailModal` intacts (constructeur inchangé).
 
 ## Zones de risque
-
-1. **Savepoint behaviour avec test fixture `db_session`** : la fixture utilise `join_transaction_mode="create_savepoint"` ; les `session.begin_nested()` du code de prod créent des savepoints imbriqués. Vérifier que les tests de la suite pré-existante (15 dans `test_veille_source_ingestion.py`) restent verts.
-
-2. **`asyncio.wait_for` + httpx timeouts** : `EditorialLLMClient` a déjà un `httpx.Timeout(30.0)` ; `_LLM_TIMEOUT_S=20s` est plus strict, donc effectif. RSSParser a 7 s par requête HTTP → un candidat qui exécute 14 variants suffix peut quand même dépasser 8 s ; le timeout par candidat coupe net.
-
-3. **Sentry noise potential** : `sentry_sdk.capture_exception` dans le `except Exception` peut générer du bruit si le LLM produit régulièrement des candidats invalides. À surveiller dans les premiers jours post-merge ; ajuster le filter rule si > 50/jour.
+- **Couplage `FluxContinuArticleCard` dans une sheet scrollable** : vérifier que le swipe
+  horizontal (swipe-to-open) ne crée pas de conflit avec le scroll vertical de la sheet, et
+  que tap → reader fonctionne. Si effet de bord, préférer un flag `interactive:false` plutôt
+  qu'un fork (cf. plan).
+- **Navigation depuis la sheet** : le tap pousse le reader sur le root navigator
+  (`RouteNames.contentDetail`) ; la sheet doit rester vivante dessous (retour OK).
+- Alignement visuel des cartes (padding +4px pour compenser les 12px internes de la carte).
 
 ## Dépendances
-
-- **Endpoints touchés** : POST `/api/veille/suggestions/sources`.
-- **Services backend** : `SourceSuggester`, `SourceService.detect_source` (RSSParser), `EditorialLLMClient` (Mistral).
-- **Mobile** : `VeilleSourcesSuggestionsNotifier` (provider famille autoDispose), `Step3SourcesScreen`.
-- **Doc** : `docs/bugs/bug-veille-suggestions-sources-pending-rollback.md` (diagnostic + fix complet).
-
-## Hors scope (à créer en issues séparées)
-
-- **Optim RSSParser** : éviter les 14 variants suffix sur un même domaine (les 100+ HTTP calls par request). Refactor `detect()` pour bail-out plus tôt.
-- **Cleanup script rows stuck `running > 15min`** : pré-existait à ce bug.
+- Backend : `GET /api/sources/{source_id}/profile` (nouveau, auth requise). Aucune migration DB.
+- Endpoints `/coverage` et `/recent-items` conservés (autres consommateurs).
+- Providers mobile : `sourceProfileProvider` (nouveau, autoDispose) ; `sourceRecentArticlesProvider` supprimé ; `sourceCoverageProvider` conservé (smart-search).

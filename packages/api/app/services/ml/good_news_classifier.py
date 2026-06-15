@@ -23,6 +23,7 @@ import structlog
 
 from app.config import get_settings
 from app.services.ml.classification_service import _clean_text
+from app.services.observability.usage_recorder import track_api_call
 
 log = structlog.get_logger()
 
@@ -152,38 +153,45 @@ class GoodNewsClassifier:
 
     async def _call(self, payload: dict, *, max_retries: int = 3) -> dict | None:
         client = self._get_client()
-        for attempt in range(max_retries):
-            try:
-                response = await client.post(MISTRAL_API_URL, json=payload)
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                status = e.response.status_code
-                if status == 429 and attempt < max_retries - 1:
-                    delay = 2**attempt
-                    log.warning(
-                        "good_news_classifier.rate_limited",
-                        attempt=attempt,
-                        delay=delay,
+        async with track_api_call(
+            "mistral", "good_news_pass2", model=payload.get("model")
+        ) as _call:
+            for attempt in range(max_retries):
+                try:
+                    response = await client.post(MISTRAL_API_URL, json=payload)
+                    response.raise_for_status()
+                    _call.status = "ok"
+                    return response.json()
+                except httpx.HTTPStatusError as e:
+                    status = e.response.status_code
+                    if status == 429 and attempt < max_retries - 1:
+                        _call.status = "rate_limited"
+                        delay = 2**attempt
+                        log.warning(
+                            "good_news_classifier.rate_limited",
+                            attempt=attempt,
+                            delay=delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    if status == 429:
+                        _call.status = "rate_limited"
+                    log.error(
+                        "good_news_classifier.http_error",
+                        status_code=status,
+                        body=e.response.text[:300],
                     )
-                    await asyncio.sleep(delay)
-                    continue
-                log.error(
-                    "good_news_classifier.http_error",
-                    status_code=status,
-                    body=e.response.text[:300],
-                )
-                return None
-            except httpx.TimeoutException:
-                log.error("good_news_classifier.timeout", attempt=attempt)
-                return None
-            except json.JSONDecodeError as e:
-                log.error("good_news_classifier.json_error", error=str(e))
-                return None
-            except Exception as e:
-                log.error("good_news_classifier.unexpected", error=str(e))
-                return None
-        return None
+                    return None
+                except httpx.TimeoutException:
+                    log.error("good_news_classifier.timeout", attempt=attempt)
+                    return None
+                except json.JSONDecodeError as e:
+                    log.error("good_news_classifier.json_error", error=str(e))
+                    return None
+                except Exception as e:
+                    log.error("good_news_classifier.unexpected", error=str(e))
+                    return None
+            return None
 
     async def classify_batch_async(self, items: list[dict]) -> list[bool | None]:
         """Classifie un batch d'articles. Renvoie une liste alignée sur `items`.

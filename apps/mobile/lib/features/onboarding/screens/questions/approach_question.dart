@@ -7,8 +7,8 @@ import '../../widgets/delayed_continue_button.dart';
 import '../../widgets/selection_card.dart';
 import '../../onboarding_strings.dart';
 
-/// Q4 : "Tu préfères..."
-/// Approche directe vs détaillée
+/// Q4 : axe "Profondeur" (ré-aiguillé v6).
+/// Sources qui vont à l'essentiel (direct) vs qui creusent le sujet (detailed).
 class ApproachQuestion extends ConsumerWidget {
   const ApproachQuestion({super.key});
 

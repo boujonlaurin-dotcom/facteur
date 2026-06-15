@@ -76,6 +76,14 @@ class UserApiService {
     return UserProfile.fromJson(data);
   }
 
+  /// Soft delete du compte courant.
+  /// Le backend marque `users.deleted_at` et anonymise l'email ; un cron purge
+  /// définitivement après 30 jours (cf. PR backend B1, Apple Guideline 5.1.1(v)).
+  /// Retourne 204 No Content en cas de succès.
+  Future<void> deleteAccount() async {
+    await _apiClient.dio.delete<void>('users/me');
+  }
+
   /// Formate les réponses pour l'API (camelCase → snake_case).
   ///
   /// Défense en profondeur : applique des défauts neutres si l'état mobile
@@ -92,6 +100,7 @@ class UserApiService {
       'approach': answers.approach ?? 'detailed',
       'perspective': answers.perspective,
       'response_style': answers.responseStyle ?? 'nuanced',
+      'independence_pref': answers.independencePref,
       'content_recency': answers.contentRecency ?? 'recent',
       'gamification_enabled': answers.gamificationEnabled ?? true,
       'weekly_goal': answers.dailyArticleCount ?? 5,
@@ -101,6 +110,8 @@ class UserApiService {
       'preferred_sources': answers.preferredSources,
       'format_preference': answers.formatPreference,
       'personal_goal': answers.personalGoal,
+      'swipe_liked': answers.swipeLiked,
+      'swipe_disliked': answers.swipeDisliked,
     };
   }
 

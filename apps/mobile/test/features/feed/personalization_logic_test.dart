@@ -18,13 +18,18 @@ class MockPersonalizationRepository extends Mock
 class MockAuthStateNotifier extends StateNotifier<app_auth.AuthState>
     implements app_auth.AuthStateNotifier {
   MockAuthStateNotifier()
-      : super(const app_auth.AuthState(
-            user: supabase.User(
-                id: 'u1',
-                appMetadata: {},
-                userMetadata: {},
-                aud: 'authenticated',
-                createdAt: '2023-01-01')));
+    : super(
+        const app_auth.AuthState(
+          user: supabase.User(
+            id: 'u1',
+            appMetadata: {},
+            userMetadata: {},
+            aud: 'authenticated',
+            createdAt: '2023-01-01',
+            emailConfirmedAt: '2023-01-01',
+          ),
+        ),
+      );
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -75,14 +80,18 @@ void main() {
     // 1. Setup Feed with one item
     final items = [mockContent];
 
-    when(() => mockFeedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            mode: any(named: 'mode')))
-        .thenAnswer((_) async => FeedResponse(
-            items: items,
-            pagination:
-                Pagination(page: 1, perPage: 20, total: 1, hasNext: false)));
+    when(
+      () => mockFeedRepo.getFeed(
+        page: any(named: 'page'),
+        limit: any(named: 'limit'),
+        mode: any(named: 'mode'),
+      ),
+    ).thenAnswer(
+      (_) async => FeedResponse(
+        items: items,
+        pagination: Pagination(page: 1, perPage: 20, total: 1, hasNext: false),
+      ),
+    );
 
     when(() => mockPersoRepo.muteSource(any())).thenAnswer((_) async {});
 
@@ -96,37 +105,51 @@ void main() {
     final muteFuture = notifier.muteSource(mockContent);
 
     // 3. Verification: Optimistic update should have removed the item IMMEDIATELY
-    expect(container.read(feedProvider).value!.items.length, 0,
-        reason: 'Item should be removed from state BEFORE API call completes');
+    expect(
+      container.read(feedProvider).value!.items.length,
+      0,
+      reason: 'Item should be removed from state BEFORE API call completes',
+    );
 
     await muteFuture; // Complete the API call
     verify(() => mockPersoRepo.muteSource('s1')).called(1);
   });
 
-  test('muteSourceById should work even if content is not in current state',
-      () async {
-    // 1. Setup Feed with one item
-    final items = [mockContent];
+  test(
+    'muteSourceById should work even if content is not in current state',
+    () async {
+      // 1. Setup Feed with one item
+      final items = [mockContent];
 
-    when(() => mockFeedRepo.getFeed(
-            page: any(named: 'page'),
-            limit: any(named: 'limit'),
-            mode: any(named: 'mode')))
-        .thenAnswer((_) async => FeedResponse(
-            items: items,
-            pagination:
-                Pagination(page: 1, perPage: 20, total: 1, hasNext: false)));
+      when(
+        () => mockFeedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          mode: any(named: 'mode'),
+        ),
+      ).thenAnswer(
+        (_) async => FeedResponse(
+          items: items,
+          pagination: Pagination(
+            page: 1,
+            perPage: 20,
+            total: 1,
+            hasNext: false,
+          ),
+        ),
+      );
 
-    when(() => mockPersoRepo.muteSource(any())).thenAnswer((_) async {});
+      when(() => mockPersoRepo.muteSource(any())).thenAnswer((_) async {});
 
-    final notifier = container.read(feedProvider.notifier);
-    await container.read(feedProvider.future);
+      final notifier = container.read(feedProvider.notifier);
+      await container.read(feedProvider.future);
 
-    // 2. Action: Mute Source by ID (simulate calling from Nudge where content might be just an ID)
-    await notifier.muteSourceById('s1');
+      // 2. Action: Mute Source by ID (simulate calling from Nudge where content might be just an ID)
+      await notifier.muteSourceById('s1');
 
-    // 3. Verification
-    expect(container.read(feedProvider).value!.items.length, 0);
-    verify(() => mockPersoRepo.muteSource('s1')).called(1);
-  });
+      // 3. Verification
+      expect(container.read(feedProvider).value!.items.length, 0);
+      verify(() => mockPersoRepo.muteSource('s1')).called(1);
+    },
+  );
 }

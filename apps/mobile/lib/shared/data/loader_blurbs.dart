@@ -11,11 +11,7 @@ class LoaderBlurb {
   final String text;
   final String? attribution;
 
-  const LoaderBlurb({
-    required this.kind,
-    required this.text,
-    this.attribution,
-  });
+  const LoaderBlurb({required this.kind, required this.text, this.attribution});
 
   /// Étiquette courte affichée au-dessus du texte (ton Facteur).
   String get label {
@@ -48,33 +44,6 @@ const List<LoaderBlurb> loaderBlurbs = [
   LoaderBlurb(
     kind: LoaderBlurbKind.citation,
     text:
-        'La connaissance s\'acquiert par l\'expérience, tout le reste n\'est que de l\'information.',
-    attribution: 'Albert Einstein',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text: 'Lire le journal du jour, c\'est s\'inscrire dans son époque.',
-    attribution: 'Régis Debray',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text:
-        'La fonction d\'une nouvelle est d\'attirer l\'attention sur un événement.',
-    attribution: 'Walter Lippmann, 1922',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text: 'On ne pense pas mieux en pensant plus vite.',
-    attribution: 'David Allen',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text: 'Le silence est une source de grande force.',
-    attribution: 'Lao Tseu',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text:
         'Là où il y avait quelque chose à voir, j\'y suis allé. Là où il y avait quelque chose à entendre, j\'ai écouté.',
     attribution: 'Albert Londres',
   ),
@@ -84,17 +53,13 @@ const List<LoaderBlurb> loaderBlurbs = [
         'La vérité est rarement pure et jamais simple. La vie moderne serait extrêmement ennuyeuse si elle l\'était.',
     attribution: 'Oscar Wilde',
   ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.citation,
-    text: 'Le pessimisme est d\'humeur ; l\'optimisme est de volonté.',
-    attribution: 'Alain',
-  ),
 
   // --- Stats (10) ---
   LoaderBlurb(
     kind: LoaderBlurbKind.stat,
     text:
-        '9 milliardaires français possèdent une grande partie des médias quotidiens nationaux.',
+        '9 milliardaires français possèdent actuellement plus de 80% des quotidiens nationaux.',
+    attribution: 'Source : Oxfam France, 2022',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.stat,
@@ -103,42 +68,30 @@ const List<LoaderBlurb> loaderBlurbs = [
   LoaderBlurb(
     kind: LoaderBlurbKind.stat,
     text:
-        'Le cerveau a besoin de 23 minutes pour se reconcentrer après une interruption.',
-    attribution: 'Université de Californie, Irvine',
+        'Le cerveau a besoin d\'environ 23 minutes pour se reconcentrer après une interruption.',
+    attribution: 'Source : Université de Californie, Irvine',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.stat,
     text:
         'Selon le MIT, les fausses nouvelles se propagent 6 fois plus vite que les vraies.',
-    attribution: 'MIT, 2018',
+    attribution: 'Source : MIT, 2018',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.stat,
-    text: '70% des Français se disent fatigués par l\'actualité.',
+    text:
+        'Plus de 70% des Français se décalarent aujourd\'hui fatigués par l\'actualité.',
     attribution: 'Reuters Digital News Report 2024',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.stat,
-    text: '30% des Français évitent activement les actualités.',
-    attribution: 'Reuters, 2024',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.stat,
-    text: 'Une heure d\'information de qualité par jour = 365 heures par an.',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.stat,
-    text: 'Le scroll moyen d\'un fil d\'actu : environ 90 mètres par jour.',
+    text:
+        'Le scroll moyen d\'un fil d\'actu est d\'environ 90 mètres par jour - et reste en constante augmentation depuis 15 ans.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.stat,
     text:
-        '5 minutes de lecture concentrée valent 30 minutes de scroll distrait.',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.stat,
-    text:
-        'Un titre négatif a 30% de chances en plus d\'être cliqué qu\'un titre neutre.',
+        'Un titre négatif a 30% de chances en plus d\'être cliqué qu\'un titre neutre - et +2,8% pour chaque mot négatif ajouté en plus.',
     attribution: 'Nature Human Behaviour, 2023',
   ),
 
@@ -156,22 +109,17 @@ const List<LoaderBlurb> loaderBlurbs = [
   LoaderBlurb(
     kind: LoaderBlurbKind.anecdote,
     text:
-        'L\'expression « breaking news » est apparue dans les années 1990 sur CNN. Avant ça, l\'actualité prenait son temps.',
+        'L\'expression « breaking news » est apparue pour la première fois dans les années 1990 sur la chaine d\'information américaine CNN.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.anecdote,
     text:
-        'Le « slow journalism » est né dans les années 2010, en réaction directe au flux continu d\'information.',
+        'Le « slow journalism » est né dans les années 2010, en réaction au trop-plein d\'info créé par les réseaux sociaux et les chaines d\'information en continu.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.anecdote,
     text:
-        'La revue XXI, créée en 2008, a démontré qu\'on pouvait vendre du long format en kiosque. Le lecteur lent existe.',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.anecdote,
-    text:
-        'Le mot « facteur » vient du latin factor : celui qui agit, qui fait. Pas mal pour une app, non ?',
+        'Le mot « facteur » vient initialement sdu latin "factor" : celui qui agit, qui fait.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.anecdote,
@@ -181,49 +129,34 @@ const List<LoaderBlurb> loaderBlurbs = [
   LoaderBlurb(
     kind: LoaderBlurbKind.anecdote,
     text:
-        'En 1631, Théophraste Renaudot lançait La Gazette : le premier journal d\'information périodique en France. 4 pages. Hebdomadaire.',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.anecdote,
-    text:
-        'Le New York Times a longtemps eu une cloche qui sonnait à chaque scoop. Elle sonne moins qu\'avant.',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.anecdote,
-    text:
-        'Le mot « journal » vient du latin diurnalis : « ce qui appartient au jour ». Il rythmait la journée, pas l\'inverse.',
+        'En 1631, Théophraste Renaudot lançait La Gazette : le tout premier journal d\'information périodique paru en France.',
   ),
 
   // --- Astuces (8) ---
   LoaderBlurb(
     kind: LoaderBlurbKind.tip,
     text:
-        'Suivez et recevez des alertes sur vos sujets préférés en les ajoutant dans "Mes intérêts"',
+        'Suivez et recevez des alertes sur vos sujets préférés en les ajoutant dans "Mes intérêts" ou en créant une veille personnalisée.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.tip,
     text:
-        'Ajoutez n\'importe quel média à Facteur dans l\'onglet "Mes sources de confiance !',
+        'Ajoutez n\'importe quel média à Facteur via l\'onglet "Mes sources de confiance !',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.tip,
     text:
-        'Ajoutez n\'importe quel média ou thème dans vos favoris pour le retrouver plus facilement.',
+        'Ajoutez n\'importe quel média ou thème à vos favoris pour ne pas rater vos articles préférés.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.tip,
     text:
-        'Filtrer les sujets qui vous semblent anxiogènes dans les paramètres du mode Serein',
+        'Activez le mode serein chaque fois que vous voulez éviter la négativité dans l\'actu. Personnalisez le mode dans "Mes intérêts" pour choisir quels sujets éviters.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.tip,
     text:
         'Vos sauvegardes sont rangées dans l\'onglet « Plus tard ». Faites-y un tour régulièrement !',
-  ),
-  LoaderBlurb(
-    kind: LoaderBlurbKind.tip,
-    text:
-        'Restez appuyé sur n\'importe quel média ou thème pour personnaliser votre feed.',
   ),
   LoaderBlurb(
     kind: LoaderBlurbKind.tip,

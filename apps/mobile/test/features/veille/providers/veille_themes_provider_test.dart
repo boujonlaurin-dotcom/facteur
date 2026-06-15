@@ -61,13 +61,17 @@ void main() {
     expect(themes[1].hot, isTrue);
 
     // Then completed with remaining Facteur themes (no article_count → meta='Disponible',
-    // hot=false because they're suggestions).
-    expect(themes.length, kVeilleFacteurThemes.length); // 9 total
+    // hot=false because they're suggestions) + tuile "Autre" en dernier (Story 23.3).
+    expect(themes.length, kVeilleFacteurThemes.length + 1); // 9 + Autre = 10 total
     final completionSlugs = themes.skip(2).map((t) => t.id).toSet();
     expect(completionSlugs, contains('society'));
     expect(completionSlugs, contains('politics'));
+    expect(completionSlugs, contains(kVeilleOtherThemeSlug));
     expect(themes[2].meta, 'Disponible');
     expect(themes[2].hot, isFalse);
+    // La tuile "Autre" est en dernier
+    expect(themes.last.id, kVeilleOtherThemeSlug);
+    expect(themes.last.label, 'Autre');
   });
 
   test('emoji is present and label uses the canonical FR name', () async {
@@ -95,13 +99,14 @@ void main() {
     addTearDown(container.dispose);
     final themes = await container.read(veilleThemesProvider.future);
 
-    expect(themes.length, kVeilleFacteurThemes.length);
+    expect(themes.length, kVeilleFacteurThemes.length + 1); // + Autre
     expect(themes.first.id, 'tech'); // canonical order
     expect(themes.first.meta, 'Disponible');
     expect(themes.first.hot, isFalse);
+    expect(themes.last.id, kVeilleOtherThemeSlug);
   });
 
-  test('caps the rendered themes at 9 even with many user themes', () async {
+  test('caps the rendered themes at 9 + tuile Autre even with many user themes', () async {
     when(() => dio.get<dynamic>('users/top-themes')).thenAnswer(
       (_) async => okResponse([
         for (final t in kVeilleFacteurThemes)
@@ -113,7 +118,7 @@ void main() {
     addTearDown(container.dispose);
     final themes = await container.read(veilleThemesProvider.future);
 
-    expect(themes.length, kVeilleFacteurThemes.length);
+    expect(themes.length, kVeilleFacteurThemes.length + 1); // 9 + Autre
   });
 
   test('article_count = 0 yields a softer meta', () async {

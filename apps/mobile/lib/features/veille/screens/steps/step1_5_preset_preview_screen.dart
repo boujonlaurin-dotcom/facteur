@@ -56,10 +56,11 @@ class Step15PresetPreviewScreen extends ConsumerWidget {
           onBack: notifier.closePresetPreview,
           body: _PreviewBody(preset: preset),
           footer: _Footer(
-            onCustomize: () =>
-                notifier.applyPreset(preset, jumpToStep4: false),
-            onContinue: () =>
-                notifier.applyPreset(preset, jumpToStep4: true),
+            // Step4 frequency dropé (Story 23.2 PR-4) : le bouton « Continuer »
+            // bascule désormais directement en step1 personnalisable comme
+            // « Personnaliser ». La distinction UX est supprimée.
+            onCustomize: () => notifier.applyPreset(preset),
+            onContinue: () => notifier.applyPreset(preset),
           ),
         );
       },

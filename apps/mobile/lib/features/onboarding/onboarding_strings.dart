@@ -1,6 +1,7 @@
 class OnboardingStrings {
   // Common
   static const String continueButton = 'Continuer';
+  static const String nextButton = 'Suivant';
   static const String skipButton = 'Passer cette étape';
   static const String backButtonTooltip = 'Retour';
 
@@ -68,13 +69,28 @@ class OnboardingStrings {
   static const String q2Option35_44 = '35 - 44 ans';
   static const String q2Option45_plus = '45 ans et plus';
 
-  // Q4: Approach
-  static const String q4Title = 'Vous préférez...';
+  // Q4: Approach → axe "Profondeur" (ré-aiguillé v6).
+  // Cible la profondeur des SOURCES, pas seulement la longueur d'un article.
+  // Valeurs inchangées : direct / detailed.
+  static const String q4Title = 'Vous préférez des sources qui...';
   static const String q4Subtitle = '';
-  static const String q4DirectLabel = 'Aller droit au but';
-  static const String q4DirectSubtitle = 'L\'essentiel, rapidement';
-  static const String q4DetailedLabel = 'Prendre le temps';
-  static const String q4DetailedSubtitle = 'Explorer en profondeur';
+  static const String q4DirectLabel = 'Vont à l\'essentiel';
+  static const String q4DirectSubtitle = 'L\'actu, claire et rapide';
+  static const String q4DetailedLabel = 'Creusent le sujet';
+  static const String q4DetailedSubtitle = 'Analyses et enquêtes de fond';
+
+  // Q5b: Indépendance (nouvelle question v6). Cadrée comme un GOÛT de sourcing,
+  // pas un jugement de fiabilité. Valeurs : established / independent.
+  static const String qIndependenceTitle = 'Côté médias, vous penchez pour...';
+  static const String qIndependenceSubtitle = '';
+  static const String qIndependenceEstablishedLabel =
+      'Les grands médias institutionnels';
+  static const String qIndependenceEstablishedSubtitle =
+      'Installés, connus de tous';
+  static const String qIndependenceIndependentLabel =
+      'Des médias plus spécialisés';
+  static const String qIndependenceIndependentSubtitle =
+      'Moins connus, souvent indépendants';
 
   // Q5: Perspective
   static const String q5Title = 'Vous préférez avoir...';
@@ -84,13 +100,47 @@ class OnboardingStrings {
   static const String q5DetailsLabel = 'Dans le détail';
   static const String q5DetailsSubtitle = 'Aller en profondeur';
 
-  // Q6: Response Style
-  static const String q6Title = 'Quand vous lisez, vous aimez...';
-  static const String q6Subtitle = '';
-  static const String q6DecisiveLabel = 'Des avis tranchés';
-  static const String q6DecisiveSubtitle = 'Pour des opinions claires';
-  static const String q6NuancedLabel = 'Toutes les perspectives';
-  static const String q6NuancedSubtitle = 'Voir tous les angles';
+  // Swipe désambiguateur (Q9c bis, v6) : quelques sources étalées sur les axes
+  // (profondeur, indépendance, perspective) que l'utilisateur trie d'un geste.
+  // Glisser à droite = ça m'intéresse ; gauche = pas pour moi.
+  static const String swipeTitle = 'Quels médias suivre ?';
+  static const String swipeSubtitle =
+      'Glissez à droite ceux qui vous parlent, à gauche les autres. '
+      'On ajuste vos suggestions en direct.';
+  static const String swipeLikeHint = 'Ça m\'intéresse';
+  static const String swipeSkipHint = 'Pas pour moi';
+  static const String swipeDoneButton = 'Voir mes sources';
+  // Compteur humanisé à 3 paliers selon l'avancement (current/total). Plus
+  // présent qu'un sec « Carte X sur Y », sans em-dash (règle PO).
+  static const String swipeProgressStart = 'Premières cartes (%d/%d)';
+  static const String swipeProgressMiddle = 'On affine (%d/%d)';
+  static const String swipeProgressEnd = 'Encore quelques-unes (%d/%d)';
+  // Nudge discret sur la 1ère carte (disparaît au 1er geste).
+  static const String swipeTapHint = 'Touchez pour explorer';
+  // Profil révélé en direct, en phrase inline sous le deck (remplace les chips
+  // du haut). Suivi des libellés de pôles nets-positifs joints par virgules.
+  static const String swipeProfileInline = 'On retient pour ta sélection : ';
+
+  // Étiquettes "pôle" affichées sur les cartes de swipe (1 à 2 tags max).
+  static const String swipePoleDeep = 'Analyse de fond';
+  static const String swipePoleMainstream = 'Actu en continu';
+  static const String swipePoleIndependent = 'Indépendant';
+  static const String swipePoleEstablished = 'Référence';
+  static const String swipePolePerspective = 'Autre angle';
+
+  // Bloc d'infos intrinsèques sur la carte (Tendance + Fiabilité).
+  static const String swipeBiasPrefix = 'Tendance : ';
+  static const String swipeReliabilityPrefix = 'Fiabilité : ';
+  static const String swipeReliabilityHigh = 'Élevée';
+  static const String swipeReliabilityMedium = 'Moyenne';
+  static const String swipeReliabilityLow = 'Limitée';
+  static const String swipeReliabilityUnknown = 'Non évaluée';
+
+  // Moment de calibration en fin de tri + micro-indice pendant les swipes.
+  static const String swipeRefiningTitle = 'On affine vos sources…';
+  static const String swipeRefiningSubtitle =
+      'On ajuste les suggestions à vos goûts.';
+  static const String swipeCalibratingHint = 'On affine…';
 
   // Q8: Gamification
   static const String q8Title =
@@ -142,16 +192,47 @@ class OnboardingStrings {
   static const String digestModeSereinPart4 =
       ' grâce au bouton dédié en haut de votre essentiel et du flux.';
 
+  // Réassurance affichée sous les choix du mode serein (sans tiret em).
+  static const String digestModeAnytimeNote =
+      'Vous pourrez activer ou désactiver le mode serein à tout moment depuis Mes intérêts.';
+
   // Personalised serein CTA (shown on the DigestMode question).
   static const String personalizeSereinCta =
       'Personnaliser mon mode serein';
+
+  // Q10: Page sources « sur mesure »
+  static const String sourcesSuggestionsTitle = 'Nos suggestions pour vous';
+  static const String sourcesAlreadyFollowTitle =
+      'Vous suivez déjà un média ?';
+  static const String sourcesSeeAllCatalog = 'Voir tout le catalogue';
+
+  // Q10: en-têtes des 4 blocs « sur mesure » (①②③④).
+  static const String sourcesBlockSuggestionsTitle = 'Suggestions sur mesure';
+  static const String sourcesBlockHabitualTitle = 'Vos médias habituels';
+  static const String sourcesBlockHabitualSubtitle =
+      'Ajoutez les médias que vous suivez déjà.';
+  static const String sourcesBlockCatalogTitle = 'Explorer le catalogue';
+  static const String sourcesBlockCatalogSubtitle =
+      'Parcourez toutes les sources disponibles.';
+  static const String sourcesBlockSubscriptionsTitle = 'Vos abonnements presse';
+  static const String sourcesBlockSubscriptionsSubtitle =
+      'Connectez vos abonnements payants pour lire les articles en entier.';
+
+  // Preuve instantanée à l'ajout (Wow #1)
+  static const String sourceProofConnected = 'Connecté';
+  static const String sourceProofEmptyFallback =
+      'Ses prochains articles arrivent dans votre tournée.';
+
+  // Conclusion vivante (Wow #2)
+  static String conclusionLiveCounter(int articles, int sources) {
+    return '$articles article${articles > 1 ? 's' : ''} récupéré${articles > 1 ? 's' : ''} '
+        'depuis vos $sources source${sources > 1 ? 's' : ''}';
+  }
 
   // Q9: Sources
   static const String q9Title = 'Vos sources, sur mesure.';
   static const String q9Subtitle =
       'Basé sur vos réponses, voici les médias que Facteur vous recommande.';
-  static const String q9HelperText =
-      'Ajoutez vos sources ! Jetez un oeil à vos feeds et boîtes mails préférées.'; // kept for reference but no longer shown in onboarding
   static const String q9SearchHint = 'Rechercher une source...';
   static const String q9LoadingError = 'Erreur de chargement des sources';
   static const String q9EmptyList = 'Aucune source disponible';
@@ -162,13 +243,17 @@ class OnboardingStrings {
   static const String q9PreselectionTitle =
       'Modifiez cette liste à tout moment.';
 
-  // Sources Page 2
-  static const String sourcesPage2Title = 'Allez plus loin.';
-  static const String sourcesPage2Subtitle =
-      'Explorez le catalogue complet et ajoutez vos propres sources.';
-  static const String addAnySourceButton = 'Ajouter n\'importe quelle source';
+  // Sources : abonnements presse
   static const String premiumSubscriptionsButton =
       'Ajouter vos abonnements presse';
+
+  // Carte d'ajout d'abonnement (style CTA Essentiel) sur la page sources.
+  static const String addSubscriptionCardTitle =
+      'Abonné à un média payant ?';
+  static const String addSubscriptionCardSubtitle =
+      'Le Monde, Mediapart, L\'Équipe... Connectez vos abonnements pour lire '
+      'les articles en entier, directement dans Facteur.';
+  static const String addSubscriptionCardButton = 'Ajouter mes abonnements';
   static const String premiumSheetTitle = 'Vos abonnements presse';
   static const String premiumSheetSubtitle =
       'Si vous êtes abonné à un média payant (Le Monde, Mediapart...), '
@@ -200,12 +285,6 @@ class OnboardingStrings {
       'Indique quels sujets tu veux le plus voir apparaitre dans ton feed.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
-
-  // Sources Reaction (after source selection)
-  static const String sourcesReactionTitle = 'Vos sources, votre contrôle.';
-  static const String sourcesReactionMessage =
-      'Modifiez ou ajoutez n\'importe quelle autre source à Facteur (newsletters, sites web, etc) depuis vos paramètres.\n\nFacteur est fait pour s\'adapter à vous.';
-  static const String addSourceButton = 'Ajouter une source';
 
   // Finalize
   static const String finalizeTitle = 'Votre essentiel est prêt.';

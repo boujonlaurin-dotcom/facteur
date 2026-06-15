@@ -50,7 +50,13 @@ def find_hot_cluster(
     min_items: int = 3,
     seed: int | None = None,
 ) -> tuple[str | None, str | None, list[Content]]:
-    """Find a hot cluster of articles sharing entities within a time window.
+    """Find a hot cluster of articles covering the same story within a window.
+
+    Reuses the topic clustering that powers the daily digest
+    (`ImportanceDetector.build_topic_clusters`, similarité Jaccard des titres,
+    couverte par le harness de calibration) instead of the old grouping by a
+    single shared NER entity, which clustered unrelated articles on passing
+    mentions (e.g. "Trump" cited once in each).
 
     Selects probabilistically among the top-3 eligible clusters (weighted by
     size) instead of always picking the largest. This adds daily variety.
@@ -63,10 +69,17 @@ def find_hot_cluster(
         seed: Optional RNG seed for deterministic selection (e.g. hash of user_id+date)
 
     Returns:
-        (entity_key, entity_display_name, clustered_articles)
-        Returns (None, None, []) if no cluster found with >= min_items articles.
+        (cluster_key, display_name, clustered_articles). cluster_key is the
+        cluster's label (deterministic for a given input pool, unlike the
+        random TopicCluster.cluster_id). display_name is the cluster's
+        dominant entity, or None when no entity is shared by at least 2 of
+        its articles. Returns (None, None, []) if no cluster has
+        >= min_items articles from >= 2 sources.
     """
     import random as _random
+    from collections import Counter
+
+    from app.services.briefing.importance_detector import ImportanceDetector
 
     cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
 
@@ -82,60 +95,53 @@ def find_hot_cluster(
     if len(recent) < min_items:
         return None, None, []
 
-    # Build entity -> articles index
-    entity_to_articles: dict[str, list[Content]] = {}
-    entity_display: dict[str, str] = {}  # key -> original casing
+    clusters = ImportanceDetector().build_topic_clusters(recent)
 
-    for article in recent:
-        entities = parse_entities(article)
-        for ent in entities:
-            entity_to_articles.setdefault(ent["key"], []).append(article)
-            if ent["key"] not in entity_display:
-                entity_display[ent["key"]] = ent["name"]
-
-    if not entity_to_articles:
-        return None, None, []
-
-    # Find top-3 eligible clusters, select one weighted by size
+    # Eligible: enough articles AND multi-source (one source pushing many
+    # takes on the same story is not "hot news").
     eligible = [
-        (key, arts)
-        for key, arts in entity_to_articles.items()
-        if len(arts) >= min_items
+        c for c in clusters if len(c.contents) >= min_items and c.is_multi_source
     ]
     if not eligible:
         return None, None, []
 
-    # Sort by size DESC, take top 3
-    eligible.sort(key=lambda x: len(x[1]), reverse=True)
+    # build_topic_clusters returns clusters sorted by size DESC — keep top 3
     top_candidates = eligible[:3]
 
     # Weighted random selection among top candidates
     rng = _random.Random(seed)
-    weights = [len(arts) for _, arts in top_candidates]
-    ((best_key, best_articles),) = rng.choices(top_candidates, weights=weights, k=1)
+    weights = [len(c.contents) for c in top_candidates]
+    (best,) = rng.choices(top_candidates, weights=weights, k=1)
 
-    # Deduplicate (article can appear via multiple entities)
-    seen_ids: set[UUID] = set()
-    unique: list[Content] = []
-    for a in best_articles:
-        if a.id not in seen_ids:
-            seen_ids.add(a.id)
-            unique.append(a)
+    # Display name: dominant entity across the cluster's articles. Entities
+    # are used for labelling only, never for grouping; require >= 2 articles
+    # sharing it so a passing mention can't title the carousel.
+    entity_counts: Counter = Counter()
+    entity_display: dict[str, str] = {}
+    for a in best.contents:
+        for ent in parse_entities(a):
+            entity_counts[ent["key"]] += 1
+            entity_display.setdefault(ent["key"], ent["name"])
+    display_name: str | None = None
+    if entity_counts:
+        top_key, top_count = entity_counts.most_common(1)[0]
+        if top_count >= 2:
+            display_name = entity_display[top_key]
 
     # Sort by published_at DESC, take max_items
-    unique.sort(key=lambda a: a.published_at, reverse=True)
+    unique = sorted(best.contents, key=lambda a: a.published_at, reverse=True)
     result = unique[:max_items]
 
     logger.info(
         "hot_cluster_found",
-        entity=best_key,
-        display_name=entity_display.get(best_key),
-        cluster_size=len(unique),
+        cluster_key=best.label,
+        display_name=display_name,
+        cluster_size=len(best.contents),
         returned=len(result),
         candidates_considered=len(top_candidates),
     )
 
-    return best_key, entity_display.get(best_key, best_key.title()), result
+    return best.label, display_name, result
 
 
 async def find_perspectives_for_read_article(

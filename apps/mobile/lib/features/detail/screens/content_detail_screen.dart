@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:facteur/core/utils/html_utils.dart';
 import 'package:flutter/foundation.dart'
-    show Factory, defaultTargetPlatform, kIsWeb;
+    show defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,27 +11,36 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart'
+    show InAppWebViewController, WebUri;
 import 'package:flutter/services.dart';
-import 'package:flutter/gestures.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../shared/widgets/fab_nudge_bubble.dart';
+import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
-import '../../../core/providers/navigation_providers.dart';
+import '../../sources/models/source_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../../config/routes.dart';
 import '../../feed/repositories/feed_repository.dart';
+import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
-import '../../lettres/providers/letters_provider.dart';
+import '../../my_interests/models/user_interests_state.dart' show InterestState;
+import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/premium_source_connection.dart';
+import '../../sources/widgets/premium_web_view.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
+import '../widgets/article_tags_row.dart';
 import '../widgets/audio_player_widget.dart';
+import '../widgets/deep_recommendation_card.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
@@ -39,12 +48,90 @@ import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
+import '../../../config/topic_labels.dart';
 import '../../digest/widgets/editorial_badge.dart';
-import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../lettres/providers/letters_provider.dart';
+import '../../lettres/providers/pending_save_nudge_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
+
+@visibleForTesting
+PerspectivesSectionStatus resolvePerspectivesStatus(
+  PerspectivesResponse? response,
+) {
+  if (response == null) return PerspectivesSectionStatus.loading;
+  if (response.perspectives.isNotEmpty) return PerspectivesSectionStatus.ready;
+  if (response.partial) return PerspectivesSectionStatus.loading;
+  return PerspectivesSectionStatus.empty;
+}
+
+/// Sink for launch breadcrumbs — injected so tests can capture them without
+/// reaching into Sentry.
+typedef LaunchBreadcrumbSink =
+    void Function(
+      String message, {
+      SentryLevel level,
+      Map<String, Object?> data,
+    });
+
+/// Opens the external source URL for the article reader CTA, keeping the Web
+/// and mobile branches strictly separate.
+///
+/// * **Web** : ouvre immédiatement dans le geste utilisateur — PAS de
+///   `canLaunchUrl`, PAS d'animation de sortie, cible `_blank`. Une ouverture
+///   hors geste (ou derrière l'overlay blanc) est précisément ce qui figeait
+///   l'écran sur le build web ; un échec est loggé au lieu de laisser
+///   l'overlay coincé.
+/// * **Mobile** : garde `canLaunchUrl` + le mode `externalApplication`
+///   (l'animation de sortie et son rollback restent gérés par l'appelant).
+///
+/// Retourne `true` quand `launchUrl` signale un succès. Ne jette jamais : les
+/// exceptions sont capturées, loggées, puis renvoyées en `false` pour que
+/// l'appelant puisse rollback l'animation.
+@visibleForTesting
+Future<bool> launchReaderUrl(
+  Uri uri, {
+  required bool isWeb,
+  required Future<bool> Function(
+    Uri, {
+    LaunchMode mode,
+    String? webOnlyWindowName,
+  })
+  launch,
+  Future<bool> Function(Uri)? canLaunch,
+  LaunchBreadcrumbSink? breadcrumb,
+  Map<String, Object?> logData = const {},
+}) async {
+  // `urlHost` seulement — jamais l'URL complète dans les logs.
+  final data = <String, Object?>{
+    ...logData,
+    'urlHost': uri.host,
+    'isWeb': isWeb,
+  };
+  breadcrumb?.call('attempt', data: data);
+  try {
+    final bool ok;
+    if (isWeb) {
+      ok = await launch(
+        uri,
+        mode: LaunchMode.platformDefault,
+        webOnlyWindowName: '_blank',
+      );
+    } else {
+      final canGo = canLaunch == null || await canLaunch(uri);
+      ok = canGo && await launch(uri, mode: LaunchMode.externalApplication);
+    }
+    if (!ok) {
+      breadcrumb?.call('result_false', level: SentryLevel.warning, data: data);
+    }
+    return ok;
+  } catch (_) {
+    breadcrumb?.call('exception', level: SentryLevel.error, data: data);
+    return false;
+  }
+}
 
 /// Écran de détail d'un contenu avec mode lecture In-App (Story 5.2)
 /// Restauré avec les fonctionnalités de l'ancien ArticleViewerModal :
@@ -58,11 +145,40 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   final String contentId;
   final Content? content; // Passed via extra from GoRouter
 
-  const ContentDetailScreen({
+  // --- Mode "externe" (perspective) ---
+  // Quand `isExternal == true`, le reader ouvre une URL seule (une "autre
+  // source" de la sheet de comparaisons) sans Content backend : aucun fetch,
+  // aucune perspective, aucun tracking. Tout passe par le MÊME reader unique
+  // (`ContentDetailScreen`) pour ne jamais re-diverger d'un webview dupliqué.
+  final String? externalUrl;
+  final String? sourceName;
+  final String? sourceDomain;
+  final String? externalTitle;
+  final String biasStance;
+  final bool isExternal;
+
+  const ContentDetailScreen({super.key, required this.contentId, this.content})
+    : externalUrl = null,
+      sourceName = null,
+      sourceDomain = null,
+      externalTitle = null,
+      biasStance = 'unknown',
+      isExternal = false;
+
+  /// Ouvre une URL externe (perspective) dans le reader unique, en mode
+  /// webview du site (header/footer/scroll/anti-saccades partagés).
+  const ContentDetailScreen.external({
     super.key,
-    required this.contentId,
-    this.content,
-  });
+    required String url,
+    required this.sourceName,
+    this.sourceDomain,
+    String? title,
+    this.biasStance = 'unknown',
+  }) : contentId = '',
+       content = null,
+       externalUrl = url,
+       externalTitle = title,
+       isExternal = true;
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -93,9 +209,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _isShortArticle = false;
   // true once user reaches end of displayed content
   final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
-  final ValueNotifier<bool> _atPerspectivesSection = ValueNotifier(false);
-  bool _suppressPerspectivesCheck = false;
   bool _showReadOnSiteNudge = false;
+  // Nudge « Sauvegarde cet article » déclenché par l'action de lettre
+  // « Sauvegarder 3 articles » (pendingSaveNudgeProvider), one-shot.
+  bool _showSaveNudge = false;
   int _articleOpenCount = 0;
   bool _readOnSiteNudgeRequested = false;
 
@@ -104,10 +221,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _perspectivesCtaTriggered = false;
   bool _linkCopiedHeader = false;
   Timer? _linkCopiedHeaderTimer;
-  bool _premiumRedirectScheduled = false;
-  bool _webFallbackRedirectScheduled = false;
   late DateTime _startTime;
   WebViewController? _webViewController;
+  // Chemin premium (source payante connectée) : WebView sur flutter_inappwebview
+  // pour réutiliser la session du média (cookies). Distinct du WebView
+  // webview_flutter du scroll-to-site des sources gratuites.
+  InAppWebViewController? _premiumWebController;
+  // Bandeau non-bloquant « Session expirée — Reconnecter » (paywall détecté en
+  // mode reader sur une source connectée).
+  bool _premiumSessionExpired = false;
   // Mutable: flipped to `true` from `_onReadOnSiteTap` when the in-app
   // reader could not enter scroll-to-site mode (htmlContent missing or
   // too short on Android race conditions). Forces `_buildWebViewFallback`
@@ -121,8 +243,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   final GlobalKey _perspectivesKey = GlobalKey();
-  final GlobalKey _perspectivesDividerKey = GlobalKey();
-  final GlobalKey _firstPerspectiveCardKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
@@ -132,12 +252,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // scrolling WebView (eliminates per-frame UI-thread cost).
   bool _articleLayerMounted = true;
   Timer? _articleLayerUnmountTimer;
-  // Last scroll position at which `_checkAtPerspectivesSection` was run.
-  // Per-frame `findRenderObject + localToGlobal` walks the RenderObject tree
-  // — gating on a 24px delta cuts that work to ~once per overscroll fling.
-  double _lastPerspCheckPixels = -1000;
 
   Timer? _readingTimer;
+  bool _isMarkingConsumed = false;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
   // 🌻 Nudge "Recommander ?" state
@@ -145,21 +262,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _showSunflowerNudge = false;
   Timer? _inactivityTimer;
   double _webScrollY = 0.0;
-  late AnimationController _headerAutoController;
-  double _headerAutoStart = 0.0;
-  double _headerAutoTarget = 0.0;
-
-  // Direction hysteresis for WebView continuous mapping. Absorbs fling-rebound
-  // micro-inversions (1-4 px) that would flicker the chrome without a filter.
-  int _webScrollDirection = 0; // -1 up, 0 idle, +1 down
-  double _webDirectionAccumulator = 0.0;
-  static const double _kWebDirectionFlipThreshold = 6.0;
-
-  /// Header slide offset as a fraction: 0.0 = fully visible, 1.0 = fully hidden.
-  final ValueNotifier<double> _headerOffset = ValueNotifier<double>(0.0);
   bool _isConsumed = false;
   bool _hasOpenedNote = false;
-  static const int _consumptionThreshold = 30; // seconds
+  // Marquage Lu unifié (décision PO) : « ouvrir un article = Lu ». Micro-délai
+  // de 1 s avant d'écrire le statut consumed — laisse le loader s'afficher et
+  // évite de marquer Lu un clic immédiatement annulé.
   static const int _noteNudgeDelay = 20; // seconds
 
   // Reading progress tracking (0.0 - 1.0)
@@ -174,7 +281,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _scrollViewKey = GlobalKey();
   double? _articleContentExtent;
 
-  // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden (mirrors _headerOffset)
+  // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
   double _footerAutoStart = 0.0;
   double _footerAutoTarget = 0.0;
@@ -192,33 +299,94 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // Perspectives pill state
   PerspectivesResponse? _perspectivesResponse;
   bool _perspectivesLoading = false;
+  Timer? _perspectivesRefetchTimer;
 
-  // Perspectives analysis state (lifted from inline section)
-  PerspectivesAnalysisState _perspectivesAnalysisState =
-      PerspectivesAnalysisState.idle;
-  String? _perspectivesAnalysisText;
-  final GlobalKey _analysisZoneKey = GlobalKey();
+  bool get _showPerspectivesBand =>
+      _content?.contentType == ContentType.article;
 
-  // Perspectives sticky section header state
-  Set<String> _perspectivesSelectedSegments = {};
-  bool _perspectivesExpanded = false;
-  final ValueNotifier<bool> _showStickyPerspectivesHeader =
-      ValueNotifier(false);
+  PerspectivesSectionStatus get _perspectivesStatus =>
+      resolvePerspectivesStatus(_perspectivesResponse);
+
+  /// Le wash du titre de référence se déclenche quand la couverture est prête
+  /// (la section est désormais toujours dépliée — plus de toggle).
+  bool get _showPivot =>
+      _perspectivesStatus == PerspectivesSectionStatus.ready;
+
+  List<Perspective> get _inlinePerspectives {
+    final response = _perspectivesResponse;
+    if (response == null) return const <Perspective>[];
+    return response.perspectives
+        .map(
+          // DÉSACTIVÉ (T1) : highlighting biais retiré → on n'alimente plus
+          // highlightSpans / sharedTokens (défaut const []) ⇒ titres plain dans
+          // le carrousel de couverture et le bottom sheet.
+          (PerspectiveData p) => Perspective(
+            title: p.title,
+            url: p.url,
+            sourceName: p.sourceName,
+            sourceDomain: p.sourceDomain,
+            biasStance: p.biasStance,
+            publishedAt: p.publishedAt,
+          ),
+        )
+        .toList();
+  }
+
+  // État réactif du bottom sheet « Analyse Facteur ». Le sheet écoute ce
+  // notifier pour refléter loading → done/error sans rebuild de l'écran.
+  final ValueNotifier<AnalysisSheetData> _analysisSheetData =
+      ValueNotifier(const AnalysisSheetData());
+
+  /// `true` lorsqu'on lit une "autre source" (perspective) : URL seule, pas de
+  /// Content backend ⇒ pas de fetch / perspectives / tracking.
+  bool get _isExternal => widget.isExternal;
+
+  /// Construit un [Content] synthétique pour le mode externe. Le levier qui
+  /// force la webview du site est `_showWebView = true` (initState), PAS
+  /// `hasInAppContent` — on ne bricole pas ce flag.
+  Content _buildExternalContent() {
+    return Content(
+      id: '',
+      title: widget.externalTitle ?? widget.sourceName ?? '',
+      url: widget.externalUrl!,
+      contentType: ContentType.article,
+      publishedAt: DateTime.now(),
+      source: Source(
+        id: widget.sourceDomain ?? '',
+        name: widget.sourceName ?? '',
+        type: SourceType.article,
+        biasStance: widget.biasStance,
+      ),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
-    _content = widget.content;
     _startTime = DateTime.now();
-    if (_content != null) {
-      _isConsumed = _content!.status == ContentStatus.consumed;
-    }
-    // Always fetch fresh content to accept latest metadata/status/theme
-    _fetchContent();
 
-    // Auto-fetch perspectives for articles
-    if (_content?.contentType == ContentType.article) {
-      _fetchPerspectives();
+    if (_isExternal) {
+      // Mode externe : pas de fetch (getContent('') renverrait null → pop()
+      // immédiat). On synthétise un Content depuis l'URL et on force la
+      // webview du site (même chemin anti-saccades que le reader normal).
+      _content = _buildExternalContent();
+      _contentResolved = true;
+      _isConsumed = false;
+      _showWebView = true;
+    } else {
+      _content = widget.content;
+      if (_content != null) {
+        _isConsumed =
+            _content!.status == ContentStatus.consumed ||
+            ref.read(consumedContentIdsProvider).contains(_content!.id);
+      }
+      // Always fetch fresh content to accept latest metadata/status/theme
+      _fetchContent();
+
+      // Auto-fetch perspectives for articles
+      if (_content?.contentType == ContentType.article) {
+        _fetchPerspectives();
+      }
     }
 
     // Bookmark bounce animation (triggered on first note character)
@@ -228,13 +396,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     _bookmarkScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.3)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 1.3,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 30,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.3, end: 1.0)
-            .chain(CurveTween(curve: Curves.bounceOut)),
+        tween: Tween<double>(
+          begin: 1.3,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.bounceOut)),
         weight: 70,
       ),
     ]).animate(_bookmarkBounceController);
@@ -246,13 +418,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     _likeScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 1.3)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween<double>(
+          begin: 1.0,
+          end: 1.3,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 30,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.3, end: 1.0)
-            .chain(CurveTween(curve: Curves.bounceOut)),
+        tween: Tween<double>(
+          begin: 1.3,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.bounceOut)),
         weight: 70,
       ),
     ]).animate(_likeBounceController);
@@ -262,21 +438,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
     );
 
-    _headerAutoController = AnimationController(
-      duration: const Duration(milliseconds: 200),
-      vsync: this,
-    );
-    _headerAutoController.addListener(() {
-      _headerOffset.value = _headerAutoStart +
-          (_headerAutoTarget - _headerAutoStart) * _headerAutoController.value;
-    });
-
     _footerAutoController = AnimationController(
       duration: const Duration(milliseconds: 200),
       vsync: this,
     );
     _footerAutoController.addListener(() {
-      _footerOffset.value = _footerAutoStart +
+      _footerOffset.value =
+          _footerAutoStart +
           (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
     });
 
@@ -312,9 +480,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       }
     });
 
-    // Start timer if content is suitable for in-app reading/viewing and not already consumed
-    final isVideo = _content?.isVideo ?? false;
-    if ((_content?.hasInAppContent == true || isVideo) && !_isConsumed) {
+    // « Ouvrir = Lu » : on démarre le timer (1 s) pour TOUT contenu non externe,
+    // y compris les articles à lien externe portant un vrai content_id — la
+    // condition hasInAppContent/isVideo a été retirée pour que le statut Lu
+    // soit universel. Le garde _isExternal exclut l'id synthétique vide (il
+    // appellerait sinon updateContentStatus('')).
+    if (!_isExternal && !_isConsumed) {
       _startReadingTimer();
     }
 
@@ -324,6 +495,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _bookmarkBounceController.forward(from: 0);
       }
     });
+
+    // Nudge « Sauvegarder 3 articles » : si l'action de lettre a armé le flag,
+    // on « pop » immédiatement le bouton Sauvegarder + bulle, puis on consomme
+    // le flag (one-shot : seul le 1er article ouvert déclenche le nudge).
+    if (!_isExternal && ref.read(pendingSaveNudgeProvider)) {
+      ref.read(pendingSaveNudgeProvider.notifier).state = false;
+      _showSaveNudge = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _bookmarkBounceController.forward(from: 0);
+      });
+    }
 
     // Scroll-to-site: attach scroll listener
     _scrollController.addListener(_onScrollToSite);
@@ -356,77 +538,101 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) => _injectScrollBridgeScript(),
-      ))
-      ..addJavaScriptChannel('ScrollBridge',
-          onMessageReceived: _onScrollBridgeMessage)
+      ..setNavigationDelegate(
+        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
+      )
+      ..addJavaScriptChannel(
+        'ScrollBridge',
+        onMessageReceived: _onScrollBridgeMessage,
+      )
       ..loadRequest(Uri.parse(content.url));
   }
 
-  /// Inject JS to detect overscroll at top + track reading progress.
+  /// Inject JS to drive the reader chrome from finger gestures + track
+  /// reading progress.
+  ///
+  /// The chrome (header/footer) is piloted **only** by `touchmove` deltas,
+  /// never by `window.scrollY`. Site-driven scroll mutations (sticky-header
+  /// collapse, lazy-load reflow, virtual scroll, …) emit `scroll` events
+  /// without a matching `touchmove` and used to flicker the chrome; they
+  /// are now ignored by construction. `window.scroll` is only observed for
+  /// reading-progress and to mirror `scrollY` back to Dart (used by the
+  /// inactivity timer).
   Future<void> _injectScrollBridgeScript() async {
     if (_webViewController == null) return;
     await _webViewController!.runJavaScript('''
       (function() {
         var lastTouchY = 0;
-        var lastProgress = 0;
-        // Track the user's finger direction so we can gate scrollY deltas
-        // that don't match it: some sites (Le Monde, Reddit, …) collapse
-        // their own sticky header on scroll, which mutates the document
-        // layout and emits scrollY deltas opposite to the gesture. Without
-        // gating, our reader chrome flips direction on these site-driven
-        // shifts and flickers.
-        //   touchDir = +1 → finger moving up = page scrolls down
-        //   touchDir = -1 → finger moving down = page scrolls up
-        // Kept across touchend so momentum frames still gate on the last
-        // gesture direction; reset on the next touchstart.
-        var touchDir = 0;
-        document.addEventListener('touchstart', function(e) {
-          lastTouchY = e.touches[0].clientY;
-          touchDir = 0;
-        }, { passive: true });
-        document.addEventListener('touchmove', function(e) {
-          var currentY = e.touches[0].clientY;
-          var dy = currentY - lastTouchY;
-          if (Math.abs(dy) >= 1) {
-            touchDir = dy < 0 ? 1 : -1;
-          }
-          if (currentY > lastTouchY && window.scrollY <= 0) {
-            ScrollBridge.postMessage('overscroll_top');
-          }
-          lastTouchY = currentY;
-        }, { passive: true });
-        // Two distinct cadences for the bridge:
-        //  - `scroll_delta`: coalesced per animation frame (~16 ms) so the
-        //    native side can apply a continuous delta→offset mapping just
-        //    like the in-app reader, instead of a binary toggle that was
-        //    causing header/footer to flicker on micro-inversions.
-        //  - `progress:`   : kept throttled to 300 ms (downstream cost is
-        //    identical at higher rates, no UX benefit).
-        var lastScrollY = window.scrollY;
+        var lastTouchT = 0;
+        var velocity = 0;        // px/ms, smoothed (positive = finger moves down)
+        var touchActive = false;
+        var pendingDy = 0;       // accumulated finger Δy since last rAF flush
         var rafScheduled = false;
         var raf = window.requestAnimationFrame
           ? function(cb) { window.requestAnimationFrame(cb); }
           : function(cb) { setTimeout(cb, 16); };
-        function flushDelta() {
+        function flushGesture() {
           rafScheduled = false;
-          var currentScrollY = window.scrollY;
-          var scrollDelta = currentScrollY - lastScrollY;
-          lastScrollY = currentScrollY;
-          if (Math.abs(scrollDelta) < 1) return;
-          // Drop deltas that don't match the user's finger direction. These
-          // are typically site-driven (sticky-header collapse, content
-          // reflow) and would flip the reader chrome direction even though
-          // the user is still scrolling the same way. lastScrollY is
-          // advanced above so the swallowed delta isn't re-emitted.
-          if (touchDir !== 0) {
-            var deltaDir = scrollDelta > 0 ? 1 : -1;
-            if (deltaDir !== touchDir) return;
-          }
-          ScrollBridge.postMessage('scroll_delta:' + scrollDelta + ':' + currentScrollY);
+          var dy = pendingDy;
+          pendingDy = 0;
+          if (Math.abs(dy) < 1) return;
+          // Cap per-frame delta to absorb rAF bursts caused by site CSS
+          // animations (e.g. Le Monde sticky-nav collapse). A real flick
+          // never exceeds ~150px in a single flush at 60fps.
+          if (dy >  150) dy =  150;
+          if (dy < -150) dy = -150;
+          // Invert sign so positive = page-scroll-down-equivalent (hide chrome).
+          ScrollBridge.postMessage('gesture_delta:' + (-dy));
         }
+        document.addEventListener('touchstart', function(e) {
+          if (e.touches.length > 1) { touchActive = false; return; }
+          lastTouchY = e.touches[0].clientY;
+          lastTouchT = (window.performance && performance.now) ? performance.now() : Date.now();
+          velocity = 0;
+          pendingDy = 0;
+          touchActive = true;
+          ScrollBridge.postMessage('gesture_start');
+        }, { passive: true, capture: true });
+        document.addEventListener('touchmove', function(e) {
+          if (!touchActive || e.touches.length > 1) return;
+          var y = e.touches[0].clientY;
+          var t = (window.performance && performance.now) ? performance.now() : Date.now();
+          var dy = y - lastTouchY;
+          var dt = t - lastTouchT;
+          if (dt > 0) {
+            // Exponential moving average — keeps a stable read of finger speed
+            // through the natural micro-jitter of touch sampling.
+            velocity = 0.7 * velocity + 0.3 * (dy / dt);
+          }
+          lastTouchY = y;
+          lastTouchT = t;
+          pendingDy += dy;
+          if (!rafScheduled) {
+            rafScheduled = true;
+            raf(flushGesture);
+          }
+        }, { passive: true, capture: true });
+        document.addEventListener('touchend', function(e) {
+          if (!touchActive) return;
+          touchActive = false;
+          // Flush any pending pixel-fraction before the snap so the offset
+          // is current.
+          if (rafScheduled) flushGesture();
+          // velocity is finger px/ms; invert sign (page-down equivalent) and
+          // convert to px/s for the Dart snap heuristic.
+          ScrollBridge.postMessage('gesture_end:' + (-velocity * 1000));
+        }, { passive: true, capture: true });
+        document.addEventListener('touchcancel', function(e) {
+          if (!touchActive) return;
+          touchActive = false;
+          if (rafScheduled) flushGesture();
+          ScrollBridge.postMessage('gesture_cancel');
+        }, { passive: true, capture: true });
+        // `window.scroll` is observed *only* for progress + scrollY mirroring.
+        // It never drives the chrome offset.
+        var lastProgress = 0;
         var progressTimer = null;
+        var scrollYTimer = null;
         function flushProgress() {
           progressTimer = null;
           var maxScroll = document.documentElement.scrollHeight - window.innerHeight;
@@ -438,14 +644,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ScrollBridge.postMessage('progress:' + pct);
           }
         }
+        function flushScrollY() {
+          scrollYTimer = null;
+          ScrollBridge.postMessage('scroll_y:' + window.scrollY);
+        }
         window.addEventListener('scroll', function() {
-          if (!rafScheduled) {
-            rafScheduled = true;
-            raf(flushDelta);
-          }
-          if (!progressTimer) {
-            progressTimer = setTimeout(flushProgress, 300);
-          }
+          if (!scrollYTimer) scrollYTimer = setTimeout(flushScrollY, 100);
+          if (!progressTimer) progressTimer = setTimeout(flushProgress, 300);
         }, { passive: true });
       })();
     ''');
@@ -454,34 +659,49 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Handle messages from the WebView JS bridge.
   void _onScrollBridgeMessage(JavaScriptMessage message) {
     final msg = message.message;
-    if (msg.startsWith('scroll_delta:')) {
-      final parts = msg.substring(13).split(':');
-      final delta = double.tryParse(parts[0]);
-      if (delta != null) {
-        if (parts.length > 1) {
-          _webScrollY = double.tryParse(parts[1]) ?? _webScrollY;
-        }
-        _onScrollDelta(delta);
-      }
+    if (msg == 'gesture_start') {
+      _onGestureStart();
+      return;
+    }
+    if (msg.startsWith('gesture_delta:')) {
+      final delta = double.tryParse(msg.substring(14));
+      if (delta != null) _onGestureDelta(delta);
+      return;
+    }
+    if (msg.startsWith('gesture_end:')) {
+      final vel = double.tryParse(msg.substring(12)) ?? 0;
+      _onGestureEnd(vel);
+      return;
+    }
+    if (msg == 'gesture_cancel') {
+      _onGestureEnd(0);
+      return;
+    }
+    if (msg.startsWith('scroll_y:')) {
+      final y = double.tryParse(msg.substring(9));
+      if (y != null) _webScrollY = y;
       return;
     }
     if (msg.startsWith('progress:')) {
       final pct = double.tryParse(msg.substring(9));
-      if (pct != null) {
-        // For partial content: WebView scroll maps to 25%-100% of total progress
-        // For full content: WebView scroll maps to the full 0%-100%
-        final double normalized;
-        if (_isPartialContent) {
-          normalized = 0.25 + (pct / 100.0) * 0.75;
-        } else {
-          normalized = pct / 100.0;
-        }
-        final clamped = normalized.clamp(0.0, 1.0);
-        _readingProgress.value = clamped;
-        if (clamped > _maxReadingProgress) {
-          _maxReadingProgress = clamped;
-        }
-      }
+      if (pct != null) _applyWebReadingProgress(pct);
+    }
+  }
+
+  /// Normalisation partagée de la progression de lecture en WebView : utilisée
+  /// par le canal webview_flutter (scroll-to-site gratuit) ET par le callback
+  /// `onProgress` de [PremiumWebView] (chemin premium inappwebview).
+  ///
+  /// For partial content: WebView scroll maps to 25%-100% of total progress.
+  /// For full content: WebView scroll maps to the full 0%-100%.
+  void _applyWebReadingProgress(double pct) {
+    final double normalized = _isPartialContent
+        ? 0.25 + (pct / 100.0) * 0.75
+        : pct / 100.0;
+    final clamped = normalized.clamp(0.0, 1.0);
+    _readingProgress.value = clamped;
+    if (clamped > _maxReadingProgress) {
+      _maxReadingProgress = clamped;
     }
   }
 
@@ -548,10 +768,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Show header + footer when user reaches the bottom of the article (progress ≥ 98%).
+  /// Skipped in WebView mode — overlays are controlled by scroll direction only.
   void _onReadingProgressNudge() {
+    if (_isWebViewActive) return;
     if (_readingProgress.value >= 0.98) {
       _inactivityTimer?.cancel();
-      if (_headerOffset.value > 0.0) _animateHeaderTo(0.0);
       if (_footerOffset.value > 0.0) _animateFooterTo(0.0);
     }
   }
@@ -602,7 +823,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (endBox == null || svBox == null) return;
     if (!_scrollController.hasClients) return;
     // content-coord of marker = screen Y of marker − screen Y of sv top + scroll offset
-    final extent = endBox.localToGlobal(Offset.zero).dy -
+    final extent =
+        endBox.localToGlobal(Offset.zero).dy -
         svBox.localToGlobal(Offset.zero).dy +
         _scrollController.offset;
     if (extent > 0) _articleContentExtent = extent;
@@ -633,138 +855,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _offsetsComputed = true;
   }
 
-  /// Updates [_atPerspectivesSection] based on whether the perspectives widget
-  /// is visible in the viewport. Called from the scroll notification handler.
-  /// Uses ValueNotifier to avoid triggering a full setState during scroll.
-  void _checkAtPerspectivesSection({bool force = false}) {
-    if (_suppressPerspectivesCheck && !force) return;
-    final ctx = _perspectivesKey.currentContext;
-    if (ctx == null) {
-      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
-      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
-      return;
-    }
-    final perspBox = ctx.findRenderObject() as RenderBox?;
-    if (perspBox == null || !perspBox.hasSize) {
-      if (_atPerspectivesSection.value) _atPerspectivesSection.value = false;
-      if (_showStickyPerspectivesHeader.value) _showStickyPerspectivesHeader.value = false;
-      return;
-    }
-
-    final perspScreenY = perspBox.localToGlobal(Offset.zero).dy;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    // Show button once the user has scrolled past the first card.
-    bool reached;
-    final firstCardCtx = _firstPerspectiveCardKey.currentContext;
-    if (firstCardCtx != null) {
-      final firstCardBox = firstCardCtx.findRenderObject() as RenderBox?;
-      if (firstCardBox != null && firstCardBox.hasSize) {
-        final firstCardBottomY = firstCardBox.localToGlobal(Offset.zero).dy +
-            firstCardBox.size.height;
-        reached = firstCardBottomY < screenHeight * 0.9;
-      } else {
-        reached = perspScreenY < screenHeight * 0.85;
-      }
-    } else {
-      reached = perspScreenY < screenHeight * 0.85;
-    }
-
-    if (reached != _atPerspectivesSection.value) {
-      _atPerspectivesSection.value = reached;
-      // Footer becomes sticky as soon as the perspectives section is reached.
-      if (reached && !_footerPermanent.value) {
-        _footerPermanent.value = true;
-        _animateFooterTo(0.0);
-      }
-    }
-
-    // Sticky perspectives header: show as soon as the section title has
-    // scrolled above the bottom of the app header.
-    final appHeaderHeight =
-        MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-    final appHeaderBottomY = appHeaderHeight * (1.0 - _headerOffset.value);
-    final shouldStick = perspScreenY < appHeaderBottomY;
-    if (shouldStick != _showStickyPerspectivesHeader.value) {
-      _showStickyPerspectivesHeader.value = shouldStick;
-    }
-  }
-
-  /// Shared handler for the inline "Couverture médiatique" toggle. On
-  /// expand-from-collapsed, scrolls the perspectives divider into view and
-  /// flips [_atPerspectivesSection] so the floating "Lancer l'analyse Facteur"
-  /// button reappears. On collapse, preserves the existing recheck behaviour.
-  void _onPerspectivesToggle() {
-    HapticFeedback.lightImpact();
-    final wasCollapsed = !_perspectivesExpanded;
+  /// Exit WebView mode and return to in-app article reading.
+  void _exitWebViewMode() {
     setState(() {
-      _perspectivesExpanded = !_perspectivesExpanded;
-      _suppressPerspectivesCheck = true;
+      _isWebViewActive = false;
+      _ctaTapped = false;
+      _offsetsComputed = false;
+      _bridgeEndOffset = 0;
     });
-    if (wasCollapsed) {
-      _atPerspectivesSection.value = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final ctx = _perspectivesDividerKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(
-            ctx,
-            alignment: 0.0,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeInOut,
-          );
-          // Re-trigger after AnimatedSize expansion settles maxScrollExtent.
-          Future.delayed(const Duration(milliseconds: 250), () {
-            if (!mounted) return;
-            final c = _perspectivesDividerKey.currentContext;
-            if (c != null) {
-              Scrollable.ensureVisible(
-                c,
-                alignment: 0.0,
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOut,
-              );
-            }
-          });
-        }
-        Future.delayed(const Duration(milliseconds: 550), () {
-          if (mounted) {
-            setState(() => _suppressPerspectivesCheck = false);
-          }
-        });
-      });
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _checkAtPerspectivesSection(force: true);
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (mounted) {
-            setState(() => _suppressPerspectivesCheck = false);
-          }
-        });
-      });
-    }
-  }
-
-  /// Toggles a perspectives bias-bar segment filter. Mirrors the logic in
-  /// [_PerspectivesInlineSectionState._onSegmentTapInternal].
-  void _onPerspectivesSegmentTap(String key) {
-    setState(() {
-      final current = _perspectivesSelectedSegments;
-      if (current.contains(key)) {
-        _perspectivesSelectedSegments =
-            current.length == 1 ? {} : (Set.from(current)..remove(key));
-      } else {
-        _perspectivesSelectedSegments = current.isEmpty || current.length == 3
-            ? {key}
-            : (Set.from(current)..add(key));
-      }
-    });
-    // Re-check sticky visibility after the section has rebuilt (filtering may
-    // shrink the section back into view with no scroll event).
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAtPerspectivesSection(force: true);
-    });
+    _footerPermanent.value = false;
+    _animateFooterTo(0.0);
+    _scrollController.jumpTo(0);
   }
 
   /// Scroll listener driving WebView activation.
@@ -785,8 +886,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // Drop the article subtree from the tree once the 300 ms fade-out is
       // done, so Flutter stops painting it under the scrolling WebView.
       _articleLayerUnmountTimer?.cancel();
-      _articleLayerUnmountTimer =
-          Timer(const Duration(milliseconds: 320), () {
+      _articleLayerUnmountTimer = Timer(const Duration(milliseconds: 320), () {
         if (mounted && _isWebViewActive && _articleLayerMounted) {
           setState(() => _articleLayerMounted = false);
         }
@@ -799,28 +899,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // avec une éventuelle modale (cookies, paywall) qui verrouille souvent
       // body { overflow: hidden } — sans scroll, le ScrollBridge JS ne peut
       // rien signaler, donc on doit cacher proactivement les overlays.
-      // Header & footer restent cachés par défaut en mode WebView et ne
-      // réapparaissent qu'au scroll vers le haut (via _onScrollDelta).
+      // Header reste toujours visible en mode WebView. Footer caché par défaut,
+      // réapparaît au scroll vers le haut (via _onScrollDelta).
       _scrollStopTimer?.cancel();
       _inactivityTimer?.cancel();
-      _animateHeaderTo(1.0);
       _animateFooterTo(1.0);
     }
   }
 
   void _onVideoPlayStateChanged(bool isPlaying) {
     if (!isPlaying) {
-      _headerOffset.value = 0.0;
       _scrollStopTimer?.cancel();
     }
-  }
-
-  /// Smoothly animate the header to [target] offset (0.0 = visible, 1.0 = hidden).
-  void _animateHeaderTo(double target) {
-    _headerAutoController.stop();
-    _headerAutoStart = _headerOffset.value;
-    _headerAutoTarget = target;
-    _headerAutoController.forward(from: 0);
   }
 
   /// Smoothly animate the footer to [target] offset (0.0 = visible, 1.0 = hidden).
@@ -831,83 +921,76 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerAutoController.forward(from: 0);
   }
 
-  /// Update header/footer offsets based on scroll delta (in pixels).
-  /// Positive delta = scrolling down, negative = scrolling up.
+  /// Apply a page-scroll-equivalent [delta] (positive = page going down)
+  /// to the footer offset. The header is pinned and never reacts to scroll.
+  void _applyChromeOffsetDelta(double delta) {
+    if (_footerPermanent.value) return;
+    final footerHeight =
+        _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
+    _footerOffset.value = (_footerOffset.value + delta / footerHeight).clamp(
+      0.0,
+      1.0,
+    );
+  }
+
+  /// Update footer offset based on a native scroll delta (in-app reader only).
+  /// Header is pinned, only the footer reacts. Positive delta = scrolling down.
   void _onScrollDelta(double delta) {
     if (delta == 0) return;
-    // Dismiss sunflower nudge on any scroll
+    if (_isWebViewActive) return;
     if (_showSunflowerNudge) {
       setState(() => _showSunflowerNudge = false);
     }
     final isVideo = _content?.isVideo ?? false;
-    // In video readers the header stays visible at all times (only native
-    // fullscreen covers it, which is handled by the system).
-    // For short articles that don't need scrolling, keep header visible —
-    // EXCEPT in WebView mode where scroll comes from the JS bridge and the
-    // user expects hide-on-scroll regardless of how short the in-app stub was.
-    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
-      // Effective delta to apply after the hysteresis filter. In native
-      // scroll mode the in-app ScrollController already produces per-frame
-      // deltas, so no filter is needed. In WebView mode the JS bridge
-      // emits per-frame deltas too, but tiny inverse spikes (fling rebound,
-      // deceleration jitter) used to flip the overlays binarily — we now
-      // gate direction changes through an accumulator so micro-inversions
-      // are absorbed before they propagate to the offset.
-      double effectiveDelta = delta;
-      if (_isWebViewActive) {
-        final int sign = delta > 0 ? 1 : -1;
-        if (_webScrollDirection == 0 || sign == _webScrollDirection) {
-          _webScrollDirection = sign;
-          _webDirectionAccumulator = 0.0;
-        } else {
-          _webDirectionAccumulator += delta.abs();
-          if (_webDirectionAccumulator < _kWebDirectionFlipThreshold) {
-            effectiveDelta = 0.0;
-          } else {
-            _webScrollDirection = sign;
-            _webDirectionAccumulator = 0.0;
-          }
-        }
-        // Stop any in-flight reveal/hide tween; it would race against the
-        // continuous mapping below and re-introduce the flicker.
-        if (effectiveDelta != 0) {
-          _headerAutoController.stop();
-          _footerAutoController.stop();
-        }
-      }
-
-      if (effectiveDelta != 0) {
-        final headerHeight =
-            MediaQuery.of(context).padding.top + _kHeaderContentHeight;
-        final shift = effectiveDelta / headerHeight;
-        _headerOffset.value = (_headerOffset.value + shift).clamp(0.0, 1.0);
-
-        // Footer mirrors header: hides on scroll-down, shows on scroll-up.
-        // Skipped once the user has reached the end of the displayed content.
-        if (!_footerPermanent.value) {
-          final bottomInset = MediaQuery.of(context).viewPadding.bottom;
-          final footerHeight = _kFooterContentHeight + bottomInset;
-          final footerShift = effectiveDelta / footerHeight;
-          _footerOffset.value =
-              (_footerOffset.value + footerShift).clamp(0.0, 1.0);
-        }
-      }
+    if (!isVideo && !_isShortArticle) {
+      _applyChromeOffsetDelta(delta);
     }
-    // Footer reappear after 2s of scroll inactivity.
-    // Skip the footer reappear in WebView mode — overlays must stay hidden
-    // until the user explicitly scrolls up to maximise reading space.
     _scrollStopTimer?.cancel();
     _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
-      if (mounted && !_isWebViewActive) _animateFooterTo(0.0);
+      if (mounted) _animateFooterTo(0.0);
     });
-    // Auto-hide header after 3s of inactivity (no scroll), but only if not at top
-    _inactivityTimer?.cancel();
-    if (!isVideo && (!_isShortArticle || _isWebViewActive)) {
-      _inactivityTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted && _webScrollY > 0 && _headerOffset.value < 1.0) {
-          _animateHeaderTo(1.0);
-        }
-      });
+  }
+
+  /// Stop any in-flight footer tween so the live gesture pilots the chrome
+  /// without fighting a residual animation.
+  void _onGestureStart() {
+    _footerAutoController.stop();
+  }
+
+  /// Map a gesture-derived page-scroll-equivalent delta onto the footer offset.
+  /// Header is pinned, so it ignores the gesture entirely.
+  void _onGestureDelta(double pageDelta) {
+    if (pageDelta == 0) return;
+    if (_showSunflowerNudge) {
+      setState(() => _showSunflowerNudge = false);
+    }
+    if (_content?.isVideo ?? false) return;
+    _applyChromeOffsetDelta(pageDelta);
+  }
+
+  /// At touchend, commit the footer to a clean state.
+  /// - High-velocity flick → snap to that direction's endpoint.
+  /// - Slow lift-off → leave the footer at its current partial offset.
+  /// - At the top of the page → force visible (overscroll guard).
+  void _onGestureEnd(double velocityPxPerSec) {
+    if (_content?.isVideo ?? false) return;
+    if (_webScrollY <= 0) {
+      if (!_footerPermanent.value && _footerOffset.value != 0) {
+        _animateFooterTo(0);
+      }
+      return;
+    }
+    const double kVelocitySnapThreshold = 600.0; // px/s
+    double? target;
+    if (velocityPxPerSec > kVelocitySnapThreshold) {
+      target = 1.0;
+    } else if (velocityPxPerSec < -kVelocitySnapThreshold) {
+      target = 0.0;
+    }
+    if (target != null &&
+        !_footerPermanent.value &&
+        _footerOffset.value != target) {
+      _animateFooterTo(target);
     }
   }
 
@@ -934,20 +1017,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           // Fixes cases where RSS provides longer htmlContent than the API
           // (e.g. Le Monde articles where enrichment returns a shorter version).
           final merged = content.copyWith(
-            description:
-                _pickLongest(content.description, _content?.description),
-            htmlContent:
-                _pickLongest(content.htmlContent, _content?.htmlContent),
+            description: _pickLongest(
+              content.description,
+              _content?.description,
+            ),
+            htmlContent: _pickLongest(
+              content.htmlContent,
+              _content?.htmlContent,
+            ),
             editorialBadge: content.editorialBadge ?? _content?.editorialBadge,
           );
           setState(() {
             _content = merged;
             _contentResolved = true;
-            _isConsumed = _content!.status == ContentStatus.consumed;
+            _isConsumed =
+                _content!.status == ContentStatus.consumed ||
+                ref.read(consumedContentIdsProvider).contains(_content!.id);
           });
-          final isVideoFetched = _content!.isVideo;
-          if ((_content!.hasInAppContent == true || isVideoFetched) &&
-              !_isConsumed) {
+          // « Ouvrir = Lu » : redémarre le timer dès que le contenu est résolu
+          // si on ne l'a pas encore marqué Lu (cas où _content était null au
+          // montage, ou fetch plus long que le micro-délai initial). Même
+          // contrat universel que l'initState (plus de garde in-app/vidéo).
+          if (!_isConsumed) {
             _startReadingTimer();
           }
           // Re-check short article + measure article extent after content
@@ -978,8 +1069,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         } else {
           // Show error and pop if content not found
           setState(() => _contentResolved = true);
-          NotificationService.showError('Contenu introuvable',
-              context: context);
+          NotificationService.showError(
+            'Contenu introuvable',
+            context: context,
+          );
           context.pop();
         }
       }
@@ -995,7 +1088,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   void _startReadingTimer() {
     _readingTimer?.cancel();
-    _readingTimer = Timer(const Duration(seconds: _consumptionThreshold), () {
+    _readingTimer = Timer(articleReadThreshold, () {
       if (mounted && !_isConsumed) {
         _markAsConsumed();
       }
@@ -1003,26 +1096,44 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Future<void> _markAsConsumed() async {
-    setState(() => _isConsumed = true);
+    // Mode externe : id synthétique vide ⇒ pas de statut backend.
+    if (_isExternal || _isConsumed || _isMarkingConsumed) return;
     final content = _content;
+    // Ne latch PAS _isConsumed tant que le contenu n'est pas résolu : sinon un
+    // fetch plus lent que le micro-délai laisserait l'article « consommé » en
+    // local sans jamais écrire le statut backend (le re-start de _fetchContent
+    // est gardé par !_isConsumed).
     if (content == null) return;
-
+    _isMarkingConsumed = true;
     try {
-      final supabase = Supabase.instance.client;
-      final apiClient = ApiClient(supabase);
-      final repository = FeedRepository(apiClient);
-      await repository.updateContentStatus(
-        content.id,
-        ContentStatus.consumed,
-      );
-
-      // Silent update - no notification needed as this is tracked automatically
+      final queued = await ref
+          .read(readSyncServiceProvider)
+          .markConsumed(content.id);
+      if (queued) {
+        if (mounted) setState(() => _isConsumed = true);
+      } else if (mounted) {
+        _scheduleConsumedRetry();
+      }
     } catch (e) {
       debugPrint('Error marking as consumed: $e');
+      if (mounted) _scheduleConsumedRetry();
+    } finally {
+      _isMarkingConsumed = false;
     }
   }
 
+  void _scheduleConsumedRetry() {
+    _readingTimer?.cancel();
+    _readingTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted && !_isConsumed) {
+        unawaited(_markAsConsumed());
+      }
+    });
+  }
+
   Future<void> _toggleBookmark() async {
+    // Mode externe : pas de Content backend à sauvegarder (id vide).
+    if (_isExternal) return;
     final content = _content;
     if (content == null) return;
 
@@ -1045,6 +1156,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           final colRepo = ref.read(collectionsRepositoryProvider);
           await colRepo.addToCollection(defaultCol.id, content.id);
           ref.invalidate(collectionsProvider);
+          unawaited(ref.read(lettersProvider.notifier).silentRefresh());
         }
         CollectionPickerSheet.show(
           context,
@@ -1064,6 +1176,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Future<void> _toggleLike() async {
+    // Mode externe : pas de Content backend à recommander (id vide).
+    if (_isExternal) return;
     final content = _content;
     if (content == null) return;
 
@@ -1211,8 +1325,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (response == null) return;
     if (response.perspectives.isEmpty || !response.shouldDisplay) return;
     _perspectivesCtaTriggered = true;
-    NudgeCounters.increment(NudgeCounters.articleWithPerspectivesCount)
-        .then((count) async {
+    NudgeCounters.increment(NudgeCounters.articleWithPerspectivesCount).then((
+      count,
+    ) async {
       if (!mounted) return;
       if (count < 2) return;
       final coordinator = ref.read(nudgeCoordinatorProvider);
@@ -1228,13 +1343,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _perspectivesPulseScale ??= TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
-      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
-    ]).animate(CurvedAnimation(
-      parent: _perspectivesPulseController!,
-      curve: Curves.easeOutCubic,
-    ));
+    _perspectivesPulseScale ??=
+        TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+          TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+        ]).animate(
+          CurvedAnimation(
+            parent: _perspectivesPulseController!,
+            curve: Curves.easeOutCubic,
+          ),
+        );
     _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
       if (!mounted) return;
       final coordinator = ref.read(nudgeCoordinatorProvider);
@@ -1253,7 +1371,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Persist reading progress + analytics on close.
     // Must happen before super.dispose() — ref.read() requires active ConsumerState.
     try {
-      if (_content != null) {
+      // Mode externe : id synthétique vide ⇒ ne jamais polluer
+      // user_content_status ni les analytics (trackArticleRead).
+      if (_content != null && !_isExternal) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
 
         final supabase = Supabase.instance.client;
@@ -1262,24 +1382,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
         // Persist reading progress via status endpoint
         if (progressPct > 0) {
-          repository.updateContentStatusWithProgress(
-            _content!.id,
-            progressPct,
-          );
+          repository.updateContentStatusWithProgress(_content!.id, progressPct);
         }
 
         // Accumulate reading time on user_content_status for recommendation signal.
-        repository.updateContentStatusWithTimeSpent(
-          _content!.id,
-          duration,
-        );
+        repository.updateContentStatusWithTimeSpent(_content!.id, duration);
 
         // Track article read duration
-        ref.read(analyticsServiceProvider).trackArticleRead(
-              _content!.id,
-              _content!.source.id,
-              duration,
-            );
+        ref
+            .read(analyticsServiceProvider)
+            .trackArticleRead(_content!.id, _content!.source.id, duration);
       }
     } catch (e) {
       debugPrint('Error tracking on dispose: $e');
@@ -1292,16 +1404,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _inactivityTimer?.cancel();
     _articleLayerUnmountTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
+    _perspectivesRefetchTimer?.cancel();
+    _analysisSheetData.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _perspectivesPulseController?.dispose();
     _exitAnimController.dispose();
-    _headerAutoController.dispose();
     _footerAutoController.dispose();
     _ctaPulseController.dispose();
     _footerPermanent.removeListener(_onFooterPermanentChanged);
     WidgetsBinding.instance.removeObserver(this);
-    _headerOffset.dispose();
     _footerOffset.dispose();
     _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
@@ -1309,8 +1421,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollController.removeListener(_onScrollToSite);
     _scrollController.removeListener(_onScrollReadingProgress);
 
-    _atPerspectivesSection.dispose();
-    _showStickyPerspectivesHeader.dispose();
     _scrollController.dispose();
     _inAppScrollController.dispose();
     super.dispose();
@@ -1353,6 +1463,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if ((state == AppLifecycleState.paused ||
+            state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.detached) &&
+        shouldCommitReadOnBackground(
+          startedAt: _startTime,
+          now: DateTime.now(),
+          isConsumed: _isConsumed,
+          isExternal: _isExternal,
+        )) {
+      _readingTimer?.cancel();
+      unawaited(_markAsConsumed());
+    }
     if (state == AppLifecycleState.resumed && _isExitAnimating) {
       _exitAnimController.reset();
       setState(() {
@@ -1361,19 +1483,74 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Future<void> _animateAndLaunch(String url) async {
+  /// Push a tiny launch breadcrumb to Sentry: category + message + a small bag
+  /// of non-PII fields (no full URL — only `urlHost`).
+  void _addLaunchBreadcrumb(
+    String message, {
+    SentryLevel level = SentryLevel.info,
+    Map<String, Object?> data = const {},
+  }) {
+    unawaited(
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'reader.launch',
+          message: message,
+          level: level,
+          data: data,
+        ),
+      ),
+    );
+  }
+
+  /// Minimal, PII-free context attached to every launch breadcrumb.
+  Map<String, Object?> _launchLogData(String trigger) {
+    final c = _content;
+    return {
+      'contentId': c?.id,
+      'sourceId': c?.source.id,
+      'sourceName': c?.source.name,
+      'trigger': trigger,
+      'platform': kIsWeb ? 'web' : defaultTargetPlatform.name,
+    };
+  }
+
+  Future<void> _animateAndLaunch(String url, {String trigger = 'cta'}) async {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
+    final logData = _launchLogData(trigger);
+
+    Future<bool> launch({required bool isWeb}) => launchReaderUrl(
+      uri,
+      isWeb: isWeb,
+      launch: launchUrl,
+      canLaunch: canLaunchUrl,
+      breadcrumb: _addLaunchBreadcrumb,
+      logData: logData,
+    );
+
+    // Web: open immediately from within the user gesture — no canLaunchUrl, no
+    // exit animation, no white overlay. Deferring the open (behind the overlay
+    // / outside the gesture) is exactly what froze the web reader.
+    if (kIsWeb) {
+      await launch(isWeb: true);
+      return;
+    }
+
     final reduceMotion = MediaQuery.of(context).disableAnimations;
-    if (!await canLaunchUrl(uri)) return;
     if (reduceMotion) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launch(isWeb: false);
       return;
     }
 
     setState(() => _isExitAnimating = true);
     await _exitAnimController.forward(from: 0.0);
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final launched = await launch(isWeb: false);
+    // Rollback the fade-to-white if the browser never actually opened, so the
+    // user is not stranded behind a frozen white overlay.
+    if (!launched && mounted) {
+      _exitAnimController.reset();
+      setState(() => _isExitAnimating = false);
+    }
   }
 
   Future<void> _openOriginalUrl() async {
@@ -1381,6 +1558,81 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (url != null) {
       await _animateAndLaunch(url);
     }
+  }
+
+  /// Stable web fallback when no in-app reader is available: an explicit
+  /// "Ouvrir dans le navigateur" button. Replaces the fragile auto-redirect
+  /// that opened outside the user gesture and could leave a white screen.
+  Widget _buildWebOpenPrompt(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      backgroundColor: colors.backgroundPrimary,
+      appBar: AppBar(
+        backgroundColor: colors.backgroundPrimary,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(
+            PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+            color: colors.textPrimary,
+          ),
+          onPressed: () => context.pop(),
+        ),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space6,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (content.title.isNotEmpty) ...[
+                Text(
+                  content.title,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.titleMedium?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+              ],
+              Text(
+                'Cet article s\'ouvre sur le site de la source.',
+                textAlign: TextAlign.center,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: FacteurSpacing.space6),
+              ElevatedButton.icon(
+                onPressed: () =>
+                    _animateAndLaunch(content.url, trigger: 'web_open_prompt'),
+                icon: Icon(
+                  PhosphorIcons.arrowSquareOut(PhosphorIconsStyle.bold),
+                  size: 18,
+                ),
+                label: const Text('Ouvrir dans le navigateur'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space6,
+                    vertical: FacteurSpacing.space4,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   String _getFabLabel() {
@@ -1410,155 +1662,102 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         setState(() {
           _perspectivesResponse = response;
           _perspectivesLoading = false;
-          if (response.perspectives.isEmpty) _perspectivesExpanded = false;
         });
+        // Un seul refetch one-shot couvre perspectives partielles ET le matching
+        // deep « Pas de recul » encore en cours (deep_pending) ; on ne double
+        // pas l'appel (LLM-coûteux). Voir _schedulePerspectivesPartialRefetch.
+        if (response.partial || response.deepPending) {
+        // Prefill : si le back renvoie déjà l'analyse cachée, on seed le sheet
+        // en `done` → ouverture immédiate sans 2ᵉ appel.
+        final cached = response.analysis;
+        if (cached != null && cached.trim().isNotEmpty) {
+          _analysisSheetData.value = AnalysisSheetData(
+            state: PerspectivesAnalysisState.done,
+            text: cached,
+          );
+        }
+        if (response.partial) {
+          _schedulePerspectivesPartialRefetch(content.id);
+        }
         _maybeTriggerPerspectivesCta();
       }
     } catch (e) {
       debugPrint('Error pre-fetching perspectives: $e');
       if (mounted) {
-        setState(() => _perspectivesLoading = false);
+        setState(() {
+          _perspectivesResponse = PerspectivesResponse(
+            perspectives: const [],
+            keywords: const [],
+            biasDistribution: const {},
+          );
+          _perspectivesLoading = false;
+        });
       }
     }
   }
 
-  /// Request Facteur analysis for the perspectives section.
-  /// Called by the floating button in the article reader.
+  /// Ouvre l'article de fond « Pas de recul » dans le reader. Le handler de
+  /// route `content/:id` (re)fetch le Content depuis l'id, donc pas d'`extra`.
+  void _openDeepReco(DeepRecommendation reco) {
+    if (reco.contentId.isEmpty) return;
+    context.push('${RoutePaths.flaner}/content/${reco.contentId}');
+  }
+
+  void _schedulePerspectivesPartialRefetch(String contentId) {
+    if (_perspectivesRefetchTimer != null) return;
+    _perspectivesRefetchTimer = Timer(const Duration(milliseconds: 2200), () {
+      _perspectivesRefetchTimer = null;
+      if (!mounted || _isExternal || _content?.id != contentId) return;
+      _fetchPerspectives();
+    });
+  }
+
+  /// Request Facteur analysis for the perspectives section. Les transitions
+  /// loading → done/error sont reflétées dans `_analysisSheetData` (le bottom
+  /// sheet l'écoute). Réutilisé comme `onRetry` du sheet.
   Future<void> _requestPerspectivesAnalysis() async {
     final contentId = _perspectivesResponse?.perspectives.isNotEmpty == true
         ? _content?.id
         : null;
     if (contentId == null) return;
 
-    setState(
-        () => _perspectivesAnalysisState = PerspectivesAnalysisState.loading);
-
-    // Scroll to analysis zone so the user can see the progress
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _analysisZoneKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
-          alignment: 0.8,
-        );
-      }
-    });
+    _analysisSheetData.value = const AnalysisSheetData(
+      state: PerspectivesAnalysisState.loading,
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
       final result = await repository.analyzePerspectives(contentId);
       if (!mounted) return;
-      setState(() {
-        _perspectivesAnalysisText = result;
-        _perspectivesAnalysisState = result != null
+      _analysisSheetData.value = AnalysisSheetData(
+        state: result != null
             ? PerspectivesAnalysisState.done
-            : PerspectivesAnalysisState.error;
-      });
+            : PerspectivesAnalysisState.error,
+        text: result,
+      );
     } catch (e) {
       debugPrint('Error requesting perspectives analysis: $e');
       if (!mounted) return;
-      setState(
-          () => _perspectivesAnalysisState = PerspectivesAnalysisState.error);
+      _analysisSheetData.value = const AnalysisSheetData(
+        state: PerspectivesAnalysisState.error,
+      );
     }
   }
 
-  /// Show perspectives bottom sheet — uses pre-loaded data if available
-  Future<void> _showPerspectives(BuildContext context) async {
-    final content = _content;
-    if (content == null) return;
-
-    // If data already pre-loaded, show directly
-    if (_perspectivesResponse != null) {
-      _showPerspectivesSheet(context, _perspectivesResponse!);
-      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
-      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
-      return;
+  /// Ouvre le bottom sheet « Analyse Facteur ». Si l'état est encore `idle`,
+  /// c'est qu'il n'y avait pas d'analyse cachée (sinon le prefill de
+  /// [_fetchPerspectives] aurait déjà seedé `done`) → on lance la requête.
+  /// Le sheet réagit ensuite aux transitions du notifier.
+  void _openPerspectivesAnalysis() {
+    HapticFeedback.mediumImpact();
+    if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
+      _requestPerspectivesAnalysis();
     }
-
-    // Otherwise fetch with loading indicator
-    showModalBottomSheet<void>(
+    showAnalysisBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        height: 200,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: const Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text('Recherche de perspectives...'),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    try {
-      final repository = ref.read(feedRepositoryProvider);
-
-      final response = await repository.getPerspectives(content.id);
-
-      if (context.mounted) Navigator.pop(context);
-
-      if (context.mounted) {
-        setState(() => _perspectivesResponse = response);
-        _showPerspectivesSheet(context, response);
-      }
-      // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
-      unawaited(ref.read(lettersProvider.notifier).silentRefresh());
-    } catch (e) {
-      debugPrint('Error fetching perspectives: $e');
-      if (context.mounted) Navigator.pop(context);
-      if (context.mounted) {
-        NotificationService.showError('Impossible de charger les perspectives',
-            context: context);
-      }
-    }
-  }
-
-  void _showPerspectivesSheet(
-      BuildContext context, PerspectivesResponse response) {
-    // Backend gate : pas assez d'angles distincts → forcer l'état vide
-    // dans le bottom sheet (équivalent à perspectives.isEmpty).
-    // Cf. docs/bugs/bug-comparison-clustering-too-loose.md
-    final perspectives = response.shouldDisplay
-        ? response.perspectives
-            .map(
-              (PerspectiveData p) => Perspective(
-                title: p.title,
-                url: p.url,
-                sourceName: p.sourceName,
-                sourceDomain: p.sourceDomain,
-                biasStance: p.biasStance,
-                publishedAt: p.publishedAt,
-              ),
-            )
-            .toList()
-        : <Perspective>[];
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => PerspectivesBottomSheet(
-        perspectives: perspectives,
-        biasDistribution:
-            response.shouldDisplay ? response.biasDistribution : const {},
-        keywords: response.keywords,
-        sourceBiasStance: response.sourceBiasStance,
-        sourceName: _content?.source.name ?? '',
-        contentId: widget.contentId,
-        comparisonQuality: response.comparisonQuality,
-      ),
+      data: _analysisSheetData,
+      perspectives: _inlinePerspectives,
+      onRetry: _requestPerspectivesAnalysis,
     );
   }
 
@@ -1582,44 +1781,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             onPressed: () => context.pop(),
           ),
         ),
-        body: Center(
-          child: CircularProgressIndicator(color: colors.primary),
-        ),
-      );
-    }
-
-    // Premium source → redirect to external browser for authenticated access
-    final userSources = ref.read(userSourcesProvider).valueOrNull ?? [];
-    final isPremiumSource =
-        userSources.any((s) => s.id == content.source.id && s.hasSubscription);
-    if (isPremiumSource &&
-        content.url.isNotEmpty &&
-        !_premiumRedirectScheduled) {
-      _premiumRedirectScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final uri = Uri.tryParse(content.url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-        if (mounted) context.pop();
-      });
-      return Scaffold(
-        backgroundColor: colors.backgroundPrimary,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: colors.primary),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                'Ouverture dans votre navigateur...',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-              ),
-            ],
-          ),
-        ),
+        body: Center(child: CircularProgressIndicator(color: colors.primary)),
       );
     }
 
@@ -1627,50 +1789,36 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // - Articles with in-app content: progressive scroll-to-site
     // - Non-articles or explicit WebView toggle: old behavior
     // Skip scroll-to-site for articles with too little content
+    final userSources = ref.watch(userSourcesProvider).valueOrNull ?? [];
+    final isConnectedPremiumSource = userSources.any(
+      (s) => s.id == content.source.id && s.hasSubscription,
+    );
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite = content.hasInAppContent &&
+    final useScrollToSite =
+        !isConnectedPremiumSource &&
+        content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
     final useInAppReading =
-        content.hasInAppContent && !_showWebView && !useScrollToSite;
+        !isConnectedPremiumSource &&
+        content.hasInAppContent &&
+        !_showWebView &&
+        !useScrollToSite;
     final isVideoContent = content.isVideo;
 
-    // Web: no WebView available — auto-redirect to original URL
+    // Web: no in-app WebView available. Instead of auto-redirecting from a
+    // post-frame callback (an open outside the user gesture, which browsers
+    // block — leaving a frozen white screen), render a stable prompt with an
+    // explicit button so the open fires from a real tap.
     if (kIsWeb &&
         !useScrollToSite &&
         !useInAppReading &&
         !isVideoContent &&
-        content.url.isNotEmpty &&
-        !_webFallbackRedirectScheduled) {
-      _webFallbackRedirectScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final uri = Uri.tryParse(content.url);
-        if (uri != null) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        }
-        if (mounted) context.pop();
-      });
-      return Scaffold(
-        backgroundColor: colors.backgroundPrimary,
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: colors.primary),
-              const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                'Ouverture dans votre navigateur...',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-              ),
-            ],
-          ),
-        ),
-      );
+        content.url.isNotEmpty) {
+      return _buildWebOpenPrompt(context, content);
     }
 
     return Scaffold(
@@ -1692,23 +1840,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   final delta = notification.scrollDelta ?? 0.0;
                   final metrics = notification.metrics;
                   if (metrics.pixels <= 0 && !_isWebViewActive) {
-                    _atPerspectivesSection.value = false;
-                    _showStickyPerspectivesHeader.value = false;
-                    _headerOffset.value = 0.0;
                     _footerOffset.value = 0.0;
                   }
-                  
+
                   _onScrollDelta(delta);
-                  // Gate the perspectives RenderObject walk on (a) the
-                  // section actually existing and (b) the user having
-                  // scrolled at least 24px since the last check. Cuts the
-                  // per-frame cost of localToGlobal on multiple GlobalKeys
-                  // — main source of jank on long articles.
-                  if (_perspectivesResponse != null &&
-                      (metrics.pixels - _lastPerspCheckPixels).abs() >= 24) {
-                    _lastPerspCheckPixels = metrics.pixels;
-                    _checkAtPerspectivesSection();
-                  }
                   // Track reading progress from any scrollable (including in-app reader)
                   if (metrics.maxScrollExtent > 0) {
                     final rawProgress =
@@ -1744,97 +1879,35 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isVideoContent
                     ? _buildVideoContent(context, content)
                     : useScrollToSite
-                        ? _buildScrollToSiteContent(context, content)
-                        : useInAppReading
-                            ? _buildInAppContent(context, content)
-                            : _buildWebViewFallback(content),
+                    ? _buildScrollToSiteContent(context, content)
+                    : useInAppReading
+                    ? _buildInAppContent(context, content)
+                    : _buildWebViewFallback(
+                        content,
+                        isConnectedPremiumSource: isConnectedPremiumSource,
+                      ),
               ),
             ),
-            // Header — follows scroll: slides up on scroll-down, back on scroll-up
-            // For short articles the header stays pinned (offset is never updated).
+            // Header — pinned at the top of the screen; no scroll-driven
+            // translation. Earlier iterations slid the header up/down on
+            // scroll but the result felt unstable in the WebView, so the
+            // header is now permanently visible.
             Positioned(
               top: 0,
               left: 0,
               right: 0,
-              child: ValueListenableBuilder<double>(
-                valueListenable: _headerOffset,
-                builder: (context, offset, child) {
-                  final headerHeight = MediaQuery.of(context).padding.top +
-                      _kHeaderContentHeight;
-                  return Transform.translate(
-                    offset: Offset(0, -offset * headerHeight),
-                    child: child!,
-                  );
-                },
-                // RepaintBoundary isolates the header's render layer so the
-                // per-pixel Transform.translate driven by _headerOffset only
-                // recomposites this layer — the article body underneath is
-                // not invalidated.
-                child: RepaintBoundary(child: _buildHeader(context, content)),
-              ),
+              child: RepaintBoundary(child: _buildHeader(context, content)),
             ),
-            // Reading progress bar — follows header position continuously
+            // Reading progress bar — pinned right below the header.
             if (content.hasInAppContent ||
                 _isWebViewActive ||
                 isVideoContent ||
                 (!useScrollToSite && !useInAppReading))
-              ValueListenableBuilder<double>(
-                valueListenable: _headerOffset,
-                builder: (context, offset, _) {
-                  final statusBarHeight = MediaQuery.of(context).padding.top;
-                  final topWhenHeaderVisible =
-                      statusBarHeight + _kHeaderVisualBottom;
-                  final topWhenHeaderHidden = statusBarHeight;
-                  final top = topWhenHeaderVisible -
-                      offset * (topWhenHeaderVisible - topWhenHeaderHidden);
-                  return Positioned(
-                    top: top,
-                    left: 0,
-                    right: 0,
-                    child: RepaintBoundary(
-                      child: _buildReadingProgressBar(colors),
-                    ),
-                  );
-                },
-              ),
-            // Sticky perspectives section header — appears below the app header
-            // when the inline section header has scrolled off-screen.
-            // Only shown for in-app article reading.
-            if (useInAppReading &&
-                content.contentType == ContentType.article &&
-                _perspectivesResponse != null)
-              ValueListenableBuilder<bool>(
-                valueListenable: _showStickyPerspectivesHeader,
-                builder: (context, showSticky, _) {
-                  return ValueListenableBuilder<double>(
-                    valueListenable: _headerOffset,
-                    builder: (context, offset, _) {
-                      final statusBarHeight =
-                          MediaQuery.of(context).padding.top;
-                      final topWhenHeaderVisible =
-                          statusBarHeight + _kHeaderVisualBottom;
-                      final topWhenHeaderHidden = statusBarHeight;
-                      final top = topWhenHeaderVisible -
-                          offset * (topWhenHeaderVisible - topWhenHeaderHidden);
-                      return Positioned(
-                        top: top,
-                        left: 0,
-                        right: 0,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 200),
-                          opacity: showSticky ? 1.0 : 0.0,
-                          child: IgnorePointer(
-                            ignoring: !showSticky,
-                            child: RepaintBoundary(
-                              child: _buildPerspectivesStickyHeader(
-                                  context, _perspectivesResponse!),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
+              Positioned(
+                top: MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                left: 0,
+                right: 0,
+                child: RepaintBoundary(child: _buildReadingProgressBar(colors)),
               ),
             // Exit animation overlay — fade-to-white + scale-down
             if (_isExitAnimating)
@@ -1844,82 +1917,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   return Positioned.fill(
                     child: IgnorePointer(
                       child: ColoredBox(
-                        color: Colors.white
-                            .withValues(alpha: 0.6 * _exitAnimController.value),
+                        color: Colors.white.withValues(
+                          alpha: 0.6 * _exitAnimController.value,
+                        ),
                       ),
                     ),
                   );
                 },
-              ),
-            // Floating "Lancer l'analyse Facteur" button — in-app articles only.
-            // Visible when the perspectives section is on screen and analysis
-            // hasn't been triggered yet.
-            if (useInAppReading && content.contentType == ContentType.article)
-              Positioned(
-                right: 16,
-                bottom: _kFooterContentHeight +
-                    MediaQuery.of(context).viewPadding.bottom +
-                    12,
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: _atPerspectivesSection,
-                  builder: (context, atPersp, _) {
-                    final show = atPersp &&
-                        !_suppressPerspectivesCheck &&
-                        _perspectivesExpanded &&
-                        _perspectivesAnalysisState ==
-                            PerspectivesAnalysisState.idle &&
-                        _perspectivesResponse != null &&
-                        _perspectivesResponse!.perspectives.isNotEmpty;
-                    return AnimatedScale(
-                      scale: show ? 1.0 : 0.9,
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOut,
-                      child: AnimatedOpacity(
-                        opacity: show ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: IgnorePointer(
-                          ignoring: !show,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              color: context.facteurColors.surfaceElevated
-                                  .withValues(alpha: 0.95),
-                              border: Border.all(
-                                color: context.facteurColors.border,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.08),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: OutlinedButton.icon(
-                              onPressed: () {
-                                HapticFeedback.lightImpact();
-                                _requestPerspectivesAnalysis();
-                              },
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: context.facteurColors.primary,
-                                side: BorderSide.none,
-                                backgroundColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: Icon(
-                                PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                                size: 16,
-                              ),
-                              label: const Text('Lancer l\'analyse Facteur'),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
               ),
             // Footer — always rendered, mirrors header slide behavior.
             // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
@@ -1955,7 +1959,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final isScrollToSite = content.hasInAppContent &&
+    final isScrollToSite =
+        content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView;
@@ -1985,18 +1990,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // (htmlContent missing or too short — common race on Android). Reveal
     // the internal WebView instead of jumping straight to the external
     // browser, so the user stays inside the reader.
-    unawaited(Sentry.addBreadcrumb(Breadcrumb(
-      category: 'reader.cta',
-      message: 'fallback to internal webview',
-      level: SentryLevel.info,
-      data: {
-        'contentId': content.id,
-        'contentType': content.contentType.name,
-        'hasInAppContent': content.hasInAppContent,
-        'plainTextLen': plainTextLength(articleText),
-        'platform': defaultTargetPlatform.name,
-      },
-    )));
+    unawaited(
+      Sentry.addBreadcrumb(
+        Breadcrumb(
+          category: 'reader.cta',
+          message: 'fallback to internal webview',
+          level: SentryLevel.info,
+          data: {
+            'contentId': content.id,
+            'contentType': content.contentType.name,
+            'hasInAppContent': content.hasInAppContent,
+            'plainTextLen': plainTextLength(articleText),
+            'platform': defaultTargetPlatform.name,
+          },
+        ),
+      ),
+    );
     setState(() {
       _showWebView = true;
       _ctaTapped = true;
@@ -2015,9 +2024,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       style: OutlinedButton.styleFrom(
         backgroundColor: Colors.white.withValues(alpha: 0.5),
         foregroundColor: colors.textPrimary,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         side: BorderSide(color: colors.border.withValues(alpha: 0.5)),
         padding: const EdgeInsets.symmetric(horizontal: 12),
       ),
@@ -2089,7 +2096,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         color: colors.backgroundPrimary,
         border: Border(
           top: BorderSide(
-              color: colors.border.withValues(alpha: 0.5), width: 0.5),
+            color: colors.border.withValues(alpha: 0.5),
+            width: 0.5,
+          ),
         ),
         boxShadow: [
           BoxShadow(
@@ -2109,333 +2118,197 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               // boutons icônes à droite); fills width pour video/audio.
               // Article: dynamic "Article complet" / "Lire via Navigateur"
               // with permanent-orange logic. Video/audio: simple external CTA.
-              Flexible(
-                fit: FlexFit.loose,
+              Expanded(
                 child: SizedBox(
                   height: 53,
                   child: isArticle
                       ? ValueListenableBuilder<bool>(
-                    valueListenable: _footerPermanent,
-                    builder: (context, permanent, _) {
-                      final isWebViewMode = _ctaTapped || _isWebViewActive;
-                      // Primary orange ONLY when the user has reached the
-                      // bottom of the article (footer locked permanent) AND
-                      // the WebView hasn't been revealed yet.
-                      final usePrimary = permanent && !isWebViewMode;
+                          valueListenable: _footerPermanent,
+                          builder: (context, permanent, _) {
+                            final isWebViewMode =
+                                _ctaTapped || _isWebViewActive;
+                            // Primary orange ONLY when the user has reached the
+                            // bottom of the article (footer locked permanent) AND
+                            // the WebView hasn't been revealed yet.
+                            final usePrimary = permanent && !isWebViewMode;
 
-                      final label = isWebViewMode
-                          ? 'Lire via Navigateur'
-                          : 'Article complet';
-                      final showLogo = !isWebViewMode;
-                      final iconData = isWebViewMode
-                          ? PhosphorIcons.arrowUpRight(
-                              PhosphorIconsStyle.regular)
-                          : PhosphorIcons.arrowDown(
-                              PhosphorIconsStyle.regular);
+                            final label = isWebViewMode
+                                ? 'Lire via Navigateur'
+                                : 'Lire sur ${content.source.name}';
+                            final showLogo = !isWebViewMode;
+                            final iconData = isWebViewMode
+                                ? PhosphorIcons.arrowUpRight(
+                                    PhosphorIconsStyle.regular,
+                                  )
+                                : PhosphorIcons.arrowDown(
+                                    PhosphorIconsStyle.regular,
+                                  );
 
-                      final children = <Widget>[
-                        if (showLogo) ...[
-                          SourceLogoAvatar(
-                            source: content.source,
-                            size: 28,
-                            radius: 8,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        Flexible(
-                          child: Text(
-                            label,
-                            style: textTheme.labelMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: usePrimary
-                                  ? Colors.white
-                                  : colors.textPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.left,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          iconData,
-                          size: 16,
-                          color: usePrimary
-                              ? Colors.white.withValues(alpha: 0.8)
-                              : colors.textSecondary,
-                        ),
-                      ];
-
-                      if (usePrimary) {
-                        return AnimatedBuilder(
-                          animation: _ctaPulseController,
-                          builder: (context, child) {
-                            // Subtle pop: 1.0 → 1.04 → 1.0 over 280ms.
-                            final t = _ctaPulseController.value;
-                            final scale = 1.0 + 0.04 * math.sin(t * math.pi);
-                            return Transform.scale(scale: scale, child: child);
-                          },
-                          child: FilledButton(
-                            onPressed: _onReadOnSiteTap,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: colors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                            final children = <Widget>[
+                              if (showLogo) ...[
+                                SourceLogoAvatar(
+                                  source: content.source,
+                                  size: 28,
+                                  radius: 8,
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  style: textTheme.labelMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: usePrimary
+                                        ? Colors.white
+                                        : colors.textPrimary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.left,
+                                ),
                               ),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: children,
-                            ),
-                          ),
-                        );
-                      }
+                              const SizedBox(width: 4),
+                              Icon(
+                                iconData,
+                                size: 16,
+                                color: usePrimary
+                                    ? Colors.white.withValues(alpha: 0.8)
+                                    : colors.textSecondary,
+                              ),
+                            ];
 
-                      return OutlinedButton(
-                        onPressed: _onReadOnSiteTap,
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor:
-                              Colors.white.withValues(alpha: 0.5),
-                          foregroundColor: colors.textPrimary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          side: BorderSide(
-                              color: colors.border.withValues(alpha: 0.5)),
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                        child: Row(children: children),
-                      );
-                    },
-                  )
+                            if (usePrimary) {
+                              return AnimatedBuilder(
+                                animation: _ctaPulseController,
+                                builder: (context, child) {
+                                  // Subtle pop: 1.0 → 1.04 → 1.0 over 280ms.
+                                  final t = _ctaPulseController.value;
+                                  final scale =
+                                      1.0 + 0.04 * math.sin(t * math.pi);
+                                  return Transform.scale(
+                                    scale: scale,
+                                    child: child,
+                                  );
+                                },
+                                child: FilledButton(
+                                  onPressed: _onReadOnSiteTap,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: colors.primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: children,
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return OutlinedButton(
+                              onPressed: _onReadOnSiteTap,
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: Colors.white.withValues(
+                                  alpha: 0.5,
+                                ),
+                                foregroundColor: colors.textPrimary,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                side: BorderSide(
+                                  color: colors.border.withValues(alpha: 0.5),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                              ),
+                              child: Row(children: children),
+                            );
+                          },
+                        )
                       : _buildExternalCtaButton(context, content),
                 ),
               ),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-              if (isArticle)
-                // Autres points de vue / Retour à l'article
-                ValueListenableBuilder<bool>(
-                  valueListenable: _atPerspectivesSection,
-                builder: (context, atPersp, _) {
-                  if (atPersp) {
-                    return Tooltip(
-                      message: 'Retour à l\'article',
-                      child: IconButton(
-                        style: iconButtonStyle,
-                        onPressed: () {
-                          HapticFeedback.lightImpact();
-                          _suppressPerspectivesCheck = true;
-                          _atPerspectivesSection.value = false;
-                          _showStickyPerspectivesHeader.value = false;
-                          // Si la webview scroll-to-site est active, le
-                          // subtree article a été démonté (cf.
-                          // _articleLayerMounted=false) et _scrollController
-                          // n'a plus de clients → l'animateTo serait no-op.
-                          // Désactiver la webview, remonter l'article puis
-                          // scroller au top.
-                          if (_isWebViewActive) {
-                            setState(() {
-                              _isWebViewActive = false;
-                              _articleLayerMounted = true;
-                              _ctaTapped = false;
-                            });
-                            _articleLayerUnmountTimer?.cancel();
-                            _animateHeaderTo(0.0);
-                            _animateFooterTo(0.0);
-                          }
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!mounted) return;
-                            final ScrollController activeController =
-                                _scrollController.hasClients
-                                    ? _scrollController
-                                    : _inAppScrollController;
-                            if (activeController.hasClients) {
-                              activeController.animateTo(
-                                0,
-                                duration: const Duration(milliseconds: 400),
-                                curve: Curves.easeInOut,
-                              );
-                            }
-                          });
-                          Future.delayed(const Duration(milliseconds: 450), () {
-                            if (mounted) _suppressPerspectivesCheck = false;
-                          });
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Sauvegarder (long-press → collection picker)
+                  Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      GestureDetector(
+                        onLongPress: () {
+                          HapticFeedback.mediumImpact();
+                          CollectionPickerSheet.show(
+                            context,
+                            content.id,
+                            onAddNote: () => _openNoteSheet(),
+                          );
                         },
-                        icon: SizedBox(
-                          width: 32,
-                          height: 32,
-                          child: Stack(
-                            children: [
-                              Center(
-                                child: Icon(
-                                  PhosphorIcons.newspaper(
-                                      PhosphorIconsStyle.regular),
-                                  size: 28,
-                                  color: colors.textSecondary,
-                                ),
-                              ),
-                              Positioned(
-                                right: 0,
-                                bottom: 0,
-                                child: Stack(
-                                  children: [
-                                    Text(
-                                      String.fromCharCode(PhosphorIcons.arrowUp(
-                                              PhosphorIconsStyle.bold)
-                                          .codePoint),
-                                      style: TextStyle(
-                                        fontFamily: PhosphorIcons.arrowUp(
-                                                PhosphorIconsStyle.bold)
-                                            .fontFamily,
-                                        package: PhosphorIcons.arrowUp(
-                                                PhosphorIconsStyle.bold)
-                                            .fontPackage,
-                                        fontSize: 8,
-                                        height: 1.0,
-                                        foreground: Paint()
-                                          ..style = PaintingStyle.stroke
-                                          ..strokeWidth = 4.0
-                                          ..strokeJoin = StrokeJoin.round
-                                          ..strokeCap = StrokeCap.round
-                                          ..color = colors.backgroundPrimary,
-                                      ),
+                        child: ScaleTransition(
+                          scale: _bookmarkScaleAnimation,
+                          child: IconButton(
+                            style: iconButtonStyle.copyWith(
+                              backgroundColor: content.isSaved
+                                  ? WidgetStatePropertyAll(colors.primary)
+                                  : null,
+                            ),
+                            onPressed: _toggleBookmark,
+                            icon: Icon(
+                              content.isSaved
+                                  ? PhosphorIcons.bookmarkSimple(
+                                      PhosphorIconsStyle.fill,
+                                    )
+                                  : PhosphorIcons.bookmarkSimple(
+                                      PhosphorIconsStyle.regular,
                                     ),
-                                    Icon(
-                                      PhosphorIcons.arrowUp(
-                                          PhosphorIconsStyle.bold),
-                                      size: 8,
-                                      color: colors.textSecondary.withValues(alpha: 0.5),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                              size: 28,
+                              color: content.isSaved
+                                  ? Colors.white
+                                  : colors.textSecondary,
+                            ),
+                            tooltip: 'Sauvegarder',
                           ),
                         ),
                       ),
-                    );
-                  }
-                  final perspectivesEmpty = !_perspectivesLoading &&
-                      _perspectivesResponse != null &&
-                      _perspectivesResponse!.perspectives.isEmpty;
-                  return _WinkingEyeButton(
-                    style: iconButtonStyle,
-                    iconColor: perspectivesEmpty
-                        ? colors.textSecondary.withValues(alpha: 0.35)
-                        : colors.textSecondary,
-                    onTap: perspectivesEmpty
-                        ? null
-                        : () {
-                            HapticFeedback.lightImpact();
-                            _suppressPerspectivesCheck = true;
-                            // Force immediate switch to "Retour à l'article"
-                            // state so the footer reflects the user intent
-                            // without waiting for the scroll-driven check
-                            // (AnimatedSize expansion + scroll animation
-                            // would otherwise race for ~600ms).
-                            _atPerspectivesSection.value = true;
-                            setState(() => _perspectivesExpanded = true);
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (!mounted) return;
-                              final ctx =
-                                  _perspectivesDividerKey.currentContext;
-                              if (ctx != null) {
-                                Scrollable.ensureVisible(
-                                  ctx,
-                                  alignment: 0.0,
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOut,
-                                );
-                                // Re-trigger scroll after AnimatedSize expands
-                                // to handle maxScrollExtent changes.
-                                Future.delayed(
-                                    const Duration(milliseconds: 250), () {
-                                  if (!mounted) return;
-                                  final currentCtx =
-                                      _perspectivesDividerKey.currentContext;
-                                  if (currentCtx != null) {
-                                    Scrollable.ensureVisible(
-                                      currentCtx,
-                                      alignment: 0.0,
-                                      duration:
-                                          const Duration(milliseconds: 250),
-                                      curve: Curves.easeOut,
-                                    );
-                                  }
-                                });
-                              } else {
-                                _showPerspectives(context);
-                              }
-                              Future.delayed(
-                                  const Duration(milliseconds: 550), () {
-                                if (mounted) _suppressPerspectivesCheck = false;
-                              });
-                            });
-                          },
-                  );
-                },
-                ),
+                      if (_showSaveNudge)
+                        const Positioned(
+                          bottom: 50,
+                          right: 0,
+                          child: FabNudgeBubble(
+                            text:
+                                'Sauvegarde cet article pour valider '
+                                'ton étape.',
+                          ),
+                        ),
+                    ],
+                  ),
 
-              // Sauvegarder (long-press → collection picker)
-              GestureDetector(
-                onLongPress: () {
-                  HapticFeedback.mediumImpact();
-                  CollectionPickerSheet.show(
-                    context,
-                    content.id,
-                    onAddNote: () => _openNoteSheet(),
-                  );
-                },
-                child: ScaleTransition(
-                  scale: _bookmarkScaleAnimation,
-                  child: IconButton(
-                    style: iconButtonStyle.copyWith(
-                      backgroundColor: content.isSaved
-                          ? WidgetStatePropertyAll(colors.primary)
-                          : null,
+                  // 🌻 Recommander
+                  ScaleTransition(
+                    scale: _likeScaleAnimation,
+                    child: IconButton(
+                      style: iconButtonStyle.copyWith(
+                        backgroundColor: content.isLiked
+                            ? WidgetStatePropertyAll(colors.primary)
+                            : null,
+                      ),
+                      onPressed: _toggleLike,
+                      icon: SunflowerIcon(
+                        isActive: content.isLiked,
+                        size: 26,
+                        inactiveColor: colors.textSecondary,
+                      ),
+                      tooltip: 'Recommander',
                     ),
-                    onPressed: _toggleBookmark,
-                    icon: Icon(
-                      content.isSaved
-                          ? PhosphorIcons.bookmarkSimple(
-                              PhosphorIconsStyle.fill)
-                          : PhosphorIcons.bookmarkSimple(
-                              PhosphorIconsStyle.regular),
-                      size: 28,
-                      color:
-                          content.isSaved ? Colors.white : colors.textSecondary,
-                    ),
-                    tooltip: 'Sauvegarder',
                   ),
-                ),
-              ),
-
-              // 🌻 Recommander
-              ScaleTransition(
-                scale: _likeScaleAnimation,
-                child: IconButton(
-                  style: iconButtonStyle.copyWith(
-                    backgroundColor: content.isLiked
-                        ? WidgetStatePropertyAll(colors.primary)
-                        : null,
-                  ),
-                  onPressed: _toggleLike,
-                  icon: SunflowerIcon(
-                    isActive: content.isLiked,
-                    size: 26,
-                    inactiveColor: colors.textSecondary,
-                  ),
-                  tooltip: 'Recommander',
-                ),
-              ),
-                  ],
-                ),
+                ],
               ),
             ],
           ),
@@ -2475,7 +2348,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ? Container(
                       key: const ValueKey('nudge_visible'),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFFF8E1).withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(16),
@@ -2496,9 +2371,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         ),
                       ),
                     )
-                  : const SizedBox.shrink(
-                      key: ValueKey('nudge_hidden'),
-                    ),
+                  : const SizedBox.shrink(key: ValueKey('nudge_hidden')),
             ),
           ),
           footerContent,
@@ -2510,6 +2383,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Widget _buildHeader(BuildContext context, Content content) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+
+    // Live follow state — relies on the unified 4-state interests provider so
+    // the action reflects an optimistic toggle from anywhere in the app.
+    final sourcesState = ref.watch(userSourcesStateProvider).valueOrNull;
+    final liveState = sourcesState?.stateOf(content.source.id);
+    // Fallback to the article payload before the provider has loaded — avoids
+    // a flash of the "Suivre +" chip on cold open when the source is already
+    // followed server-side.
+    final InterestState effectiveState =
+        liveState ??
+        (content.isFollowedSource
+            ? InterestState.followed
+            : InterestState.unfollowed);
+
+    // Tous les sujets + entités regroupés en une seule balise « X sujets »
+    // (B1) — fini la 2e ligne de chips au-dessus du titre.
+    final subjectCount = content.topics.length + content.entities.length;
 
     // ColoredBox fills the status bar area; SafeArea pushes content below it
     final headerContent = ColoredBox(
@@ -2524,8 +2414,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             right: FacteurSpacing.space2,
           ),
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: FacteurSpacing.space2),
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space2,
+            ),
             child: Row(
               children: [
                 // Discreet Back Button (reduced icon, maintained hitbox)
@@ -2537,27 +2428,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     size: 16,
                     color: colors.textSecondary,
                   ),
-                  onPressed: () => context.pop(_content),
+                  onPressed: _isWebViewActive
+                      ? _exitWebViewMode
+                      : () => context.pop(_content),
                 ),
                 const SizedBox(width: 4),
 
-                // Source logo + name + gear: tappable → filter feed by source
+                // CTA source unique : logo + nom + étoile (indicateur) + heure,
+                // le tout tappable → ouvre directement la modal source (plus de
+                // roue dentée, plus de filtre feed ; le suivi / favori se font
+                // dans la modal). Balise « X sujets » séparée à droite.
                 Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _SourceBadgeNudge(
+                  child: _SourceBadgeNudge(
+                    child: Row(
+                      children: [
+                        Flexible(
                           child: GestureDetector(
-                            onTap: () {
-                              ref
-                                  .read(feedProvider.notifier)
-                                  .setSource(content.source.id);
-                              ref
-                                  .read(feedScrollTriggerProvider.notifier)
-                                  .state++;
-                              context.pop(_content);
-                            },
-                            onLongPress: () => TopicChip.showArticleSheet(
+                            onTap: () => TopicChip.showArticleSheet(
                               context,
                               content,
                               initialSection: ArticleSheetSection.source,
@@ -2588,14 +2475,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                               child: Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2),
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
                                                 decoration: BoxDecoration(
                                                   color: Color.lerp(
-                                                      colors
-                                                          .backgroundSecondary,
-                                                      Colors.black,
-                                                      0.003)!,
+                                                    colors.backgroundSecondary,
+                                                    Colors.black,
+                                                    0.003,
+                                                  )!,
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
@@ -2603,9 +2491,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                                   content.source.name,
                                                   style: textTheme.labelMedium
                                                       ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: colors.textPrimary,
-                                                  ),
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        color:
+                                                            colors.textPrimary,
+                                                      ),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -2613,18 +2503,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                               ),
                                             ),
                                           ),
-                                          // Bias dot
-                                          if (content.source.biasStance !=
-                                              'unknown') ...[
-                                            const SizedBox(width: 6),
-                                            Container(
-                                              width: 7,
-                                              height: 7,
-                                              decoration: BoxDecoration(
-                                                color: content.source
-                                                    .getBiasColor(),
-                                                shape: BoxShape.circle,
-                                              ),
+                                          // Étoile = indicateur non-cliquable
+                                          // accolé au nom (favori = pleine
+                                          // primary, suivi = creuse tertiary,
+                                          // non-suivi = rien). Le tap est géré
+                                          // par le GestureDetector parent →
+                                          // ouvre la modal source (le suivi /
+                                          // favori s'y font désormais).
+                                          if (effectiveState ==
+                                                  InterestState.favorite ||
+                                              effectiveState ==
+                                                  InterestState.followed) ...[
+                                            const SizedBox(width: 5),
+                                            Icon(
+                                              effectiveState ==
+                                                      InterestState.favorite
+                                                  ? PhosphorIcons.star(
+                                                      PhosphorIconsStyle.fill,
+                                                    )
+                                                  : PhosphorIcons.star(
+                                                      PhosphorIconsStyle.regular,
+                                                    ),
+                                              size: 14,
+                                              color: effectiveState ==
+                                                      InterestState.favorite
+                                                  ? colors.primary
+                                                  : colors.textTertiary,
                                             ),
                                           ],
                                           // Editorial badge (digest articles)
@@ -2646,18 +2550,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                             child: InkWell(
                                               onTap: () =>
                                                   TopicChip.showArticleSheet(
-                                                context,
-                                                content,
-                                                initialSection:
-                                                    ArticleSheetSection.source,
-                                              ),
+                                                    context,
+                                                    content,
+                                                    initialSection:
+                                                        ArticleSheetSection
+                                                            .source,
+                                                  ),
                                               child: Padding(
-                                                padding:
-                                                    const EdgeInsets.all(3),
+                                                padding: const EdgeInsets.all(
+                                                  3,
+                                                ),
                                                 child: Icon(
                                                   PhosphorIcons.gear(
-                                                      PhosphorIconsStyle
-                                                          .regular),
+                                                    PhosphorIconsStyle.regular,
+                                                  ),
                                                   size: 11,
                                                   color: colors.textTertiary,
                                                 ),
@@ -2672,21 +2578,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                         children: [
                                           Icon(
                                             PhosphorIcons.clock(
-                                                PhosphorIconsStyle.regular),
+                                              PhosphorIconsStyle.regular,
+                                            ),
                                             size: 11,
                                             color: colors.textTertiary,
                                           ),
                                           const SizedBox(width: 3),
                                           Text(
                                             timeago
-                                                .format(content.publishedAt,
-                                                    locale: 'fr_short')
+                                                .format(
+                                                  content.publishedAt,
+                                                  locale: 'fr_short',
+                                                )
                                                 .replaceAll('il y a ', ''),
-                                            style:
-                                                textTheme.bodySmall?.copyWith(
-                                              color: colors.textTertiary,
-                                              fontSize: 11,
-                                            ),
+                                            style: textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: colors.textTertiary,
+                                                  fontSize: 11,
+                                                ),
                                           ),
                                         ],
                                       ),
@@ -2696,9 +2605,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               ],
                             ),
                           ),
-                        ), // _SourceBadgeNudge
-                      ),
-                    ],
+                        ),
+                        // B1 : tous les sujets regroupés en une balise compacte,
+                        // après le CTA source unique (logo + nom + étoile).
+                        if (subjectCount > 0) ...[
+                          const SizedBox(width: 6),
+                          _SubjectsCountChip(
+                            count: subjectCount,
+                            onTap: () =>
+                                TopicChip.showArticleSheet(context, content),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
 
@@ -2743,144 +2662,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Returns individual entity chip widgets (no wrapper) for use in Wrap layouts.
-  /// Tapping any chip opens the full entities sheet.
-  List<Widget> _buildArticleTagWidgets(BuildContext context, Content content) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final topicsAsync = ref.watch(customTopicsProvider);
-    final followedNames = (topicsAsync.valueOrNull ?? [])
-        .where((t) => t.canonicalName != null)
-        .map((t) => t.canonicalName!.toLowerCase())
-        .toSet();
-
-    // Dense layout: 4 tags max across macro-theme + topic + entities.
-    // Remaining entities are grouped into a "+X" overflow chip.
-    const maxTotalVisible = 6;
-
-    final hasMacroTheme = content.topics.isNotEmpty &&
-        getTopicMacroTheme(content.topics.first) != null;
-    final hasTopic = content.topics.isNotEmpty;
-    final reservedForTopics = (hasMacroTheme ? 1 : 0) + (hasTopic ? 1 : 0);
-    final entities = content.entities;
-    final maxEntitiesVisible =
-        (maxTotalVisible - reservedForTopics).clamp(0, entities.length);
-    final visible = entities.take(maxEntitiesVisible).toList();
-    final overflow = entities.length - maxEntitiesVisible;
-
-    return [
-      // Macro-theme chip (thème du sujet, ex: Cinéma)
-      if (hasMacroTheme)
-        Builder(builder: (context) {
-          final macroTheme = getTopicMacroTheme(content.topics.first)!;
-          final emoji = getMacroThemeEmoji(macroTheme);
-          return GestureDetector(
-            onTap: () => TopicChip.showArticleSheet(context, content,
-                initialSection: ArticleSheetSection.topic),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.textTertiary.withValues(alpha: 0.20),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                '${emoji.isNotEmpty ? '$emoji ' : ''}$macroTheme',
-                style: textTheme.labelSmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          );
-        }),
-      // Topic chip
-      if (hasTopic)
-        GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.topic),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              getTopicLabel(content.topics.first),
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+  Widget _buildTagsRow(BuildContext context, Content content) {
+    final items = [
+      for (final slug in content.topics)
+        ArticleTagItem(
+          label: getTopicLabel(slug),
+          onTap: () => TopicChip.showArticleSheet(context, content),
         ),
-      // Entity chips
-      ...visible.map((entity) {
-        final isFollowed = followedNames.contains(entity.text.toLowerCase());
-        return GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.entities),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isFollowed
-                  ? const Color(0xFFE07A5F).withValues(alpha: 0.15)
-                  : colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 100),
-                  child: Text(
-                    entity.text,
-                    style: textTheme.labelSmall?.copyWith(
-                      color: isFollowed
-                          ? const Color(0xFFE07A5F)
-                          : colors.textTertiary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (isFollowed) ...[
-                  const SizedBox(width: 3),
-                  Icon(
-                    PhosphorIcons.check(PhosphorIconsStyle.bold),
-                    size: 10,
-                    color: const Color(0xFFE07A5F),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      }),
-      if (overflow > 0)
-        GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content,
-              initialSection: ArticleSheetSection.entities),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              '+$overflow',
-              style: textTheme.labelSmall?.copyWith(
-                color: colors.textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+      for (final entity in content.entities)
+        ArticleTagItem(
+          label: entity.text,
+          onTap: () => TopicChip.showArticleSheet(
+            context,
+            content,
+            initialSection: ArticleSheetSection.entities,
           ),
         ),
     ];
+    return ArticleTagsRow(
+      items: items,
+      onOverflowTap: () => TopicChip.showArticleSheet(
+        context,
+        content,
+        initialSection: ArticleSheetSection.entities,
+      ),
+    );
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
@@ -2896,8 +2702,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Colors.grey.shade400,
           colors.primary,
           clamped,
-        )!
-            .withValues(alpha: alpha);
+        )!.withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -2916,116 +2721,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Renders the sticky version of the perspectives section header (icon +
-  /// title, optional quality badge, interactive bias bar).  Shown as a
-  /// [Positioned] overlay below the app header when the inline section header
-  /// has scrolled off-screen.
-  Widget _buildPerspectivesStickyHeader(
-      BuildContext context, PerspectivesResponse response) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-
-    // Compute merged 3-group distribution from the raw bias distribution.
-    final dist = response.biasDistribution;
-    final merged = {
-      'gauche': (dist['left'] ?? 0) + (dist['center-left'] ?? 0),
-      'centre': dist['center'] ?? 0,
-      'droite': (dist['center-right'] ?? 0) + (dist['right'] ?? 0),
-    };
-
-    final selected = _perspectivesSelectedSegments;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.backgroundPrimary,
-        border: Border(
-          bottom: BorderSide(color: colors.border, width: 1),
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Icon + title row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                color: colors.primary,
-                size: 22,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Couverture médiatique',
-                  style: textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colors.textPrimary,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (response.comparisonQuality == 'low')
-            PerspectivesWarningBadge(colors: colors, textTheme: textTheme),
-          const SizedBox(height: FacteurSpacing.space2),
-          PerspectivesBiasBar(
-            colors: colors,
-            mergedDistribution: merged,
-            sourceBiasStance: response.sourceBiasStance,
-            sourceName: _content?.source.name ?? '',
-            selectedSegments: selected,
-            onSegmentTap: _onPerspectivesSegmentTap,
-          ),
-          SizedBox(
-            height: selected.isNotEmpty ? 28 : 4,
-            child: selected.isNotEmpty
-                ? Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Align(
-                      alignment: Alignment.topRight,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _perspectivesSelectedSegments = {});
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) _checkAtPerspectivesSection();
-                          });
-                        },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Tout afficher',
-                              style: textTheme.labelSmall?.copyWith(
-                                color: colors.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              PhosphorIcons.x(PhosphorIconsStyle.bold),
-                              size: 12,
-                              color: colors.primary,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                : null,
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Inline "Article complet" button shown at the end of the body when the
   /// article is in partial mode — replaces the dismissible nudge for partial
   /// articles since reading-on-site is the only path to the full content.
-  Widget _buildPartialArticleInlineButton(BuildContext context, Content content) {
+  Widget _buildPartialArticleInlineButton(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     return Padding(
@@ -3049,12 +2748,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SourceLogoAvatar(
-                source: content.source,
-                size: 24,
-                radius: 6,
-              ),
-              const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   'Article complet',
@@ -3133,9 +2826,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     return Stack(
       children: [
-        // LAYER 0: WebView — fixed in viewport, always rendered.
-        // Painted first so it appears visually behind the scrollable content.
-        Positioned.fill(
+        // LAYER 0: WebView — pinned below the (now-fixed) header, always
+        // rendered. Painted first so it appears visually behind the
+        // scrollable content.
+        Positioned(
+          top: headerHeight,
+          left: 0,
+          right: 0,
+          bottom: 0,
           child: _buildWebViewLayer(),
         ),
 
@@ -3150,46 +2848,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // of the scrolling WebView.
         if (_articleLayerMounted)
           Positioned.fill(
-          child: AnimatedOpacity(
-            opacity: _isWebViewActive ? 0.0 : 1.0,
-            duration: const Duration(milliseconds: 300),
-            child: IgnorePointer(
-              ignoring: _isWebViewActive,
-              child: ColoredBox(
-                color: _isWebViewActive
-                    ? const Color(0x00000000)
-                    : colors.backgroundPrimary,
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  physics: _isWebViewActive
-                      ? const NeverScrollableScrollPhysics()
-                      : const ClampingScrollPhysics(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Spacer: scrolls with content, initially behind the header overlay
-                      SizedBox(height: headerHeight),
-                      // ZONE 1: Article content — opaque background hides WebView.
-                      Container(
-                        key: _articleKey,
-                        color: colors.backgroundPrimary,
-                        child: ArticleReaderWidget(
-                          htmlContent: content.htmlContent,
-                          description: content.description,
-                          title: content.title,
-                          shrinkWrap: true,
-                          onLinkTap: _animateAndLaunch,
-                          bodyPlaceholder: !_contentResolved
-                              ? _buildArticleBodySkeleton(colors)
-                              : null,
-                          header: Column(
+            child: AnimatedOpacity(
+              opacity: _isWebViewActive ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 300),
+              child: IgnorePointer(
+                ignoring: _isWebViewActive,
+                child: ColoredBox(
+                  color: _isWebViewActive
+                      ? const Color(0x00000000)
+                      : colors.backgroundPrimary,
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    physics: _isWebViewActive
+                        ? const NeverScrollableScrollPhysics()
+                        : const ClampingScrollPhysics(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Spacer: scrolls with content, initially behind the header overlay
+                        SizedBox(height: headerHeight),
+                        // ZONE 1a: Top header (thumbnail / tags / title / reading-time)
+                        Container(
+                          color: colors.backgroundPrimary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: FacteurSpacing.space4,
+                          ),
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: FacteurSpacing.space2),
                               if (content.thumbnailUrl != null) ...[
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(
-                                      FacteurRadius.large),
+                                    FacteurRadius.large,
+                                  ),
                                   child: FacteurThumbnail(
                                     imageUrl: content.thumbnailUrl,
                                     aspectRatio: 16 / 9,
@@ -3197,38 +2889,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space3),
                               ],
-                              if (content.entities.isNotEmpty || isPartial) ...[
-                                _FadeScrollRow(
-                                  children: [
-                                    if (isPartial)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: colors.warning
-                                              .withValues(alpha: 0.12),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          'Aperçu — contenu partiel',
-                                          style: textTheme.labelSmall?.copyWith(
-                                            color: colors.warning,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    if (content.entities.isNotEmpty)
-                                      ..._buildArticleTagWidgets(
-                                          context, content),
-                                  ],
-                                ),
+                              if (content.entities.isNotEmpty ||
+                                  content.topics.isNotEmpty) ...[
+                                _buildTagsRow(context, content),
                                 const SizedBox(height: FacteurSpacing.space4),
                               ],
-                              Text(
-                                content.title,
-                                style: textTheme.displayLarge
-                                    ?.copyWith(fontSize: 24),
+                              PivotWashTitle(
+                                key: ValueKey(
+                                  'article-title-wash-'
+                                  '$_showPivot-'
+                                  '${_perspectivesResponse?.referencePivot?.start}-'
+                                  '${_perspectivesResponse?.referencePivot?.end}',
+                                ),
+                                title: content.title,
+                                pivot: _showPivot
+                                    ? _perspectivesResponse?.referencePivot
+                                    : null,
+                                textStyle: textTheme.displayLarge?.copyWith(
+                                  fontSize: 24,
+                                ),
+                                animate: _showPivot,
                               ),
                               const SizedBox(height: FacteurSpacing.space2),
                               if (readingTime != null) ...[
@@ -3236,7 +2916,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                   children: [
                                     Icon(
                                       PhosphorIcons.timer(
-                                          PhosphorIconsStyle.regular),
+                                        PhosphorIconsStyle.regular,
+                                      ),
                                       size: 14,
                                       color: colors.textTertiary,
                                     ),
@@ -3244,7 +2925,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                     Text(
                                       readingTime,
                                       style: textTheme.bodySmall?.copyWith(
-                                          color: colors.textTertiary),
+                                        color: colors.textTertiary,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -3253,100 +2935,75 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               const SizedBox(height: FacteurSpacing.space4),
                             ],
                           ),
-                          footer: (_perspectivesResponse != null ||
-                                  _perspectivesLoading)
-                              ? null
-                              : SizedBox(
-                                  height:
-                                      _kFooterContentHeight + bottomInset),
                         ),
-                      ),
 
-                      if (isPartial && _contentResolved)
-                        _buildPartialArticleInlineButton(context, content),
-
-                      // ZONE 2: Inline perspectives (articles only)
-                      if (_perspectivesResponse != null ||
-                          _perspectivesLoading) ...[
+                        // ZONE 2: Article body — _articleKey scopes scroll-bridge
+                        // measurement to the body, excluding header + perspectives.
                         Container(
-                          key: _perspectivesDividerKey,
+                          key: _articleKey,
                           color: colors.backgroundPrimary,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: FacteurSpacing.space4,
-                            vertical: FacteurSpacing.space4,
+                          child: ArticleReaderWidget(
+                            htmlContent: content.htmlContent,
+                            description: content.description,
+                            title: content.title,
+                            shrinkWrap: true,
+                            onLinkTap: _animateAndLaunch,
+                            bodyPlaceholder: !_contentResolved
+                                ? _buildArticleBodySkeleton(colors)
+                                : null,
+                            footer: SizedBox(
+                              height: _kFooterContentHeight + bottomInset,
+                            ),
                           ),
-                          child: Divider(color: colors.border, height: 1),
                         ),
-                        Container(
-                          color: colors.backgroundPrimary,
-                          child: _perspectivesLoading &&
-                                  _perspectivesResponse == null
-                              ? const Center(child: CircularProgressIndicator())
-                              : _perspectivesResponse != null
-                                  ? PerspectivesInlineSection(
-                                      key: _perspectivesKey,
-                                      perspectives: _perspectivesResponse!
-                                          .perspectives
-                                          .map(
-                                            (PerspectiveData p) => Perspective(
-                                              title: p.title,
-                                              url: p.url,
-                                              sourceName: p.sourceName,
-                                              sourceDomain: p.sourceDomain,
-                                              biasStance: p.biasStance,
-                                              publishedAt: p.publishedAt,
-                                            ),
-                                          )
-                                          .toList(),
-                                      biasDistribution: _perspectivesResponse!
-                                          .biasDistribution,
-                                      keywords: _perspectivesResponse!.keywords,
-                                      sourceBiasStance: _perspectivesResponse!
-                                          .sourceBiasStance,
-                                      sourceName: _content?.source.name ?? '',
-                                      contentId: widget.contentId,
-                                      comparisonQuality: _perspectivesResponse!
-                                          .comparisonQuality,
-                                      externalSelectedSegments:
-                                          _perspectivesSelectedSegments,
-                                      onSegmentTap: _onPerspectivesSegmentTap,
-                                      onClearSegments: () {
-                                        setState(() =>
-                                            _perspectivesSelectedSegments = {});
-                                        WidgetsBinding.instance
-                                            .addPostFrameCallback((_) {
-                                          if (mounted) {
-                                            _checkAtPerspectivesSection(
-                                                force: true);
-                                          }
-                                        });
-                                      },
-                                      analysisState: _perspectivesAnalysisState,
-                                      analysisText: _perspectivesAnalysisText,
-                                      onRequestAnalysis:
-                                          _requestPerspectivesAnalysis,
-                                      analysisZoneKey: _analysisZoneKey,
-                                      firstCardKey: _firstPerspectiveCardKey,
-                                      isExpanded: _perspectivesExpanded,
-                                      onToggle: _onPerspectivesToggle,
-                                    )
-                                  : const SizedBox.shrink(),
-                        ),
-                        SizedBox(
-                            height: _kFooterContentHeight + bottomInset),
-                      ],
 
-                      // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
-                      // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
-                      if (_ctaTapped)
-                        SizedBox(key: _bridgeKey, height: availableHeight),
-                    ],
+                        if (isPartial && _contentResolved)
+                          _buildPartialArticleInlineButton(context),
+
+                        // ZONE 2b: Perspectives section, after the article body
+                        // and its optional "Article complet" CTA. Bande frostée
+                        // encastrée (hairline fine + teinte quasi-invisible) ;
+                        // large respiration au-dessus pour détacher du texte.
+                        if (_showPerspectivesBand) ...[
+                          const SizedBox(height: FacteurSpacing.space8),
+                          Container(
+                            color: colors.backgroundPrimary,
+                            child: PerspectivesInlineSection(
+                              key: _perspectivesKey,
+                              status: _perspectivesStatus,
+                              perspectives: _inlinePerspectives,
+                              biasDistribution:
+                                  _perspectivesResponse?.biasDistribution ??
+                                      const {},
+                              keywords:
+                                  _perspectivesResponse?.keywords ?? const [],
+                              sourceBiasStance:
+                                  _perspectivesResponse?.sourceBiasStance ??
+                                      'unknown',
+                              sourceName: _content?.source.name ?? '',
+                              contentId: widget.contentId,
+                              comparisonQuality:
+                                  _perspectivesResponse?.comparisonQuality ??
+                                      'low',
+                              divergenceLevel:
+                                  _perspectivesResponse?.divergenceLevel,
+                              onOpenAnalysis: _openPerspectivesAnalysis,
+                            ),
+                          ),
+                          const SizedBox(height: FacteurSpacing.space4),
+                        ],
+
+                        // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
+                        // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
+                        if (_ctaTapped)
+                          SizedBox(key: _bridgeKey, height: availableHeight),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -3366,12 +3023,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return WebViewWidget(
       controller: _webViewController!,
       gestureRecognizers: _isWebViewActive
-          ? {
-              Factory<VerticalDragGestureRecognizer>(
-                  () => VerticalDragGestureRecognizer()),
-              Factory<HorizontalDragGestureRecognizer>(
-                  () => HorizontalDragGestureRecognizer()),
-            }
+          ? swipeBackCompatiblePlatformViewGestureRecognizers()
           : const {},
     );
   }
@@ -3389,52 +3041,210 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
-    final descriptionText =
-        rawDescription != null ? stripHtml(rawDescription).trim() : null;
+    final descriptionText = rawDescription != null
+        ? stripHtml(rawDescription).trim()
+        : null;
 
-    return LayoutBuilder(builder: (context, constraints) {
-      final maxHeight = constraints.maxHeight;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxHeight = constraints.maxHeight;
 
-      // --- Shorts: Column layout (no overlay on iframe → all buttons clickable) ---
-      if (isShort) {
-        // Reserve ~160px below the player for metadata (scrollable, same
-        // pattern as regular videos). FABs float over this Flutter text area
-        // (not an iframe) so they remain clickable.
-        final shortsPlayerHeight =
-            (maxHeight - headerHeight - 140).clamp(200.0, screenWidth * 16 / 9);
+        // --- Shorts: Column layout (no overlay on iframe → all buttons clickable) ---
+        if (isShort) {
+          // Reserve ~160px below the player for metadata (scrollable, same
+          // pattern as regular videos). FABs float over this Flutter text area
+          // (not an iframe) so they remain clickable.
+          final shortsPlayerHeight = (maxHeight - headerHeight - 140).clamp(
+            200.0,
+            screenWidth * 16 / 9,
+          );
+
+          return Column(
+            children: [
+              // Spacer for the pinned header overlay.
+              SizedBox(height: headerHeight),
+
+              // Centered player — bounded height, narrower than screen width
+              SizedBox(
+                height: shortsPlayerHeight,
+                width: screenWidth,
+                child: Center(
+                  child: YouTubePlayerWidget(
+                    videoUrl: content.url,
+                    title: content.title,
+                    aspectRatio: 9 / 16,
+                    onProgressChanged: _onVideoProgressChanged,
+                    onPlayStateChanged: _onVideoPlayStateChanged,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: FacteurSpacing.space3),
+
+              // Scrollable metadata — same design as regular video
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space4,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Video Title
+                      Text(
+                        content.title,
+                        style: textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: FacteurSpacing.space2),
+
+                      // Published date
+                      Text(
+                        timeago.format(content.publishedAt, locale: 'fr_short'),
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: FacteurSpacing.space3),
+
+                      // Channel row: avatar + name + optional theme chip
+                      Row(
+                        children: [
+                          if (content.source.logoUrl != null)
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundImage: CachedNetworkImageProvider(
+                                content.source.logoUrl!,
+                              ),
+                              backgroundColor: colors.surfaceElevated,
+                            )
+                          else
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: colors.surfaceElevated,
+                              child: Icon(
+                                PhosphorIcons.user(PhosphorIconsStyle.regular),
+                                size: 16,
+                                color: colors.textTertiary,
+                              ),
+                            ),
+                          const SizedBox(width: FacteurSpacing.space3),
+                          Expanded(
+                            child: Text(
+                              content.source.name,
+                              style: textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (content.source.theme != null &&
+                              content.source.theme!.isNotEmpty) ...[
+                            const SizedBox(width: FacteurSpacing.space2),
+                            Opacity(
+                              opacity: 0.9,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.primary,
+                                  borderRadius: BorderRadius.circular(
+                                    FacteurRadius.pill,
+                                  ),
+                                ),
+                                child: Text(
+                                  content.source.getThemeLabel(),
+                                  style: textTheme.labelSmall?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+
+                      // Expandable description
+                      if (descriptionText != null &&
+                          descriptionText.isNotEmpty) ...[
+                        const SizedBox(height: FacteurSpacing.space3),
+                        Divider(color: colors.border, height: 1),
+                        const SizedBox(height: FacteurSpacing.space3),
+                        Text(
+                          descriptionText,
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: colors.textSecondary,
+                            height: 1.5,
+                          ),
+                          maxLines: _isDescriptionExpanded ? null : 2,
+                          overflow: _isDescriptionExpanded
+                              ? TextOverflow.visible
+                              : TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: FacteurSpacing.space2),
+                        GestureDetector(
+                          onTap: () {
+                            setState(
+                              () => _isDescriptionExpanded =
+                                  !_isDescriptionExpanded,
+                            );
+                          },
+                          child: Text(
+                            _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
+                            style: textTheme.bodySmall?.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+
+                      // Bottom spacing — clears the persistent footer.
+                      SizedBox(
+                        height:
+                            _kFooterContentHeight +
+                            MediaQuery.of(context).viewPadding.bottom,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+
+        // --- Regular video: Column layout ---
+        final playerHeight = screenWidth * 9 / 16;
 
         return Column(
           children: [
-            // Spacer for header overlay — collapses as header slides off so
-            // the player fills the viewport up to the status bar.
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (_, offset, __) =>
-                  SizedBox(height: headerHeight * (1.0 - offset)),
-            ),
+            // Push below the pinned header overlay.
+            SizedBox(height: headerHeight),
 
-            // Centered player — bounded height, narrower than screen width
+            // Sticky player container
             SizedBox(
-              height: shortsPlayerHeight,
               width: screenWidth,
-              child: Center(
-                child: YouTubePlayerWidget(
-                  videoUrl: content.url,
-                  title: content.title,
-                  aspectRatio: 9 / 16,
-                  onProgressChanged: _onVideoProgressChanged,
-                  onPlayStateChanged: _onVideoPlayStateChanged,
-                ),
+              height: playerHeight,
+              child: YouTubePlayerWidget(
+                videoUrl: content.url,
+                title: content.title,
+                aspectRatio: 16 / 9,
+                onProgressChanged: _onVideoProgressChanged,
+                onPlayStateChanged: _onVideoPlayStateChanged,
               ),
             ),
 
-            const SizedBox(height: FacteurSpacing.space3),
-
-            // Scrollable metadata — same design as regular video
+            // Scrollable metadata below the player
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: FacteurSpacing.space4),
+                padding: const EdgeInsets.all(FacteurSpacing.space4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -3444,7 +3254,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       style: textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
-                      maxLines: 3,
+                      maxLines: 4,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: FacteurSpacing.space2),
@@ -3456,7 +3266,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         color: colors.textSecondary,
                       ),
                     ),
-                    const SizedBox(height: FacteurSpacing.space3),
+                    const SizedBox(height: FacteurSpacing.space4),
 
                     // Channel row: avatar + name + optional theme chip
                     Row(
@@ -3465,7 +3275,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           CircleAvatar(
                             radius: 16,
                             backgroundImage: CachedNetworkImageProvider(
-                                content.source.logoUrl!),
+                              content.source.logoUrl!,
+                            ),
                             backgroundColor: colors.surfaceElevated,
                           )
                         else
@@ -3492,24 +3303,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         if (content.source.theme != null &&
                             content.source.theme!.isNotEmpty) ...[
                           const SizedBox(width: FacteurSpacing.space2),
-                          Opacity(
-                            opacity: 0.9,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.primary,
+                              borderRadius: BorderRadius.circular(
+                                FacteurRadius.pill,
                               ),
-                              decoration: BoxDecoration(
-                                color: colors.primary,
-                                borderRadius:
-                                    BorderRadius.circular(FacteurRadius.pill),
-                              ),
-                              child: Text(
-                                content.source.getThemeLabel(),
-                                style: textTheme.labelSmall?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            ),
+                            child: Text(
+                              content.source.getThemeLabel(),
+                              style: textTheme.labelSmall?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -3520,16 +3329,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     // Expandable description
                     if (descriptionText != null &&
                         descriptionText.isNotEmpty) ...[
-                      const SizedBox(height: FacteurSpacing.space3),
+                      const SizedBox(height: FacteurSpacing.space4),
                       Divider(color: colors.border, height: 1),
-                      const SizedBox(height: FacteurSpacing.space3),
+                      const SizedBox(height: FacteurSpacing.space4),
                       Text(
                         descriptionText,
                         style: textTheme.bodyMedium?.copyWith(
                           color: colors.textSecondary,
                           height: 1.5,
                         ),
-                        maxLines: _isDescriptionExpanded ? null : 2,
+                        maxLines: _isDescriptionExpanded ? null : 3,
                         overflow: _isDescriptionExpanded
                             ? TextOverflow.visible
                             : TextOverflow.ellipsis,
@@ -3537,8 +3346,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       const SizedBox(height: FacteurSpacing.space2),
                       GestureDetector(
                         onTap: () {
-                          setState(() =>
-                              _isDescriptionExpanded = !_isDescriptionExpanded);
+                          setState(
+                            () => _isDescriptionExpanded =
+                                !_isDescriptionExpanded,
+                          );
                         },
                         child: Text(
                           _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
@@ -3552,7 +3363,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                     // Bottom spacing — clears the persistent footer.
                     SizedBox(
-                      height: _kFooterContentHeight +
+                      height:
+                          _kFooterContentHeight +
                           MediaQuery.of(context).viewPadding.bottom,
                     ),
                   ],
@@ -3561,161 +3373,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ),
           ],
         );
-      }
-
-      // --- Regular video: Column layout ---
-      final playerHeight = screenWidth * 9 / 16;
-
-      return Column(
-        children: [
-          // Push below the header overlay — collapses with header slide.
-          ValueListenableBuilder<double>(
-            valueListenable: _headerOffset,
-            builder: (_, offset, __) =>
-                SizedBox(height: headerHeight * (1.0 - offset)),
-          ),
-
-          // Sticky player container
-          SizedBox(
-            width: screenWidth,
-            height: playerHeight,
-            child: YouTubePlayerWidget(
-              videoUrl: content.url,
-              title: content.title,
-              aspectRatio: 16 / 9,
-              onProgressChanged: _onVideoProgressChanged,
-              onPlayStateChanged: _onVideoPlayStateChanged,
-            ),
-          ),
-
-          // Scrollable metadata below the player
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(FacteurSpacing.space4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Video Title
-                  Text(
-                    content.title,
-                    style: textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 4,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: FacteurSpacing.space2),
-
-                  // Published date
-                  Text(
-                    timeago.format(content.publishedAt, locale: 'fr_short'),
-                    style: textTheme.bodySmall?.copyWith(
-                      color: colors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: FacteurSpacing.space4),
-
-                  // Channel row: avatar + name + optional theme chip
-                  Row(
-                    children: [
-                      if (content.source.logoUrl != null)
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundImage: CachedNetworkImageProvider(
-                              content.source.logoUrl!),
-                          backgroundColor: colors.surfaceElevated,
-                        )
-                      else
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor: colors.surfaceElevated,
-                          child: Icon(
-                            PhosphorIcons.user(PhosphorIconsStyle.regular),
-                            size: 16,
-                            color: colors.textTertiary,
-                          ),
-                        ),
-                      const SizedBox(width: FacteurSpacing.space3),
-                      Expanded(
-                        child: Text(
-                          content.source.name,
-                          style: textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (content.source.theme != null &&
-                          content.source.theme!.isNotEmpty) ...[
-                        const SizedBox(width: FacteurSpacing.space2),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colors.primary,
-                            borderRadius:
-                                BorderRadius.circular(FacteurRadius.pill),
-                          ),
-                          child: Text(
-                            content.source.getThemeLabel(),
-                            style: textTheme.labelSmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-
-                  // Expandable description
-                  if (descriptionText != null &&
-                      descriptionText.isNotEmpty) ...[
-                    const SizedBox(height: FacteurSpacing.space4),
-                    Divider(color: colors.border, height: 1),
-                    const SizedBox(height: FacteurSpacing.space4),
-                    Text(
-                      descriptionText,
-                      style: textTheme.bodyMedium?.copyWith(
-                        color: colors.textSecondary,
-                        height: 1.5,
-                      ),
-                      maxLines: _isDescriptionExpanded ? null : 3,
-                      overflow: _isDescriptionExpanded
-                          ? TextOverflow.visible
-                          : TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: FacteurSpacing.space2),
-                    GestureDetector(
-                      onTap: () {
-                        setState(() =>
-                            _isDescriptionExpanded = !_isDescriptionExpanded);
-                      },
-                      child: Text(
-                        _isDescriptionExpanded ? 'Voir moins' : 'Voir plus',
-                        style: textTheme.bodySmall?.copyWith(
-                          color: colors.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  // Bottom spacing — clears the persistent footer.
-                  SizedBox(
-                    height: _kFooterContentHeight +
-                        MediaQuery.of(context).viewPadding.bottom,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }); // LayoutBuilder
+      },
+    ); // LayoutBuilder
   }
 
   Widget _buildInAppContent(BuildContext context, Content content) {
@@ -3750,8 +3409,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           title: content.title,
           shrinkWrap: true,
           onLinkTap: _animateAndLaunch,
-          bodyPlaceholder:
-              !_contentResolved ? _buildArticleBodySkeleton(colors) : null,
+          bodyPlaceholder: !_contentResolved
+              ? _buildArticleBodySkeleton(colors)
+              : null,
         );
 
         return ScrollConfiguration(
@@ -3770,46 +3430,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // ── Top section: thumbnail → chips → title → reading time ─
                 Padding(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: FacteurSpacing.space4),
+                    horizontal: FacteurSpacing.space4,
+                  ),
                   child: Column(
                     spacing: 12,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (content.thumbnailUrl != null)
                         ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(FacteurRadius.large),
+                          borderRadius: BorderRadius.circular(
+                            FacteurRadius.large,
+                          ),
                           child: FacteurThumbnail(
                             imageUrl: content.thumbnailUrl,
                             aspectRatio: 16 / 9,
                           ),
                         ),
-                      if (content.entities.isNotEmpty || isPartial)
-                        _FadeScrollRow(
-                          children: [
-                            if (isPartial)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: colors.warning.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  'Aperçu — contenu partiel',
-                                  style: textTheme.labelSmall?.copyWith(
-                                    color: colors.warning,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            if (content.entities.isNotEmpty)
-                              ..._buildArticleTagWidgets(context, content),
-                          ],
+                      if (content.entities.isNotEmpty ||
+                          content.topics.isNotEmpty)
+                        _buildTagsRow(context, content),
+                      PivotWashTitle(
+                        key: ValueKey(
+                          'article-title-wash-alt-'
+                          '$_showPivot-'
+                          '${_perspectivesResponse?.referencePivot?.start}-'
+                          '${_perspectivesResponse?.referencePivot?.end}',
                         ),
-                      Text(
-                        content.title,
-                        style: textTheme.displayLarge?.copyWith(fontSize: 24),
+                        title: content.title,
+                        pivot: _showPivot
+                            ? _perspectivesResponse?.referencePivot
+                            : null,
+                        textStyle: textTheme.displayLarge?.copyWith(
+                          fontSize: 24,
+                        ),
+                        animate: _showPivot,
                       ),
                       if (readingTime != null)
                         Row(
@@ -3822,8 +3476,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             const SizedBox(width: 4),
                             Text(
                               readingTime,
-                              style: textTheme.bodySmall
-                                  ?.copyWith(color: colors.textTertiary),
+                              style: textTheme.bodySmall?.copyWith(
+                                color: colors.textTertiary,
+                              ),
                             ),
                           ],
                         ),
@@ -3841,12 +3496,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   children: [
                     articleWidget,
                     if (isPartial && _contentResolved)
-                      _buildPartialArticleInlineButton(context, content),
+                      _buildPartialArticleInlineButton(context),
                     if (_showReadOnSiteNudge) ...[
                       const SizedBox(height: FacteurSpacing.space4),
                       Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: FacteurSpacing.space4),
+                          horizontal: FacteurSpacing.space4,
+                        ),
                         child: NudgeInlineBanner(
                           body:
                               "Préférez l'expérience du site original ? Ouvrez l'article dans votre navigateur.",
@@ -3865,62 +3521,46 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
-                // ── Perspectives section ───────────────────────────────────
-                if (_perspectivesResponse != null || _perspectivesLoading) ...[
+                // ── « Pas de recul » (deep reco) ────────────────────────────
+                // Carte d'analyse de fond surfacée tout en bas du reader.
+                // Silencieux tant que deep_pending && reco null (calcul en cours).
+                if (_perspectivesResponse?.deepRecommendation != null &&
+                    !_isExternal) ...[
                   const SizedBox(height: FacteurSpacing.space4),
-                  Padding(
-                    key: _perspectivesDividerKey,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4),
-                    child: Divider(color: colors.border, height: 1),
+                  DeepRecommendationCard(
+                    reco: _perspectivesResponse!.deepRecommendation!,
+                    onTap: () =>
+                        _openDeepReco(_perspectivesResponse!.deepRecommendation!),
+                  ),
+                // ── Perspectives section (fin du reader) ───────────────────
+                // Bande frostée encastrée (hairline fine + teinte quasi-
+                // invisible) ; large respiration au-dessus pour la détacher.
+                if (_showPerspectivesBand) ...[
+                  const SizedBox(height: FacteurSpacing.space8),
+                  PerspectivesInlineSection(
+                    key: _perspectivesKey,
+                    status: _perspectivesStatus,
+                    perspectives: _inlinePerspectives,
+                    biasDistribution:
+                        _perspectivesResponse?.biasDistribution ?? const {},
+                    keywords: _perspectivesResponse?.keywords ?? const [],
+                    sourceBiasStance:
+                        _perspectivesResponse?.sourceBiasStance ?? 'unknown',
+                    sourceName: _content?.source.name ?? '',
+                    contentId: widget.contentId,
+                    comparisonQuality:
+                        _perspectivesResponse?.comparisonQuality ?? 'low',
+                    divergenceLevel: _perspectivesResponse?.divergenceLevel,
+                    onOpenAnalysis: _openPerspectivesAnalysis,
                   ),
                   const SizedBox(height: FacteurSpacing.space4),
-                  if (_perspectivesLoading && _perspectivesResponse == null)
-                    const Center(child: CircularProgressIndicator())
-                  else if (_perspectivesResponse != null)
-                    PerspectivesInlineSection(
-                      key: _perspectivesKey,
-                      perspectives: _perspectivesResponse!.perspectives
-                          .map(
-                            (PerspectiveData p) => Perspective(
-                              title: p.title,
-                              url: p.url,
-                              sourceName: p.sourceName,
-                              sourceDomain: p.sourceDomain,
-                              biasStance: p.biasStance,
-                              publishedAt: p.publishedAt,
-                            ),
-                          )
-                          .toList(),
-                      biasDistribution: _perspectivesResponse!.biasDistribution,
-                      keywords: _perspectivesResponse!.keywords,
-                      sourceBiasStance: _perspectivesResponse!.sourceBiasStance,
-                      sourceName: _content?.source.name ?? '',
-                      contentId: widget.contentId,
-                      comparisonQuality:
-                          _perspectivesResponse!.comparisonQuality,
-                      externalSelectedSegments: _perspectivesSelectedSegments,
-                      onSegmentTap: _onPerspectivesSegmentTap,
-                      onClearSegments: () {
-                        setState(() => _perspectivesSelectedSegments = {});
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) _checkAtPerspectivesSection(force: true);
-                        });
-                      },
-                      analysisState: _perspectivesAnalysisState,
-                      analysisText: _perspectivesAnalysisText,
-                      onRequestAnalysis: _requestPerspectivesAnalysis,
-                      analysisZoneKey: _analysisZoneKey,
-                      firstCardKey: _firstPerspectiveCardKey,
-                      isExpanded: _perspectivesExpanded,
-                      onToggle: _onPerspectivesToggle,
-                    ),
                 ],
 
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
                 SizedBox(
-                  height: _kFooterContentHeight +
+                  height:
+                      _kFooterContentHeight +
                       MediaQuery.of(context).viewPadding.bottom,
                 ),
               ],
@@ -3933,11 +3573,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
         return Column(
           children: [
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (_, offset, __) =>
-                  SizedBox(height: headerHeight * (1.0 - offset)),
-            ),
+            SizedBox(height: headerHeight),
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(bottom: audioBottomInset),
@@ -3959,11 +3595,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
         return Column(
           children: [
-            ValueListenableBuilder<double>(
-              valueListenable: _headerOffset,
-              builder: (_, offset, __) =>
-                  SizedBox(height: headerHeight * (1.0 - offset)),
-            ),
+            SizedBox(height: headerHeight),
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(bottom: videoBottomInset),
@@ -3979,200 +3611,265 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  Widget _buildWebViewFallback(Content content) {
+  Widget _buildWebViewFallback(
+    Content content, {
+    bool isConnectedPremiumSource = false,
+  }) {
     final colors = context.facteurColors;
 
     // Legacy web fallback — unreachable since build() auto-redirects
     // and footer CTA opens externally on web. Kept as safety net.
     if (kIsWeb) {
-      return Center(
-        child: CircularProgressIndicator(color: colors.primary),
+      return Center(child: CircularProgressIndicator(color: colors.primary));
+    }
+
+    final topInset = MediaQuery.of(context).padding.top;
+    final headerHeight = topInset + _kHeaderContentHeight;
+
+    // Chemin premium (source payante connectée) : flutter_inappwebview pour
+    // réutiliser la session du média + détecter l'expiration. Les sources
+    // gratuites restent sur webview_flutter (pas de cookies, moindre risque).
+    if (isConnectedPremiumSource) {
+      final webView = PremiumWebView(
+        source: content.source,
+        url: WebUri(content.url),
+        sessionStore: ref.read(premiumSessionStoreProvider),
+        enableScrollBridge: true,
+        detectPaywall: true,
+        onWebViewCreated: (c) => _premiumWebController = c,
+        onGestureStart: _onGestureStart,
+        onGestureDelta: _onGestureDelta,
+        onGestureEnd: _onGestureEnd,
+        onScrollY: (y) => _webScrollY = y,
+        onProgress: _applyWebReadingProgress,
+        onPaywallDetected: _onPremiumPaywallDetected,
+        gestureRecognizers: swipeBackCompatiblePlatformViewGestureRecognizers(),
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(height: headerHeight),
+          if (_premiumSessionExpired)
+            _PremiumSessionExpiredBanner(
+              onReconnect: () => _reconnectPremium(content),
+            ),
+          Expanded(child: webView),
+        ],
       );
     }
 
     // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
     _webViewController ??= WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) => _injectScrollBridgeScript(),
-      ))
-      ..addJavaScriptChannel('ScrollBridge',
-          onMessageReceived: _onScrollBridgeMessage)
+      ..setNavigationDelegate(
+        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
+      )
+      ..addJavaScriptChannel(
+        'ScrollBridge',
+        onMessageReceived: _onScrollBridgeMessage,
+      )
       ..loadRequest(Uri.parse(content.url));
 
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + _kHeaderContentHeight;
+    // CTA discret : source payante non connectée → proposer de lire avec son
+    // abonnement (ouvre le flow de connexion).
+    final source = content.source;
+    final showConnectCta =
+        source.hasPaywall && source.premiumConnection != null;
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ValueListenableBuilder<double>(
-          valueListenable: _headerOffset,
-          builder: (_, offset, __) =>
-              SizedBox(height: headerHeight * (1.0 - offset)),
-        ),
-        // Extra breathing room so tag chips aren't clipped by the header overlay
-        const SizedBox(height: FacteurSpacing.space2),
-        if (content.entities.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: _FadeScrollRow(
-              children: _buildArticleTagWidgets(context, content),
-            ),
+        SizedBox(height: headerHeight),
+        if (showConnectCta)
+          _PremiumConnectBanner(
+            onConnect: () => _openPremiumConnectionFromReader(source),
           ),
-        Expanded(child: WebViewWidget(controller: _webViewController!)),
+        Expanded(
+          child: WebViewWidget(
+            controller: _webViewController!,
+            gestureRecognizers:
+                swipeBackCompatiblePlatformViewGestureRecognizers(),
+          ),
+        ),
       ],
     );
   }
-}
 
-/// Eye button that winks periodically (scaleY close → open) to hint at perspectives.
-class _WinkingEyeButton extends StatefulWidget {
-  final VoidCallback? onTap;
-  final ButtonStyle? style;
-  final Color iconColor;
-
-  const _WinkingEyeButton({
-    required this.onTap,
-    this.style,
-    required this.iconColor,
-  });
-
-  @override
-  State<_WinkingEyeButton> createState() => _WinkingEyeButtonState();
-}
-
-class _WinkingEyeButtonState extends State<_WinkingEyeButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scaleY;
-  final math.Random _rng = math.Random();
-  final Stopwatch _timeOnScreen = Stopwatch();
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _timeOnScreen.start();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 320),
+  /// Ouvre le flow de connexion premium depuis le reader (source payante non
+  /// connectée). Le provider bascule en connecté → rebuild → chemin premium.
+  Future<void> _openPremiumConnectionFromReader(Source source) async {
+    if (source.premiumConnection == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
+      ),
     );
-    _scaleY = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 1.0, end: 0.05)
-            .chain(CurveTween(curve: Curves.easeIn)),
-        weight: 30, // close fast (~96ms)
-      ),
-      TweenSequenceItem(
-        tween: Tween<double>(begin: 0.05, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOut)),
-        weight: 70, // open slower (~224ms)
-      ),
-    ]).animate(_controller);
-    _controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed) _scheduleNext();
-    });
-    _scheduleNext();
   }
 
-  void _scheduleNext() {
-    final elapsed = _timeOnScreen.elapsed.inSeconds;
-    // Multiplier grows from 1× at t=0 to 3× at t=60s, then stays at 3×.
-    final multiplier = (3.0 * (elapsed.clamp(0, 60) / 60.0)).clamp(1.0, 3.0);
-    final baseMs = 2000 + _rng.nextInt(3001); // 2–5 s
-    final delayMs = (baseMs * multiplier).round();
-    _timer?.cancel();
-    _timer = Timer(Duration(milliseconds: delayMs), () {
-      if (mounted && widget.onTap != null) _controller.forward(from: 0);
-    });
+  void _onPremiumPaywallDetected() {
+    if (!mounted || _premiumSessionExpired) return;
+    setState(() => _premiumSessionExpired = true);
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _controller.dispose();
-    super.dispose();
+  /// Rouvre le flow de connexion pour re-loguer le média (session expirée),
+  /// puis recharge la WebView premium. Ne dissocie jamais l'abonnement.
+  Future<void> _reconnectPremium(Content content) async {
+    final userSources = ref.read(userSourcesProvider).valueOrNull ?? const [];
+    final source = userSources.firstWhere(
+      (s) => s.id == content.source.id,
+      orElse: () => content.source,
+    );
+    if (source.premiumConnection == null) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PremiumSourceConnection(
+          source: source,
+          onConnected: () => ref
+              .read(userSourcesProvider.notifier)
+              .connectSubscription(source.id),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _premiumSessionExpired = false);
+    await _premiumWebController?.reload();
   }
+}
+
+/// Bandeau non-bloquant affiché en mode reader premium quand un paywall est
+/// détecté (session du média expirée). Propose de se reconnecter sans
+/// dissocier l'abonnement.
+class _PremiumSessionExpiredBanner extends StatelessWidget {
+  final VoidCallback onReconnect;
+
+  const _PremiumSessionExpiredBanner({required this.onReconnect});
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _scaleY,
-      builder: (context, _) {
-        final isWinking = _scaleY.value < 0.5;
-        final disabled = widget.onTap == null;
-        return IconButton(
-          style: widget.style,
-          onPressed: widget.onTap,
-          tooltip:
-              disabled ? 'Pas d\'autres points de vue' : 'Autres points de vue',
-          icon: SizedBox(
-            width: 32,
-            height: 32,
-            child: Stack(
-              children: [
-                Center(
-                  child: disabled
-                      ? Icon(
-                          PhosphorIcons.eyeClosed(PhosphorIconsStyle.regular),
-                          size: 26,
-                          color: widget.iconColor,
-                        )
-                      : Transform.scale(
-                          scaleY: _scaleY.value,
-                          child: Icon(
-                            isWinking
-                                ? PhosphorIcons.eyeClosed(
-                                    PhosphorIconsStyle.regular)
-                                : PhosphorIcons.eye(PhosphorIconsStyle.regular),
-                            size: 26,
-                            color: widget.iconColor,
-                          ),
-                        ),
-                ),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Stack(
-                    children: [
-                      Text(
-                        String.fromCharCode(
-                            PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
-                                .codePoint),
-                        style: TextStyle(
-                          fontFamily:
-                              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
-                                  .fontFamily,
-                          package:
-                              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold)
-                                  .fontPackage,
-                          fontSize: 8,
-                          height: 1.0,
-                          foreground: Paint()
-                            ..style = PaintingStyle.stroke
-                            ..strokeWidth = 4.0
-                            ..strokeJoin = StrokeJoin.round
-                            ..strokeCap = StrokeCap.round
-                            ..color = context.facteurColors.backgroundPrimary,
-                        ),
-                      ),
-                      Icon(
-                        PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
-                        size: 8,
-                        color: widget.iconColor.withValues(alpha: 0.5),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.surfaceElevated,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.warningCircle(PhosphorIconsStyle.fill),
+              size: 18,
+              color: colors.warning,
             ),
-          ),
-        );
-      },
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Session expirée chez ce média',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+              ),
+            ),
+            TextButton(
+              onPressed: onReconnect,
+              child: const Text('Reconnecter'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
-/// Subtle periodic nudge on the source badge to hint at long-press.
+/// CTA discret affiché en haut du reader pour une source payante non connectée :
+/// propose de lire l'article avec son abonnement.
+class _PremiumConnectBanner extends StatelessWidget {
+  final VoidCallback onConnect;
+
+  const _PremiumConnectBanner({required this.onConnect});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Material(
+      color: colors.surfaceElevated,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.lockKey(PhosphorIconsStyle.regular),
+              size: 18,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Article réservé aux abonnés',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+              ),
+            ),
+            TextButton(
+              onPressed: onConnect,
+              child: const Text('Lire avec mon abonnement'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Balise compacte regroupant tous les sujets/entités de l'article (B1).
+/// Remplace l'ancien Wrap de chips au-dessus du titre ; tap → fiche article.
+class _SubjectsCountChip extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _SubjectsCountChip({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final label = count == 1 ? '1 sujet' : '$count sujets';
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: colors.textTertiary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.tag(PhosphorIconsStyle.regular),
+              size: 11,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SourceBadgeNudge extends StatefulWidget {
   final Widget child;
 
@@ -4264,10 +3961,7 @@ class _ShimmerSkeletonState extends State<_ShimmerSkeleton>
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
-        return Opacity(
-          opacity: 0.3 + 0.4 * _controller.value,
-          child: child,
-        );
+        return Opacity(opacity: 0.3 + 0.4 * _controller.value, child: child);
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4347,10 +4041,7 @@ class _FadeScrollRowState extends State<_FadeScrollRow> {
               child: SingleChildScrollView(
                 controller: _controller,
                 scrollDirection: Axis.horizontal,
-                child: Row(
-                  spacing: 6,
-                  children: widget.children,
-                ),
+                child: Row(spacing: 6, children: widget.children),
               ),
             ),
           ),

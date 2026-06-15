@@ -5,10 +5,19 @@ Consolide : CoreLayer (theme), ArticleTopicLayer, BehavioralLayer,
 """
 
 from app.models.content import Content
-from app.models.enums import ContentType
+from app.models.enums import ContentType, InterestState
+from app.services.recommendation.helpers import (
+    compute_coverage_score,
+    matches_word_boundary,
+)
 from app.services.recommendation.pillars.base import BasePillar, PillarContribution
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
+
+# Story 22.1 — floor appliqué au weight (Thèmes) et au priority_multiplier
+# (Sujets) quand state == favorite. Garantit qu'un favori est toujours boosté
+# même si l'algo ML ne lui a pas (encore) appris un weight élevé.
+_FAVORITE_WEIGHT_FLOOR = 1.5
 
 # Mapping thèmes slugs -> Français
 THEME_LABELS = {
@@ -90,12 +99,14 @@ def _subtopic_label(slug: str) -> str:
 
 def _get_effective_theme(content: Content, user_interests: set[str]) -> str | None:
     """Determine effective theme: content.theme > source.theme > secondary_themes."""
-    if hasattr(content, "theme") and content.theme:
-        if content.theme in user_interests:
-            return content.theme
-    if content.source and content.source.theme:
-        if content.source.theme in user_interests:
-            return content.source.theme
+    if hasattr(content, "theme") and content.theme and content.theme in user_interests:
+        return content.theme
+    if (
+        content.source
+        and content.source.theme
+        and content.source.theme in user_interests
+    ):
+        return content.source.theme
     if content.source and getattr(content.source, "secondary_themes", None):
         matched = set(content.source.secondary_themes) & user_interests
         if matched:
@@ -150,6 +161,15 @@ class PertinencePillar(BasePillar):
         score += format_result[0]
         contributions.extend(format_result[1])
 
+        # --- 5b. Coverage Bonus (multi-sources sur même cluster) ---
+        # Un sujet relayé par plusieurs médias distincts dans les 24h dernières
+        # est plus probablement "l'essentiel" que les 3 articles standalone
+        # de la même section. Signal capé pour ne pas écraser la pertinence
+        # thématique (max +30 sur un base pertinence ~130).
+        coverage_result = self._score_coverage(content, context)
+        score += coverage_result[0]
+        contributions.extend(coverage_result[1])
+
         # --- 6. Theme Mismatch Malus ---
         # Léger désavantage pour les articles hors des thèmes/sous-thèmes suivis,
         # sans les exclure. Ne s'applique qu'aux utilisateurs ayant déclaré des
@@ -161,6 +181,32 @@ class PertinencePillar(BasePillar):
         contributions.extend(mismatch_result[1])
 
         return score, contributions
+
+    def _score_coverage(
+        self, content: Content, context: ScoringContext
+    ) -> tuple[float, list[PillarContribution]]:
+        """Bonus log-calibré pour les clusters multi-sources.
+
+        `cluster_source_counts` est rempli en mode thématique personnalisé ;
+        sinon (cold start, autres surfaces) on n'a aucun coût ni effet.
+        """
+        cluster_id = getattr(content, "cluster_id", None)
+        if cluster_id is None or not context.cluster_source_counts:
+            return 0.0, []
+
+        source_count = context.cluster_source_counts.get(cluster_id, 1)
+        bonus = compute_coverage_score(source_count)
+        if bonus <= 0:
+            return 0.0, []
+
+        # is_trending = ≥3 sources distinctes (définition partagée avec
+        # ImportanceDetector). On l'expose comme contribution dédiée pour
+        # l'explicabilité ; le bonus de couverture reste log-calibré.
+        if source_count >= 3:
+            label = f"Couvert par {source_count} sources"
+        else:
+            label = "Sujet relayé"
+        return bonus, [PillarContribution(label=label, points=bonus)]
 
     def _score_theme_mismatch(
         self,
@@ -194,20 +240,26 @@ class PertinencePillar(BasePillar):
     ) -> tuple[float, PillarContribution | None]:
         """3-tier theme matching: content.theme > source.theme > secondary_themes."""
         # Tier 1: Article-level theme (ML-inferred)
-        if hasattr(content, "theme") and content.theme:
-            if content.theme in context.user_interests:
-                label = f"Thème : {_theme_label(content.theme)}"
-                return ScoringWeights.THEME_MATCH, PillarContribution(
-                    label=label, points=ScoringWeights.THEME_MATCH
-                )
+        if (
+            hasattr(content, "theme")
+            and content.theme
+            and content.theme in context.user_interests
+        ):
+            label = f"Thème : {_theme_label(content.theme)}"
+            return ScoringWeights.THEME_MATCH, PillarContribution(
+                label=label, points=ScoringWeights.THEME_MATCH
+            )
 
         # Tier 2: Source primary theme
-        if content.source and content.source.theme:
-            if content.source.theme in context.user_interests:
-                label = f"Thème : {_theme_label(content.source.theme)}"
-                return ScoringWeights.THEME_MATCH, PillarContribution(
-                    label=label, points=ScoringWeights.THEME_MATCH
-                )
+        if (
+            content.source
+            and content.source.theme
+            and content.source.theme in context.user_interests
+        ):
+            label = f"Thème : {_theme_label(content.source.theme)}"
+            return ScoringWeights.THEME_MATCH, PillarContribution(
+                label=label, points=ScoringWeights.THEME_MATCH
+            )
 
         # Tier 3: Source secondary themes (70% of primary)
         if content.source and getattr(content.source, "secondary_themes", None):
@@ -290,7 +342,17 @@ class PertinencePillar(BasePillar):
         if not effective_theme:
             return 0.0, []
 
+        # Story 22.1 — état déclaré : hidden court-circuite (score=0),
+        # favorite floor le weight pour garantir un boost minimal.
+        state = context.user_interest_states.get(
+            effective_theme, InterestState.FOLLOWED
+        )
+        if state == InterestState.HIDDEN:
+            return 0.0, []
+
         weight = context.user_interest_weights.get(effective_theme, 1.0)
+        if state == InterestState.FAVORITE:
+            weight = max(weight, _FAVORITE_WEIGHT_FLOOR)
         base_theme_score = 50.0
 
         if weight > 1.0:
@@ -310,7 +372,14 @@ class PertinencePillar(BasePillar):
     def _score_custom_topics(
         self, content: Content, context: ScoringContext
     ) -> tuple[float, list[PillarContribution]]:
-        """Custom topics from Epic 11."""
+        """Custom topics (Epic 11) + branche veille (Story 23.4).
+
+        Les angles veille sont marqués `is_veille=True` (`VeilleAngleTopic`) et
+        empruntent un barème escaladant veille-spécifique ; les vrais custom
+        topics Epic 11 (`is_veille` absent) gardent le chemin plat `+25`
+        inchangé. On ne retient qu'un seul angle (le meilleur) — pas
+        d'empilement non borné.
+        """
         if not context.user_custom_topics:
             return 0.0, []
 
@@ -325,20 +394,36 @@ class PertinencePillar(BasePillar):
         best_topic_name = ""
 
         for tp in context.user_custom_topics:
+            # Story 22.1 — état déclaré : hidden court-circuite ce Sujet,
+            # favorite floor le multiplier appliqué au bonus de base.
+            tp_state = getattr(tp, "state", InterestState.FOLLOWED)
+            if tp_state == InterestState.HIDDEN:
+                continue
+
+            if getattr(tp, "is_veille", False):
+                topic_score = self._score_veille_angle(
+                    tp, content, context, content_topics, title_lower, desc_lower
+                )
+                if topic_score > best_score:
+                    best_score = topic_score
+                    best_topic_name = tp.topic_name
+                continue
+
             matched = False
             if tp.slug_parent in content_topics:
                 matched = True
             if not matched and tp.keywords:
                 for kw in tp.keywords:
                     kw_lower = kw.lower().strip()
-                    if kw_lower and (kw_lower in title_lower or kw_lower in desc_lower):
+                    if matches_word_boundary(kw_lower, title_lower, desc_lower):
                         matched = True
                         break
 
             if matched:
-                topic_score = (
-                    ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * tp.priority_multiplier
-                )
+                multiplier = tp.priority_multiplier
+                if tp_state == InterestState.FAVORITE:
+                    multiplier = max(multiplier, _FAVORITE_WEIGHT_FLOOR)
+                topic_score = ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * multiplier
                 if topic_score > best_score:
                     best_score = topic_score
                     best_topic_name = tp.topic_name
@@ -348,6 +433,62 @@ class PertinencePillar(BasePillar):
             return best_score, [PillarContribution(label=label, points=best_score)]
 
         return 0.0, []
+
+    def _score_veille_angle(
+        self,
+        tp,
+        content: Content,
+        context: ScoringContext,
+        content_topics: set[str],
+        title_lower: str,
+        desc_lower: str,
+    ) -> float:
+        """Barème veille (Story 23.4) pour un angle = topic canonique + grappe.
+
+        `bonus = composante_kw_escaladante + (50 si topic) + (15 si combo)
+                 + (12 si source suivie ET bonus > 0)`.
+
+        La composante mots-clés vaut `min(BASE + INC*(N-1), CAP)` où N = nombre
+        de mots-clés **distincts** de l'angle matchés (titre/description).
+        Renvoie 0.0 si ni topic ni mot-clé ne matche (source-seul = pas de
+        contribution de pertinence : « la source est un boost, pas un
+        free-pass »).
+        """
+        slug = (tp.slug_parent or "").lower().strip()
+        topic_hit = bool(slug) and slug in content_topics
+
+        kw_hits = 0
+        seen: set[str] = set()
+        for kw in tp.keywords or ():
+            kw_lower = kw.lower().strip()
+            if not kw_lower or kw_lower in seen:
+                continue
+            if matches_word_boundary(kw_lower, title_lower, desc_lower):
+                seen.add(kw_lower)
+                kw_hits += 1
+
+        if not topic_hit and kw_hits == 0:
+            return 0.0
+
+        bonus = 0.0
+        if kw_hits > 0:
+            bonus += min(
+                ScoringWeights.VEILLE_KEYWORD_BASE_BONUS
+                + ScoringWeights.VEILLE_KEYWORD_INCREMENT * (kw_hits - 1),
+                ScoringWeights.VEILLE_KEYWORD_CAP,
+            )
+        if topic_hit:
+            bonus += ScoringWeights.VEILLE_TOPIC_MATCH_BONUS
+        if topic_hit and kw_hits > 0:
+            bonus += ScoringWeights.VEILLE_TOPIC_KEYWORD_COMBO_BONUS
+
+        # Source conditionnée : appliquée seulement quand l'article a déjà un
+        # topic ou un mot-clé (bonus > 0). Source-seul n'atteint jamais cette
+        # branche (early-return ci-dessus).
+        if bonus > 0 and content.source_id in context.followed_source_ids:
+            bonus += ScoringWeights.VEILLE_SOURCE_ON_TOPIC_BONUS
+
+        return bonus
 
     def _score_format(
         self, content: Content, context: ScoringContext

@@ -57,12 +57,35 @@ def create_tables():
 
     Not autouse — only runs when a test depends on db_session.
     This prevents pure unit tests from requiring a database connection.
+
+    Story 22.1 — les types ENUM Postgres custom (ex: `interest_state`) sont
+    créés en pré-requis via SQL brut, car les modèles SQLAlchemy les
+    référencent avec `create_type=False` (la création passe par Alembic en
+    prod). Sans cette étape, `Base.metadata.create_all` lèverait
+    `psycopg.errors.UndefinedObject` au CREATE TABLE.
     """
     import asyncio
 
+    from sqlalchemy import text
+
     async def _setup():
         async with test_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
+            # Use DROP SCHEMA CASCADE to cleanly wipe all tables (including
+            # Alembic-only tables like article_feedback that are not in
+            # Base.metadata), then recreate the schema. Without CASCADE,
+            # Base.metadata.drop_all fails when unregistered tables have FK
+            # constraints pointing to registered ones.
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+            await conn.execute(
+                text(
+                    "DO $$ BEGIN "
+                    "CREATE TYPE interest_state AS ENUM "
+                    "('hidden','unfollowed','followed','favorite'); "
+                    "EXCEPTION WHEN duplicate_object THEN NULL; "
+                    "END $$;"
+                )
+            )
             await conn.run_sync(Base.metadata.create_all)
 
     asyncio.run(_setup())

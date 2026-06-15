@@ -1,17 +1,33 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
 import '../../custom_topics/models/topic_models.dart';
-import '../../custom_topics/providers/custom_topics_provider.dart';
-import '../../custom_topics/providers/theme_priority_provider.dart';
+import '../../my_interests/models/user_interests_state.dart';
+import '../../my_interests/models/user_sources_state.dart';
+import '../../my_interests/providers/user_interests_provider.dart';
+import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../sources/models/source_model.dart';
+import '../../sources/providers/sources_providers.dart';
+import '../../sources/widgets/source_logo_avatar.dart';
+import '../../flux_continu/providers/tournee_order_prefs_provider.dart'
+    show tourneeOrderPrefsProvider;
+import '../../flux_continu/utils/theme_color_mapping.dart' show visualFor;
+import '../../veille/providers/veille_themes_provider.dart'
+    show kVeilleFacteurThemes;
 import '../models/content_model.dart';
+import '../providers/tab_order_prefs_provider.dart';
 import '../repositories/feed_repository.dart';
 
-enum FavoriteTabKind { tous, subjectTopic, subjectEntity, theme }
+enum FavoriteTabKind { subjectTopic, subjectEntity, theme, source }
+
+/// Nombre maximum d'onglets épinglés rendus dans la barre Flâner. Au-delà, on
+/// garde les [kMaxFavoriteTabs] premiers dans l'ordre validé par l'utilisateur
+/// (drag de la modal) ; le surplus reste gérable dans la modal d'épinglage.
+const int kMaxFavoriteTabs = 10;
 
 @immutable
 class FavoriteTabModel {
@@ -22,6 +38,10 @@ class FavoriteTabModel {
   final int count;
   final bool active;
 
+  /// Renseigné uniquement pour [FavoriteTabKind.source] : sert à rendre le logo
+  /// (avec fallback initiales) via [SourceLogoAvatar].
+  final Source? source;
+
   const FavoriteTabModel({
     required this.kind,
     required this.slug,
@@ -29,6 +49,7 @@ class FavoriteTabModel {
     required this.emoji,
     required this.count,
     required this.active,
+    this.source,
   });
 }
 
@@ -38,10 +59,11 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final String? selectedTopicSlug;
   final String? selectedThemeSlug;
   final String? selectedEntitySlug;
+  final String? selectedSourceId;
   final void Function(FavoriteTabKind kind, String? slug) onTabTap;
   final VoidCallback onTapActiveTab;
-  final VoidCallback onTapActiveTabRefresh;
   final VoidCallback onAddFavorite;
+  final Widget? trailingFilterTrigger;
 
   const FavoriteTopicTabs({
     super.key,
@@ -50,10 +72,11 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     this.selectedTopicSlug,
     this.selectedThemeSlug,
     this.selectedEntitySlug,
+    this.selectedSourceId,
     required this.onTabTap,
     required this.onTapActiveTab,
-    required this.onTapActiveTabRefresh,
     required this.onAddFavorite,
+    this.trailingFilterTrigger,
   });
 
   @override
@@ -71,7 +94,8 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     final selectionChanged =
         old.selectedTopicSlug != widget.selectedTopicSlug ||
             old.selectedThemeSlug != widget.selectedThemeSlug ||
-            old.selectedEntitySlug != widget.selectedEntitySlug;
+            old.selectedEntitySlug != widget.selectedEntitySlug ||
+            old.selectedSourceId != widget.selectedSourceId;
     if (selectionChanged) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollActiveIntoView();
@@ -107,27 +131,50 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final topicsAsync = ref.watch(customTopicsProvider);
-    final themePriorityAsync = ref.watch(themePriorityProvider);
+    final interestsAsync = ref.watch(userInterestsProvider);
+    final sourcesStateAsync = ref.watch(userSourcesStateProvider);
+    final sourcesAsync = ref.watch(userSourcesProvider);
+    final order = ref.watch(tabOrderPrefsProvider);
+    // Story 10.2 — appartenance exclusive : une source en mode « Essentiel »
+    // (clé dans `tournee_order_v1`) ne s'affiche pas en onglet Flâner.
+    final tourneeOrder = ref.watch(
+      tourneeOrderPrefsProvider.select((s) => s.order),
+    );
 
-    final topics = topicsAsync.valueOrNull ?? const <UserTopicProfile>[];
-    final themePriority =
-        themePriorityAsync.valueOrNull ?? const <String, double>{};
+    final interests = interestsAsync.valueOrNull;
+    final customTopics =
+        interests?.customTopics ?? const <CustomTopicInterest>[];
+    final favorites = interests?.favorites ?? const <FavoriteRef>[];
+    final sourceFavorites =
+        sourcesStateAsync.valueOrNull?.favorites ?? const <SourceFavoriteRef>[];
+    final sourceById = <String, Source>{
+      for (final s in sourcesAsync.valueOrNull ?? const <Source>[]) s.id: s,
+    };
 
     final tabs = _buildTabModels(
-      topics: topics,
-      themePriority: themePriority,
+      customTopics: customTopics,
+      favorites: favorites,
+      sourceFavorites: sourceFavorites,
+      sourceById: sourceById,
+      order: order,
+      tourneeOrder: tourneeOrder,
       items: widget.items,
       serverCounts: widget.serverCounts,
       selectedTopicSlug: widget.selectedTopicSlug,
       selectedThemeSlug: widget.selectedThemeSlug,
       selectedEntitySlug: widget.selectedEntitySlug,
+      selectedSourceId: widget.selectedSourceId,
     );
 
     _activeKey = null;
+    // > 4 onglets épinglés → l'affordance d'ajout devient un engrenage
+    // (« gérer ») plutôt qu'un « + ». Même action (ouvre la modal).
+    final showGear = tabs.length > 4;
+    final trailingFilterTrigger = widget.trailingFilterTrigger;
+    final itemCount = tabs.length + 1 + (trailingFilterTrigger == null ? 0 : 1);
 
     return SizedBox(
-      height: 32,
+      height: 38,
       child: ShaderMask(
         shaderCallback: (rect) {
           return const LinearGradient(
@@ -142,16 +189,23 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
           controller: _scrollController,
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.only(right: 16),
-          itemCount: tabs.length + 1,
+          itemCount: itemCount,
           separatorBuilder: (_, __) => const SizedBox(width: 2),
           itemBuilder: (ctx, i) {
             if (i == tabs.length) {
               return _AddFavoritePill(
+                showGear: showGear,
                 onTap: () {
                   HapticFeedback.mediumImpact();
                   widget.onAddFavorite();
                 },
                 colors: colors,
+              );
+            }
+            if (i == tabs.length + 1) {
+              return Padding(
+                padding: const EdgeInsets.only(left: 2),
+                child: trailingFilterTrigger,
               );
             }
             final tab = tabs[i];
@@ -160,12 +214,10 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
               tab: tab,
               colors: colors,
               onTap: () {
+                // Taper l'onglet actif = vider la sélection (feed non filtré) ;
+                // le refresh est assuré par le pull-to-refresh de la page.
                 if (tab.active) {
-                  if (tab.count >= 3) {
-                    widget.onTapActiveTabRefresh();
-                  } else {
-                    widget.onTapActiveTab();
-                  }
+                  widget.onTapActiveTab();
                 } else {
                   HapticFeedback.selectionClick();
                   widget.onTabTap(tab.kind, tab.slug);
@@ -179,140 +231,227 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
   }
 }
 
-final Map<String, String> _apiSlugToMacroLabel = {
-  for (final e in macroThemeToApiSlug.entries) e.value: e.key,
-};
-
 @visibleForTesting
 List<FavoriteTabModel> buildFavoriteTabModelsForTest({
   required List<UserTopicProfile> topics,
-  required Map<String, double> themePriority,
+  List<CustomTopicInterest>? customTopics,
+  required List<FavoriteRef> favorites,
   required List<Content> items,
+  List<SourceFavoriteRef> sourceFavorites = const [],
+  Map<String, Source> sourceById = const {},
+  List<String> order = const [],
+  List<String> tourneeOrder = const [],
   TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
+  String? selectedSourceId,
 }) =>
     _buildTabModels(
-      topics: topics,
-      themePriority: themePriority,
+      customTopics:
+          customTopics ?? topics.map(_customInterestFromProfile).toList(),
+      favorites: favorites,
+      sourceFavorites: sourceFavorites,
+      sourceById: sourceById,
+      order: order,
+      tourneeOrder: tourneeOrder,
       items: items,
       serverCounts: serverCounts,
       selectedTopicSlug: selectedTopicSlug,
       selectedThemeSlug: selectedThemeSlug,
       selectedEntitySlug: selectedEntitySlug,
+      selectedSourceId: selectedSourceId,
     );
 
+CustomTopicInterest _customInterestFromProfile(UserTopicProfile topic) {
+  return CustomTopicInterest(
+    id: topic.id,
+    topicName: topic.name,
+    slugParent: topic.slugParent ?? topic.id,
+    state: InterestState.favorite,
+    priorityMultiplier: topic.priorityMultiplier,
+    entityType: topic.entityType,
+    canonicalName: topic.canonicalName,
+    compositeScore: topic.compositeScore,
+  );
+}
+
+/// Onglets Flâner = *sujets épinglés* (custom topics + entités favoris),
+/// *sources épinglées* (favoris sources) **et** *thèmes livrés en Flâner*
+/// (modèle exclusif : un `ThemeFavoriteRef` dont la clé `theme:<slug>` est dans
+/// [order] vit en onglet plutôt que dans l'Essentiel). Tous mélangés selon
+/// l'ordre unifié [order] (cf. [tabOrderPrefsProvider]). Un thème *hors* [order]
+/// reste côté Essentiel (non rendu ici) ; la veille pilote toujours la Tournée.
 List<FavoriteTabModel> _buildTabModels({
-  required List<UserTopicProfile> topics,
-  required Map<String, double> themePriority,
+  required List<CustomTopicInterest> customTopics,
+  required List<FavoriteRef> favorites,
+  required List<SourceFavoriteRef> sourceFavorites,
+  required Map<String, Source> sourceById,
+  required List<String> order,
+  List<String> tourneeOrder = const [],
   required List<Content> items,
   TabCounts? serverCounts,
   String? selectedTopicSlug,
   String? selectedThemeSlug,
   String? selectedEntitySlug,
+  String? selectedSourceId,
 }) {
-  final themeApiSlugs = macroThemeToApiSlug.values.toSet();
   final useServer = serverCounts != null && serverCounts.total > 0;
 
-  final entitySubjects = topics
-      .where((t) => t.entityType != null && t.priorityMultiplier == 2.0)
+  final favoriteCustomIds = <String>{
+    for (final f in favorites)
+      if (f is CustomTopicFavoriteRef) f.id,
+  };
+
+  // Diagnostic : un sujet favori sans `CustomTopicInterest` correspondant ne
+  // produira aucun onglet (réponse `user/interests` incohérente).
+  if (kDebugMode) {
+    final knownTopicIds = {for (final t in customTopics) t.id};
+    final orphanFavorites =
+        favoriteCustomIds.where((id) => !knownTopicIds.contains(id)).toList();
+    if (orphanFavorites.isNotEmpty) {
+      debugPrint(
+        '[FavoriteTabs] ${orphanFavorites.length} sujet(s) favori(s) sans '
+        'CustomTopicInterest : $orphanFavorites',
+      );
+    }
+  }
+
+  final entitySubjects = customTopics
+      .where((t) => t.entityType != null && favoriteCustomIds.contains(t.id))
       .toList()
     ..sort((a, b) => b.compositeScore.compareTo(a.compositeScore));
 
-  final topicSubjects = topics
-      .where((t) =>
-          t.entityType == null &&
-          t.priorityMultiplier == 2.0 &&
-          !themeApiSlugs.contains(t.slugParent))
+  final topicSubjects = customTopics
+      .where((t) => t.entityType == null && favoriteCustomIds.contains(t.id))
       .toList()
-    ..sort((a, b) {
-      final byPriority = b.priorityMultiplier.compareTo(a.priorityMultiplier);
-      if (byPriority != 0) return byPriority;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-
-  final favoriteThemes = macroThemeOrder
-      .where((label) => (themePriority[label] ?? 1.0) == 2.0)
-      .toList();
+    ..sort(
+      (a, b) => a.topicName.toLowerCase().compareTo(b.topicName.toLowerCase()),
+    );
 
   final cutoff = DateTime.now().subtract(const Duration(hours: 48));
   final tabs = <FavoriteTabModel>[];
 
-  // 1. Tous (always first).
-  tabs.add(FavoriteTabModel(
-    kind: FavoriteTabKind.tous,
-    slug: null,
-    label: 'Tous',
-    emoji: '',
-    count: useServer
-        ? serverCounts.total
-        : _countUnreadRecent(items,
-            cutoff: cutoff, kind: FavoriteTabKind.tous, slug: null),
-    active: selectedTopicSlug == null &&
-        selectedThemeSlug == null &&
-        selectedEntitySlug == null,
-  ));
-
-  // 2. Onglets favoris (entités, topics, thèmes) fusionnés et triés
-  // par nombre d'articles disponibles décroissant. Pas de hiérarchie
-  // Sujet > Thème : seul le volume d'actu disponible compte.
-  final favoriteTabs = <FavoriteTabModel>[];
+  // Onglets favoris (sujets + sources épinglés). On garde la clé d'ordre unifié
+  // (`topic:<id>` / `source:<id>`) à côté de chaque modèle pour pouvoir
+  // appliquer [order] ensuite. L'ordre d'insertion (entités, sujets, sources)
+  // reflète celui de la section « ÉPINGLÉS » de la modal : barre et modal
+  // passent ensuite par le même [applyOrder] avec les mêmes prefs.
+  final favoriteTabs = <({FavoriteTabModel tab, String key})>[];
 
   for (final entity in entitySubjects) {
-    final slug = entity.canonicalName ?? entity.name;
-    favoriteTabs.add(FavoriteTabModel(
-      kind: FavoriteTabKind.subjectEntity,
-      slug: slug,
-      label: entity.name,
-      emoji: '',
-      count: useServer
-          ? (serverCounts.entities[slug.toLowerCase()] ?? 0)
-          : _countUnreadRecent(items,
-              cutoff: cutoff, kind: FavoriteTabKind.subjectEntity, slug: slug),
-      active: selectedEntitySlug != null && selectedEntitySlug == slug,
+    final slug = entity.canonicalName ?? entity.topicName;
+    favoriteTabs.add((
+      key: tabOrderTopicKey(entity.id),
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.subjectEntity,
+        slug: slug,
+        label: entity.topicName,
+        emoji: '',
+        count: useServer
+            ? (serverCounts.entities[slug.toLowerCase()] ?? 0)
+            : _countUnreadRecent(items,
+                cutoff: cutoff,
+                kind: FavoriteTabKind.subjectEntity,
+                slug: slug),
+        active: selectedEntitySlug != null && selectedEntitySlug == slug,
+      ),
     ));
   }
 
   for (final topic in topicSubjects) {
-    final slug = topic.slugParent ?? topic.id;
-    favoriteTabs.add(FavoriteTabModel(
-      kind: FavoriteTabKind.subjectTopic,
-      slug: slug,
-      label: topic.name,
-      emoji: '',
-      count: useServer
-          ? (serverCounts.topics[slug] ?? 0)
-          : _countUnreadRecent(items,
-              cutoff: cutoff, kind: FavoriteTabKind.subjectTopic, slug: slug),
-      active: selectedTopicSlug != null && selectedTopicSlug == slug,
+    final slug = topic.slugParent;
+    favoriteTabs.add((
+      key: tabOrderTopicKey(topic.id),
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.subjectTopic,
+        slug: slug,
+        label: topic.topicName,
+        emoji: '',
+        count: useServer
+            ? (serverCounts.topics[slug] ?? 0)
+            : _countUnreadRecent(items,
+                cutoff: cutoff, kind: FavoriteTabKind.subjectTopic, slug: slug),
+        active: selectedTopicSlug != null && selectedTopicSlug == slug,
+      ),
     ));
   }
 
-  for (final label in favoriteThemes) {
-    final apiSlug = macroThemeToApiSlug[label];
-    if (apiSlug == null) continue;
-    favoriteTabs.add(FavoriteTabModel(
-      kind: FavoriteTabKind.theme,
-      slug: apiSlug,
-      label: label,
-      emoji: getMacroThemeEmoji(label),
-      count: useServer
-          ? (serverCounts.themes[apiSlug] ?? 0)
-          : _countUnreadRecent(items,
-              cutoff: cutoff, kind: FavoriteTabKind.theme, slug: apiSlug),
-      active: selectedThemeSlug != null && selectedThemeSlug == apiSlug,
+  // Sources épinglées (favoris sources). Pas de count serveur par source pour
+  // l'instant → count 0 (pas de badge). On skippe les sources inconnues du
+  // catalogue (logo/nom non résolus).
+  final sortedSourceFavorites = [...sourceFavorites]
+    ..sort((a, b) => a.position.compareTo(b.position));
+  // Story 10.2 — une source en mode « Essentiel » (clé dans `tournee_order_v1`)
+  // n'est pas un onglet Flâner. Même chaîne `source:<id>` que [tabOrderSourceKey].
+  final essentielSourceKeys = tourneeOrder.toSet();
+  for (final ref in sortedSourceFavorites) {
+    final source = sourceById[ref.sourceId];
+    if (source == null) continue;
+    if (essentielSourceKeys.contains(tabOrderSourceKey(ref.sourceId))) continue;
+    favoriteTabs.add((
+      key: tabOrderSourceKey(ref.sourceId),
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.source,
+        slug: ref.sourceId,
+        label: source.name,
+        emoji: '',
+        count: 0,
+        active: selectedSourceId != null && selectedSourceId == ref.sourceId,
+        source: source,
+      ),
     ));
   }
 
-  favoriteTabs.sort((a, b) {
-    final byCount = b.count.compareTo(a.count);
-    if (byCount != 0) return byCount;
-    return a.label.toLowerCase().compareTo(b.label.toLowerCase());
-  });
+  // Story Essentiel UX — thèmes livrés en onglet Flâner (modèle exclusif) : un
+  // `ThemeFavoriteRef` dont la clé `theme:<slug>` est dans l'ordre Flâner
+  // [order] produit un onglet (label/emoji via visualFor + kVeilleFacteurThemes,
+  // count 0 = pas de badge). Hors [order], le thème reste côté Essentiel.
+  final flanerThemeKeys = order.toSet();
+  for (final f in favorites) {
+    if (f is! ThemeFavoriteRef) continue;
+    final key = tabOrderThemeKey(f.slug);
+    if (!flanerThemeKeys.contains(key)) continue;
+    favoriteTabs.add((
+      key: key,
+      tab: FavoriteTabModel(
+        kind: FavoriteTabKind.theme,
+        slug: f.slug,
+        label: visualFor(f.slug).label,
+        emoji: _themeTabEmoji(f.slug),
+        count: 0,
+        active: selectedThemeSlug != null && selectedThemeSlug == f.slug,
+      ),
+    ));
+  }
 
-  tabs.addAll(favoriteTabs);
+  // Ordre unifié voulu par l'utilisateur (drag dans la modal d'épinglage). Plus
+  // de tri par count : il reléguait les sources (count: 0 codé en dur) derrière
+  // tout sujet ayant des non-lus → elles finissaient en fin de liste, cachées
+  // derrière le fade (« sujets/sources disparus »). On conserve l'ordre
+  // d'insertion comme base, puis on applique l'ordre custom.
+  final ordered = applyOrder(favoriteTabs, order, (e) => e.key);
+
+  // Cap : garder les [kMaxFavoriteTabs] premiers dans l'ordre utilisateur. Pas
+  // de troncature silencieuse — on logge les clés du surplus en debug.
+  final capped = ordered.take(kMaxFavoriteTabs).toList();
+  if (kDebugMode && ordered.length > kMaxFavoriteTabs) {
+    final dropped = ordered.skip(kMaxFavoriteTabs).map((e) => e.key).toList();
+    debugPrint(
+      '[FavoriteTabs] cap $kMaxFavoriteTabs atteint — '
+      '${dropped.length} onglet(s) tronqué(s) : $dropped',
+    );
+  }
+
+  tabs.addAll(capped.map((e) => e.tab));
   return tabs;
+}
+
+String _themeTabEmoji(String slug) {
+  for (final t in kVeilleFacteurThemes) {
+    if (t.slug == slug) return t.emoji;
+  }
+  return '📰';
 }
 
 int _countUnreadRecent(
@@ -323,8 +462,6 @@ int _countUnreadRecent(
 }) {
   bool matches(Content c) {
     switch (kind) {
-      case FavoriteTabKind.tous:
-        return true;
       case FavoriteTabKind.subjectTopic:
         return slug != null && c.topics.contains(slug);
       case FavoriteTabKind.subjectEntity:
@@ -332,11 +469,12 @@ int _countUnreadRecent(
         final lower = slug.toLowerCase();
         return c.entities.any((e) => e.text.toLowerCase() == lower);
       case FavoriteTabKind.theme:
-        if (slug == null) return false;
-        final label = _apiSlugToMacroLabel[slug];
-        if (label == null) return false;
-        final themeSlugs = getSlugsForMacroTheme(label);
-        return c.topics.any(themeSlugs.contains);
+        // Les thèmes ne sont plus rendus en onglet Flâner (ils pilotent la
+        // Tournée). Valeur conservée dans l'enum pour la chip thème.
+        return false;
+      case FavoriteTabKind.source:
+        // Pas de count local par source — les onglets source affichent 0.
+        return false;
     }
   }
 
@@ -362,12 +500,27 @@ class _FavoriteTabItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labelColor =
-        tab.active ? colors.textPrimary : colors.textSecondary;
+    final labelColor = tab.active ? colors.textPrimary : colors.textSecondary;
     final labelWeight = tab.active ? FontWeight.w700 : FontWeight.w500;
     final showBadge = tab.count >= 3;
     final showLabel =
         tab.emoji.isNotEmpty ? '${tab.emoji} ${tab.label}' : tab.label;
+    final sourceAvatar =
+        tab.kind == FavoriteTabKind.source && tab.source != null
+            ? tab.source
+            : null;
+    final label = Text(
+      showLabel,
+      style: TextStyle(
+        fontSize: 14.5,
+        fontWeight: labelWeight,
+        color: labelColor,
+        height: 1.15,
+      ),
+      maxLines: 1,
+      overflow: tab.active ? TextOverflow.visible : TextOverflow.ellipsis,
+      softWrap: false,
+    );
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -378,24 +531,26 @@ class _FavoriteTabItem extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            if (sourceAvatar != null) ...[
+              SourceLogoAvatar(source: sourceAvatar, size: 20, radius: 5),
+              const SizedBox(width: 6),
+            ],
             IntrinsicWidth(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    showLabel,
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: labelWeight,
-                      color: labelColor,
-                      height: 1.15,
+                  if (tab.active)
+                    label
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 108),
+                      child: label,
                     ),
-                  ),
                   const SizedBox(height: 2),
                   Container(
-                    height: 1.5,
+                    height: 2,
                     decoration: BoxDecoration(
                       color: tab.active ? colors.primary : Colors.transparent,
                       borderRadius: BorderRadius.circular(2),
@@ -405,13 +560,13 @@ class _FavoriteTabItem extends StatelessWidget {
               ),
             ),
             if (showBadge) ...[
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Transform.translate(
                 offset: const Offset(0, -6),
                 child: tab.active
                     ? Container(
-                        width: 6,
-                        height: 6,
+                        width: 6.5,
+                        height: 6.5,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: colors.primary,
@@ -420,7 +575,7 @@ class _FavoriteTabItem extends StatelessWidget {
                     : Text(
                         tab.count > 10 ? '10+' : '${tab.count}',
                         style: TextStyle(
-                          fontSize: 10.5,
+                          fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: colors.textTertiary,
                           height: 1.0,
@@ -436,10 +591,12 @@ class _FavoriteTabItem extends StatelessWidget {
 }
 
 class _AddFavoritePill extends StatelessWidget {
+  final bool showGear;
   final VoidCallback onTap;
   final FacteurColors colors;
 
   const _AddFavoritePill({
+    required this.showGear,
     required this.onTap,
     required this.colors,
   });
@@ -450,12 +607,14 @@ class _AddFavoritePill extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 28,
-        height: 32,
+        width: 34,
+        height: 38,
         child: Center(
           child: Icon(
-            PhosphorIcons.plus(PhosphorIconsStyle.regular),
-            size: 16,
+            showGear
+                ? PhosphorIcons.gear(PhosphorIconsStyle.regular)
+                : PhosphorIcons.plus(PhosphorIconsStyle.regular),
+            size: 18,
             color: colors.textSecondary,
           ),
         ),

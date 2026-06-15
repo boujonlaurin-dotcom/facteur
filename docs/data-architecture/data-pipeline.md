@@ -6,7 +6,7 @@
 
 > **Important** : il y a deux surfaces utilisateur distinctes avec deux architectures différentes.
 > - **Feed** (`GET /api/feed`) — computation **temps réel** à chaque requête. C'est la surface principale aujourd'hui.
-> - **Digest** (`GET /api/digest`) — généré une fois par jour à 08:00 par un job batch. En cours de refonte.
+> - **Digest** (`GET /api/digest`) — généré une fois par jour à 07:30 Paris par un job batch. En cours de refonte.
 
 ```mermaid
 flowchart TB
@@ -25,12 +25,12 @@ flowchart TB
         TM -->|theme slug| DB_C
     end
 
-    subgraph ENRICHMENT["③ Enrichissement (inline)"]
-        DB_C -->|on-demand| TR[trafilatura +<br>readability-lxml]
-        TR -->|html_content +<br>content_quality| DB_C
+    subgraph READER["③ Contenu du reader"]
+        F -->|content:encoded / description| DB_C
+        DB_C -->|html_content RSS uniquement| APP[Reader mobile]
     end
 
-    subgraph DIGEST["④ Digest Generation (08:00 Paris)"]
+    subgraph DIGEST["④ Digest Generation (07:30 Paris)"]
         DB_C --> CAND[Candidate Selection<br>7 derniers jours]
         CAND -->|filter: followed sources,<br>interests, exclude seen/hidden| CLUSTER[Topic Clustering<br>Jaccard ≥ 0.45]
         CLUSTER --> SCORE[Scoring v2<br>4 piliers pondérés]
@@ -145,22 +145,22 @@ Chaque article reçoit :
 
 ---
 
-## ③ Enrichissement contenu
+## ③ Contenu du reader
 
-**Service** : `ContentExtractor` (inline, déclenché à la demande)
+Le backend ne télécharge pas le corps des pages web. Le reader utilise
+uniquement le contenu transmis par le flux RSS.
 
 | Étape | Outil | Output |
 |-------|-------|--------|
-| Extraction full-text | trafilatura + readability-lxml | `html_content` |
+| Ingestion | `content:encoded`, fallback description RSS | `html_content` |
 | Qualité | Heuristique longueur | `content_quality` = "full" / "partial" / "none" |
-| Anti-retry | Timestamp | `extraction_attempted_at` |
 
 ---
 
 ## ④ Digest Generation
 
 **Job** : `jobs/digest_generation_job.py` → `DigestService`
-**Schedule** : `CronTrigger(hour=8, minute=0, timezone=Europe/Paris)`
+**Schedule** : `CronTrigger(hour=7, minute=30, timezone=Europe/Paris)` — Unes du matin déjà publiées (cf. `bug-digest-evening-content.md`). Watchdog à 08:15 Paris.
 
 ```mermaid
 flowchart TB
@@ -273,7 +273,7 @@ RSS Feeds ──[30min]──> contents ──[continu]──> classification (t
                            │
                            ├──[temps réel]──> FEED ──> user interactions ──┐
                            │                                                │
-                           └──[08:00]──> DIGEST ──> user interactions ──┐  │
+                           └──[07:30]──> DIGEST ──> user interactions ──┐  │
                                                                          ↓  ↓
                                                               user_content_status
                                                                          │

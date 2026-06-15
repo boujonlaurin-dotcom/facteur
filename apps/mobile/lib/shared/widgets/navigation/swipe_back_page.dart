@@ -1,5 +1,27 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show Factory;
 import 'package:flutter/gestures.dart';
+
+const double wideBackGestureWidthFraction = 0.35;
+
+/// Gesture set for platform views nested inside [FullSwipeCupertinoPage].
+///
+/// Only vertical drags are claimed by the platform view.
+///
+/// This mirrors a Flutter [Scrollable]: vertical movement scrolls immediately,
+/// while horizontal movement remains available to the enclosing route's
+/// swipe-back recognizer. Taps and other unclaimed gestures still fall through
+/// to the platform view.
+Set<Factory<OneSequenceGestureRecognizer>>
+    swipeBackCompatiblePlatformViewGestureRecognizers() {
+  return {
+    const Factory<VerticalDragGestureRecognizer>(
+      VerticalDragGestureRecognizer.new,
+    ),
+  };
+}
+
+enum FullSwipePageTransition { horizontal, verticalFromBottom }
 
 /// A [Page] that uses the standard Cupertino slide-from-right transition
 /// but with a wider swipe-back gesture zone (left ~35% of screen) instead
@@ -9,10 +31,12 @@ import 'package:flutter/gestures.dart';
 class FullSwipeCupertinoPage<T> extends Page<T> {
   final Widget child;
   final Duration? transitionDurationOverride;
+  final FullSwipePageTransition transition;
 
   const FullSwipeCupertinoPage({
     required this.child,
     this.transitionDurationOverride,
+    this.transition = FullSwipePageTransition.horizontal,
     super.key,
     super.name,
   });
@@ -30,8 +54,7 @@ class _FullSwipePageRoute<T> extends PageRoute<T>
   _FullSwipePageRoute({required FullSwipeCupertinoPage<T> page})
       : super(settings: page);
 
-  FullSwipeCupertinoPage<T> get _page =>
-      settings as FullSwipeCupertinoPage<T>;
+  FullSwipeCupertinoPage<T> get _page => settings as FullSwipeCupertinoPage<T>;
 
   @override
   Widget buildContent(BuildContext context) => _page.child;
@@ -53,6 +76,21 @@ class _FullSwipePageRoute<T> extends PageRoute<T>
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    if (_page.transition == FullSwipePageTransition.verticalFromBottom) {
+      final curvedAnimation = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 1),
+          end: Offset.zero,
+        ).animate(curvedAnimation),
+        child: child,
+      );
+    }
+
     return CupertinoPageTransition(
       primaryRouteAnimation: animation,
       secondaryRouteAnimation: secondaryAnimation,
@@ -117,7 +155,8 @@ class _BackGestureController {
         navigator.pop();
       }
       if (controller.isAnimating) {
-        controller.animateBack(0.0, duration: dropDuration, curve: animationCurve);
+        controller.animateBack(0.0,
+            duration: dropDuration, curve: animationCurve);
       }
     }
 
@@ -177,7 +216,10 @@ class _FullScreenBackGestureDetectorState
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    if (widget.enabledCallback()) {
+    final width = context.size?.width;
+    if (width != null &&
+        event.localPosition.dx <= width * wideBackGestureWidthFraction &&
+        widget.enabledCallback()) {
       _recognizer.addPointer(event);
     }
   }
@@ -215,29 +257,12 @@ class _FullScreenBackGestureDetectorState
     }
   }
 
-  /// Fraction of screen width from the left edge where the gesture is active.
-  static const double _gestureWidthFraction = 0.35;
-
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    return Stack(
-      fit: StackFit.passthrough,
-      children: [
-        widget.child,
-        // Left-third overlay — wide enough for easy swiping,
-        // narrow enough to not fight vertical scroll in content.
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: screenWidth * _gestureWidthFraction,
-          child: Listener(
-            onPointerDown: _handlePointerDown,
-            behavior: HitTestBehavior.translucent,
-          ),
-        ),
-      ],
+    return Listener(
+      onPointerDown: _handlePointerDown,
+      behavior: HitTestBehavior.translucent,
+      child: widget.child,
     );
   }
 }

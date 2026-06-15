@@ -9,18 +9,24 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
 from app.models.user_personalization import UserPersonalization
-from app.schemas.source import SourceResponse
+from app.schemas.source import PremiumConnectionResponse, SourceResponse
+from app.services.premium_curated_sources import (
+    PREMIUM_CURATED_MAP,
+    is_paywalled_source,
+)
 
 logger = structlog.get_logger()
 
 DISMISS_COOL_DOWN_DAYS = 7
 RATE_LIMIT_HOURS = 24
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
 
 def _now() -> datetime:
@@ -80,7 +86,10 @@ class PepiteService:
 
     async def _user_followed_source_ids(self, user_uuid: UUID) -> set[UUID]:
         result = await self.db.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_uuid)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_uuid,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
         )
         return set(result.scalars().all())
 
@@ -94,7 +103,7 @@ class PepiteService:
         return created
 
     async def get_pepites_for_user(
-        self, user_id: str, limit: int = 4
+        self, user_id: str, limit: int = 4, force_show: bool = False
     ) -> list[SourceResponse]:
         """Retourne jusqu'à `limit` sources pépites pour l'utilisateur.
 
@@ -103,7 +112,7 @@ class PepiteService:
         user_uuid = UUID(user_id)
         personalization = await self._load_personalization(user_uuid)
 
-        if not self._is_eligible(personalization):
+        if not force_show and not self._is_eligible(personalization):
             return []
 
         followed_ids = await self._user_followed_source_ids(user_uuid)
@@ -119,7 +128,13 @@ class PepiteService:
         count_col = func.count(UserSource.user_id).label("follower_count")
         query = (
             select(Source, count_col)
-            .outerjoin(UserSource, UserSource.source_id == Source.id)
+            .outerjoin(
+                UserSource,
+                and_(
+                    UserSource.source_id == Source.id,
+                    UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                ),
+            )
             .where(Source.is_pepite_recommendation)
             .where(Source.is_active)
             .group_by(Source.id)
@@ -151,9 +166,12 @@ class PepiteService:
         if not selected:
             return []
 
-        personalization = await self._ensure_personalization(user_uuid, personalization)
-        personalization.pepite_carousel_last_shown_at = _now()
-        await self.db.flush()
+        if not force_show:
+            personalization = await self._ensure_personalization(
+                user_uuid, personalization
+            )
+            personalization.pepite_carousel_last_shown_at = _now()
+            await self.db.flush()
 
         return [
             SourceResponse(
@@ -181,6 +199,10 @@ class PepiteService:
                 score_ux=s.score_ux,
                 recommended_by=getattr(s, "recommended_by", None),
                 recommendation_reason=getattr(s, "recommendation_reason", None),
+                has_paywall=is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP),
+                premium_connection=PremiumConnectionResponse.from_source(
+                    s, curated_map=PREMIUM_CURATED_MAP
+                ),
             )
             for s, follower_count in selected
         ]

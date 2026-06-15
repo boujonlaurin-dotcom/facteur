@@ -1,8 +1,9 @@
 """Service Lettres du Facteur — auto-détection actions + chaînage.
 
-`get_user_letters` est idempotent : si l'utilisateur n'a pas encore de rows,
-on initialise les 3 lettres en base puis on retourne l'état complet (en
-rafraîchissant la lettre active pour propager les actions déjà accomplies).
+`get_user_letters` est idempotent : `_ensure_rows` initialise les rows
+manquantes (user nouveau OU user existant après ajout de lettres au catalogue)
+puis on retourne l'état complet (en rafraîchissant la lettre active pour
+propager les actions déjà accomplies).
 
 `refresh_letter_status` recalcule les détecteurs pour une lettre donnée et,
 si elle est complète, l'archive et déverrouille la suivante.
@@ -14,14 +15,18 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import AnalyticsEvent
+from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
-from app.models.source import UserSource
+from app.models.enums import ContentStatus, ContentType, SourceType
+from app.models.source import Source, UserSource
 from app.models.user_letter_progress import UserLetterProgress
+from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
+from app.models.veille import VeilleConfig
 from app.services.letters.catalog import (
     LETTERS_BY_ID,
     LETTERS_ORDER,
@@ -79,55 +84,78 @@ async def _detect_add_2_personal_sources(user_id: UUID, db: AsyncSession) -> boo
     return (count or 0) >= 2
 
 
-def _first_event_detector(event_type: str):
+def _count_event_detector(event_type: str, threshold: int):
     async def _detect(user_id: UUID, db: AsyncSession) -> bool:
         stmt = (
-            select(AnalyticsEvent.id)
+            select(func.count())
+            .select_from(AnalyticsEvent)
             .where(
                 AnalyticsEvent.user_id == user_id,
                 AnalyticsEvent.event_type == event_type,
             )
-            .limit(1)
         )
-        return (await db.execute(stmt)).scalar() is not None
+        return ((await db.execute(stmt)).scalar() or 0) >= threshold
 
     return _detect
+
+
+def _first_event_detector(event_type: str):
+    return _count_event_detector(event_type, 1)
 
 
 _detect_first_perspectives_open = _first_event_detector("perspectives_opened")
 _detect_read_first_essentiel = _first_event_detector("digest_opened")
 _detect_read_first_bonnes_nouvelles = _first_event_detector("bonnes_nouvelles_opened")
+_detect_open_10_perspectives = _count_event_detector("perspectives_opened", 10)
+_detect_give_app_feedback = _first_event_detector("app_feedback_opened")
 
 
-async def _detect_read_3_long_articles(user_id: UUID, db: AsyncSession) -> bool:
-    """≥3 contenus articles avec reading_progress≥90 et time_spent_seconds≥60."""
+async def _count_read_articles(user_id: UUID, db: AsyncSession) -> int:
+    """Articles distincts avec un signal minimal d'interaction."""
     stmt = (
         select(func.count(func.distinct(UserContentStatus.content_id)))
         .select_from(UserContentStatus)
         .join(Content, Content.id == UserContentStatus.content_id)
         .where(
             UserContentStatus.user_id == user_id,
-            UserContentStatus.reading_progress >= 90,
-            UserContentStatus.time_spent_seconds >= 60,
-            Content.content_type == "article",
+            Content.content_type == ContentType.ARTICLE,
+            or_(
+                UserContentStatus.time_spent_seconds > 0,
+                UserContentStatus.reading_progress > 0,
+                UserContentStatus.status.in_(
+                    [ContentStatus.SEEN, ContentStatus.CONSUMED]
+                ),
+                UserContentStatus.seen_at.is_not(None),
+            ),
         )
     )
-    return ((await db.execute(stmt)).scalar() or 0) >= 3
+    return (await db.execute(stmt)).scalar() or 0
+
+
+async def _detect_read_3_long_articles(user_id: UUID, db: AsyncSession) -> bool:
+    """≥10 articles distincts avec un signal minimal d'interaction."""
+    return await _count_read_articles(user_id, db) >= 10
+
+
+async def _detect_read_50_articles(user_id: UUID, db: AsyncSession) -> bool:
+    """≥50 articles distincts avec un signal minimal d'interaction."""
+    return await _count_read_articles(user_id, db) >= 50
 
 
 async def _detect_read_first_video_podcast(user_id: UUID, db: AsyncSession) -> bool:
-    """Au moins un contenu podcast/youtube avec time_spent_seconds≥240."""
+    """≥3 articles distincts ajoutés dans des collections utilisateur non likées."""
     stmt = (
-        select(UserContentStatus.id)
-        .join(Content, Content.id == UserContentStatus.content_id)
+        select(func.count(func.distinct(CollectionItem.content_id)))
+        .select_from(CollectionItem)
+        .join(Collection, Collection.id == CollectionItem.collection_id)
+        .join(Content, Content.id == CollectionItem.content_id)
         .where(
-            UserContentStatus.user_id == user_id,
-            UserContentStatus.time_spent_seconds >= 240,
-            Content.content_type.in_(["podcast", "youtube"]),
+            Collection.user_id == user_id,
+            Collection.is_liked_collection.is_(False),
+            Content.content_type == ContentType.ARTICLE,
         )
-        .limit(1)
     )
-    return (await db.execute(stmt)).scalar() is not None
+    return ((await db.execute(stmt)).scalar() or 0) >= 3
 
 
 async def _detect_recommend_first_article(user_id: UUID, db: AsyncSession) -> bool:
@@ -143,6 +171,75 @@ async def _detect_recommend_first_article(user_id: UUID, db: AsyncSession) -> bo
     return (await db.execute(stmt)).scalar() is not None
 
 
+async def _detect_create_first_veille(user_id: UUID, db: AsyncSession) -> bool:
+    """≥1 veille_config, quel que soit son statut (pauser ou supprimer la
+    veille ne dé-complète pas l'action)."""
+    stmt = select(VeilleConfig.id).where(VeilleConfig.user_id == user_id).limit(1)
+    return (await db.execute(stmt)).scalar() is not None
+
+
+def _count_status_flag_detector(flag, threshold: int):
+    """Détecteur sur un flag booléen de UserContentStatus (is_saved, is_liked)."""
+
+    async def _detect(user_id: UUID, db: AsyncSession) -> bool:
+        stmt = (
+            select(func.count())
+            .select_from(UserContentStatus)
+            .where(
+                UserContentStatus.user_id == user_id,
+                flag.is_(True),
+            )
+        )
+        return ((await db.execute(stmt)).scalar() or 0) >= threshold
+
+    return _detect
+
+
+_detect_save_5_articles = _count_status_flag_detector(UserContentStatus.is_saved, 5)
+_detect_recommend_10_articles = _count_status_flag_detector(
+    UserContentStatus.is_liked, 10
+)
+
+
+async def _detect_write_first_note(user_id: UUID, db: AsyncSession) -> bool:
+    """≥1 note non vide (trim) sur un article sauvegardé."""
+    stmt = (
+        select(UserContentStatus.id)
+        .where(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.is_saved.is_(True),
+            UserContentStatus.note_text.is_not(None),
+            func.length(func.trim(UserContentStatus.note_text)) > 0,
+        )
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar() is not None
+
+
+async def _detect_mute_3_sources(user_id: UUID, db: AsyncSession) -> bool:
+    """≥3 sources masquées (UserPersonalization.muted_sources)."""
+    count = await db.scalar(
+        select(func.cardinality(UserPersonalization.muted_sources)).where(
+            UserPersonalization.user_id == user_id
+        )
+    )
+    return (count or 0) >= 3
+
+
+async def _detect_add_5_youtube_channels(user_id: UUID, db: AsyncSession) -> bool:
+    """≥5 user_sources pointant vers une source de type YouTube."""
+    stmt = (
+        select(func.count())
+        .select_from(UserSource)
+        .join(Source, Source.id == UserSource.source_id)
+        .where(
+            UserSource.user_id == user_id,
+            Source.type == SourceType.YOUTUBE,
+        )
+    )
+    return ((await db.execute(stmt)).scalar() or 0) >= 5
+
+
 DETECTORS = {
     "define_editorial_line": _detect_define_editorial_line,
     "add_5_sources": _detect_add_5_sources,
@@ -153,6 +250,15 @@ DETECTORS = {
     "read_3_long_articles": _detect_read_3_long_articles,
     "read_first_video_podcast": _detect_read_first_video_podcast,
     "recommend_first_article": _detect_recommend_first_article,
+    "create_first_veille": _detect_create_first_veille,
+    "save_5_articles": _detect_save_5_articles,
+    "write_first_note": _detect_write_first_note,
+    "mute_3_sources": _detect_mute_3_sources,
+    "add_5_youtube_channels": _detect_add_5_youtube_channels,
+    "read_50_articles": _detect_read_50_articles,
+    "recommend_10_articles": _detect_recommend_10_articles,
+    "open_10_perspectives": _detect_open_10_perspectives,
+    "give_app_feedback": _detect_give_app_feedback,
 }
 
 
@@ -203,7 +309,10 @@ async def _get_rows(user_id: UUID, db: AsyncSession) -> dict[str, UserLetterProg
 
 
 async def _init_progress(user_id: UUID, db: AsyncSession) -> None:
-    """Crée les 3 rows initiales pour un nouveau user."""
+    """Crée toutes les rows initiales pour un nouveau user."""
+    from app.services.user_service import UserService
+
+    await UserService(db).get_or_create_profile(str(user_id))
     now = datetime.now(UTC)
     for catalog in LETTERS_ORDER:
         default_status = catalog["default_status"]
@@ -217,6 +326,59 @@ async def _init_progress(user_id: UUID, db: AsyncSession) -> None:
         )
         db.add(row)
     await db.commit()
+
+
+async def _ensure_rows(
+    user_id: UUID, db: AsyncSession
+) -> dict[str, UserLetterProgress]:
+    """Garantit une row par lettre du catalogue. Idempotent, read-mostly.
+
+    - Aucune row → init complet (nouveau user).
+    - Rows partielles (lettres ajoutées au catalogue après coup) → backfill
+      des manquantes en `upcoming`.
+    - Réactivation de chaîne : si aucune lettre n'est active et que toutes
+      les lettres précédant la première `upcoming` sont archivées, on active
+      cette première `upcoming` (couvre le user qui avait fini la dernière
+      lettre avant l'extension du catalogue).
+    - Commit seulement si quelque chose a changé.
+    """
+    rows = await _get_rows(user_id, db)
+    if not rows:
+        await _init_progress(user_id, db)
+        return await _get_rows(user_id, db)
+
+    changed = False
+    now = datetime.now(UTC)
+    for catalog in LETTERS_ORDER:
+        if catalog["id"] in rows:
+            continue
+        row = UserLetterProgress(
+            user_id=user_id,
+            letter_id=catalog["id"],
+            status="upcoming",
+            completed_actions=[],
+        )
+        db.add(row)
+        rows[catalog["id"]] = row
+        changed = True
+
+    has_active = any(r.status == "active" for r in rows.values())
+    if not has_active:
+        for catalog in LETTERS_ORDER:
+            row = rows[catalog["id"]]
+            if row.status == "archived":
+                continue
+            if row.status == "upcoming":
+                row.status = "active"
+                row.started_at = now
+                row.updated_at = now
+                changed = True
+            break
+
+    if changed:
+        await db.commit()
+        rows = await _get_rows(user_id, db)
+    return rows
 
 
 def _next_upcoming(
@@ -266,12 +428,7 @@ async def refresh_letter_status(
     """Recalcule les actions cochées + archive si terminée + déverrouille
     la suivante. Idempotent."""
     catalog = LETTERS_BY_ID[letter_id]
-    rows = await _get_rows(user_id, db)
-    if letter_id not in rows:
-        # Init si jamais — peut arriver pour un user qui n'a pas appelé
-        # GET /api/letters au préalable.
-        await _init_progress(user_id, db)
-        rows = await _get_rows(user_id, db)
+    rows = await _ensure_rows(user_id, db)
     row = rows[letter_id]
 
     # Idempotence : une lettre archivée n'est jamais re-évaluée.
@@ -301,11 +458,11 @@ async def refresh_letter_status(
 
 
 async def get_user_letters(user_id: UUID, db: AsyncSession) -> list[dict]:
-    """Retourne les 3 lettres avec leur état courant. Init si pas de rows."""
-    rows = await _get_rows(user_id, db)
-    if not rows:
-        await _init_progress(user_id, db)
-        rows = await _get_rows(user_id, db)
+    """Retourne toutes les lettres du catalogue avec leur état courant.
+
+    `_ensure_rows` initialise ou complète les rows manquantes (nouveau user
+    ou lettres ajoutées au catalogue après coup)."""
+    rows = await _ensure_rows(user_id, db)
 
     # Refresh la lettre active (s'il y en a une) pour propager les actions
     # accomplies hors de l'app (ex: user a ajouté des sources sans appeler

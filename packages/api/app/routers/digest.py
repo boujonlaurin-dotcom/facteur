@@ -260,7 +260,7 @@ async def get_both_digests(
         return _preparing_response()
 
     service = DigestService(db)
-    serein_enabled = await service._get_user_serein_enabled(user_uuid)
+    serein_enabled = await service.get_user_serein_enabled(user_uuid)
 
     if normal is not None:
         normal = await _enrich_community_carousel(db, user_uuid, normal)

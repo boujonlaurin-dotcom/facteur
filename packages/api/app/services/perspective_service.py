@@ -1,5 +1,6 @@
 """Perspectives service - hybrid search via DB entities + Google News RSS."""
 
+import asyncio
 import html
 import json
 import os
@@ -15,6 +16,7 @@ import httpx
 import structlog
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from app.services.text_similarity import jaccard_similarity, normalize_title
 
@@ -28,7 +30,10 @@ PERSPECTIVE_TITLE_JACCARD_MIN = 0.30
 # Empêche qu'un seul topic générique ("politics") suffise à valider deux articles
 # sur des sujets radicalement différents (ex: Congo/prisonniers vs Ukraine/trêve)
 # partageant seulement un nom propre omniprésent (Trump, Macron…).
-PERSPECTIVE_MIN_JACCARD_FLOOR = 0.08
+# Calibré sur le gold « event_membership » (Iter 1, 2026-06-09) : 0.08 → 0.12
+# coupe ~36% des FP « weak double signal » (contamination −24%) pour −7,6% de
+# rappel. Cf. docs/maintenance/maintenance-clustering-calibration.md.
+PERSPECTIVE_MIN_JACCARD_FLOOR = 0.12
 PERSPECTIVE_MIN_VALID_RESULTS = 2
 PERSPECTIVE_MIN_BIAS_GROUPS = 2
 # Entités jugées suffisamment discriminantes (LOCATION exclu : trop générique)
@@ -61,6 +66,38 @@ def _parse_entity_names(
 
 # User-Agent to avoid being blocked by Google News
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Google News RSS titles end with " - Source Name" / " | Source" / " – Source".
+# Stripping at ingestion keeps the source name out of DiffTitle highlight spans
+# (spaCy would otherwise tag « Le Monde » as PROPN and surligher).
+# Primary path: exact match against the known source name from <source>.
+# Fallback regex stays restrictive — uppercase-initial, no colon, no internal
+# separator, ≤ 40 chars — to avoid eating legitimate dash-bearing titles
+# (« Foo - Le Linux de poche… », « Etats-Unis – Iran : … », « … - 26/05 »).
+_SOURCE_SUFFIX_FALLBACK_RE = re.compile(
+    r"\s+[-–|]\s+[A-ZÀ-Ý][A-Za-zÀ-ÿ0-9\s'.&-]{0,40}\s*$"
+)
+
+
+def _strip_source_suffix(title: str, source_name: str | None = None) -> str:
+    """Remove Google News' trailing source-name suffix from an RSS title."""
+    if not title:
+        return title
+    stripped = title.rstrip()
+    if source_name:
+        sn = source_name.strip()
+        if sn:
+            lower_title = stripped.lower()
+            lower_sn = sn.lower()
+            for sep in (" - ", " – ", " | "):
+                suffix = f"{sep}{lower_sn}"
+                if lower_title.endswith(suffix):
+                    return stripped[: -len(suffix)].rstrip()
+    match = _SOURCE_SUFFIX_FALLBACK_RE.search(stripped)
+    if match:
+        return stripped[: match.start()].rstrip()
+    return stripped
+
 
 # Bias mapping for major French news sources
 DOMAIN_BIAS_MAP = {
@@ -162,6 +199,11 @@ class Perspective:
     bias_stance: str  # left, center-left, center, center-right, right, unknown
     published_at: str | None = None
     description: str | None = None
+    # Langue détectée du titre ("fr", "en", autre — None = inconnu). Rempli
+    # côté cluster depuis `Content.language` ; les perspectives Google News
+    # restent None faute de row Content (le client traite null comme FR par
+    # défaut).
+    language: str | None = None
 
 
 STANCE_LABELS = {
@@ -216,6 +258,14 @@ class PerspectiveService:
 
     def _has_db(self) -> bool:
         return self._session_maker is not None or self.db is not None
+
+    def _extract_bias_from_source(self, source, domain: str) -> str:
+        """Bias from an eager-loaded Source, falling back to DOMAIN_BIAS_MAP."""
+        if source is not None and source.bias_stance:
+            stance = source.bias_stance.value
+            if stance != "unknown":
+                return stance
+        return DOMAIN_BIAS_MAP.get(domain, "unknown")
 
     async def resolve_bias(self, domain: str, source_name: str | None = None) -> str:
         """Resolve bias for a domain: DOMAIN_BIAS_MAP first, then DB fallback by URL, then by name."""
@@ -561,7 +611,6 @@ class PerspectiveService:
         entity_names = entity_names[:3]
 
         from app.models.content import Content
-        from app.models.source import Source
 
         cutoff = datetime.now(UTC) - timedelta(hours=time_window_hours)
 
@@ -571,9 +620,12 @@ class PerspectiveService:
             for name in entity_names
         ]
 
+        # Eager-load Content.source so the bias lookup below is in-memory.
+        # Sans selectinload, `resolve_bias(domain)` repartait au DB pour chaque
+        # ligne (N+1 sur /contents/{id}/perspectives — bottom-sheet "Autres regards").
         stmt = (
             select(Content)
-            .join(Source, Content.source_id == Source.id)
+            .options(selectinload(Content.source))
             .where(
                 or_(*entity_filters),
                 Content.source_id != content.source_id,
@@ -641,13 +693,16 @@ class PerspectiveService:
 
             # Extract domain from URL
             domain = self._extract_domain(row.url)
-            bias = await self.resolve_bias(domain)
+
+            source_obj = row.source
+            source_name = (source_obj.name or domain) if source_obj else domain
+            bias = self._extract_bias_from_source(source_obj, domain)
 
             perspectives.append(
                 Perspective(
                     title=row.title,
                     url=row.url,
-                    source_name=domain,  # Best we have without eager-loading source
+                    source_name=source_name,
                     source_domain=domain,
                     bias_stance=bias,
                     published_at=row.published_at.isoformat()
@@ -746,7 +801,7 @@ class PerspectiveService:
             if not domain and not source_name:
                 continue
 
-            bias = await self.resolve_bias(domain=domain, source_name=source_name)
+            bias = self._extract_bias_from_source(source, domain)
 
             result.append(
                 Perspective(
@@ -761,6 +816,7 @@ class PerspectiveService:
                         else None
                     ),
                     description=getattr(content, "description", None),
+                    language=getattr(content, "language", None),
                 )
             )
         return result
@@ -813,11 +869,36 @@ class PerspectiveService:
                 seen_domains.add(p.source_domain)
                 merged.append(p)
 
-        # Layer 2: Google News with quoted entities + post-filtre titre Jaccard
+        # Layer 2/3: run Google News entity and fallback queries in parallel.
+        # The endpoint may decide not to wait for Google at all (fast-first),
+        # but when this full path is used, avoid entity→fallback serial latency.
         entity_keywords = self.build_entity_query(content.entities, content.title)
-        google_raw = await self.search_perspectives(
-            entity_keywords, exclude_url, exclude_title, exclude_domain
+        fallback_keywords = self.extract_keywords(content.title)
+        google_tasks = [
+            self.search_perspectives(
+                entity_keywords, exclude_url, exclude_title, exclude_domain
+            )
+        ]
+        include_fallback = entity_keywords != fallback_keywords
+        if include_fallback:
+            google_tasks.append(
+                self.search_perspectives(
+                    fallback_keywords, exclude_url, exclude_title, exclude_domain
+                )
+            )
+
+        google_outputs = await asyncio.gather(*google_tasks, return_exceptions=True)
+        google_raw = (
+            google_outputs[0]
+            if google_outputs and not isinstance(google_outputs[0], Exception)
+            else []
         )
+        if google_outputs and isinstance(google_outputs[0], Exception):
+            logger.warning(
+                "perspectives_entity_google_failed",
+                error=str(google_outputs[0]),
+                error_type=type(google_outputs[0]).__name__,
+            )
         google_results, google_filtered = self._filter_external_perspectives(
             seed_tokens, google_raw
         )
@@ -826,13 +907,20 @@ class PerspectiveService:
                 seen_domains.add(p.source_domain)
                 merged.append(p)
 
-        # Layer 3: Fallback if < 6 results and entity query differs from title keywords
-        fallback_keywords = self.extract_keywords(content.title)
         fallback_filtered = 0
-        if len(merged) < 6 and entity_keywords != fallback_keywords:
-            fallback_raw = await self.search_perspectives(
-                fallback_keywords, exclude_url, exclude_title, exclude_domain
+        if include_fallback and len(merged) < 6:
+            fallback_raw = (
+                google_outputs[1]
+                if len(google_outputs) > 1
+                and not isinstance(google_outputs[1], Exception)
+                else []
             )
+            if len(google_outputs) > 1 and isinstance(google_outputs[1], Exception):
+                logger.warning(
+                    "perspectives_fallback_google_failed",
+                    error=str(google_outputs[1]),
+                    error_type=type(google_outputs[1]).__name__,
+                )
             fallback_results, fallback_filtered = self._filter_external_perspectives(
                 seed_tokens, fallback_raw
             )
@@ -886,23 +974,27 @@ class PerspectiveService:
                 if title_el is None or link_el is None:
                     continue
 
-                title = title_el.text or ""
+                raw_title = title_el.text or ""
                 link = link_el.text or ""
 
                 # 1. Filter out exact URL match
                 if exclude_url and link == exclude_url:
                     continue
 
-                # 2. Filter out very similar titles (simple exact match or contains for now)
-                # Google News titles often include " - Source Name" at the end
+                source_name = source_el.text if source_el is not None else "Unknown"
+                source_url = source_el.get("url", "") if source_el is not None else ""
+
+                # Strip Google News' "- Source" suffix once, at ingestion.
+                # All downstream consumers (dedup, DiffTitle, LLM annotation)
+                # see a clean title.
+                title = _strip_source_suffix(raw_title, source_name)
+
+                # 2. Filter out very similar titles vs. the reference article
                 if exclude_title:
-                    clean_title = title.split(" - ")[0].strip().lower()
+                    clean_title = title.lower()
                     clean_exclude = exclude_title.strip().lower()
                     if clean_title == clean_exclude or clean_exclude in clean_title:
                         continue
-
-                source_name = source_el.text if source_el is not None else "Unknown"
-                source_url = source_el.get("url", "") if source_el is not None else ""
 
                 # Extract domain from source URL
                 domain = self._extract_domain(source_url)
@@ -929,7 +1021,7 @@ class PerspectiveService:
 
                 perspectives.append(
                     Perspective(
-                        title=title_el.text or "",
+                        title=title,
                         url=link_el.text or "",
                         source_name=source_name,
                         source_domain=domain,

@@ -37,7 +37,7 @@ async def test_time_spent_uses_accumulation_expression_in_conflict_set():
         user_id=uuid4(), content_id=uuid4(), time_spent_seconds=60
     )
     result = MagicMock()
-    result.one.return_value = mock_status
+    result.one_or_none.return_value = mock_status
     session.scalars.return_value = result
 
     service = ContentService(session)
@@ -64,7 +64,7 @@ async def test_time_spent_absent_does_not_emit_time_spent_in_conflict_set():
         user_id=uuid4(), content_id=uuid4(), time_spent_seconds=60
     )
     result = MagicMock()
-    result.one.return_value = mock_status
+    result.one_or_none.return_value = mock_status
     session.scalars.return_value = result
 
     service = ContentService(session)
@@ -91,7 +91,7 @@ async def test_consumed_status_triggers_implicit_digest_completion():
     session = AsyncMock()
     mock_status = UserContentStatus(user_id=uuid4(), content_id=uuid4())
     result = MagicMock()
-    result.one.return_value = mock_status
+    result.one_or_none.return_value = mock_status
     session.scalars.return_value = result
     session.get = AsyncMock(return_value=None)  # skip interest/subtopic paths
 
@@ -132,7 +132,7 @@ async def test_non_consumed_status_skips_implicit_completion():
     session = AsyncMock()
     mock_status = UserContentStatus(user_id=uuid4(), content_id=uuid4())
     result = MagicMock()
-    result.one.return_value = mock_status
+    result.one_or_none.return_value = mock_status
     session.scalars.return_value = result
     session.get = AsyncMock(return_value=None)
 
@@ -147,3 +147,36 @@ async def test_non_consumed_status_skips_implicit_completion():
         )
 
         digest_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_consumed_retry_skips_all_transition_side_effects():
+    session = AsyncMock()
+    existing = UserContentStatus(
+        user_id=uuid4(),
+        content_id=uuid4(),
+        status=ContentStatus.CONSUMED,
+    )
+    result = MagicMock()
+    result.one_or_none.return_value = None
+    session.scalars.return_value = result
+    session.scalar.return_value = existing
+
+    with (
+        patch("app.services.content_service.StreakService") as streak_cls,
+        patch("app.services.digest_service.DigestService") as digest_cls,
+    ):
+        service = ContentService(session)
+        updated, transitioned = await service.update_content_status(
+            user_id=existing.user_id,
+            content_id=existing.content_id,
+            update_data=ContentStatusUpdate(status=ContentStatus.CONSUMED),
+        )
+
+        assert updated is existing
+        assert transitioned is False
+        streak_cls.assert_not_called()
+        digest_cls.assert_not_called()
+
+    sql = _captured_stmt(session).lower()
+    assert "where user_content_status.status !=" in sql

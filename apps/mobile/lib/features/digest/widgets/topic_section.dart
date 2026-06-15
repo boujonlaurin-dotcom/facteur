@@ -9,7 +9,6 @@ import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
-import '../../feed/repositories/feed_repository.dart';
 import '../providers/digest_provider.dart';
 import '../../feed/utils/article_title_layout.dart';
 import '../../feed/widgets/dismiss_banner.dart';
@@ -17,11 +16,11 @@ import '../../feed/widgets/feed_card.dart';
 import '../../feed/widgets/initial_circle.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
-import '../../feed/widgets/perspectives_loading_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
 import 'a_la_une_badge.dart';
+import '../../settings/providers/display_mode_provider.dart';
 import 'article_thumbs_feedback.dart';
 import 'divergence_analysis_block.dart';
 import 'editorial_badge.dart';
@@ -876,6 +875,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => PerspectivesBottomSheet(
+        // DÉSACTIVÉ (T1) : highlighting biais retiré → spans non alimentés
+        // (défaut const []) ⇒ titres plain.
         perspectives: response.perspectives
             .map((p) => Perspective(
                   title: p.title,
@@ -894,6 +895,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
         // action (e.g. analyzePerspectives) operates on the same content.
         contentId: pivotId,
         comparisonQuality: response.comparisonQuality,
+        divergenceLevel: widget.topic.divergenceLevel,
       ),
     );
   }
@@ -1113,6 +1115,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
             descriptionFontSize: 15,
             titleMaxLines: _digestTitleMaxLines,
             denseLayout: true,
+            displaySpec: ref.watch(displayModeSpecProvider),
+            divergenceLevel: widget.topic.divergenceLevel,
             onImageError: () => _onImageError(article.contentId),
             onTap: () => widget.onArticleTap(article),
             onSourceTap: widget.onSourceTap != null && article.source?.id != null
@@ -1159,6 +1163,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           descriptionFontSize: 15,
           titleMaxLines: _digestTitleMaxLines,
           denseLayout: true,
+          displaySpec: ref.watch(displayModeSpecProvider),
+          divergenceLevel: widget.topic.divergenceLevel,
           onImageError: () => _onImageError(article.contentId),
           onTap: () => widget.onArticleTap(article),
           onSourceTap: widget.onSourceTap != null && article.source?.id != null

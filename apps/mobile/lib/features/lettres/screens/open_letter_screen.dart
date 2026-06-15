@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,14 +7,25 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../navigation/letter_action_route_resolver.dart';
 import '../models/letter.dart';
 import '../models/letter_progress.dart';
 import '../providers/letters_provider.dart';
+import '../providers/pending_save_nudge_provider.dart';
 import '../widgets/envelope_thumb.dart';
 import '../widgets/letter_action_tile.dart';
 import '../widgets/letter_completion_overlay.dart';
 import '../widgets/progress_toast.dart';
+
+/// Les seules destinations qui sont des onglets de la StatefulShellRoute :
+/// `context.push` y crashe (push sur une branche de shell), `context.go`
+/// bascule l'onglet. Toute autre route (`/settings`, `/veille/config`,
+/// `/saved`, …) est une route empilée → `context.push` (sinon `go` la rend
+/// unique, fond noir + crash au pop).
+bool _isShellTabRoute(String route) =>
+    route == RoutePaths.flaner || route.startsWith(RoutePaths.fluxContinu);
 
 class OpenLetterScreen extends ConsumerStatefulWidget {
   final String letterId;
@@ -95,10 +107,8 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen>
               opaque: true,
               fullscreenDialog: true,
               transitionDuration: const Duration(milliseconds: 280),
-              pageBuilder: (_, __, ___) => LetterCompletionOverlay(
-                letter: letter,
-                onDismiss: () {},
-              ),
+              pageBuilder: (_, __, ___) =>
+                  LetterCompletionOverlay(letter: letter, onDismiss: () {}),
             ),
           );
         },
@@ -123,8 +133,9 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen>
       return;
     }
 
-    final newlyDone =
-        doneActions.where((a) => !_seenDoneActionIds.contains(a.id)).toList();
+    final newlyDone = doneActions
+        .where((a) => !_seenDoneActionIds.contains(a.id))
+        .toList();
     if (newlyDone.isEmpty) return;
     _seenDoneActionIds.addAll(newlyDone.map((a) => a.id));
 
@@ -162,9 +173,8 @@ class _OpenLetterScreenState extends ConsumerState<OpenLetterScreen>
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       body: state.when(
-        loading: () => Center(
-          child: CircularProgressIndicator(color: colors.primary),
-        ),
+        loading: () =>
+            Center(child: CircularProgressIndicator(color: colors.primary)),
         error: (e, _) => _ErrorView(
           onRetry: () => ref.read(lettersProvider.notifier).refresh(),
         ),
@@ -197,8 +207,10 @@ class _NotFound extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: IconButton(
-                icon:
-                    Icon(PhosphorIcons.arrowLeft(), color: colors.textPrimary),
+                icon: Icon(
+                  PhosphorIcons.arrowLeft(),
+                  color: colors.textPrimary,
+                ),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ),
@@ -262,8 +274,9 @@ class _Body extends ConsumerWidget {
         .where((p) => p.trim().isNotEmpty)
         .toList(growable: false);
 
-    final doneCount =
-        letter.actions.where((a) => a.status == LetterActionStatus.done).length;
+    final doneCount = letter.actions
+        .where((a) => a.status == LetterActionStatus.done)
+        .length;
     final total = letter.actions.length;
 
     return SafeArea(
@@ -275,8 +288,10 @@ class _Body extends ConsumerWidget {
               child: Row(
                 children: [
                   IconButton(
-                    icon: Icon(PhosphorIcons.arrowLeft(),
-                        color: colors.textPrimary),
+                    icon: Icon(
+                      PhosphorIcons.arrowLeft(),
+                      color: colors.textPrimary,
+                    ),
                     onPressed: () => Navigator.of(context).pop(),
                     tooltip: 'Retour',
                   ),
@@ -294,8 +309,10 @@ class _Body extends ConsumerWidget {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(PhosphorIcons.dotsThreeVertical(),
-                        color: colors.textTertiary),
+                    icon: Icon(
+                      PhosphorIcons.dotsThreeVertical(),
+                      color: colors.textTertiary,
+                    ),
                     onPressed: () {},
                     tooltip: 'Plus',
                   ),
@@ -303,9 +320,7 @@ class _Body extends ConsumerWidget {
               ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: _Illustration(colors: colors),
-          ),
+          SliverToBoxAdapter(child: _Illustration(colors: colors)),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 22),
             sliver: SliverList(
@@ -344,7 +359,8 @@ class _Body extends ConsumerWidget {
                     const SizedBox(height: 12),
                   ],
                 ),
-                if (letter.introPalier != null && letter.introPalier!.isNotEmpty) ...[
+                if (letter.introPalier != null &&
+                    letter.introPalier!.isNotEmpty) ...[
                   Text(
                     letter.introPalier!,
                     style: GoogleFonts.fraunces(
@@ -389,14 +405,29 @@ class _Body extends ConsumerWidget {
                   (a) => LetterActionTile(
                     action: a,
                     onTap: () async {
-                      final route = a.targetRoute;
-                      if (route != null && route.isNotEmpty) {
-                        await context.push<void>(route);
-                      }
-                      if (!context.mounted) return;
+                      final route = resolveLetterActionRoute(a);
+                      // Rafraîchir l'UI Progression AVANT de naviguer.
                       await ref
                           .read(lettersProvider.notifier)
                           .refreshLetterStatus(letter.id);
+                      if (!context.mounted) return;
+                      if (route != null && route.isNotEmpty) {
+                        // « Sauvegarder 3 articles » : armer le nudge
+                        // Sauvegarder sur le 1er article ouvert.
+                        if (a.id == 'read_first_video_podcast') {
+                          ref
+                              .read(pendingSaveNudgeProvider.notifier)
+                              .state = true;
+                        }
+                        // Onglets shell → go (bascule d'onglet) ; routes
+                        // empilées → push (la lettre reste derrière, le pop
+                        // y revient au lieu de vider le navigator → crash).
+                        if (_isShellTabRoute(route)) {
+                          context.go(route);
+                        } else {
+                          unawaited(context.push(route));
+                        }
+                      }
                     },
                   ),
                 ),
@@ -446,10 +477,7 @@ class _IllustrationState extends State<_Illustration>
         gradient: RadialGradient(
           center: const Alignment(0.4, -0.4),
           radius: 1.0,
-          colors: [
-            widget.colors.primary.withOpacity(0.06),
-            Colors.transparent,
-          ],
+          colors: [widget.colors.primary.withOpacity(0.06), Colors.transparent],
           stops: const [0, 0.6],
         ),
       ),

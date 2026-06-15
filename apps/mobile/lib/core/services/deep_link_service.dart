@@ -13,20 +13,20 @@ import 'analytics_service.dart';
 /// Supported URIs:
 /// - `io.supabase.facteur://digest` → `/digest`
 /// - `io.supabase.facteur://digest/<contentId>?pos=<n>&topicId=<id>`
-///   → `/feed/content/<contentId>` (article reader, Essentiel deep link)
-/// - `io.supabase.facteur://feed` → `/feed`
+///   → `/flux-continu/content/<contentId>` (article reader, Essentiel deep link)
+/// - `io.supabase.facteur://feed` → `/flaner`
 /// - `io.supabase.facteur://feed/content/<contentId>?pos=<n>&topicId=<id>`
-///   → `/feed/content/<contentId>` (article reader, Flux deep link)
+///   → `/flaner/content/<contentId>` (article reader, Flâner deep link)
 /// - `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`
+/// - `io.supabase.facteur://grille` → `/grille` (« Le mot du jour », partagé
+///   entre amis — ouvre la grille dans l'app au lieu du site facteur.app)
 ///
 /// `io.supabase.facteur://login-callback` is intentionally ignored — Supabase
 /// SDK intercepts it before it reaches us. Anything else falls through to
 /// GoRouter's `errorBuilder`, which is a safety net only.
 class DeepLinkService {
-  DeepLinkService._({
-    AppLinks? appLinks,
-    AnalyticsService? analytics,
-  })  : _appLinks = appLinks ?? AppLinks(),
+  DeepLinkService._({AppLinks? appLinks, AnalyticsService? analytics})
+      : _appLinks = appLinks ?? AppLinks(),
         _analytics = analytics;
 
   /// Test-only factory letting suites inject a fake AppLinks/Analytics.
@@ -73,10 +73,7 @@ class DeepLinkService {
   bool _authenticated = false;
 
   /// Bind the service to the running router and analytics. Idempotent.
-  void bind({
-    required GoRouter router,
-    AnalyticsService? analytics,
-  }) {
+  void bind({required GoRouter router, AnalyticsService? analytics}) {
     _router = router;
     if (analytics != null) {
       _analytics = analytics;
@@ -187,6 +184,10 @@ class DeepLinkService {
         _analytics?.trackWidgetAppOpened(target: 'veille');
         router.go(action.route!);
         return;
+      case WidgetDeepLinkTarget.grille:
+        _analytics?.trackWidgetAppOpened(target: 'grille');
+        router.go(action.route!);
+        return;
       case WidgetDeepLinkTarget.ignored:
       case WidgetDeepLinkTarget.unhandled:
         debugPrint('DeepLinkService: unhandled uri=$uri');
@@ -216,14 +217,25 @@ class DeepLinkService {
         (host.isEmpty && segments.isNotEmpty && segments.first == 'feed');
     final isVeille = host == 'veille' ||
         (host.isEmpty && segments.isNotEmpty && segments.first == 'veille');
+    final isGrille = host == 'grille' ||
+        (host.isEmpty && segments.isNotEmpty && segments.first == 'grille');
+
+    if (isGrille) {
+      // « Le mot du jour » partagé entre amis : ouvre la grille dans l'app.
+      return const WidgetDeepLinkAction(
+        target: WidgetDeepLinkTarget.grille,
+        route: RoutePaths.grille,
+      );
+    }
 
     if (isVeille) {
-      // `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`.
-      // Toute autre cible veille (deliveries, …) inconnue tombe en fallback
-      // sur le dashboard plutôt que l'errorBuilder GoRouter.
+      // La veille n'a plus d'écran dédié — son contenu vit dans la Tournée
+      // du jour (slot kind=veille). Les anciens deep links widget
+      // `io.supabase.facteur://veille/dashboard` sont redirigés vers le
+      // flux continu, où la section veille apparaît avec son accent dédié.
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.veille,
-        route: RoutePaths.veilleDashboard,
+        route: RoutePaths.fluxContinu,
       );
     }
 
@@ -232,15 +244,17 @@ class DeepLinkService {
       if (articleId != null && articleId.isNotEmpty) {
         return WidgetDeepLinkAction(
           target: WidgetDeepLinkTarget.article,
-          route: '/feed/content/$articleId',
+          route: '/flux-continu/content/$articleId',
           articleId: articleId,
           position: int.tryParse(uri.queryParameters['pos'] ?? ''),
           topicId: uri.queryParameters['topicId'],
         );
       }
+      // Le digest a fusionné dans la Tournée du jour lors du cleanup
+      // post-unification — on redirige vers le flux continu.
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.digest,
-        route: RoutePaths.digest,
+        route: RoutePaths.fluxContinu,
       );
     }
     if (isFeed) {
@@ -255,16 +269,18 @@ class DeepLinkService {
         if (articleId.isNotEmpty) {
           return WidgetDeepLinkAction(
             target: WidgetDeepLinkTarget.article,
-            route: '/feed/content/$articleId',
+            route: '${RoutePaths.flaner}/content/$articleId',
             articleId: articleId,
             position: int.tryParse(uri.queryParameters['pos'] ?? ''),
             topicId: uri.queryParameters['topicId'],
           );
         }
       }
+      // FeedScreen historique — on route vers Flâner, désormais page feed
+      // autonome.
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.feed,
-        route: RoutePaths.feed,
+        route: RoutePaths.flaner,
       );
     }
 
@@ -290,7 +306,15 @@ class DeepLinkService {
   }
 }
 
-enum WidgetDeepLinkTarget { digest, article, feed, veille, ignored, unhandled }
+enum WidgetDeepLinkTarget {
+  digest,
+  article,
+  feed,
+  veille,
+  grille,
+  ignored,
+  unhandled,
+}
 
 class WidgetDeepLinkAction {
   final WidgetDeepLinkTarget target;

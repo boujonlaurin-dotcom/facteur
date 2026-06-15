@@ -266,3 +266,92 @@ class TestGlobalCandidatePool:
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": False})).lower()
         # No good-news filter applied — historical behaviour preserved
         assert "is_good_news = true" not in compiled
+
+
+class TestFollowedSourceSlice:
+    """P1: followed sources are unioned into the clustering pool."""
+
+    @pytest.mark.asyncio
+    async def test_followed_slice_unioned_and_deduped(self, job):
+        """A followed-source article past the top-200 cut is added, deduped."""
+        from app.models.source import Source
+
+        followed_src = uuid4()
+        # recency slice: c1 (other source), c2 (followed, already present)
+        c1 = Mock(id=uuid4(), source_id=uuid4())
+        c2 = Mock(id=uuid4(), source_id=followed_src)
+        # followed slice query returns c2 (dup) + c3 (new, older niche article)
+        c3 = Mock(id=uuid4(), source_id=followed_src)
+
+        def _result(items):
+            scalars = MagicMock()
+            scalars.all = MagicMock(return_value=items)
+            res = MagicMock()
+            res.scalars = MagicMock(return_value=scalars)
+            return res
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[_result([c1, c2]), _result([c2, c3])]
+        )
+
+        result = await job._get_global_candidates(
+            mock_session, followed_source_ids={followed_src}
+        )
+
+        ids = [c.id for c in result]
+        # c1, c2 from recency + c3 from followed slice (c2 deduped).
+        assert ids == [c1.id, c2.id, c3.id]
+        assert mock_session.execute.await_count == 2
+        # Second query (followed slice) filters on source_id and keeps cutoff.
+        followed_stmt = mock_session.execute.await_args_list[1].args[0]
+        compiled = str(
+            followed_stmt.compile(compile_kwargs={"literal_binds": False})
+        ).lower()
+        assert "contents.source_id in" in compiled
+        assert "contents.published_at >=" in compiled
+
+    @pytest.mark.asyncio
+    async def test_no_followed_slice_when_empty(self, job):
+        """Without followed sources, only the recency slice query runs."""
+        scalars = MagicMock()
+        scalars.all = MagicMock(return_value=[Mock(id=uuid4(), source_id=uuid4())])
+        res = MagicMock()
+        res.scalars = MagicMock(return_value=scalars)
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=res)
+
+        result = await job._get_global_candidates(
+            mock_session, followed_source_ids=set()
+        )
+        assert len(result) == 1
+        assert mock_session.execute.await_count == 1
+
+
+class TestBatchFollowedSourceIds:
+    """P1: the batch union of genuinely-followed source ids."""
+
+    @pytest.mark.asyncio
+    async def test_empty_user_ids_short_circuits(self, job):
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        result = await job._get_batch_followed_source_ids(mock_session, [])
+        assert result == set()
+        mock_session.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_filters_on_followed_and_favorite_state(self, job):
+        sid1, sid2 = uuid4(), uuid4()
+        res = MagicMock()
+        res.all = MagicMock(return_value=[(sid1,), (sid2,)])
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=res)
+
+        result = await job._get_batch_followed_source_ids(
+            mock_session, [uuid4(), uuid4()]
+        )
+        assert result == {sid1, sid2}
+        stmt = mock_session.execute.await_args.args[0]
+        compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "state in" in compiled
+        assert "'followed'" in compiled and "'favorite'" in compiled

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'package:facteur/core/api/api_client.dart';
@@ -6,12 +7,22 @@ import 'package:facteur/core/api/notification_preferences_api_service.dart';
 import 'package:facteur/core/services/posthog_service.dart';
 import 'package:facteur/features/notifications/widgets/notification_activation_modal.dart';
 
+enum FeedLoadMilestone {
+  firstPaint('first_paint'),
+  digestVisible('digest_visible'),
+  fullyLoaded('fully_loaded');
+
+  const FeedLoadMilestone(this.eventValue);
+  final String eventValue;
+}
+
 class AnalyticsService {
   final ApiClient? _apiClient;
   final PostHogService? _posthog;
   String? _deviceId;
   String? _sessionId;
   DateTime? _sessionStartTime;
+  String? _appVersion;
 
   AnalyticsService(ApiClient this._apiClient, {PostHogService? posthog})
       : _posthog = posthog;
@@ -30,16 +41,25 @@ class AnalyticsService {
       _deviceId = const Uuid().v4();
       await prefs.setString('analytics_device_id', _deviceId!);
     }
+    try {
+      final info = await PackageInfo.fromPlatform();
+      _appVersion = '${info.version}+${info.buildNumber}';
+    } catch (_) {
+      // Best-effort — version tracking degrades gracefully if unavailable
+    }
   }
 
   Future<void> startSession({bool isOrganic = true}) async {
     _sessionId = const Uuid().v4();
     _sessionStartTime = DateTime.now();
+    final localDate = _sessionStartTime!.toIso8601String().split('T').first;
 
     await _logEvent('session_start', {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      'local_date': localDate,
+      if (_appVersion != null) 'app_version': _appVersion,
     });
     // Story 14.1 — PostHog uses `app_open` as the conventional event name
     // for DAU/retention computation. We mirror session_start to it.
@@ -47,22 +67,30 @@ class AnalyticsService {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
+      'local_date': localDate,
+      if (_appVersion != null) 'app_version': _appVersion,
     });
   }
 
   Future<void> endSession() async {
     if (_sessionStartTime == null) return;
 
-    final duration = DateTime.now().difference(_sessionStartTime!).inSeconds;
+    final sessionStartTime = _sessionStartTime!;
+    final sessionId = _sessionId;
+    final duration = DateTime.now().difference(sessionStartTime).inSeconds;
 
-    await _logEvent('session_end', {
-      'session_id': _sessionId,
-      'duration_seconds': duration,
-    });
-
+    // Clear the in-memory session before awaiting I/O so a quick
+    // pause→resume cycle can start a fresh session immediately.
     _sessionId = null;
     _sessionStartTime = null;
+
+    await _logEvent('session_end', {
+      'session_id': sessionId,
+      'duration_seconds': duration,
+    });
   }
+
+  bool get hasActiveSession => _sessionStartTime != null;
 
   // ──────────────────────────────────────────────────────────────
   // Unified content interaction methods (GAFAM-aligned)
@@ -209,6 +237,21 @@ class AnalyticsService {
     await _logEvent('feed_complete', {'session_id': _sessionId});
   }
 
+  /// Mesure la progression du chargement progressif du feed.
+  /// [durationMs] : ms depuis le mount du `FeedScreen`.
+  Future<void> trackFeedLoadTiming({
+    required FeedLoadMilestone milestone,
+    required int durationMs,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'milestone': milestone.eventValue,
+      'duration_ms': durationMs,
+    };
+    await _logEvent('feed_load_timing', props);
+    await _capturePostHog('feed_load_timing', props);
+  }
+
   Future<void> trackSourceAdd(String sourceId) async {
     await _logEvent('source_add', {'source_id': sourceId});
     await _capturePostHog('source_added', {'source_id': sourceId});
@@ -216,6 +259,29 @@ class AnalyticsService {
 
   Future<void> trackSourceRemove(String sourceId) async {
     await _logEvent('source_remove', {'source_id': sourceId});
+  }
+
+  /// Issue de l'enregistrement des sources en fin d'onboarding.
+  ///
+  /// Rend OBSERVABLE en production l'écart "sources demandées → enregistrées".
+  /// Avant, un échec n'était qu'un `debugPrint` (invisible en release) → classe
+  /// de bug "enregistrement silencieux". `failed` = l'appel onboarding lui-même
+  /// n'a pas abouti (tous les retries KO).
+  Future<void> trackOnboardingSourcesRegistered({
+    required int requested,
+    required int created,
+    bool failed = false,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'requested': requested,
+      'created': created,
+      // signal clé pour l'alerting : des sources demandées mais 0 enregistrée
+      'missing': failed ? requested : (requested - created).clamp(0, requested),
+      'failed': failed,
+    };
+    await _logEvent('onboarding_sources_registered', props);
+    await _capturePostHog('onboarding_sources_registered', props);
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -303,6 +369,14 @@ class AnalyticsService {
     await _logEvent('perspective_comparison_closed', props);
   }
 
+  /// Ouverture de la modale « Donner mon avis » (réglages). Trace serveur
+  /// utilisée par la lettre 4 (action give_app_feedback).
+  Future<void> trackAppFeedbackOpened() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('app_feedback_opened', props);
+    await _capturePostHog('app_feedback_opened', props);
+  }
+
   /// origin: 'digest' | 'feed' | 'settings'
   Future<void> trackArticleFeedbackSubmitted({
     required String contentId,
@@ -375,7 +449,6 @@ class AnalyticsService {
     await _capturePostHog('preference_changed', props);
   }
 
-
   Future<void> trackAddSourceThemeTap(String themeSlug) async {
     await _logEvent('add_source_theme_tap', {'theme_slug': themeSlug});
   }
@@ -389,10 +462,9 @@ class AnalyticsService {
   }
 
   Future<void> trackAddSourceContentTypeFilter(String contentType) async {
-    await _logEvent(
-      'add_source_content_type_filter',
-      {'content_type': contentType},
-    );
+    await _logEvent('add_source_content_type_filter', {
+      'content_type': contentType,
+    });
   }
 
   Future<void> trackAddSourceExpand(String query) async {
@@ -407,20 +479,14 @@ class AnalyticsService {
   Future<void> trackWellInformedPromptShown({
     String context = 'digest_inline',
   }) async {
-    final props = {
-      'session_id': _sessionId,
-      'context': context,
-    };
+    final props = {'session_id': _sessionId, 'context': context};
     await _logEvent('well_informed_prompt_shown', props);
   }
 
   Future<void> trackWellInformedPromptSkipped({
     String context = 'digest_inline',
   }) async {
-    final props = {
-      'session_id': _sessionId,
-      'context': context,
-    };
+    final props = {'session_id': _sessionId, 'context': context};
     await _logEvent('well_informed_prompt_skipped', props);
     await _capturePostHog('well_informed_prompt_skipped', props);
   }
@@ -478,6 +544,30 @@ class AnalyticsService {
     await _capturePostHog('discover_disable_skipped', props);
   }
 
+  Future<void> trackGeolocPromptShown({required int displayCount}) async {
+    final props = {
+      'session_id': _sessionId,
+      'display_count': displayCount,
+    };
+    await _logEvent('geoloc_prompt_shown', props);
+    await _capturePostHog('geoloc_prompt_shown', props);
+  }
+
+  Future<void> trackGeolocPromptActivated({required bool granted}) async {
+    final props = {
+      'session_id': _sessionId,
+      'granted': granted,
+    };
+    await _logEvent('geoloc_prompt_activated', props);
+    await _capturePostHog('geoloc_prompt_activated', props);
+  }
+
+  Future<void> trackGeolocPromptDismissed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('geoloc_prompt_dismissed', props);
+    await _capturePostHog('geoloc_prompt_dismissed', props);
+  }
+
   /// target: 'digest' | 'article' | 'feed'.
   /// Fired whenever a `io.supabase.facteur://` widget URI lands in the app.
   Future<void> trackWidgetAppOpened({
@@ -524,9 +614,8 @@ class AnalyticsService {
     required int totalCount,
     DateTime? at,
   }) async {
-    final scrollPct = totalCount > 0
-        ? ((maxPosition + 1) / totalCount).clamp(0.0, 1.0)
-        : 0.0;
+    final scrollPct =
+        totalCount > 0 ? ((maxPosition + 1) / totalCount).clamp(0.0, 1.0) : 0.0;
     final props = <String, dynamic>{
       'session_id': _sessionId,
       'max_position': maxPosition,
@@ -540,19 +629,25 @@ class AnalyticsService {
 
   // ── Notifications activation events (brief §7) ──────────────────────
 
-  Future<void> trackModalNotifShown({required ActivationTrigger trigger}) async {
+  Future<void> trackModalNotifShown({
+    required ActivationTrigger trigger,
+  }) async {
     final props = <String, dynamic>{'trigger': trigger.name};
     await _logEvent('modal_notif_shown', props);
     await _capturePostHog('modal_notif_shown', props);
   }
 
-  Future<void> trackModalNotifPresetChanged({required NotifPreset preset}) async {
+  Future<void> trackModalNotifPresetChanged({
+    required NotifPreset preset,
+  }) async {
     final props = <String, dynamic>{'preset': preset.wire};
     await _logEvent('modal_notif_preset_changed', props);
     await _capturePostHog('modal_notif_preset_changed', props);
   }
 
-  Future<void> trackModalNotifTimeChanged({required NotifTimeSlot timeSlot}) async {
+  Future<void> trackModalNotifTimeChanged({
+    required NotifTimeSlot timeSlot,
+  }) async {
     final props = <String, dynamic>{'time': timeSlot.wire};
     await _logEvent('modal_notif_time_changed', props);
     await _capturePostHog('modal_notif_time_changed', props);
@@ -575,6 +670,23 @@ class AnalyticsService {
   Future<void> trackModalNotifDismissed() async {
     await _logEvent('modal_notif_dismissed', {});
     await _capturePostHog('modal_notif_dismissed', {});
+  }
+
+  // ── iOS "Add to Home Screen" PWA modal (Story web.1) ────────────────
+
+  Future<void> trackIosAddToHomeShown() async {
+    await _logEvent('ios_add_to_home_shown', {});
+    await _capturePostHog('ios_add_to_home_shown', {});
+  }
+
+  Future<void> trackIosAddToHomeConfirmed() async {
+    await _logEvent('ios_add_to_home_confirmed', {});
+    await _capturePostHog('ios_add_to_home_confirmed', {});
+  }
+
+  Future<void> trackIosAddToHomeDismissed() async {
+    await _logEvent('ios_add_to_home_dismissed', {});
+    await _capturePostHog('ios_add_to_home_dismissed', {});
   }
 
   Future<void> trackRenudgeShown({required int displayCount}) async {
@@ -641,6 +753,103 @@ class AnalyticsService {
     await prefs.setBool('has_launched_before', true);
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // La Grille du jour (Story 24.2)
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> trackGrilleOpened({String? numero, required String statut}) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'statut': statut,
+    };
+    await _logEvent('grille_opened', props);
+    await _capturePostHog('grille_opened', props);
+  }
+
+  Future<void> trackGrilleGuessSubmitted({
+    String? numero,
+    required int essai,
+    required bool valide,
+    String? raison,
+  }) async {
+    await _logEvent('grille_guess_submitted', {
+      'session_id': _sessionId,
+      'numero': numero,
+      'essai': essai,
+      'valide': valide,
+      'raison': raison,
+    });
+  }
+
+  Future<void> trackGrilleCompleted({
+    String? numero,
+    required String statut,
+    required int nbEssais,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'statut': statut,
+      'nb_essais': nbEssais,
+    };
+    await _logEvent('grille_completed', props);
+    await _capturePostHog('grille_completed', props);
+  }
+
+  /// `medium` ∈ `texte | lien`.
+  Future<void> trackGrilleShared({String? numero, required String medium}) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'medium': medium,
+    };
+    await _logEvent('grille_shared', props);
+    await _capturePostHog('grille_shared', props);
+  }
+
+  Future<void> trackGrilleLeaderboardOpened({String? numero}) async {
+    await _logEvent('grille_leaderboard_opened', {
+      'session_id': _sessionId,
+      'numero': numero,
+    });
+  }
+
+  Future<void> trackGrilleCtaShown({required String state}) async {
+    await _logEvent('grille_cta_shown', {
+      'session_id': _sessionId,
+      'state': state,
+    });
+  }
+
+  Future<void> trackGrilleCtaTapped({required String state}) async {
+    final props = {'session_id': _sessionId, 'state': state};
+    await _logEvent('grille_cta_tapped', props);
+    await _capturePostHog('grille_cta_tapped', props);
+  }
+
+  /// Tap sur un lien « lire les actus du jour » depuis La Grille (résultat ou
+  /// mini-CTA en cours de jeu).
+  Future<void> trackGrilleActusTapped({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_actus_tapped', props);
+    await _capturePostHog('grille_actus_tapped', props);
+  }
+
+  /// Le joueur a ouvert le vrai article accroché au mot du jour (reveal).
+  Future<void> trackGrilleArticleTapped({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_article_tapped', props);
+    await _capturePostHog('grille_article_tapped', props);
+  }
+
+  /// Le joueur a « donné sa langue au chat » (mot révélé, exclu du classement).
+  Future<void> trackGrilleRevealed({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_revealed', props);
+    await _capturePostHog('grille_revealed', props);
+  }
+
   Future<void> _logEvent(
     String eventType,
     Map<String, dynamic> eventData,
@@ -650,7 +859,7 @@ class AnalyticsService {
     try {
       if (_deviceId == null) await init();
 
-      await client.dio.post(
+      await client.dio.post<dynamic>(
         'analytics/events',
         data: {
           'event_type': eventType,

@@ -130,8 +130,6 @@ class TestMatchedDeepArticle:
 class TestEditorialSubject:
     def test_optional_fields_default_none(self):
         subject = _make_subject()
-        assert subject.intro_text is None
-        assert subject.transition_text is None
         assert subject.actu_article is None
         assert subject.deep_article is None
 

@@ -27,12 +27,9 @@ cachetools>=5.3.0
 feedparser==6.0.10
 beautifulsoup4==4.12.3
 
-# Content Extraction (In-App Reading)
-trafilatura>=1.12.0
-readability-lxml>=0.8.1
-
 # Scheduling
 apscheduler==3.10.4
+firebase-admin>=6.5.0,<7
 
 # Logging
 structlog==24.1.0
@@ -59,6 +56,10 @@ pytest-asyncio==0.23.5
 # Install with: pip install -r requirements-ml.txt
 protobuf==5.26.1
 curl-cffi==0.7.4
+
+# NER pour le surlignage des titres de perspectives (Story 7.4)
+# Le modèle fr_core_news_md (~40 MB) est téléchargé dans le Dockerfile.
+spacy==3.8.11
 
 # Editorial Pipeline (Story 10.23)
 PyYAML>=6.0

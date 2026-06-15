@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import InterestState
 from app.models.source import Source, UserSource
 from app.models.user import (
     UserInterest,
@@ -16,12 +17,35 @@ from app.models.user import (
     UserStreak,
     UserSubtopic,
 )
+from app.models.user_favorites import UserFavoriteInterest
 from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.schemas.user import OnboardingAnswers, UserProfileUpdate, UserStatsResponse
 from app.services.ml.classification_service import SLUG_TO_LABEL
 
 logger = structlog.get_logger(__name__)
+
+
+ALLOWED_PREFERENCE_KEYS: frozenset[str] = frozenset(
+    {
+        "serein_enabled",
+        "serein_personalized",
+        "sensitive_themes",
+        "digest_format",
+        "objective",
+        "approach",
+        "perspective",
+        "response_style",
+        "content_recency",
+        "format_preference",
+        "personal_goal",
+        "acquisition_source",
+        # Axes "profondeur" ré-aiguillés (onboarding v6).
+        "independence_pref",
+        "swipe_liked_count",
+        "swipe_disliked_count",
+    }
+)
 
 
 class UserService:
@@ -140,6 +164,21 @@ class UserService:
             "serein_enabled": ("true" if answers.digest_mode == "serein" else "false")
             if answers.digest_mode is not None
             else None,
+            # Axe indépendance (établis vs indépendants) — réutilisable par le
+            # feed plus tard. Préférence déclarée, persistée telle quelle.
+            "independence_pref": answers.independence_pref,
+            # Résultat du swipe désambiguateur : on persiste un agrégat compact
+            # (compteurs) plutôt que les IDs bruts — tient dans
+            # preference_value (String(100)) et suffit comme signal d'engagement.
+            # L'effet immédiat du swipe (pré-sélection + repondération au reveal)
+            # est entièrement côté client. L'affinité par source → pillars du
+            # feed reste un follow-up explicite (cf. story, hors scope).
+            "swipe_liked_count": str(len(answers.swipe_liked))
+            if answers.swipe_liked
+            else None,
+            "swipe_disliked_count": str(len(answers.swipe_disliked))
+            if answers.swipe_disliked
+            else None,
         }
 
         pref_count = 0
@@ -155,18 +194,43 @@ class UserService:
             self.db.add(pref)
             pref_count += 1
 
+        user_uuid = UUID(user_id)
+
         # Sauvegarder les intérêts
         interest_count = 0
+        created_interests: dict[str, UserInterest] = {}
         if answers.themes:
             for interest_slug in answers.themes:
                 interest = UserInterest(
                     id=uuid4(),
-                    user_id=UUID(user_id),
+                    user_id=user_uuid,
                     interest_slug=interest_slug,
                     weight=1.0,
                 )
                 self.db.add(interest)
+                created_interests[interest_slug] = interest
                 interest_count += 1
+
+        favorites_seeded = 0
+        if answers.themes:
+            existing_favorite = await self.db.scalar(
+                select(UserFavoriteInterest).where(
+                    UserFavoriteInterest.user_id == user_uuid
+                )
+            )
+            if existing_favorite is None:
+                for position, interest_slug in enumerate(answers.themes[:3]):
+                    interest = created_interests.get(interest_slug)
+                    if interest is not None:
+                        interest.state = InterestState.FAVORITE
+                    self.db.add(
+                        UserFavoriteInterest(
+                            user_id=user_uuid,
+                            position=position,
+                            interest_slug=interest_slug,
+                        )
+                    )
+                    favorites_seeded += 1
 
         # Muter les thèmes non-sélectionnés (pour affichage "Mes Intérêts")
         all_themes = {
@@ -186,7 +250,7 @@ class UserService:
         stmt = (
             pg_insert(UserPersonalization)
             .values(
-                user_id=UUID(user_id),
+                user_id=user_uuid,
                 muted_themes=unselected_themes,
             )
             .on_conflict_do_update(
@@ -213,13 +277,13 @@ class UserService:
                 # (preserves manual priority changes from post-onboarding edits)
                 existing_profile = await self.db.scalar(
                     select(UserTopicProfile).where(
-                        UserTopicProfile.user_id == UUID(user_id),
+                        UserTopicProfile.user_id == user_uuid,
                         UserTopicProfile.slug_parent == topic_slug,
                     )
                 )
                 if not existing_profile:
                     topic_profile = UserTopicProfile(
-                        user_id=UUID(user_id),
+                        user_id=user_uuid,
                         topic_name=SLUG_TO_LABEL.get(
                             topic_slug, topic_slug.capitalize()
                         ),
@@ -234,6 +298,7 @@ class UserService:
         # Sauvegarder les sources sélectionnées (UserSource)
         # Atomique avec le reste de l'onboarding — pas de race condition
         sources_created = 0
+        sources_followed = 0
         sources_removed = 0
         if answers.preferred_sources:
             # Valider les UUIDs
@@ -274,21 +339,30 @@ class UserService:
                 valid_source_ids = existing_source_ids
 
             if valid_source_ids:
-                # Vérifier lesquelles l'utilisateur a déjà
+                # Vérifier lesquelles l'utilisateur a déjà pour forcer l'état
+                # déclaré `followed` si une row incohérente existe déjà.
                 already_result = await self.db.execute(
-                    select(UserSource.source_id).where(
-                        UserSource.user_id == UUID(user_id),
+                    select(UserSource).where(
+                        UserSource.user_id == user_uuid,
                         UserSource.source_id.in_(list(valid_source_ids)),
                     )
                 )
-                already_trusted = set(already_result.scalars().all())
+                existing_user_sources = {
+                    us.source_id: us for us in already_result.scalars().all()
+                }
 
-                for source_id in valid_source_ids - already_trusted:
+                for source_id, user_source in existing_user_sources.items():
+                    if user_source.state != InterestState.FOLLOWED:
+                        user_source.state = InterestState.FOLLOWED
+                        sources_followed += 1
+
+                for source_id in valid_source_ids - set(existing_user_sources):
                     user_source = UserSource(
                         id=uuid4(),
-                        user_id=UUID(user_id),
+                        user_id=user_uuid,
                         source_id=source_id,
                         is_custom=False,
+                        state=InterestState.FOLLOWED,
                     )
                     self.db.add(user_source)
                     sources_created += 1
@@ -297,7 +371,7 @@ class UserService:
             # Ne supprime que les sources non-custom ajoutées via onboarding
             all_user_sources_result = await self.db.execute(
                 select(UserSource).where(
-                    UserSource.user_id == UUID(user_id),
+                    UserSource.user_id == user_uuid,
                     UserSource.is_custom.is_(False),
                 )
             )
@@ -322,7 +396,9 @@ class UserService:
             subtopics_created=subtopic_count,
             preferences_created=pref_count,
             sources_created=sources_created,
+            sources_followed=sources_followed,
             sources_removed=sources_removed,
+            favorites_seeded=favorites_seeded,
             preferred_sources_count=len(answers.preferred_sources)
             if answers.preferred_sources
             else 0,
@@ -371,6 +447,13 @@ class UserService:
 
     async def upsert_preference(self, user_id: str, key: str, value: str) -> None:
         """Upsert une préférence clé-valeur pour l'utilisateur."""
+        if key not in ALLOWED_PREFERENCE_KEYS:
+            logger.warning(
+                "upsert_preference_rejected_unknown_key",
+                user_id=user_id,
+                key=key,
+            )
+            raise ValueError(f"preference_key '{key}' is not allowed")
         uid = UUID(user_id)
         result = await self.db.execute(
             select(UserPreference).where(

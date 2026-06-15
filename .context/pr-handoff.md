@@ -1,54 +1,97 @@
-# PR — fix(veille): empêcher configs sans source + filets historique
+feat(onboarding): refonte sources — swipe de calibration + biais « sources productives » + badge format (Story 2.8)
 
-## Summary
+Refonte du parcours sources de l'onboarding, livrée en **1 PR groupée** (backend + mobile) vers `main`. Le swipe devient le cœur du parcours, la calibration agit au niveau pôle, et l'onboarding **favorise les sources productives** (volume de publication réel) tout en rendant le **format** (vidéo, podcast, Reddit) lisible d'un coup d'œil. Additif, **aucune migration Alembic** (champ `articles_30d` purement calculé).
 
-Coupe à la racine le pipeline qui aboutissait à des digests vides : sans validation, le mobile soumettait des configs avec `source_selections=[]` (filtre interne sur les mocks sans `apiSourceId`), le backend acceptait, et le digest builder rendait `items=[]` instantanément. 4 des 7 livraisons des 14 derniers jours étaient dans cet état (cf. `bug-veille-config-without-sources.md`).
+## Ce que ça change (user-visible)
 
-- **A1 — Backend 422 si config sans source** : `VeilleConfigUpsert.source_selections` passe à `min_length=1` (`packages/api/app/schemas/veille.py`) + filet final post-dedup dans `upsert_config` qui rollback puis lève `HTTPException(422)` (`packages/api/app/routers/veille.py`).
-- **A2/A3 — Mobile Step 3** : `realSelectedSourceCount` (sources avec `apiSourceId`) gate le CTA « Continuer » + hint « Sélectionne au moins une source ». La liste mock cliquable du fallback est supprimée (piège UX : tous filtrés au submit) — remplacée par `_SuggestionsUnavailable` (texte sobre + bouton « Réessayer »). Le bouton « + Ajouter une source » reste disponible.
-- **A4 — Mobile 422 ciblé** : `veille_config_screen.dart` distingue `e.statusCode == 422` (message validation) du reste.
-- **B2 — Drop `lastError` UI** : `_DeliveryFailedView` n'affiche plus le texte technique brut (`watchdog_backfill: stuck running …` etc.) ; il reste dans Sentry/logs.
-- **C1 — Watchdog cleanup `*/5 min`** : `cleanup_stuck_running_deliveries` marque FAILED toute row RUNNING > 15 min (`packages/api/app/jobs/veille_generation_job.py`) + Sentry `capture_message` par row + job ajouté au scheduler (`packages/api/app/workers/scheduler.py`).
-- **C2 — PostHog `veille_config_submitted`** avec `source_count` pour mesurer 0% post-A1.
+- **Tout le monde swipe.** Question d'intent « curieux / je connais » retirée. Après les sous-thèmes → directement le swipe, non skippable (set vide = auto-skip).
+- **Swipe satisfaisant + cliquable.** Carte suivie au drag (rotation + translation), fling hors écran au seuil, retour élastique sinon ; tap carte → fiche source. Nudge « Touchez pour explorer » sur la 1ère carte.
+- **Sources les plus actives mises en avant.** Le recommander biaise vers les sources qui publient vraiment (volume 30 j), en matched/préselection **et** dans le deck de swipe (tiebreaker volume puis audience).
+- **Format visible.** Badge discret YouTube / Podcast / Vidéo / Reddit sur les cartes de swipe, les recos d'onboarding et la fiche source (jamais pour les articles, format implicite).
+- **Titre + compteur humanisés.** Titre « Quels médias suivre ? » ; compteur à 3 paliers (« Premières cartes » → « On affine » → « Encore quelques-unes »).
+- **« Ce qu'on retient » en bas.** Les chips du haut deviennent une phrase inline discrète sous le deck (« On retient pour ta sélection : … »), qui s'allume quand un pôle passe net-positif.
+- **Calibration en direct (signal pôle).** Votes agrégés par pôle (fond / actu directe / indépendant / référence) → repondèrent toutes les sources du pôle (±2/vote, capé ±4), en plus du `+5/-4` par source swipée.
+
+## Technique (additif, sans migration)
+
+- **Backend** : `SourceResponse.articles_30d` (calculé, défaut 0). `SourceService` enrichit les réponses curées (`get_all_sources` + `get_curated_sources`) via **un unique GROUP BY batché** (jamais d'appel par source), réutilisant l'index composite existant `ix_contents_source_published` (source_id, published_at). Le custom reste à 0 (hors-scope). Aucune colonne DB, aucune migration, toujours 1 head Alembic.
+- **Mobile** : `Source.articles30d` (porté depuis le JSON) + `Source.getTypeIcon()` ; nouveau widget partagé `SourceTypeBadge` (masqué pour les articles). Recommander : `_volumeBonus` (+2 ≥90/30j, +1 ≥20/30j, 0 sinon — sous le match thème `+3`) et tiebreaker `byVolumeThenFollowers` sur `buildSpanningSet`. `articles30d == 0` = no-op (rétro-compatible).
+- Réutilise `SourceDetailModal`, `buildSpanningSet`, le scoring thème/fiabilité existant.
+
+## Vérification
+
+- **Backend** : `pytest` ciblé sources/onboarding → **49 passed** (dont 2 nouveaux : `articles_30d` peuplé par le GROUP BY, fenêtre 30 j, 0 sans contenu). Alembic : 1 head, aucune migration ajoutée. `ruff check` OK.
+- **Mobile** : `flutter analyze` → **0 erreur** sur les fichiers touchés (warnings `withOpacity` pré-existants). `flutter test test/features/onboarding/ test/features/sources/{widgets,models}/` → **147 passed** (recommander volume + tiebreaker, badge type, compteur humanisé, phrase inline, absence des chips du haut).
+- NB : suite mobile complète a ~27 échecs pré-existants (Hive/Supabase non init, hors CI) — non liés.
+
+## Follow-up (PR2, hors scope)
+
+- Page « Vos sources, sur mesure » : 4 blocs numérotés, 15-20 suggestions dont ~8-10 pré-cochées, « pourquoi » plus visible + tag « Similaire à », proxy volume mainstream.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+# Volet « Pas de recul » (deep reco) dans le reader — backend + mobile
+
+## Résumé
+Réactive le moteur « Pas de recul » (désactivé au post-unification cleanup) et
+l'expose **par article ouvert** : l'endpoint `GET /contents/{id}/perspectives`
+renvoie une recommandation d'article de fond (`deep_recommendation`), et le
+reader la rend tout en bas, sous la « Couverture médiatique ». Premier étage de
+la dimension « deep » de l'app. **Aucune migration Alembic.**
+
+## Changements — Backend
+- **`deep_matcher.py`** : nouvelle méthode `match_for_content(content)` — variante
+  reader de `match_for_topics`. Dérive un pseudo-angle depuis l'article ouvert
+  (titre + topics + theme), réutilise tel quel `_load_deep_articles` / `_prefilter`
+  / `_expand_query` / `_llm_evaluate` / `_fallback_pick`. Exclut l'article ouvert
+  **et** tout article du même cluster (pas une autre dépêche du même évènement).
+  Helper `_entity_names` tolérant aux deux formats d'entités (JSON & `name:type`).
+- **`routers/contents.py`** : cache dédié `_deep_reco_cache` (TTL 2h) + sentinelle
+  `_DEEP_NO_MATCH` + garde in-flight. Le matching tourne en **background**
+  (`_compute_deep_reco_background`) car il fait 2 appels LLM — on ne bloque pas
+  l'ouverture du reader, exactement comme le pattern partiel/refresh des
+  perspectives. `deep_recommendation` (dict|null) + `deep_pending` (bool) sont
+  attachés aux 3 chemins de retour (cache hit / snapshot digest / live) et
+  préservés à travers le refresh background.
+- **`editorial_prompts.yaml`** : prompt `deep_matching` décommenté. **`config.py`** :
+  commentaire TODO nettoyé.
+
+## Changements — Mobile
+- **`feed_repository.dart`** : modèle `DeepRecommendation` + champs
+  `deepRecommendation` / `deepPending` sur `PerspectivesResponse` (+ parsing JSON,
+  rétro-compatible : clés absentes ⇒ `null` / `false`).
+- **`deep_recommendation_card.dart`** (nouveau) : carte « Pas de recul »
+  (médaillon 🔭, titre, raison de match, source ; tap → ouvre l'article dans le
+  reader). Palette dérivée des tokens `colors.*` ⇒ cohérent clair/sombre/oled.
+- **`content_detail_screen.dart`** : rendu de la carte en bas du reader (gardé par
+  `deep_recommendation != null && !_isExternal`), `_openDeepReco()` (push route
+  `content/:id`), et refetch one-shot étendu à `deepPending` (pas de double appel
+  LLM-coûteux).
+
+## Contrat API (nouveaux champs de la réponse perspectives)
+```
+deep_recommendation: {
+  content_id, title, url, thumbnail_url, content_type,
+  source_id, source_name, source_logo_url, published_at,
+  match_reason, description
+} | null
+deep_pending: bool   # true = matching en cours en background → mobile doit refetch
+```
 
 ## Tests
+- `tests/editorial/test_deep_matcher.py` : `TestMatchForContent` (sélection LLM,
+  exclusion self, exclusion même cluster, pool vide, pivot maigre, fallback no-LLM)
+  + `TestEntityNames`. **25/25 verts.**
+- `tests/routers/test_contents_deep_reco.py` (nouveau) : helpers `_deep_reco_to_dict`,
+  `_apply_deep_from_cache`, `_attach_deep_recommendation`. **8/8 verts.**
+- `deep_recommendation_card_test.dart` (nouveau) + `feed_repository_perspectives_test.dart`
+  (étendu : parsing `deep_recommendation` / `deep_pending`).
+- 1 seul head Alembic, aucune migration.
 
-- Backend : `pytest tests/routers/test_veille_routes.py tests/test_veille_generation_job.py tests/test_veille_first_delivery_failure.py tests/test_veille_digest_builder.py` → 46/46 OK (2 nouveaux tests 422, 2 nouveaux tests cleanup stuck).
-- Mobile : `flutter test test/features/veille/screens/step3_sources_screen_test.dart` → 2/2 OK (fallback texte + CTA disabled state).
-- Lint : `ruff check` + `ruff format --check` OK sur les fichiers touchés ; `flutter analyze` OK sur les écrans veille touchés.
-- Alembic : 1 head, aucune migration ajoutée.
+## Vérif manuelle suggérée (avant merge)
+`uvicorn` local + `curl /contents/{id}/perspectives` → `deep_pending:true` au 1er
+appel, puis `deep_recommendation` peuplé au 2e (article avec sujet couvert par une
+source `source_tier='deep'`) ; `null` sur un fait divers.
 
-## Action manuelle PO post-merge — cleanup historique (B1)
-
-MCP Supabase est en read-only ; à exécuter via Supabase SQL Editor :
-
-```sql
-DELETE FROM veille_deliveries WHERE id IN (
-  'e508b4cd-95f0-47a4-b5fc-5de09893c055',
-  '44a569dd-a72f-41de-970e-98c6d1cda27f',
-  '5902a90e-7126-47bc-9f4c-81ca595dbea9',
-  'f48e57dc-30b6-4ad5-81c0-3b6ae635bf01',
-  '06280b22-de15-4c1b-8219-f11b03106e95',
-  '90adb2e5-da1a-46f6-8fb1-38f6d54ad62c',
-  'ef6e0f7e-1a2d-4341-a698-16baebe238eb'
-);
-```
-
-Vérification SELECT pré-DELETE déjà faite : 6 succeeded `item_count=0` + 1 failed `watchdog_backfill`. Décision PO : DELETE pur, pas de donnée user de valeur.
-
-Vérification post-fix :
-
-```sql
--- Doit retourner 0 :
-SELECT COUNT(*) FROM veille_configs vc
-WHERE NOT EXISTS (SELECT 1 FROM veille_sources vs WHERE vs.veille_config_id = vc.id);
-
--- Doit rester à 0 :
-SELECT COUNT(*) FROM veille_deliveries
-WHERE generation_state='running' AND started_at < NOW() - INTERVAL '15 minutes';
-```
-
-## Hors scope
-
-- Stabilisation `/api/veille/suggestions/sources` (cause racine `IdleInTransactionSessionTimeout`, à traiter dans un sprint dédié — A1+A3 protègent l'utilisateur indépendamment).
-- Mapping LLM-slug → taxonomie canonique (déjà tracé dans `bug-veille-empty-digests-and-no-wow.md`).
+## Suite
+- Chantier curation deep (séparé) : labelliser plus de sources `source_tier='deep'`
+  + chaînes YouTube + reportages.
