@@ -370,17 +370,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           essentielArticles: essentielArticles,
         ),
       );
-      // Re-pose les notifs perso (Essentiel + Bonnes Nouvelles) avec le contenu
-      // frais. Fire-and-forget, gated sur `dual != null` → ne tire jamais sur le
-      // chemin caché (stale) ni quand le digest a totalement échoué.
+      // Rafraîchit uniquement les teasers locaux Bonnes Nouvelles. Les teasers
+      // Essentiel viennent désormais du push serveur basé sur le digest exact.
       unawaited(_syncNotificationTeasers(dual, essentielArticles));
     }
     return next;
   }
 
-  /// Pousse les derniers teasers connus vers `NotificationsSettingsNotifier`
-  /// pour re-planifier les notifs perso. Non bloquant, try/catch interne : une
-  /// erreur de scheduling ne doit jamais casser le rendu du home.
+  /// Pousse les teasers Bonnes Nouvelles vers les réglages. Non bloquant :
+  /// une erreur de scheduling ne doit jamais casser le rendu du home.
   Future<void> _syncNotificationTeasers(
     DualDigestResponse dual,
     List<EssentielArticle> essentielArticles,

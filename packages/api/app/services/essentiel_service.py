@@ -57,10 +57,8 @@ logger = logging.getLogger(__name__)
 ESSENTIEL_MAX_ARTICLES = 5
 ESSENTIEL_MAX_PER_SOURCE = 2  # Diversité dure : max 2 articles d'une même source.
 
-# Fenêtre de cohérence avec la Tournée du jour : un article de l'Essentiel
-# doit pouvoir apparaître aussi dans la Tournée (24h + sources suivies). Sans
-# ce filtre, le digest peut surfacer des articles > 24h ou de sources curated
-# non-suivies invisibles dans la Tournée → incohérence UI.
+# Fenêtre de fraîcheur commune aux deux tiers de sélection. Les sources
+# suivies sont prioritaires, puis le pool éditorial global frais complète.
 ESSENTIEL_TOURNEE_WINDOW = timedelta(hours=24)
 
 # Valeur de `DigestTopicArticle.badge` qui marque l'article comme "Actu du jour".
@@ -426,29 +424,35 @@ def _filter_articles_by_language(
     return filtered
 
 
-def _filter_articles_by_tournee_pool(
+def _filter_articles_by_freshness(
     topics: list[DigestTopic],
-    ctx: EssentielUserContext,
     *,
     now: datetime | None = None,
 ) -> list[DigestTopic]:
-    """Garantit Essentiel ⊆ Tournée du jour.
-
-    La Tournée requête live (24h + sources suivies) tandis qu'Essentiel lit
-    un digest pré-calculé (7j ∪ sources curated) — sans ce filtre l'UI peut
-    surfacer un article inaccessible ailleurs. No-op si l'utilisateur n'a
-    aucune source suivie (sinon le filtre viderait tout).
-    """
-    if not ctx.followed_source_ids:
-        return topics
-
+    """Conserve uniquement les articles publiés dans les dernières 24 heures."""
     cutoff = (now or datetime.now(UTC)) - ESSENTIEL_TOURNEE_WINDOW
     filtered: list[DigestTopic] = []
     for topic in topics:
+        kept = [a for a in topic.articles if a.published_at >= cutoff]
+        if kept:
+            filtered.append(topic.model_copy(update={"articles": kept}))
+    return filtered
+
+
+def _filter_articles_by_followed_sources(
+    topics: list[DigestTopic],
+    ctx: EssentielUserContext,
+) -> list[DigestTopic]:
+    """Construit le tier prioritaire des sources explicitement suivies."""
+    if not ctx.followed_source_ids:
+        return []
+
+    filtered: list[DigestTopic] = []
+    for topic in topics:
         kept = [
-            a
-            for a in topic.articles
-            if a.source.id in ctx.followed_source_ids and a.published_at >= cutoff
+            article
+            for article in topic.articles
+            if article.source.id in ctx.followed_source_ids
         ]
         if kept:
             filtered.append(topic.model_copy(update={"articles": kept}))
@@ -458,17 +462,15 @@ def _filter_articles_by_tournee_pool(
 def _pick_transversal_articles(
     topics: list[DigestTopic],
     ctx: EssentielUserContext,
+    *,
+    now: datetime | None = None,
 ) -> list[tuple[DigestTopic, DigestTopicArticle]]:
     """Pioche jusqu'à 5 articles cross-topic, user-aware.
 
-    1. **Slot lead Actu** : si un article est Actu du jour (trending/une/badge),
-       il prend la position 1 — quel que soit son score user. Le meilleur des
-       Actu gagne.
-    2. **Round diversité** (1 article max par topic), topics ordonnés par leur
-       meilleur score (desc), tie-break `topic.rank` (asc).
-    3. **Round remplissage** par score décroissant.
-    4. **Diversité dure** : max `ESSENTIEL_MAX_PER_SOURCE` (=2) articles d'une
-       même source à toutes les étapes.
+    1. Applique définitivement mutes, langue, types interdits et fraîcheur 24 h.
+    2. Sélectionne le tier sources suivies, puis complète depuis le pool global.
+    3. Déduplique les sujets et limite chaque source à deux articles.
+    4. Diffère le sport jusqu'au cinquième slot, sans post-filtre destructif.
     """
     # Mutes utilisateur (`user_personalization`) — prime sur tous les autres
     # filtres : un article muté ne doit jamais devenir le fallback Tournée.
@@ -478,27 +480,26 @@ def _pick_transversal_articles(
     # — ces contenus ne reflètent pas l'actualité chaude traitée par la presse.
     topics = _filter_articles_allowed(topics)
 
-    # Cohérence Essentiel ⊆ Tournée du jour (24h + sources suivies).
-    # Fallback : si le filtre vide tout le pool, on garde le pré-filtre pour
-    # éviter une carte Essentiel vide ; on log une WARNING pour traçage.
-    pre_filter_topics = topics
-    topics = _filter_articles_by_tournee_pool(topics, ctx)
-    if not any(t.articles for t in topics):
-        if ctx.followed_source_ids:
-            logger.warning(
-                "tournee-pool filter emptied the pool — falling back to pre-filter "
-                "topics (user has %d followed sources)",
-                len(ctx.followed_source_ids),
-            )
-        topics = pre_filter_topics
+    hard_filtered_count = sum(len(topic.articles) for topic in topics)
+    fresh_topics = _filter_articles_by_freshness(topics, now=now)
+    followed_topics = _filter_articles_by_followed_sources(fresh_topics, ctx)
+    fresh_count = sum(len(topic.articles) for topic in fresh_topics)
+    followed_count = sum(len(topic.articles) for topic in followed_topics)
 
-    eligible_topics = [t for t in topics if t.articles]
-    if not eligible_topics:
+    if not fresh_topics:
+        logger.info(
+            "essentiel_selection hard_filtered=%d followed_pool=%d "
+            "fresh_global_pool=%d supplements=0 dedup_rejections=0 "
+            "sport_rejections=0 final_count=0",
+            hard_filtered_count,
+            followed_count,
+            fresh_count,
+        )
         return []
 
-    # Score de chaque (topic, article) une seule fois.
+    # Score de chaque (topic, article) une seule fois sur le pool global frais.
     scored: dict[tuple[str, UUID], float] = {}
-    for topic in eligible_topics:
+    for topic in fresh_topics:
         for article in topic.articles:
             scored[(topic.topic_id, article.content_id)] = _score_article(
                 topic, article, ctx
@@ -509,6 +510,8 @@ def _pick_transversal_articles(
     used_topics: set[str] = set()
     source_count: dict[UUID, int] = {}
     picked_title_tokens: list[set[str]] = []
+    dedup_rejections = 0
+    sport_rejections = 0
 
     def _is_duplicate_subject(topic: DigestTopic, article: DigestTopicArticle) -> bool:
         """Un même sujet ne doit jamais occuper deux slots de l'Essentiel.
@@ -539,11 +542,32 @@ def _pick_transversal_articles(
 
         Renvoie True si ajouté, False sinon. Marque les ensembles.
         """
+        nonlocal dedup_rejections, sport_rejections
+
         if article.content_id in seen_content_ids:
+            dedup_rejections += 1
             return False
         if source_count.get(article.source.id, 0) >= ESSENTIEL_MAX_PER_SOURCE:
             return False
         if _is_duplicate_subject(topic, article):
+            dedup_rejections += 1
+            return False
+        if _is_sport_pick(topic, article):
+            non_sport_count = sum(
+                not _is_sport_pick(picked_topic, picked_article)
+                for picked_topic, picked_article in picked
+            )
+            already_has_sport = any(
+                _is_sport_pick(picked_topic, picked_article)
+                for picked_topic, picked_article in picked
+            )
+            if (
+                non_sport_count < ScoringWeights.ESSENTIEL_SPORT_MIN_SLOT - 1
+                or already_has_sport
+            ):
+                sport_rejections += 1
+                return False
+        if len(picked) >= ESSENTIEL_MAX_ARTICLES:
             return False
         picked.append((topic, article))
         seen_content_ids.add(article.content_id)
@@ -552,90 +576,58 @@ def _pick_transversal_articles(
         picked_title_tokens.append(normalize_title(article.title))
         return True
 
-    # ─── Slot lead Actu ──────────────────────────────────────────────────
-    # Cherche le meilleur article Actu du jour (trending/une/badge=="actu").
-    # S'il existe, on le pose en rank=1 avant tout le reste. Le sport est
-    # exclu du lead-slot par construction (Story 9.4 : sport jamais < slot 5).
-    actu_candidates: list[tuple[DigestTopic, DigestTopicArticle, float]] = []
-    for topic in eligible_topics:
-        for article in topic.articles:
-            if _is_actu_du_jour(topic, article) and not _is_sport_pick(topic, article):
-                actu_candidates.append(
-                    (topic, article, scored[(topic.topic_id, article.content_id)])
-                )
-    if actu_candidates:
-        actu_candidates.sort(key=lambda x: (-x[2], x[1].rank))
-        lead_topic, lead_article, _ = actu_candidates[0]
-        _try_pick(lead_topic, lead_article)
-
-    # ─── Round 1 : diversité (1 article max par topic, hors lead) ────────
-    def _best_for_topic(
-        topic: DigestTopic,
-    ) -> tuple[DigestTopicArticle, float]:
-        best_article = max(
-            topic.articles,
-            key=lambda a: (
-                scored[(topic.topic_id, a.content_id)],
-                -a.rank,
+    def _ordered_candidates(
+        tier_topics: list[DigestTopic],
+    ) -> list[tuple[DigestTopic, DigestTopicArticle, float]]:
+        candidates = [
+            (topic, article, scored[(topic.topic_id, article.content_id)])
+            for topic in tier_topics
+            for article in topic.articles
+        ]
+        return sorted(
+            candidates,
+            key=lambda item: (
+                not _is_actu_du_jour(item[0], item[1]),
+                -item[2],
+                item[0].rank,
+                item[1].rank,
             ),
         )
-        return best_article, scored[(topic.topic_id, best_article.content_id)]
 
-    topic_bests = [(t, *_best_for_topic(t)) for t in eligible_topics]
-    topic_bests_sorted = sorted(topic_bests, key=lambda tb: (-tb[2], tb[0].rank))
+    def _fill_from_tier(tier_topics: list[DigestTopic]) -> None:
+        candidates = _ordered_candidates(tier_topics)
+        # Sport is reconsidered only after every non-sport candidate. This
+        # prevents a high-scoring sport item from consuming a slot that would
+        # disappear during a final post-filter.
+        for want_sport in (False, True):
+            for topic, article, _ in candidates:
+                if _is_sport_pick(topic, article) != want_sport:
+                    continue
+                _try_pick(topic, article)
+                if len(picked) >= ESSENTIEL_MAX_ARTICLES:
+                    return
 
-    for topic, article, _ in topic_bests_sorted:
-        if topic.topic_id in used_topics:
-            continue
-        _try_pick(topic, article)
-        if len(picked) >= ESSENTIEL_MAX_ARTICLES:
-            return _enforce_sport_slot_constraint(picked)
+    _fill_from_tier(followed_topics)
+    followed_pick_count = len(picked)
+    if len(picked) < ESSENTIEL_MAX_ARTICLES:
+        _fill_from_tier(fresh_topics)
 
-    # ─── Round 2 : remplissage (meilleurs articles restants) ─────────────
-    remaining: list[tuple[DigestTopic, DigestTopicArticle, float]] = []
-    for topic in eligible_topics:
-        for article in topic.articles:
-            if article.content_id in seen_content_ids:
-                continue
-            remaining.append(
-                (topic, article, scored[(topic.topic_id, article.content_id)])
-            )
-
-    remaining.sort(key=lambda x: (-x[2], x[1].rank))
-
-    for topic, article, _ in remaining:
-        _try_pick(topic, article)
-        if len(picked) >= ESSENTIEL_MAX_ARTICLES:
-            break
-
-    return _enforce_sport_slot_constraint(picked)
-
-
-def _enforce_sport_slot_constraint(
-    picked: list[tuple[DigestTopic, DigestTopicArticle]],
-) -> list[tuple[DigestTopic, DigestTopicArticle]]:
-    """Force le sport à occuper le slot ≥ 5 (Story 9.4), avec au plus 1 sport.
-
-    Stratégie :
-    - Partitionne en non-sport et sport (max ESSENTIEL_MAX_SPORT_PER_DIGEST).
-    - Si on a ≥ (ESSENTIEL_SPORT_MIN_SLOT - 1) non-sport, on place le sport
-      après — il aboutit en slot 5 ou plus.
-    - Sinon le pool non-sport est trop petit pour placer le sport en slot 5+ :
-      on l'exclut plutôt que de le remonter en slot < 5.
-    """
-    non_sport: list[tuple[DigestTopic, DigestTopicArticle]] = []
-    sport: list[tuple[DigestTopic, DigestTopicArticle]] = []
-    for topic, article in picked:
-        if _is_sport_pick(topic, article):
-            sport.append((topic, article))
-        else:
-            non_sport.append((topic, article))
-
-    sport = sport[: ScoringWeights.ESSENTIEL_MAX_SPORT_PER_DIGEST]
-    min_non_sport = ScoringWeights.ESSENTIEL_SPORT_MIN_SLOT - 1
-    if len(non_sport) >= min_non_sport:
-        return (non_sport + sport)[:ESSENTIEL_MAX_ARTICLES]
-    return non_sport[:ESSENTIEL_MAX_ARTICLES]
+    # `picked` only grows after `followed_pick_count` is captured, so the
+    # supplement count is always non-negative.
+    supplements = len(picked) - followed_pick_count
+    logger.info(
+        "essentiel_selection hard_filtered=%d followed_pool=%d "
+        "fresh_global_pool=%d supplements=%d dedup_rejections=%d "
+        "sport_rejections=%d final_count=%d",
+        hard_filtered_count,
+        followed_count,
+        fresh_count,
+        supplements,
+        dedup_rejections,
+        sport_rejections,
+        len(picked),
+    )
+    return picked
 
 
 def _to_essentiel_article(
@@ -670,6 +662,8 @@ def _to_essentiel_article(
 def build_essentiel_response(
     digest: DigestResponse,
     user_context: EssentielUserContext | None = None,
+    *,
+    now: datetime | None = None,
 ) -> EssentielResponse:
     """Projette une `DigestResponse` en `EssentielResponse` (5 articles max).
 
@@ -677,7 +671,7 @@ def build_essentiel_response(
     no-prefs (le scorer dégénère en actu_boost + perspective − rank).
     """
     ctx = user_context or EssentielUserContext()
-    picks = _pick_transversal_articles(digest.topics, ctx)
+    picks = _pick_transversal_articles(digest.topics, ctx, now=now)
     articles = [
         _to_essentiel_article(topic, article, rank=i + 1, ctx=ctx)
         for i, (topic, article) in enumerate(picks)

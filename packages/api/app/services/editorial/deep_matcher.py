@@ -16,6 +16,7 @@ No time limit on deep articles (can be months old).
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -209,6 +210,124 @@ class DeepMatcher:
                 min_score=self.FALLBACK_MIN_SCORE_NO_LLM,
             )
         return fallback_matches
+
+    async def match_for_content(
+        self,
+        content: Content,
+    ) -> MatchedDeepArticle | None:
+        """Match a deep ("Pas de recul") article for a single opened article.
+
+        Reader variant of :meth:`match_for_topics`. Instead of an editorial
+        topic (label + LLM-generated ``deep_angle``), the pivot is the article
+        the user just opened. We derive a pseudo-angle from its ML topics/theme
+        and reuse the exact same machinery — Jaccard pre-filter → optional
+        query expansion → LLM evaluation → deterministic fallback.
+
+        The opened article and any article sharing its cluster (same event)
+        are excluded: a "pas de recul" must add perspective, never echo
+        another dispatch on the same story.
+
+        Returns ``None`` when nothing relevant is found — better no deep
+        recommendation than a hors-sujet one (same contract as the topic flow).
+        """
+        topics = list(content.topics or [])
+        deep_angle = " ".join(topics) if topics else (content.theme or "")
+        label = (content.title or "").strip()
+
+        if not label and not deep_angle.strip():
+            # No title and no topics/theme — nothing to match on.
+            return None
+
+        pseudo_topic = SelectedTopic(
+            topic_id=str(content.id),
+            label=label,
+            selection_reason="",
+            deep_angle=deep_angle or None,
+            theme=content.theme,
+        )
+
+        deep_articles = await self._load_deep_articles()
+        if not deep_articles:
+            logger.info("deep_matcher.content_no_pool", content_id=str(content.id))
+            return None
+
+        # Exclude the opened article itself and any article in its cluster.
+        cluster_id = content.cluster_id
+        pool = [
+            a
+            for a in deep_articles
+            if a.id != content.id
+            and not (cluster_id is not None and a.cluster_id == cluster_id)
+        ]
+        if not pool:
+            return None
+
+        cluster_entities = self._entity_names(content)
+
+        # Query expansion (best-effort, small LLM) — same as the topic flow.
+        extra_tokens: set[str] = set()
+        if self._llm.is_ready and deep_angle.strip():
+            try:
+                extra_tokens = await self._expand_query(pseudo_topic)
+            except Exception as e:
+                logger.warning(
+                    "deep_matcher.content_expansion_failed",
+                    content_id=str(content.id),
+                    error=str(e),
+                )
+
+        candidates = self._prefilter(
+            topic=pseudo_topic,
+            articles=pool,
+            limit=self._config.pipeline.deep_candidates_prefilter,
+            threshold=self._config.pipeline.deep_jaccard_threshold,
+            extra_tokens=extra_tokens,
+            cluster_entities=cluster_entities,
+        )
+        if not candidates:
+            logger.info(
+                "deep_matcher.content_no_candidates", content_id=str(content.id)
+            )
+            return None
+
+        if self._llm.is_ready:
+            try:
+                return await self._llm_evaluate(pseudo_topic, candidates)
+            except Exception as e:
+                logger.warning(
+                    "deep_matcher.content_llm_failed",
+                    content_id=str(content.id),
+                    error=str(e),
+                )
+                return self._fallback_pick(
+                    candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
+                )
+
+        return self._fallback_pick(
+            candidates, min_score=self.FALLBACK_MIN_SCORE_NO_LLM
+        )
+
+    @staticmethod
+    def _entity_names(content: Content) -> set[str]:
+        """Lowercase named-entity set from a Content for the prefilter bonus.
+
+        Tolerant of both the JSON-encoded ``{"name": ..., "type": ...}`` form
+        and the legacy ``"name:type"`` form so the overlap bonus fires
+        regardless of how entities were persisted.
+        """
+        names: set[str] = set()
+        for raw in content.entities or []:
+            if not raw:
+                continue
+            name: str | None
+            try:
+                parsed = json.loads(raw)
+                name = parsed.get("name") if isinstance(parsed, dict) else None
+            except (json.JSONDecodeError, TypeError):
+                name = raw.split(":")[0] if ":" in raw else raw
+            if name:
+                names.add(name.lower().strip())
+        return names
 
     async def _load_deep_articles(self) -> list[Content]:
         """Load deep-tier articles older than ``deep_min_age_hours``.

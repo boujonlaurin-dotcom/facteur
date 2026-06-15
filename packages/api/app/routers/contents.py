@@ -475,6 +475,16 @@ _perspectives_source_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
 # In-flight guard: prevent stacking background refresh tasks for the same key.
 _perspectives_refresh_inflight: set[str] = set()
 
+# « Pas de recul » deep recommendation cache (TTL 2h). Keyed by content_id.
+# Value is either the rendered deep-reco dict, or the _DEEP_NO_MATCH sentinel
+# meaning "computed, nothing relevant" (so we don't recompute on every open).
+# A missing key means "not computed yet" → schedule a background match.
+# The match runs LLM calls (query expansion + evaluation) too slow to block
+# the reader, so we mirror the perspectives partial/background pattern.
+_deep_reco_cache: TTLCache = TTLCache(maxsize=256, ttl=7200)
+_deep_reco_inflight: set[str] = set()
+_DEEP_NO_MATCH = object()
+
 
 def _empty_timings() -> dict[str, int]:
     return dict.fromkeys(
@@ -927,6 +937,12 @@ async def _refresh_perspectives_cache_background(
                 "divergence_level": divergence_level,
                 "timings_ms": timings,
             }
+            # Carry the deep recommendation across the refresh: this new body
+            # replaces the cached one, so re-apply the deep state (resolved or
+            # still-pending) instead of silently dropping it.
+            _apply_deep_from_cache(
+                response_body, content_id, _perspectives_cache.get(content_id)
+            )
             _perspectives_cache[content_id] = response_body
             _perspectives_source_cache[content_id] = bias_source
             logger.info(
@@ -943,6 +959,158 @@ async def _refresh_perspectives_cache_background(
         )
     finally:
         _perspectives_refresh_inflight.discard(content_id)
+
+
+def _deep_reco_to_dict(matched: object, matched_content: Content) -> dict:
+    """Render a MatchedDeepArticle (+ its Content) as a mobile-ready dict.
+
+    Adds the fields the schema doesn't carry but the reader card needs to
+    render and open the deep article: url, thumbnail, content_type, logo.
+    """
+    source = getattr(matched_content, "source", None)
+    ctype = getattr(matched_content, "content_type", None)
+    ctype_str = ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else "article")
+    published_at = getattr(matched, "published_at", None)
+    return {
+        "content_id": str(matched.content_id),
+        "title": matched.title,
+        "url": matched_content.url,
+        "thumbnail_url": matched_content.thumbnail_url,
+        "content_type": ctype_str,
+        "source_id": str(matched.source_id) if matched.source_id else None,
+        "source_name": matched.source_name,
+        "source_logo_url": source.logo_url if source else None,
+        "published_at": published_at.isoformat() if published_at else None,
+        "match_reason": matched.match_reason,
+        "description": matched.description,
+    }
+
+
+def _apply_deep_from_cache(
+    response_body: dict,
+    cache_key: str,
+    prev_body: dict | None = None,
+) -> bool:
+    """Set deep_recommendation/deep_pending on a body from the deep cache.
+
+    Returns True when the deep state is resolved (matched or known-empty),
+    False when it's still pending. On a pending miss we carry over the prior
+    body's deep state if any so a background perspectives refresh doesn't
+    erase an in-flight (or already-resolved) deep recommendation.
+    """
+    deep_cached = _deep_reco_cache.get(cache_key)
+    if deep_cached is _DEEP_NO_MATCH:
+        response_body["deep_recommendation"] = None
+        response_body["deep_pending"] = False
+        return True
+    if deep_cached is not None:
+        response_body["deep_recommendation"] = deep_cached
+        response_body["deep_pending"] = False
+        return True
+    # Not computed yet.
+    if prev_body is not None:
+        response_body["deep_recommendation"] = prev_body.get("deep_recommendation")
+        response_body["deep_pending"] = prev_body.get("deep_pending", True)
+    else:
+        response_body["deep_recommendation"] = None
+        response_body["deep_pending"] = True
+    return False
+
+
+def _attach_deep_recommendation(
+    response_body: dict,
+    cache_key: str,
+    content_id: UUID,
+    user_id: str,
+    background_tasks: BackgroundTasks,
+) -> None:
+    """Attach deep fields to a perspectives body, scheduling a match on miss."""
+    resolved = _apply_deep_from_cache(response_body, cache_key)
+    if not resolved:
+        response_body["deep_pending"] = True
+        background_tasks.add_task(
+            _compute_deep_reco_background, str(content_id), user_id
+        )
+
+
+async def _compute_deep_reco_background(content_id: str, user_id: str) -> None:
+    """Compute the « Pas de recul » deep recommendation for an opened article.
+
+    Runs the DeepMatcher reader path, caches the result, and patches the
+    already-served perspectives body so the next fetch (or cache hit) carries
+    the deep recommendation without recomputing.
+    """
+    if content_id in _deep_reco_inflight:
+        return
+    _deep_reco_inflight.add(content_id)
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import joinedload
+
+    from app.models.content import Content
+    from app.services.editorial.config import load_editorial_config
+    from app.services.editorial.deep_matcher import DeepMatcher
+    from app.services.editorial.llm_client import EditorialLLMClient
+
+    try:
+        async with safe_async_session() as db:
+            result = await db.execute(
+                select(Content)
+                .options(joinedload(Content.source))
+                .where(Content.id == UUID(content_id))
+            )
+            content = result.scalars().first()
+            if content is None:
+                _deep_reco_cache[content_id] = _DEEP_NO_MATCH
+                return
+
+            llm = EditorialLLMClient()
+            try:
+                matcher = DeepMatcher(
+                    session=db,
+                    llm=llm,
+                    config=load_editorial_config(),
+                    session_maker=safe_async_session,
+                )
+                matched = await matcher.match_for_content(content)
+            finally:
+                await llm.close()
+
+            if matched is None:
+                _deep_reco_cache[content_id] = _DEEP_NO_MATCH
+                logger.info("deep_reco_background_no_match", content_id=content_id)
+                return
+
+            matched_result = await db.execute(
+                select(Content)
+                .options(joinedload(Content.source))
+                .where(Content.id == matched.content_id)
+            )
+            matched_content = matched_result.scalars().first()
+            if matched_content is None:
+                _deep_reco_cache[content_id] = _DEEP_NO_MATCH
+                return
+
+            deep_dict = _deep_reco_to_dict(matched, matched_content)
+            _deep_reco_cache[content_id] = deep_dict
+
+            # Patch the already-cached perspectives body so a subsequent cache
+            # hit serves the deep recommendation immediately.
+            cached_body = _perspectives_cache.get(content_id)
+            if cached_body is not None:
+                cached_body["deep_recommendation"] = deep_dict
+                cached_body["deep_pending"] = False
+
+            logger.info(
+                "deep_reco_background_matched",
+                content_id=content_id,
+                deep_content_id=str(matched.content_id),
+                source=matched.source_name,
+            )
+    except Exception:
+        logger.exception("deep_reco_background_failed", content_id=content_id)
+    finally:
+        _deep_reco_inflight.discard(content_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -1249,6 +1417,11 @@ async def get_perspectives(
                 cache_key,
                 current_user_id,
             )
+        # Re-evaluate deep state: a background match may have resolved since
+        # this body was cached; if still missing, (re)schedule the compute.
+        _attach_deep_recommendation(
+            cached_response, cache_key, content_id, current_user_id, background_tasks
+        )
         return cached_response
 
     # Track perspective open (Story 19.1 — Lettres du Facteur, action 4).
@@ -1377,6 +1550,9 @@ async def get_perspectives(
             "divergence_level": stored_divergence_level or derived_divergence,
             "timings_ms": timings,
         }
+        _attach_deep_recommendation(
+            response_body, cache_key, content_id, current_user_id, background_tasks
+        )
         _perspectives_cache[cache_key] = response_body
         _perspectives_source_cache[cache_key] = bias_source
         logger.info(
@@ -1526,6 +1702,9 @@ async def get_perspectives(
 
     # Store partial response immediately; background refresh replaces this
     # same cache key with the complete Google-enriched response.
+    _attach_deep_recommendation(
+        response_body, cache_key, content_id, current_user_id, background_tasks
+    )
     _perspectives_cache[cache_key] = response_body
     _perspectives_source_cache[cache_key] = bias_source
     background_tasks.add_task(
