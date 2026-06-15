@@ -5,10 +5,13 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.main import app
+from app.models.content import Content
+from app.models.enums import ContentType, SourceType
 from app.models.grille_game_state import (
     STATUS_FAILED,
     STATUS_IN_PROGRESS,
@@ -16,15 +19,12 @@ from app.models.grille_game_state import (
     STATUS_SOLVED,
     GrilleGameState,
 )
-from app.models.content import Content
-from app.models.enums import ContentType, SourceType
 from app.models.grille_puzzle import GrillePuzzle
 from app.models.source import Source
 from app.services.grille_service import (
     GameAlreadyFinished,
     GameNotFinished,
     GrilleService,
-    PuzzleNotFound,
 )
 from app.utils.time import today_paris
 
@@ -43,7 +43,9 @@ def _override_user(user_id: str):
     return _fake_user
 
 
-async def _make_puzzle(db, *, word="CLIMAT", max_attempts=6, on_date=None, featured=False):
+async def _make_puzzle(
+    db, *, word="CLIMAT", max_attempts=6, on_date=None, featured=False
+):
     puzzle = GrillePuzzle(
         puzzle_date=on_date or today_paris(),
         word=word,
@@ -135,7 +137,9 @@ async def test_today_creates_game_and_hides_word(db_session):
 
 
 @pytest.mark.asyncio
-async def test_today_404_when_no_puzzle(db_session):
+async def test_today_repairs_missing_post_seed_puzzle(db_session, monkeypatch):
+    target_date = datetime(2026, 6, 15).date()
+    monkeypatch.setattr("app.services.grille_service.today_paris", lambda: target_date)
     user_id = uuid4()
     app.dependency_overrides[get_current_user_id] = _override_user(str(user_id))
     app.dependency_overrides[get_db] = _override_db(db_session)
@@ -147,7 +151,12 @@ async def test_today_404_when_no_puzzle(db_session):
         app.dependency_overrides.pop(get_current_user_id, None)
         app.dependency_overrides.pop(get_db, None)
 
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert resp.json()["date"] == "2026-06-15"
+    puzzle = await db_session.scalar(
+        select(GrillePuzzle).where(GrillePuzzle.puzzle_date == target_date)
+    )
+    assert puzzle is not None
 
 
 # ----- validation (service) -------------------------------------------------
