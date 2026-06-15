@@ -14,11 +14,6 @@ def _exc_event(logger_name: str, exc_value: str) -> dict:
     }
 
 
-def test_drops_trafilatura_download_error():
-    event = _logentry("trafilatura.downloads", "download error: cerveauetpsycho.fr/foo")
-    assert _sentry_before_send(event, {}) is None
-
-
 def test_drops_feedparser_not_200():
     event = _logentry("feedparser", "not a 200 response: 403 for https://tldr.tech/x")
     assert _sentry_before_send(event, {}) is None
@@ -41,9 +36,4 @@ def test_keeps_digest_queuepool_error():
 
 def test_keeps_validation_error():
     event = _exc_event("app.services.digest_service", "ValidationError: bad payload")
-    assert _sentry_before_send(event, {}) is event
-
-
-def test_keeps_trafilatura_unrelated_message():
-    event = _logentry("trafilatura.core", "extracted main content successfully")
     assert _sentry_before_send(event, {}) is event

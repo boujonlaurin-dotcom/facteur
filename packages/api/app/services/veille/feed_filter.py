@@ -231,9 +231,8 @@ def _matched_axes(
     appels par fetch).
     """
     axes: list[str] = []
-    if topic_slugs and content.topics:
-        if any(t in topic_slugs for t in content.topics):
-            axes.append("topic")
+    if topic_slugs and content.topics and any(t in topic_slugs for t in content.topics):
+        axes.append("topic")
     if source_ids and content.source_id in source_ids:
         axes.append("source")
     if keywords:

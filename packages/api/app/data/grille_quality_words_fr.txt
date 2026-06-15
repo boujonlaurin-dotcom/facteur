@@ -1,0 +1,168 @@
+# Liste de qualité éditoriale — « mot du jour » de La Grille (voix Facteur).
+#
+# Noms communs de 6 lettres « dignes du mot du jour » : civiques, économiques,
+# environnementaux, sociaux, internationaux, culturels. Un mot extrait de
+# l'actu n'est retenu comme mot du jour QUE s'il figure ici (qualité éditoriale)
+# ET dans `grille_words_fr.txt` (validité / tapable par le joueur).
+#
+# Format : 1 mot/ligne, MAJUSCULES sans accent, exactement 6 lettres. `#` = commentaire.
+# Seedé depuis les mots seed de `grille_puzzles_seed.json`, puis élargi.
+# Chaque entrée a été vérifiée présente dans le dictionnaire de validité.
+
+# --- Seeds historiques (puzzles seedés) ---
+CLIMAT
+BUDGET
+SOMMET
+IMPOTS
+EUROPE
+GREVES
+OCEANS
+DEBATS
+MANDAT
+MARCHE
+GUERRE
+FORETS
+TRAITE
+SEISME
+MUSEES
+
+# --- Politique / institutions ---
+NATION
+REGION
+PEUPLE
+PARTIS
+PATRON
+SYNDIC
+DEPUTE
+SENATS
+PALAIS
+SCANDA
+MANDAT
+
+# --- Économie / social ---
+BUDGET
+DETTES
+CRISES
+EMPLOI
+USINES
+BOURSE
+HAUSSE
+BAISSE
+INDICE
+CREDIT
+IMPACT
+GROUPE
+BANQUE
+DOUANE
+FISCAL
+REVENU
+LOYERS
+CHARTE
+ACCORD
+NUMERO
+
+# --- Conflits / international ---
+ARMEES
+OTAGES
+FRAPPE
+REFUGE
+EXODES
+FAMINE
+RUSSIE
+MARINE
+AVIONS
+NAVIRE
+PILOTE
+
+# --- Environnement / climat ---
+GLACES
+NATURE
+ESPECE
+DESERT
+FLEUVE
+DELUGE
+SECHER
+ORAGES
+CANCER
+
+# --- Société / mouvements ---
+FEMMES
+HOMMES
+JEUNES
+COLERE
+GROGNE
+DROITS
+VALEUR
+AVENIR
+REGARD
+PAROLE
+ENJEUX
+ALERTE
+RECORD
+
+# --- Justice / faits ---
+PROCES
+CRIMES
+DELITS
+PEINES
+GRACES
+AMENDE
+FRAUDE
+ESCROC
+AVOCAT
+TEMOIN
+ACCUSE
+BLESSE
+CHUTES
+VISITE
+
+# --- Santé ---
+GRIPPE
+VACCIN
+MALADE
+
+# --- Numérique / médias ---
+RESEAU
+DONNEE
+SECRET
+ESPION
+PIRATE
+RUMEUR
+MEDIAS
+PRESSE
+RADIOS
+CHAINE
+ECRANS
+
+# --- Éducation / sciences ---
+ECOLES
+LYCEES
+ETUDES
+THESES
+SAVOIR
+ESPACE
+FUSEES
+TRAINS
+METROS
+ROUTES
+
+# --- Culture ---
+LIVRES
+ROMANS
+POEMES
+CHANTS
+DANSES
+OPERAS
+TALENT
+GENIES
+
+# --- Sport ---
+EQUIPE
+FINALE
+STADES
+JOUEUR
+DOPAGE
+TENNIS
+BALLON
+COURSE
+NAGEUR

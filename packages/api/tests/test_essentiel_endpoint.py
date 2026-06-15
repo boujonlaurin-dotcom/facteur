@@ -371,7 +371,7 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
 
 
 def test_followed_source_promoted_above_unfollowed_competitor():
-    """Cohérence Essentiel ⊆ Tournée : la source non-suivie est filtrée."""
+    """Le tier suivi passe d'abord, puis le pool global frais complète."""
     followed_source = _make_source("Mediapart")
     other_source = _make_source("Le Monde")
     topics = [
@@ -406,9 +406,10 @@ def test_followed_source_promoted_above_unfollowed_competitor():
 
     response = build_essentiel_response(digest, user_context=ctx)
 
-    assert len(response.articles) == 1
+    assert len(response.articles) == 2
     assert response.articles[0].source.id == followed_source.id
     assert response.articles[0].rank == 1
+    assert response.articles[1].source.id == other_source.id
 
 
 def test_user_topic_weight_promotes_lower_ranked_topic():
@@ -606,8 +607,8 @@ def test_tournee_pool_filter_drops_article_older_than_24h():
     assert labels == ["Fresh"]
 
 
-def test_tournee_pool_filter_drops_unfollowed_source():
-    """Un article d'une source non-suivie est retiré du pool Essentiel."""
+def test_followed_pool_is_completed_by_global_fresh_pool():
+    """Un article global frais complète le tier suivi sans le devancer."""
     followed = _make_source("Mediapart")
     curated = _make_source("Le Monde")
     topics = [
@@ -636,7 +637,7 @@ def test_tournee_pool_filter_drops_unfollowed_source():
     response = build_essentiel_response(digest, user_context=ctx)
 
     labels = [a.section_label for a in response.articles]
-    assert labels == ["Followed"]
+    assert labels == ["Followed", "Curated"]
 
 
 def test_tournee_pool_filter_keeps_mixed_topic_partially():
@@ -669,8 +670,8 @@ def test_tournee_pool_filter_keeps_mixed_topic_partially():
     assert response.articles[0].title == "OK"
 
 
-def test_tournee_pool_filter_fallback_when_empties_pool(caplog):
-    """Si le filtre vide tout, on retombe sur le pool pré-filtre + warning."""
+def test_empty_followed_pool_uses_global_fresh_pool_and_logs_metrics(caplog):
+    """Un tier suivi vide utilise directement le pool global frais."""
     followed = _make_source("Mediapart")
     curated = _make_source("Le Monde")
     # Aucun article ne vient d'une source suivie → le filtre videra tout.
@@ -690,13 +691,123 @@ def test_tournee_pool_filter_fallback_when_empties_pool(caplog):
 
     import logging
 
-    with caplog.at_level(logging.WARNING, logger="app.services.essentiel_service"):
+    with caplog.at_level(logging.INFO, logger="app.services.essentiel_service"):
         response = build_essentiel_response(digest, user_context=ctx)
 
-    # Fallback : l'article curated réapparaît plutôt que de servir une carte vide.
     assert len(response.articles) == 1
     assert response.articles[0].section_label == "Only-Curated"
-    assert any("tournee-pool filter emptied" in rec.message for rec in caplog.records)
+    assert any(
+        "followed_pool=0" in rec.message
+        and "supplements=1" in rec.message
+        and "final_count=1" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_followed_pool_two_articles_completed_by_three_global_subjects(caplog):
+    followed_a = _make_source("Mediapart")
+    followed_b = _make_source("Les Jours")
+    global_sources = [_make_source(f"Global {index}") for index in range(3)]
+    titles = [
+        "Budget national adopte au parlement",
+        "Vaccin experimental contre le paludisme",
+        "Seisme majeur dans le Pacifique",
+        "Nouvelle mission spatiale europeenne",
+        "Accord mondial sur les oceans",
+    ]
+    topics = [
+        DigestTopic(
+            topic_id=f"topic-{index}",
+            label=f"Subject {index}",
+            rank=index,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[
+                _make_article(
+                    rank=1,
+                    title=titles[index - 1],
+                    source=source,
+                )
+            ],
+        )
+        for index, source in enumerate(
+            [followed_a, followed_b, *global_sources], start=1
+        )
+    ]
+    ctx = EssentielUserContext(
+        followed_source_ids=frozenset({followed_a.id, followed_b.id})
+    )
+
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="app.services.essentiel_service"):
+        response = build_essentiel_response(_make_digest(topics), user_context=ctx)
+
+    assert len(response.articles) == 5
+    assert [article.source.id for article in response.articles[:2]] == [
+        followed_a.id,
+        followed_b.id,
+    ]
+    assert any(
+        "followed_pool=2" in rec.message
+        and "supplements=3" in rec.message
+        and "final_count=5" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_articles_older_than_24_hours_never_backfill_short_card():
+    now = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
+    fresh_topics = [
+        DigestTopic(
+            topic_id=f"fresh-{index}",
+            label=label,
+            rank=index,
+            reason="Test",
+            theme="society",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title=title)],
+        )
+        for index, (label, title) in enumerate(
+            [
+                ("Elections", "Coalition politique apres les elections"),
+                ("Science", "Decouverte medicale contre Alzheimer"),
+                ("Climat", "Canicule exceptionnelle en Europe"),
+            ],
+            start=1,
+        )
+    ]
+    stale_topics = [
+        DigestTopic(
+            topic_id=f"stale-{index}",
+            label=f"Stale {index}",
+            rank=index + 3,
+            reason="Test",
+            theme="society",
+            perspective_count=4,
+            articles=[
+                _make_article(
+                    rank=1,
+                    title=f"Old distinct subject {index}",
+                    published_at=now - timedelta(hours=25),
+                )
+            ],
+        )
+        for index in range(1, 4)
+    ]
+
+    response = build_essentiel_response(
+        _make_digest([*fresh_topics, *stale_topics]),
+        now=now,
+    )
+
+    assert len(response.articles) == 3
+    assert {article.section_label for article in response.articles} == {
+        "Elections",
+        "Science",
+        "Climat",
+    }
 
 
 def test_tournee_pool_filter_noop_when_no_followed_sources():

@@ -294,6 +294,16 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    scheduler.add_job(
+        dispatch_daily_essentiel_pushes,
+        trigger=IntervalTrigger(minutes=5),
+        id="daily_essentiel_push_dispatch",
+        name="Daily Essentiel server push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     scheduler.start()
     logger.info(
         "Scheduler started",
@@ -306,6 +316,7 @@ def start_scheduler() -> None:
             "recompute_source_language",
             "zombie_session_sweeper",
             "pool_health_probe",
+            "daily_essentiel_push_dispatch",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="07:30 Europe/Paris",

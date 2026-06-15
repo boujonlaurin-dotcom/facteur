@@ -204,7 +204,13 @@ mixin _$GrilleTodayResponse {
   String? get featuredTitle => throw _privateConstructorUsedError;
   String? get featuredExcerpt => throw _privateConstructorUsedError;
   String? get featuredUrl => throw _privateConstructorUsedError;
-  String? get featuredSource => throw _privateConstructorUsedError;
+  String? get featuredSource =>
+      throw _privateConstructorUsedError; // Sélection hybride : où le mot se cachait dans l'actu réelle.
+// `hybridField` = "title" | "description" (badge), `hybridSnippet` = texte
+// exact à afficher, `hybridMatch` = surface à surligner.
+  String? get hybridField => throw _privateConstructorUsedError;
+  String? get hybridSnippet => throw _privateConstructorUsedError;
+  String? get hybridMatch => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -239,7 +245,10 @@ abstract class $GrilleTodayResponseCopyWith<$Res> {
       String? featuredTitle,
       String? featuredExcerpt,
       String? featuredUrl,
-      String? featuredSource});
+      String? featuredSource,
+      String? hybridField,
+      String? hybridSnippet,
+      String? hybridMatch});
 }
 
 /// @nodoc
@@ -276,6 +285,9 @@ class _$GrilleTodayResponseCopyWithImpl<$Res, $Val extends GrilleTodayResponse>
     Object? featuredExcerpt = freezed,
     Object? featuredUrl = freezed,
     Object? featuredSource = freezed,
+    Object? hybridField = freezed,
+    Object? hybridSnippet = freezed,
+    Object? hybridMatch = freezed,
   }) {
     return _then(_value.copyWith(
       date: null == date
@@ -362,6 +374,18 @@ class _$GrilleTodayResponseCopyWithImpl<$Res, $Val extends GrilleTodayResponse>
           ? _value.featuredSource
           : featuredSource // ignore: cast_nullable_to_non_nullable
               as String?,
+      hybridField: freezed == hybridField
+          ? _value.hybridField
+          : hybridField // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridSnippet: freezed == hybridSnippet
+          ? _value.hybridSnippet
+          : hybridSnippet // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridMatch: freezed == hybridMatch
+          ? _value.hybridMatch
+          : hybridMatch // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -395,7 +419,10 @@ abstract class _$$GrilleTodayResponseImplCopyWith<$Res>
       String? featuredTitle,
       String? featuredExcerpt,
       String? featuredUrl,
-      String? featuredSource});
+      String? featuredSource,
+      String? hybridField,
+      String? hybridSnippet,
+      String? hybridMatch});
 }
 
 /// @nodoc
@@ -430,6 +457,9 @@ class __$$GrilleTodayResponseImplCopyWithImpl<$Res>
     Object? featuredExcerpt = freezed,
     Object? featuredUrl = freezed,
     Object? featuredSource = freezed,
+    Object? hybridField = freezed,
+    Object? hybridSnippet = freezed,
+    Object? hybridMatch = freezed,
   }) {
     return _then(_$GrilleTodayResponseImpl(
       date: null == date
@@ -516,6 +546,18 @@ class __$$GrilleTodayResponseImplCopyWithImpl<$Res>
           ? _value.featuredSource
           : featuredSource // ignore: cast_nullable_to_non_nullable
               as String?,
+      hybridField: freezed == hybridField
+          ? _value.hybridField
+          : hybridField // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridSnippet: freezed == hybridSnippet
+          ? _value.hybridSnippet
+          : hybridSnippet // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridMatch: freezed == hybridMatch
+          ? _value.hybridMatch
+          : hybridMatch // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -544,7 +586,10 @@ class _$GrilleTodayResponseImpl extends _GrilleTodayResponse {
       this.featuredTitle,
       this.featuredExcerpt,
       this.featuredUrl,
-      this.featuredSource})
+      this.featuredSource,
+      this.hybridField,
+      this.hybridSnippet,
+      this.hybridMatch})
       : _essais = essais,
         super._();
 
@@ -601,10 +646,19 @@ class _$GrilleTodayResponseImpl extends _GrilleTodayResponse {
   final String? featuredUrl;
   @override
   final String? featuredSource;
+// Sélection hybride : où le mot se cachait dans l'actu réelle.
+// `hybridField` = "title" | "description" (badge), `hybridSnippet` = texte
+// exact à afficher, `hybridMatch` = surface à surligner.
+  @override
+  final String? hybridField;
+  @override
+  final String? hybridSnippet;
+  @override
+  final String? hybridMatch;
 
   @override
   String toString() {
-    return 'GrilleTodayResponse(date: $date, dateAffichee: $dateAffichee, dateCourt: $dateCourt, numero: $numero, longueur: $longueur, essaisMax: $essaisMax, premiereLettre: $premiereLettre, indice: $indice, theme: $theme, statut: $statut, essais: $essais, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi, streak: $streak, prochainMotDansSec: $prochainMotDansSec, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource)';
+    return 'GrilleTodayResponse(date: $date, dateAffichee: $dateAffichee, dateCourt: $dateCourt, numero: $numero, longueur: $longueur, essaisMax: $essaisMax, premiereLettre: $premiereLettre, indice: $indice, theme: $theme, statut: $statut, essais: $essais, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi, streak: $streak, prochainMotDansSec: $prochainMotDansSec, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource, hybridField: $hybridField, hybridSnippet: $hybridSnippet, hybridMatch: $hybridMatch)';
   }
 
   @override
@@ -645,7 +699,13 @@ class _$GrilleTodayResponseImpl extends _GrilleTodayResponse {
             (identical(other.featuredUrl, featuredUrl) ||
                 other.featuredUrl == featuredUrl) &&
             (identical(other.featuredSource, featuredSource) ||
-                other.featuredSource == featuredSource));
+                other.featuredSource == featuredSource) &&
+            (identical(other.hybridField, hybridField) ||
+                other.hybridField == hybridField) &&
+            (identical(other.hybridSnippet, hybridSnippet) ||
+                other.hybridSnippet == hybridSnippet) &&
+            (identical(other.hybridMatch, hybridMatch) ||
+                other.hybridMatch == hybridMatch));
   }
 
   @JsonKey(ignore: true)
@@ -672,7 +732,10 @@ class _$GrilleTodayResponseImpl extends _GrilleTodayResponse {
         featuredTitle,
         featuredExcerpt,
         featuredUrl,
-        featuredSource
+        featuredSource,
+        hybridField,
+        hybridSnippet,
+        hybridMatch
       ]);
 
   @JsonKey(ignore: true)
@@ -712,7 +775,10 @@ abstract class _GrilleTodayResponse extends GrilleTodayResponse {
       final String? featuredTitle,
       final String? featuredExcerpt,
       final String? featuredUrl,
-      final String? featuredSource}) = _$GrilleTodayResponseImpl;
+      final String? featuredSource,
+      final String? hybridField,
+      final String? hybridSnippet,
+      final String? hybridMatch}) = _$GrilleTodayResponseImpl;
   const _GrilleTodayResponse._() : super._();
 
   factory _GrilleTodayResponse.fromJson(Map<String, dynamic> json) =
@@ -761,6 +827,14 @@ abstract class _GrilleTodayResponse extends GrilleTodayResponse {
   String? get featuredUrl;
   @override
   String? get featuredSource;
+  @override // Sélection hybride : où le mot se cachait dans l'actu réelle.
+// `hybridField` = "title" | "description" (badge), `hybridSnippet` = texte
+// exact à afficher, `hybridMatch` = surface à surligner.
+  String? get hybridField;
+  @override
+  String? get hybridSnippet;
+  @override
+  String? get hybridMatch;
   @override
   @JsonKey(ignore: true)
   _$$GrilleTodayResponseImplCopyWith<_$GrilleTodayResponseImpl> get copyWith =>
@@ -781,6 +855,9 @@ mixin _$GrilleRevealResponse {
   String? get featuredExcerpt => throw _privateConstructorUsedError;
   String? get featuredUrl => throw _privateConstructorUsedError;
   String? get featuredSource => throw _privateConstructorUsedError;
+  String? get hybridField => throw _privateConstructorUsedError;
+  String? get hybridSnippet => throw _privateConstructorUsedError;
+  String? get hybridMatch => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -802,7 +879,10 @@ abstract class $GrilleRevealResponseCopyWith<$Res> {
       String? featuredTitle,
       String? featuredExcerpt,
       String? featuredUrl,
-      String? featuredSource});
+      String? featuredSource,
+      String? hybridField,
+      String? hybridSnippet,
+      String? hybridMatch});
 }
 
 /// @nodoc
@@ -827,6 +907,9 @@ class _$GrilleRevealResponseCopyWithImpl<$Res,
     Object? featuredExcerpt = freezed,
     Object? featuredUrl = freezed,
     Object? featuredSource = freezed,
+    Object? hybridField = freezed,
+    Object? hybridSnippet = freezed,
+    Object? hybridMatch = freezed,
   }) {
     return _then(_value.copyWith(
       statut: null == statut
@@ -861,6 +944,18 @@ class _$GrilleRevealResponseCopyWithImpl<$Res,
           ? _value.featuredSource
           : featuredSource // ignore: cast_nullable_to_non_nullable
               as String?,
+      hybridField: freezed == hybridField
+          ? _value.hybridField
+          : hybridField // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridSnippet: freezed == hybridSnippet
+          ? _value.hybridSnippet
+          : hybridSnippet // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridMatch: freezed == hybridMatch
+          ? _value.hybridMatch
+          : hybridMatch // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -881,7 +976,10 @@ abstract class _$$GrilleRevealResponseImplCopyWith<$Res>
       String? featuredTitle,
       String? featuredExcerpt,
       String? featuredUrl,
-      String? featuredSource});
+      String? featuredSource,
+      String? hybridField,
+      String? hybridSnippet,
+      String? hybridMatch});
 }
 
 /// @nodoc
@@ -903,6 +1001,9 @@ class __$$GrilleRevealResponseImplCopyWithImpl<$Res>
     Object? featuredExcerpt = freezed,
     Object? featuredUrl = freezed,
     Object? featuredSource = freezed,
+    Object? hybridField = freezed,
+    Object? hybridSnippet = freezed,
+    Object? hybridMatch = freezed,
   }) {
     return _then(_$GrilleRevealResponseImpl(
       statut: null == statut
@@ -937,6 +1038,18 @@ class __$$GrilleRevealResponseImplCopyWithImpl<$Res>
           ? _value.featuredSource
           : featuredSource // ignore: cast_nullable_to_non_nullable
               as String?,
+      hybridField: freezed == hybridField
+          ? _value.hybridField
+          : hybridField // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridSnippet: freezed == hybridSnippet
+          ? _value.hybridSnippet
+          : hybridSnippet // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridMatch: freezed == hybridMatch
+          ? _value.hybridMatch
+          : hybridMatch // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -952,7 +1065,10 @@ class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
       this.featuredTitle,
       this.featuredExcerpt,
       this.featuredUrl,
-      this.featuredSource});
+      this.featuredSource,
+      this.hybridField,
+      this.hybridSnippet,
+      this.hybridMatch});
 
   factory _$GrilleRevealResponseImpl.fromJson(Map<String, dynamic> json) =>
       _$$GrilleRevealResponseImplFromJson(json);
@@ -973,10 +1089,16 @@ class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
   final String? featuredUrl;
   @override
   final String? featuredSource;
+  @override
+  final String? hybridField;
+  @override
+  final String? hybridSnippet;
+  @override
+  final String? hybridMatch;
 
   @override
   String toString() {
-    return 'GrilleRevealResponse(statut: $statut, mot: $mot, pourquoi: $pourquoi, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource)';
+    return 'GrilleRevealResponse(statut: $statut, mot: $mot, pourquoi: $pourquoi, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource, hybridField: $hybridField, hybridSnippet: $hybridSnippet, hybridMatch: $hybridMatch)';
   }
 
   @override
@@ -997,7 +1119,13 @@ class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
             (identical(other.featuredUrl, featuredUrl) ||
                 other.featuredUrl == featuredUrl) &&
             (identical(other.featuredSource, featuredSource) ||
-                other.featuredSource == featuredSource));
+                other.featuredSource == featuredSource) &&
+            (identical(other.hybridField, hybridField) ||
+                other.hybridField == hybridField) &&
+            (identical(other.hybridSnippet, hybridSnippet) ||
+                other.hybridSnippet == hybridSnippet) &&
+            (identical(other.hybridMatch, hybridMatch) ||
+                other.hybridMatch == hybridMatch));
   }
 
   @JsonKey(ignore: true)
@@ -1011,7 +1139,10 @@ class _$GrilleRevealResponseImpl implements _GrilleRevealResponse {
       featuredTitle,
       featuredExcerpt,
       featuredUrl,
-      featuredSource);
+      featuredSource,
+      hybridField,
+      hybridSnippet,
+      hybridMatch);
 
   @JsonKey(ignore: true)
   @override
@@ -1038,7 +1169,10 @@ abstract class _GrilleRevealResponse implements GrilleRevealResponse {
       final String? featuredTitle,
       final String? featuredExcerpt,
       final String? featuredUrl,
-      final String? featuredSource}) = _$GrilleRevealResponseImpl;
+      final String? featuredSource,
+      final String? hybridField,
+      final String? hybridSnippet,
+      final String? hybridMatch}) = _$GrilleRevealResponseImpl;
 
   factory _GrilleRevealResponse.fromJson(Map<String, dynamic> json) =
       _$GrilleRevealResponseImpl.fromJson;
@@ -1059,6 +1193,12 @@ abstract class _GrilleRevealResponse implements GrilleRevealResponse {
   String? get featuredUrl;
   @override
   String? get featuredSource;
+  @override
+  String? get hybridField;
+  @override
+  String? get hybridSnippet;
+  @override
+  String? get hybridMatch;
   @override
   @JsonKey(ignore: true)
   _$$GrilleRevealResponseImplCopyWith<_$GrilleRevealResponseImpl>
@@ -1083,6 +1223,9 @@ mixin _$GrilleGuessResponse {
   String? get featuredExcerpt => throw _privateConstructorUsedError;
   String? get featuredUrl => throw _privateConstructorUsedError;
   String? get featuredSource => throw _privateConstructorUsedError;
+  String? get hybridField => throw _privateConstructorUsedError;
+  String? get hybridSnippet => throw _privateConstructorUsedError;
+  String? get hybridMatch => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -1108,7 +1251,10 @@ abstract class $GrilleGuessResponseCopyWith<$Res> {
       String? featuredTitle,
       String? featuredExcerpt,
       String? featuredUrl,
-      String? featuredSource});
+      String? featuredSource,
+      String? hybridField,
+      String? hybridSnippet,
+      String? hybridMatch});
 }
 
 /// @nodoc
@@ -1136,6 +1282,9 @@ class _$GrilleGuessResponseCopyWithImpl<$Res, $Val extends GrilleGuessResponse>
     Object? featuredExcerpt = freezed,
     Object? featuredUrl = freezed,
     Object? featuredSource = freezed,
+    Object? hybridField = freezed,
+    Object? hybridSnippet = freezed,
+    Object? hybridMatch = freezed,
   }) {
     return _then(_value.copyWith(
       valide: null == valide
@@ -1186,6 +1335,18 @@ class _$GrilleGuessResponseCopyWithImpl<$Res, $Val extends GrilleGuessResponse>
           ? _value.featuredSource
           : featuredSource // ignore: cast_nullable_to_non_nullable
               as String?,
+      hybridField: freezed == hybridField
+          ? _value.hybridField
+          : hybridField // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridSnippet: freezed == hybridSnippet
+          ? _value.hybridSnippet
+          : hybridSnippet // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridMatch: freezed == hybridMatch
+          ? _value.hybridMatch
+          : hybridMatch // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -1210,7 +1371,10 @@ abstract class _$$GrilleGuessResponseImplCopyWith<$Res>
       String? featuredTitle,
       String? featuredExcerpt,
       String? featuredUrl,
-      String? featuredSource});
+      String? featuredSource,
+      String? hybridField,
+      String? hybridSnippet,
+      String? hybridMatch});
 }
 
 /// @nodoc
@@ -1236,6 +1400,9 @@ class __$$GrilleGuessResponseImplCopyWithImpl<$Res>
     Object? featuredExcerpt = freezed,
     Object? featuredUrl = freezed,
     Object? featuredSource = freezed,
+    Object? hybridField = freezed,
+    Object? hybridSnippet = freezed,
+    Object? hybridMatch = freezed,
   }) {
     return _then(_$GrilleGuessResponseImpl(
       valide: null == valide
@@ -1286,6 +1453,18 @@ class __$$GrilleGuessResponseImplCopyWithImpl<$Res>
           ? _value.featuredSource
           : featuredSource // ignore: cast_nullable_to_non_nullable
               as String?,
+      hybridField: freezed == hybridField
+          ? _value.hybridField
+          : hybridField // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridSnippet: freezed == hybridSnippet
+          ? _value.hybridSnippet
+          : hybridSnippet // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hybridMatch: freezed == hybridMatch
+          ? _value.hybridMatch
+          : hybridMatch // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -1305,7 +1484,10 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
       this.featuredTitle,
       this.featuredExcerpt,
       this.featuredUrl,
-      this.featuredSource})
+      this.featuredSource,
+      this.hybridField,
+      this.hybridSnippet,
+      this.hybridMatch})
       : _etats = etats,
         super._();
 
@@ -1344,10 +1526,16 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
   final String? featuredUrl;
   @override
   final String? featuredSource;
+  @override
+  final String? hybridField;
+  @override
+  final String? hybridSnippet;
+  @override
+  final String? hybridMatch;
 
   @override
   String toString() {
-    return 'GrilleGuessResponse(valide: $valide, raison: $raison, etats: $etats, statut: $statut, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource)';
+    return 'GrilleGuessResponse(valide: $valide, raison: $raison, etats: $etats, statut: $statut, nbEssais: $nbEssais, mot: $mot, pourquoi: $pourquoi, featuredContentId: $featuredContentId, featuredTitle: $featuredTitle, featuredExcerpt: $featuredExcerpt, featuredUrl: $featuredUrl, featuredSource: $featuredSource, hybridField: $hybridField, hybridSnippet: $hybridSnippet, hybridMatch: $hybridMatch)';
   }
 
   @override
@@ -1373,7 +1561,13 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
             (identical(other.featuredUrl, featuredUrl) ||
                 other.featuredUrl == featuredUrl) &&
             (identical(other.featuredSource, featuredSource) ||
-                other.featuredSource == featuredSource));
+                other.featuredSource == featuredSource) &&
+            (identical(other.hybridField, hybridField) ||
+                other.hybridField == hybridField) &&
+            (identical(other.hybridSnippet, hybridSnippet) ||
+                other.hybridSnippet == hybridSnippet) &&
+            (identical(other.hybridMatch, hybridMatch) ||
+                other.hybridMatch == hybridMatch));
   }
 
   @JsonKey(ignore: true)
@@ -1391,7 +1585,10 @@ class _$GrilleGuessResponseImpl extends _GrilleGuessResponse {
       featuredTitle,
       featuredExcerpt,
       featuredUrl,
-      featuredSource);
+      featuredSource,
+      hybridField,
+      hybridSnippet,
+      hybridMatch);
 
   @JsonKey(ignore: true)
   @override
@@ -1421,7 +1618,10 @@ abstract class _GrilleGuessResponse extends GrilleGuessResponse {
       final String? featuredTitle,
       final String? featuredExcerpt,
       final String? featuredUrl,
-      final String? featuredSource}) = _$GrilleGuessResponseImpl;
+      final String? featuredSource,
+      final String? hybridField,
+      final String? hybridSnippet,
+      final String? hybridMatch}) = _$GrilleGuessResponseImpl;
   const _GrilleGuessResponse._() : super._();
 
   factory _GrilleGuessResponse.fromJson(Map<String, dynamic> json) =
@@ -1451,6 +1651,12 @@ abstract class _GrilleGuessResponse extends GrilleGuessResponse {
   String? get featuredUrl;
   @override
   String? get featuredSource;
+  @override
+  String? get hybridField;
+  @override
+  String? get hybridSnippet;
+  @override
+  String? get hybridMatch;
   @override
   @JsonKey(ignore: true)
   _$$GrilleGuessResponseImplCopyWith<_$GrilleGuessResponseImpl> get copyWith =>

@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # Firebase Admin SDK. JSON brut ou base64 ; vide désactive l'envoi tout en
+    # laissant les endpoints d'enregistrement disponibles.
+    firebase_service_account_json: str = ""
+    firebase_service_account_base64: str = ""
+
     # PostHog (Story 14.1 — retention cohorts)
     posthog_api_key: str = ""
     posthog_host: str = "https://eu.i.posthog.com"

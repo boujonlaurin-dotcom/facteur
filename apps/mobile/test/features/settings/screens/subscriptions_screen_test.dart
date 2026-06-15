@@ -66,18 +66,22 @@ Source _source({
   required String id,
   required String name,
   bool hasSubscription = false,
+  bool isTrusted = false,
+  bool hasPaywall = true,
+  PremiumConnection? premiumConnection = const PremiumConnection(
+    loginUrl: 'https://example.com/login',
+    testUrl: 'https://example.com/test',
+  ),
 }) =>
     Source(
       id: id,
       name: name,
       type: SourceType.article,
       url: 'https://$id.example',
+      isTrusted: isTrusted,
       hasSubscription: hasSubscription,
-      hasPaywall: true,
-      premiumConnection: const PremiumConnection(
-        loginUrl: 'https://example.com/login',
-        testUrl: 'https://example.com/test',
-      ),
+      hasPaywall: hasPaywall,
+      premiumConnection: premiumConnection,
     );
 
 void main() {
@@ -92,14 +96,98 @@ void main() {
     expect(find.text('Free Blog'), findsNothing);
     expect(find.text('Reconnecter'), findsOneWidget);
     expect(find.text('Dissocier'), findsOneWidget);
+    expect(find.text('Ajouter un abonnement'), findsOneWidget);
   });
 
-  testWidgets('shows empty state when no subscriptions', (tester) async {
+  testWidgets('empty state opens fallback when no followed paid source',
+      (tester) async {
     await tester.pumpWidget(_wrap([
-      _source(id: 'freeblog', name: 'Free Blog'),
+      _source(
+        id: 'freeblog',
+        name: 'Free Blog',
+        isTrusted: true,
+        hasPaywall: false,
+        premiumConnection: null,
+      ),
     ]));
     await tester.pumpAndSettle();
 
     expect(find.text('Aucun abonnement connecté'), findsOneWidget);
+    expect(find.text('Ajouter un abonnement'), findsOneWidget);
+
+    await tester.tap(find.text('Ajouter un abonnement'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Aucun média payant suivi'), findsOneWidget);
+    expect(find.text('Choisir mes sources'), findsOneWidget);
+  });
+
+  testWidgets('lists only followed connectable paid sources in add sheet',
+      (tester) async {
+    await tester.pumpWidget(_wrap([
+      _source(id: 'lemonde', name: 'Le Monde', isTrusted: true),
+      _source(id: 'mediapart', name: 'Mediapart', isTrusted: true),
+      _source(id: 'unfollowed', name: 'Non suivi'),
+      _source(
+        id: 'freeblog',
+        name: 'Gratuit suivi',
+        isTrusted: true,
+        hasPaywall: false,
+        premiumConnection: null,
+      ),
+      _source(
+        id: 'connected',
+        name: 'Déjà connecté',
+        isTrusted: true,
+        hasSubscription: true,
+      ),
+    ]));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Ajouter un abonnement').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Le Monde'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.text('Mediapart'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Non suivi'), findsNothing);
+    expect(find.text('Gratuit suivi'), findsNothing);
+    expect(find.text('Déjà connecté'), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextField),
+      'Mediapart',
+    );
+    await tester.pump();
+
+    expect(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.text('Mediapart'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Le Monde'), findsNothing);
+  });
+
+  testWidgets('connect action opens the existing premium connection flow',
+      (tester) async {
+    await tester.pumpWidget(_wrap([
+      _source(id: 'lemonde', name: 'Le Monde', isTrusted: true),
+    ]));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Ajouter un abonnement'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connecter'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connecter votre abonnement'), findsOneWidget);
+    expect(find.text('Commencer'), findsOneWidget);
   });
 }

@@ -12,9 +12,11 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../sources/models/source_model.dart';
 import '../../flux_continu/providers/flux_continu_provider.dart';
 import '../../my_interests/widgets/interest_state_pill.dart';
 import '../../sources/widgets/premium_source_connection.dart';
+import '../../sources/widgets/source_detail_modal.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
@@ -90,6 +92,13 @@ class TopicChip extends StatelessWidget {
     ArticleSheetSection initialSection = ArticleSheetSection.topic,
     bool highlightInitialSection = false,
   }) {
+    // Deep-link « source » d'un article → fiche source v2 dédiée
+    // (Story 7.8). Les autres entrées gardent l'ArticleSheet unifiée.
+    if (initialSection == ArticleSheetSection.source &&
+        content.source.name.isNotEmpty) {
+      return showSourceDetailSheet(context, content.source);
+    }
+
     final topicSlug = content.topics.isNotEmpty ? content.topics.first : '';
     final topicLabel = topicSlug.isNotEmpty ? getTopicLabel(topicSlug) : '';
     return showModalBottomSheet<void>(
@@ -105,6 +114,40 @@ class TopicChip extends StatelessWidget {
           topicLabel: topicLabel,
           initialSection: initialSection,
           highlightInitialSection: highlightInitialSection,
+        ),
+      ),
+    );
+  }
+
+  /// Ouvre la fiche source v2 ([SourceDetailModal]) dans une bottom sheet,
+  /// avec les callbacks trust/mute câblés sur [userSourcesProvider].
+  static Future<void> showSourceDetailSheet(
+    BuildContext context,
+    Source source,
+  ) {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: Consumer(
+          builder: (context, ref, _) {
+            // État live (trust) pour aligner le libellé du bouton principal.
+            final live = ref
+                    .watch(userSourcesProvider)
+                    .valueOrNull
+                    ?.where((s) => s.id == source.id)
+                    .firstOrNull ??
+                source;
+            return SourceDetailModal(
+              source: live,
+              onToggleTrust: () => ref
+                  .read(userSourcesProvider.notifier)
+                  .toggleTrust(live.id, live.isTrusted),
+            );
+          },
         ),
       ),
     );

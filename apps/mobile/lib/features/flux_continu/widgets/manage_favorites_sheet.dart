@@ -53,6 +53,8 @@ Future<void> showManageFavoritesSheet(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
+    enableDrag: true,
+    isDismissible: true,
     barrierColor: Colors.black.withValues(alpha: 0.5),
     builder: (ctx) => ClipRect(
       child: BackdropFilter(
@@ -610,7 +612,7 @@ class _ManageFavoritesContentState
       top: false,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.88,
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
         ),
         child: Container(
           decoration: BoxDecoration(
@@ -618,13 +620,16 @@ class _ManageFavoritesContentState
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header fixe : handle cosmétique centré + bouton de fermeture
+              // explicite (chemin garanti 1 tap, le SingleChildScrollView
+              // interne capturant sinon le drag-to-dismiss natif).
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
@@ -632,8 +637,28 @@ class _ManageFavoritesContentState
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                const SizedBox(height: FacteurSpacing.space4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(Icons.close, color: colors.textTertiary),
+                      tooltip: 'Fermer',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: FacteurSpacing.space2),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                 Text(
                   'Mes favoris',
                   style: textTheme.displaySmall?.copyWith(
@@ -845,8 +870,11 @@ class _ManageFavoritesContentState
                     router.pushNamed(RouteNames.myInterests);
                   },
                 ),
-              ],
-            ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

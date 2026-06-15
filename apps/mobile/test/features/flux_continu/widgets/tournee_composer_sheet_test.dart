@@ -103,6 +103,22 @@ void main() {
     expect(find.text('BLOCS DE TA PAGE L\'ESSENTIEL'), findsOneWidget);
   });
 
+  testWidgets('ComposeTourneeButton supports a secondary visual hierarchy',
+      (tester) async {
+    await tester.pumpWidget(
+      _host(
+        const ComposeTourneeButton(
+          style: ComposeTourneeButtonStyle.secondary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OutlinedButton), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsNothing);
+    expect(find.text('Composer ma Tournée'), findsOneWidget);
+  });
+
   testWidgets('showTourneeComposerSheet ouvre la sheet unifiée',
       (tester) async {
     await tester.pumpWidget(

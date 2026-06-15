@@ -54,22 +54,30 @@ def extract_content_ids(items: Any, format_version: str | None) -> set[UUID]:
             if not isinstance(subject, dict):
                 continue
             actu = subject.get("actu_article")
-            if isinstance(actu, dict):
-                if (cid := _safe_uuid(actu.get("content_id"))) is not None:
-                    ids.add(cid)
+            if (
+                isinstance(actu, dict)
+                and (cid := _safe_uuid(actu.get("content_id"))) is not None
+            ):
+                ids.add(cid)
             for extra in subject.get("extra_actu_articles") or []:
-                if isinstance(extra, dict):
-                    if (cid := _safe_uuid(extra.get("content_id"))) is not None:
-                        ids.add(cid)
-            deep = subject.get("deep_article")
-            if isinstance(deep, dict):
-                if (cid := _safe_uuid(deep.get("content_id"))) is not None:
+                if (
+                    isinstance(extra, dict)
+                    and (cid := _safe_uuid(extra.get("content_id"))) is not None
+                ):
                     ids.add(cid)
+            deep = subject.get("deep_article")
+            if (
+                isinstance(deep, dict)
+                and (cid := _safe_uuid(deep.get("content_id"))) is not None
+            ):
+                ids.add(cid)
         for key in ("pepite", "coup_de_coeur", "actu_decalee"):
             node = items.get(key)
-            if isinstance(node, dict):
-                if (cid := _safe_uuid(node.get("content_id"))) is not None:
-                    ids.add(cid)
+            if (
+                isinstance(node, dict)
+                and (cid := _safe_uuid(node.get("content_id"))) is not None
+            ):
+                ids.add(cid)
         return ids
 
     if fmt == "topics_v1" and isinstance(items, dict):
@@ -77,15 +85,19 @@ def extract_content_ids(items: Any, format_version: str | None) -> set[UUID]:
             if not isinstance(topic, dict):
                 continue
             for art in topic.get("articles") or []:
-                if isinstance(art, dict):
-                    if (cid := _safe_uuid(art.get("content_id"))) is not None:
-                        ids.add(cid)
+                if (
+                    isinstance(art, dict)
+                    and (cid := _safe_uuid(art.get("content_id"))) is not None
+                ):
+                    ids.add(cid)
         return ids
 
     # flat_v1 (and unknown legacy formats): items is an array
     if isinstance(items, list):
         for item in items:
-            if isinstance(item, dict):
-                if (cid := _safe_uuid(item.get("content_id"))) is not None:
-                    ids.add(cid)
+            if (
+                isinstance(item, dict)
+                and (cid := _safe_uuid(item.get("content_id"))) is not None
+            ):
+                ids.add(cid)
     return ids

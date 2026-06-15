@@ -148,6 +148,11 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     final name = _customController.text.trim();
     if (name.isEmpty) return;
 
+    // Fermer le clavier tant que l'EditableText focalisé est encore monté :
+    // un unfocus après suppression du widget (via setState ci-dessous) est un
+    // no-op qui laisserait le clavier ouvert sur iOS.
+    FocusManager.instance.primaryFocus?.unfocus();
+
     setState(() {
       _customTopics.putIfAbsent(themeSlug, () => []);
       _customTopics[themeSlug]!.add(name);
@@ -577,7 +582,9 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                     key: _customFieldKey,
                     controller: _customController,
                     autofocus: true,
-                    scrollPadding: const EdgeInsets.only(bottom: 240),
+                    textInputAction: TextInputAction.done,
+                    scrollPadding: EdgeInsets.only(
+                        bottom: MediaQuery.viewInsetsOf(context).bottom + 80),
                     decoration: InputDecoration(
                       hintText: AvailableSubtopics
                               .customTopicPlaceholders[theme.slug] ??

@@ -3,14 +3,16 @@
 import contextlib
 import time
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
@@ -19,7 +21,10 @@ from app.models.enums import InterestState
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
+from app.schemas.content import ContentResponse
 from app.schemas.source import (
+    CoverageResponse,
+    CoverageRow,
     PremiumConnectionResponse,
     RecentItemsRequest,
     RecentItemsResponse,
@@ -32,11 +37,13 @@ from app.schemas.source import (
     SourceCreate,
     SourceDetectRequest,
     SourceDetectResponse,
+    SourceProfileResponse,
     SourceRecentItems,
     SourceResponse,
     SourceSearchResponse,
     ThemeFollowed,
     ThemesFollowedResponse,
+    ThemeShare,
     ThemeSourceGroup,
     ThemeSourcesResponse,
     UpdateSourceSubscriptionRequest,
@@ -388,13 +395,24 @@ async def get_recent_items(
         .label("rn")
     )
     ranked = (
-        select(Content.source_id, Content.title, Content.published_at, rn)
+        select(
+            Content.source_id,
+            Content.title,
+            Content.published_at,
+            Content.theme,
+            rn,
+        )
         .where(Content.source_id.in_(data.source_ids))
         .subquery()
     )
     rows = (
         await db.execute(
-            select(ranked.c.source_id, ranked.c.title, ranked.c.published_at)
+            select(
+                ranked.c.source_id,
+                ranked.c.title,
+                ranked.c.published_at,
+                ranked.c.theme,
+            )
             .where(ranked.c.rn <= data.per_source)
             .order_by(ranked.c.source_id, ranked.c.published_at.desc())
         )
@@ -406,6 +424,7 @@ async def get_recent_items(
             SmartSearchRecentItem(
                 title=row.title,
                 published_at=row.published_at.isoformat() if row.published_at else "",
+                theme=row.theme,
             )
         )
 
@@ -678,6 +697,193 @@ async def detect_source(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+# Nombre maximum de thèmes affichés individuellement ; la longue traîne au-delà
+# est regroupée dans une ligne unique `theme="autres"`.
+COVERAGE_TOP_N = 6
+# Clé brute utilisée pour la ligne agrégée (longue traîne + thèmes NULL).
+COVERAGE_OTHER_THEME = "autres"
+# Espace fine insécable (U+202F) — séparateur des milliers en typographie FR.
+_NARROW_NBSP = " "
+
+
+def _format_fr_thousands(value: int) -> str:
+    """Formate un entier avec une espace fine insécable comme séparateur des milliers."""
+    return f"{value:,}".replace(",", _NARROW_NBSP)
+
+
+async def _aggregate_source_themes(
+    db: AsyncSession,
+    source_id: UUID,
+    *,
+    days: int,
+) -> tuple[list[tuple[str, int]], int]:
+    """Agrège les contenus d'une source par thème sur une fenêtre glissante.
+
+    Helper partagé par `/coverage` et `/profile` (zéro duplication).
+
+    Renvoie `(rows, total)` :
+    - `total` = nombre d'articles publiés sur la fenêtre, tous thèmes confondus
+      (avant troncature top-N) ;
+    - `rows` = liste `(theme, count)` triée par volume décroissant : les
+      `COVERAGE_TOP_N` thèmes nommés les plus volumineux, suivis d'une ligne
+      `COVERAGE_OTHER_THEME` repliant la longue traîne **et** les thèmes NULL
+      (présente seulement si non vide). Liste vide quand `total == 0`.
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=days)
+
+    result = await db.execute(
+        select(Content.theme, func.count())
+        .where(Content.source_id == source_id)
+        .where(Content.published_at >= cutoff)
+        .group_by(Content.theme)
+    )
+    aggregates = result.all()
+
+    # total = somme sur TOUS les thèmes de la fenêtre (avant troncature top-N).
+    total = sum(int(count) for _theme, count in aggregates)
+    if total == 0:
+        return [], 0
+
+    # Sépare les thèmes nommés (non-NULL) de la part NULL, qui ira dans « autres ».
+    named: list[tuple[str, int]] = []
+    other_count = 0
+    for theme, count in aggregates:
+        count = int(count)
+        if theme is None:
+            other_count += count
+        else:
+            named.append((theme, count))
+
+    named.sort(key=lambda item: item[1], reverse=True)
+
+    # Top N affichés individuellement ; le reste rejoint « autres ».
+    head = named[:COVERAGE_TOP_N]
+    tail = named[COVERAGE_TOP_N:]
+    other_count += sum(count for _theme, count in tail)
+
+    rows: list[tuple[str, int]] = list(head)
+    if other_count > 0:
+        rows.append((COVERAGE_OTHER_THEME, other_count))
+    return rows, total
+
+
+@router.get("/{source_id}/coverage", response_model=CoverageResponse)
+async def get_source_coverage(
+    source_id: UUID,
+    days: int = Query(default=30, ge=1, le=365),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> CoverageResponse:
+    """Couverture par thèmes d'une source sur une fenêtre glissante.
+
+    Agrège `contents` par `theme` sur les `days` derniers jours. Trie par
+    volume décroissant, conserve le top N et regroupe la longue traîne (ainsi
+    que les thèmes NULL) dans une ligne unique `autres`. La clé `theme` reste
+    brute : le mapping label/couleur est fait côté front.
+    """
+    period_label = f"{days} derniers jours"
+    rows, total_count = await _aggregate_source_themes(db, source_id, days=days)
+
+    if total_count == 0:
+        return CoverageResponse(
+            period_label=period_label,
+            total_count=0,
+            caption="Aucun article publié sur la période",
+            rows=[],
+        )
+
+    coverage_rows = [
+        CoverageRow(theme=theme, count=count, pct=round(count / total_count * 100))
+        for theme, count in rows
+    ]
+
+    noun = "article publié" if total_count == 1 else "articles publiés"
+    caption = f"{_format_fr_thousands(total_count)} {noun} sur la période"
+
+    return CoverageResponse(
+        period_label=period_label,
+        total_count=total_count,
+        caption=caption,
+        rows=coverage_rows,
+    )
+
+
+@router.get("/{source_id}/profile", response_model=SourceProfileResponse)
+async def get_source_profile(
+    source_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SourceProfileResponse:
+    """Profil unifié d'une source pour la fiche v3 (lecture seule).
+
+    Une seule réponse regroupe : l'identité de la source, sa couverture par
+    thèmes sur 30 jours (`theme_distribution` + `articles_30d`), la date du
+    plus ancien contenu connu (`oldest_content_at`, hors fenêtre, pour clamper
+    la fréquence côté mobile) et ses 3 articles les plus récents (objets
+    `Content` complets → carte standard cliquable). Placé après `/coverage`,
+    donc après toutes les routes statiques (`/catalog`, `/trending`…).
+    """
+    source = (
+        await db.execute(select(Source).where(Source.id == source_id))
+    ).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+
+    # Source suivie par l'utilisateur courant ? → flag is_trusted (réponse
+    # source) + is_followed_source (cartes article).
+    followed = (
+        await db.execute(
+            select(UserSource.source_id).where(
+                UserSource.user_id == UUID(user_id),
+                UserSource.source_id == source_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
+        )
+    ).first() is not None
+
+    source_response = _source_to_response(
+        source, trusted_ids={source_id} if followed else set()
+    )
+
+    rows, total = await _aggregate_source_themes(db, source_id, days=30)
+    theme_distribution = [
+        ThemeShare(theme=theme, count=count, share=count / total if total else 0.0)
+        for theme, count in rows
+    ]
+
+    # Plus ancien contenu sur TOUT l'historique (hors fenêtre 30 j).
+    oldest_content_at = (
+        await db.execute(
+            select(func.min(Content.published_at)).where(Content.source_id == source_id)
+        )
+    ).scalar_one_or_none()
+
+    recent_result = await db.execute(
+        select(Content)
+        .options(selectinload(Content.source))
+        .where(Content.source_id == source_id)
+        .order_by(Content.published_at.desc())
+        .limit(3)
+    )
+    recent_articles: list[ContentResponse] = []
+    for content in recent_result.scalars().all():
+        item = ContentResponse.model_validate(content)
+        # `status`, `is_saved`… retombent sur leurs défauts (absents de l'ORM
+        # Content) ; on renseigne le seul flag dérivable ici.
+        item.is_followed_source = followed
+        recent_articles.append(item)
+
+    return SourceProfileResponse(
+        source=source_response,
+        recent_articles=recent_articles,
+        theme_distribution=theme_distribution,
+        articles_30d=total,
+        oldest_content_at=oldest_content_at,
+    )
 
 
 @router.put("/{source_id}/subscription", response_model=SourceResponse)

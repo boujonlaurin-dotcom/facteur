@@ -12,7 +12,8 @@ class OnboardingAnswers {
 
   // Section 2
   final String? perspective; // big_picture, details
-  final String? responseStyle; // decisive, nuanced
+  final String? responseStyle; // decisive, nuanced (deprecated v6 — plus demandé)
+  final String? independencePref; // established, independent (axe v6)
   final String? contentRecency; // kept nullable for backward compat (deprecated)
   final bool? gamificationEnabled;
   final int? dailyArticleCount; // 3, 5, 7
@@ -21,10 +22,18 @@ class OnboardingAnswers {
   // Section 3
   final List<String>? themes;
   final List<String>? subtopics;
-  final String? sourcesIntent; // curious, knows (local uniquement, hors API)
+  // Conservé pour la compat reprise Hive (v7 : question retirée, figé à
+  // 'curious'). Local uniquement, jamais dans toJson() (hors payload API).
+  final String? sourcesIntent;
   final List<String>? preferredSources;
   final String? formatPreference; // short, long, audio, video
   final String? personalGoal; // culture, work, conversations, learning
+
+  // Swipe désambiguateur (v6) : IDs des sources triées d'un geste. Usage
+  // client (pré-sélection + repondération au reveal Q10) ; agrégat persisté
+  // côté API en compteurs.
+  final List<String>? swipeLiked;
+  final List<String>? swipeDisliked;
 
   const OnboardingAnswers({
     this.objectives,
@@ -33,6 +42,7 @@ class OnboardingAnswers {
     this.approach,
     this.perspective,
     this.responseStyle,
+    this.independencePref,
     this.contentRecency,
     this.gamificationEnabled,
     this.dailyArticleCount,
@@ -43,6 +53,8 @@ class OnboardingAnswers {
     this.preferredSources,
     this.formatPreference,
     this.personalGoal,
+    this.swipeLiked,
+    this.swipeDisliked,
   });
 
   OnboardingAnswers copyWith({
@@ -52,6 +64,7 @@ class OnboardingAnswers {
     String? approach,
     String? perspective,
     String? responseStyle,
+    String? independencePref,
     String? contentRecency,
     bool? gamificationEnabled,
     int? dailyArticleCount,
@@ -62,6 +75,8 @@ class OnboardingAnswers {
     List<String>? preferredSources,
     String? formatPreference,
     String? personalGoal,
+    List<String>? swipeLiked,
+    List<String>? swipeDisliked,
   }) {
     return OnboardingAnswers(
       objectives: objectives ?? this.objectives,
@@ -70,6 +85,7 @@ class OnboardingAnswers {
       approach: approach ?? this.approach,
       perspective: perspective ?? this.perspective,
       responseStyle: responseStyle ?? this.responseStyle,
+      independencePref: independencePref ?? this.independencePref,
       contentRecency: contentRecency ?? this.contentRecency,
       gamificationEnabled: gamificationEnabled ?? this.gamificationEnabled,
       dailyArticleCount: dailyArticleCount ?? this.dailyArticleCount,
@@ -80,6 +96,8 @@ class OnboardingAnswers {
       preferredSources: preferredSources ?? this.preferredSources,
       formatPreference: formatPreference ?? this.formatPreference,
       personalGoal: personalGoal ?? this.personalGoal,
+      swipeLiked: swipeLiked ?? this.swipeLiked,
+      swipeDisliked: swipeDisliked ?? this.swipeDisliked,
     );
   }
 
@@ -90,6 +108,7 @@ class OnboardingAnswers {
         'approach': approach,
         'perspective': perspective,
         'response_style': responseStyle,
+        'independence_pref': independencePref,
         'content_recency': contentRecency,
         'gamification_enabled': gamificationEnabled,
         'weekly_goal': dailyArticleCount,
@@ -99,6 +118,8 @@ class OnboardingAnswers {
         'preferred_sources': preferredSources,
         'format_preference': formatPreference,
         'personal_goal': personalGoal,
+        'swipe_liked': swipeLiked,
+        'swipe_disliked': swipeDisliked,
       };
 
   /// Sérialisation locale (Hive) : ajoute les champs hors payload API.
@@ -123,6 +144,7 @@ class OnboardingAnswers {
       approach: json['approach'] as String?,
       perspective: json['perspective'] as String?,
       responseStyle: json['response_style'] as String?,
+      independencePref: json['independence_pref'] as String?,
       contentRecency: json['content_recency'] as String?,
       gamificationEnabled: json['gamification_enabled'] as bool?,
       dailyArticleCount: json['weekly_goal'] as int?,
@@ -134,6 +156,9 @@ class OnboardingAnswers {
           (json['preferred_sources'] as List<dynamic>?)?.cast<String>(),
       formatPreference: json['format_preference'] as String?,
       personalGoal: json['personal_goal'] as String?,
+      swipeLiked: (json['swipe_liked'] as List<dynamic>?)?.cast<String>(),
+      swipeDisliked:
+          (json['swipe_disliked'] as List<dynamic>?)?.cast<String>(),
     );
   }
 }
@@ -160,20 +185,23 @@ enum Section1Question {
 }
 
 /// Questions de la Section 2 (App Preferences) — 2 étapes
+/// Axes "profondeur" ré-aiguillés (v6) : la posture (ex-`responseStyle`) a été
+/// retirée du parcours ; à la place on demande l'axe Indépendance.
 enum Section2Question {
-  approach, // Q3: Tu préfères...
-  responseStyle, // Q6: Tranchées vs nuancées
+  approach, // Q4: profondeur des sources (direct / detailed)
+  independence, // Q5b: références établies / indépendants
 }
 
 /// Questions de la Section 3 (Source Preferences)
-/// Ordre : Thèmes → Subtopics → Intent sources → Sources → [Mode serein] → Finalize
-/// `digestMode` n'apparaît que si l'objectif « anxiety » est coché (mode serein
-/// conditionnel, placé juste avant le final).
+/// Ordre : Thèmes → Subtopics → Swipe → Sources → [Mode serein] → Finalize
+/// La question d'intent (« curieux / je connais ») a été retirée (v7) : tout le
+/// monde passe par le swipe de calibration. `digestMode` n'apparaît que si
+/// l'objectif « anxiety » est coché (mode serein conditionnel, avant le final).
 enum Section3Question {
   themes, // Q9: Vos thèmes préférés (cloud pur)
   subtopics, // Q9b: Affine tes centres d'intérêt (cards structurées)
-  sourcesIntent, // Q9c: Avec quels médias préférez-vous partir ? (curious/knows)
-  sources, // Q10: Page sources adaptative (suggestions / recherche selon intent)
+  swipe, // Q9c: swipe de calibration (inconditionnel, cœur du parcours)
+  sources, // Q10: Page sources « sur mesure » (suggestions pré-cochées)
   digestMode, // Mode serein (conditionnel : objectif « anxiety » uniquement)
   finalize, // Écran de finalisation
 }
@@ -210,15 +238,19 @@ class OnboardingState {
   bool get hasAnxietyObjective =>
       answers.objectives?.contains('anxiety') ?? false;
 
-  /// Séquence active des questions de la Section 3 : `digestMode` est retiré du
-  /// parcours quand le mode serein n'est pas proposé (pas d'objectif anxiety).
-  List<Section3Question> get section3Sequence => hasAnxietyObjective
-      ? Section3Question.values
-      : Section3Question.values
-          .where((q) => q != Section3Question.digestMode)
-          .toList();
+  /// Séquence active des questions de la Section 3 :
+  /// - `digestMode` est retiré quand le mode serein n'est pas proposé (pas
+  ///   d'objectif anxiety). Le swipe est désormais inconditionnel (v7).
+  List<Section3Question> get section3Sequence =>
+      Section3Question.values.where((q) {
+        if (q == Section3Question.digestMode && !hasAnxietyObjective) {
+          return false;
+        }
+        return true;
+      }).toList();
 
-  /// Nombre de questions effectives de la Section 3 (6 si serein, 5 sinon).
+  /// Nombre de questions effectives de la Section 3 (varie avec le mode serein
+  /// et le parcours sources, via [section3Sequence]).
   int get section3QuestionCount => section3Sequence.length;
 
   /// Position (0-based) de la question Section 3 courante dans la séquence
@@ -285,15 +317,16 @@ class OnboardingState {
             !showReaction;
       case OnboardingSection.appPreferences:
         return currentSection2Question == Section2Question.approach ||
-            currentSection2Question == Section2Question.responseStyle;
+            currentSection2Question == Section2Question.independence;
       case OnboardingSection.sourcePreferences:
         // Thèmes + sous-thèmes ne sont plus skippables (décision PO) : ces deux
         // étapes structurent toute la perso et ont déjà un gate « >=1 sélection »
-        // côté bouton Continuer. Seuls l'intent sources et le mode digest gardent
-        // un défaut sain et restent passables.
+        // côté bouton Continuer. Le swipe de calibration est désormais
+        // obligatoire (v7, « tout le monde swipe ») : il dégrade gracieusement
+        // (set vide → auto-skip) et n'a donc pas besoin d'un « Passer ». Seul le
+        // mode digest garde un défaut sain et reste passable.
         final q = currentSection3Question;
-        return q == Section3Question.sourcesIntent ||
-            q == Section3Question.digestMode;
+        return q == Section3Question.digestMode;
     }
   }
 
@@ -330,7 +363,12 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // v5 : sourcesReaction (page 2 sources) supprimé, sourcesIntent inséré →
   // les index d'enum changent, on doit wiper les positions sauvegardées
   // (sinon reprise Hive sur un index invalide).
-  static const int _currentVersion = 5;
+  // v6 : posture (responseStyle) retirée de la Section 2 → remplacée par
+  // l'axe Indépendance ; étape `swipe` insérée en Section 3. Les index d'enum
+  // changent à nouveau → bump obligatoire pour wiper les positions sauvegardées.
+  // v7 : question `sourcesIntent` retirée (swipe inconditionnel). Les index
+  // d'enum Section 3 changent encore → bump pour wiper les positions Hive.
+  static const int _currentVersion = 7;
 
   /// Charge les réponses sauvegardées en cas de reprise
   Future<void> _loadSavedAnswers() async {
@@ -459,7 +497,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
   }
 
-  /// Sélectionne l'approche (Q3) - première question Section 2
+  /// Sélectionne l'approche / profondeur (Q4) - première question Section 2
   void selectApproach(String approach) {
     state = state.copyWith(
       answers: state.answers.copyWith(approach: approach),
@@ -467,10 +505,10 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     );
     _saveAnswers();
 
-    // Passe à la question suivante dans Section 2
+    // Passe à la question suivante dans Section 2 (Indépendance)
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section2Question.responseStyle.index,
+        currentQuestionIndex: Section2Question.independence.index,
         isTransitioning: false,
       );
     });
@@ -487,10 +525,10 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       if (pos > 0) {
         state = state.copyWith(currentQuestionIndex: seq[pos - 1].index);
       } else {
-        // themes (1ère question) → retour Section 2 (dernière = responseStyle)
+        // themes (1ère question) → retour Section 2 (dernière = independence)
         state = state.copyWith(
           currentSection: OnboardingSection.appPreferences,
-          currentQuestionIndex: Section2Question.responseStyle.index,
+          currentQuestionIndex: Section2Question.independence.index,
         );
       }
       return;
@@ -538,11 +576,11 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   // SECTION 2 : App Preferences
   // ============================================================
 
-  /// Sélectionne le style de réponse (Q6) — dernière question de la Section 2 →
-  /// transition vers la Section 3.
-  void selectResponseStyle(String responseStyle) {
+  /// Sélectionne l'axe Indépendance (Q5b) — dernière question de la Section 2 →
+  /// transition vers la Section 3. Valeurs : established / independent.
+  void selectIndependence(String independencePref) {
     state = state.copyWith(
-      answers: state.answers.copyWith(responseStyle: responseStyle),
+      answers: state.answers.copyWith(independencePref: independencePref),
       isTransitioning: true,
     );
     _saveAnswers();
@@ -598,12 +636,13 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
           case Section2Question.approach:
             state = state.copyWith(
               answers: state.answers.copyWith(approach: 'detailed'),
-              currentQuestionIndex: Section2Question.responseStyle.index,
+              currentQuestionIndex: Section2Question.independence.index,
             );
             _saveAnswers();
-          case Section2Question.responseStyle:
+          case Section2Question.independence:
+            // Défaut neutre : « références établies » (le catalogue est large).
             state = state.copyWith(
-              answers: state.answers.copyWith(responseStyle: 'nuanced'),
+              answers: state.answers.copyWith(independencePref: 'established'),
             );
             _saveAnswers();
             _transitionToSection3();
@@ -611,23 +650,16 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       case OnboardingSection.sourcePreferences:
         switch (state.currentSection3Question) {
           case Section3Question.themes:
-            // pas de thèmes → saut direct intent (pas de subtopics sans thème)
+            // pas de thèmes → saut direct swipe (pas de subtopics sans thème)
             state = state.copyWith(
               answers: state.answers.copyWith(themes: const []),
-              currentQuestionIndex: Section3Question.sourcesIntent.index,
+              currentQuestionIndex: Section3Question.swipe.index,
             );
             _saveAnswers();
           case Section3Question.subtopics:
             state = state.copyWith(
               answers: state.answers.copyWith(subtopics: const []),
-              currentQuestionIndex: Section3Question.sourcesIntent.index,
-            );
-            _saveAnswers();
-          case Section3Question.sourcesIntent:
-            // défaut PO : variante « curieux » (suggestions guidées)
-            state = state.copyWith(
-              answers: state.answers.copyWith(sourcesIntent: 'curious'),
-              currentQuestionIndex: Section3Question.sources.index,
+              currentQuestionIndex: Section3Question.swipe.index,
             );
             _saveAnswers();
           case Section3Question.digestMode:
@@ -636,6 +668,9 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
               currentQuestionIndex: Section3Question.finalize.index,
             );
             _saveAnswers();
+          // Le swipe est inconditionnel (v7) → jamais « Passer » (cf.
+          // isSkippable). Le set vide auto-avance via completeSwipe.
+          case Section3Question.swipe:
           case Section3Question.sources:
           case Section3Question.finalize:
             break;
@@ -674,7 +709,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
     });
   }
 
-  /// Sélectionne les sous-thèmes (Q9b) → Intent sources
+  /// Sélectionne les sous-thèmes (Q9b) → Swipe de calibration
   void selectSubtopics(List<String> subtopics) {
     state = state.copyWith(
       answers: state.answers.copyWith(subtopics: subtopics),
@@ -684,17 +719,21 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 
     Future.delayed(const Duration(milliseconds: 300), () {
       state = state.copyWith(
-        currentQuestionIndex: Section3Question.sourcesIntent.index,
+        currentQuestionIndex: Section3Question.swipe.index,
         isTransitioning: false,
       );
     });
   }
 
-  /// Sélectionne l'intent sources (Q9c : curious / knows) → page sources.
-  /// Détermine la variante de la page sources (suggestions vs recherche).
-  void selectSourcesIntent(String intent) {
+  /// Termine le swipe désambiguateur : enregistre les sources triées (likées /
+  /// rejetées) puis enchaîne sur la page sources (Q10). Les likes seront
+  /// boostés et pré-sélectionnés au reveal via [SourceRecommender].
+  void completeSwipe(List<String> liked, List<String> disliked) {
     state = state.copyWith(
-      answers: state.answers.copyWith(sourcesIntent: intent),
+      answers: state.answers.copyWith(
+        swipeLiked: liked,
+        swipeDisliked: disliked,
+      ),
       isTransitioning: true,
     );
     _saveAnswers();
@@ -763,6 +802,7 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
         approach: 'direct',
         perspective: 'big_picture',
         responseStyle: 'decisive',
+        independencePref: 'independent',
         gamificationEnabled: true,
         dailyArticleCount: 5,
         digestMode: 'pour_vous',
@@ -794,14 +834,13 @@ final isSection1CompleteProvider = Provider<bool>((ref) {
       answers.approach != null;
 });
 
-/// Provider pour vérifier si Section 2 est complète
-/// (gamification, nombre d'articles et digestMode ne sont plus demandés ici :
-/// gamification/articles utilisent des défauts sains, digestMode est passé en
-/// Section 3 et conditionnel au mode serein.)
+/// Provider pour vérifier si Section 2 est complète.
+/// Section 2 = axes "profondeur" (approach) + Indépendance (independencePref).
+/// La posture (ex-responseStyle) a été retirée du parcours (v6).
 final isSection2CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
-  return answers.approach != null && answers.responseStyle != null;
+  return answers.approach != null && answers.independencePref != null;
 });
 
 /// Provider pour vérifier si Section 3 est complète
