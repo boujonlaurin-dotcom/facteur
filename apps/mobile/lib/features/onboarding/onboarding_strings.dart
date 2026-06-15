@@ -103,18 +103,23 @@ class OnboardingStrings {
   // Swipe désambiguateur (Q9c bis, v6) : quelques sources étalées sur les axes
   // (profondeur, indépendance, perspective) que l'utilisateur trie d'un geste.
   // Glisser à droite = ça m'intéresse ; gauche = pas pour moi.
-  static const String swipeTitle = 'Lesquels vous tentent ?';
+  static const String swipeTitle = 'Quels médias suivre ?';
   static const String swipeSubtitle =
       'Glissez à droite ceux qui vous parlent, à gauche les autres. '
       'On ajuste vos suggestions en direct.';
   static const String swipeLikeHint = 'Ça m\'intéresse';
   static const String swipeSkipHint = 'Pas pour moi';
   static const String swipeDoneButton = 'Voir mes sources';
-  static const String swipeProgress = 'Carte %d sur %d';
+  // Compteur humanisé à 3 paliers selon l'avancement (current/total). Plus
+  // présent qu'un sec « Carte X sur Y », sans em-dash (règle PO).
+  static const String swipeProgressStart = 'Premières cartes (%d/%d)';
+  static const String swipeProgressMiddle = 'On affine (%d/%d)';
+  static const String swipeProgressEnd = 'Encore quelques-unes (%d/%d)';
   // Nudge discret sur la 1ère carte (disparaît au 1er geste).
   static const String swipeTapHint = 'Touchez pour explorer';
-  // Profil révélé en direct : rangée de chips « voici ce qu'on retient ».
-  static const String swipeProfileLabel = 'On retient :';
+  // Profil révélé en direct, en phrase inline sous le deck (remplace les chips
+  // du haut). Suivi des libellés de pôles nets-positifs joints par virgules.
+  static const String swipeProfileInline = 'On retient pour ta sélection : ';
 
   // Étiquettes "pôle" affichées sur les cartes de swipe (1 à 2 tags max).
   static const String swipePoleDeep = 'Analyse de fond';

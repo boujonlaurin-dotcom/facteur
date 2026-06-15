@@ -244,6 +244,13 @@ class _FsHeader extends StatelessWidget {
         frequencyLabel!,
       ));
     }
+    // Format (non-article uniquement) : rend lisible vidéo/podcast/Reddit. Rendu
+    // dans l'idiome « signal » du header plutôt qu'en pill, pour rester cohérent
+    // avec les autres signaux (suiveurs, fréquence).
+    final typeIcon = source.getTypeIcon();
+    if (typeIcon != null) {
+      signals.add(_signal(context, typeIcon, source.getTypeLabel()));
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),

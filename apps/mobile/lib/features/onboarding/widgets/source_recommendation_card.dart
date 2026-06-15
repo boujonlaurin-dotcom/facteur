@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
+import '../../sources/widgets/source_type_badge.dart';
 import '../data/source_recommender.dart';
 
 /// Card widget for a recommended source in the onboarding sources screen.
@@ -109,6 +110,12 @@ class SourceRecommendationCard extends StatelessWidget {
                                     fontSize: 10,
                                   ),
                         ),
+                      ],
+                      // Badge format (non-article uniquement) : rend le format
+                      // vidéo/podcast/Reddit lisible d'un coup d'œil.
+                      if (source.getTypeIcon() != null) ...[
+                        const SizedBox(width: 6),
+                        SourceTypeBadge(source: source, iconSize: 11),
                       ],
                     ],
                   ),

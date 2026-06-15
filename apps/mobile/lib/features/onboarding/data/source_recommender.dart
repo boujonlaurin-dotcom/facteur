@@ -99,6 +99,17 @@ class SourceRecommender {
   /// Themes considered low-anxiety (for "anxiety" objective tag).
   static const _sereinThemes = {'tech', 'science', 'culture', 'sport'};
 
+  /// Bonus « sources productives » : favorise les médias qui publient vraiment
+  /// (quotidien actif vs blog dormant), au volume sur 30 j. Tiers modestes
+  /// (+2/+1) pour rester sous le match thématique (`+3`) — le volume affine,
+  /// il ne remplace pas la pertinence. `articles30d == 0` (signal absent) =
+  /// no-op, donc rétro-compatible avec les réponses sans le champ.
+  static int _volumeBonus(int articles30d) {
+    if (articles30d >= 90) return 2; // ≈ 3/jour, source très active
+    if (articles30d >= 20) return 1; // ≈ 0,7/jour, source régulière
+    return 0;
+  }
+
   /// Compute recommendations from user choices and available sources.
   ///
   /// Axes "profondeur" ré-aiguillés (onboarding v6) — optionnels, sans défaut
@@ -350,6 +361,9 @@ class SourceRecommender {
       score += 1;
     }
 
+    // Volume bonus : favorise les sources productives (cf. _volumeBonus).
+    score += _volumeBonus(source.articles30d);
+
     // --- Axes "profondeur" ré-aiguillés (v6) ---
 
     // Profondeur : aligne le tier de la source sur la préférence déclarée.
@@ -548,8 +562,15 @@ class SourceRecommender {
     final used = <String>{};
     final result = <SpanningSource>[];
 
-    int byFollowers(Source a, Source b) =>
-        b.followerCount.compareTo(a.followerCount);
+    // Tiebreaker des pôles non spécialisés (fond / actu directe / perspective)
+    // et des fillers : à match thématique égal, faire remonter les sources
+    // *productives* (volume 30 j) avant de départager par audience. Aligne le
+    // deck de swipe sur le biais « sources productives » du scoring.
+    int byVolumeThenFollowers(Source a, Source b) {
+      final v = b.articles30d.compareTo(a.articles30d);
+      if (v != 0) return v;
+      return b.followerCount.compareTo(a.followerCount);
+    }
 
     // Sélectionne la meilleure source d'un pôle, en préférant les sources
     // matchées thématiquement avant de puiser dans le catalogue large.
@@ -586,7 +607,11 @@ class SourceRecommender {
                 (b.scoreIndependence ?? 0).compareTo(a.scoreIndependence ?? 0),
           ),
       // 2. Fond : tier deep.
-      () => pick(SwipeAxisPole.deep, (s) => s.sourceTier == 'deep', byFollowers),
+      () => pick(
+            SwipeAxisPole.deep,
+            (s) => s.sourceTier == 'deep',
+            byVolumeThenFollowers,
+          ),
       // 3. Référence établie : fiabilité haute + faible indépendance.
       () => pick(
             SwipeAxisPole.established,
@@ -600,13 +625,13 @@ class SourceRecommender {
       () => pick(
             SwipeAxisPole.mainstream,
             (s) => s.sourceTier == 'mainstream',
-            byFollowers,
+            byVolumeThenFollowers,
           ),
       // 5. Perspective : bord opposé à la majorité matchée.
       () => pick(
             SwipeAxisPole.perspective,
             (s) => targetPerspectiveBiases.contains(s.biasStance),
-            byFollowers,
+            byVolumeThenFollowers,
           ),
     ];
 
@@ -621,7 +646,7 @@ class SourceRecommender {
     // matchées restantes les plus suivies (pôle neutre = actu directe).
     if (result.length < maxCards) {
       final fillers = pool.where((s) => !used.contains(s.id)).toList()
-        ..sort(byFollowers);
+        ..sort(byVolumeThenFollowers);
       for (final s in fillers) {
         if (result.length >= maxCards) break;
         used.add(s.id);

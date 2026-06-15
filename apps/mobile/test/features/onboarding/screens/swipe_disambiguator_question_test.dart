@@ -135,6 +135,54 @@ void main() {
     );
   });
 
+  // Deck large et étalé (~8-10 cartes) pour exercer le compteur et la phrase
+  // inline « ce qu'on retient ».
+  List<Source> _richDeck() => [
+        _src('deep-1', tier: 'deep'),
+        _src('deep-2', tier: 'deep'),
+        _src('indie-1', independence: 0.9, bias: 'alternative'),
+        _src('indie-2', independence: 0.8, bias: 'specialized'),
+        _src('est-1', independence: 0.2),
+        _src('est-2', independence: 0.3),
+        _src('main-1', tier: 'mainstream'),
+        _src('main-2', tier: 'mainstream'),
+        _src('left-1', bias: 'left'),
+        _src('right-1', bias: 'right'),
+      ];
+
+  testWidgets('compteur humanisé + pas de chips de profil au départ',
+      (tester) async {
+    final container = makeContainer(_richDeck());
+    await tester.pumpWidget(buildTestWidget(container));
+    await tester.pumpAndSettle();
+
+    // Nouveau titre.
+    expect(find.text('Quels médias suivre ?'), findsOneWidget);
+    // Compteur humanisé (palier « début »), plus jamais l'ancien « Carte X sur Y ».
+    expect(find.textContaining('Premières cartes'), findsOneWidget);
+    expect(find.textContaining('Carte '), findsNothing);
+    // Aucun vote encore → la phrase inline « ce qu'on retient » est absente.
+    expect(find.textContaining(OnboardingStrings.swipeProfileInline),
+        findsNothing);
+  });
+
+  testWidgets('phrase inline « ce qu\'on retient » apparaît après un vote net-positif',
+      (tester) async {
+    final container = makeContainer(_richDeck());
+    await tester.pumpWidget(buildTestWidget(container));
+    await tester.pumpAndSettle();
+
+    // Like la carte du dessus (mainstream par défaut le plus suivi) → un pôle
+    // passe net-positif → la phrase inline s'affiche sous le deck.
+    await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
+    await tester.pump(); // démarre le fling
+    await tester.pump(const Duration(milliseconds: 400)); // fling → vote
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(OnboardingStrings.swipeProfileInline),
+        findsOneWidget);
+  });
+
   testWidgets('spanning set vide : saute directement vers sources',
       (tester) async {
     final container = makeContainer(const []);

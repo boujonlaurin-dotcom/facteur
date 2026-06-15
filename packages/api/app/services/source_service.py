@@ -1,12 +1,13 @@
 """Service source."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.content import Content
 from app.models.enums import InterestState
 from app.models.source import Source, UserSource
 from app.models.user_favorites import UserFavoriteSource
@@ -73,6 +74,24 @@ class SourceService:
         subscriptions = {row.source_id: row.has_subscription for row in rows}
         return trusted_ids, multipliers, subscriptions
 
+    async def _load_articles_30d(self, source_ids: list[UUID]) -> dict[UUID, int]:
+        """Volume de publication 30 j par source en UN seul GROUP BY batché.
+
+        Évite le N+1 (jamais d'appel par source) — une requête couvre toute la
+        liste curée. S'appuie sur l'index composite ``ix_contents_source_published``
+        (source_id, published_at) ; aucune colonne DB ni migration.
+        """
+        if not source_ids:
+            return {}
+        cutoff = datetime.now(UTC) - timedelta(days=30)
+        result = await self.db.execute(
+            select(Content.source_id, func.count())
+            .where(Content.source_id.in_(source_ids))
+            .where(Content.published_at >= cutoff)
+            .group_by(Content.source_id)
+        )
+        return {row[0]: row[1] for row in result.all()}
+
     def _build_source_response(
         self,
         s: Source,
@@ -84,6 +103,7 @@ class SourceService:
         multipliers: dict[UUID, float],
         subscriptions: dict[UUID, bool],
         follower_count: int = 0,
+        articles_30d_map: dict[UUID, int] | None = None,
     ) -> SourceResponse:
         """Construit un SourceResponse à partir d'un objet Source et du contexte user.
 
@@ -105,6 +125,7 @@ class SourceService:
             priority_multiplier=multipliers.get(s.id, 1.0),
             has_subscription=subscriptions.get(s.id, False),
             content_count=0,  # TODO
+            articles_30d=(articles_30d_map or {}).get(s.id, 0),
             follower_count=follower_count,
             bias_stance=getattr(s.bias_stance, "value", "unknown"),
             reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -151,6 +172,14 @@ class SourceService:
         curated_result = await self.db.execute(
             select(Source).where(Source.is_curated, Source.is_active)
         )
+        curated_sources = curated_result.scalars().all()
+
+        # 1 query batchée : volume de publication 30 j pour TOUTES les curées
+        # (onboarding « sources productives »). Le custom reste à 0 (hors-scope).
+        articles_30d_map = await self._load_articles_30d(
+            [s.id for s in curated_sources]
+        )
+
         curated = [
             self._build_source_response(
                 s,
@@ -160,8 +189,9 @@ class SourceService:
                 muted_source_ids=muted_source_ids,
                 multipliers=multipliers,
                 subscriptions=subscriptions,
+                articles_30d_map=articles_30d_map,
             )
-            for s in curated_result.scalars().all()
+            for s in curated_sources
         ]
 
         # 1 query : sources custom (distinct pour éviter doublons user_sources)
@@ -202,6 +232,7 @@ class SourceService:
             select(Source).where(Source.is_curated, Source.is_active)
         )
         sources = curated_result.scalars().all()
+        articles_30d_map = await self._load_articles_30d([s.id for s in sources])
 
         trusted_source_ids: set[UUID] = set()
         muted_source_ids: set[UUID] = set()
@@ -232,6 +263,7 @@ class SourceService:
                 muted_source_ids=muted_source_ids,
                 multipliers=multipliers,
                 subscriptions=subscriptions,
+                articles_30d_map=articles_30d_map,
             )
             for s in sources
         ]

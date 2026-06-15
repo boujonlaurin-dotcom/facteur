@@ -9,6 +9,7 @@ import '../../../sources/models/source_model.dart';
 import '../../../sources/providers/sources_providers.dart';
 import '../../../sources/widgets/source_detail_modal.dart';
 import '../../../sources/widgets/source_logo_avatar.dart';
+import '../../../sources/widgets/source_type_badge.dart';
 import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
 import '../../providers/onboarding_provider.dart';
@@ -291,25 +292,22 @@ class _SwipeDisambiguatorQuestionState
               const SizedBox(height: FacteurSpacing.space2),
               if (remaining > 0)
                 Text(
-                  OnboardingStrings.swipeProgress
-                      .replaceFirst('%d', '$current')
-                      .replaceFirst('%d', '$_total'),
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: colors.textTertiary),
+                  _humanizedProgress(current, _total),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: colors.textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
                   textAlign: TextAlign.center,
                 ),
 
               _buildCalibratingHint(context),
-
-              _buildProfileChips(context),
 
               Expanded(child: _buildCardArea(context, queue)),
 
               _buildTapHint(context, isFirstCard: remaining == _total),
 
               if (remaining > 0) ...[
+                _buildProfileInline(context),
                 _buildActions(context, queue.last),
                 const SizedBox(height: FacteurSpacing.space4),
               ],
@@ -327,8 +325,27 @@ class _SwipeDisambiguatorQuestionState
     );
   }
 
-  /// Rangée de chips « voici ce qu'on retient » : un chip par pôle net-positif.
-  Widget _buildProfileChips(BuildContext context) {
+  /// Compteur humanisé à 3 paliers selon l'avancement (current/total) : libellés
+  /// plus présents qu'un sec « Carte X sur Y », sans em-dash (règle PO).
+  String _humanizedProgress(int current, int total) {
+    final ratio = total > 0 ? current / total : 0.0;
+    final String template;
+    if (ratio <= 0.3) {
+      template = OnboardingStrings.swipeProgressStart;
+    } else if (ratio >= 0.7) {
+      template = OnboardingStrings.swipeProgressEnd;
+    } else {
+      template = OnboardingStrings.swipeProgressMiddle;
+    }
+    return template
+        .replaceFirst('%d', '$current')
+        .replaceFirst('%d', '$total');
+  }
+
+  /// Phrase inline « ce qu'on retient » placée *sous* le deck (au-dessus des
+  /// actions) : libellés des pôles net-positifs joints par virgules. Masquée
+  /// tant qu'aucun pôle n'est net-positif.
+  Widget _buildProfileInline(BuildContext context) {
     final colors = context.facteurColors;
     final activePoles = SwipeAxisPole.values
         .where((p) => (_poleScore[p] ?? 0) > 0)
@@ -337,31 +354,19 @@ class _SwipeDisambiguatorQuestionState
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
-      alignment: Alignment.topCenter,
+      alignment: Alignment.bottomCenter,
       child: activePoles.isEmpty
-          ? const SizedBox(width: double.infinity)
+          ? const SizedBox.shrink()
           : Padding(
-              padding: const EdgeInsets.only(top: FacteurSpacing.space3),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text(
-                    OnboardingStrings.swipeProfileLabel,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: colors.textTertiary),
-                  ),
-                  const SizedBox(height: FacteurSpacing.space2),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: FacteurSpacing.space2,
-                    runSpacing: FacteurSpacing.space2,
-                    children: activePoles
-                        .map((p) => _profileChip(context, _poleLabel(p)))
-                        .toList(),
-                  ),
-                ],
+              padding: const EdgeInsets.only(bottom: FacteurSpacing.space3),
+              child: Text(
+                OnboardingStrings.swipeProfileInline +
+                    activePoles.map(_poleLabel).join(', '),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.textTertiary),
+                textAlign: TextAlign.center,
               ),
             ),
     );
@@ -424,35 +429,6 @@ class _SwipeDisambiguatorQuestionState
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _profileChip(BuildContext context, String label) {
-    final colors = context.facteurColors;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space2,
-        vertical: 3,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(FacteurRadius.pill),
-        border: Border.all(color: colors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_rounded, size: 12, color: colors.textTertiary),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.textTertiary,
-                  fontWeight: FontWeight.w500,
-                ),
-          ),
-        ],
       ),
     );
   }
@@ -625,6 +601,10 @@ class _SwipeDisambiguatorQuestionState
           Row(
             children: [
               _formatChip(context, source),
+              if (source.getTypeIcon() != null) ...[
+                const SizedBox(width: FacteurSpacing.space2),
+                SourceTypeBadge(source: source),
+              ],
             ],
           ),
           const SizedBox(height: FacteurSpacing.space3),
@@ -648,38 +628,15 @@ class _SwipeDisambiguatorQuestionState
     );
   }
 
-  /// Chip « format » discret dérivé du tier de la source (display-only).
+  /// Chip « format » discret dérivé du tier de la source (display-only). Partage
+  /// le chassis [IconLabelPill] avec le badge format ([SourceTypeBadge]).
   Widget _formatChip(BuildContext context, Source source) {
-    final colors = context.facteurColors;
     final isDeep = source.sourceTier == 'deep';
-    final label = isDeep
-        ? OnboardingStrings.swipePoleDeep
-        : OnboardingStrings.swipePoleMainstream;
-    final icon = isDeep ? Icons.menu_book_outlined : Icons.bolt_outlined;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space3,
-        vertical: 5,
-      ),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(FacteurRadius.pill),
-        border: Border.all(color: colors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: colors.textSecondary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
-      ),
+    return IconLabelPill(
+      icon: isDeep ? Icons.menu_book_outlined : Icons.bolt_outlined,
+      label: isDeep
+          ? OnboardingStrings.swipePoleDeep
+          : OnboardingStrings.swipePoleMainstream,
     );
   }
 

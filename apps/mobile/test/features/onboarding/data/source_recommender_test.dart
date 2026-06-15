@@ -22,12 +22,14 @@ Source _src(
   double? independence,
   String bias = 'unknown',
   int followers = 0,
+  int articles30d = 0,
+  SourceType type = SourceType.article,
   String? name,
 }) {
   return Source(
     id: id,
     name: name ?? 'Source $id',
-    type: SourceType.article,
+    type: type,
     isCurated: true,
     reliabilityScore: reliability,
     theme: theme,
@@ -35,6 +37,7 @@ Source _src(
     scoreIndependence: independence,
     biasStance: bias,
     followerCount: followers,
+    articles30d: articles30d,
   );
 }
 
@@ -384,6 +387,65 @@ void main() {
       );
 
       expect(set, isNotEmpty);
+    });
+
+    test('tiebreaker volume : à thème égal, la source productive remonte', () {
+      // Deux sources mainstream identiques sauf le volume — la productive
+      // (articles30d élevé) doit être préférée, même avec moins de followers.
+      final sources = [
+        _src('quiet', theme: 'tech', tier: 'mainstream', reliability: 'unknown',
+            followers: 1000, articles30d: 0),
+        _src('active', theme: 'tech', tier: 'mainstream', reliability: 'unknown',
+            followers: 10, articles30d: 200),
+      ];
+
+      final set = SourceRecommender.buildSpanningSet(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+        maxCards: 1,
+        perPole: 1,
+      );
+
+      expect(set.first.source.id, 'active',
+          reason: 'volume prime sur followers à match égal');
+    });
+  });
+
+  group('SourceRecommender — biais « sources productives »', () {
+    test('à thème égal, une source productive est classée au-dessus', () {
+      final sources = [
+        _src('active', theme: 'tech', articles30d: 120), // +2 volume
+        _src('quiet', theme: 'tech', articles30d: 0), // no-op
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+      );
+
+      final ids = reco.matched.map((r) => r.source.id).toList();
+      expect(ids.indexOf('active'), lessThan(ids.indexOf('quiet')),
+          reason: 'le bonus volume départage à match thématique égal');
+    });
+
+    test('articles30d absent (0) : aucun effet (rétro-compatible)', () {
+      // Sans signal volume, le classement reste piloté par les autres axes :
+      // ici 'b' gagne uniquement par sa fiabilité, pas par un volume fantôme.
+      final sources = [
+        _src('a', theme: 'tech', reliability: 'unknown', articles30d: 0),
+        _src('b', theme: 'tech', reliability: 'high', articles30d: 0),
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+      );
+
+      final ids = reco.matched.map((r) => r.source.id).toList();
+      expect(ids.indexOf('b'), lessThan(ids.indexOf('a')));
     });
   });
 }
