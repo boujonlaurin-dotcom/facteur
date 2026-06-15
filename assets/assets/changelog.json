@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Sources",
+      "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription."
+    },
+    {
       "tag": "Notifications",
       "summary": "Ton Essentiel du jour arrive maintenant par notification, même app fermée : un rappel fiable le matin pour ton moment de lecture."
     },
@@ -15,6 +19,22 @@
     {
       "tag": "Lecture",
       "summary": "En-tête d'article épuré : un tap sur la source ouvre sa fiche, et les titres comparés s'affichent plus sobrement."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Tri des sources plus clair et plus fluide : carte lisible, un seul tampon, et un temps « on affine » en fin de tri."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et suggestions plus pertinentes."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Calibre tes suggestions d'un geste : un tri tactile de quelques médias, vivant et explorable, qui ajuste tout ton feed en direct."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Sources les plus actives mises en avant, et le format (vidéo, podcast…) affiché d'un coup d'œil."
     },
     {
       "tag": "Corrections",
