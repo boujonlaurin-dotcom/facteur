@@ -73,6 +73,18 @@ Future<void> _bootstrap() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
+  // à jour APK : permet au téléchargement de continuer en arrière-plan.
+  // Gate Android-only : sur iOS l'init crash (AppDelegate ne wire pas
+  // setPluginRegistrantCallback) et la feature (sideload APK) ne s'applique
+  // pas. Sur web `dart:io` Platform throw.
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+    } catch (e) {
+      debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+    }
+  }
   await Hive.initFlutter();
 
   final boxesSw = Stopwatch()..start();
