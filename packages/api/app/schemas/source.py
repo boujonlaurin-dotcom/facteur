@@ -29,6 +29,9 @@ class SourceResponse(BaseModel):
     priority_multiplier: float = 1.0
     has_subscription: bool = False
     content_count: int = 0
+    # Volume de publication sur 30 j (calculé côté catalogue, défaut 0).
+    # Additif/rétro-compatible — aucune colonne DB, aucune migration.
+    articles_30d: int = 0
     follower_count: int = 0
     bias_stance: str = "unknown"
     reliability_score: str = "unknown"

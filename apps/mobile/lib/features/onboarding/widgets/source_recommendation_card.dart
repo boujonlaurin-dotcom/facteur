@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
+import '../../sources/widgets/source_type_badge.dart';
 import '../data/source_recommender.dart';
 
 /// Card widget for a recommended source in the onboarding sources screen.
@@ -110,6 +111,12 @@ class SourceRecommendationCard extends StatelessWidget {
                                   ),
                         ),
                       ],
+                      // Badge format (non-article uniquement) : rend le format
+                      // vidéo/podcast/Reddit lisible d'un coup d'œil.
+                      if (source.getTypeIcon() != null) ...[
+                        const SizedBox(width: 6),
+                        SourceTypeBadge(source: source, iconSize: 11),
+                      ],
                     ],
                   ),
 
@@ -215,19 +222,33 @@ class SourceRecommendationCard extends StatelessWidget {
       RecommendationTagType.antiBruit => '\u{1F507} ',
       RecommendationTagType.fiable => '\u2713 ',
       RecommendationTagType.serein => '\u2600 ',
+      RecommendationTagType.similar => '\u2248 ', // \u2248
+    };
+
+    // Les chips \u00ab pourquoi \u00bb (similaire / fiable / anti-bruit) ressortent en
+    // teinte primary ; les tags purement th\u00e9matiques restent neutres.
+    final highlighted = switch (tag.type) {
+      RecommendationTagType.similar ||
+      RecommendationTagType.fiable ||
+      RecommendationTagType.antiBruit =>
+        true,
+      _ => false,
     };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: colors.textPrimary.withOpacity(0.05),
+        color: highlighted
+            ? colors.primary.withOpacity(0.08)
+            : colors.textPrimary.withOpacity(0.05),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
       ),
       child: Text(
         '$prefix${tag.label}',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: colors.textSecondary,
+              color: highlighted ? colors.primary : colors.textSecondary,
               fontSize: 11,
+              fontWeight: highlighted ? FontWeight.w600 : null,
             ),
       ),
     );

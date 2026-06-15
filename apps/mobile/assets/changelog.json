@@ -17,6 +17,22 @@
       "summary": "En-tête d'article épuré : un tap sur la source ouvre sa fiche, et les titres comparés s'affichent plus sobrement."
     },
     {
+      "tag": "Onboarding",
+      "summary": "Tri des sources plus clair et plus fluide : carte lisible, un seul tampon, et un temps « on affine » en fin de tri."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et suggestions plus pertinentes."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Calibre tes suggestions d'un geste : un tri tactile de quelques médias, vivant et explorable, qui ajuste tout ton feed en direct."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Sources les plus actives mises en avant, et le format (vidéo, podcast…) affiché d'un coup d'œil."
+    },
+    {
       "tag": "Corrections",
       "summary": "Saisie d'un sujet plus fluide à l'onboarding, fermeture évidente de la modal Favoris, et navigation des lettres de progression fiabilisée."
     },
