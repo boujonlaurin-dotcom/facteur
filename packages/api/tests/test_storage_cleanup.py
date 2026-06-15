@@ -21,6 +21,16 @@ def _empty_referenced_ids():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _skip_queue_purge():
+    """Neutralise la purge classification_queue (session propre, testée à part)."""
+    with patch(
+        "app.workers.storage_cleanup.purge_finished_classification_queue",
+        new=AsyncMock(return_value=0),
+    ):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_cleanup_deletes_old_articles():
     """Verify cleanup deletes articles older than retention period."""

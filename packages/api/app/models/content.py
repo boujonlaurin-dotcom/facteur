@@ -132,16 +132,6 @@ class UserContentStatus(Base):
         Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
         Index("ix_user_content_status_user_liked", "user_id", "is_liked"),
         Index("ix_user_content_status_user_status", "user_id", "status"),
-        # Performance index for digest exclusion queries
-        # Used in _get_candidates() EXISTS subquery that filters out seen/saved/hidden content
-        Index(
-            "ix_user_content_status_exclusion",
-            "user_id",
-            "content_id",
-            "is_hidden",
-            "is_saved",
-            "status",
-        ),
     )
 
     id: Mapped[UUID] = mapped_column(
