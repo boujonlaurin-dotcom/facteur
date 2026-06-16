@@ -456,6 +456,31 @@ class TestMatchForContent:
         assert result.match_reason == "Analyse de fond"
 
     @pytest.mark.asyncio
+    async def test_empty_reason_uses_clean_default(self):
+        """When the LLM picks a candidate but returns an empty reason, the
+        reader gets a clean trustworthy sentence — never the title-interpolated
+        fallback nor « Sélection automatique »."""
+        pool = [_make_deep_content("Modèle par répartition")]
+        llm = MagicMock()
+        llm.is_ready = True
+        llm.chat_json = AsyncMock(
+            return_value={"selected_index": 0, "reason": ""}
+        )
+
+        matcher = DeepMatcher(AsyncMock(), llm, _make_config())
+        with (
+            patch.object(matcher, "_load_deep_articles", AsyncMock(return_value=pool)),
+            patch.object(matcher, "_expand_query", AsyncMock(return_value=set())),
+            patch.object(matcher, "_prefilter", return_value=[(pool[0], 0.5)]),
+        ):
+            result = await matcher.match_for_content(_make_pivot_content())
+
+        assert result is not None
+        assert result.match_reason == (
+            "Une analyse de fond pour replacer ce sujet dans son contexte."
+        )
+
+    @pytest.mark.asyncio
     async def test_excludes_self_from_pool(self):
         pivot = _make_pivot_content()
         # Pool contains the opened article itself + another deep article.

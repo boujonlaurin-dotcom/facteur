@@ -3155,6 +3155,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           const SizedBox(height: FacteurSpacing.space4),
                         ],
 
+                        // ── « Pas de recul » (deep reco) ───────────────────
+                        // Placée directement SOUS la couverture médiatique.
+                        // Silencieuse tant que deep_pending && reco null.
+                        if (_perspectivesResponse?.deepRecommendation != null &&
+                            !_isExternal) ...[
+                          DeepRecommendationCard(
+                            reco: _perspectivesResponse!.deepRecommendation!,
+                            onTap: () => _openDeepReco(
+                              _perspectivesResponse!.deepRecommendation!,
+                            ),
+                          ),
+                          const SizedBox(height: FacteurSpacing.space4),
+                        ],
+
                         // ZONE 2: Article body — _articleKey scopes scroll-bridge
                         // measurement to the body, excluding header + perspectives.
                         Container(
@@ -3721,6 +3735,19 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ),
                 ],
 
+                // ── « Pas de recul » (deep reco) ────────────────────────────
+                // Placée directement SOUS la couverture médiatique.
+                // Silencieuse tant que deep_pending && reco null (calcul en cours).
+                if (_perspectivesResponse?.deepRecommendation != null &&
+                    !_isExternal) ...[
+                  const SizedBox(height: FacteurSpacing.space4),
+                  DeepRecommendationCard(
+                    reco: _perspectivesResponse!.deepRecommendation!,
+                    onTap: () =>
+                        _openDeepReco(_perspectivesResponse!.deepRecommendation!),
+                  ),
+                ],
+
                 const SizedBox(height: FacteurSpacing.space4),
 
                 // ── Article section ────────────────────────────────────────
@@ -3755,19 +3782,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),
-
-                // ── « Pas de recul » (deep reco) ────────────────────────────
-                // Carte d'analyse de fond surfacée tout en bas du reader.
-                // Silencieux tant que deep_pending && reco null (calcul en cours).
-                if (_perspectivesResponse?.deepRecommendation != null &&
-                    !_isExternal) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  DeepRecommendationCard(
-                    reco: _perspectivesResponse!.deepRecommendation!,
-                    onTap: () =>
-                        _openDeepReco(_perspectivesResponse!.deepRecommendation!),
-                  ),
-                ],
 
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),

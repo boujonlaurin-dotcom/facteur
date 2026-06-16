@@ -6,15 +6,15 @@ import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../feed/repositories/feed_repository.dart';
 
-/// Carte « Pas de recul » affichée tout en bas du reader d'article.
+/// Carte « Pas de recul » affichée directement sous la « Couverture
+/// médiatique » du reader.
 ///
 /// Surface un article de fond ([reco]) pour prendre du recul sur le sujet lu,
 /// avec une raison de match éditoriale ([DeepRecommendation.matchReason]). Un tap
 /// ouvre l'article recommandé dans le reader via [onTap].
 ///
-/// Design : composant `CardFinal` du handoff « Pas de recul · B6 final »,
-/// recoloré de la palette bleue d'origine vers l'orange `primary` Facteur (tokens
-/// dérivés de `colors.*` ⇒ cohérent en clair / sombre / oled).
+/// Design : dégradé orange simple aligné design system (teinte `primaryMuted`
+/// atténuée → `surface`, tokens `colors.*` ⇒ cohérent clair / sombre / oled).
 class DeepRecommendationCard extends StatelessWidget {
   final DeepRecommendation reco;
   final VoidCallback? onTap;
@@ -39,16 +39,18 @@ class DeepRecommendationCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(13, 14, 13, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
+            // Dégradé orange simple, aligné design system : teinte orange
+            // atténuée (primaryMuted) qui fond vers le papier. 2 stops, tokens
+            // only ⇒ cohérent clair / sombre / oled.
             gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
               colors: [
-                primary.withValues(alpha: 0.14),
-                primary.withValues(alpha: 0.05),
+                colors.primaryMuted.withValues(alpha: 0.55),
                 colors.surface,
               ],
             ),
-            border: Border.all(color: primary.withValues(alpha: 0.10)),
+            border: Border.all(color: primary.withValues(alpha: 0.12)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.10),

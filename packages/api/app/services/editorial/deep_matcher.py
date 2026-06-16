@@ -309,6 +309,9 @@ class DeepMatcher:
                     candidates,
                     pivot_excerpt=pivot_excerpt,
                     allow_fallback=False,
+                    default_reason=(
+                        "Une analyse de fond pour replacer ce sujet dans son contexte."
+                    ),
                 )
             except Exception as e:
                 logger.warning(
@@ -449,6 +452,7 @@ class DeepMatcher:
         candidates: list[tuple[Content, float]],
         pivot_excerpt: str | None = None,
         allow_fallback: bool = True,
+        default_reason: str | None = None,
     ) -> MatchedDeepArticle | None:
         """Pass 2: LLM picks best deep article from candidates.
 
@@ -540,7 +544,9 @@ class DeepMatcher:
             source_name=source_name,
             source_id=content.source_id,
             published_at=content.published_at,
-            match_reason=reason or f"Analyse de fond sur {topic.label}",
+            match_reason=reason
+            or default_reason
+            or f"Analyse de fond sur {topic.label}",
             description=content.description,
         )
 
