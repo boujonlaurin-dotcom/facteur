@@ -42,6 +42,13 @@ class _VoteIntent {
   const _VoteIntent(this.card, this.liked);
 }
 
+/// Vote déjà appliqué, utilisé pour restaurer exactement la dernière carte.
+class _SwipeVote {
+  final SpanningSource card;
+  final bool liked;
+  const _SwipeVote({required this.card, required this.liked});
+}
+
 class _SwipeDisambiguatorQuestionState
     extends ConsumerState<SwipeDisambiguatorQuestion>
     with SingleTickerProviderStateMixin {
@@ -50,12 +57,14 @@ class _SwipeDisambiguatorQuestionState
   int _total = 0;
   final List<String> _liked = [];
   final List<String> _disliked = [];
+  final List<_SwipeVote> _voteHistory = [];
 
   /// Score net par pôle (alimente les chips de profil en direct).
   final Map<SwipeAxisPole, int> _poleScore = {};
 
   bool _completed = false;
   bool _hasInteracted = false;
+  bool _finishedSwipe = false;
 
   /// Moment « on affine vos sources » en fin de tri (overlay + délai).
   bool _refining = false;
@@ -122,6 +131,7 @@ class _SwipeDisambiguatorQuestionState
     );
     _queue = set.reversed.toList(); // dernier = première carte montrée
     _total = set.length;
+    _preloadTopProfiles();
 
     // Rien à montrer (catalogue indisponible / thèmes trop pauvres) → on saute
     // l'étape sans bloquer le parcours.
@@ -142,16 +152,14 @@ class _SwipeDisambiguatorQuestionState
 
     // Tri terminé : moment « on affine vos sources » (~1,4 s) avant de basculer.
     setState(() => _refining = true);
-    _refineTimer = Timer(
-      const Duration(milliseconds: 1400),
-      () {
-        if (!mounted) return;
-        _finishSwipe();
-      },
-    );
+    _refineTimer = Timer(const Duration(milliseconds: 1400), () {
+      if (!mounted) return;
+      _finishSwipe();
+    });
   }
 
   void _finishSwipe() {
+    _finishedSwipe = true;
     ref
         .read(onboardingProvider.notifier)
         .completeSwipe(List.of(_liked), List.of(_disliked));
@@ -161,13 +169,65 @@ class _SwipeDisambiguatorQuestionState
     HapticFeedback.lightImpact();
     setState(() {
       _hasInteracted = true;
+      _voteHistory.add(_SwipeVote(card: card, liked: liked));
       (liked ? _liked : _disliked).add(card.source.id);
       _poleScore[card.pole] = (_poleScore[card.pole] ?? 0) + (liked ? 1 : -1);
       _queue!.removeLast();
       _dragOffset = Offset.zero;
     });
+    _preloadTopProfiles();
     _flashCalibratingHint();
     if (_queue!.isEmpty) _complete();
+  }
+
+  bool get _canUndoSwipe => _voteHistory.isNotEmpty && !_finishedSwipe;
+
+  void _undoLastSwipe() {
+    if (!_canUndoSwipe) return;
+    HapticFeedback.selectionClick();
+
+    if (_slideController.isAnimating) {
+      _slideController.stop();
+    }
+    _slideController.reset();
+    _pendingVote = null;
+    _animFrom = Offset.zero;
+    _animTo = Offset.zero;
+    _refineTimer?.cancel();
+    _hintTimer?.cancel();
+
+    final vote = _voteHistory.removeLast();
+    final votedIds = vote.liked ? _liked : _disliked;
+    final index = votedIds.lastIndexOf(vote.card.source.id);
+    if (index != -1) {
+      votedIds.removeAt(index);
+    }
+
+    final reversedDelta = vote.liked ? -1 : 1;
+    final nextScore = (_poleScore[vote.card.pole] ?? 0) + reversedDelta;
+    if (nextScore == 0) {
+      _poleScore.remove(vote.card.pole);
+    } else {
+      _poleScore[vote.card.pole] = nextScore;
+    }
+
+    setState(() {
+      _completed = false;
+      _refining = false;
+      _hintVisible = false;
+      _dragOffset = Offset.zero;
+      _queue ??= <SpanningSource>[];
+      _queue!.add(vote.card);
+    });
+    _preloadTopProfiles();
+  }
+
+  void _preloadTopProfiles() {
+    final queue = _queue;
+    if (queue == null || queue.isEmpty) return;
+    for (final card in queue.reversed.take(3)) {
+      ref.read(sourceProfileProvider(card.source.id).future).ignore();
+    }
   }
 
   /// Fait apparaître brièvement le micro-indice « On affine… » après un vote.
@@ -220,8 +280,11 @@ class _SwipeDisambiguatorQuestionState
   }
 
   /// Projette la carte hors écran dans la direction du vote puis valide.
-  void _flingOut(SpanningSource card,
-      {required bool liked, double fromDy = -40}) {
+  void _flingOut(
+    SpanningSource card, {
+    required bool liked,
+    double fromDy = -40,
+  }) {
     if (_slideController.isAnimating) return;
     final dir = liked ? 1.0 : -1.0;
     _animateTo(
@@ -237,12 +300,12 @@ class _SwipeDisambiguatorQuestionState
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) => SourceDetailModal(
+      builder: (_) => SourceDetailModal(
         source: card.source,
         selectLabel: OnboardingStrings.swipeLikeHint,
         isSelectedOverride: _liked.contains(card.source.id),
+        articleOpener: openSourceArticleOnRootNavigator,
         onToggleTrust: () {
-          Navigator.of(sheetContext).pop();
           _flingOut(card, liked: true);
         },
       ),
@@ -269,8 +332,9 @@ class _SwipeDisambiguatorQuestionState
         final current = _total - remaining + 1;
 
         final content = Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space6,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -283,10 +347,9 @@ class _SwipeDisambiguatorQuestionState
               const SizedBox(height: FacteurSpacing.space3),
               Text(
                 OnboardingStrings.swipeSubtitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: colors.textSecondary),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: FacteurSpacing.space2),
@@ -299,13 +362,9 @@ class _SwipeDisambiguatorQuestionState
                       ),
                   textAlign: TextAlign.center,
                 ),
-
               _buildCalibratingHint(context),
-
               Expanded(child: _buildCardArea(context, queue)),
-
               _buildTapHint(context, isFirstCard: remaining == _total),
-
               if (remaining > 0) ...[
                 _buildProfileInline(context),
                 _buildActions(context, queue.last),
@@ -337,9 +396,7 @@ class _SwipeDisambiguatorQuestionState
     } else {
       template = OnboardingStrings.swipeProgressMiddle;
     }
-    return template
-        .replaceFirst('%d', '$current')
-        .replaceFirst('%d', '$total');
+    return template.replaceFirst('%d', '$current').replaceFirst('%d', '$total');
   }
 
   /// Phrase inline « ce qu'on retient » placée *sous* le deck (au-dessus des
@@ -347,9 +404,8 @@ class _SwipeDisambiguatorQuestionState
   /// tant qu'aucun pôle n'est net-positif.
   Widget _buildProfileInline(BuildContext context) {
     final colors = context.facteurColors;
-    final activePoles = SwipeAxisPole.values
-        .where((p) => (_poleScore[p] ?? 0) > 0)
-        .toList();
+    final activePoles =
+        SwipeAxisPole.values.where((p) => (_poleScore[p] ?? 0) > 0).toList();
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 220),
@@ -362,10 +418,9 @@ class _SwipeDisambiguatorQuestionState
               child: Text(
                 OnboardingStrings.swipeProfileInline +
                     activePoles.map(_poleLabel).join(', '),
-                style: Theme.of(context)
-                    .textTheme
-                    .bodySmall
-                    ?.copyWith(color: colors.textTertiary),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
                 textAlign: TextAlign.center,
               ),
             ),
@@ -382,10 +437,9 @@ class _SwipeDisambiguatorQuestionState
         padding: const EdgeInsets.only(top: FacteurSpacing.space2),
         child: Text(
           OnboardingStrings.swipeCalibratingHint,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: colors.textTertiary),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
           textAlign: TextAlign.center,
         ),
       ),
@@ -396,38 +450,42 @@ class _SwipeDisambiguatorQuestionState
   Widget _buildRefiningOverlay(BuildContext context) {
     final colors = context.facteurColors;
     return Positioned.fill(
-      child: AbsorbPointer(
-        child: ColoredBox(
-          color: colors.backgroundPrimary.withOpacity(0.96),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: FacteurSpacing.space6),
-              Text(
-                OnboardingStrings.swipeRefiningTitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+      child: ColoredBox(
+        color: colors.backgroundPrimary.withOpacity(0.96),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: FacteurSpacing.space6),
+            Text(
+              OnboardingStrings.swipeRefiningTitle,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: FacteurSpacing.space2),
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space6,
+              ),
+              child: Text(
+                OnboardingStrings.swipeRefiningSubtitle,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: FacteurSpacing.space2),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: FacteurSpacing.space6,
-                ),
-                child: Text(
-                  OnboardingStrings.swipeRefiningSubtitle,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.copyWith(color: colors.textSecondary),
-                  textAlign: TextAlign.center,
-                ),
+            ),
+            if (_canUndoSwipe) ...[
+              const SizedBox(height: FacteurSpacing.space6),
+              TextButton.icon(
+                onPressed: _undoLastSwipe,
+                icon: const Icon(Icons.undo_rounded, size: 18),
+                label: const Text(OnboardingStrings.swipeUndoLabel),
               ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -447,7 +505,8 @@ class _SwipeDisambiguatorQuestionState
           for (var i = 0; i < queue.length; i++) {
             final card = queue[i];
             final depth = queue.length - 1 - i; // 0 = carte du dessus
-            if (depth > 2) continue; // ne rend que le dessus + 2 cartes derrière
+            if (depth > 2)
+              continue; // ne rend que le dessus + 2 cartes derrière
             final visual = SizedBox(
               width: constraints.maxWidth,
               child: _cardVisual(context, card),
@@ -488,10 +547,7 @@ class _SwipeDisambiguatorQuestionState
           }
           return Stack(
             alignment: Alignment.center,
-            children: [
-              ...backCards,
-              if (topCard != null) topCard,
-            ],
+            children: [...backCards, if (topCard != null) topCard],
           );
         },
       ),
@@ -567,19 +623,17 @@ class _SwipeDisambiguatorQuestionState
                   children: [
                     Text(
                       source.name,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       source.getThemeLabel(),
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: colors.textSecondary),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
                     ),
                   ],
                 ),
@@ -655,10 +709,9 @@ class _SwipeDisambiguatorQuestionState
         const SizedBox(width: FacteurSpacing.space2),
         Text(
           label,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: colors.textSecondary),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
         ),
         Flexible(
           child: Text(
@@ -740,15 +793,17 @@ class _SwipeDisambiguatorQuestionState
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.touch_app_outlined,
-                      size: 14, color: colors.textTertiary),
+                  Icon(
+                    Icons.touch_app_outlined,
+                    size: 14,
+                    color: colors.textTertiary,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     OnboardingStrings.swipeTapHint,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: colors.textTertiary),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
                   ),
                 ],
               ),
@@ -758,23 +813,36 @@ class _SwipeDisambiguatorQuestionState
 
   Widget _buildActions(BuildContext context, SpanningSource top) {
     final colors = context.facteurColors;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _actionButton(
-          context,
-          icon: Icons.close_rounded,
-          color: colors.textSecondary,
-          tooltip: OnboardingStrings.swipeSkipHint,
-          onTap: () => _flingOut(top, liked: false),
-        ),
-        const SizedBox(width: FacteurSpacing.space8),
-        _actionButton(
-          context,
-          icon: Icons.favorite_rounded,
-          color: colors.success,
-          tooltip: OnboardingStrings.swipeLikeHint,
-          onTap: () => _flingOut(top, liked: true),
+        if (_canUndoSwipe) ...[
+          TextButton.icon(
+            onPressed: _undoLastSwipe,
+            icon: const Icon(Icons.undo_rounded, size: 18),
+            label: const Text(OnboardingStrings.swipeUndoLabel),
+          ),
+          const SizedBox(height: FacteurSpacing.space2),
+        ],
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _actionButton(
+              context,
+              icon: Icons.close_rounded,
+              color: colors.textSecondary,
+              tooltip: OnboardingStrings.swipeSkipHint,
+              onTap: () => _flingOut(top, liked: false),
+            ),
+            const SizedBox(width: FacteurSpacing.space8),
+            _actionButton(
+              context,
+              icon: Icons.favorite_rounded,
+              color: colors.success,
+              tooltip: OnboardingStrings.swipeLikeHint,
+              onTap: () => _flingOut(top, liked: true),
+            ),
+          ],
         ),
       ],
     );

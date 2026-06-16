@@ -4,12 +4,7 @@ import '../../../config/topic_labels.dart';
 import '../../sources/models/source_model.dart';
 
 /// Category of a recommended source.
-enum SourceCategory {
-  matched,
-  perspective,
-  gem,
-  catalog,
-}
+enum SourceCategory { matched, perspective, gem, catalog }
 
 /// Type of recommendation tag displayed on a source card.
 enum RecommendationTagType {
@@ -73,10 +68,10 @@ class SourceRecommendation {
 
   /// IDs that should be pre-selected.
   Set<String> get preselectedIds => {
-        ...specialists.map((r) => r.source.id),
-        ...matched.map((r) => r.source.id),
-        ...gems.map((r) => r.source.id),
-      };
+    ...specialists.map((r) => r.source.id),
+    ...matched.map((r) => r.source.id),
+    ...gems.map((r) => r.source.id),
+  };
 
   const SourceRecommendation({
     required this.matched,
@@ -197,13 +192,15 @@ class SourceRecommender {
         continue;
       }
       final result = tagResults[source.id]!;
-      matchedSources.add(RecommendedSource(
-        source: source,
-        category: SourceCategory.matched,
-        tags: result.tags,
-        reason: result.reason,
-        score: scored[source.id] ?? 0,
-      ));
+      matchedSources.add(
+        RecommendedSource(
+          source: source,
+          category: SourceCategory.matched,
+          tags: result.tags,
+          reason: result.reason,
+          score: scored[source.id] ?? 0,
+        ),
+      );
       usedIds.add(source.id);
     }
 
@@ -242,30 +239,40 @@ class SourceRecommender {
     }
 
     // 4. Catalog: everything else, alphabetical
-    final catalogSources = curated
-        .where((s) => !usedIds.contains(s.id))
-        .toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final catalogSources =
+        curated.where((s) => !usedIds.contains(s.id)).toList()..sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        );
 
     final catalogRecommended = catalogSources
-        .map((s) => RecommendedSource(
-              source: s,
-              category: SourceCategory.catalog,
-              reason: '',
-            ))
+        .map(
+          (s) => RecommendedSource(
+            source: s,
+            category: SourceCategory.catalog,
+            reason: '',
+          ),
+        )
         .toList();
 
-    // Tag « Similaire à {nom} » : raccroche chaque reco (matched / perspective /
-    // gems) à la meilleure source aimée AU SWIPE partageant thème + (tier ou
-    // biais). Pas le catalogue (déjà replié), pas les sources déjà suivies.
-    final likedSources =
-        curated.where((s) => likedSet.contains(s.id)).toList();
+    // Tag « Similaire à {nom} » : raccroche quelques recos à une source aimée
+    // AU SWIPE, seulement quand aucune raison plus spécifique n'est déjà
+    // affichée. Pas le catalogue (déjà replié), pas les sources déjà suivies.
+    final likedSources = curated.where((s) => likedSet.contains(s.id)).toList();
+    final similarTagCounts = <String, int>{};
 
     List<RecommendedSource> withSimilarTag(List<RecommendedSource> list) {
       if (likedSources.isEmpty) return list;
       return list.map((r) {
-        final tag = _similarTag(r.source, likedSources);
-        if (tag == null) return r;
+        if (_hasSpecificTag(r.tags)) return r;
+        final anchor = _similarAnchor(r.source, likedSources);
+        if (anchor == null) return r;
+        final count = similarTagCounts[anchor.id] ?? 0;
+        if (count >= 2) return r;
+        similarTagCounts[anchor.id] = count + 1;
+        final tag = RecommendationTag(
+          label: 'Similaire à ${anchor.name}',
+          type: RecommendationTagType.similar,
+        );
         return RecommendedSource(
           source: r.source,
           category: r.category,
@@ -283,6 +290,15 @@ class SourceRecommender {
       catalog: catalogRecommended,
       specialists: withSimilarTag(specialistSources),
     );
+  }
+
+  static bool _hasSpecificTag(List<RecommendationTag> tags) {
+    return tags.any((t) {
+      return t.type == RecommendationTagType.specialist ||
+          t.type == RecommendationTagType.topic ||
+          t.type == RecommendationTagType.antiBruit ||
+          t.type == RecommendationTagType.fiable;
+    });
   }
 
   /// Garantit ≥1 carte « spécialiste » par subtopic sélectionné. Un subtopic est
@@ -314,74 +330,86 @@ class SourceRecommender {
 
     for (final sub in selectedSubtopics) {
       if (covered.contains(sub)) continue;
-      final candidates = allCurated
-          .where((s) => !taken.contains(s.id) && s.granularTopics.contains(sub))
-          .toList()
-        ..sort((a, b) {
-          final ad = a.granularTopics.isNotEmpty && a.granularTopics.first == sub
-              ? 1
-              : 0;
-          final bd = b.granularTopics.isNotEmpty && b.granularTopics.first == sub
-              ? 1
-              : 0;
-          if (ad != bd) return bd - ad; // spécialité dominante d'abord
-          final byScore = (scored[b.id] ?? 0).compareTo(scored[a.id] ?? 0);
-          if (byScore != 0) return byScore;
-          final aRel = a.reliabilityScore == 'high' ? 1 : 0;
-          final bRel = b.reliabilityScore == 'high' ? 1 : 0;
-          if (aRel != bRel) return bRel - aRel;
-          return b.articles30d.compareTo(a.articles30d);
-        });
+      final candidates =
+          allCurated
+              .where(
+                (s) => !taken.contains(s.id) && s.granularTopics.contains(sub),
+              )
+              .toList()
+            ..sort((a, b) {
+              final ad =
+                  a.granularTopics.isNotEmpty && a.granularTopics.first == sub
+                  ? 1
+                  : 0;
+              final bd =
+                  b.granularTopics.isNotEmpty && b.granularTopics.first == sub
+                  ? 1
+                  : 0;
+              if (ad != bd) return bd - ad; // spécialité dominante d'abord
+              final byScore = (scored[b.id] ?? 0).compareTo(scored[a.id] ?? 0);
+              if (byScore != 0) return byScore;
+              final aRel = a.reliabilityScore == 'high' ? 1 : 0;
+              final bRel = b.reliabilityScore == 'high' ? 1 : 0;
+              if (aRel != bRel) return bRel - aRel;
+              return b.articles30d.compareTo(a.articles30d);
+            });
       if (candidates.isEmpty) continue;
       final best = candidates.first;
       taken.add(best.id);
       covered.add(sub);
-      result.add(RecommendedSource(
-        source: best,
-        category: SourceCategory.matched,
-        tags: [
-          RecommendationTag(
-            label: 'Spécialisé en ${getTopicLabel(sub)}',
-            type: RecommendationTagType.specialist,
-          ),
-        ],
-        reason: 'Parce que vous suivez ${getTopicLabel(sub)}',
-        score: scored[best.id] ?? 0,
-      ));
+      result.add(
+        RecommendedSource(
+          source: best,
+          category: SourceCategory.matched,
+          tags: [
+            RecommendationTag(
+              label: 'Spécialisé en ${getTopicLabel(sub)}',
+              type: RecommendationTagType.specialist,
+            ),
+          ],
+          reason: 'Parce que vous suivez ${getTopicLabel(sub)}',
+          score: scored[best.id] ?? 0,
+        ),
+      );
     }
     return result;
   }
 
-  /// Cherche la meilleure source aimée au swipe « similaire » à [s] : partage un
-  /// thème (principal ou secondaire) **et** (même `sourceTier` **ou** même
-  /// `biasStance` connu). Départage par `followerCount` desc. Renvoie le tag
-  /// `'Similaire à {nom}'` ou `null` si aucune ancre.
-  static RecommendationTag? _similarTag(
-    Source s,
-    List<Source> likedSources,
-  ) {
+  /// Cherche la meilleure source aimée au swipe « similaire » à [s]. Deux
+  /// signaux partagés sont requis parmi thème, sujet granulaire, tier et biais
+  /// connu. Départage par `followerCount` desc.
+  static Source? _similarAnchor(Source s, List<Source> likedSources) {
     Set<String> themesOf(Source x) => {
-          if (x.theme != null) x.theme!,
-          ...x.secondaryThemes,
-        };
+      if (x.theme != null) x.theme!,
+      ...x.secondaryThemes,
+    };
 
     final sThemes = themesOf(s);
     Source? best;
     for (final liked in likedSources) {
       if (liked.id == s.id) continue;
-      if (sThemes.intersection(themesOf(liked)).isEmpty) continue;
-      final sameTierOrBias = s.sourceTier == liked.sourceTier ||
-          (s.biasStance != 'unknown' && s.biasStance == liked.biasStance);
-      if (!sameTierOrBias) continue;
+      var sharedSignals = 0;
+      if (sThemes.intersection(themesOf(liked)).isNotEmpty) {
+        sharedSignals++;
+      }
+      if (s.granularTopics
+          .toSet()
+          .intersection(liked.granularTopics.toSet())
+          .isNotEmpty) {
+        sharedSignals++;
+      }
+      if (s.sourceTier == liked.sourceTier) {
+        sharedSignals++;
+      }
+      if (s.biasStance != 'unknown' && s.biasStance == liked.biasStance) {
+        sharedSignals++;
+      }
+      if (sharedSignals < 2) continue;
       if (best == null || liked.followerCount > best.followerCount) {
         best = liked;
       }
     }
-    if (best == null) return null;
-    return RecommendationTag(
-      label: 'Similaire à ${best.name}',
-      type: RecommendationTagType.similar,
-    );
+    return best;
   }
 
   static _ScoreResult _scoreSource({
@@ -409,10 +437,12 @@ class SourceRecommender {
         bestReasonScore = 3;
         bestReason = getTopicLabel(source.theme!);
       }
-      tags.add(RecommendationTag(
-        label: getTopicLabel(source.theme!),
-        type: RecommendationTagType.topic,
-      ));
+      tags.add(
+        RecommendationTag(
+          label: getTopicLabel(source.theme!),
+          type: RecommendationTagType.topic,
+        ),
+      );
     }
 
     // Secondary themes match (+1 each)
@@ -423,11 +453,14 @@ class SourceRecommender {
           bestReason = getTopicLabel(t);
         }
         // Only add tag for first secondary theme to avoid clutter
-        if (tags.where((t) => t.type == RecommendationTagType.topic).length < 2) {
-          tags.add(RecommendationTag(
-            label: getTopicLabel(t),
-            type: RecommendationTagType.topic,
-          ));
+        if (tags.where((t) => t.type == RecommendationTagType.topic).length <
+            2) {
+          tags.add(
+            RecommendationTag(
+              label: getTopicLabel(t),
+              type: RecommendationTagType.topic,
+            ),
+          );
         }
       }
     }
@@ -436,33 +469,38 @@ class SourceRecommender {
     // top share après le re-tag backend) ∈ sujets choisis. Cœur de l'effet wow.
     final String? specialistSlug =
         source.granularTopics.isNotEmpty &&
-                subtopics.contains(source.granularTopics.first)
-            ? source.granularTopics.first
-            : null;
+            subtopics.contains(source.granularTopics.first)
+        ? source.granularTopics.first
+        : null;
     if (specialistSlug != null) {
-      tags.add(RecommendationTag(
-        label: 'Spécialisé en ${getTopicLabel(specialistSlug)}',
-        type: RecommendationTagType.specialist,
-      ));
+      tags.add(
+        RecommendationTag(
+          label: 'Spécialisé en ${getTopicLabel(specialistSlug)}',
+          type: RecommendationTagType.specialist,
+        ),
+      );
     }
 
     // Granular topics match subtopics (+2 each)
     for (final gt in source.granularTopics) {
       if (subtopics.contains(gt)) {
         score += 2;
-        if (2 > bestReasonScore) {
-          bestReasonScore = 2;
+        if (bestReasonScore <= 3) {
+          bestReasonScore = 4;
           bestReason = getTopicLabel(gt);
         }
         // La spécialité dominante est déjà badgée « Spécialisé en X » : on ne
         // double pas avec un tag thème générique.
         if (gt == specialistSlug) continue;
         // Add subtopic tag (prefer over theme if more specific)
-        if (tags.where((t) => t.type == RecommendationTagType.topic).length < 2) {
-          tags.add(RecommendationTag(
-            label: getTopicLabel(gt),
-            type: RecommendationTagType.topic,
-          ));
+        if (tags.where((t) => t.type == RecommendationTagType.topic).length <
+            2) {
+          tags.add(
+            RecommendationTag(
+              label: getTopicLabel(gt),
+              type: RecommendationTagType.topic,
+            ),
+          );
         }
       }
     }
@@ -529,19 +567,23 @@ class SourceRecommender {
     // Rule: source has high reliability OR is deep-tier (= analyses profondes)
     if (hasNoise &&
         (source.sourceTier == 'deep' || source.reliabilityScore == 'high')) {
-      tags.add(const RecommendationTag(
-        label: 'Anti-bruit',
-        type: RecommendationTagType.antiBruit,
-      ));
+      tags.add(
+        const RecommendationTag(
+          label: 'Anti-bruit',
+          type: RecommendationTagType.antiBruit,
+        ),
+      );
     }
 
     // Source fiable: user worried about bias → tag reliable sources
     // Rule: source has high reliability score
     if (hasBias && source.reliabilityScore == 'high') {
-      tags.add(const RecommendationTag(
-        label: 'Source fiable',
-        type: RecommendationTagType.fiable,
-      ));
+      tags.add(
+        const RecommendationTag(
+          label: 'Source fiable',
+          type: RecommendationTagType.fiable,
+        ),
+      );
     }
 
     // Serein: user worried about anxiety → tag sources with calm themes
@@ -549,10 +591,12 @@ class SourceRecommender {
     if (hasAnxiety &&
         source.theme != null &&
         _sereinThemes.contains(source.theme)) {
-      tags.add(const RecommendationTag(
-        label: 'Peu anxiogène',
-        type: RecommendationTagType.serein,
-      ));
+      tags.add(
+        const RecommendationTag(
+          label: 'Peu anxiogène',
+          type: RecommendationTagType.serein,
+        ),
+      );
     }
 
     final reason = bestReason.isNotEmpty
@@ -571,8 +615,9 @@ class SourceRecommender {
     final targetBiases = _oppositeBiases(matched.map((r) => r.source).toList());
 
     final candidates = allCurated
-        .where((s) =>
-            !usedIds.contains(s.id) && targetBiases.contains(s.biasStance))
+        .where(
+          (s) => !usedIds.contains(s.id) && targetBiases.contains(s.biasStance),
+        )
         .toList();
 
     // Sort by reliability (prefer 'high')
@@ -584,11 +629,13 @@ class SourceRecommender {
 
     return candidates
         .take(_maxPerspective)
-        .map((s) => RecommendedSource(
-              source: s,
-              category: SourceCategory.perspective,
-              reason: 'Pour voir un autre point de vue',
-            ))
+        .map(
+          (s) => RecommendedSource(
+            source: s,
+            category: SourceCategory.perspective,
+            reason: 'Pour voir un autre point de vue',
+          ),
+        )
         .toList();
   }
 
@@ -599,10 +646,12 @@ class SourceRecommender {
   }) {
     // Debug: help diagnose missing Pépites section
     final allDeep = allCurated.where((s) => s.sourceTier == 'deep').toList();
-    debugPrint('[SourceRecommender] _computeGems: '
-        '${allCurated.length} curated sources, '
-        '${allDeep.length} deep-tier sources '
-        '(${allDeep.map((s) => s.name).join(", ")})');
+    debugPrint(
+      '[SourceRecommender] _computeGems: '
+      '${allCurated.length} curated sources, '
+      '${allDeep.length} deep-tier sources '
+      '(${allDeep.map((s) => s.name).join(", ")})',
+    );
 
     final candidates = allCurated
         .where((s) => !usedIds.contains(s.id) && s.sourceTier == 'deep')
@@ -709,41 +758,40 @@ class SourceRecommender {
     final pickers = <void Function()>[
       // 1. Indépendant : forte indépendance ou posture alternative/spécialisée.
       () => pick(
-            SwipeAxisPole.independent,
-            (s) =>
-                (s.scoreIndependence ?? 0) >= 0.6 ||
-                s.biasStance == 'alternative' ||
-                s.biasStance == 'specialized',
-            (a, b) =>
-                (b.scoreIndependence ?? 0).compareTo(a.scoreIndependence ?? 0),
-          ),
+        SwipeAxisPole.independent,
+        (s) =>
+            (s.scoreIndependence ?? 0) >= 0.6 ||
+            s.biasStance == 'alternative' ||
+            s.biasStance == 'specialized',
+        (a, b) =>
+            (b.scoreIndependence ?? 0).compareTo(a.scoreIndependence ?? 0),
+      ),
       // 2. Fond : tier deep.
       () => pick(
-            SwipeAxisPole.deep,
-            (s) => s.sourceTier == 'deep',
-            byVolumeThenFollowers,
-          ),
+        SwipeAxisPole.deep,
+        (s) => s.sourceTier == 'deep',
+        byVolumeThenFollowers,
+      ),
       // 3. Référence établie : fiabilité haute + faible indépendance.
       () => pick(
-            SwipeAxisPole.established,
-            (s) =>
-                s.reliabilityScore == 'high' &&
-                (s.scoreIndependence ?? 1) <= 0.5,
-            (a, b) =>
-                (a.scoreIndependence ?? 1).compareTo(b.scoreIndependence ?? 1),
-          ),
+        SwipeAxisPole.established,
+        (s) =>
+            s.reliabilityScore == 'high' && (s.scoreIndependence ?? 1) <= 0.5,
+        (a, b) =>
+            (a.scoreIndependence ?? 1).compareTo(b.scoreIndependence ?? 1),
+      ),
       // 4. Actu directe : tier mainstream.
       () => pick(
-            SwipeAxisPole.mainstream,
-            (s) => s.sourceTier == 'mainstream',
-            byVolumeThenFollowers,
-          ),
+        SwipeAxisPole.mainstream,
+        (s) => s.sourceTier == 'mainstream',
+        byVolumeThenFollowers,
+      ),
       // 5. Perspective : bord opposé à la majorité matchée.
       () => pick(
-            SwipeAxisPole.perspective,
-            (s) => targetPerspectiveBiases.contains(s.biasStance),
-            byVolumeThenFollowers,
-          ),
+        SwipeAxisPole.perspective,
+        (s) => targetPerspectiveBiases.contains(s.biasStance),
+        byVolumeThenFollowers,
+      ),
     ];
 
     for (var round = 0; round < perPole; round++) {
@@ -761,9 +809,7 @@ class SourceRecommender {
       for (final s in fillers) {
         if (result.length >= maxCards) break;
         used.add(s.id);
-        result.add(
-          SpanningSource(source: s, pole: SwipeAxisPole.mainstream),
-        );
+        result.add(SpanningSource(source: s, pole: SwipeAxisPole.mainstream));
       }
     }
 

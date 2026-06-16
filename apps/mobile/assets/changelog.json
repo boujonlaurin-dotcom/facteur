@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Ta Tournée démarre par tes favoris, l'Essentiel ne s'affiche plus s'il est trop maigre, et le mode Serein recharge tout de suite le bon contenu."
+    },
+    {
       "tag": "Sources",
       "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription."
     },

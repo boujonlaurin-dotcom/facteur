@@ -1,7 +1,7 @@
 /// Humanise la fréquence de publication d'une source pour la fiche v3.
 ///
-/// Fonction **pure** : le chip horloge du header en dérive un libellé court
-/// (« ~100/jour », « quelques-uns/semaine », « peu actif »…).
+/// Fonction **pure** : le chip horloge du header en dérive un libellé naturel
+/// (« 70 articles par jour en moyenne », « quelques articles par semaine »…).
 ///
 /// - [articles30d] : nombre d'articles publiés sur les 30 derniers jours
 ///   (= `articles_30d` du profil = somme des `theme_distribution`).
@@ -27,10 +27,13 @@ String humanizeFrequency(
 
   final perDay = articles30d / windowDays;
 
-  if (perDay >= 10) return '~${_niceRound(perDay)}/jour';
-  if (perDay >= 1.5) return 'quelques-uns/jour';
-  if (perDay * 7 >= 1.5) return 'quelques-uns/semaine';
-  return 'quelques-uns/mois';
+  if (perDay >= 10) {
+    final rounded = _niceRound(perDay);
+    return '$rounded articles par jour en moyenne';
+  }
+  if (perDay >= 1.5) return 'quelques articles par jour';
+  if (perDay * 7 >= 1.5) return 'quelques articles par semaine';
+  return 'quelques articles par mois';
 }
 
 /// Arrondi « joli » pour les gros volumes (lecture rapide, pas exacte).

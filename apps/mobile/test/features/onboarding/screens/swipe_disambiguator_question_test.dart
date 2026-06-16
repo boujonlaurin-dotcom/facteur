@@ -8,10 +8,13 @@ import 'package:hive/hive.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/providers/analytics_provider.dart';
 import 'package:facteur/core/services/analytics_service.dart';
+import 'package:facteur/widgets/design/facteur_button.dart';
 import 'package:facteur/features/onboarding/onboarding_strings.dart';
+import 'package:facteur/features/onboarding/data/source_recommender.dart';
 import 'package:facteur/features/onboarding/providers/onboarding_provider.dart';
 import 'package:facteur/features/onboarding/screens/questions/swipe_disambiguator_question.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/features/sources/models/source_profile.dart';
 import 'package:facteur/features/sources/providers/sources_providers.dart';
 
 class _FakeUserSourcesNotifier extends UserSourcesNotifier {
@@ -48,10 +51,18 @@ void main() {
   });
 
   ProviderContainer makeContainer(List<Source> sources) {
-    final container = ProviderContainer(overrides: [
-      userSourcesProvider.overrideWith(() => _FakeUserSourcesNotifier(sources)),
-      analyticsServiceProvider.overrideWithValue(AnalyticsService.disabled()),
-    ]);
+    final container = ProviderContainer(
+      overrides: [
+        userSourcesProvider.overrideWith(
+          () => _FakeUserSourcesNotifier(sources),
+        ),
+        for (final source in sources)
+          sourceProfileProvider(
+            source.id,
+          ).overrideWith((_) async => const SourceProfile()),
+        analyticsServiceProvider.overrideWithValue(AnalyticsService.disabled()),
+      ],
+    );
     addTearDown(container.dispose);
     return container;
   }
@@ -86,54 +97,74 @@ void main() {
     expect(find.text(OnboardingStrings.swipeReliabilityPrefix), findsWidgets);
   });
 
-  testWidgets('like (carte unique) : fling, vote enregistré, avance vers sources',
-      (tester) async {
-    final container = makeContainer([_src('solo', tier: 'mainstream')]);
-    await tester.pumpWidget(buildTestWidget(container));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'like (carte unique) : fling, vote enregistré, avance vers sources',
+    (tester) async {
+      final container = makeContainer([_src('solo', tier: 'mainstream')]);
+      await tester.pumpWidget(buildTestWidget(container));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
-    await tester.pump(); // démarre le fling
-    await tester.pump(const Duration(milliseconds: 400)); // fling terminé → vote
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
+      await tester.pump(); // démarre le fling
+      await tester.pump(
+        const Duration(milliseconds: 400),
+      ); // fling terminé → vote
 
-    // Dernière carte triée → moment « on affine vos sources » (overlay ~1,4 s).
-    expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
+      // Dernière carte triée → moment « on affine vos sources » (overlay ~1,4 s).
+      expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 1500)); // refining → completeSwipe
-    expect(container.read(onboardingProvider).answers.swipeLiked,
-        equals(['solo']));
+      await tester.pump(
+        const Duration(milliseconds: 1500),
+      ); // refining → completeSwipe
+      expect(
+        container.read(onboardingProvider).answers.swipeLiked,
+        equals(['solo']),
+      );
 
-    await tester.pump(const Duration(milliseconds: 350)); // transition completeSwipe
-    expect(
-      container.read(onboardingProvider).currentQuestionIndex,
-      Section3Question.sources.index,
-    );
-  });
+      await tester.pump(
+        const Duration(milliseconds: 350),
+      ); // transition completeSwipe
+      expect(
+        container.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.sources.index,
+      );
+    },
+  );
 
-  testWidgets('skip (carte unique) : fling, rejet enregistré, avance vers sources',
-      (tester) async {
-    final container = makeContainer([_src('solo', tier: 'mainstream')]);
-    await tester.pumpWidget(buildTestWidget(container));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'skip (carte unique) : fling, rejet enregistré, avance vers sources',
+    (tester) async {
+      final container = makeContainer([_src('solo', tier: 'mainstream')]);
+      await tester.pumpWidget(buildTestWidget(container));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.widgetWithIcon(InkWell, Icons.close_rounded));
-    await tester.pump(); // démarre le fling
-    await tester.pump(const Duration(milliseconds: 400)); // fling terminé → vote
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.close_rounded));
+      await tester.pump(); // démarre le fling
+      await tester.pump(
+        const Duration(milliseconds: 400),
+      ); // fling terminé → vote
 
-    // Dernière carte triée → moment « on affine vos sources » (overlay ~1,4 s).
-    expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
+      // Dernière carte triée → moment « on affine vos sources » (overlay ~1,4 s).
+      expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 1500)); // refining → completeSwipe
-    expect(container.read(onboardingProvider).answers.swipeDisliked,
-        equals(['solo']));
-    expect(container.read(onboardingProvider).answers.swipeLiked, isEmpty);
+      await tester.pump(
+        const Duration(milliseconds: 1500),
+      ); // refining → completeSwipe
+      expect(
+        container.read(onboardingProvider).answers.swipeDisliked,
+        equals(['solo']),
+      );
+      expect(container.read(onboardingProvider).answers.swipeLiked, isEmpty);
 
-    await tester.pump(const Duration(milliseconds: 350)); // transition completeSwipe
-    expect(
-      container.read(onboardingProvider).currentQuestionIndex,
-      Section3Question.sources.index,
-    );
-  });
+      await tester.pump(
+        const Duration(milliseconds: 350),
+      ); // transition completeSwipe
+      expect(
+        container.read(onboardingProvider).currentQuestionIndex,
+        Section3Question.sources.index,
+      );
+    },
+  );
 
   // Deck large et étalé (~8-10 cartes) pour exercer le compteur et la phrase
   // inline « ce qu'on retient ».
@@ -150,8 +181,9 @@ void main() {
         _src('right-1', bias: 'right'),
       ];
 
-  testWidgets('compteur humanisé + pas de chips de profil au départ',
-      (tester) async {
+  testWidgets('compteur humanisé + pas de chips de profil au départ', (
+    tester,
+  ) async {
     final container = makeContainer(_richDeck());
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
@@ -162,33 +194,200 @@ void main() {
     expect(find.textContaining('Premières cartes'), findsOneWidget);
     expect(find.textContaining('Carte '), findsNothing);
     // Aucun vote encore → la phrase inline « ce qu'on retient » est absente.
-    expect(find.textContaining(OnboardingStrings.swipeProfileInline),
-        findsNothing);
+    expect(
+      find.textContaining(OnboardingStrings.swipeProfileInline),
+      findsNothing,
+    );
   });
 
-  testWidgets('phrase inline « ce qu\'on retient » apparaît après un vote net-positif',
-      (tester) async {
-    final container = makeContainer(_richDeck());
-    await tester.pumpWidget(buildTestWidget(container));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'précharge uniquement les 3 profils visibles et ignore les erreurs',
+    (tester) async {
+      final sources = _richDeck();
+      final expected = SourceRecommender.buildSpanningSet(
+        selectedThemes: const [],
+        selectedSubtopics: const [],
+        allSources: sources,
+      ).take(3).map((s) => s.source.id).toSet();
+      final preloaded = <String>[];
+      final container = ProviderContainer(
+        overrides: [
+          userSourcesProvider.overrideWith(
+            () => _FakeUserSourcesNotifier(sources),
+          ),
+          for (final source in sources)
+            sourceProfileProvider(source.id).overrideWith((_) async {
+              preloaded.add(source.id);
+              if (source.id == expected.first) {
+                throw Exception('profile down');
+              }
+              return const SourceProfile();
+            }),
+          analyticsServiceProvider.overrideWithValue(
+            AnalyticsService.disabled(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    // Like la carte du dessus (mainstream par défaut le plus suivi) → un pôle
-    // passe net-positif → la phrase inline s'affiche sous le deck.
-    await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
-    await tester.pump(); // démarre le fling
-    await tester.pump(const Duration(milliseconds: 400)); // fling → vote
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(buildTestWidget(container));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.textContaining(OnboardingStrings.swipeProfileInline),
-        findsOneWidget);
-  });
+      expect(find.text(OnboardingStrings.swipeTitle), findsOneWidget);
+      expect(preloaded.toSet(), expected);
+    },
+  );
 
-  testWidgets('spanning set vide : saute directement vers sources',
-      (tester) async {
+  testWidgets(
+    'phrase inline « ce qu\'on retient » apparaît après un vote net-positif',
+    (tester) async {
+      final container = makeContainer(_richDeck());
+      await tester.pumpWidget(buildTestWidget(container));
+      await tester.pumpAndSettle();
+
+      // Like la carte du dessus (mainstream par défaut le plus suivi) → un pôle
+      // passe net-positif → la phrase inline s'affiche sous le deck.
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
+      await tester.pump(); // démarre le fling
+      await tester.pump(const Duration(milliseconds: 400)); // fling → vote
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining(OnboardingStrings.swipeProfileInline),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'bouton retour : restaure la dernière carte et permet de revoter',
+    (tester) async {
+      final sources = _richDeck();
+      final firstCard = SourceRecommender.buildSpanningSet(
+        selectedThemes: const [],
+        selectedSubtopics: const [],
+        allSources: sources,
+      ).first;
+      final container = makeContainer(sources);
+      await tester.pumpWidget(buildTestWidget(container));
+      await tester.pumpAndSettle();
+
+      expect(find.text(firstCard.source.name), findsOneWidget);
+
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text(OnboardingStrings.swipeUndoLabel), findsOneWidget);
+      expect(find.text(firstCard.source.name), findsNothing);
+      expect(
+        find.textContaining(OnboardingStrings.swipeProfileInline),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text(OnboardingStrings.swipeUndoLabel));
+      await tester.pumpAndSettle();
+
+      expect(find.text(firstCard.source.name), findsOneWidget);
+      expect(find.text(OnboardingStrings.swipeUndoLabel), findsNothing);
+      expect(
+        find.textContaining(OnboardingStrings.swipeProfileInline),
+        findsNothing,
+      );
+
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.close_rounded));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text(OnboardingStrings.swipeUndoLabel), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'bouton retour pendant l\'overlay final : annule la fin et restaure la carte',
+    (tester) async {
+      final container = makeContainer([_src('solo', tier: 'mainstream')]);
+      await tester.pumpWidget(buildTestWidget(container));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
+      expect(find.text(OnboardingStrings.swipeUndoLabel), findsOneWidget);
+
+      await tester.tap(find.text(OnboardingStrings.swipeUndoLabel));
+      await tester.pumpAndSettle();
+
+      expect(find.text(OnboardingStrings.swipeRefiningTitle), findsNothing);
+      expect(find.text('Source solo'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 1500));
+      expect(container.read(onboardingProvider).answers.swipeLiked, isNull);
+      expect(
+        container.read(onboardingProvider).currentQuestionIndex,
+        isNot(Section3Question.sources.index),
+      );
+    },
+  );
+
+  testWidgets(
+    'fiche source : CTA like ferme la modal une seule fois et avance la carte',
+    (tester) async {
+      final container = makeContainer([
+        _src('indie', independence: 0.9, bias: 'alternative'),
+        _src('deep', tier: 'deep'),
+      ]);
+      await tester.pumpWidget(buildTestWidget(container));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Source indie'), findsOneWidget);
+      await tester.tap(find.text('Source indie'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sélectionner cette source'), findsNothing);
+      expect(find.text(OnboardingStrings.swipeLikeHint), findsWidgets);
+
+      tester
+          .widget<FacteurButton>(
+            find.widgetWithText(FacteurButton, OnboardingStrings.swipeLikeHint),
+          )
+          .onPressed!();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Gestion de la source'), findsNothing);
+      expect(find.text('Source deep'), findsOneWidget);
+
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.close_rounded));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 1500));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(
+        container.read(onboardingProvider).answers.swipeLiked,
+        equals(['indie']),
+      );
+      expect(
+        container.read(onboardingProvider).answers.swipeDisliked,
+        equals(['deep']),
+      );
+    },
+  );
+
+  testWidgets('spanning set vide : saute directement vers sources', (
+    tester,
+  ) async {
     final container = makeContainer(const []);
     await tester.pumpWidget(buildTestWidget(container));
-    await tester.pump(); // résout le FutureProvider → _ensureBuilt → post-frame _complete()
-    await tester.pump(const Duration(milliseconds: 350)); // transition completeSwipe
+    await tester
+        .pump(); // résout le FutureProvider → _ensureBuilt → post-frame _complete()
+    await tester.pump(
+      const Duration(milliseconds: 350),
+    ); // transition completeSwipe
 
     expect(
       container.read(onboardingProvider).currentQuestionIndex,

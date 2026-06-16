@@ -171,6 +171,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ref.listen<SereinToggleState>(sereinToggleProvider, (prev, next) {
       if (_bootstrapping) return;
       if (prev?.enabled != next.enabled && state.hasValue) {
+        // Vide le cache de la vue feed par défaut (Flâner) pour que la vue
+        // visible re-fetche avec le bon paramètre `serein` au lieu de servir le
+        // résultat dédupliqué de l'autre mode. Le snapshot Flux du mode
+        // précédent est lui ignoré au prochain `build` (mode mismatch), donc
+        // on ne réaffiche jamais l'ancien contenu : squelette → refetch complet.
+        FeedRepository.clearDefaultViewCache();
         ref.invalidateSelf();
       }
     });
@@ -278,8 +284,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final isSerene = ref.read(sereinToggleProvider).enabled;
 
     // Première peinture : on lit le snapshot SANS le jeter sur un day mismatch.
+    // On exige aussi que le snapshot ait été écrit dans le **même mode serein**
+    // que le mode courant — sinon (toggle serein → invalidateSelf) son contenu
+    // mode-dépendant (Essentiel, sections feed) est périmé : on tombe alors sur
+    // le squelette + refetch complet plutôt que de réafficher l'ancien snapshot.
     final snapshot = await _cacheService.readLatest();
-    if (snapshot != null && !snapshot.isStale) {
+    final snapshotUsable = snapshot != null &&
+        !snapshot.isStale &&
+        snapshot.sereinEnabled == isSerene;
+    if (snapshotUsable) {
       // Snapshot du jour → SWR in-day : on peint le **vrai** contenu
       // instantanément (puis revalidation via _fetchAll).
       debugPrint('[PERF] fluxContinu.build mode=content_fresh');
@@ -293,9 +306,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         ),
       );
     } else {
-      // Snapshot d'hier (stale) ou aucun → on ne peint JAMAIS de contenu
-      // périmé : on émet un squelette fidèle dérivé des prefs locales
-      // (bon nombre/ordre/labels/accents de sections), qui se remplit derrière.
+      // Snapshot d'hier (stale), mode serein différent, ou aucun → on ne peint
+      // JAMAIS de contenu périmé : on émet un squelette fidèle dérivé des prefs
+      // locales (bon nombre/ordre/labels/accents de sections), rempli derrière.
       debugPrint(
           '[PERF] fluxContinu.build mode=${snapshot == null ? 'cold' : 'skeleton_stale'}');
       state = AsyncData(_buildSkeletonState(isSerene));
@@ -368,6 +381,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           dual: dual,
           topThemes: topThemes,
           essentielArticles: essentielArticles,
+          sereinEnabled: isSerene,
         ),
       );
       // Rafraîchit uniquement les teasers locaux Bonnes Nouvelles. Les teasers
@@ -1567,23 +1581,22 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final orderedThemeKeys =
         customized ? themeKeys : _biasThemeKeysByMostFollowed(themeKeys);
     final favoriteKeys = [...orderedThemeKeys, ...sourceKeys, ...veilleKeys];
-    final useSereneDefault = isSerene && !customized;
+    // Ordre par défaut unifié (normal & serein) : on démarre la Tournée par les
+    // favoris utilisateur (thèmes/sources/veille — le signal d'intérêt le plus
+    // fort), puis les Actus du jour, puis Bonnes Nouvelles. En mode serein ce
+    // sont les contenus serein qui peuplent ces mêmes sections (fetch serein) ;
+    // seul l'ordre reste constant. Un ordre personnalisé (`customized`) reste
+    // prioritaire via `applyOrder`.
     // La Grille n'est PAS réordonnable par l'utilisateur (cf. modal « Mes
     // favoris ») : on l'exclut d'`applyOrder` et on l'épingle juste après les
     // Actus plus bas. Sinon, comme sa clé est absente de `order` (compte
     // personnalisé), `applyOrder` la reléguerait en fin de liste → coupée par
     // le cap → la Grille disparaîtrait. Régression corrigée par hotfix.
-    final defaultKeys = useSereneDefault
-        ? <String>[
-            kTourneeBonnesKey,
-            ...favoriteKeys,
-            kTourneeActusKey,
-          ]
-        : <String>[
-            kTourneeActusKey,
-            ...favoriteKeys,
-            kTourneeBonnesKey,
-          ];
+    final defaultKeys = <String>[
+      ...favoriteKeys,
+      kTourneeActusKey,
+      kTourneeBonnesKey,
+    ];
     final availableKeys = [
       for (final key in defaultKeys)
         if (!hiddenKeys.contains(key) && sectionByKey.containsKey(key)) key,

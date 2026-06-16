@@ -21,7 +21,8 @@ from app.dependencies import get_current_user_id
 from app.schemas.essentiel import EssentielResponse
 from app.services.digest_service import DigestService, read_digest_or_fallback
 from app.services.essentiel_service import (
-    build_essentiel_response,
+    ESSENTIEL_MIN_ARTICLES,
+    build_essentiel_response_with_supplements,
     fetch_user_essentiel_context,
 )
 from app.utils.time import today_paris
@@ -72,7 +73,19 @@ async def get_essentiel(
     # promouvoir les articles qui matchent les prefs de l'utilisateur.
     # Pas de pipeline LLM, juste 2 SELECTs courts indexés sur `user_id`.
     user_context = await fetch_user_essentiel_context(db, user_uuid)
-    response = build_essentiel_response(digest, user_context=user_context)
+    response = await build_essentiel_response_with_supplements(
+        db,
+        user_uuid,
+        digest,
+        user_context=user_context,
+        is_serene=serein_enabled,
+    )
+
+    # Plancher de qualité : on n'expose jamais une carte Essentiel pauvre
+    # (1-2 articles). Si la complétion depuis les sources suivies n'a pas
+    # atteint 3 articles, on signale au client que l'essentiel se prépare.
+    if len(response.articles) < ESSENTIEL_MIN_ARTICLES:
+        return _preparing_response()
 
     logger.info(
         "essentiel_retrieved",
