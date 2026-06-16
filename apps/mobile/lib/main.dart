@@ -247,6 +247,12 @@ Future<void> _registerServerPushIfEnabled() async {
 
 /// Init FlutterDownloader avec fallback silencieux (non-critique).
 Future<void> _initDownloaderSafe() async {
+  // flutter_downloader ne sert qu'à la MAJ in-app par APK (Android uniquement ;
+  // la feature app_update est déjà gardée `!Platform.isAndroid` partout).
+  // Sur iOS, FlutterDownloader.initialize() déclenche un fatalError natif
+  // (setPluginRegistrantCallback absent d'AppDelegate) → crash AU LANCEMENT,
+  // non rattrapable par le try/catch Dart. On skip donc l'init hors Android.
+  if (kIsWeb || !Platform.isAndroid) return;
   try {
     await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
   } catch (e) {
@@ -289,7 +295,10 @@ Future<void> _initRevenueCatSafe() async {
 /// Permet à un achat Web Billing fait depuis la landing — où l'`app_user_id`
 /// est déjà le user_id Supabase — de suivre le bon compte dans l'app.
 Future<void> _loginRevenueCatSafe(String userId) async {
-  if (kIsWeb) return;
+  // Garde isConfigured OBLIGATOIRE : si RevenueCat n'est pas configuré (clé API
+  // absente), Purchases.logIn lève un fatalError NATIF (cf. crash post-login
+  // EXC_BREAKPOINT/PurchasesHybridCommon) que le try/catch Dart ne rattrape PAS.
+  if (kIsWeb || !RevenueCatConstants.isConfigured(isIOS: Platform.isIOS)) return;
   try {
     await Purchases.logIn(userId);
   } catch (e) {
@@ -300,7 +309,9 @@ Future<void> _loginRevenueCatSafe(String userId) async {
 /// Délie l'identité RevenueCat au logout : évite que l'utilisateur suivant
 /// hérite par erreur des entitlements du précédent sur un device partagé.
 Future<void> _logoutRevenueCatSafe() async {
-  if (kIsWeb) return;
+  // Même garde que _loginRevenueCatSafe : Purchases.logOut fatalError natif si
+  // RevenueCat n'est pas configuré.
+  if (kIsWeb || !RevenueCatConstants.isConfigured(isIOS: Platform.isIOS)) return;
   try {
     await Purchases.logOut();
   } catch (e) {

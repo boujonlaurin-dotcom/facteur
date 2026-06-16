@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +13,11 @@ import '../../config/constants.dart';
 /// l'entitlement `premium` — la table Postgres `user_subscriptions` n'est
 /// qu'un miroir analytics.
 final customerInfoProvider = StreamProvider<CustomerInfo?>((ref) {
-  if (kIsWeb) {
+  // Web : pas de SDK. Natif : si RevenueCat n'est PAS configuré (clé API
+  // absente, ex. build sans --dart-define=REVENUECAT_*), NE JAMAIS appeler le
+  // SDK — `Purchases.*` sur un singleton non initialisé lève une exception
+  // native → crash post-login. On émet simplement `null` (non-premium).
+  if (kIsWeb || !RevenueCatConstants.isConfigured(isIOS: Platform.isIOS)) {
     return Stream<CustomerInfo?>.value(null);
   }
 
@@ -22,7 +27,16 @@ final customerInfoProvider = StreamProvider<CustomerInfo?>((ref) {
     if (!controller.isClosed) controller.add(info);
   }
 
-  Purchases.addCustomerInfoUpdateListener(listener);
+  try {
+    Purchases.addCustomerInfoUpdateListener(listener);
+  } catch (e) {
+    // SDK indisponible/non initialisé → dégrade en non-premium sans crasher.
+    if (!controller.isClosed) {
+      controller.add(null);
+      controller.close();
+    }
+    return controller.stream;
+  }
 
   // Premier état : on récupère le snapshot courant pour que les consommateurs
   // n'aient pas à attendre un événement RevenueCat avant de pouvoir afficher.

@@ -59,11 +59,15 @@ android {
     productFlavors {
         create("beta") {
             dimension = "channel"
-            applicationIdSuffix = ".beta"
+            // Conserve le package historique des ~60 testeurs side-load
+            // (com.example.facteur.staging) -> auto-update préservé, aucune réinstall.
+            applicationIdSuffix = ".staging"
             versionNameSuffix = "-beta"
         }
         create("playstore") {
             dimension = "channel"
+            // Package définitif Play Store, figé au 1er upload AAB. NE PAS modifier.
+            applicationId = "facteur.app"
         }
     }
 
