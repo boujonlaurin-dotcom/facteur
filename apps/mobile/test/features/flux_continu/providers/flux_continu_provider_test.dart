@@ -874,6 +874,78 @@ void main() {
         );
       },
     );
+
+    test(
+      'Essentiel masqué sous 3 articles (plancher anti-carte-pauvre)',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+
+        final digest = DigestResponse(
+          digestId: 'd1',
+          userId: 'u1',
+          targetDate: DateTime(2026, 5, 23),
+          generatedAt: DateTime(2026, 5, 23),
+          topics: const [
+            DigestTopic(
+              topicId: 't1',
+              label: 'Topic A',
+              articles: [DigestItem(contentId: 'a1', title: 'A')],
+            ),
+          ],
+        );
+        when(() => digestRepo.fetchBothDigests()).thenAnswer(
+          (_) async => DualDigestResponse(normal: digest, sereinEnabled: false),
+        );
+
+        // Seulement 2 articles Essentiel → la carte hi-fi ne doit pas être rendue
+        // (un backend ancien qui répond pauvrement ne casse pas l'UI).
+        EssentielArticle poorArticle(String id) => EssentielArticle(
+              contentId: id,
+              title: 'Poor $id',
+              url: 'https://x.test/$id',
+              publishedAt: DateTime(2026, 1, 1),
+              sourceName: 'Source',
+              sourceLetter: 'S',
+              sectionLabel: 'Tech',
+              rank: 1,
+            );
+
+        final container = ProviderContainer(
+          overrides: [
+            digestRepositoryProvider.overrideWithValue(digestRepo),
+            feedRepositoryProvider.overrideWithValue(feedRepo),
+            fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+            essentielRepositoryProvider.overrideWithValue(
+              _FixedEssentielRepository([poorArticle('p1'), poorArticle('p2')]),
+            ),
+            grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
+            userInterestsProvider.overrideWith(
+              () => _StubUserInterestsNotifier(_interestsState()),
+            ),
+            sereinToggleProvider.overrideWith(
+              (ref) => SereinToggleNotifier(ref),
+            ),
+            displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+
+        expect(
+          state.sections.whereType<EssentielSection>(),
+          isEmpty,
+          reason: 'moins de 3 articles ⇒ pas de carte Essentiel',
+        );
+        // "Actus du jour" reste affichée (dégradation gracieuse).
+        expect(
+          state.sections
+              .whereType<DigestTopicSection>()
+              .where((s) => s.kind == SectionKind.essentiel),
+          hasLength(1),
+        );
+      },
+    );
   });
 
   group('FluxContinuNotifier — dedup inter-sections', () {
@@ -1420,14 +1492,38 @@ void main() {
   });
 }
 
-/// Stub EssentielRepository returning exactly one [EssentielArticle] so the
-/// hi-fi section is built during the coexistence test.
+/// Stub EssentielRepository centré sur un [EssentielArticle] précis (dont les
+/// tests de coexistence/dédup vérifient la présence), complété par 2 articles de
+/// remplissage pour atteindre le plancher d'affichage de la carte hi-fi
+/// (`_kEssentielMinArticles` = 3). Le primary reste en tête (rank 1).
 class _OneArticleEssentielRepository implements EssentielRepository {
   _OneArticleEssentielRepository(this._article);
   final EssentielArticle _article;
 
   @override
-  Future<List<EssentielArticle>?> fetch() async => [_article];
+  Future<List<EssentielArticle>?> fetch() async => [
+        _article,
+        EssentielArticle(
+          contentId: '${_article.contentId}-filler-1',
+          title: 'Filler 1',
+          url: 'https://x.test/${_article.contentId}-filler-1',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 2,
+        ),
+        EssentielArticle(
+          contentId: '${_article.contentId}-filler-2',
+          title: 'Filler 2',
+          url: 'https://x.test/${_article.contentId}-filler-2',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 3,
+        ),
+      ];
 }
 
 /// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.

@@ -87,6 +87,40 @@ void main() {
     expect(await service.readToday(now: DateTime(2026, 6, 9, 12)), isNull);
   });
 
+  test('serein_enabled round-trip : write(true) → readLatest sereinEnabled:true',
+      () async {
+    final service = FluxContinuCacheService();
+    final now = DateTime(2026, 6, 9, 12);
+    await service.write(
+      dual: dual(),
+      topThemes: const [],
+      essentielArticles: const [],
+      sereinEnabled: true,
+      now: now,
+    );
+
+    final latest = await service.readLatest(now: now);
+    expect(latest, isNotNull);
+    expect(latest!.sereinEnabled, isTrue);
+  });
+
+  test('sereinEnabled défaut false quand la clé est absente (rétro-compat)',
+      () async {
+    final b = await box();
+    // Snapshot legacy sans `serein_enabled`.
+    await b.put(
+      'latest_snapshot',
+      jsonEncode({
+        'day_key': '2026-06-09',
+        'dual': dual().toJson(),
+      }),
+    );
+    final latest =
+        await FluxContinuCacheService().readLatest(now: DateTime(2026, 6, 9, 12));
+    expect(latest, isNotNull);
+    expect(latest!.sereinEnabled, isFalse);
+  });
+
   test('JSON corrompu → readLatest null (pas d\'exception)', () async {
     final b = await box();
     await b.put('latest_snapshot', '{ this is : not json');
