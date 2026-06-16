@@ -280,10 +280,12 @@ void main() {
 
   group('FluxContinuNotifier — favorites-driven theme sections', () {
     test(
-      '0 favorites + empty top-themes fallback → 3 canonical themes fetched',
+      // Story 22.3 — le fallback canonique (tech/environment/science) codé en
+      // dur a été supprimé : un compte 0 favori + top-themes vide ne fetche
+      // plus aucun thème (le padding vient désormais des suggestions backend).
+      '0 favorites + empty top-themes → no canonical theme fetched',
       () async {
         SharedPreferences.setMockInitialValues(<String, Object>{});
-        // Digest absent, feed absent → only the theme fetches matter.
         when(
           () => feedRepo.getFeed(
             page: any(named: 'page'),
@@ -294,12 +296,57 @@ void main() {
           ),
         ).thenAnswer((_) async => _feedResponseWith(3));
 
-        final container = makeContainer(); // 0 favorites in stub
+        final container = makeContainer(); // 0 favorites, top-themes vide
         addTearDown(container.dispose);
 
         await settle(container);
 
-        // 3 fallback canonical theme fetches (tech, environment, science).
+        // Plus de fetch canonique : aucune section thème n'est fetchée.
+        verifyNever(
+          () => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        );
+      },
+    );
+
+    test(
+      // Story 22.3 — une suggestion « Choisie pour vous » (origin=suggested)
+      // remplit un slot : son feed est fetché et la section porte le badge.
+      '0 favorites + a suggested top-theme → suggested theme fetched',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        when(() => fluxRepo.getTopThemes()).thenAnswer(
+          (_) async => const [
+            TopTheme(
+              interestSlug: 'science',
+              weight: 1.0,
+              articleCount: 5,
+              origin: 'suggested',
+              dailyRank: 0,
+              reason: SuggestionReason(label: 'Tu suis ce thème'),
+            ),
+          ],
+        );
+        when(
+          () => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        ).thenAnswer((_) async => _feedResponseWith(3));
+
+        final container = makeContainer();
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+
         final captured = verify(
           () => feedRepo.getFeed(
             page: any(named: 'page'),
@@ -309,7 +356,15 @@ void main() {
             personalized: any(named: 'personalized'),
           ),
         ).captured;
-        expect(captured, containsAll(['tech', 'environment', 'science']));
+        expect(captured, contains('science'));
+
+        final suggested = state.sections
+            .whereType<FeedThemeSection>()
+            .where((s) => s.isSuggested)
+            .toList();
+        expect(suggested, hasLength(1));
+        expect(suggested.first.themeSlug, 'science');
+        expect(suggested.first.reason?.label, 'Tu suis ce thème');
       },
     );
 

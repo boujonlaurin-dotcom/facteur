@@ -23,6 +23,7 @@ import '../../sources/widgets/source_logo_avatar.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart' hide applyOrder;
+import '../providers/tournee_smart_arrangement_provider.dart';
 import '../utils/theme_color_mapping.dart';
 import 'choice_tile.dart';
 
@@ -848,6 +849,9 @@ class _ManageFavoritesContentState
                 const SizedBox(height: FacteurSpacing.space4),
                 _SectionLabel(label: 'GÉRER', colors: colors),
                 const SizedBox(height: 4),
+                // Story 22.3 — switch discret « Suggestions du facteur » : active
+                // ou non les sections « Choisie pour vous » de la Tournée.
+                const _SmartArrangementSwitch(),
                 ChoiceTile(
                   icon: Icons.rss_feed,
                   accent: colors.sectionVeille1,
@@ -1537,6 +1541,74 @@ class _SectionLabel extends StatelessWidget {
         const SizedBox(width: 6),
         Text('· $counter', style: labelStyle?.copyWith(letterSpacing: 0.2)),
       ],
+    );
+  }
+}
+
+/// Story 22.3 — switch discret « Suggestions du facteur » : active/désactive
+/// les sections « Choisie pour vous » de la Tournée (préférence serveur
+/// `tournee_smart_arrangement`, default-ON). Calqué sur [ChoiceTile].
+class _SmartArrangementSwitch extends ConsumerWidget {
+  const _SmartArrangementSwitch();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final state = ref.watch(tourneeSmartArrangementProvider);
+    final accent = colors.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withValues(alpha: 0.12),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+              color: accent,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Suggestions du facteur',
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Complète ta Tournée avec des thèmes et sources que tu suis.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch.adaptive(
+            value: state.enabled,
+            onChanged: state.isLoading
+                ? null
+                : (_) => ref
+                    .read(tourneeSmartArrangementProvider.notifier)
+                    .toggle(),
+          ),
+        ],
+      ),
     );
   }
 }
