@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/providers.dart';
 import '../../feed/models/content_model.dart';
+import '../models/flux_continu_models.dart';
 
 /// One entry of `GET /api/users/top-themes`.
 ///
@@ -16,17 +17,50 @@ class TopTheme {
   final double weight;
   final int articleCount;
 
+  /// Story 22.3 — discriminant de slot : `"theme"` (défaut, rétro-compat),
+  /// `"veille"` ou `"source"`. Pour `"source"`, [sourceId] est rempli et le
+  /// mobile route vers `/api/feed?source_id=` au lieu de `?theme=`.
+  final String kind;
+  final String? sourceId;
+
+  /// `"validated"` (défaut, rétro-compat) ou `"suggested"` (section
+  /// « Choisie pour vous »).
+  final String origin;
+
+  /// Ordre du jour calculé par le backend (validées d'abord, puis suggérées
+  /// best-first). Sert à ordonner les suggérées entre elles.
+  final int dailyRank;
+
+  /// Raison de transparence — non null seulement quand [origin] == suggested.
+  final SuggestionReason? reason;
+
   const TopTheme({
     required this.interestSlug,
     required this.weight,
     this.articleCount = 0,
+    this.kind = 'theme',
+    this.sourceId,
+    this.origin = 'validated',
+    this.dailyRank = 0,
+    this.reason,
   });
 
+  /// Raccourci : ce slot est une section « Choisie pour vous ».
+  bool get isSuggested => origin == 'suggested';
+
   factory TopTheme.fromJson(Map<String, dynamic> json) {
+    final rawReason = json['reason'];
     return TopTheme(
       interestSlug: (json['interest_slug'] as String?) ?? '',
       weight: (json['weight'] as num?)?.toDouble() ?? 0.0,
       articleCount: (json['article_count'] as num?)?.toInt() ?? 0,
+      kind: (json['kind'] as String?) ?? 'theme',
+      sourceId: json['source_id'] as String?,
+      origin: (json['origin'] as String?) ?? 'validated',
+      dailyRank: (json['daily_rank'] as num?)?.toInt() ?? 0,
+      reason: rawReason is Map<String, dynamic>
+          ? SuggestionReason.fromJson(rawReason)
+          : null,
     );
   }
 
@@ -34,6 +68,10 @@ class TopTheme {
     'interest_slug': interestSlug,
     'weight': weight,
     'article_count': articleCount,
+    'kind': kind,
+    'source_id': sourceId,
+    'origin': origin,
+    'daily_rank': dailyRank,
   };
 }
 

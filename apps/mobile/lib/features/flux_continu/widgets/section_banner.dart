@@ -51,6 +51,15 @@ class SectionBanner extends StatelessWidget {
   /// est câblé.
   final int hiddenCount;
 
+  /// Story 22.3 — quand true, le banner pose un badge « Choisie pour vous »
+  /// au-dessus du titre, tappable via [onTapInfo] (ouvre la sheet « Pourquoi
+  /// cette section ? »). Signale une section suggérée par le facteur.
+  final bool suggested;
+
+  /// Tap sur le badge « Choisie pour vous » → sheet explicative + actions
+  /// (garder / retirer). Null hors sections suggérées.
+  final VoidCallback? onTapInfo;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -63,6 +72,8 @@ class SectionBanner extends StatelessWidget {
     this.logoUrl,
     this.onTap,
     this.hiddenCount = 0,
+    this.suggested = false,
+    this.onTapInfo,
   });
 
   static final _titleStyleLarge = GoogleFonts.fraunces(
@@ -210,6 +221,10 @@ class SectionBanner extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (suggested) ...[
+                          _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                          const SizedBox(height: 8),
+                        ],
                         _AccentDash(accent: accent, large: large),
                         Padding(
                           padding: EdgeInsets.only(
@@ -367,6 +382,66 @@ class _SettingsButton extends StatelessWidget {
             semanticLabel: 'Réglages de ma veille',
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Story 22.3 — pastille « Choisie pour vous » posée au-dessus du titre d'une
+/// section suggérée. Tappable : ouvre la sheet « Pourquoi cette section ? ». Le
+/// « i » signale l'affordance d'explication (transparence totale, PO).
+class _SuggestedBadge extends StatelessWidget {
+  final Color accent;
+  final VoidCallback? onTap;
+
+  const _SuggestedBadge({required this.accent, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 7, 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.34), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+            size: 11,
+            color: accent,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'Choisie pour vous',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+              color: accent,
+            ),
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: 5),
+            Icon(
+              PhosphorIcons.info(PhosphorIconsStyle.bold),
+              size: 12,
+              color: accent.withValues(alpha: 0.85),
+            ),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) return badge;
+    return Semantics(
+      button: true,
+      label: 'Pourquoi cette section est proposée',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: badge,
       ),
     );
   }

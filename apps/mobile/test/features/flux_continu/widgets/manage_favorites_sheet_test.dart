@@ -5,6 +5,7 @@
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_smart_arrangement_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/manage_favorites_sheet.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
@@ -176,6 +177,9 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
         ),
         sereinToggleProvider.overrideWith(
           (ref) => _StubSereinToggleNotifier(ref, false),
+        ),
+        tourneeSmartArrangementProvider.overrideWith(
+          (ref) => TourneeSmartArrangementNotifier(ref),
         ),
       ],
       child: _wrap(
@@ -504,6 +508,9 @@ void main() {
           sereinToggleProvider.overrideWith(
             (ref) => _StubSereinToggleNotifier(ref, false),
           ),
+        tourneeSmartArrangementProvider.overrideWith(
+          (ref) => TourneeSmartArrangementNotifier(ref),
+        ),
         ],
         child: MaterialApp.router(
           theme: ThemeData(

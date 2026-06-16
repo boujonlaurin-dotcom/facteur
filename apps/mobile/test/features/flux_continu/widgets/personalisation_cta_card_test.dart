@@ -4,6 +4,7 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/nudges/nudge_ids.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/flux_continu/providers/personalisation_cta_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_smart_arrangement_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/personalisation_cta_card.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
 import 'package:facteur/features/grille/repositories/grille_repository.dart';
@@ -85,6 +86,9 @@ void main() {
           veilleActiveConfigProvider.overrideWith(() => _StubVeille()),
           grilleRepositoryProvider.overrideWithValue(_FakeGrilleRepository()),
           sereinToggleProvider.overrideWith((ref) => _StubSerein(ref)),
+          tourneeSmartArrangementProvider.overrideWith(
+            (ref) => TourneeSmartArrangementNotifier(ref),
+          ),
         ],
         child: MaterialApp(
           theme: ThemeData(

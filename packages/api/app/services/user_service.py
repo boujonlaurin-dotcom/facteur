@@ -44,6 +44,10 @@ ALLOWED_PREFERENCE_KEYS: frozenset[str] = frozenset(
         "independence_pref",
         "swipe_liked_count",
         "swipe_disliked_count",
+        # Story 22.3 — arrangement intelligent de la Tournée (« Choisie pour
+        # vous »). Absence = activé ; seul "false" désactive (default-ON sans
+        # migration). Toggle exposé dans « Composer ma Tournée ».
+        "tournee_smart_arrangement",
     }
 )
 
