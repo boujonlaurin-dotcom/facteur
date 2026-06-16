@@ -1,8 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Pas de recul",
+      "summary": "L'analyse de fond « Pas de recul » s'affiche désormais instantanément à l'ouverture d'un article, sans attente."
+    },
+    {
       "tag": "Corrections",
       "summary": "Saisie d'un sujet plus fluide à l'onboarding, fermeture évidente de la modal Favoris, et navigation des lettres de progression fiabilisée."
+    },
+    {
       "tag": "Grille",
       "summary": "Le mot du jour vient d'un vrai titre de l'actu, et on te montre où il se cachait."
     },
