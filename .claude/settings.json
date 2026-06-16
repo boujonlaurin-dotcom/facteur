@@ -19,7 +19,10 @@
       "Bash(git log *)",
       "Bash(git show *)",
       "Bash(git branch *)",
-      "Bash(git rev-parse *)"
+      "Bash(git rev-parse *)",
+      "Bash(npx playwright-cli *)",
+      "Bash(playwright-cli *)",
+      "Bash(npx -y skills *)"
     ]
   },
   "hooks": {
@@ -84,11 +87,6 @@
     ]
   },
   "mcpServers": {
-    "playwright": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["@playwright/mcp@latest"]
-    },
     "sentry": {
       "type": "stdio",
       "command": "python",
