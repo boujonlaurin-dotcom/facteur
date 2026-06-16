@@ -3,6 +3,10 @@
     {
       "tag": "Pas de recul",
       "summary": "L'analyse de fond « Pas de recul » s'affiche désormais instantanément à l'ouverture d'un article, sans attente."
+      "tag": "Tournée",
+      "summary": "Ta Tournée se complète chaque jour avec des sections « Choisie pour vous », à partir des thèmes et sources que tu suis. Un tap sur le badge explique le pourquoi ; tu peux garder ou retirer, et tout désactiver d'un switch."
+    },
+    {
       "tag": "Lecture",
       "summary": "Ouverture d'article instantanée depuis l'Essentiel : titre, image et source s'affichent tout de suite, sans écran blanc."
     },

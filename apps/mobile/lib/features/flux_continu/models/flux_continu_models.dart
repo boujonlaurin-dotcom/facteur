@@ -17,6 +17,59 @@ import '../../feed/models/content_model.dart';
 /// réutilisant le payload [FeedThemeSection] (champs `sourceId`/`sourceLogoUrl`).
 enum SectionKind { essentiel, bonnes, theme, veille, source }
 
+/// Origine d'une section de la Tournée du jour (Story 22.3).
+///
+/// `validated` = section **dédiée** (favori épinglé / source Essentiel /
+/// veille) — toujours rendue, jamais masquée par l'algo. `suggested` = section
+/// « Choisie pour vous » qui remplit un slot restant, issue d'un thème/source
+/// que l'utilisateur suit déjà mais n'a pas épinglé. Défaut `validated` →
+/// rétro-compat des payloads/sections qui ne portent pas le champ.
+enum SectionOrigin { validated, suggested }
+
+/// Une puce de transparence d'une suggestion (miroir de `ScoreContribution`
+/// côté backend, cf. `schemas/content.py`). Story 22.3.
+class SuggestionContribution {
+  final String label;
+  final double points;
+  final String? pillar;
+
+  const SuggestionContribution({
+    required this.label,
+    this.points = 0,
+    this.pillar,
+  });
+
+  factory SuggestionContribution.fromJson(Map<String, dynamic> json) {
+    return SuggestionContribution(
+      label: (json['label'] as String?) ?? '',
+      points: (json['points'] as num?)?.toDouble() ?? 0,
+      pillar: json['pillar'] as String?,
+    );
+  }
+}
+
+/// Raison « Pourquoi cette section ? » d'une suggestion (Story 22.3).
+///
+/// `label` = la contribution dominante (titre de la sheet) ; `breakdown` =
+/// 2-3 puces honnêtes construites côté backend depuis les seules composantes
+/// réellement présentes (préférence déclarée / lue + N articles + variété).
+class SuggestionReason {
+  final String label;
+  final List<SuggestionContribution> breakdown;
+
+  const SuggestionReason({required this.label, this.breakdown = const []});
+
+  factory SuggestionReason.fromJson(Map<String, dynamic> json) {
+    return SuggestionReason(
+      label: (json['label'] as String?) ?? '',
+      breakdown: ((json['breakdown'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(SuggestionContribution.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
 /// Stable identity for a section across rebuilds.
 ///
 /// Used as a key for per-section UI/dérivations (ordre tournée, dédup…) so
@@ -270,6 +323,13 @@ class FeedThemeSection extends FluxSection {
   /// the "Chargement…" label and ignore taps.
   final bool isLoadingMore;
 
+  /// Story 22.3 — origine de la section. `suggested` ⇒ section « Choisie pour
+  /// vous » (badge + « i » explicatif, dismiss/promotion). Défaut `validated`.
+  final SectionOrigin origin;
+
+  /// Raison de transparence (non null seulement quand [origin] est `suggested`).
+  final SuggestionReason? reason;
+
   /// Section source : true quand la source n'a aucun article récent (≤72h) et
   /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
   final bool noRecentSource;
@@ -287,6 +347,8 @@ class FeedThemeSection extends FluxSection {
     this.currentPage = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.origin = SectionOrigin.validated,
+    this.reason,
     this.noRecentSource = false,
     super.blurb,
     super.illustrationAsset,
@@ -294,6 +356,9 @@ class FeedThemeSection extends FluxSection {
 
   @override
   int get totalCount => items.length;
+
+  /// Raccourci : la section est une suggestion « Choisie pour vous ».
+  bool get isSuggested => origin == SectionOrigin.suggested;
 
   FeedThemeSection copyWith({
     List<Content>? items,
@@ -320,6 +385,11 @@ class FeedThemeSection extends FluxSection {
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      // Story 22.3 — origin/reason doivent survivre au dédup/filtre/loadMore
+      // (même piège que coreVisibleCount ci-dessus) : un copyWith qui les
+      // perdrait retirerait le badge « Choisie pour vous » au 1ᵉʳ recompose.
+      origin: origin,
+      reason: reason,
       noRecentSource: noRecentSource ?? this.noRecentSource,
       blurb: blurb,
       illustrationAsset: illustrationAsset,

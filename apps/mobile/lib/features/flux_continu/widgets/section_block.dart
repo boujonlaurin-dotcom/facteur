@@ -58,6 +58,11 @@ class SectionBlock extends StatelessWidget {
   /// (spécifique veille). Câblé uniquement pour les sections thème.
   final VoidCallback? onAddSources;
 
+  /// Story 22.3 — tap sur le badge « Choisie pour vous » d'une section
+  /// suggérée → ouvre la sheet « Pourquoi cette section ? ». Câblé uniquement
+  /// pour les sections `origin == suggested` (cf. flux_continu_screen).
+  final VoidCallback? onTapSuggestionInfo;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -76,6 +81,7 @@ class SectionBlock extends StatelessWidget {
     this.onTapSettings,
     this.onAddSources,
     this.onSeeAll,
+    this.onTapSuggestionInfo,
   });
 
   @override
@@ -129,6 +135,9 @@ class SectionBlock extends StatelessWidget {
           onTapSettings: onTapSettings,
           onTap: onSeeAll,
           hiddenCount: hiddenCount,
+          // Story 22.3 — badge « Choisie pour vous » sur les sections suggérées.
+          suggested: section is FeedThemeSection && section.isSuggested,
+          onTapInfo: onTapSuggestionInfo,
         ),
         ...cards,
         const SizedBox(height: 16),
