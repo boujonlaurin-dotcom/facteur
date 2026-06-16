@@ -343,7 +343,10 @@ async def test_get_essentiel_401_without_token():
 
 @pytest.mark.asyncio
 async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
-    topics = [_make_topic(rank=1, label="Tech", n_articles=5)]
+    # ≥3 sujets distincts → ≥3 articles, au-dessus du plancher ESSENTIEL_MIN_ARTICLES.
+    topics = [
+        _make_topic(rank=i + 1, label=f"T{i + 1}", n_articles=2) for i in range(3)
+    ]
     digest = _make_digest(topics, is_stale=True)
 
     with (
@@ -852,6 +855,17 @@ async def test_get_essentiel_uses_user_context_from_router(auth_override: UUID):
             perspective_count=2,
             articles=[_make_article(rank=1, title="C-1", source=followed_source)],
         ),
+        # 3e sujet pour franchir le plancher ESSENTIEL_MIN_ARTICLES (=3) sans
+        # déclencher la complétion 202 ; n'affecte pas le rang du suivi.
+        DigestTopic(
+            topic_id="t3",
+            label="Économie",
+            rank=3,
+            reason="Test",
+            theme="economy",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="E-1", source=other_source)],
+        ),
     ]
     digest = _make_digest(topics)
 
@@ -889,7 +903,12 @@ async def test_get_essentiel_serein_user_fetches_serein_digest(
     auth_override: UUID,
 ):
     """serein_enabled=True propagates is_serene=True to read_digest_or_fallback."""
-    topics = [_make_topic(rank=1, label="Tech", n_articles=3)]
+    # 3 sujets aux titres distincts → 3 articles (au-dessus du plancher), pas 202.
+    topics = [
+        _make_topic(rank=1, label="Politique", theme="politique", n_articles=1),
+        _make_topic(rank=2, label="Sciences", theme="sciences", n_articles=1),
+        _make_topic(rank=3, label="Cuisine", theme="cuisine", n_articles=1),
+    ]
     digest = _make_digest(topics)
 
     with (
