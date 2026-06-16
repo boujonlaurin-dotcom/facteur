@@ -957,8 +957,10 @@ def _deep_row_to_dict(matched_content: Content, match_reason: str | None) -> dic
     """
     source = getattr(matched_content, "source", None)
     ctype = getattr(matched_content, "content_type", None)
-    ctype_str = ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else "article")
-    published_at = getattr(matched_content, "published_at", None)
+    ctype_str = (
+        ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else "article")
+    )
+    published_at = getattr(matched, "published_at", None)
     return {
         "content_id": str(matched_content.id),
         "title": matched_content.title,

@@ -90,6 +90,13 @@ class ScoringWeights:
     # accessible.
     THEMATIC_HARD_FLOOR = 5
 
+    # Repli « pas d'article récent » pour les sections **source** : si aucune
+    # source n'a publié dans la fenêtre adaptative (≤72h), on élargit jusqu'à
+    # 30 j (720h) pour afficher des articles plus anciens plutôt qu'un
+    # empty-state. Le client est notifié via `no_recent_source` (banner =
+    # « Pas d'article récent. »).
+    SOURCE_STALE_FALLBACK_HOURS = 720  # 30 j — repli « pas d'article récent » (source)
+
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
 
     # Bonus léger pour les sources qualitatives (curées par Facteur).

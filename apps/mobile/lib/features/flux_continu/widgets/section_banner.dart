@@ -65,6 +65,30 @@ class SectionBanner extends StatelessWidget {
     this.hiddenCount = 0,
   });
 
+  static final _titleStyleLarge = GoogleFonts.fraunces(
+    fontSize: 24,
+    fontWeight: FontWeight.w700,
+    height: 1.12,
+    letterSpacing: -0.4,
+  );
+
+  static final _titleStyleInline = GoogleFonts.fraunces(
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
+    height: 1.08,
+    letterSpacing: -0.4,
+  );
+
+  static final _blurbStyleLarge = GoogleFonts.dmSans(
+    fontSize: 13,
+    height: 1.42,
+  );
+
+  static final _blurbStyleInline = GoogleFonts.dmSans(
+    fontSize: 12,
+    height: 1.36,
+  );
+
   double _trailingControlReserve() {
     if (onTapSettings != null) return 58;
     return 0;
@@ -101,13 +125,13 @@ class SectionBanner extends StatelessWidget {
     final borderRadius = large ? largeRadius : inlineRadius;
     final container = Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(0, 3, 0, 5),
+      margin: const EdgeInsets.fromLTRB(0, 2, 0, 4),
       // Thematic sections have no blurb — a single title line doesn't need
       // the taller editorial floor, so we drop it to keep the scroll tight.
       // The `large` page-hero variant gets a taller floor to breathe, while
       // content can still grow naturally when title/blurb wrap.
       constraints: BoxConstraints(
-        minHeight: hasBlurb ? (large ? 140 : 92) : 60,
+        minHeight: hasBlurb ? (large ? 116 : 76) : 48,
       ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -165,12 +189,12 @@ class SectionBanner extends StatelessWidget {
             // down. Add a few px of top inset on the blurb variant to match
             // the thematic dash's apparent inset.
             padding: large
-                ? const EdgeInsets.fromLTRB(22, 24, 16, 20)
+                ? const EdgeInsets.fromLTRB(18, 18, 14, 16)
                 : EdgeInsets.fromLTRB(
-                    20,
-                    hasBlurb ? 20 : 8,
-                    14,
-                    hasBlurb ? 14 : 9,
+                    16,
+                    hasBlurb ? 14 : 6,
+                    12,
+                    hasBlurb ? 11 : 7,
                   ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -200,11 +224,19 @@ class SectionBanner extends StatelessWidget {
                                   const TextSpan(text: ' '),
                                   WidgetSpan(
                                     alignment: PlaceholderAlignment.middle,
-                                    child: IgnorePointer(
+                                    child: Transform.translate(
+                                      offset: const Offset(0, 1),
+                                      // Caret calibré sur la nouvelle police de
+                                      // titre (17, post-compaction) et noir
+                                      // (textPrimary) plutôt que gris. La
+                                      // « middle » du glyphe Phosphor tombe ~1px
+                                      // haut sur la cap-height Fraunces → léger
+                                      // nudge bas pour le recentrer optiquement.
                                       child: Icon(
-                                        PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                                        size: 18,
-                                        color: colors.textTertiary,
+                                        PhosphorIcons.caretRight(
+                                            PhosphorIconsStyle.bold),
+                                        size: 16,
+                                        color: colors.textPrimary,
                                       ),
                                     ),
                                   ),
@@ -220,24 +252,16 @@ class SectionBanner extends StatelessWidget {
                                   ),
                                 ],
                               ],
-                              style: GoogleFonts.fraunces(
-                                fontSize: large ? 28 : 20,
-                                fontWeight: FontWeight.w700,
-                                height: large ? 1.12 : 1.08,
-                                letterSpacing: -0.4,
-                                color: colors.textPrimary,
-                              ),
+                              style: (large ? _titleStyleLarge : _titleStyleInline)
+                                  .copyWith(color: colors.textPrimary),
                             ),
                           ),
                         ),
                         if (hasBlurb)
                           Text(
                             effectiveBlurb,
-                            style: GoogleFonts.dmSans(
-                              fontSize: large ? 14 : 12,
-                              height: large ? 1.42 : 1.36,
-                              color: colors.textSecondary,
-                            ),
+                            style: (large ? _blurbStyleLarge : _blurbStyleInline)
+                                .copyWith(color: colors.textSecondary),
                           ),
                       ],
                     ),
@@ -358,9 +382,9 @@ class _AccentDash extends StatelessWidget {
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: Container(
-        width: large ? 34 : 28,
+        width: large ? 28 : 22,
         height: 3,
-        margin: const EdgeInsets.only(bottom: 7),
+        margin: const EdgeInsets.only(bottom: 5),
         decoration: BoxDecoration(
           color: accent.withValues(alpha: 0.78),
           borderRadius: BorderRadius.circular(999),

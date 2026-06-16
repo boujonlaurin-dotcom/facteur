@@ -194,6 +194,9 @@ class RecommendationService:
             dict
         ] = []  # Populated by topic regroupement (Phase 2)
         self.total_candidates: int = 0  # Total candidate pool size (pre-filtering)
+        # Section source : True quand aucun article récent (≤72h) n'existe et que
+        # le feed a dû reculer jusqu'à 30 j (repli « Pas d'article récent. »).
+        self.source_no_recent_source: bool = False
         self.keyword_overflow: list[dict] = []  # Populated by keyword regroupement
         self.entity_overflow: list[dict] = []  # Populated by entity regroupement
         self.carousels: list[dict] = []  # Populated by _build_carousels()
@@ -2823,6 +2826,31 @@ class RecommendationService:
                 candidates=len(candidates_list),
                 threshold=ScoringWeights.THEMATIC_MIN_POOL_SIZE,
             )
+
+            # Repli « pas d'article récent » pour les sections **source** : si la
+            # source suivie n'a rien publié dans la fenêtre adaptative (≤72h), on
+            # recule jusqu'à 30 j plutôt que de tomber sur un empty-state. Gardé
+            # strictement sur `source_id` (donc hors sections thème) ; `query`
+            # porte déjà `Content.source_id == source_id` + mutes/paywall/langue,
+            # le repli reste cadré à la source. N'entre pas dans le backfill curé
+            # (réservé `_use_two_phase`) → aucune régression thème.
+            if source_id is not None and len(candidates_list) == 0:
+                since_stale = now_window - datetime.timedelta(
+                    hours=ScoringWeights.SOURCE_STALE_FALLBACK_HOURS
+                )
+                stale_list = await _fetch_candidates(
+                    query.where(Content.published_at >= since_stale)
+                )
+                if stale_list:
+                    candidates_list = stale_list
+                    self.source_no_recent_source = True
+                    logger.info(
+                        "feed_source_stale_fallback",
+                        user_id=str(user_id),
+                        source_id=str(source_id),
+                        window=ScoringWeights.SOURCE_STALE_FALLBACK_HOURS,
+                        candidates=len(candidates_list),
+                    )
 
             # Backfill curé NON-suivi : quand l'utilisateur suit ≥1 source
             # (_use_two_phase) mais que le pool suivi reste sous le plancher

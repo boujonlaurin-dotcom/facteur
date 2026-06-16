@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
+import '../../detail/content_preview_mapper.dart';
 import '../../digest/models/digest_models.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -65,6 +66,7 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
   Future<void> _openArticle(BuildContext context, DigestItem article) async {
     await context.push(
       '${RoutePaths.fluxContinu}/content/${article.contentId}',
+      extra: article.toPreviewContent(),
     );
     if (mounted) setState(() {});
   }

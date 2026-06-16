@@ -3,6 +3,12 @@
     {
       "tag": "Pas de recul",
       "summary": "L'analyse de fond « Pas de recul » s'affiche désormais instantanément à l'ouverture d'un article, sans attente."
+      "tag": "Lecture",
+      "summary": "Ouverture d'article instantanée depuis l'Essentiel : titre, image et source s'affichent tout de suite, sans écran blanc."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Sections plus aérées et plus d'articles à l'écran : une source sans actu récente affiche désormais ses articles plus anciens plutôt qu'un vide."
     },
     {
       "tag": "Sources",

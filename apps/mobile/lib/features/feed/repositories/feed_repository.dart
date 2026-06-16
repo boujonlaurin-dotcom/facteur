@@ -668,10 +668,15 @@ class FeedRepository {
       itemsCount: itemsList.length,
     );
 
+    final noRecentSource = data is Map<String, dynamic>
+        ? (data['no_recent_source'] as bool?) ?? false
+        : false;
+
     return FeedResponse(
       items: itemsList,
       pagination: pagination,
       carousels: carousels,
+      noRecentSource: noRecentSource,
     );
   }
 
