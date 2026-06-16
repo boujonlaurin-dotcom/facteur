@@ -29,6 +29,7 @@ beautifulsoup4==4.12.3
 
 # Scheduling
 apscheduler==3.10.4
+tzlocal==5.2
 firebase-admin>=6.5.0,<7
 
 # Logging

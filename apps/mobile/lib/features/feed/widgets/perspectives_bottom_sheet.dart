@@ -13,6 +13,7 @@ import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/web/web_perf.dart';
 import '../../../widgets/design/facteur_card.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../digest/widgets/markdown_text.dart';
 import '../../digest/widgets/section_divider.dart';
@@ -442,14 +443,15 @@ class _PerspectivesBottomSheetState
                             ),
                             const SizedBox(height: 4),
                           ],
-                          const SizedBox(height: 12),
-                          Text(
-                            kHighlightIntroText,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colors.textSecondary,
-                              height: 1.4,
-                            ),
-                          ),
+                          // DÉSACTIVÉ (T1) : surlignage retiré.
+                          // const SizedBox(height: 12),
+                          // Text(
+                          //   kHighlightIntroText,
+                          //   style: textTheme.bodySmall?.copyWith(
+                          //     color: colors.textSecondary,
+                          //     height: 1.4,
+                          //   ),
+                          // ),
                           const SizedBox(height: 16),
                           PerspectivesBiasBar(
                             colors: colors,
@@ -805,12 +807,14 @@ class _PerspectiveCard extends ConsumerWidget {
                     if (perspective.sourceDomain.isNotEmpty) ...[
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
+                        // Web : proxy backend (CORS) via FacteurImage, sinon le
+                        // canvas CanvasKit taint sur l'URL google directe.
+                        child: FacteurImage(
+                          imageUrl:
+                              'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
                           width: 14,
                           height: 14,
-                          errorBuilder: (_, __, ___) =>
-                              _buildSourcePlaceholder(colors),
+                          errorWidget: (_) => _buildSourcePlaceholder(colors),
                         ),
                       ),
                     ] else
@@ -1353,6 +1357,11 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
 
   final PerspectivesSectionStatus status;
 
+  /// Vrai si le backend a déjà renvoyé des résultats partiels et que la
+  /// recherche Google est encore en cours (refetch planifié). Affiche un
+  /// indicateur discret dans le header quand le carousel est déjà visible.
+  final bool partial;
+
   const PerspectivesInlineSection({
     super.key,
     this.perspectives = const [],
@@ -1366,6 +1375,7 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.firstCardKey,
     this.onOpenAnalysis,
     this.status = PerspectivesSectionStatus.ready,
+    this.partial = false,
   });
 
   @override
@@ -1467,6 +1477,13 @@ class _PerspectivesInlineSectionState
   // les setState parents.
   int _animationGeneration = 0;
 
+  // Perspectives affichées localement : mises à jour immédiatement au premier
+  // passage en `ready`, puis via un fade-through quand le refetch partiel
+  // ramène des résultats supplémentaires (partial true → false).
+  List<Perspective> _displayedPerspectives = const [];
+  double _carouselFade = 1.0;
+  bool _refreshing = false;
+
   // Carte 192 + padding vertical (15 haut + 16 bas). La hauteur fixe borne les
   // cartes médias et CTA au même gabarit.
   static const double _kCarouselCardHeight = 192;
@@ -1476,6 +1493,7 @@ class _PerspectivesInlineSectionState
   @override
   void initState() {
     super.initState();
+    _displayedPerspectives = widget.perspectives;
     _syncEmptyDismissal();
   }
 
@@ -1487,9 +1505,33 @@ class _PerspectivesInlineSectionState
       if (widget.status == PerspectivesSectionStatus.ready &&
           oldWidget.status != PerspectivesSectionStatus.ready) {
         _animationGeneration++;
+        _displayedPerspectives = widget.perspectives;
       }
       _syncEmptyDismissal();
+      return;
     }
+    // Déjà en ready : refetch partiel terminé → plus de cartes disponibles.
+    // Fade-through discret : efface le carrousel, swap les données, réapparaît.
+    if (widget.status == PerspectivesSectionStatus.ready &&
+        widget.perspectives.length > _displayedPerspectives.length) {
+      _smoothRefresh(widget.perspectives);
+    } else {
+      _displayedPerspectives = widget.perspectives;
+    }
+  }
+
+  void _smoothRefresh(List<Perspective> incoming) {
+    if (_refreshing) return;
+    _refreshing = true;
+    setState(() => _carouselFade = 0.0);
+    Future.delayed(const Duration(milliseconds: 180), () {
+      if (!mounted) return;
+      setState(() {
+        _displayedPerspectives = incoming;
+        _carouselFade = 1.0;
+        _refreshing = false;
+      });
+    });
   }
 
   @override
@@ -1530,7 +1572,7 @@ class _PerspectivesInlineSectionState
   static const _groupOrder = ['gauche', 'centre', 'droite'];
 
   List<Perspective> get _sortedPerspectives {
-    final sorted = [...widget.perspectives];
+    final sorted = [..._displayedPerspectives];
     sorted.sort(
       (a, b) => _groupOrder
           .indexOf(a.biasGroup)
@@ -1551,7 +1593,7 @@ class _PerspectivesInlineSectionState
     final shouldShowBand = !isEmpty || _emptyStage != _EmptyStage.collapsed;
     final label = (isLoading || isEmpty)
         ? 'Couverture médiatique'
-        : 'Couverture médiatique (${widget.perspectives.length})';
+        : 'Couverture médiatique (${_displayedPerspectives.length})';
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
@@ -1581,10 +1623,19 @@ class _PerspectivesInlineSectionState
                   children: [
                     _buildHeader(colors, textTheme, label, isLoading, isEmpty),
                     if (isReady) ...[
-                      _buildCarousel(variants),
-                      // Libellé de polarisation déplacé SOUS le carrousel
-                      // (le header ne porte plus que le titre + la barre).
-                      _buildBandFooter(colors, textTheme),
+                      AnimatedOpacity(
+                        opacity: _carouselFade,
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        child: Column(
+                          children: [
+                            _buildCarousel(variants),
+                            // Libellé de polarisation déplacé SOUS le carrousel
+                            // (le header ne porte plus que le titre + la barre).
+                            _buildBandFooter(colors, textTheme),
+                          ],
+                        ),
+                      ),
                     ] else if (isLoading) ...[
                       // Squelette plein-format : la bande garde la stature de
                       // l'état prêt (sinon un mince filet « ressemble à un bug »).
@@ -1697,6 +1748,21 @@ class _PerspectivesInlineSectionState
               ],
             ],
           ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: (!isLoading && !isEmpty && widget.partial)
+                ? Padding(
+                    key: const ValueKey('partial-label'),
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Recherche en cours…',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('no-partial')),
+          ),
         ],
       ),
     );
@@ -1748,7 +1814,7 @@ class _PerspectivesInlineSectionState
             if (variants.isNotEmpty) const SizedBox(width: 13),
             _AnalysisCtaCard(
               onTap: widget.onOpenAnalysis,
-              count: widget.perspectives.length,
+              count: _displayedPerspectives.length,
             ),
           ],
         ),
@@ -1881,37 +1947,38 @@ class _PerspectivesInlineSectionState
                 height: 1.45,
               ),
             ),
-            const SizedBox(height: 18),
-            Divider(
-              color: colors.textSecondary.withValues(alpha: 0.1),
-              height: 1,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(
-                  PhosphorIcons.highlighter(PhosphorIconsStyle.regular),
-                  size: 18,
-                  color: colors.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Surlignage',
-                  style: textTheme.titleSmall?.copyWith(
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              kHighlightIntroText,
-              style: textTheme.bodyMedium?.copyWith(
-                color: colors.textSecondary,
-                height: 1.45,
-              ),
-            ),
+            // DÉSACTIVÉ (T1) : surlignage retiré.
+            // const SizedBox(height: 18),
+            // Divider(
+            //   color: colors.textSecondary.withValues(alpha: 0.1),
+            //   height: 1,
+            // ),
+            // const SizedBox(height: 16),
+            // Row(
+            //   children: [
+            //     Icon(
+            //       PhosphorIcons.highlighter(PhosphorIconsStyle.regular),
+            //       size: 18,
+            //       color: colors.primary,
+            //     ),
+            //     const SizedBox(width: 8),
+            //     Text(
+            //       'Surlignage',
+            //       style: textTheme.titleSmall?.copyWith(
+            //         color: colors.textPrimary,
+            //         fontWeight: FontWeight.w700,
+            //       ),
+            //     ),
+            //   ],
+            // ),
+            // const SizedBox(height: 10),
+            // Text(
+            //   kHighlightIntroText,
+            //   style: textTheme.bodyMedium?.copyWith(
+            //     color: colors.textSecondary,
+            //     height: 1.45,
+            //   ),
+            // ),
           ],
         ),
       ),

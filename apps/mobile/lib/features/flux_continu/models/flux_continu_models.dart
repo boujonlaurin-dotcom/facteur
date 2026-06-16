@@ -270,6 +270,10 @@ class FeedThemeSection extends FluxSection {
   /// the "Chargement…" label and ignore taps.
   final bool isLoadingMore;
 
+  /// Section source : true quand la source n'a aucun article récent (≤72h) et
+  /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
+  final bool noRecentSource;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -283,6 +287,7 @@ class FeedThemeSection extends FluxSection {
     this.currentPage = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.noRecentSource = false,
     super.blurb,
     super.illustrationAsset,
   });
@@ -300,6 +305,7 @@ class FeedThemeSection extends FluxSection {
     // `loadMoreTheme` (qui recopient via copyWith) réinitialiseraient le compte
     // au défaut à chaque recompose — le piège le plus facile à introduire.
     int? coreVisibleCount,
+    bool? noRecentSource,
   }) {
     return FeedThemeSection(
       kind: kind,
@@ -314,6 +320,7 @@ class FeedThemeSection extends FluxSection {
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      noRecentSource: noRecentSource ?? this.noRecentSource,
       blurb: blurb,
       illustrationAsset: illustrationAsset,
     );

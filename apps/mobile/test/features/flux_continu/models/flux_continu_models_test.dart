@@ -169,6 +169,28 @@ void main() {
       expect(themeSection(itemCount: 5, core: 2).totalCount, 5);
     });
 
+    test('FeedThemeSection: noRecentSource defaults to false', () {
+      expect(themeSection().noRecentSource, isFalse);
+    });
+
+    test('FeedThemeSection: copyWith preserves noRecentSource', () {
+      // Piège connu (cf. coreVisibleCount) : un champ oublié dans copyWith
+      // disparaîtrait au 1er recompose. Ici on vérifie qu'il survit quand on
+      // ne le redéfinit pas.
+      final src = FeedThemeSection(
+        kind: SectionKind.source,
+        label: 'Le Monde',
+        accent: const Color(0xFF2C3E50),
+        coreVisibleCount: 3,
+        sourceId: 's1',
+        items: const <Content>[],
+        noRecentSource: true,
+      );
+      final copy = src.copyWith(isLoadingMore: true);
+      expect(copy.noRecentSource, isTrue);
+      expect(src.copyWith(noRecentSource: false).noRecentSource, isFalse);
+    });
+
     test('blurb is optional and defaults to null', () {
       expect(digestSection(topicCount: 2, core: 2).blurb, isNull);
       expect(themeSection(itemCount: 2, core: 2).blurb, isNull);

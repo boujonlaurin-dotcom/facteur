@@ -5,7 +5,7 @@ import 'package:facteur/features/settings/models/display_mode_spec.dart';
 void main() {
   group('fitVisibleCount', () {
     // Section chrome = banner + footer. With the no-blurb banner that is
-    // 68 + 16 = 84 px of fixed chrome, then each card is 146 px.
+    // 54 + 16 = 70 px of fixed chrome, then each card is 146 px.
     const banner = kBannerHeightNoBlurb;
     const footer = kSectionFooterHeight;
     final card = estimateRegularCardHeight();
@@ -25,7 +25,7 @@ void main() {
     });
 
     test('a mid screen drops to 2', () {
-      // 84 + 2·146 = 376 fits, 84 + 3·146 = 522 does not.
+      // 70 + 2·146 = 362 fits, 70 + 3·146 = 508 does not.
       expect(fit(500), 2);
     });
 
@@ -49,10 +49,10 @@ void main() {
     });
 
     test('a blurb banner reserves more chrome, so it can fit fewer cards', () {
-      // Same usable height, the with-blurb banner (100) leaves 32 px less.
-      // Pick a height where the extra 32 px tips 3 → 2.
-      // no-blurb: 84 + 3·146 = 522 ; with-blurb: 116 + 3·146 = 554.
-      const usable = 540.0;
+      // Same usable height, the with-blurb banner (82) leaves 28 px less.
+      // Pick a height where the extra 28 px tips 3 → 2.
+      // no-blurb: 70 + 3·146 = 508 ; with-blurb: 98 + 3·146 = 536.
+      const usable = 520.0;
       final noBlurb = fitVisibleCount(
         usableHeight: usable,
         bannerHeight: kBannerHeightNoBlurb,
@@ -165,7 +165,7 @@ void main() {
     test(
         'minimal : le fit MONTE jusqu\'au plafond 6 selon le viewport '
         '(cible 4-6)', () {
-      // Chrome 84 + N·126 : 4 cartes = 588, 5 = 714, 6 = 840.
+      // Chrome 70 + N·126 : 4 cartes = 574, 5 = 700, 6 = 826.
       expect(fitForMode(DisplayModeSpec.minimal, 600), 4);
       expect(fitForMode(DisplayModeSpec.minimal, 720), 5);
       // Écran géant : plafonné à 6 (et non 7+).
@@ -178,7 +178,7 @@ void main() {
 
     test('normal : grandit jusqu\'à 4 quand l\'écran le permet (cible 3-4)',
         () {
-      // Chrome 84 + N·146 : 3 = 522, 4 = 668.
+      // Chrome 70 + N·146 : 3 = 508, 4 = 654.
       expect(fitForMode(DisplayModeSpec.normal, 600), 3);
       expect(fitForMode(DisplayModeSpec.normal, 700), 4);
       // Plafonné à 4 même sur écran géant.
@@ -186,7 +186,7 @@ void main() {
     });
 
     test('ludique : 2-3 cartes selon le viewport, plafonné à 3', () {
-      // Chrome 84 + N·272 : 2 = 628, 3 = 900.
+      // Chrome 70 + N·272 : 2 = 614, 3 = 886.
       expect(fitForMode(DisplayModeSpec.playful, 640), 2);
       expect(fitForMode(DisplayModeSpec.playful, 920), 3);
       // Plafonné à 3 même sur écran géant.

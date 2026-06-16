@@ -90,6 +90,7 @@ FeedThemeSection _themeSection({
 FeedThemeSection _sourceSection({
   int items = 3,
   String? logoUrl = 'https://logo.test/x.png',
+  bool noRecentSource = false,
 }) {
   return FeedThemeSection(
     kind: SectionKind.source,
@@ -100,6 +101,7 @@ FeedThemeSection _sourceSection({
     sourceLogoUrl: logoUrl,
     items: List.generate(items, (i) => _content('c$i')),
     hasMore: false,
+    noRecentSource: noRecentSource,
   );
 }
 
@@ -146,6 +148,41 @@ void main() {
       expect(find.byType(FluxContinuArticleCard), findsNothing);
       expect(find.text('Voir toute la curation'), findsOneWidget);
       expect(find.byType(SourceLogoAvatar), findsOneWidget);
+    });
+
+    testWidgets(
+        'source noRecentSource + articles anciens : note « Pas d\'article '
+        'récent. » dans le banner + cartes', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 3, noRecentSource: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Les cartes anciennes sont rendues (pas d'empty-state)…
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
+      expect(find.text('Voir toute la curation'), findsNothing);
+      // …et le banner signale l'absence d'article récent.
+      expect(find.text('Pas d\'article récent.'), findsOneWidget);
+    });
+
+    testWidgets(
+        'source noRecentSource mais SANS article : empty-state, pas la note',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 0, noRecentSource: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Aucun article même ancien → empty-state, et la note ne s'affiche pas.
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(find.text('Voir toute la curation'), findsOneWidget);
+      expect(find.text('Pas d\'article récent.'), findsNothing);
     });
   });
 

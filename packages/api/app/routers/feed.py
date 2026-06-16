@@ -396,6 +396,7 @@ async def _compute_feed(
         keyword_overflow=keyword_overflow_data,
         entity_overflow=entity_overflow_data,
         carousels=carousels_data,
+        no_recent_source=service.source_no_recent_source,
     )
 
 
