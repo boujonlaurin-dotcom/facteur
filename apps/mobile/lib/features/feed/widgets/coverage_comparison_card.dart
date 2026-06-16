@@ -5,6 +5,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_card.dart';
+import '../../../widgets/design/facteur_image.dart';
 import 'diff_title.dart';
 import 'perspectives_bottom_sheet.dart' show Perspective, openPerspectiveReader;
 
@@ -203,11 +204,13 @@ class _SourcePastille extends StatelessWidget {
     }
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
-      child: Image.network(
-        'https://www.google.com/s2/favicons?domain=$domain&sz=64',
+      // Sur web, FacteurImage route via le proxy backend (CORS) — l'URL google
+      // directe tainte le canvas CanvasKit (cf. facteur_image.dart).
+      child: FacteurImage(
+        imageUrl: 'https://www.google.com/s2/favicons?domain=$domain&sz=64',
         width: 20,
         height: 20,
-        errorBuilder: (_, __, ___) => _SourceFallback(name: name, colors: colors),
+        errorWidget: (_) => _SourceFallback(name: name, colors: colors),
       ),
     );
   }

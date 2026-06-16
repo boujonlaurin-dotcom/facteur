@@ -13,6 +13,7 @@ import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/web/web_perf.dart';
 import '../../../widgets/design/facteur_card.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../digest/widgets/markdown_text.dart';
 import '../../digest/widgets/section_divider.dart';
@@ -805,12 +806,14 @@ class _PerspectiveCard extends ConsumerWidget {
                     if (perspective.sourceDomain.isNotEmpty) ...[
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
+                        // Web : proxy backend (CORS) via FacteurImage, sinon le
+                        // canvas CanvasKit taint sur l'URL google directe.
+                        child: FacteurImage(
+                          imageUrl:
+                              'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
                           width: 14,
                           height: 14,
-                          errorBuilder: (_, __, ___) =>
-                              _buildSourcePlaceholder(colors),
+                          errorWidget: (_) => _buildSourcePlaceholder(colors),
                         ),
                       ),
                     ] else

@@ -50,10 +50,11 @@ Après le GO utilisateur, implémente et teste en autonomie :
 
 1. **Code** : implémente atomiquement, MAJ story (tasks ✓, fichiers modifiés)
 2. **Tests unitaires** : les hooks `post-edit-auto-test.sh` lancent automatiquement les tests liés à chaque fichier modifié. Corrige les échecs immédiatement.
-3. **Tests E2E / UI** : utilise le **Playwright MCP** pour tester les flux visuels :
+3. **Tests E2E / UI** : utilise le **Playwright Agent CLI** (`playwright-cli`, skills `facteur-qa-web` + `playwright-cli`) pour tester les flux visuels sur le build web :
    - Démarre l'API locale si besoin (`uvicorn app.main:app --port 8080`)
    - Navigue dans l'app, remplit les formulaires, vérifie les réponses
    - Valide les cas nominaux + cas limites
+   - ⚠️ Flutter web = canvas : active la sémantique au boot (cf. skill `facteur-qa-web`) avant tout `snapshot`
 4. **Suite complète** : lance la suite de tests complète (`pytest -v` backend, `flutter test` mobile) et corrige tout échec
 5. Le hook `stop-verify-tests.sh` vérifie automatiquement que les tests passent avant de terminer — si un test échoue, l'agent doit corriger avant de pouvoir conclure
 
@@ -93,11 +94,15 @@ Si ta PR dépasse **400 lignes de diff** OU si elle livre un changement user-vis
 
 L'agent peut **by-passer la règle des 400 lignes** si elle ne reflète pas l'impact réel (gros refactor invisible / petit fix UX très visible). Le script `scripts/promote_changelog.py --version X.Y.Z` déplace `unreleased` → `released` au moment du bump de version.
 
-## MCP Servers
+## Outillage UI/E2E & MCP Servers
 
-| Serveur | Usage |
+**Tests UI/E2E** : **Playwright Agent CLI** (`playwright-cli`, épinglé dans `package.json`).
+Skills : `.claude/skills/facteur-qa-web/` (spécificités Facteur) + `.claude/skills/playwright-cli/`
+(syntaxe). Pilote le build web Flutter ; voir aussi `/validate-feature`. (Le MCP `@playwright/mcp`
+a été retiré au profit du CLI.)
+
+| Serveur MCP | Usage |
 |---------|-------|
-| **Playwright** | Tests UI/E2E autonomes (navigation, formulaires, assertions visuelles) |
 | Sentry | Monitoring erreurs production |
 | Railway | Déploiement et logs |
 | Supabase | Accès DB et Auth |
@@ -139,7 +144,7 @@ Le hook `SessionStart` lance un healthcheck `--fast` au démarrage. Scanne les l
 ```bash
 bash scripts/healthcheck-agent-secrets.sh
 ```
-## 🧪 Validation Feature via Chrome (Agent QA)
+## 🧪 Validation Feature web via Playwright Agent CLI (Agent QA)
 
 Après la phase VERIFY de l'agent dev et la validation du PO (Laurin), une étape de **validation web automatisée** peut être déclenchée pour les features touchant l'UI.
 
@@ -148,10 +153,10 @@ Après la phase VERIFY de l'agent dev et la validation du PO (Laurin), une étap
 1. **L'agent dev** complète sa feature et écrit un QA Handoff dans `.context/qa-handoff.md` en suivant le template `.context/qa-handoff-template.md`. Ce handoff décrit les écrans impactés, les scénarios de test (happy path + edge cases), et les critères d'acceptation.
 
 2. **L'agent dev STOP** et notifie :
-   "Feature prête pour validation QA web — handoff dans .context/qa-handoff.md. Lancer /validate-feature pour tester via Chrome."
+   "Feature prête pour validation QA web — handoff dans .context/qa-handoff.md. Lancer /validate-feature pour tester via le Playwright Agent CLI."
 
 3. **L'utilisateur** lance la commande `/validate-feature` (dans un workspace séparé ou le même en mode QA). L'agent QA :
-   - Ouvre l'app web dans Chrome (viewport mobile 390x844)
+   - Ouvre le build web Flutter avec `playwright-cli` (viewport mobile 390x844, sémantique activée — cf. skill `facteur-qa-web`)
    - Exécute chaque scénario du handoff
    - Capture des screenshots avant/après chaque interaction
    - Vérifie les erreurs console et les requêtes réseau
@@ -175,7 +180,7 @@ Après la phase VERIFY de l'agent dev et la validation du PO (Laurin), une étap
 ### Commande
 
 ```
-/validate-feature   # Lit .context/qa-handoff.md et teste via Chrome
+/validate-feature   # Lit .context/qa-handoff.md et teste via le Playwright Agent CLI
 ```
 
 ### Checklist complémentaire (phase VERIFY)
@@ -197,8 +202,9 @@ autonomie** les 3 étapes qui restent — avec la preuve que ça marche :
    - Backend : `pytest -v` + démarrage `uvicorn` + `curl` sur les endpoints
      touchés (cas nominal + 1 cas limite) + `docs/qa/scripts/verify_<task>.sh`
      si présent.
-   - Mobile : `flutter test && flutter analyze` + Playwright MCP
-     (viewport 390x844, console sans erreurs, réseau sans 4xx/5xx inattendus,
+   - Mobile : `flutter test && flutter analyze` + Playwright Agent CLI
+     (`playwright-cli`, skill `facteur-qa-web` ; viewport 390x844, sémantique
+     activée au boot, console sans erreurs, réseau sans 4xx/5xx inattendus,
      edge cases).
    - Alembic : exactement 1 head, `upgrade head` local OK. Le `Dockerfile` rejouera `alembic upgrade head` au prochain boot Railway — une migration cassée plante le déploiement, donc tester localement contre une DB *vide* (`make db-reset`) est non-négociable.
    - Re-run systématique de la suite complète avant de conclure
