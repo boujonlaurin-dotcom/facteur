@@ -3,16 +3,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
+import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
+import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 
 Widget _wrap(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
-    overrides: overrides,
+    overrides: [
+      weatherProvider.overrideWith(
+        () => _FakeWeatherNotifier(_testWeatherForecast()),
+      ),
+      weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
+      // Spec lu via Hive en prod — court-circuité dans les widget tests.
+      displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
+      ...overrides,
+    ],
     child: MaterialApp(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
       home: Scaffold(body: SingleChildScrollView(child: child)),
@@ -22,9 +35,35 @@ Widget _wrap(Widget child, {List<Override> overrides = const []}) {
 
 class _FakeWeatherNotifier extends WeatherNotifier {
   _FakeWeatherNotifier(this._value);
-  final WeatherSnapshot _value;
+  final WeatherForecast _value;
   @override
-  Future<WeatherSnapshot> build() async => _value;
+  Future<WeatherForecast> build() async => _value;
+}
+
+/// Évite le chargement Hive (non initialisé en test unitaire) : renvoie Paris.
+class _FakeLocationNotifier extends WeatherLocationNotifier {
+  @override
+  WeatherLocation build() => WeatherLocation.paris;
+}
+
+WeatherForecast _testWeatherForecast() {
+  return WeatherForecast(
+    condition: WeatherCondition.sunny,
+    currentC: 19,
+    feelsLikeC: 18,
+    minC: 12,
+    maxC: 21,
+    fetchedAt: DateTime(2026, 5, 28),
+    days: [
+      for (var i = 0; i < 5; i++)
+        WeatherDay(
+          date: DateTime(2026, 5, 28).add(Duration(days: i)),
+          condition: WeatherCondition.sunny,
+          minC: 12 + i,
+          maxC: 21 + i,
+        ),
+    ],
+  );
 }
 
 EssentielArticle _article({
@@ -33,6 +72,7 @@ EssentielArticle _article({
   String? theme = 'tech',
   String source = 'Le Monde',
   bool isActuDuJour = false,
+  bool isRead = false,
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
@@ -46,6 +86,7 @@ EssentielArticle _article({
     rank: rank,
     perspectiveCount: 3,
     isActuDuJour: isActuDuJour,
+    isRead: isRead,
   );
 }
 
@@ -66,7 +107,7 @@ void main() {
 
       expect(find.textContaining('Ton Essentiel'), findsOneWidget);
       expect(
-        find.textContaining('Tes 5 articles du jour'),
+        find.textContaining('5 articles du jour, basé sur tes intérêts'),
         findsOneWidget,
       );
       expect(
@@ -93,7 +134,8 @@ void main() {
       expect(tapped?.contentId, 'c-1');
     });
 
-    testWidgets('tap on the personalize button fires the callback and not the '
+    testWidgets(
+        'tap on the personalize button fires the callback and not the '
         'lead', (tester) async {
       var personalizeTaps = 0;
       var articleTaps = 0;
@@ -127,56 +169,19 @@ void main() {
       }
     });
 
-    testWidgets('"Tout l\'essentiel" button fires onTapExploreAll when wired',
-        (tester) async {
-      var exploreTaps = 0;
-      await tester.pumpWidget(_wrap(
-        EssentielHiFiCard(
-          articles: [_article(rank: 1)],
-          onTapArticle: (_) {},
-          onTapPersonalize: () {},
-          onTapSeeAllDown: () {},
-          onTapExploreAll: () => exploreTaps++,
-        ),
-      ));
-
-      expect(find.text('Tout l’essentiel'), findsOneWidget);
-      await tester.tap(find.text('Tout l’essentiel'));
-      await tester.pumpAndSettle();
-      expect(exploreTaps, 1);
-    });
-
-    testWidgets('"Tout l\'essentiel" button is omitted when onTapExploreAll is null',
+    testWidgets(
+        'no footer CTAs: the card is a standalone section, not a teaser',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
-          articles: [_article(rank: 1)],
+          articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
           onTapPersonalize: () {},
-          onTapSeeAllDown: () {},
         ),
       ));
 
       expect(find.text('Tout l’essentiel'), findsNothing);
-    });
-
-    testWidgets('"Tous mes articles ↓" button fires onTapSeeAllDown when wired',
-        (tester) async {
-      var seeAllDownTaps = 0;
-      await tester.pumpWidget(_wrap(
-        EssentielHiFiCard(
-          articles: [_article(rank: 1)],
-          onTapArticle: (_) {},
-          onTapPersonalize: () {},
-          onTapSeeAllDown: () => seeAllDownTaps++,
-          onTapExploreAll: () {},
-        ),
-      ));
-
-      expect(find.text('Tous mes articles ↓'), findsOneWidget);
-      await tester.tap(find.text('Tous mes articles ↓'));
-      await tester.pumpAndSettle();
-      expect(seeAllDownTaps, 1);
+      expect(find.text('Flâner →'), findsNothing);
     });
 
     testWidgets('"Ton Essentiel" header is rendered', (tester) async {
@@ -191,8 +196,9 @@ void main() {
       expect(find.text('Ton Essentiel'), findsOneWidget);
     });
 
-    testWidgets('lead Actu du jour badge and section chip share a Wrap',
-        (tester) async {
+    testWidgets(
+        'lead Actu du jour badge rendu sans chip section (Bonus 10.1) ; '
+        'lead sans Actu du jour : aucun badge', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
@@ -201,17 +207,19 @@ void main() {
         ),
       ));
 
-      final badge = find.text('Actu du jour');
-      expect(badge, findsOneWidget);
+      expect(find.text('Actu du jour'), findsOneWidget);
+      // Le chip section (themeMap : 'tech' → 'Technologie') a été retiré
+      // des tuiles pour alléger la carte.
+      expect(find.text('Technologie'), findsNothing);
 
-      // ActuBadge text and section chip both descend from the same Wrap.
-      // The chip label resolves via themeMap (theme: 'tech' → 'Technologie').
-      final wrap = find.ancestor(of: badge, matching: find.byType(Wrap));
-      expect(wrap, findsAtLeastNWidgets(1));
-      expect(
-        find.descendant(of: wrap.first, matching: find.text('Technologie')),
-        findsOneWidget,
-      );
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+      expect(find.text('Actu du jour'), findsNothing);
     });
 
     testWidgets('lead Actu du jour badge uses forced sectionEssentiel orange',
@@ -242,22 +250,38 @@ void main() {
       ));
 
       expect(find.byType(SvgPicture), findsNothing);
+      expect(find.text('Météo'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_return_rounded), findsOneWidget);
     });
 
-    testWidgets('flips to the weather badge once the user scrolls past 32 px',
-        (tester) async {
-      final snapshot = WeatherSnapshot(
+    testWidgets(
+        'flips to the weather badge and tapping it opens the detail '
+        'sheet', (tester) async {
+      final forecast = WeatherForecast(
         condition: WeatherCondition.sunny,
         currentC: 19,
+        feelsLikeC: 18,
         minC: 12,
         maxC: 21,
         fetchedAt: DateTime(2026, 5, 28),
+        days: [
+          for (var i = 0; i < 5; i++)
+            WeatherDay(
+              date: DateTime(2026, 5, 28).add(Duration(days: i)),
+              condition: WeatherCondition.sunny,
+              minC: 12 + i,
+              maxC: 21 + i,
+            ),
+        ],
       );
 
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            weatherProvider.overrideWith(() => _FakeWeatherNotifier(snapshot)),
+            weatherProvider.overrideWith(() => _FakeWeatherNotifier(forecast)),
+            weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
+            displayModeSpecProvider
+                .overrideWith((ref) => DisplayModeSpec.normal),
           ],
           child: MaterialApp(
             theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -273,21 +297,91 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Before timer fires → date stamp.
+      // Before timer fires → date stamp, no weather icon.
       expect(find.byType(SvgPicture), findsNothing);
+      expect(find.text('Météo'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_return_rounded), findsOneWidget);
 
-      // Advance 2 s → badge flips to weather.
+      // Advance 2 s → badge flips to weather (icon + min/max visible).
       await tester.pump(const Duration(seconds: 2));
-      await tester.pumpAndSettle();
+      await tester.pump();
 
       expect(find.byType(SvgPicture), findsOneWidget);
+      expect(find.text('Météo'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText && widget.text.toPlainText() == '12°/21°',
+        ),
+        findsOneWidget,
+      );
+      final temperatures = tester.widget<ScaleTransition>(
+        find.byKey(const ValueKey('weather_temperatures')),
+      );
+      expect(temperatures.scale.value, closeTo(0.94, 0.01));
+      final richText = tester.widget<RichText>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is RichText && widget.text.toPlainText() == '12°/21°',
+        ),
+      );
+      expect((richText.text as TextSpan).style?.fontSize, 17);
 
-      // Tap the weather badge → flips back to date stamp.
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(temperatures.scale.value, greaterThan(1));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(temperatures.scale.value, closeTo(1, 0.001));
+      expect(find.byIcon(Icons.keyboard_return_rounded), findsNothing);
+
+      // Tap the weather badge → opens the detail sheet (5-day forecast).
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
       await tester.pumpAndSettle();
 
-      expect(find.byType(SvgPicture), findsNothing,
-          reason: 'Tap on the weather badge pins the date stamp back.');
+      expect(find.text('Prévisions'), findsOneWidget,
+          reason: 'Tapping the weather badge opens the detail sheet.');
+      expect(find.text("Aujourd'hui"), findsOneWidget);
+    });
+
+    testWidgets('read article dims its tile to 0.6 and shows a check badge',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1, isRead: true)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      // Read tiles dim to 0.6 (même valeur que les autres sections) — un
+      // Opacity à 0.6 est propre au wrapper d'état Lu.
+      final dimmed = tester
+          .widgetList<Opacity>(find.byType(Opacity))
+          .where((o) => o.opacity == 0.6);
+      expect(dimmed, isNotEmpty);
+      // Green check badge (same Phosphor glyph as the other sections).
+      expect(
+        find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unread article is not dimmed (no read badge)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      final dimmed = tester
+          .widgetList<Opacity>(find.byType(Opacity))
+          .where((o) => o.opacity == 0.6);
+      expect(dimmed, isEmpty);
+      expect(
+        find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
+        findsNothing,
+      );
     });
 
     testWidgets('slots 2-5 all use the medium layout (no dotted divider)',

@@ -44,6 +44,11 @@ class ScoringContext:
         # par interest_slug. Sujets (custom topics) portent leur state sur l'objet
         # ORM directement, pas dans cette dict.
         user_interest_states: dict[str, InterestState] | None = None,
+        # Top3 thematic selection: nombre de sources distinctes par cluster_id
+        # sur la fenêtre 24h. Permet à PertinencePillar d'attribuer un bonus
+        # de couverture multi-sources (cf. helpers.compute_coverage_score).
+        # Vide en cold start ou hors mode thématique personnalisé.
+        cluster_source_counts: dict[UUID, int] | None = None,
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -76,6 +81,9 @@ class ScoringContext:
 
         # Story 22.1: declared interest state per theme slug.
         self.user_interest_states = user_interest_states or {}
+
+        # Top3 thematic selection: cluster_id -> nb sources distinctes (24h).
+        self.cluster_source_counts = cluster_source_counts or {}
 
         # Diagnostics pour explicabilité
         self.reasons: dict[UUID, dict[str, Any]] = {}

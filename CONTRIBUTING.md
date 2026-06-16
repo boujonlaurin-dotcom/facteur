@@ -2,6 +2,12 @@
 
 Ce guide s'adresse aux développeurs (même débutants) souhaitant contribuer au projet Facteur. Il regroupe toutes les étapes pour configurer votre environnement, installer les dépendances et lancer les différentes briques du projet.
 
+## 📄 Licence des contributions
+
+Le code du dépôt est disponible sous licence `PolyForm Noncommercial 1.0.0` (voir [`LICENSE`](LICENSE)).
+
+En contribuant à Facteur, vous acceptez que votre contribution soit distribuée sous cette même licence. Les contributions au dépôt sont donc acceptées sur une base non commerciale.
+
 ---
 
 ## 🛠 1. Prérequis

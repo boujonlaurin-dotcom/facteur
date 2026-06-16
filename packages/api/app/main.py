@@ -9,12 +9,12 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 # Ceinture + bretelles : un timeout socket par défaut empêche un appel synchrone
-# (urllib via feedparser, trafilatura, libs tierces) de bloquer indéfiniment un
+# (urllib via feedparser et libs tierces) de bloquer indéfiniment un
 # thread de l'executor par défaut quand l'upstream stalle byte-par-byte.
 # 30 s couvre largement les RSS/HTML lents tout en garantissant qu'aucun
 # `run_in_executor(...)` ne reste vivant au-delà même si `asyncio.wait_for`
 # cancel sa coroutine. Cf. docs/bugs/bug-infinite-load-requests.md (thread
-# poisoning avéré sur trafilatura et landmine sur feedparser.parse(url)).
+# poisoning observé sur des appels réseau tiers et feedparser.parse(url)).
 socket.setdefaulttimeout(30)
 
 # Bornes du startup digest catchup. Cf. docs/bugs/bug-infinite-load-requests.md :
@@ -82,14 +82,16 @@ from app.routers import (
     custom_topics,
     digest,
     essentiel,
+    event_rsvp,
     feed,
+    grille,
     images,
     internal,
-    legal,
     letters,
     notification_preferences,
     personalization,
     progress,
+    push_devices,
     sources,
     streaks,
     subscription,
@@ -100,6 +102,7 @@ from app.routers import (
     waitlist,
     webhooks,
     well_informed,
+    youtube_player,
 )
 from app.workers.scheduler import start_scheduler, stop_scheduler
 
@@ -128,7 +131,6 @@ def _get_alembic_head() -> str:
 # Drop predictable RSS fetch noise saturating Sentry quota (sources rate-limit
 # our crawler — expected, not actionable). Metric preserved via Railway log.
 _RSS_NOISE_LOGGERS = (
-    "trafilatura",
     "feedparser",
     "app.workers.rss_sync",
     "app.services.rss_parser",
@@ -223,6 +225,29 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
                 logger.warning(
                     "lifespan_startup_checks_skipped", reason="skip_startup_checks=True"
                 )
+
+            # SEED « La Grille du jour » : upsert idempotent des puzzles au boot.
+            # Le seed était manuel-only et n'avait jamais tourné en prod → table
+            # vide → GET /grille/today en 404 pour tous → crash silencieux côté
+            # mobile (écran gris). Cf. docs/bugs/bug-grille-du-jour-crash.md.
+            # Best-effort : un échec ici ne doit pas dégrader le reste de l'API.
+            try:
+                from app.database import safe_async_session
+                from app.services.grille_seed import ensure_daily_puzzle, seed_puzzles
+                from app.utils.time import today_paris
+
+                async with safe_async_session() as _seed_db:
+                    created, updated = await seed_puzzles(_seed_db)
+                    await ensure_daily_puzzle(_seed_db, today_paris())
+                    await _seed_db.commit()
+                logger.info("lifespan_grille_seeded", created=created, updated=updated)
+            except Exception as seed_exc:
+                logger.error(
+                    "lifespan_grille_seed_failed",
+                    error=str(seed_exc),
+                    exc_info=True,
+                )
+                sentry_sdk.capture_exception(seed_exc)
 
         except Exception as e:
             logger.critical(
@@ -451,11 +476,13 @@ app.include_router(digest.router, prefix="/api/digest", tags=["Digest"])
 app.include_router(essentiel.router, prefix="/api/essentiel", tags=["Essentiel"])
 app.include_router(contents.router, prefix="/api/contents", tags=["Contents"])
 app.include_router(images.router, prefix="/api/images", tags=["Images"])
+app.include_router(youtube_player.router, prefix="/api/youtube", tags=["YouTube"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(
     subscription.router, prefix="/api/subscription", tags=["Subscription"]
 )
 app.include_router(streaks.router, prefix="/api/streaks", tags=["Streaks"])
+app.include_router(grille.router, prefix="/api/grille", tags=["Grille"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(checkout.router, prefix="/api/checkout", tags=["Checkout"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
@@ -466,6 +493,7 @@ app.include_router(
     prefix="/api/notification-preferences",
     tags=["NotificationPreferences"],
 )
+app.include_router(push_devices.router, prefix="/api/devices", tags=["PushDevices"])
 app.include_router(
     personalization.router,
     prefix="/api/users/personalization",
@@ -480,6 +508,7 @@ app.include_router(
 )
 app.include_router(app_update.router, prefix="/api/app", tags=["AppUpdate"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
+app.include_router(event_rsvp.router, prefix="/api/events", tags=["Events"])
 app.include_router(admin_cohorts.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(
     well_informed.router,
@@ -498,7 +527,6 @@ app.include_router(
     prefix="/api/user/sources",
     tags=["UserSourcesState"],
 )
-app.include_router(legal.router, prefix="/legal", tags=["Legal"])
 
 
 @app.exception_handler(Exception)
@@ -600,42 +628,23 @@ async def pool_metrics() -> dict[str, Any]:
     agrégées.
     """
     from app.database import engine
+    from app.observability.pool_stats import read_pool_stats
 
-    pool = engine.pool
-    size = getattr(pool, "size", lambda: None)()
-    checked_in = getattr(pool, "checkedin", lambda: None)()
-    checked_out = getattr(pool, "checkedout", lambda: None)()
-    overflow = getattr(pool, "overflow", lambda: None)()
+    metrics: dict[str, Any] = read_pool_stats(engine)
 
-    saturated = (
-        checked_out is not None
-        and size is not None
-        and checked_out >= size + max(overflow or 0, 0)
-    )
-
-    metrics: dict[str, Any] = {
-        "status": "saturated" if saturated else "ok",
-        "pool_class": type(pool).__name__,
-        "size": size,
-        "checked_in": checked_in,
-        "checked_out": checked_out,
-        "overflow": overflow,
-    }
-
-    # Signal warning à Sentry dès que la saturation est proche (> 75 %). Permet
+    # Signal warning à Sentry dès que la saturation est proche (>= 75 %). Permet
     # de corréler pics de latence et pool pressure sans avoir à déployer de
-    # l'instrumentation supplémentaire.
-    if checked_out is not None and size is not None and size > 0:
-        usage_pct = checked_out / (size + max(overflow or 0, 0))
-        metrics["usage_pct"] = round(usage_pct * 100, 1)
-        if usage_pct >= 0.75:
-            logger.warning(
-                "db_pool_pressure_high",
-                checked_out=checked_out,
-                size=size,
-                overflow=overflow,
-                usage_pct=round(usage_pct * 100, 1),
-            )
+    # l'instrumentation supplémentaire. (La sonde périodique du scheduler
+    # alerte au seuil configurable `pool_alert_threshold_pct`, défaut 80 %.)
+    usage_pct = metrics.get("usage_pct")
+    if usage_pct is not None and usage_pct >= 75:
+        logger.warning(
+            "db_pool_pressure_high",
+            checked_out=metrics.get("checked_out"),
+            size=metrics.get("size"),
+            overflow=metrics.get("overflow"),
+            usage_pct=usage_pct,
+        )
 
     logger.info("pool_metrics_probed", **metrics)
     return metrics

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../../config/routes.dart';
 import '../../../../config/serein_colors.dart';
 import '../../../../config/theme.dart';
 import '../../onboarding_strings.dart';
@@ -32,15 +30,12 @@ class DigestModeQuestion extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: FacteurSpacing.space8),
-
                   Text(
                     '🌿 Rester serein ?',
                     style: Theme.of(context).textTheme.displayLarge,
                     textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: FacteurSpacing.space3),
-
                   Text.rich(
                     TextSpan(
                       style: Theme.of(context)
@@ -68,13 +63,13 @@ class DigestModeQuestion extends ConsumerWidget {
                     ),
                     textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: FacteurSpacing.space8),
-
                   ElevatedButton.icon(
                     onPressed: () {
                       HapticFeedback.lightImpact();
-                      ref.read(onboardingProvider.notifier).selectDigestMode('serein');
+                      ref
+                          .read(onboardingProvider.notifier)
+                          .selectDigestMode('serein');
                     },
                     icon: Icon(SereinColors.sereinIcon, size: 18),
                     label: const Text('Oui, rester serein'),
@@ -87,13 +82,12 @@ class DigestModeQuestion extends ConsumerWidget {
                         fontWeight: FontWeight.w600,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(FacteurRadius.large),
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.large),
                       ),
                     ),
                   ),
-
                   const SizedBox(height: FacteurSpacing.space3),
-
                   OutlinedButton.icon(
                     onPressed: () {
                       HapticFeedback.lightImpact();
@@ -114,40 +108,25 @@ class DigestModeQuestion extends ConsumerWidget {
                         color: colors.textTertiary.withOpacity(0.3),
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(FacteurRadius.large),
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.large),
                       ),
                     ),
                   ),
-
-                  const SizedBox(height: FacteurSpacing.space2),
-
-                  TextButton(
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      ref
-                          .read(onboardingProvider.notifier)
-                          .markDigestMode('serein');
-                      context.pushNamed(
-                        RouteNames.myInterests,
-                        queryParameters: const {'serein': '1'},
-                      );
-                    },
-                    child: Text(
-                      OnboardingStrings.personalizeSereinCta,
-                      style: TextStyle(
-                        color: SereinColors.sereinColor,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
+                  const SizedBox(height: FacteurSpacing.space4),
+                  Text(
+                    OnboardingStrings.digestModeAnytimeNote,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: colors.textTertiary),
+                    textAlign: TextAlign.center,
                   ),
-
                   const SizedBox(height: FacteurSpacing.space6),
                 ],
               ),
             ),
           ),
-
           DelayedContinueButton(
             visible: selectedMode != null,
             onPressed: () {

@@ -16,6 +16,7 @@ class NudgeIds {
   static const feedSwipeHint = 'feed_swipe_hint';
   static const feedBadgeLongpress = 'feed_badge_longpress';
   static const feedPreviewLongpress = 'feed_preview_longpress';
+  static const personalisationCta = 'personalisation_cta';
   // ID kept after the slider→picker migration so users who already dismissed
   // the explainer don't see it pop again.
   static const prioritySliderExplainer = 'priority_slider_explainer';

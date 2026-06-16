@@ -14,6 +14,10 @@ import '../../digest/models/digest_models.dart';
 /// mais nettement plus sobre : tampon brun chaud distinct du vert "fin de
 /// tournée", pas de CTA, pas d'illustration.
 class CitationDuJourCard extends StatelessWidget {
+  /// Brun chaud du tampon « CITATION DU JOUR ». Exposé pour que l'onglet sticky
+  /// « Citation du jour » réutilise exactement l'accent de la carte.
+  static const Color stampColor = Color(0xFF8D6E63);
+
   final QuoteResponse quote;
 
   const CitationDuJourCard({super.key, required this.quote});
@@ -21,9 +25,9 @@ class CitationDuJourCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    const stampColor = Color(0xFF8D6E63);
     return Container(
       margin: const EdgeInsets.fromLTRB(18, 24, 18, 8),
+
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: colors.surface,
@@ -37,7 +41,7 @@ class CitationDuJourCard extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 26),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -67,7 +71,7 @@ class CitationDuJourCard extends StatelessWidget {
                 '« ${quote.text} »',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.fraunces(
-                  fontSize: 18,
+                  fontSize: 20,
                   fontStyle: FontStyle.italic,
                   height: 1.45,
                   color: colors.textPrimary,
@@ -85,7 +89,7 @@ class CitationDuJourCard extends StatelessWidget {
               _attribution(quote),
               textAlign: TextAlign.center,
               style: GoogleFonts.dmSans(
-                fontSize: 12,
+                fontSize: 13,
                 height: 1.4,
                 color: colors.textSecondary,
               ),

@@ -21,6 +21,7 @@ void showProgressToast(
   String? sectionTitle,
   String? stepNum,
   String? stepTitle,
+  Color? accentColor,
   VoidCallback? onOpen,
 }) {
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
@@ -53,6 +54,7 @@ void showProgressToast(
       sectionTitle: sectionTitle,
       stepNum: stepNum,
       stepTitle: stepTitle,
+      accentColor: accentColor,
       onOpen: onOpen,
       onDismissed: onDismissed,
       onRequestClose: (cb) {
@@ -90,6 +92,7 @@ class _ProgressToast extends StatefulWidget {
   final String? sectionTitle;
   final String? stepNum;
   final String? stepTitle;
+  final Color? accentColor;
   final VoidCallback? onOpen;
   final VoidCallback onDismissed;
   final ValueChanged<VoidCallback> onRequestClose;
@@ -104,6 +107,7 @@ class _ProgressToast extends StatefulWidget {
     this.sectionTitle,
     this.stepNum,
     this.stepTitle,
+    this.accentColor,
     this.onOpen,
   });
 
@@ -195,14 +199,16 @@ class _ProgressToastState extends State<_ProgressToast>
   }
 
   Widget _buildShell(FacteurColors colors) {
-    final accent = widget.level == ProgressToastLevel.step
-        ? colors.primary
-        : colors.success;
+    final accent =
+        widget.accentColor ??
+        (widget.level == ProgressToastLevel.step
+            ? colors.primary
+            : colors.success);
 
     final body = switch (widget.level) {
       ProgressToastLevel.micro => _MicroBody(accent: accent, toast: widget),
       ProgressToastLevel.section => _SectionBody(accent: accent, toast: widget),
-      ProgressToastLevel.step => _StepBody(toast: widget),
+      ProgressToastLevel.step => _StepBody(accent: accent, toast: widget),
     };
 
     return GestureDetector(
@@ -213,7 +219,7 @@ class _ProgressToastState extends State<_ProgressToast>
           color: colors.surface,
           borderRadius: BorderRadius.circular(12),
           border: widget.level == ProgressToastLevel.step
-              ? Border.all(color: colors.primary.withValues(alpha: 0.15))
+              ? Border.all(color: accent.withValues(alpha: 0.15))
               : null,
           boxShadow: const [
             BoxShadow(
@@ -782,9 +788,10 @@ class _EnvelopePainter extends CustomPainter {
    NIVEAU 3 · B — Étape (cachet + halo + CTA)
    ============================================================ */
 class _StepBody extends StatelessWidget {
+  final Color accent;
   final _ProgressToast toast;
 
-  const _StepBody({required this.toast});
+  const _StepBody({required this.accent, required this.toast});
 
   @override
   Widget build(BuildContext context) {
@@ -799,10 +806,7 @@ class _StepBody extends StatelessWidget {
           gradient: RadialGradient(
             center: const Alignment(-0.64, 0),
             radius: 0.55,
-            colors: [
-              colors.primary.withValues(alpha: 0.10),
-              Colors.transparent,
-            ],
+            colors: [accent.withValues(alpha: 0.10), Colors.transparent],
           ),
         ),
         child: Padding(
@@ -814,7 +818,7 @@ class _StepBody extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  _CachetStamp(num: num, accent: colors.primary),
+                  _CachetStamp(num: num, accent: accent),
                   const SizedBox(width: 11),
                   Expanded(
                     child: Column(
@@ -827,7 +831,7 @@ class _StepBody extends StatelessWidget {
                             fontSize: 8.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.1,
-                            color: colors.primary,
+                            color: accent,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -853,7 +857,7 @@ class _StepBody extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 6),
                 child: CustomPaint(
                   painter: _DashedTopBorder(
-                    color: colors.primary.withValues(alpha: 0.25),
+                    color: accent.withValues(alpha: 0.25),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.only(top: 6),
@@ -870,7 +874,7 @@ class _StepBody extends StatelessWidget {
                                   style: GoogleFonts.dmSans(
                                     fontSize: 11.5,
                                     fontWeight: FontWeight.w600,
-                                    color: colors.primary,
+                                    color: accent,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -880,7 +884,7 @@ class _StepBody extends StatelessWidget {
                               Icon(
                                 PhosphorIcons.arrowRight(),
                                 size: 13,
-                                color: colors.primary,
+                                color: accent,
                               ),
                             ],
                           ),

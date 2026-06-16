@@ -33,9 +33,10 @@ from sqlalchemy.orm import selectinload
 from app.models.content import Content, UserContentStatus
 from app.models.daily_digest import DailyDigest
 from app.models.digest_completion import DigestCompletion
-from app.models.enums import ContentStatus
+from app.models.enums import ContentStatus, InterestState
 from app.models.user import UserStreak
 from app.models.user_personalization import UserPersonalization
+from app.schemas.content import SourceMini
 from app.schemas.digest import (
     DigestAction,
     DigestItem,
@@ -46,6 +47,7 @@ from app.schemas.digest import (
     DigestTopicArticle,
     QuoteResponse,
 )
+from app.services.digest_cache import DIGEST_CONTENT_CACHE, CachedDigestContent
 from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
@@ -169,7 +171,7 @@ def _schedule_background_regen(
                         user_id, target_date, is_serene=is_serene
                     )
                     if existing and existing.format_version in (
-                        "editorial_v1",
+                        EDITORIAL_FORMAT_VERSION,
                         "topics_v1",
                     ):
                         logger.info(
@@ -329,9 +331,26 @@ def _select_daily_quote(user_id: str, target_date: str) -> dict | None:
     return rng.choice(quotes)
 
 
+# Version courante du format editorial. Bumpée editorial_v1 -> editorial_v2 avec
+# la projection per-user (P2), puis editorial_v2 -> editorial_v3 avec le
+# classement par importance éditoriale (couverture + récence + polarisation,
+# perso en départage ; solos relégués) — cf. bug-actus-du-jour-ranking.md. La
+# FORME JSON est inchangée (toujours `subjects[]`), mais la SÉMANTIQUE D'ORDRE
+# change → le bump force la régénération des digests cachés `editorial_v2`
+# (le cron les voit "stale") et évite de servir un mix de sémantiques. Clé
+# d'idempotence (user_id, target_date, is_serene) inchangée.
+EDITORIAL_FORMAT_VERSION = "editorial_v3"
+# Tous les formats editorial rendus/clonables pendant les transitions.
+# Même forme JSON → `_build_editorial_response` les traite identiquement.
+_EDITORIAL_FORMATS: tuple[str, ...] = (
+    "editorial_v1",
+    "editorial_v2",
+    "editorial_v3",
+)
+
 # Format versions that the read-only hot path is willing to render. flat_v1
 # is legacy/expendable — never served from /digest or /digest/both.
-_READABLE_FORMATS: tuple[str, ...] = ("editorial_v1", "topics_v1")
+_READABLE_FORMATS: tuple[str, ...] = (*_EDITORIAL_FORMATS, "topics_v1")
 _HOTPATH_FALLBACK_DAYS = 7
 
 
@@ -443,7 +462,7 @@ async def read_digest_or_fallback(
                 DailyDigest.user_id != user_id,
                 DailyDigest.target_date == yesterday,
                 DailyDigest.is_serene == is_serene,
-                DailyDigest.format_version == "editorial_v1",
+                DailyDigest.format_version.in_(_EDITORIAL_FORMATS),
             )
         )
         .order_by(DailyDigest.generated_at.desc())
@@ -637,10 +656,10 @@ class DigestService:
         # 1a. Check format_version mismatch — stale cache from pre-editorial era
         expected_format = await self._get_user_digest_format(user_id)
         expected_version = {
-            "editorial": "editorial_v1",
+            "editorial": EDITORIAL_FORMAT_VERSION,
             "topics": "topics_v1",
             "flat": "flat_v1",
-        }.get(expected_format, "editorial_v1")
+        }.get(expected_format, EDITORIAL_FORMAT_VERSION)
 
         # Defer deletion of stale-format digest until AFTER the new digest is
         # successfully generated. This avoids a hole where we delete a valid
@@ -700,10 +719,7 @@ class DigestService:
                         digest_id=str(existing_digest.id),
                         format_version=existing_digest.format_version,
                     )
-                    if existing_digest.format_version in (
-                        "editorial_v1",
-                        "topics_v1",
-                    ):
+                    if existing_digest.format_version in _READABLE_FORMATS:
                         # Defer deletion, fall through to regeneration.
                         stale_format_digest = existing_digest
                         existing_digest = None
@@ -725,7 +741,13 @@ class DigestService:
             # pipeline (3-5 min), which exceeds both the /digest timeouts
             # and the mobile retry budget — the classic "spinner forever
             # after onboarding" symptom.
-            if expected_version == "editorial_v1":
+            # Cold-start fallback : depuis P2 le digest editorial est per-user,
+            # donc cloner la ligne d'un autre user n'est plus strictement
+            # "user-agnostic". On le garde quand même pour les nouveaux users
+            # arrivés après le batch : un digest frais et valide vaut mieux que
+            # le spinner cold-path LLM (3-5 min). La ligne clonée sera regénérée
+            # proprement (per-user) au prochain batch.
+            if expected_version == EDITORIAL_FORMAT_VERSION:
                 cloned = await self._try_clone_global_editorial_digest(
                     user_id=user_id,
                     target_date=target_date,
@@ -1056,7 +1078,10 @@ class DigestService:
         from app.models.source import UserSource
 
         followed_result = await self.session.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
         )
         followed_source_ids = set(followed_result.scalars().all())
 
@@ -1610,7 +1635,7 @@ class DigestService:
                         DailyDigest.user_id != user_id,
                         DailyDigest.target_date == target_date,
                         DailyDigest.is_serene == is_serene,
-                        DailyDigest.format_version == "editorial_v1",
+                        DailyDigest.format_version.in_(_EDITORIAL_FORMATS),
                     )
                 )
                 .order_by(DailyDigest.generated_at.desc())
@@ -1645,7 +1670,9 @@ class DigestService:
             items=source.items,
             mode=source.mode or ("serein" if is_serene else "pour_vous"),
             is_serene=is_serene,
-            format_version="editorial_v1",
+            # Préserve la version de la source (le `items` JSONB embarque sa
+            # propre `format_version` — garder la ligne cohérente avec lui).
+            format_version=source.format_version,
             generated_at=source.generated_at,
         )
         self.session.add(cloned)
@@ -1848,7 +1875,7 @@ class DigestService:
         mode: str | None = None,
         is_serene: bool = False,
     ) -> DailyDigest | None:
-        """Create a new DailyDigest in editorial_v1 format."""
+        """Create a new DailyDigest in the current editorial format (editorial_v2)."""
         # Garde-fou: la pipeline trim déjà les sujets sans article (cf.
         # pipeline.py "ÉTAPE 3A-bis"). Ici on est défensif : si quelque chose
         # passe au travers, on logge en error (ce ne devrait plus arriver).
@@ -1868,7 +1895,7 @@ class DigestService:
         result = result.model_copy(update={"subjects": valid_subjects})
 
         items_json = {
-            "format_version": "editorial_v1",
+            "format_version": EDITORIAL_FORMAT_VERSION,
             "mode": mode or "pour_vous",
             "subjects": [
                 {
@@ -1929,7 +1956,7 @@ class DigestService:
             items=items_json,
             mode=mode or "pour_vous",
             is_serene=is_serene,
-            format_version="editorial_v1",
+            format_version=EDITORIAL_FORMAT_VERSION,
             generated_at=datetime.now(UTC),
         )
 
@@ -2015,7 +2042,7 @@ class DigestService:
         - topics_v1: grouped topics + flat items fallback
         - flat_v1 / None: legacy flat list
         """
-        if digest.format_version == "editorial_v1":
+        if digest.format_version in _EDITORIAL_FORMATS:
             return await self._build_editorial_response(digest, user_id)
         if digest.format_version == "topics_v1":
             return await self._build_topics_response(digest, user_id)
@@ -2175,7 +2202,10 @@ class DigestService:
         # The editorial digest is generated globally (match_global) and hard-
         # codes that flag to False, so the cached value is per-user wrong.
         followed_result = await self.session.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
         )
         followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 
@@ -2200,13 +2230,9 @@ class DigestService:
             )
         )
 
-        content_stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.id.in_(all_content_ids))
+        content_map = await self._get_cached_digest_contents(
+            digest, user_id, all_content_ids
         )
-        content_result = await self.session.execute(content_stmt)
-        content_map = {c.id: c for c in content_result.scalars().all()}
 
         action_states_map = await self._get_batch_action_states(
             user_id, all_content_ids
@@ -2334,10 +2360,17 @@ class DigestService:
                     _divergence_str = str(_divergence_raw)
                 else:
                     _divergence_str = _divergence_raw
+                # Fallback label : les digests editorial_v1/globaux persistés
+                # avant le fix write-side ont `label=""`, ce qui désactive la
+                # notification personnalisée (variante B). On répare au read en
+                # reprenant le titre de l'actu_article. Pas de regénération requise.
+                _label = subject.get("label") or ""
+                if not _label and subject.get("actu_article"):
+                    _label = (subject["actu_article"].get("title") or "")[:80]
                 response_topics.append(
                     DigestTopic(
                         topic_id=subject.get("topic_id", ""),
-                        label=subject.get("label", ""),
+                        label=_label,
                         rank=subject.get("rank", 0),
                         reason=subject.get("selection_reason", ""),
                         # `is_trending` = signal "≥3 sources couvrent le topic"
@@ -2403,7 +2436,8 @@ class DigestService:
             generated_at=digest.generated_at,
             mode=digest.mode or "pour_vous",
             is_serene=digest.is_serene,
-            format_version="editorial_v1",
+            # Reflète la version réelle de la ligne (v1 legacy ou v2 courant).
+            format_version=digest.format_version or EDITORIAL_FORMAT_VERSION,
             items=flat_items,
             topics=response_topics,
             completion_threshold=editorial_completion_threshold,
@@ -2434,7 +2468,10 @@ class DigestService:
         # users in some paths). Always recompute against the current
         # UserSource table so the badge in mobile reflects reality.
         followed_result = await self.session.execute(
-            select(UserSource.source_id).where(UserSource.user_id == user_id)
+            select(UserSource.source_id).where(
+                UserSource.user_id == user_id,
+                UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+            )
         )
         followed_source_ids: set[UUID] = set(followed_result.scalars().all())
 
@@ -2454,14 +2491,11 @@ class DigestService:
             )
         )
 
-        # Batch query: content + sources
-        content_stmt = (
-            select(Content)
-            .options(selectinload(Content.source))
-            .where(Content.id.in_(all_content_ids))
+        # Batch query: content + sources, cached briefly across /digest and
+        # /essentiel. User action state and completion are still fetched below.
+        content_map = await self._get_cached_digest_contents(
+            digest, user_id, all_content_ids
         )
-        content_result = await self.session.execute(content_stmt)
-        content_map = {c.id: c for c in content_result.scalars().all()}
 
         # Batch query: action states
         action_states_map = await self._get_batch_action_states(
@@ -2663,6 +2697,80 @@ class DigestService:
             }
             for status in statuses
         }
+
+    async def _get_cached_digest_contents(
+        self,
+        digest: DailyDigest,
+        user_id: UUID,
+        content_ids: list[UUID],
+    ) -> dict[UUID, CachedDigestContent]:
+        """Fetch content/source snapshots for a digest with a short TTL.
+
+        Cache key is user/date/variant/digest-id. The user component keeps
+        cloned/stale render paths isolated; the digest id prevents serving a
+        previous row if today's digest is regenerated inside the TTL window.
+        """
+        if not content_ids:
+            return {}
+
+        key = (user_id, digest.target_date, digest.is_serene, digest.id)
+        cached = DIGEST_CONTENT_CACHE.get(key)
+        if cached is not None:
+            logger.info(
+                "digest_content_cache_hit",
+                user_id=str(user_id),
+                digest_id=str(digest.id),
+                content_count=len(cached),
+            )
+            return cached
+
+        async with DIGEST_CONTENT_CACHE.lock(key):
+            cached = DIGEST_CONTENT_CACHE.get(key)
+            if cached is not None:
+                logger.info(
+                    "digest_content_cache_hit_after_lock",
+                    user_id=str(user_id),
+                    digest_id=str(digest.id),
+                    content_count=len(cached),
+                )
+                return cached
+
+            content_stmt = (
+                select(Content)
+                .options(selectinload(Content.source))
+                .where(Content.id.in_(content_ids))
+            )
+            content_result = await self.session.execute(content_stmt)
+            content_map: dict[UUID, CachedDigestContent] = {}
+            for content in content_result.scalars().all():
+                if content.source is None:
+                    continue
+                content_map[content.id] = CachedDigestContent(
+                    id=content.id,
+                    title=content.title,
+                    url=content.url,
+                    thumbnail_url=content.thumbnail_url,
+                    description=content.description,
+                    html_content=content.html_content,
+                    topics=list(content.topics or []),
+                    entities=list(content.entities or []),
+                    content_type=content.content_type,
+                    duration_seconds=content.duration_seconds,
+                    published_at=content.published_at,
+                    is_paid=content.is_paid,
+                    source_id=content.source_id,
+                    source=SourceMini.model_validate(content.source),
+                )
+
+            DIGEST_CONTENT_CACHE.put(key, content_map)
+            logger.info(
+                "digest_content_cache_miss_loaded",
+                user_id=str(user_id),
+                digest_id=str(digest.id),
+                content_found=len(content_map),
+                content_expected=len(set(content_ids)),
+            )
+            return content_map
 
     async def _get_or_create_content_status(
         self, user_id: UUID, content_id: UUID

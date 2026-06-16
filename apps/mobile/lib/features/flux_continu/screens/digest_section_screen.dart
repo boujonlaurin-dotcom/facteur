@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/navigation_providers.dart';
+import '../../detail/content_preview_mapper.dart';
 import '../../digest/models/digest_models.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -38,6 +40,18 @@ class DigestSectionScreen extends ConsumerStatefulWidget {
 }
 
 class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
+  final ScrollController _scroll = ScrollController(keepScrollOffset: false);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(tourneeLastDedicatedSectionProvider.notifier).state =
+          widget.sectionKeyValue;
+    });
+  }
+
   DigestTopicSection? _resolveSection() {
     final state = ref.watch(fluxContinuProvider).valueOrNull;
     if (state == null) return widget.initialSection;
@@ -49,8 +63,12 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
     return widget.initialSection;
   }
 
-  void _openArticle(BuildContext context, DigestItem article) {
-    context.push('${RoutePaths.fluxContinu}/content/${article.contentId}');
+  Future<void> _openArticle(BuildContext context, DigestItem article) async {
+    await context.push(
+      '${RoutePaths.fluxContinu}/content/${article.contentId}',
+      extra: article.toPreviewContent(),
+    );
+    if (mounted) setState(() {});
   }
 
   void _onBackToTournee() {
@@ -58,11 +76,22 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
   }
 
   void _onTapNextSection(FluxSection next) {
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      next,
+    );
     final key = Uri.encodeComponent(sectionKey(next));
-    final path = next is FeedThemeSection
-        ? '${RoutePaths.fluxContinu}/theme/$key'
-        : '${RoutePaths.fluxContinu}/section/$key';
-    context.pushReplacement(path, extra: next);
+    final path = next is FeedThemeSection && next.kind == SectionKind.source
+        ? '${RoutePaths.fluxContinu}/source/$key'
+        : next is FeedThemeSection
+            ? '${RoutePaths.fluxContinu}/theme/$key'
+            : '${RoutePaths.fluxContinu}/section/$key';
+    context.pushReplacement(tourneeNextSectionLocation(path), extra: next);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
   }
 
   @override
@@ -107,6 +136,7 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
         ? null
         : nextSectionAfter(state.sections, widget.sectionKeyValue);
     return CustomScrollView(
+      controller: _scroll,
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverToBoxAdapter(
@@ -118,21 +148,18 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
           ),
         ),
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final topic = section.topics[index];
-              final lead = pickTopicLead(topic);
-              return FluxContinuArticleCard(
-                article: lead,
-                isEssentiel: section.kind == SectionKind.essentiel,
-                pressReviewCount: topic.perspectiveCount,
-                perspectiveSources: topic.perspectiveSources,
-                divergenceLevel: topic.divergenceLevel,
-                onTap: () => _openArticle(context, lead),
-              );
-            },
-            childCount: section.topics.length,
-          ),
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final topic = section.topics[index];
+            final lead = pickTopicLead(topic);
+            return FluxContinuArticleCard(
+              article: lead,
+              isEssentiel: section.kind == SectionKind.essentiel,
+              pressReviewCount: topic.perspectiveCount,
+              perspectiveSources: topic.perspectiveSources,
+              divergenceLevel: topic.divergenceLevel,
+              onTap: () => _openArticle(context, lead),
+            );
+          }, childCount: section.topics.length),
         ),
         SliverToBoxAdapter(
           child: ThemeDetailFooter(

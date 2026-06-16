@@ -1,7 +1,7 @@
 name: facteur
 description: Facteur - Curation intelligente de contenus
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -52,6 +52,9 @@ dependencies:
   intl: ^0.20.2
   url_launcher: ^6.2.5
   flutter_secure_storage: ^10.0.0
+
+  # Geolocation (Story 10.1 — météo géolocalisée, client-only, iOS/Android/web)
+  geolocator: ^13.0.4
   
   # Home Screen Widget
   home_widget: ^0.7.0
@@ -59,7 +62,9 @@ dependencies:
   # Deep Links (widget tap → in-app routing)
   app_links: ^6.3.2
 
-  # Push Notifications (local, no FCM)
+  # Push Notifications
+  firebase_core: ^4.0.0
+  firebase_messaging: ^16.0.0
   flutter_local_notifications: ^20.0.0
   timezone: ^0.10.0
   flutter_timezone: ^3.0.1
@@ -149,4 +154,4 @@ flutter:
     - assets/icons/
     - assets/loaders/
     - assets/notifications/
-
+    - assets/changelog.json

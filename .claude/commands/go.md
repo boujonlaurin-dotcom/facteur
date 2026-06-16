@@ -29,11 +29,12 @@ Choisis les vérifications selon ce qui a été modifié dans le diff
 ### Mobile / UI modifié (`apps/mobile/**`)
 
 1. **Tests Flutter** : `cd apps/mobile && flutter test` puis `flutter analyze`.
-2. **Validation navigateur via Playwright MCP** (viewport 390x844) :
+2. **Validation navigateur via le Playwright Agent CLI** (`playwright-cli`,
+   skill `facteur-qa-web`, viewport 390x844) :
    - Démarre l'API locale si la feature en dépend
-   - Navigate vers la route touchée, screenshot avant/après chaque interaction
-   - Vérifie `read_console_messages(onlyErrors: true)` — aucune erreur JS
-   - Vérifie `read_network_requests` — aucun 4xx/5xx inattendu
+   - `goto` la route touchée, **active la sémantique Flutter** (canvas — cf. skill), `snapshot`/`screenshot` avant/après chaque interaction
+   - `playwright-cli console error` — aucune erreur JS inattendue
+   - Surveille les requêtes réseau — aucun 4xx/5xx inattendu
    - Teste au moins 1 edge case (saisie vide, double-clic, retour arrière)
 3. Si un `.context/qa-handoff.md` existe, exécute tous ses scénarios.
 

@@ -134,6 +134,18 @@ async def test_suggest_sources_empty_when_llm_returns_garbage():
     assert sources == []
 
 
+async def test_suggest_sources_does_not_cache_empty_fallback():
+    llm = _mk_llm(ready=True, response={"unexpected": "shape"})
+    suggester = SourceSuggester(llm=llm)
+
+    first = await suggester.suggest_sources("tech", "Tech", "", [], [])
+    second = await suggester.suggest_sources("tech", "Tech", "", [], [])
+
+    assert first == []
+    assert second == []
+    assert llm.chat_json.call_count == 2
+
+
 async def test_suggest_sources_skips_invalid_items():
     llm = _mk_llm(
         ready=True,

@@ -1,21 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
+import '../../../sources/models/smart_search_result.dart';
 import '../../../sources/models/source_model.dart';
 import '../../../sources/providers/sources_providers.dart';
+import '../../../sources/widgets/source_add_panel.dart';
 import '../../../sources/widgets/source_detail_modal.dart';
+import '../../../sources/widgets/source_logo_avatar.dart';
 import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
+import '../../providers/onboarding_proof_cache_provider.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/add_subscription_card.dart';
+import '../../widgets/premium_sources_sheet.dart';
 import '../../widgets/recommendation_section.dart';
+import '../../widgets/source_catalog_section.dart';
 import '../../widgets/source_recommendation_card.dart';
 
-/// Q9 : Sources recommandées personnalisées — Page 1.
+/// Q10 : page sources « sur mesure », 4 blocs numérotés (①②③④).
 ///
-/// Affiche 3 sections: Pour vous, Élargis ta vision, Pépites.
-/// Le catalogue et les CTAs sont sur la Page 2 (sourcesReaction).
+/// ① Suggestions sur mesure (jusqu'à 18 affichées, top 9 + sources likées au
+/// swipe pré-cochées) ; ② Vos médias habituels (panneau d'ajout replié) ;
+/// ③ Explorer le catalogue (replié) ; ④ Vos abonnements presse. (v7 : la
+/// question d'intent a été retirée — tout le monde passe par le swipe puis
+/// cette page unique.)
 class SourcesQuestion extends ConsumerStatefulWidget {
   const SourcesQuestion({super.key});
 
@@ -27,16 +40,24 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   Set<String> _selectedSourceIds = {};
   bool _hasAppliedPreselection = false;
   SourceRecommendation? _recommendation;
-  bool _showAllMatched = false;
+  List<RecommendedSource>? _suggestions;
 
-  /// Max matched sources visible before "Voir plus"
-  static const int _matchedVisibleLimit = 8;
+  /// Panneau d'ajout (« Vous suivez déjà un média ? ») replié derrière un en-tête.
+  bool _addPanelExpanded = false;
+
+  /// Cap des suggestions mises en avant (affichées, cochées ou non).
+  static const int _suggestionsLimit = 18;
+
+  /// Parmi les suggestions affichées, seules les `_preselectLimit` premières
+  /// (top score) sont pré-cochées ; le reste s'affiche décoché.
+  static const int _preselectLimit = 9;
 
   @override
   void initState() {
     super.initState();
-    // Restore existing selections (back navigation or resume)
     final existingAnswers = ref.read(onboardingProvider).answers;
+
+    // Restore existing selections (back navigation or resume)
     final existingSources = existingAnswers.preferredSources;
     if (existingSources != null && existingSources.isNotEmpty) {
       _selectedSourceIds = existingSources.toSet();
@@ -52,19 +73,110 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     final subtopics = answers.subtopics ?? [];
     final objectives = answers.objectives ?? [];
 
-    _recommendation = SourceRecommender.recommend(
+    final swipeLiked = answers.swipeLiked ?? const <String>[];
+
+    final reco = SourceRecommender.recommend(
       selectedThemes: themes,
       selectedSubtopics: subtopics,
       allSources: allSources,
       objectives: objectives,
+      // Axes "profondeur" ré-aiguillés (v6) : déclaratif (approach +
+      // indépendance) repondéré par le révélé (swipe).
+      depthPref: answers.approach,
+      independencePref: answers.independencePref,
+      swipeLiked: swipeLiked,
+      swipeDisliked: answers.swipeDisliked ?? const <String>[],
     );
+    _recommendation = reco;
+    _suggestions = _computeSuggestions(
+      reco,
+      hasThemes: themes.isNotEmpty,
+      excludedIds: swipeLiked.toSet(),
+    );
+    _preloadSuggestionProfiles(_suggestions!);
 
-    // Apply preselection (matched + gems)
+    // Pré-sélection : top `_preselectLimit` des suggestions (déjà triées) +
+    // toutes les sources swipées à droite (garanties cochées au reveal, même
+    // au-delà du rang 9). Le reste des suggestions s'affiche décoché.
     if (!_hasAppliedPreselection) {
       _hasAppliedPreselection = true;
-      _selectedSourceIds = _recommendation!.preselectedIds;
+      _selectedSourceIds = {
+        ..._suggestions!.take(_preselectLimit).map((r) => r.source.id),
+        ...swipeLiked,
+      };
     }
   }
+
+  /// Tri à score égal : favorise les gros publieurs mainstream (proxy volume
+  /// front, sans champ backend dédié) puis le `followerCount`. Garantit
+  /// quelques sources « vivantes » parmi les suggestions.
+  static int _byVolumeProxy(RecommendedSource a, RecommendedSource b) {
+    final am = a.source.sourceTier == 'mainstream' ? 1 : 0;
+    final bm = b.source.sourceTier == 'mainstream' ? 1 : 0;
+    if (am != bm) return bm - am; // mainstream d'abord
+    return b.source.followerCount.compareTo(a.source.followerCount);
+  }
+
+  /// Jusqu'à `_suggestionsLimit` suggestions : les **spécialistes garantis** en
+  /// tête (≥1 par sujet choisi, badge « Spécialisé en X ») pour qu'ils survivent
+  /// au cap, puis matched triées score desc + volume-proxy ; sans thèmes (ou sans
+  /// match), tri volume-proxy sur tout le pool.
+  List<RecommendedSource> _computeSuggestions(
+    SourceRecommendation reco, {
+    required bool hasThemes,
+    Set<String> excludedIds = const {},
+  }) {
+    final specialists = reco.specialists;
+    if (hasThemes && (reco.matched.isNotEmpty || specialists.isNotEmpty)) {
+      final sorted = [...reco.matched]
+        ..sort((a, b) {
+          final byScore = b.score.compareTo(a.score);
+          return byScore != 0 ? byScore : _byVolumeProxy(a, b);
+        });
+      return _dedupById([...specialists, ...sorted])
+          .where((r) => !excludedIds.contains(r.source.id))
+          .take(_suggestionsLimit)
+          .toList();
+    }
+
+    final pool = [
+      ...reco.matched,
+      ...reco.perspective,
+      ...reco.gems,
+      ...reco.catalog,
+    ]..sort(_byVolumeProxy);
+    return _dedupById([...specialists, ...pool])
+        .where((r) => !excludedIds.contains(r.source.id))
+        .take(_suggestionsLimit)
+        .toList();
+  }
+
+  void _preloadSuggestionProfiles(List<RecommendedSource> suggestions) {
+    for (final r in suggestions.take(6)) {
+      ref.read(sourceProfileProvider(r.source.id).future).ignore();
+    }
+  }
+
+  /// Dédoublonne par `source.id` en conservant le premier passage (les
+  /// spécialistes garantis, placés en tête, priment).
+  static List<RecommendedSource> _dedupById(List<RecommendedSource> list) {
+    final seen = <String>{};
+    final out = <RecommendedSource>[];
+    for (final r in list) {
+      if (seen.add(r.source.id)) out.add(r);
+    }
+    return out;
+  }
+
+  /// Catalogue complet (toutes catégories confondues) pour « Voir tout ».
+  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) =>
+      _dedupById([
+        ...reco.specialists,
+        ...reco.matched,
+        ...reco.perspective,
+        ...reco.gems,
+        ...reco.catalog,
+      ]);
 
   void _toggleSource(String sourceId) {
     HapticFeedback.lightImpact();
@@ -85,8 +197,44 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       builder: (context) => SourceDetailModal(
         source: source,
         onToggleTrust: () => _toggleSource(source.id),
+        isSelectedOverride: _selectedSourceIds.contains(source.id),
+        articleOpener: openSourceArticleOnRootNavigator,
       ),
     );
+  }
+
+  void _openPremiumSheet(List<Source> allSources) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => PremiumSourcesSheet(
+        allSources: allSources,
+        selectedSourceIds: _selectedSourceIds,
+      ),
+    );
+  }
+
+  /// Ajout via le panneau smart-search : sélectionne la source et capture la
+  /// preuve (derniers articles) pour l'animation de conclusion.
+  void _onSourceAdded(SmartSearchResult result) {
+    final sourceId = result.sourceId;
+    if (sourceId == null || sourceId.isEmpty || sourceId == 'null') return;
+
+    setState(() => _selectedSourceIds.add(sourceId));
+    ref
+        .read(onboardingProofCacheProvider.notifier)
+        .update(
+          (cache) => {
+            ...cache,
+            sourceId: SourceProofSeed(
+              sourceId: sourceId,
+              name: result.name,
+              logoUrl: result.faviconUrl,
+              items: result.recentItems,
+            ),
+          },
+        );
   }
 
   void _continue() {
@@ -115,7 +263,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
             ),
             data: (sources) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (_recommendation == null) {
+                if (_recommendation == null && mounted) {
                   setState(() => _computeRecommendations(sources));
                 }
               });
@@ -125,7 +273,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              return _buildContent(context, reco);
+              return _buildContent(context, reco, sources);
             },
           ),
         ),
@@ -144,8 +292,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
             child: Text(
               _selectedSourceIds.isEmpty
                   ? OnboardingStrings.skipButton
-                  : OnboardingStrings.selectedCount(
-                      _selectedSourceIds.length),
+                  : OnboardingStrings.selectedCount(_selectedSourceIds.length),
             ),
           ),
         ),
@@ -153,115 +300,248 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     );
   }
 
-  Widget _buildContent(BuildContext context, SourceRecommendation reco) {
-    final colors = context.facteurColors;
-
+  Widget _buildContent(
+    BuildContext context,
+    SourceRecommendation reco,
+    List<Source> allSources,
+  ) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
+      padding: EdgeInsets.fromLTRB(
+        FacteurSpacing.space6,
+        0,
+        FacteurSpacing.space6,
+        MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: FacteurSpacing.space6),
-
-          // Title
-          Text(
-            OnboardingStrings.q9Title,
-            style: Theme.of(context).textTheme.displayLarge,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: FacteurSpacing.space3),
-          Text(
-            OnboardingStrings.q9Subtitle,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
-
-          // Section: Pour vous
-          if (reco.matched.isNotEmpty) ...[
-            const RecommendationSectionHeader(
-              emoji: '🎯',
-              title: 'Pour vous',
-              subtitle: 'Pré-sélectionnées pour vous',
-            ),
-            ..._visibleMatched(reco.matched).map((r) => Padding(
-                  padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
-                  child: SourceRecommendationCard(
-                    recommendation: r,
-                    isSelected: _selectedSourceIds.contains(r.source.id),
-                    onToggle: () => _toggleSource(r.source.id),
-                    onInfoTap: () => _showSourceDetail(r.source),
-                  ),
-                )),
-            // "Voir plus" button
-            if (!_showAllMatched &&
-                reco.matched.length > _matchedVisibleLimit)
-              Padding(
-                padding: const EdgeInsets.only(
-                  top: FacteurSpacing.space2,
-                  bottom: FacteurSpacing.space2,
-                ),
-                child: TextButton(
-                  onPressed: () => setState(() => _showAllMatched = true),
-                  child: Text(
-                    'Voir ${reco.matched.length - _matchedVisibleLimit} de plus',
-                    style: TextStyle(color: colors.primary),
-                  ),
-                ),
-              ),
-          ],
-
-          // Section: Élargissez votre vision
-          if (reco.perspective.isNotEmpty) ...[
-            const RecommendationSectionHeader(
-              emoji: '🔭',
-              title: 'Élargissez votre vision',
-              subtitle:
-                  'Des sources qui challengent vos habitudes de lecture.',
-            ),
-            ...reco.perspective.map((r) => Padding(
-                  padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
-                  child: SourceRecommendationCard(
-                    recommendation: r,
-                    isSelected: _selectedSourceIds.contains(r.source.id),
-                    onToggle: () => _toggleSource(r.source.id),
-                    onInfoTap: () => _showSourceDetail(r.source),
-                  ),
-                )),
-          ],
-
-          // Section: Pépites
-          if (reco.gems.isNotEmpty) ...[
-            const RecommendationSectionHeader(
-              emoji: '💎',
-              title: 'Pépites',
-              subtitle:
-                  'Des sources rares qui pourraient changer votre vision du monde.',
-            ),
-            ...reco.gems.map((r) => Padding(
-                  padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
-                  child: SourceRecommendationCard(
-                    recommendation: r,
-                    isSelected: _selectedSourceIds.contains(r.source.id),
-                    onToggle: () => _toggleSource(r.source.id),
-                    onInfoTap: () => _showSourceDetail(r.source),
-                  ),
-                )),
-          ],
-
+          ..._buildSourcesLayout(context, reco, allSources),
           const SizedBox(height: FacteurSpacing.space8),
         ],
       ),
     );
   }
 
-  /// Returns visible matched sources, respecting the collapse limit.
-  List<RecommendedSource> _visibleMatched(List<RecommendedSource> matched) {
-    if (_showAllMatched || matched.length <= _matchedVisibleLimit) {
-      return matched;
-    }
-    return matched.take(_matchedVisibleLimit).toList();
+  // ── Layout : suggestions d'abord ────────────────────────────────────────
+
+  List<Widget> _buildSourcesLayout(
+    BuildContext context,
+    SourceRecommendation reco,
+    List<Source> allSources,
+  ) {
+    final colors = context.facteurColors;
+    final suggestions = _suggestions ?? const <RecommendedSource>[];
+    final swipeLikedIds =
+        ref.read(onboardingProvider).answers.swipeLiked ?? const <String>[];
+    final alreadyAdded = [
+      for (final id in swipeLikedIds)
+        for (final source in allSources)
+          if (source.id == id) source,
+    ];
+
+    return [
+      Text(
+        OnboardingStrings.q9Title,
+        style: Theme.of(context).textTheme.displayLarge,
+        textAlign: TextAlign.center,
+      ),
+      const SizedBox(height: FacteurSpacing.space3),
+      Text(
+        OnboardingStrings.q9Subtitle,
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+        textAlign: TextAlign.center,
+      ),
+
+      if (alreadyAdded.isNotEmpty) ...[
+        const SizedBox(height: FacteurSpacing.space4),
+        _AlreadyAddedSources(sources: alreadyAdded),
+      ],
+
+      // ① Suggestions sur mesure (top pré-cochées)
+      if (suggestions.isNotEmpty) ...[
+        const RecommendationSectionHeader(
+          emoji: '①',
+          title: OnboardingStrings.sourcesBlockSuggestionsTitle,
+          subtitle: OnboardingStrings.q9PreselectionTitle,
+        ),
+        ...suggestions.map((r) => _buildSuggestionCard(r)),
+      ],
+
+      // ② Vos médias habituels → panneau d'ajout replié
+      const RecommendationSectionHeader(
+        emoji: '②',
+        title: OnboardingStrings.sourcesBlockHabitualTitle,
+        subtitle: OnboardingStrings.sourcesBlockHabitualSubtitle,
+      ),
+      _buildAddPanelToggle(context, colors),
+      AnimatedSize(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: _addPanelExpanded
+            ? _buildEmbeddedAddPanel()
+            : const SizedBox.shrink(),
+      ),
+
+      // ③ Explorer le catalogue (replié)
+      const RecommendationSectionHeader(
+        emoji: '③',
+        title: OnboardingStrings.sourcesBlockCatalogTitle,
+        subtitle: OnboardingStrings.sourcesBlockCatalogSubtitle,
+      ),
+      SourceCatalogSection(
+        catalog: _fullCatalog(reco),
+        selectedIds: _selectedSourceIds,
+        onToggle: _toggleSource,
+        onInfoTap: _showSourceDetail,
+        initiallyExpanded: false,
+      ),
+
+      // ④ Vos abonnements presse
+      const RecommendationSectionHeader(
+        emoji: '④',
+        title: OnboardingStrings.sourcesBlockSubscriptionsTitle,
+        subtitle: OnboardingStrings.sourcesBlockSubscriptionsSubtitle,
+      ),
+      AddSubscriptionCard(onTap: () => _openPremiumSheet(allSources)),
+    ];
+  }
+
+  // ── Briques partagées ────────────────────────────────────────────────────
+
+  Widget _buildSuggestionCard(RecommendedSource r) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
+      child: SourceRecommendationCard(
+        recommendation: r,
+        isSelected: _selectedSourceIds.contains(r.source.id),
+        onToggle: () => _toggleSource(r.source.id),
+        onInfoTap: () => _showSourceDetail(r.source),
+      ),
+    );
+  }
+
+  /// En-tête repliable « Vous suivez déjà un média ? » (variante curious).
+  Widget _buildAddPanelToggle(BuildContext context, FacteurColors colors) {
+    return Semantics(
+      button: true,
+      expanded: _addPanelExpanded,
+      label: OnboardingStrings.sourcesAlreadyFollowTitle,
+      child: InkWell(
+        onTap: () => setState(() => _addPanelExpanded = !_addPanelExpanded),
+        borderRadius: BorderRadius.circular(FacteurRadius.medium),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space2,
+            vertical: FacteurSpacing.space3,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                PhosphorIcons.magnifyingGlass(),
+                size: 20,
+                color: colors.textSecondary,
+              ),
+              const SizedBox(width: FacteurSpacing.space2),
+              Expanded(
+                child: Text(
+                  OnboardingStrings.sourcesAlreadyFollowTitle,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              AnimatedRotation(
+                turns: _addPanelExpanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  PhosphorIcons.caretDown(),
+                  size: 18,
+                  color: colors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmbeddedAddPanel() {
+    return SourceAddPanel(
+      padding: EdgeInsets.zero,
+      showIntro: false,
+      showCommunityGems: false,
+      showAddedNudge: false,
+      inlineProof: true,
+      embedded: true,
+      // Autofocus seulement quand l'utilisateur vient de déplier le panneau.
+      autoFocusSearch: _addPanelExpanded,
+      onSourceAdded: _onSourceAdded,
+    );
+  }
+}
+
+class _AlreadyAddedSources extends StatelessWidget {
+  final List<Source> sources;
+
+  const _AlreadyAddedSources({required this.sources});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Déjà ajoutées',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space2),
+          Wrap(
+            spacing: FacteurSpacing.space2,
+            runSpacing: FacteurSpacing.space2,
+            children: [
+              for (final source in sources)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                    border: Border.all(color: colors.primary.withOpacity(0.18)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SourceLogoAvatar(source: source, size: 22, radius: 6),
+                      const SizedBox(width: 7),
+                      Text(
+                        source.name,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

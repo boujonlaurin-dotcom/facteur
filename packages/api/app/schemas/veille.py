@@ -21,6 +21,8 @@ VeilleThemeSlug = Literal[
 ]
 
 MAX_KEYWORDS_PER_CONFIG = 20
+MAX_SUGGEST_SOURCE_ANGLES = 20
+MAX_SUGGEST_SOURCE_KEYWORDS = 40
 
 
 def _normalize_keyword(raw: str) -> str:
@@ -36,6 +38,8 @@ class VeilleTopicResponse(BaseModel):
     kind: Literal["preset", "suggested", "custom"]
     reason: str | None = None
     position: int = 0
+    # Grappe de mots-clés de l'angle (round-trip avec VeilleTopicSelection).
+    keywords: list[str] = Field(default_factory=list)
 
 
 class VeilleSourceLite(BaseModel):
@@ -61,6 +65,11 @@ class VeilleSourceResponse(BaseModel):
     kind: Literal["followed", "niche"]
     why: str | None = None
     position: int = 0
+    # Santé du flux (alimente le badge « flux inactif / aucun article récent »
+    # côté config). `last_article_at` = date du dernier article ingéré ;
+    # `recent_article_count` = nb d'articles sur la fenêtre Bloc A (30 j).
+    last_article_at: datetime | None = None
+    recent_article_count: int = 0
 
 
 class VeilleKeywordResponse(BaseModel):
@@ -69,6 +78,20 @@ class VeilleKeywordResponse(BaseModel):
     id: UUID
     keyword: str
     position: int = 0
+
+
+class VeilleUnconnectedSource(BaseModel):
+    """Source niche dont le flux RSS n'a pas pu être détecté à l'enregistrement.
+
+    Renvoyée par `POST /api/veille/config` pour que le mobile puisse afficher
+    « X sources n'ont pas pu être connectées » + une CTA de recherche, au lieu
+    de les laisser disparaître silencieusement (cf. plan veille V0, Problème 1).
+    """
+
+    url: str
+    reason: str
+    client_slug: str | None = None
+    name: str | None = None
 
 
 class VeilleConfigResponse(BaseModel):
@@ -87,6 +110,9 @@ class VeilleConfigResponse(BaseModel):
     purpose: str | None = None
     editorial_brief: str | None = None
     preset_id: str | None = None
+    # Sources niche dont le flux RSS n'a pas pu être détecté lors de l'upsert.
+    # Toujours vide sur GET /config ; peuplé uniquement par POST /config.
+    unconnected_sources: list[VeilleUnconnectedSource] = Field(default_factory=list)
 
 
 class VeilleTopicSelection(BaseModel):
@@ -95,6 +121,21 @@ class VeilleTopicSelection(BaseModel):
     kind: Literal["preset", "suggested", "custom"]
     reason: str | None = Field(default=None, max_length=500)
     position: int = Field(default=0, ge=0)
+    # Grappe de mots-clés de l'angle — normalisés lowercase, dédupliqués.
+    # Ces mots-clés pilotent le scoring (custom-topic) en plus du slug.
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+
+    @field_validator("keywords")
+    @classmethod
+    def _normalize_cluster(cls, v: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in v:
+            kw = _normalize_keyword(raw)
+            if kw and 1 <= len(kw) <= 80 and kw not in seen:
+                seen.add(kw)
+                out.append(kw)
+        return out
 
 
 class VeilleNicheCandidate(BaseModel):
@@ -103,6 +144,7 @@ class VeilleNicheCandidate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=4, max_length=2048)
     why: str | None = Field(default=None, max_length=500)
+    client_slug: str | None = Field(default=None, max_length=120)
 
 
 class VeilleSourceSelection(BaseModel):
@@ -205,6 +247,11 @@ class VeilleFeedArticle(BaseModel):
     matched_on: list[Literal["theme", "topic", "source", "keyword"]] = Field(
         default_factory=list
     )
+    # Bloc de curation auquel appartient l'article (refonte deux blocs) :
+    # « sources » = Bloc A « Tes sources » ; « elargie » = Bloc B « Couverture
+    # élargie ». Le mobile dérive les en-têtes de section au rendu sur les
+    # transitions de `group`. Défaut backward-safe (clients pré-refonte).
+    group: Literal["sources", "elargie"] = "sources"
 
 
 class VeilleFeedResponse(BaseModel):
@@ -218,6 +265,24 @@ class VeilleFeedResponse(BaseModel):
 
 
 # ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
+
+
+class VeilleResolveTopicRequest(BaseModel):
+    """Input du POST /api/veille/resolve/topic."""
+
+    topic: str = Field(min_length=2, max_length=200)
+    theme_id: str | None = Field(default=None, max_length=50)
+    theme_label: str | None = Field(default=None, max_length=120)
+
+
+class VeilleResolveTopicResponse(BaseModel):
+    """Sujet libre enrichi pour une veille, sans création de UserTopicProfile."""
+
+    label: str = Field(min_length=1, max_length=200)
+    topic_id: str = Field(min_length=1, max_length=80)
+    keywords: list[str] = Field(default_factory=list, max_length=10)
+    description: str = ""
+    metadata: dict[str, str | None] = Field(default_factory=dict)
 
 
 class VeilleSuggestAnglesRequest(BaseModel):
@@ -246,8 +311,18 @@ class VeilleSuggestSourcesRequest(BaseModel):
     theme_id: str = Field(min_length=1, max_length=50)
     theme_label: str = Field(min_length=1, max_length=120)
     brief: str = Field(default="", max_length=500)
-    angles: list[str] = Field(default_factory=list, max_length=20)
-    keywords: list[str] = Field(default_factory=list, max_length=40)
+    angles: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+
+    @field_validator("angles", mode="after")
+    @classmethod
+    def truncate_angles(cls, v: list[str]) -> list[str]:
+        return v[:MAX_SUGGEST_SOURCE_ANGLES]
+
+    @field_validator("keywords", mode="after")
+    @classmethod
+    def truncate_keywords(cls, v: list[str]) -> list[str]:
+        return v[:MAX_SUGGEST_SOURCE_KEYWORDS]
 
 
 class VeilleSourceSuggestion(BaseModel):
@@ -261,3 +336,43 @@ class VeilleSourceSuggestion(BaseModel):
 
 class VeilleSuggestSourcesResponse(BaseModel):
     sources: list[VeilleSourceSuggestion] = Field(default_factory=list)
+
+
+# ─── Résolution batch de sources candidates (Step 3) ────────────────────────
+
+
+class VeilleResolveSourceCandidate(BaseModel):
+    """Candidat source proposé/local côté mobile, pas encore attaché à la veille."""
+
+    client_slug: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=4, max_length=2048)
+    why: str | None = Field(default=None, max_length=500)
+
+
+class VeilleResolveSourceCandidatesRequest(BaseModel):
+    candidates: list[VeilleResolveSourceCandidate] = Field(
+        default_factory=list, max_length=12
+    )
+
+
+class VeilleResolvedSourceCandidate(BaseModel):
+    client_slug: str
+    source_id: UUID
+    name: str
+    url: str
+    feed_url: str
+    logo_url: str | None = None
+    description: str | None = None
+
+
+class VeilleFailedSourceCandidate(BaseModel):
+    client_slug: str
+    name: str
+    url: str
+    reason: str
+
+
+class VeilleResolveSourceCandidatesResponse(BaseModel):
+    resolved: list[VeilleResolvedSourceCandidate] = Field(default_factory=list)
+    failed: list[VeilleFailedSourceCandidate] = Field(default_factory=list)

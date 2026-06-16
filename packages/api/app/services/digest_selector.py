@@ -46,6 +46,11 @@ from app.services.recommendation.filter_presets import (
     apply_good_news_filter,
     is_sport_content,
 )
+from app.services.recommendation.helpers.coverage_score import compute_coverage_score
+from app.services.recommendation.helpers.editorial_ranking import (
+    polarization_bonus,
+    recency_bonus,
+)
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import ScoringContext
 from app.services.recommendation_service import RecommendationService
@@ -85,6 +90,48 @@ def _set_cached_editorial_ctx(
         del _editorial_ctx_cache[k]
     _editorial_ctx_cache[(target_date, mode)] = (time.time(), ctx)
     logger.info("editorial_ctx_cache_set", target_date=str(target_date), mode=mode)
+
+
+# --- Rehydrated TopicCluster cache (P2) ---
+# `EditorialGlobalContext` only serializes cluster IDs (`cluster_data`); the
+# `TopicCluster` objects (with Content loaded) needed by the per-user actu
+# matching are discarded after `compute_global_context`. We rehydrate them
+# ONCE per (date, mode) — a single shared query — and reuse across all users
+# in the batch. Same date-based eviction as the ctx cache.
+_editorial_clusters_cache: dict[tuple, tuple[float, list]] = {}
+
+
+def _get_cached_editorial_clusters(
+    target_date: datetime.date, mode: str
+) -> list | None:
+    """Return cached rehydrated clusters for this (date, mode), else None."""
+    entry = _editorial_clusters_cache.get((target_date, mode))
+    if entry is not None:
+        return entry[1]
+    return None
+
+
+def _set_cached_editorial_clusters(
+    target_date: datetime.date, mode: str, clusters: list
+) -> None:
+    """Cache rehydrated clusters, clearing entries from previous dates."""
+    stale_keys = [k for k in _editorial_clusters_cache if k[0] != target_date]
+    for k in stale_keys:
+        del _editorial_clusters_cache[k]
+    _editorial_clusters_cache[(target_date, mode)] = (time.time(), clusters)
+
+
+# Seuil minimal (échelle pilier ~0-100) pour qu'un article de source suivie
+# non clusterisé en multi-sources devienne un "subject solo" per-user (P2).
+# Décision PO : pas de quota dur — on laisse le scoring (source suivie + fort
+# match intérêt + récence) franchir le gate. Configurable via env.
+def _read_solo_subject_min_score() -> float:
+    import os
+
+    try:
+        return float(os.environ.get("EDITORIAL_SOLO_SUBJECT_MIN_SCORE", ""))
+    except ValueError:
+        return 40.0
 
 
 @dataclass
@@ -362,31 +409,59 @@ class DigestSelector:
                             )
                             return None
                         else:
-                            # MVP V2: global digest — actu already matched
-                            # in compute_global_context(), no per-user phase
-                            from app.services.editorial.schemas import (
-                                EditorialPipelineResult,
-                            )
+                            # P2 : projection editorial PER-USER. Le contexte
+                            # global (clusters/sujets) reste partagé ; on en
+                            # dérive un digest personnalisé (représentant source
+                            # suivie + re-ranking intérêts + sujets solo) sans
+                            # re-clustering ni LLM. Cf. _project_editorial_for_user.
+                            clusters = _get_cached_editorial_clusters(_cache_date, mode)
+                            if clusters is None:
+                                clusters = await self._rehydrate_editorial_clusters(
+                                    global_ctx
+                                )
+                                _set_cached_editorial_clusters(
+                                    _cache_date, mode, clusters
+                                )
 
-                            actu_hits = sum(
-                                1
-                                for s in global_ctx.subjects
-                                if s.actu_article is not None
-                            )
-                            deep_hits = sum(
-                                1
-                                for s in global_ctx.subjects
-                                if s.deep_article is not None
-                            )
-                            result = EditorialPipelineResult(
-                                subjects=global_ctx.subjects,
-                                metadata={
-                                    "actu_hits": actu_hits,
-                                    "deep_hits": deep_hits,
-                                    "total_subjects": len(global_ctx.subjects),
-                                    "matching_ms": 0,
-                                },
-                            )
+                            if clusters:
+                                result = await self._project_editorial_for_user(
+                                    pipeline=pipeline,
+                                    global_ctx=global_ctx,
+                                    clusters=clusters,
+                                    context=context,
+                                    mode=mode,
+                                )
+                            else:
+                                # Réhydratation impossible (pool absent) :
+                                # repli sur le digest global verbatim plutôt
+                                # que de renvoyer vide.
+                                from app.services.editorial.schemas import (
+                                    EditorialPipelineResult,
+                                )
+
+                                logger.warning(
+                                    "digest_editorial_rehydrate_empty_fallback_global",
+                                    user_id=str(user_id),
+                                )
+                                result = EditorialPipelineResult(
+                                    subjects=global_ctx.subjects,
+                                    metadata={
+                                        "actu_hits": sum(
+                                            1
+                                            for s in global_ctx.subjects
+                                            if s.actu_article is not None
+                                        ),
+                                        "deep_hits": sum(
+                                            1
+                                            for s in global_ctx.subjects
+                                            if s.deep_article is not None
+                                        ),
+                                        "total_subjects": len(global_ctx.subjects),
+                                        "matching_ms": 0,
+                                        "per_user_projection": False,
+                                    },
+                                )
+
                             editorial_time = time.time() - step_start
                             total_time = time.time() - start_time
                             logger.info(
@@ -395,6 +470,10 @@ class DigestSelector:
                                 subjects=len(result.subjects),
                                 actu_hits=result.metadata.get("actu_hits", 0),
                                 deep_hits=result.metadata.get("deep_hits", 0),
+                                solo_added=result.metadata.get("solo_added", 0),
+                                followed_source_reps=result.metadata.get(
+                                    "followed_source_reps", 0
+                                ),
                                 editorial_ms=round(editorial_time * 1000, 2),
                                 total_ms=round(total_time * 1000, 2),
                             )
@@ -975,19 +1054,298 @@ class DigestSelector:
             )
             return []
 
+    async def _rehydrate_editorial_clusters(self, global_ctx: object) -> list:
+        """Reconstruit les `TopicCluster` (avec Content chargés) depuis `cluster_data`.
+
+        `EditorialGlobalContext` ne sérialise que les IDs (`cluster_data`) ; les
+        `TopicCluster` originaux sont jetés après `compute_global_context`. La
+        projection per-user (`match_for_user`) en a besoin (lit `contents` /
+        `source_ids` / `cluster_id`). On charge tous les Content concernés en UNE
+        requête partagée. `tokens` reste vide (non lu par le matching).
+        """
+        from app.services.briefing.importance_detector import TopicCluster
+
+        cluster_data = getattr(global_ctx, "cluster_data", None) or []
+
+        def _to_uuid(value: object) -> UUID | None:
+            try:
+                return UUID(str(value))
+            except (ValueError, AttributeError, TypeError):
+                return None
+
+        all_ids: set[UUID] = set()
+        for cd in cluster_data:
+            for cid in cd.get("content_ids", []):
+                u = _to_uuid(cid)
+                if u is not None:
+                    all_ids.add(u)
+        if not all_ids:
+            return []
+
+        stmt = (
+            select(Content)
+            .options(selectinload(Content.source))
+            .where(Content.id.in_(all_ids))
+        )
+        content_map: dict[UUID, Content] = {}
+        try:
+            if self.session_maker is not None:
+                async with self.session_maker() as session:
+                    result = await session.execute(stmt)
+                    for c in result.scalars().all():
+                        content_map[c.id] = c
+            else:
+                result = await self.session.execute(stmt)
+                for c in result.scalars().all():
+                    content_map[c.id] = c
+        except SQLAlchemyError:
+            logger.exception("editorial_clusters_rehydrate_failed")
+            return []
+
+        clusters: list = []
+        for cd in cluster_data:
+            contents = [
+                content_map[u]
+                for cid in cd.get("content_ids", [])
+                if (u := _to_uuid(cid)) is not None and u in content_map
+            ]
+            if not contents:
+                continue
+            source_ids = {
+                u
+                for sid in cd.get("source_ids", [])
+                if (u := _to_uuid(sid)) is not None
+            }
+            clusters.append(
+                TopicCluster(
+                    cluster_id=cd["cluster_id"],
+                    label=cd.get("label", ""),
+                    tokens=set(),
+                    contents=contents,
+                    source_ids=source_ids,
+                    theme=cd.get("theme"),
+                )
+            )
+        logger.info(
+            "editorial_clusters_rehydrated",
+            clusters=len(clusters),
+            contents=len(content_map),
+        )
+        return clusters
+
+    async def _project_editorial_for_user(
+        self,
+        *,
+        pipeline: object,
+        global_ctx: object,
+        clusters: list,
+        context: DigestContext,
+        mode: str,
+    ) -> object:
+        """Projection editorial per-user (P2 — le vrai levier de l'Essentiel).
+
+        À partir du contexte global PARTAGÉ (clusters/sujets identiques pour
+        tous), on dérive un digest personnalisé sans re-clustering ni LLM :
+
+        1. `run_for_user` choisit, par sujet, un représentant préférant une
+           source suivie (`is_user_source=True`) ; sinon conserve le
+           représentant global.
+        2. Re-ranking per-user : on score le représentant de chaque sujet via le
+           moteur de piliers (intérêts/subtopics×poids + source suivie + récence)
+           et on réordonne, en préservant « À la Une » au rang 1.
+        3. Sujets solo : un article d'une source suivie (<24h), non déjà
+           représenté et au score ≥ seuil, devient un sujet à lui seul
+           (gate cluster levé). Créés par-user → pas de fuite cross-user.
+        """
+        from app.services.editorial.pipeline import _read_target_subject_count
+        from app.services.editorial.schemas import (
+            EditorialPipelineResult,
+            EditorialSubject,
+            MatchedActuArticle,
+        )
+
+        target = _read_target_subject_count()
+
+        # 1. Matching actu per-user (représentant préférant les sources suivies).
+        per_user = pipeline.run_for_user(
+            global_ctx=global_ctx,
+            clusters=clusters,
+            user_source_ids=context.followed_source_ids,
+            excluded_content_ids=set(),
+        )
+        subjects = list(per_user.subjects)
+
+        # Lookup Content depuis le pool réhydraté.
+        content_by_id: dict[UUID, Content] = {}
+        for cl in clusters:
+            for c in cl.contents:
+                content_by_id[c.id] = c
+
+        represented_ids = {
+            s.actu_article.content_id for s in subjects if s.actu_article is not None
+        }
+
+        # Représentants à scorer.
+        rep_contents: list[Content] = []
+        seen: set[UUID] = set()
+        for s in subjects:
+            if s.actu_article is None:
+                continue
+            c = content_by_id.get(s.actu_article.content_id)
+            if c is not None and c.id not in seen:
+                rep_contents.append(c)
+                seen.add(c.id)
+
+        # Candidats solo : sources suivies, <24h, non représentés. 1 par source.
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=24)
+        solo_by_source: dict[UUID, Content] = {}
+        for c in content_by_id.values():
+            if c.source_id not in context.followed_source_ids:
+                continue
+            if c.id in represented_ids:
+                continue
+            pub = c.published_at
+            if pub.tzinfo is None:
+                pub = pub.replace(tzinfo=datetime.UTC)
+            if pub < cutoff:
+                continue
+            current = solo_by_source.get(c.source_id)
+            if current is None or pub > current.published_at.replace(
+                tzinfo=current.published_at.tzinfo or datetime.UTC
+            ):
+                solo_by_source[c.source_id] = c
+        solo_candidates = list(solo_by_source.values())
+
+        # 2. Scoring unifié (réutilise _score_candidates / pillar_engine).
+        score_map: dict[UUID, float] = {}
+        score_inputs = rep_contents + solo_candidates
+        if score_inputs:
+            try:
+                scored = await self._score_candidates(score_inputs, context, mode=mode)
+                score_map = {c.id: sc for c, sc, _bd in scored}
+            except Exception:
+                # Dégradation sûre : sans scoring on garde l'ordre run_for_user.
+                logger.exception(
+                    "editorial_per_user_scoring_failed",
+                    user_id=str(context.user_id),
+                )
+
+        def subject_perso(s: EditorialSubject) -> float:
+            """Score de personnalisation du représentant — départage uniquement."""
+            if s.actu_article is None:
+                return float("-inf")
+            return score_map.get(s.actu_article.content_id, 0.0)
+
+        def subject_importance(s: EditorialSubject) -> float:
+            """Importance éditoriale = couverture + récence + polarisation.
+
+            Critère primaire du rang 2+. Réutilise `compute_coverage_score`
+            (source de vérité couverture) et les helpers partagés de récence /
+            polarisation. La personnalisation ne sert plus qu'à départager.
+            """
+            published = s.actu_article.published_at if s.actu_article else None
+            return (
+                compute_coverage_score(s.source_count)
+                + recency_bonus(published)
+                + polarization_bonus(s.divergence_level)
+            )
+
+        def subject_rank_key(s: EditorialSubject) -> tuple[bool, float, float]:
+            """Clé de tri reverse=True : importance éditoriale d'abord, perso en
+            départage, et les sujets solo (1 source) toujours sous les
+            multi-sources. Un sujet sans actu est relégué en dernier.
+            """
+            if s.actu_article is None:
+                return (False, float("-inf"), float("-inf"))
+            is_multi = s.source_count >= 2
+            return (is_multi, subject_importance(s), subject_perso(s))
+
+        # 3. Sujets solo au-dessus du seuil. Conservés mais RELÉGUÉS sous les
+        # sujets multi-sources par `subject_rank_key` (is_multi=False) — décision
+        # PO : un solo n'est jamais au-dessus d'un multi-sources.
+        threshold = _read_solo_subject_min_score()
+        solo_subjects: list[EditorialSubject] = []
+        for c in solo_candidates:
+            if score_map.get(c.id, 0.0) < threshold:
+                continue
+            solo_subjects.append(
+                EditorialSubject(
+                    rank=0,
+                    topic_id=f"solo-{c.id}",
+                    label=c.title,
+                    selection_reason="Source suivie",
+                    deep_angle=None,
+                    source_count=1,
+                    theme=c.theme or (c.source.theme if c.source else None),
+                    is_a_la_une=False,
+                    actu_article=MatchedActuArticle(
+                        content_id=c.id,
+                        title=c.title,
+                        source_name=c.source.name if c.source else "Source inconnue",
+                        source_id=c.source_id,
+                        is_user_source=True,
+                        published_at=c.published_at,
+                    ),
+                    extra_actu_articles=[],
+                )
+            )
+
+        # Re-ranking : « À la Une » reste rang 1 ; le reste trié par importance
+        # éditoriale (couverture + récence + polarisation), perso en départage,
+        # solos relégués sous les multi-sources. Cf. bug-actus-du-jour-ranking.md.
+        une = [s for s in subjects if s.is_a_la_une]
+        rest = [s for s in subjects if not s.is_a_la_une] + solo_subjects
+        rest_sorted = sorted(rest, key=subject_rank_key, reverse=True)
+        ordered = (une + rest_sorted)[:target]
+
+        renumbered: list[EditorialSubject] = []
+        for new_rank, s in enumerate(ordered, start=1):
+            renumbered.append(
+                s.model_copy(
+                    update={
+                        "rank": new_rank,
+                        "is_a_la_une": s.is_a_la_une and new_rank == 1,
+                    }
+                )
+            )
+
+        actu_hits = sum(1 for s in renumbered if s.actu_article is not None)
+        deep_hits = sum(1 for s in renumbered if s.deep_article is not None)
+        followed_reps = sum(
+            1
+            for s in renumbered
+            if s.actu_article is not None and s.actu_article.is_user_source
+        )
+        return EditorialPipelineResult(
+            subjects=renumbered,
+            metadata={
+                "actu_hits": actu_hits,
+                "deep_hits": deep_hits,
+                "total_subjects": len(renumbered),
+                "matching_ms": per_user.metadata.get("matching_ms", 0),
+                "solo_added": len(solo_subjects),
+                "followed_source_reps": followed_reps,
+                "per_user_projection": True,
+            },
+        )
+
     async def _score_candidates(
         self,
         candidates: list[Content],
         context: DigestContext,
         mode: str = "pour_vous",
     ) -> list[tuple[Content, float, list[DigestScoreBreakdown]]]:
-        """Score les candidats en utilisant le ScoringEngine existant avec bonus de fraîcheur.
+        """Score les candidats via le moteur de piliers unifié (PillarScoringEngine).
 
-        Cette méthode utilise le ScoringEngine configuré dans RecommendationService
-        et ajoute un bonus de fraîcheur hiérarchisé pour favoriser les articles
-        des sources suivies même s'ils sont plus anciens.
+        Le scoring (pertinence/source/fraîcheur/qualité + pénalités) est entièrement
+        délégué au `pillar_engine` — le même moteur que le Feed — pour une seule
+        source de vérité. La récence (FraicheurPillar) et le bonus source suivie
+        (SourcePillar) sont donc déjà comptés : aucun bonus manuel n'est ré-empilé
+        ici (anti double-comptage).
 
-        En mode PERSPECTIVE, ajoute un boost de +80 pts aux articles de biais opposé.
+        Seuls les ajustements digest-spécifiques sans équivalent pilier sont appliqués
+        en post-pilier : pénalité Sport (les deux modes) et boost "actu décalée" en
+        mode serein.
 
         Retourne les candidats avec leur score et un breakdown détaillé des contributions
         pour la transparence algorithmique.
@@ -1023,82 +1381,31 @@ class DigestSelector:
             breakdown: list[DigestScoreBreakdown] = []
 
             try:
-                # Get base score from ScoringEngine
-                base_score = self.rec_service.scoring_engine.compute_score(
+                # Moteur unifié : pertinence + source + fraîcheur + qualité,
+                # combinés et normalisés (~0-100), pénalités incluses. Une seule
+                # source de vérité partagée avec le Feed.
+                pillar_result = self.rec_service.pillar_engine.compute_score(
                     content, scoring_context
                 )
+                final_score = pillar_result.final_score
 
-                # Calculate recency bonus based on article age
-                # Defensive: Ensure both datetimes are timezone-aware
-                published = content.published_at
-                now = datetime.datetime.now(datetime.UTC)
-
-                if published.tzinfo is None:
-                    published = published.replace(tzinfo=datetime.UTC)
-                if now.tzinfo is None:
-                    now = now.replace(tzinfo=datetime.UTC)
-
-                hours_old = (now - published).total_seconds() / 3600
-
-                # Add recency contribution to breakdown
-                if hours_old < 6:
-                    recency_bonus = ScoringWeights.RECENT_VERY_BONUS  # +30
+                # Breakdown = contributions des piliers (déjà labellisées avec
+                # leur `pillar`). Récence et source suivie y figurent une seule
+                # fois — plus de ré-empilement manuel.
+                for contrib in pillar_result.contributions:
                     breakdown.append(
                         DigestScoreBreakdown(
-                            label="Article très récent (< 6h)",
-                            points=recency_bonus,
-                            is_positive=True,
+                            label=contrib["label"],
+                            points=contrib["points"],
+                            is_positive=contrib["is_positive"],
+                            pillar=contrib["pillar"],
                         )
                     )
-                elif hours_old < 24:
-                    recency_bonus = ScoringWeights.RECENT_BONUS  # +25
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Article récent (< 24h)",
-                            points=recency_bonus,
-                            is_positive=True,
-                        )
-                    )
-                elif hours_old < 48:
-                    recency_bonus = ScoringWeights.RECENT_DAY_BONUS  # +15
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Publié aujourd'hui",
-                            points=recency_bonus,
-                            is_positive=True,
-                        )
-                    )
-                elif hours_old < 72:
-                    recency_bonus = ScoringWeights.RECENT_YESTERDAY_BONUS  # +8
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Publié hier", points=recency_bonus, is_positive=True
-                        )
-                    )
-                elif hours_old < 120:
-                    recency_bonus = ScoringWeights.RECENT_WEEK_BONUS  # +3
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Article de la semaine",
-                            points=recency_bonus,
-                            is_positive=True,
-                        )
-                    )
-                elif hours_old < 168:
-                    recency_bonus = ScoringWeights.RECENT_OLD_BONUS  # +1
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Article ancien",
-                            points=recency_bonus,
-                            is_positive=True,
-                        )
-                    )
-                else:
-                    recency_bonus = 0.0
 
-                final_score = base_score + recency_bonus
+                # --- Ajustements digest-spécifiques (post-pilier) ---
+                # Pas d'équivalent pilier : appliqués après la combinaison.
 
-                # Sport penalty (applied to both pour_vous and serein modes)
+                # Pénalité Sport (les deux modes).
                 if is_sport_content(content):
                     final_score += ScoringWeights.DIGEST_SPORT_PENALTY
                     breakdown.append(
@@ -1106,154 +1413,11 @@ class DigestSelector:
                             label="Sport (priorité réduite)",
                             points=ScoringWeights.DIGEST_SPORT_PENALTY,
                             is_positive=False,
+                            pillar="penalite",
                         )
                     )
 
-                # Capture CoreLayer contributions
-                # Theme match (3-tier: content.theme > source.theme > secondary)
-                _theme_breakdown_added = False
-                if (
-                    hasattr(content, "theme")
-                    and content.theme
-                    and content.theme in context.user_interests
-                ):
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label=f"Thème article : {content.theme}",
-                            points=ScoringWeights.THEME_MATCH,
-                            is_positive=True,
-                        )
-                    )
-                    _theme_breakdown_added = True
-                elif content.source and content.source.theme in context.user_interests:
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label=f"Thème matché : {content.source.theme}",
-                            points=ScoringWeights.THEME_MATCH,
-                            is_positive=True,
-                        )
-                    )
-                    _theme_breakdown_added = True
-                elif content.source and getattr(
-                    content.source, "secondary_themes", None
-                ):
-                    matched_sec = (
-                        set(content.source.secondary_themes) & context.user_interests
-                    )
-                    if matched_sec:
-                        sec_theme = sorted(matched_sec)[0]
-                        sec_pts = (
-                            ScoringWeights.THEME_MATCH
-                            * ScoringWeights.SECONDARY_THEME_FACTOR
-                        )
-                        breakdown.append(
-                            DigestScoreBreakdown(
-                                label=f"Thème secondaire : {sec_theme}",
-                                points=sec_pts,
-                                is_positive=True,
-                            )
-                        )
-                        _theme_breakdown_added = True
-
-                # Source followed
-                if content.source_id in context.followed_source_ids:
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Source de confiance",
-                            points=ScoringWeights.TRUSTED_SOURCE,
-                            is_positive=True,
-                        )
-                    )
-
-                    # Digest-only additive boost: ensures an article from a
-                    # followed source outranks a comparable curated article in
-                    # the top-7 selection. base_score already counted the
-                    # standard TRUSTED_SOURCE via CoreLayer; this stacks on it
-                    # exclusively for the digest pipeline.
-                    final_score += ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Priorité source suivie (digest)",
-                            points=ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS,
-                            is_positive=True,
-                        )
-                    )
-
-                    # Custom source bonus
-                    if content.source_id in context.custom_source_ids:
-                        breakdown.append(
-                            DigestScoreBreakdown(
-                                label="Ta source personnalisée",
-                                points=ScoringWeights.CUSTOM_SOURCE_BONUS,
-                                is_positive=True,
-                            )
-                        )
-
-                # Capture ArticleTopicLayer contributions
-                if content.topics:
-                    matched_topics = 0
-                    for topic in content.topics:
-                        topic_lower = topic.lower()
-                        if topic_lower in context.user_subtopics and matched_topics < 2:
-                            w = context.user_subtopic_weights.get(topic_lower, 1.0)
-                            points = ScoringWeights.TOPIC_MATCH * w
-                            if w > 1.0:
-                                label = f"Renforcé par vos j'aime : {topic}"
-                            else:
-                                label = f"Sous-thème : {topic}"
-                            breakdown.append(
-                                DigestScoreBreakdown(
-                                    label=label, points=points, is_positive=True
-                                )
-                            )
-                            matched_topics += 1
-
-                    # Subtopic precision bonus if any topics matched
-                    if matched_topics > 0:
-                        breakdown.append(
-                            DigestScoreBreakdown(
-                                label="Précision thématique",
-                                points=ScoringWeights.SUBTOPIC_PRECISION_BONUS,
-                                is_positive=True,
-                            )
-                        )
-
-                # Capture StaticPreferenceLayer contributions
-                if content.content_type and context.user_prefs.get("preferred_format"):
-                    if content.content_type.value == context.user_prefs.get(
-                        "preferred_format"
-                    ):
-                        breakdown.append(
-                            DigestScoreBreakdown(
-                                label=f"Format préféré : {content.content_type.value}",
-                                points=15.0,  # Format preference weight
-                                is_positive=True,
-                            )
-                        )
-
-                # Capture QualityLayer contributions
-                if content.source and content.source.is_curated:
-                    breakdown.append(
-                        DigestScoreBreakdown(
-                            label="Source qualitative",
-                            points=ScoringWeights.CURATED_SOURCE,
-                            is_positive=True,
-                        )
-                    )
-
-                # Low reliability penalty (if applicable)
-                if content.source and hasattr(content.source, "reliability_score"):
-                    reliability = content.source.reliability_score
-                    if reliability and reliability.value == "low":
-                        breakdown.append(
-                            DigestScoreBreakdown(
-                                label="Fiabilité source faible",
-                                points=ScoringWeights.FQS_LOW_MALUS,
-                                is_positive=False,
-                            )
-                        )
-
-                # Serein mode: boost humorous/satirical sources x1.3
+                # Mode serein : boost sources humoristiques/satiriques x1.3.
                 if (
                     mode == "serein"
                     and content.source
@@ -1266,16 +1430,17 @@ class DigestSelector:
                             label="Actu décalée (mode serein)",
                             points=round(tone_boost, 1),
                             is_positive=True,
+                            pillar="pertinence",
                         )
                     )
 
                 logger.debug(
                     "digest_scoring_breakdown",
                     content_id=str(content.id),
-                    hours_old=round(hours_old, 2),
-                    base_score=round(base_score, 2),
-                    recency_bonus=recency_bonus,
                     final_score=round(final_score, 2),
+                    pillar_scores={
+                        k: round(v, 1) for k, v in pillar_result.pillar_scores.items()
+                    },
                     breakdown_count=len(breakdown),
                 )
 

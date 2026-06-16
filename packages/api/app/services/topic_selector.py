@@ -26,6 +26,7 @@ from app.services.digest_selector import DigestContext, GlobalTrendingContext
 from app.services.ml.classification_service import SLUG_TO_LABEL
 from app.services.perspective_service import PerspectiveService
 from app.services.recommendation.filter_presets import is_cluster_serein_compatible
+from app.services.recommendation.helpers.editorial_ranking import recency_bonus
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import (
     PillarScoringEngine,
@@ -241,38 +242,15 @@ class TopicSelector:
         return scored
 
     def _best_recency_bonus(self, contents: list[Content]) -> float:
-        """Retourne le meilleur bonus recency parmi les articles."""
-        now = datetime.datetime.now(datetime.UTC)
-        best = 0.0
+        """Retourne le meilleur bonus recency parmi les articles.
 
-        for content in contents:
-            published = content.published_at
-            if published and published.tzinfo is None:
-                published = published.replace(tzinfo=datetime.UTC)
-            if not published:
-                continue
-
-            hours_old = (now - published).total_seconds() / 3600
-
-            if hours_old < 6:
-                bonus = ScoringWeights.RECENT_VERY_BONUS
-            elif hours_old < 24:
-                bonus = ScoringWeights.RECENT_BONUS
-            elif hours_old < 48:
-                bonus = ScoringWeights.RECENT_DAY_BONUS
-            elif hours_old < 72:
-                bonus = ScoringWeights.RECENT_YESTERDAY_BONUS
-            elif hours_old < 120:
-                bonus = ScoringWeights.RECENT_WEEK_BONUS
-            elif hours_old < 168:
-                bonus = ScoringWeights.RECENT_OLD_BONUS
-            else:
-                bonus = 0.0
-
-            if bonus > best:
-                best = bonus
-
-        return best
+        Délègue les paliers à `helpers/editorial_ranking.recency_bonus` (source
+        de vérité partagée avec la projection per-user du digest).
+        """
+        return max(
+            (recency_bonus(c.published_at) for c in contents),
+            default=0.0,
+        )
 
     def _select_n_topics(
         self,

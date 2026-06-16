@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
+import '../../sources/widgets/source_type_badge.dart';
 import '../data/source_recommender.dart';
 
 /// Card widget for a recommended source in the onboarding sources screen.
 ///
-/// Tap on the card toggles selection. Tap on the (i) icon opens the detail modal.
+/// Tap on the card opens the detail modal (compréhension par défaut). Tap on the
+/// selection circle toggles selection (hit area ≥44px).
 /// Shows recommendation tags (topic matches, anti-bruit, fiable, serein) as chips.
 class SourceRecommendationCard extends StatelessWidget {
   final RecommendedSource recommendation;
@@ -34,7 +35,7 @@ class SourceRecommendationCard extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
-        onToggle();
+        onInfoTap();
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
@@ -62,7 +63,8 @@ class SourceRecommendationCard extends StatelessWidget {
                     ? FacteurImage(
                         imageUrl: source.logoUrl!,
                         fit: BoxFit.cover,
-                        errorWidget: (_) => _buildLogoFallback(colors, source.name),
+                        errorWidget: (_) =>
+                            _buildLogoFallback(colors, source.name),
                       )
                     : _buildLogoFallback(colors, source.name),
               ),
@@ -80,13 +82,13 @@ class SourceRecommendationCard extends StatelessWidget {
                       Flexible(
                         child: Text(
                           source.name,
-                          style:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: colors.textPrimary,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                  ),
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: colors.textPrimary,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -103,12 +105,18 @@ class SourceRecommendationCard extends StatelessWidget {
                         const SizedBox(width: 3),
                         Text(
                           source.getBiasLabel(),
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: colors.textTertiary,
-                                    fontSize: 10,
-                                  ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: colors.textTertiary,
+                                fontSize: 10,
+                              ),
                         ),
+                      ],
+                      // Badge format (non-article uniquement) : rend le format
+                      // vidéo/podcast/Reddit lisible d'un coup d'œil.
+                      if (source.getTypeIcon() != null) ...[
+                        const SizedBox(width: 6),
+                        SourceTypeBadge(source: source, iconSize: 11),
                       ],
                     ],
                   ),
@@ -129,13 +137,25 @@ class SourceRecommendationCard extends StatelessWidget {
                     Text(
                       recommendation.reason,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontStyle: recommendation.category ==
-                                    SourceCategory.gem
-                                ? FontStyle.italic
-                                : FontStyle.normal,
-                          ),
+                        color: colors.textTertiary,
+                        fontStyle: recommendation.category == SourceCategory.gem
+                            ? FontStyle.italic
+                            : FontStyle.normal,
+                      ),
                       maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (source.followerCount > 0) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      _followerLabel(source.followerCount),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -145,46 +165,42 @@ class SourceRecommendationCard extends StatelessWidget {
 
             const SizedBox(width: FacteurSpacing.space2),
 
-            // Info button
+            // Selection indicator — propre zone de tap (≥44px) pour toggler la
+            // sélection, indépendante du tap carte (qui ouvre la modal).
             GestureDetector(
               onTap: () {
                 HapticFeedback.lightImpact();
-                onInfoTap();
+                onToggle();
               },
               behavior: HitTestBehavior.opaque,
               child: Padding(
-                padding: const EdgeInsets.all(4),
-                child: Icon(
-                  PhosphorIcons.info(PhosphorIconsStyle.regular),
-                  size: 20,
-                  color: colors.textTertiary,
+                padding: const EdgeInsets.all(10),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: isSelected ? colors.primary : Colors.transparent,
+                    border: Border.all(
+                      color: isSelected ? colors.primary : colors.textTertiary,
+                      width: isSelected ? 0 : 1.5,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 16, color: Colors.white)
+                      : null,
                 ),
               ),
-            ),
-
-            const SizedBox(width: FacteurSpacing.space2),
-
-            // Selection indicator
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: isSelected ? colors.primary : Colors.transparent,
-                border: Border.all(
-                  color: isSelected ? colors.primary : colors.textTertiary,
-                  width: isSelected ? 0 : 1.5,
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: isSelected
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
-                  : null,
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _followerLabel(int count) {
+    return 'Suivi par $count lecteur${count > 1 ? 's' : ''} Facteur';
   }
 
   /// Builds a fallback avatar with the source's initials.
@@ -220,23 +236,38 @@ class SourceRecommendationCard extends StatelessWidget {
 
     final prefix = switch (tag.type) {
       RecommendationTagType.topic => '',
+      RecommendationTagType.specialist => '\u{1F3AF} ', // \ud83c\udfaf
       RecommendationTagType.antiBruit => '\u{1F507} ',
       RecommendationTagType.fiable => '\u2713 ',
       RecommendationTagType.serein => '\u2600 ',
+      RecommendationTagType.similar => '\u2248 ', // \u2248
+    };
+
+    // Les chips \u00ab pourquoi \u00bb (sp\u00e9cialiste / similaire / fiable / anti-bruit)
+    // ressortent en teinte primary ; les tags purement th\u00e9matiques restent neutres.
+    final highlighted = switch (tag.type) {
+      RecommendationTagType.specialist ||
+      RecommendationTagType.similar ||
+      RecommendationTagType.fiable ||
+      RecommendationTagType.antiBruit => true,
+      _ => false,
     };
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: colors.textPrimary.withOpacity(0.05),
+        color: highlighted
+            ? colors.primary.withOpacity(0.08)
+            : colors.textPrimary.withOpacity(0.05),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
       ),
       child: Text(
         '$prefix${tag.label}',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: colors.textSecondary,
-              fontSize: 11,
-            ),
+          color: highlighted ? colors.primary : colors.textSecondary,
+          fontSize: 11,
+          fontWeight: highlighted ? FontWeight.w600 : null,
+        ),
       ),
     );
   }

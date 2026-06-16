@@ -31,7 +31,7 @@ _CACHE_TTL_SECONDS = 86400  # 24h
 class AngleSuggestion:
     title: str
     keywords: list[str]
-    reason: str | None
+    reason: str | None = None
 
 
 class _LLMAngle(BaseModel):
@@ -39,30 +39,27 @@ class _LLMAngle(BaseModel):
 
     title: str = Field(min_length=1, max_length=120)
     keywords: list[str] = Field(default_factory=list, min_length=1, max_length=10)
-    reason: str | None = Field(default=None, max_length=300)
 
 
 _SYSTEM_PROMPT = """Tu es un expert en curation éditoriale francophone, spécialisé en veille thématique.
 
-Tâche : pour un thème et un brief éditorial donnés, propose 5 à 8 ANGLES de veille pertinents. Chaque angle vient avec 3 à 5 mots-clés explicites qui serviront ensuite à filtrer des articles d'actualité.
+Tâche : pour un thème et un brief éditorial donnés, propose 8 à 12 ANGLES de veille pertinents. Chaque angle vient avec 3 à 5 mots-clés explicites qui serviront ensuite à filtrer des articles d'actualité.
 
 Format JSON strict :
 {
   "angles": [
     {
       "title": "<titre court fr, 4-8 mots>",
-      "keywords": ["<mot-cle-1>", "<mot-cle-2>", "..."],
-      "reason": "<1 phrase max sur le pourquoi de cet angle>"
+      "keywords": ["<mot-cle-1>", "<mot-cle-2>", "..."]
     },
     ...
   ]
 }
 
 Contraintes :
-- 5 à 8 angles distincts (pas de redondance).
+- 8 à 12 angles distincts (pas de redondance).
 - title : titre court (max 80 chars), explicite, complémentaire aux autres angles.
 - keywords : 3 à 5 mots ou expressions courtes (1-3 mots chacun), en français, en minuscules. Ce sont les mots qui doivent matcher dans les titres / descriptions des articles. Pense large (synonymes, variantes, noms propres pertinents) mais reste précis pour le sujet.
-- reason : 1 phrase max 200 chars qui explique l'intérêt de cet angle pour le thème + brief.
 - Couvre plusieurs angles complémentaires (différents axes du sujet).
 - Réponds UNIQUEMENT avec le JSON, rien d'autre."""
 
@@ -73,27 +70,34 @@ def _fallback_angles(theme_label: str) -> list[AngleSuggestion]:
         AngleSuggestion(
             title=f"Actualité {theme_label}",
             keywords=[theme_label.lower(), "actualité", "nouveau"],
-            reason=f"Suit l'actualité courante de {theme_label}",
         ),
         AngleSuggestion(
             title="Analyses de fond",
             keywords=["analyse", "enquête", "décryptage"],
-            reason="Articles long format et tribunes d'experts",
         ),
         AngleSuggestion(
             title="Innovations et nouveautés",
             keywords=["innovation", "nouveauté", "lancement"],
-            reason="Suit les évolutions récentes du domaine",
         ),
         AngleSuggestion(
             title="Débats et controverses",
             keywords=["débat", "controverse", "polémique"],
-            reason="Sujets clivants et arguments contradictoires",
         ),
         AngleSuggestion(
             title="Initiatives et bonnes pratiques",
             keywords=["initiative", "bonne pratique", "retour d'expérience"],
-            reason="Cas concrets et solutions testées",
+        ),
+        AngleSuggestion(
+            title="Acteurs et personnalités",
+            keywords=["interview", "portrait", "personnalité"],
+        ),
+        AngleSuggestion(
+            title="Tendances de fond",
+            keywords=["tendance", "prospective", "futur"],
+        ),
+        AngleSuggestion(
+            title="Réglementation et politique",
+            keywords=["réglementation", "loi", "politique"],
         ),
     ]
 
@@ -139,7 +143,7 @@ class AngleSuggester:
         user_message = (
             f"Thème : {theme_label} (slug: {theme_id})\n"
             f"Brief éditorial : {brief or '(aucun)'}\n\n"
-            f"Propose 5 à 8 angles avec leurs mots-clés explicites."
+            f"Propose 8 à 12 angles avec leurs mots-clés explicites."
         )
 
         raw = await self._llm.chat_json(
@@ -147,7 +151,8 @@ class AngleSuggester:
             user_message=user_message,
             model=self._model,
             temperature=0.3,
-            max_tokens=1200,
+            max_tokens=2000,
+            call_site="veille_suggester",
         )
 
         angles = self._parse(raw)
@@ -178,7 +183,7 @@ class AngleSuggester:
             AngleSuggestion(
                 title=a.title.strip(),
                 keywords=[k.strip().lower() for k in a.keywords if k.strip()],
-                reason=a.reason,
+                reason=None,
             )
             for a in parsed
         ]

@@ -824,11 +824,25 @@ class TestGenerateReasonTrending:
         assert reason == "Thème : AI"
 
 
-# ─── Tests: Sport penalty in _score_candidates ───────────────────────────────
+# ─── Helpers: pillar engine ──────────────────────────────────────────────────
+
+
+def make_pillar_result(final_score=100.0, contributions=None):
+    """Construit un PillarScoreResult minimal pour mocker pillar_engine."""
+    from app.services.recommendation.scoring_engine import PillarScoreResult
+
+    return PillarScoreResult(
+        final_score=final_score,
+        pillar_scores={},
+        contributions=contributions or [],
+    )
+
+
+# ─── Tests: Sport penalty in _score_candidates (post-pilier) ──────────────────
 
 
 class TestScoreCandidatesSportPenalty:
-    """Pénalité Sport appliquée dans le scoring du digest (2 modes)."""
+    """Pénalité Sport appliquée en post-pilier dans le scoring du digest (2 modes)."""
 
     @pytest.fixture
     def context(self):
@@ -861,8 +875,11 @@ class TestScoreCandidatesSportPenalty:
 
         selector.rec_service = Mock()
         selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
-        selector.rec_service.scoring_engine = Mock()
-        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+        selector.rec_service.pillar_engine = Mock()
+        # Même score pilier pour les deux → seul le post-pilier sport diffère.
+        selector.rec_service.pillar_engine.compute_score = Mock(
+            return_value=make_pillar_result(final_score=100.0)
+        )
 
         scored = await selector._score_candidates(
             [sport_content, tech_content], context, mode="pour_vous"
@@ -877,6 +894,10 @@ class TestScoreCandidatesSportPenalty:
         )
         labels = [b.label for b in sport_breakdown]
         assert "Sport (priorité réduite)" in labels
+        sport_entry = next(
+            b for b in sport_breakdown if b.label == "Sport (priorité réduite)"
+        )
+        assert sport_entry.pillar == "penalite"
 
     @pytest.mark.asyncio
     async def test_sport_penalty_applies_in_serein_mode(self, selector, context):
@@ -889,8 +910,10 @@ class TestScoreCandidatesSportPenalty:
 
         selector.rec_service = Mock()
         selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
-        selector.rec_service.scoring_engine = Mock()
-        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+        selector.rec_service.pillar_engine = Mock()
+        selector.rec_service.pillar_engine.compute_score = Mock(
+            return_value=make_pillar_result(final_score=100.0)
+        )
 
         scored = await selector._score_candidates(
             [sport_content], context, mode="serein"
@@ -914,8 +937,10 @@ class TestScoreCandidatesSportPenalty:
 
         selector.rec_service = Mock()
         selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
-        selector.rec_service.scoring_engine = Mock()
-        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+        selector.rec_service.pillar_engine = Mock()
+        selector.rec_service.pillar_engine.compute_score = Mock(
+            return_value=make_pillar_result(final_score=100.0)
+        )
 
         scored = await selector._score_candidates([content], context, mode="pour_vous")
         _, _, breakdown = scored[0]
@@ -923,11 +948,17 @@ class TestScoreCandidatesSportPenalty:
         assert "Sport (priorité réduite)" in labels
 
 
-# ─── Tests: DIGEST_TRUSTED_SOURCE_BONUS ──────────────────────────────────────
+# ─── Tests: unified pillar scoring (P0) ───────────────────────────────────────
 
 
-class TestScoreCandidatesFollowedSourceBoost:
-    """Articles de sources suivies reçoivent un bonus exclusif au digest."""
+class TestScoreCandidatesUnifiedPillars:
+    """Le scoring digest est entièrement délégué au PillarScoringEngine.
+
+    On utilise le VRAI moteur de piliers (pas un mock) pour vérifier que :
+    - une source suivie reçoit une contribution `pillar='source'`,
+    - la récence n'est comptée qu'une fois (`pillar='fraicheur'`), sans
+      ré-empilement du bonus manuel legacy (anti double-comptage).
+    """
 
     @pytest.fixture
     def followed_src(self):
@@ -955,60 +986,49 @@ class TestScoreCandidatesFollowedSourceBoost:
             muted_content_types=set(),
         )
 
-    @pytest.mark.asyncio
-    async def test_followed_source_gets_digest_bonus(
-        self, selector, context, followed_src, other_src
-    ):
-        """Article d'une source suivie reçoit DIGEST_TRUSTED_SOURCE_BONUS en sus."""
-        from app.services.recommendation.scoring_config import ScoringWeights
-
-        now = datetime.now(timezone.utc)
-        followed_content = make_content(source=followed_src, theme="tech", published_at=now)
-        other_content = make_content(source=other_src, theme="tech", published_at=now)
+    def _wire_real_engine(self, selector):
+        from app.services.recommendation.scoring_engine import PillarScoringEngine
 
         selector.rec_service = Mock()
         selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
-        selector.rec_service.scoring_engine = Mock()
-        # CoreLayer's TRUSTED_SOURCE is already folded into base_score by
-        # compute_score in production; we mock it as a constant for both so
-        # the only differential measurable is the digest-specific bonus.
-        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
+        selector.rec_service.pillar_engine = PillarScoringEngine()
+
+    @pytest.mark.asyncio
+    async def test_followed_source_gets_source_pillar_contribution(
+        self, selector, context, followed_src, other_src
+    ):
+        """Une source suivie reçoit une contribution mappée avec pillar='source'."""
+        self._wire_real_engine(selector)
+        now = datetime.now(timezone.utc)
+        followed_content = make_content(
+            source=followed_src, theme="tech", published_at=now
+        )
+        other_content = make_content(source=other_src, theme="tech", published_at=now)
 
         scored = await selector._score_candidates(
             [followed_content, other_content], context, mode="pour_vous"
         )
 
-        by_id = {c.id: (s, bd) for c, s, bd in scored}
-        followed_score, followed_breakdown = by_id[followed_content.id]
-        other_score, _ = by_id[other_content.id]
+        by_id = {c.id: bd for c, _, bd in scored}
+        followed_bd = by_id[followed_content.id]
+        other_bd = by_id[other_content.id]
 
-        assert followed_score - other_score == pytest.approx(
-            ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS
-        )
-        labels = [b.label for b in followed_breakdown]
-        assert "Priorité source suivie (digest)" in labels
+        source_contribs = [b for b in followed_bd if b.pillar == "source"]
+        assert any(b.label == "Source suivie" for b in source_contribs)
+        # La source non-suivie n'a pas de contribution "Source suivie".
+        assert not any(b.label == "Source suivie" for b in other_bd)
 
     @pytest.mark.asyncio
-    async def test_followed_outranks_curated_when_scores_close(
+    async def test_followed_source_outranks_equivalent_unfollowed(
         self, selector, context, followed_src, other_src
     ):
-        """Avec un base_score un peu inférieur, le followed gagne quand même."""
-        from app.services.recommendation.scoring_config import ScoringWeights
-
+        """Tout égal par ailleurs, l'article d'une source suivie score plus haut."""
+        self._wire_real_engine(selector)
         now = datetime.now(timezone.utc)
-        followed_content = make_content(source=followed_src, theme="tech", published_at=now)
+        followed_content = make_content(
+            source=followed_src, theme="tech", published_at=now
+        )
         other_content = make_content(source=other_src, theme="tech", published_at=now)
-
-        # Curated outscores by < bonus → followed should still win after stack.
-        gap = ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS - 5.0
-
-        def fake_compute(content, ctx):
-            return 100.0 if content.source_id == followed_src.id else 100.0 + gap
-
-        selector.rec_service = Mock()
-        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
-        selector.rec_service.scoring_engine = Mock()
-        selector.rec_service.scoring_engine.compute_score = Mock(side_effect=fake_compute)
 
         scored = await selector._score_candidates(
             [followed_content, other_content], context, mode="pour_vous"
@@ -1018,48 +1038,44 @@ class TestScoreCandidatesFollowedSourceBoost:
         assert by_id[followed_content.id] > by_id[other_content.id]
 
     @pytest.mark.asyncio
-    async def test_followed_loses_when_curated_far_better(
-        self, selector, context, followed_src, other_src
+    async def test_recency_counted_once_no_legacy_double_count(
+        self, selector, context, followed_src
     ):
-        """Boost reste souple : un curated nettement meilleur passe devant."""
-        from app.services.recommendation.scoring_config import ScoringWeights
-
+        """La récence vient uniquement du FraicheurPillar, comptée une seule fois."""
+        self._wire_real_engine(selector)
         now = datetime.now(timezone.utc)
-        followed_content = make_content(source=followed_src, theme="tech", published_at=now)
-        other_content = make_content(source=other_src, theme="tech", published_at=now)
-
-        # Gap > bonus → curated wins, diversité préservée.
-        gap = ScoringWeights.DIGEST_TRUSTED_SOURCE_BONUS + 50.0
-
-        def fake_compute(content, ctx):
-            return 100.0 if content.source_id == followed_src.id else 100.0 + gap
-
-        selector.rec_service = Mock()
-        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
-        selector.rec_service.scoring_engine = Mock()
-        selector.rec_service.scoring_engine.compute_score = Mock(side_effect=fake_compute)
+        content = make_content(source=followed_src, theme="tech", published_at=now)
 
         scored = await selector._score_candidates(
-            [followed_content, other_content], context, mode="pour_vous"
+            [content], context, mode="pour_vous"
         )
+        _, _, breakdown = scored[0]
 
-        by_id = {c.id: s for c, s, _ in scored}
-        assert by_id[other_content.id] > by_id[followed_content.id]
+        fraicheur_contribs = [b for b in breakdown if b.pillar == "fraicheur"]
+        # Exactement une contribution de récence (pas de préférence de récence
+        # dans user_prefs={} → un seul item fraicheur).
+        assert len(fraicheur_contribs) == 1
+        # Aucun label de récence manuel legacy ne doit subsister.
+        legacy_labels = {
+            "Article très récent (< 6h)",
+            "Article récent (< 24h)",
+            "Publié aujourd'hui",
+            "Publié hier",
+            "Article de la semaine",
+            "Article ancien",
+        }
+        assert not (legacy_labels & {b.label for b in breakdown})
 
     @pytest.mark.asyncio
-    async def test_no_bonus_when_source_not_followed(
+    async def test_no_source_contribution_when_not_followed(
         self, selector, context, other_src
     ):
-        """Aucun breakdown ni bonus si l'article n'est d'aucune source suivie."""
+        """Aucune contribution 'Source suivie' si l'article n'est d'aucune source suivie."""
+        self._wire_real_engine(selector)
         now = datetime.now(timezone.utc)
         content = make_content(source=other_src, theme="tech", published_at=now)
-
-        selector.rec_service = Mock()
-        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
-        selector.rec_service.scoring_engine = Mock()
-        selector.rec_service.scoring_engine.compute_score = Mock(return_value=100.0)
 
         scored = await selector._score_candidates([content], context, mode="pour_vous")
         _, _, breakdown = scored[0]
         labels = [b.label for b in breakdown]
-        assert "Priorité source suivie (digest)" not in labels
+        assert "Source suivie" not in labels

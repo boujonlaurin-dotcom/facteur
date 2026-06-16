@@ -5,13 +5,14 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.source import UserSource
+from app.models.user_favorites import UserFavoriteSource
 from app.models.user_personalization import UserPersonalization
 from app.schemas.learning import (
     EntityPreferenceRequest,
@@ -107,15 +108,12 @@ async def mute_source(
 ):
     """Ajoute une source à la liste des sources mutées."""
     user_uuid = UUID(current_user_id)
-    # Garantir l'existence du profil utilisateur (requis pour la FK)
-
-    # Garantir l'existence du profil utilisateur (requis pour la FK)
     user_service = UserService(db)
-    # Ensure profile exists to satisfy FK constraint
-    await user_service.get_or_create_profile(current_user_id)
-    await db.commit()  # S'assurer que le profil est persisté et visible pour la FK
 
     try:
+        await user_service.get_or_create_profile(current_user_id)
+        await db.commit()
+
         # Upsert: Insert if not exists, update if exists
         # Use COALESCE to handle case where muted_sources is NULL
         stmt = (
@@ -149,6 +147,12 @@ async def mute_source(
             )
         )
         if existing_trust:
+            await db.execute(
+                delete(UserFavoriteSource).where(
+                    UserFavoriteSource.user_id == user_uuid,
+                    UserFavoriteSource.source_id == request.source_id,
+                )
+            )
             await db.delete(existing_trust)
 
         await db.commit()

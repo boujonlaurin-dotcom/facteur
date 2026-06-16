@@ -143,6 +143,12 @@ class Content {
   /// par l'UI.
   final String? language;
 
+  /// Bloc de curation veille (`GET /api/veille/feed`) : `"sources"` (Bloc A
+  /// « Tes sources ») ou `"elargie"` (Bloc B « Couverture élargie »). `null`
+  /// hors section veille. Le rendu de la section veille dérive un en-tête léger
+  /// à chaque transition de ce champ. Backward-safe (nullable).
+  final String? veilleGroup;
+
   Content({
     required this.id,
     required this.title,
@@ -187,6 +193,7 @@ class Content {
     this.keywordOverflowIsCustomTopic = false,
     this.editorialBadge,
     this.language,
+    this.veilleGroup,
   });
 
   bool get isVideo => contentType == ContentType.youtube || contentType == ContentType.video;
@@ -267,6 +274,7 @@ class Content {
       keywordOverflowIsCustomTopic: keywordOverflowIsCustomTopic,
       editorialBadge: editorialBadge,
       language: language,
+      veilleGroup: veilleGroup,
     );
   }
 
@@ -320,6 +328,7 @@ class Content {
             : null,
         isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
         language: json['language'] as String?,
+        veilleGroup: json['group'] as String?,
       );
     } catch (e, stack) {
       // ignore: avoid_print
@@ -380,6 +389,7 @@ class Content {
     bool? keywordOverflowIsCustomTopic,
     String? editorialBadge,
     String? language,
+    String? veilleGroup,
   }) {
     return Content(
       id: id ?? this.id,
@@ -438,6 +448,7 @@ class Content {
           keywordOverflowIsCustomTopic ?? this.keywordOverflowIsCustomTopic,
       editorialBadge: editorialBadge ?? this.editorialBadge,
       language: language ?? this.language,
+      veilleGroup: veilleGroup ?? this.veilleGroup,
     );
   }
 
@@ -836,6 +847,10 @@ class FeedResponse {
   final List<KeywordOverflow> keywordOverflow;
   final List<FeedCarouselData> carousels;
 
+  /// Section source : true quand la source n'a aucun article récent (≤72h) et
+  /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
+  final bool noRecentSource;
+
   FeedResponse({
     required this.items,
     required this.pagination,
@@ -844,6 +859,7 @@ class FeedResponse {
     this.topicOverflow = const [],
     this.keywordOverflow = const [],
     this.carousels = const [],
+    this.noRecentSource = false,
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -880,6 +896,7 @@ class FeedResponse {
               .map((e) => FeedCarouselData.fromJson(e))
               .toList() ??
           const [],
+      noRecentSource: (json['no_recent_source'] as bool?) ?? false,
     );
   }
 }

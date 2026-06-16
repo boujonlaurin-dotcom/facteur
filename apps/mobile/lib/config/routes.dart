@@ -3,16 +3,23 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../shared/widgets/navigation/swipe_back_page.dart';
+import '../shared/widgets/navigation/main_shell.dart';
 
 import '../features/auth/screens/login_screen.dart';
+import '../features/auth/screens/reset_password_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
 import '../features/feed/models/content_model.dart';
+import '../features/feed/screens/flaner_screen.dart';
+import '../features/feed/widgets/perspectives_bottom_sheet.dart'
+    show Perspective;
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
+import '../features/flux_continu/screens/source_section_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
+import '../features/flux_continu/services/tournee_progress_service.dart';
 import '../features/auth/screens/email_confirmation_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
@@ -21,6 +28,9 @@ import '../features/sources/screens/add_source_screen.dart';
 import '../features/sources/screens/theme_sources_screen.dart';
 import '../features/settings/screens/profile_screen.dart';
 import '../features/settings/screens/account_screen.dart';
+import '../features/settings/screens/appearance_screen.dart';
+import '../features/settings/screens/source_settings_screen.dart';
+import '../features/settings/screens/subscriptions_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
@@ -30,6 +40,9 @@ import '../features/subscription/screens/paywall_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
+import '../features/grille/screens/grille_screen.dart';
+import '../features/grille/screens/grille_leaderboard_screen.dart';
+import '../features/grille/screens/grille_share_screen.dart';
 import '../features/saved/screens/saved_screen.dart';
 import '../features/saved/screens/saved_all_screen.dart';
 import '../features/saved/screens/collection_detail_screen.dart';
@@ -38,6 +51,20 @@ import '../core/nudges/widgets/nudge_host.dart';
 import '../core/services/deep_link_service.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
+
+const tourneeSectionTransitionDuration = Duration(milliseconds: 420);
+
+/// Clés de navigator des deux branches du shell principal (Essentiel / Flâner).
+///
+/// Chaque branche d'un `StatefulShellRoute` possède son propre navigator pour
+/// préserver son état (scroll, pile) quand on passe d'un onglet à l'autre. Le
+/// navigator *root* reste `NotificationService.navigatorKey` (cf. `GoRouter`
+/// plus bas) — c'est lui que ciblent les sous-routes article via
+/// `parentNavigatorKey` pour s'afficher plein écran au-dessus du footer.
+final _essentielBranchKey = GlobalKey<NavigatorState>(
+  debugLabel: 'essentielBranch',
+);
+final _flanerBranchKey = GlobalKey<NavigatorState>(debugLabel: 'flanerBranch');
 
 /// Noms des routes
 class RouteNames {
@@ -49,8 +76,10 @@ class RouteNames {
   static const String onboardingConclusion = 'onboarding-conclusion';
   static const String digest = 'digest';
   static const String feed = 'feed';
+  static const String flaner = 'flaner';
   static const String fluxContinu = 'flux-continu';
   static const String contentDetail = 'content-detail';
+  static const String contentExternal = 'content-external';
   static const String saved = 'saved';
   static const String savedAll = 'saved-all';
   static const String collectionDetail = 'collection-detail';
@@ -58,6 +87,9 @@ class RouteNames {
   static const String addSource = 'add-source';
   static const String settings = 'settings';
   static const String account = 'account';
+  static const String appearance = 'appearance';
+  static const String sourceSettings = 'source-settings';
+  static const String subscriptions = 'subscriptions';
   static const String notifications = 'notifications';
   static const String about = 'about';
   static const String profile = 'profile';
@@ -65,12 +97,16 @@ class RouteNames {
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
+  static const String resetPassword = 'reset-password';
   static const String myInterests = 'my-interests';
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
   static const String veilleConfig = 'veille-config';
   static const String lettres = 'lettres';
   static const String openLetter = 'open-letter';
+  static const String grille = 'grille';
+  static const String grilleLeaderboard = 'grille-leaderboard';
+  static const String grilleShare = 'grille-share';
 }
 
 /// Chemins des routes
@@ -83,13 +119,18 @@ class RoutePaths {
   static const String onboardingConclusion = '/onboarding/conclusion';
   static const String digest = '/digest';
   static const String feed = '/feed';
+  static const String flaner = '/flaner';
   static const String fluxContinu = '/flux-continu';
   static const String contentDetail = '/content/:id';
+  static const String contentExternal = '/content-external';
   static const String saved = '/saved';
   static const String sources = '/settings/sources'; // Moved to settings
   // static const String addSource = '/sources/add'; // Removed for V0
   static const String settings = '/settings';
   static const String account = '/settings/account';
+  static const String appearance = '/settings/appearance';
+  static const String sourceSettings = '/settings/sources/preferences';
+  static const String subscriptions = '/settings/subscriptions';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
   static const String profile = '/settings/profile';
@@ -99,9 +140,13 @@ class RoutePaths {
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
+  static const String resetPassword = '/reset-password';
   static const String veilleConfig = '/veille/config';
   static const String lettres = '/lettres';
   static const String openLetter = '/lettres/:id';
+  static const String grille = '/grille';
+  static const String grilleLeaderboard = '/grille/leaderboard';
+  static const String grilleShare = '/grille/share';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -132,6 +177,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final authState = ref.read(authStateProvider);
+      String postAuthHomePath() {
+        final tournee = ref.read(tourneeProgressServiceProvider);
+        return tournee.isClosingDismissedTodaySync()
+            ? RoutePaths.flaner
+            : RoutePaths.fluxContinu;
+      }
 
       // Attendre que l'auth state soit initialisé
       if (authState.isLoading) {
@@ -147,14 +198,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnLoginPage = matchedLocation == RoutePaths.login;
       final isOnEmailConfirmation =
           matchedLocation == RoutePaths.emailConfirmation;
+      final isOnResetPassword = matchedLocation == RoutePaths.resetPassword;
       final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
-      // Escape hatch: the onboarding "Personnaliser mon mode serein" CTA pushes
-      // the interests screen with ?serein=1. Let that through so the user can
-      // configure their exclusions before completing onboarding.
-      final isOnInterestsFromOnboarding =
-          matchedLocation == RoutePaths.myInterests &&
-              state.uri.queryParameters['serein'] == '1';
+
+      if (authState.passwordRecoveryPending && !isOnResetPassword) {
+        return RoutePaths.resetPassword;
+      }
+
+      if (isOnResetPassword) {
+        return null;
+      }
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -176,23 +230,30 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.emailConfirmation;
       }
 
+      // 2b. Statut d'onboarding pas encore résolu (cache Hive + DB async) :
+      // garder l'utilisateur sur le splash plutôt que de monter le shell puis de
+      // rebondir vers /onboarding. Ce rebond démontait le shell en plein
+      // finalizeTree → écran gris fatal (Sentry FLUTTER-2). `needsOnboarding`
+      // n'est fiable qu'une fois `onboardingStatusKnown == true`.
+      if (!authState.onboardingStatusKnown) {
+        return isOnSplash ? null : RoutePaths.splash;
+      }
+
       // 3. Les utilisateurs confirmés ne doivent pas être sur login, confirmation ou splash
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
         return authState.needsOnboarding
             ? RoutePaths.onboarding
-            : RoutePaths.fluxContinu;
+            : postAuthHomePath();
       }
 
       // 4. Onboarding : forcer si nécessaire
-      if (authState.needsOnboarding &&
-          !isOnOnboarding &&
-          !isOnInterestsFromOnboarding) {
+      if (authState.needsOnboarding && !isOnOnboarding) {
         return RoutePaths.onboarding;
       }
 
       // 5. Onboarding : empêcher d'y retourner si fini → atterrissage flux continu
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return RoutePaths.fluxContinu;
+        return postAuthHomePath();
       }
 
       return null;
@@ -226,6 +287,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
 
+      GoRoute(
+        path: RoutePaths.resetPassword,
+        name: RouteNames.resetPassword,
+        builder: (context, state) => const ResetPasswordScreen(),
+      ),
+
       // Onboarding
       GoRoute(
         path: RoutePaths.onboarding,
@@ -240,72 +307,159 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const ConclusionAnimationScreen(),
       ),
 
-      // Flux Continu V1.8 — nouvelle home post-auth (Story 21.1)
-      GoRoute(
-        path: RoutePaths.fluxContinu,
-        name: RouteNames.fluxContinu,
-        builder: (context, state) => const Stack(
-          children: [
-            FluxContinuScreen(),
-            NudgeHost(),
-          ],
+      // Shell principal des deux onglets (Essentiel / Flâner). MainShell ne
+      // garde que le conteneur de branches (BranchPageView) ; le header/footer
+      // partagés sont rendus dans les pages racines de branche pour rester sous
+      // les modales ouvertes depuis ces pages. Les sous-routes article
+      // s'échappent vers le navigator root via `parentNavigatorKey` pour
+      // s'afficher plein écran (swipe-back Cupertino conservé).
+      StatefulShellRoute(
+        builder: (context, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
+        navigatorContainerBuilder: (context, navigationShell, children) =>
+            BranchPageView(
+          navigationShell: navigationShell,
+          children: children,
         ),
-        routes: [
-          GoRoute(
-            path: 'content/:id',
-            // Nom historique conservé pour que `context.pushNamed(contentDetail)`
-            // continue de fonctionner après la suppression de la route /feed.
-            name: RouteNames.contentDetail,
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final contentId = state.pathParameters['id']!;
-              final content = state.extra as Content?;
-              return FullSwipeCupertinoPage(
-                child: ContentDetailScreen(
-                  contentId: contentId,
-                  content: content,
+        branches: [
+          // Branche 0 — L'Essentiel (Flux Continu, home post-auth Story 21.1).
+          StatefulShellBranch(
+            navigatorKey: _essentielBranchKey,
+            routes: [
+              GoRoute(
+                path: RoutePaths.fluxContinu,
+                name: RouteNames.fluxContinu,
+                builder: (context, state) => const MainTabPageScaffold(
+                  currentIndex: 0,
+                  child: Stack(children: [FluxContinuScreen(), NudgeHost()]),
                 ),
-              );
-            },
+                routes: [
+                  GoRoute(
+                    path: 'content/:id',
+                    // Nom historique conservé pour que
+                    // `context.pushNamed(contentDetail)` fonctionne toujours.
+                    name: RouteNames.contentDetail,
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final contentId = state.pathParameters['id']!;
+                      final content = state.extra as Content?;
+                      return FullSwipeCupertinoPage(
+                        child: ContentDetailScreen(
+                          contentId: contentId,
+                          content: content,
+                        ),
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: 'theme/:key',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final key = state.pathParameters['key']!;
+                      final section = state.extra as FeedThemeSection?;
+                      return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
+                        child: ThemeSectionScreen(
+                          sectionKeyValue: key,
+                          initialSection: section,
+                        ),
+                      );
+                    },
+                  ),
+                  GoRoute(
+                    path: 'section/:key',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final key = state.pathParameters['key']!;
+                      final section = state.extra as DigestTopicSection?;
+                      return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
+                        child: DigestSectionScreen(
+                          sectionKeyValue: key,
+                          initialSection: section,
+                        ),
+                      );
+                    },
+                  ),
+                  // PR « Sources dans la Tournée » — détail d'une section source
+                  // (curation complète). Miroir de `theme/:key` ; le param `:id`
+                  // est le sectionKey complet (`source:<uuid>`).
+                  GoRoute(
+                    path: 'source/:id',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final id = state.pathParameters['id']!;
+                      final section = state.extra as FeedThemeSection?;
+                      return FullSwipeCupertinoPage(
+                        key: state.pageKey,
+                        transitionDurationOverride:
+                            tourneeSectionTransitionDuration,
+                        transition: tourneeSectionTransition(state.uri),
+                        child: SourceSectionScreen(
+                          sectionKeyValue: id,
+                          initialSection: section,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
-          GoRoute(
-            path: 'theme/:key',
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final key = state.pathParameters['key']!;
-              final section = state.extra as FeedThemeSection?;
-              return FullSwipeCupertinoPage(
-                child: ThemeSectionScreen(
-                  sectionKeyValue: key,
-                  initialSection: section,
+          // Branche 1 — Flâner (feed autonome).
+          StatefulShellBranch(
+            navigatorKey: _flanerBranchKey,
+            routes: [
+              GoRoute(
+                path: RoutePaths.flaner,
+                name: RouteNames.flaner,
+                builder: (context, state) => const MainTabPageScaffold(
+                  currentIndex: 1,
+                  child: Stack(children: [FlanerScreen(), NudgeHost()]),
                 ),
-              );
-            },
-          ),
-          GoRoute(
-            path: 'section/:key',
-            parentNavigatorKey: NotificationService.navigatorKey,
-            pageBuilder: (context, state) {
-              final key = state.pathParameters['key']!;
-              final section = state.extra as DigestTopicSection?;
-              return FullSwipeCupertinoPage(
-                child: DigestSectionScreen(
-                  sectionKeyValue: key,
-                  initialSection: section,
-                ),
-              );
-            },
+                routes: [
+                  GoRoute(
+                    path: 'content/:id',
+                    parentNavigatorKey: NotificationService.navigatorKey,
+                    pageBuilder: (context, state) {
+                      final contentId = state.pathParameters['id']!;
+                      final content = state.extra as Content?;
+                      return FullSwipeCupertinoPage(
+                        child: ContentDetailScreen(
+                          contentId: contentId,
+                          content: content,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),
 
-      // Feed (legacy) — redirige vers FluxContinu pour préserver les deep
+      GoRoute(
+        path: '${RoutePaths.feed}/content/:id',
+        redirect: (context, state) {
+          final id = state.pathParameters['id']!;
+          return '${RoutePaths.flaner}/content/$id';
+        },
+      ),
+
+      // Feed (legacy) — redirige vers Flâner pour préserver les deep
       // links sortants en circulation (push notifs, partages, anciennes
       // versions de l'app). Voir cleanup post-unification du flux.
       GoRoute(
         path: RoutePaths.feed,
         name: RouteNames.feed,
-        redirect: (context, state) => RoutePaths.fluxContinu,
+        redirect: (context, state) => RoutePaths.flaner,
       ),
 
       // Saved (Sauvegardés)
@@ -317,9 +471,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'all',
             name: RouteNames.savedAll,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: SavedAllScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: SavedAllScreen()),
           ),
           GoRoute(
             path: 'collection/:id',
@@ -331,6 +484,28 @@ final routerProvider = Provider<GoRouter>((ref) {
             ),
           ),
         ],
+      ),
+
+      // Reader externe (perspective) — ouvre une "autre source" de la sheet de
+      // comparaisons dans le reader unique (ContentDetailScreen) en mode webview
+      // du site. Top-level sur le root navigator + swipe-back iOS : la sheet de
+      // comparaisons (elle-même sur le root navigator) reste vivante dessous.
+      GoRoute(
+        path: RoutePaths.contentExternal,
+        name: RouteNames.contentExternal,
+        parentNavigatorKey: NotificationService.navigatorKey,
+        pageBuilder: (context, state) {
+          final p = state.extra as Perspective;
+          return FullSwipeCupertinoPage(
+            child: ContentDetailScreen.external(
+              url: p.url,
+              sourceName: p.sourceName,
+              sourceDomain: p.sourceDomain,
+              title: p.title,
+              biasStance: p.biasStance,
+            ),
+          );
+        },
       ),
 
       // Progress / Quiz (legacy) — redirige vers FluxContinu.
@@ -351,30 +526,38 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.settings,
         name: RouteNames.settings,
-        pageBuilder: (context, state) => const ModalBottomSheetPage(
-          child: SettingsSheet(),
-        ),
+        pageBuilder: (context, state) =>
+            const ModalBottomSheetPage(child: SettingsSheet()),
         routes: [
           GoRoute(
             path: 'profile', // /settings/profile
             name: RouteNames.profile,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: ProfileScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: ProfileScreen()),
+          ),
+          GoRoute(
+            path: 'appearance', // /settings/appearance
+            name: RouteNames.appearance,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: AppearanceScreen()),
           ),
           GoRoute(
             path: 'sources', // /settings/sources
             name: RouteNames.sources,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: SourcesScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: SourcesScreen()),
             routes: [
               GoRoute(
                 path: 'add', // /settings/sources/add
                 name: RouteNames.addSource,
-                pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-                  child: AddSourceScreen(),
-                ),
+                pageBuilder: (context, state) =>
+                    const FullSwipeCupertinoPage(child: AddSourceScreen()),
+              ),
+              GoRoute(
+                path: 'preferences', // /settings/sources/preferences
+                name: RouteNames.sourceSettings,
+                pageBuilder: (context, state) =>
+                    const FullSwipeCupertinoPage(child: SourceSettingsScreen()),
               ),
               GoRoute(
                 path: 'theme/:slug', // /settings/sources/theme/:slug
@@ -395,23 +578,26 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'account', // /settings/account
             name: RouteNames.account,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: AccountScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: AccountScreen()),
+          ),
+          GoRoute(
+            path: 'subscriptions', // /settings/subscriptions
+            name: RouteNames.subscriptions,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: SubscriptionsScreen()),
           ),
           GoRoute(
             path: 'notifications', // /settings/notifications
             name: RouteNames.notifications,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: NotificationsScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: NotificationsScreen()),
           ),
           GoRoute(
             path: 'about', // /settings/about
             name: RouteNames.about,
-            pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-              child: AboutScreen(),
-            ),
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: AboutScreen()),
           ),
           GoRoute(
             path: 'interests', // /settings/interests
@@ -444,9 +630,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutePaths.lettres,
         name: RouteNames.lettres,
-        pageBuilder: (context, state) => const FullSwipeCupertinoPage(
-          child: CourrierScreen(),
-        ),
+        pageBuilder: (context, state) =>
+            const FullSwipeCupertinoPage(child: CourrierScreen()),
         routes: [
           GoRoute(
             path: ':id',
@@ -464,6 +649,29 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.digest,
         name: RouteNames.digest,
         redirect: (context, state) => RoutePaths.fluxContinu,
+      ),
+
+      // La Grille du jour — route top-level (hors transition main-tab) +
+      // sous-routes classement / partage, toutes en FullSwipeCupertinoPage.
+      GoRoute(
+        path: RoutePaths.grille,
+        name: RouteNames.grille,
+        pageBuilder: (context, state) =>
+            const FullSwipeCupertinoPage(child: GrilleScreen()),
+        routes: [
+          GoRoute(
+            path: 'leaderboard',
+            name: RouteNames.grilleLeaderboard,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: GrilleLeaderboardScreen()),
+          ),
+          GoRoute(
+            path: 'share',
+            name: RouteNames.grilleShare,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: GrilleShareScreen()),
+          ),
+        ],
       ),
 
       // Topic Explorer (outside ShellRoute to hide bottom nav)
@@ -489,18 +697,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => CustomTransitionPage(
           child: const PaywallScreen(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
         ),
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
-      body: Center(
-        child: Text('Page non trouvée: ${state.uri}'),
-      ),
-    ),
+    errorBuilder: (context, state) =>
+        Scaffold(body: Center(child: Text('Page non trouvée: ${state.uri}'))),
   );
 });
+FullSwipePageTransition tourneeSectionTransition(Uri uri) {
+  return uri.queryParameters['transition'] == 'next'
+      ? FullSwipePageTransition.verticalFromBottom
+      : FullSwipePageTransition.horizontal;
+}
+
+String tourneeNextSectionLocation(String path) {
+  final separator = path.contains('?') ? '&' : '?';
+  return '$path${separator}transition=next';
+}

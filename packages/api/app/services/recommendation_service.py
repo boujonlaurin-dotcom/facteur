@@ -19,6 +19,10 @@ from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
 
 logger = structlog.get_logger()
+FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
+
+# "Ouvrir ses horizons" carousel disabled (PO decision); code kept for re-enable.
+DEEP_CAROUSEL_ENABLED = False
 
 # Upper bound on the two-phase followed-sources query in the default feed
 # view. Above this, we rollback and fall back to a curated-only query so the
@@ -116,15 +120,20 @@ def is_personalized_theme_mode(
 ) -> bool:
     """Story 21.2 — Tournée du jour personalized-theme dispatch.
 
-    Returns True when the caller is asking for a favorite-theme section of
-    the Flux Continu (`personalized=True` + `theme|topic`, no source pinned).
-    These calls bypass the chronological short-circuit and fall through to
-    the PillarScoringEngine branch.
+    Returns True when the caller is asking for a personalized section of the
+    Flux Continu (`personalized=True` + `theme|topic|source`). These calls
+    bypass the chronological short-circuit and fall through to the
+    PillarScoringEngine branch.
+
+    Source sections (PR « Sources dans la Tournée ») reuse this dispatch :
+    `source_id + personalized=true` est classé par les mêmes piliers que les
+    sections thème (fenêtre adaptative 24→48→72h). Le filtre `source_id`
+    restreint déjà le pool à une source (`_get_candidates` l'applique en
+    première branche), donc la stratification two-phase reste inerte. Flâner
+    appelle `source_id` SANS `personalized` → reste chronologique.
     """
-    return (
-        personalized
-        and (theme is not None or topic is not None)
-        and source_uuid is None
+    return personalized and (
+        theme is not None or topic is not None or source_uuid is not None
     )
 
 
@@ -185,6 +194,9 @@ class RecommendationService:
             dict
         ] = []  # Populated by topic regroupement (Phase 2)
         self.total_candidates: int = 0  # Total candidate pool size (pre-filtering)
+        # Section source : True quand aucun article récent (≤72h) n'existe et que
+        # le feed a dû reculer jusqu'à 30 j (repli « Pas d'article récent. »).
+        self.source_no_recent_source: bool = False
         self.keyword_overflow: list[dict] = []  # Populated by keyword regroupement
         self.entity_overflow: list[dict] = []  # Populated by entity regroupement
         self.carousels: list[dict] = []  # Populated by _build_carousels()
@@ -224,6 +236,7 @@ class RecommendationService:
         serein: bool = False,
         include_unfollowed: bool = False,
         personalized: bool = False,
+        followed_only: bool = False,
     ) -> list[Content]:
         """
         Génère un feed personnalisé pour l'utilisateur.
@@ -264,7 +277,10 @@ class RecommendationService:
         )
         sources_stmt = select(
             UserSource.source_id, UserSource.is_custom, UserSource.has_subscription
-        ).where(UserSource.user_id == user_id)
+        ).where(
+            UserSource.user_id == user_id,
+            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+        )
         subtopics_stmt = select(UserSubtopic).where(UserSubtopic.user_id == user_id)
         personalization_stmt = select(UserPersonalization).where(
             UserPersonalization.user_id == user_id
@@ -491,6 +507,9 @@ class RecommendationService:
             # sources + 24h window + boost user_subtopics.
             personalized=personalized,
             user_subtopics=user_subtopics,
+            # Onglets Flâner : restreindre le bloc principal aux sources suivies
+            # (tri chronologique conservé, contrairement à personalized).
+            followed_only=followed_only,
         )
         self.total_candidates = len(candidates)
 
@@ -556,29 +575,24 @@ class RecommendationService:
             source_uuid=source_uuid,
         )
 
-        # Explicit filter OR RECENT mode OR Tournée theme section: skip scoring,
+        # Explicit filter (exploration chip) OR RECENT mode : skip scoring,
         # return pure chronological order. Candidates are already sorted by
-        # published_at DESC (et boost user_subtopics pour personalized_theme_mode)
-        # from _get_candidates.
+        # published_at DESC from _get_candidates.
         #
-        # Note historique : Story 21.2 routait personalized_theme_mode vers le
-        # PillarScoringEngine + diversification + regroupement pour pondérer par
-        # weight_effective / source affinity / quality. En pratique cela
-        # compressait 40+ candidats à 2-3 articles visibles (cf. bug curation
-        # sections thématiques 2026-05-28) et créait un écart béant avec ce que
-        # Flâner thématique remontait sur les mêmes sources. On rebascule sur la
-        # même politique chronologique pure : « tout le contenu user récent
-        # (<24h) sur le thème, dans l'ordre publié » — la personnalisation reste
-        # exprimée via la restriction aux sources suivies + l'ordering boost
-        # user_subtopics appliqués dans _get_candidates.
+        # Note historique : les sections thématiques de la Tournée
+        # (personalized_theme_mode) ont oscillé — compression regroupement
+        # (Story 21.2), chrono pur (#706), puis promotion top-3 "essentiel-grade"
+        # + reste chronologique (#710). Décision PO 2026-06-01 : aucune de ces
+        # variantes ne satisfait la qualité de curation perçue. On route
+        # désormais la section ENTIÈRE par le PillarScoringEngine (chemin scoré
+        # ci-dessous) — classement qualité/source/pertinence/fraîcheur sur tous
+        # les candidats, sans compression ni promotion top-N. D'où le
+        # `and not personalized_theme_mode` : le mode saute cet early-return ET
+        # la compression chrono-diversifiée (garde plus bas) pour atterrir dans
+        # le chemin scoré (cf. bug curation sections thématiques + hand-off QA).
         if (
-            source_uuid
-            or theme
-            or topic
-            or entity
-            or mode == FeedFilterMode.RECENT
-            or personalized_theme_mode
-        ):
+            source_uuid or theme or topic or entity or mode == FeedFilterMode.RECENT
+        ) and not personalized_theme_mode:
             paginated = candidates[offset : offset + limit]
             await self._hydrate_user_status(paginated, user_id, followed_source_ids)
             return paginated
@@ -587,7 +601,8 @@ class RecommendationService:
         source_weight_rows = (
             await self.session.execute(
                 select(UserSource.source_id, UserSource.priority_multiplier).where(
-                    UserSource.user_id == user_id
+                    UserSource.user_id == user_id,
+                    UserSource.state.in_(FOLLOWED_SOURCE_STATES),
                 )
             )
         ).all()
@@ -596,8 +611,12 @@ class RecommendationService:
         }
 
         # Epic 12: Chronological diversified mode (new default)
-        # mode=None means no chip selected → chronological diversified
-        if mode is None or mode == FeedFilterMode.CHRONOLOGICAL:
+        # mode=None means no chip selected → chronological diversified.
+        # personalized_theme_mode est exclu : il saute cette compression
+        # (regroupement + safety-net) et tombe dans le chemin scoré ci-dessous.
+        if (
+            mode is None or mode == FeedFilterMode.CHRONOLOGICAL
+        ) and not personalized_theme_mode:
             t3 = time.monotonic()
             logger.info(
                 "feed_phase2_candidates",
@@ -807,9 +826,13 @@ class RecommendationService:
             else:
                 score = self.scoring_engine.compute_score(content, context)
             # Serein mode: boost humorous/satirical sources x1.3
-            if serein and hasattr(content, "source") and content.source:
-                if content.source.tone in ("humorous", "satirical"):
-                    score *= 1.3
+            if (
+                serein
+                and hasattr(content, "source")
+                and content.source
+                and content.source.tone in ("humorous", "satirical")
+            ):
+                score *= 1.3
             scored_candidates.append((content, score))
 
         t5 = time.monotonic()
@@ -827,22 +850,32 @@ class RecommendationService:
         # 4b. Diversity Re-ranking (Source Fatigue)
         # Apply a cumulative penalty for multiple items from the same source
         # to ensure a diverse top-of-feed.
-        final_list = []
-        source_counts = {}
-        decay_factor = 0.70  # Each subsequent item from same source loses 30% score (Story diversity fix)
+        #
+        # personalized_theme_mode : decay NEUTRALISÉ. Sur une section mono-thème
+        # où le user suit délibérément ~10 sources, 0.70^n enterre ses meilleures
+        # sources suivies (ex. Next.ink = 7/21 candidats tech → 0.70^6 ≈ 0.12×).
+        # On conserve l'ordre par score ; les murs de même source seront évités
+        # par un interleaving doux (sans pénalité de score) juste avant la
+        # pagination (cf. étape 5).
+        if personalized_theme_mode:
+            final_list = scored_candidates
+        else:
+            final_list = []
+            source_counts = {}
+            decay_factor = 0.70  # Each subsequent item from same source loses 30% score (Story diversity fix)
 
-        for content, base_score in scored_candidates:
-            source_id = content.source_id
-            count = source_counts.get(source_id, 0)
+            for content, base_score in scored_candidates:
+                source_id = content.source_id
+                count = source_counts.get(source_id, 0)
 
-            # FinalScore = BaseScore * (decay_factor ^ count)
-            final_score = base_score * (decay_factor**count)
+                # FinalScore = BaseScore * (decay_factor ^ count)
+                final_score = base_score * (decay_factor**count)
 
-            final_list.append((content, final_score))
-            source_counts[source_id] = count + 1
+                final_list.append((content, final_score))
+                source_counts[source_id] = count + 1
 
-        # Sort again with diversity penalties applied to find the new Top-N
-        final_list.sort(key=lambda x: x[1], reverse=True)
+            # Sort again with diversity penalties applied to find the new Top-N
+            final_list.sort(key=lambda x: x[1], reverse=True)
 
         # 4c. Randomization (v2 only — Gumbel noise for discovery)
         # Story 21.2 — disabled on personalized_theme_mode so paginated "Plus de…"
@@ -871,15 +904,14 @@ class RecommendationService:
         if (theme or topic) and followed_source_ids:
             final_list = stratify_followed_first(final_list, followed_source_ids)
 
-        # 5. Paginate
-        scored_candidates = final_list
-        start = offset
-        end = offset + limit
-        # Check bounds
-        if start >= len(scored_candidates):
-            return []
-
-        result = [item[0] for item in scored_candidates[start:end]]
+        # 5. Paginate (le slice gère seul un offset hors-borne → [])
+        ordered = [item[0] for item in final_list]
+        if personalized_theme_mode:
+            # Interleaving doux sur la liste ordonnée complète : remplace le
+            # decay neutralisé en 4b (évite les murs de même source SANS
+            # pénalité de score). Pagination stable (slice déterministe).
+            ordered = self._apply_source_interleaving(ordered)
+        result = ordered[offset : offset + limit]
 
         # 5.5 Hydrate Recommendation Reason (Transparency)
         if use_pillars:
@@ -1207,17 +1239,23 @@ class RecommendationService:
         self.source_overflow = updated
 
     # Story 12.8: business-ordered base positions for carousel types
-    # (favorite > new_source > community > saved > hot > deep).
+    # (favorite > quiet_sources > saved > new_source > community > hot > deep),
+    # tightened to a 5-slot pitch so up to 4 carousels land within the first
+    # ~20 articles (page 1 mobile — a carousel only renders once its position
+    # is < the number of loaded articles).
     # `decale` is only emitted in serein mode, which excludes hot/community,
-    # so it sits at community's slot.
+    # so it sits at saved's slot.
+    # `deep` keeps its slot for the collision resolver but is no longer
+    # emitted (DEEP_CAROUSEL_ENABLED = False).
     _CAROUSEL_BASE_POSITIONS: dict[str, int] = {
-        "favorite": 5,
-        "new_source": 11,
-        "community": 17,
-        "decale": 17,
-        "saved": 23,
+        "favorite": 4,
+        "quiet_sources": 9,
+        "saved": 14,
+        "decale": 14,
+        "new_source": 19,
+        "community": 24,
         "hot": 29,
-        "deep": 35,
+        "deep": 41,
     }
 
     @staticmethod
@@ -1257,7 +1295,7 @@ class RecommendationService:
         MIN_CAROUSEL_ITEMS = 3  # Minimum items for building a carousel
         MIN_DISPLAY_ITEMS = 2  # T2: Minimum items after consumed filtering
         MAX_CAROUSEL_ITEMS = 5
-        MIN_CAROUSEL_POSITION = 5  # No carousel before position 5 (≈ GNews cadence)
+        MIN_CAROUSEL_POSITION = 4  # No carousel before position 4 (≈ GNews cadence)
         carousels: list[dict] = []
         promoted_ids: set[UUID] = set()
         used_group_keys: set[str] = set()  # Prevent same group in hot + deep
@@ -1313,7 +1351,9 @@ class RecommendationService:
                     carousels.append(
                         {
                             "carousel_type": "hot",
-                            "title": f"Actu chaude : {display_name}",
+                            "title": f"Actu chaude : {display_name}"
+                            if display_name
+                            else "Actu chaude",
                             "emoji": "\U0001f50d",
                             "position": self._jitter_carousel_position(
                                 "hot", user_id, today
@@ -1374,7 +1414,12 @@ class RecommendationService:
             break  # Only 1 favorite carousel
 
         # --- deep → "Ouvrir ses horizons": internal perspectives from read articles (T5) ---
-        if len(carousels) < max_carousels and user_id is not None:
+        # Disabled (PO decision): kept intact behind the flag for an easy re-enable.
+        if (
+            DEEP_CAROUSEL_ENABLED
+            and len(carousels) < max_carousels
+            and user_id is not None
+        ):
             from app.services.article_clustering_service import (
                 find_perspectives_for_read_article,
             )
@@ -1501,6 +1546,7 @@ class RecommendationService:
                         .join(Source, Source.id == UserSource.source_id)
                         .where(
                             UserSource.user_id == user_id,
+                            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
                             UserSource.added_at > seven_days_ago,
                         )
                         .order_by(UserSource.added_at.desc())  # T3A: most recent first
@@ -1579,6 +1625,88 @@ class RecommendationService:
                     for item in items:
                         promoted_ids.add(item.id)
                     break  # T3A: only 1 source carousel
+
+            # --- quiet_sources: latest article from followed low-volume sources ---
+            if len(carousels) < max_carousels:
+                QUIET_SOURCE_MAX_RECENT = 3  # < 3 articles in 30 days = "quiet"
+                now = datetime.datetime.now(datetime.UTC)
+                thirty_days_ago = now - datetime.timedelta(days=30)
+                sixty_days_ago = now - datetime.timedelta(days=60)
+
+                quiet_source_ids = (
+                    (
+                        await self.session.execute(
+                            select(UserSource.source_id)
+                            .join(Source, Source.id == UserSource.source_id)
+                            .outerjoin(
+                                Content,
+                                (Content.source_id == UserSource.source_id)
+                                & (Content.published_at >= thirty_days_ago),
+                            )
+                            .where(
+                                UserSource.user_id == user_id,
+                                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                                Source.is_active == True,  # noqa: E712
+                            )
+                            .group_by(UserSource.source_id)
+                            .having(func.count(Content.id) < QUIET_SOURCE_MAX_RECENT)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+
+                quiet_articles: list[Content] = []
+                if quiet_source_ids:
+                    latest_per_source = (
+                        select(Content)
+                        .options(selectinload(Content.source))
+                        .where(
+                            Content.source_id.in_(quiet_source_ids),
+                            Content.published_at >= sixty_days_ago,
+                            Content.id.notin_(promoted_ids | consumed_ids),
+                        )
+                        .distinct(Content.source_id)
+                        .order_by(
+                            Content.source_id,
+                            Content.published_at.desc(),
+                        )
+                    )
+                    quiet_articles = list(
+                        (await self.session.scalars(latest_per_source)).all()
+                    )
+                    quiet_articles.sort(key=lambda c: c.published_at, reverse=True)
+                    quiet_articles = quiet_articles[:MAX_CAROUSEL_ITEMS]
+
+                logger.info(
+                    "carousel_quiet_sources_query",
+                    quiet_sources_found=len(quiet_source_ids),
+                    articles_found=len(quiet_articles),
+                    min_required=MIN_DISPLAY_ITEMS,
+                )
+                if len(quiet_articles) >= MIN_DISPLAY_ITEMS:
+                    badges = [
+                        {
+                            "code": "quiet_source",
+                            "label": a.source.name,
+                            "emoji": "\U0001f50d",
+                        }
+                        for a in quiet_articles
+                    ]
+                    carousels.append(
+                        {
+                            "carousel_type": "quiet_sources",
+                            "title": "Tes sources discrètes",
+                            "emoji": "\U0001f92b",
+                            "position": self._jitter_carousel_position(
+                                "quiet_sources", user_id, today
+                            ),
+                            "items": quiet_articles,
+                            "badges": badges,
+                        }
+                    )
+                    for item in quiet_articles:
+                        promoted_ids.add(item.id)
 
             # --- community: 🌻 sunflower recommendations with decay scoring ---
             if len(carousels) < max_carousels:
@@ -1698,7 +1826,14 @@ class RecommendationService:
                                 UserContentStatus.is_saved.is_(True),
                                 UserContentStatus.status != ContentStatus.CONSUMED,
                             )
-                            .order_by(UserContentStatus.created_at.asc())
+                            .order_by(
+                                desc(
+                                    func.coalesce(
+                                        UserContentStatus.saved_at,
+                                        UserContentStatus.created_at,
+                                    )
+                                )
+                            )
                             .limit(MAX_CAROUSEL_ITEMS)
                         )
                     ).all()
@@ -1782,7 +1917,7 @@ class RecommendationService:
         )
         # Carrousels espacés d'au moins MIN_GAP slots — évite les empilements
         # adjacents qui rendent le flux dense (effet GNews / Apple News).
-        MIN_GAP = 6
+        MIN_GAP = 5
         taken: list[int] = []
         for c in carousels:
             pos = max(c["position"], MIN_CAROUSEL_POSITION)
@@ -2356,6 +2491,7 @@ class RecommendationService:
         excluded_topics: list[Any] | None = None,
         personalized: bool = False,
         user_subtopics: set[str] | None = None,
+        followed_only: bool = False,
     ) -> list[Content]:
         """Récupère les N contenus les plus récents que l'utilisateur n'a pas encore vus/consommés et qui ne sont pas masqués."""
         from sqlalchemy import and_, or_
@@ -2379,13 +2515,16 @@ class RecommendationService:
         # Otherwise, exclude hidden + saved + seen + consumed (default feed).
         from sqlalchemy import exists
 
-        # Tournée du jour : sections curées par thème/topic restreintes aux
-        # sources suivies + fenêtre 24h + boost user_subtopics. Inerte sans
-        # personalized=true côté client (rétro-compat).
-        personalized_theme_mode = (
-            personalized
-            and (theme is not None or topic is not None)
-            and source_id is None
+        # Tournée du jour : sections curées par thème/topic/source restreintes
+        # (source suivie) + fenêtre adaptative 24→48→72h + boost user_subtopics.
+        # Inerte sans personalized=true côté client (rétro-compat Flâner).
+        # Source unique de vérité : is_personalized_theme_mode() (évite tout
+        # drift entre ce dispatch et le helper testé unitairement).
+        personalized_theme_mode = is_personalized_theme_mode(
+            personalized=personalized,
+            theme=theme,
+            topic=topic,
+            source_uuid=source_id,
         )
 
         explicit_filter = (
@@ -2467,6 +2606,16 @@ class RecommendationService:
         elif personalized_theme_mode:
             # Edge: user follows zero sources → fallback curated pour ne pas
             # rendre la section vide.
+            query = query.where(Source.is_curated, Source.source_tier != "deep")
+        elif (theme or topic or entity) and followed_only and followed_source_ids:
+            # Onglets Flâner (sujet/thème/entité) : bloc principal restreint aux
+            # sources suivies → requête rapide, tri chronologique conservé
+            # (personalized reste False). Le bloc « Explorer » charge les sources
+            # non-suivies en parallèle via un appel séparé sans followed_only.
+            query = query.where(Content.source_id.in_(followed_source_ids))
+        elif (theme or topic or entity) and followed_only:
+            # 0 source suivie → repli curé pour ne pas vider le bloc principal
+            # (même sémantique que personalized_theme_mode ci-dessus).
             query = query.where(Source.is_curated, Source.source_tier != "deep")
         elif theme or topic or entity or (keyword and include_unfollowed):
             pass
@@ -2578,79 +2727,182 @@ class RecommendationService:
         if keyword and not source_id:
             query = apply_keyword_filter(query, keyword)
 
-        # Tournée du jour : fenêtre 24h sur les sections curées par thème/topic.
-        # Aligne le pool de candidats avec la notion de "fraîcheur du jour".
-        if personalized_theme_mode:
-            since_24h = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-                hours=24
-            )
-            query = query.where(Content.published_at >= since_24h)
-
-        if _use_two_phase:
-            # Followed sources only — no curated enrichment in default feed.
-            # Curated enrichment is reserved for digest (digest_selector.py).
-            # In serein mode, also include serein_default sources (humorous/satirical).
-            if serein:
-                user_query = query.where(
-                    or_(
-                        Source.id.in_(list(followed_source_ids)),
-                        Source.serein_default == True,  # noqa: E712
+        async def _fetch_candidates(base_query) -> list[Content]:
+            """Exécute le fetch (two-phase ou simple) sur une `base_query` déjà
+            filtrée (thème/topic/fenêtre). Isolé pour pouvoir rejouer la requête
+            avec une fenêtre élargie (Tournée — rareté de contenu)."""
+            if _use_two_phase:
+                # Followed sources only — no curated enrichment in default feed.
+                # Curated enrichment is reserved for digest (digest_selector.py).
+                # In serein mode, also include serein_default sources (humorous/satirical).
+                if serein:
+                    user_query = base_query.where(
+                        or_(
+                            Source.id.in_(list(followed_source_ids)),
+                            Source.serein_default == True,  # noqa: E712
+                        )
                     )
-                )
-            else:
-                user_query = query.where(Source.id.in_(list(followed_source_ids)))
-            if personalized_theme_mode and user_subtopics:
-                # Soft boost via ORDER BY : articles matchant un user_subtopic
-                # remontent en tête, mais pas de section vide si l'intersection
-                # est nulle (`overlap` retourne False, on dégrade vers le tri
-                # chronologique pur).
-                user_query = user_query.order_by(
-                    Content.topics.overlap(list(user_subtopics)).desc(),
-                    Content.published_at.desc(),
-                ).limit(limit_candidates)
-            else:
-                user_query = user_query.order_by(Content.published_at.desc()).limit(
-                    limit_candidates
-                )
-            # The followed-only query on the default (unfiltered) view can
-            # hang under a bad plan when the user has many followed sources —
-            # other branches dodge it thanks to their `is_curated` narrowing.
-            # Bound the wait and degrade to the curated query on timeout so
-            # the client never gets stuck on a spinner. Cf.
-            # docs/bugs/bug-feed-default-hang.md
-            try:
-                user_result = await asyncio.wait_for(
-                    self.session.scalars(user_query),
-                    timeout=_FEED_TWO_PHASE_TIMEOUT_S,
-                )
-                candidates_list = list(user_result.all())
-            except TimeoutError:
-                await self.session.rollback()
-                logger.warning(
-                    "feed_two_phase_timeout_fallback_curated",
+                else:
+                    user_query = base_query.where(
+                        Source.id.in_(list(followed_source_ids))
+                    )
+                if personalized_theme_mode and user_subtopics:
+                    # Soft boost via ORDER BY : articles matchant un user_subtopic
+                    # remontent en tête, mais pas de section vide si l'intersection
+                    # est nulle (`overlap` retourne False, on dégrade vers le tri
+                    # chronologique pur).
+                    user_query = user_query.order_by(
+                        Content.topics.overlap(list(user_subtopics)).desc(),
+                        Content.published_at.desc(),
+                    ).limit(limit_candidates)
+                else:
+                    user_query = user_query.order_by(Content.published_at.desc()).limit(
+                        limit_candidates
+                    )
+                # The followed-only query on the default (unfiltered) view can
+                # hang under a bad plan when the user has many followed sources —
+                # other branches dodge it thanks to their `is_curated` narrowing.
+                # Bound the wait and degrade to the curated query on timeout so
+                # the client never gets stuck on a spinner. Cf.
+                # docs/bugs/bug-feed-default-hang.md
+                try:
+                    user_result = await asyncio.wait_for(
+                        self.session.scalars(user_query),
+                        timeout=_FEED_TWO_PHASE_TIMEOUT_S,
+                    )
+                    fetched = list(user_result.all())
+                except TimeoutError:
+                    await self.session.rollback()
+                    logger.warning(
+                        "feed_two_phase_timeout_fallback_curated",
+                        user_id=str(user_id),
+                        followed_source_count=len(followed_source_ids),
+                        timeout_seconds=_FEED_TWO_PHASE_TIMEOUT_S,
+                    )
+                    fallback_query = (
+                        base_query.where(
+                            Source.is_curated, Source.source_tier != "deep"
+                        )
+                        .order_by(Content.published_at.desc())
+                        .limit(limit_candidates)
+                    )
+                    fallback_result = await self.session.scalars(fallback_query)
+                    fetched = list(fallback_result.all())
+
+                logger.info(
+                    "feed_candidates_followed_only",
                     user_id=str(user_id),
                     followed_source_count=len(followed_source_ids),
-                    timeout_seconds=_FEED_TWO_PHASE_TIMEOUT_S,
+                    serein_default_included=serein,
+                    candidates=len(fetched),
                 )
-                fallback_query = (
-                    query.where(Source.is_curated, Source.source_tier != "deep")
+                return fetched
+
+            simple_query = base_query.order_by(Content.published_at.desc()).limit(
+                limit_candidates
+            )
+            simple_result = await self.session.scalars(simple_query)
+            return list(simple_result.all())
+
+        if personalized_theme_mode:
+            # Tournée du jour : fenêtre de fraîcheur adaptative. On part de 24h
+            # (« fraîcheur du jour ») et on n'élargit (48h puis 72h) que si le
+            # pool reste sous THEMATIC_MIN_POOL_SIZE — évite la section quasi
+            # vide sur les thèmes rares sans dégrader les thèmes denses. On ne
+            # rejoue la requête que si nécessaire (pas 3 requêtes systématiques).
+            now_window = datetime.datetime.now(datetime.UTC)
+            for tier_hours in ScoringWeights.THEMATIC_WINDOW_TIERS_HOURS:
+                since = now_window - datetime.timedelta(hours=tier_hours)
+                candidates_list = await _fetch_candidates(
+                    query.where(Content.published_at >= since)
+                )
+                if len(candidates_list) >= ScoringWeights.THEMATIC_MIN_POOL_SIZE:
+                    break
+            # `tier_hours` reste le dernier palier essayé (tiers non vide).
+            logger.info(
+                "feed_thematic_adaptive_window",
+                user_id=str(user_id),
+                window_hours=tier_hours,
+                candidates=len(candidates_list),
+                threshold=ScoringWeights.THEMATIC_MIN_POOL_SIZE,
+            )
+
+            # Repli « pas d'article récent » pour les sections **source** : si la
+            # source suivie n'a rien publié dans la fenêtre adaptative (≤72h), on
+            # recule jusqu'à 30 j plutôt que de tomber sur un empty-state. Gardé
+            # strictement sur `source_id` (donc hors sections thème) ; `query`
+            # porte déjà `Content.source_id == source_id` + mutes/paywall/langue,
+            # le repli reste cadré à la source. N'entre pas dans le backfill curé
+            # (réservé `_use_two_phase`) → aucune régression thème.
+            if source_id is not None and len(candidates_list) == 0:
+                since_stale = now_window - datetime.timedelta(
+                    hours=ScoringWeights.SOURCE_STALE_FALLBACK_HOURS
+                )
+                stale_list = await _fetch_candidates(
+                    query.where(Content.published_at >= since_stale)
+                )
+                if stale_list:
+                    candidates_list = stale_list
+                    self.source_no_recent_source = True
+                    logger.info(
+                        "feed_source_stale_fallback",
+                        user_id=str(user_id),
+                        source_id=str(source_id),
+                        window=ScoringWeights.SOURCE_STALE_FALLBACK_HOURS,
+                        candidates=len(candidates_list),
+                    )
+
+            # Backfill curé NON-suivi : quand l'utilisateur suit ≥1 source
+            # (_use_two_phase) mais que le pool suivi reste sous le plancher
+            # absolu, on complète avec des sources curées non-suivies (comme
+            # Flâner) pour garantir un deep-dive exploitable. `is_followed_source`
+            # (calculé plus bas) marquera ces articles à false → chip « Suivre + »
+            # côté client. On NE backfill PAS quand l'utilisateur ne suit aucune
+            # source (le `query` est déjà restreint aux sources curées non-deep).
+            if (
+                _use_two_phase
+                and len(candidates_list) < ScoringWeights.THEMATIC_HARD_FLOOR
+            ):
+                followed_pool = len(candidates_list)
+                since_backfill = now_window - datetime.timedelta(
+                    hours=ScoringWeights.THEMATIC_WINDOW_TIERS_HOURS[-1]
+                )
+                # `query` hérite déjà des filtres thème/topic, mutes, serein,
+                # paywall, langue. On ajoute la restriction curée non-suivie et la
+                # fenêtre la plus large autorisée (72h). Requête simple sur le plan
+                # `is_curated` (rapide) — pas besoin du garde-fou timeout réservé à
+                # la branche followed-only.
+                backfill_query = (
+                    query.where(
+                        Content.published_at >= since_backfill,
+                        Source.is_curated,
+                        Source.source_tier != "deep",
+                        Source.id.notin_(list(followed_source_ids)),
+                    )
                     .order_by(Content.published_at.desc())
                     .limit(limit_candidates)
                 )
-                fallback_result = await self.session.scalars(fallback_query)
-                candidates_list = list(fallback_result.all())
+                backfill_result = await self.session.scalars(backfill_query)
+                backfill_list = list(backfill_result.all())
 
-            logger.info(
-                "feed_candidates_followed_only",
-                user_id=str(user_id),
-                followed_source_count=len(followed_source_ids),
-                serein_default_included=serein,
-                candidates=len(candidates_list),
-            )
+                # Ordre suivies-d'abord : concaténer le backfill APRÈS le pool
+                # suivi, dédupe par id (1ʳᵉ occurrence gardée), tronquer.
+                seen_ids: set = {c.id for c in candidates_list}
+                for c in backfill_list:
+                    if c.id not in seen_ids:
+                        candidates_list.append(c)
+                        seen_ids.add(c.id)
+                candidates_list = candidates_list[:limit_candidates]
+
+                logger.info(
+                    "feed_thematic_backfill",
+                    user_id=str(user_id),
+                    followed_pool=followed_pool,
+                    backfilled=len(candidates_list) - followed_pool,
+                    final=len(candidates_list),
+                )
         else:
-            query = query.order_by(Content.published_at.desc()).limit(limit_candidates)
-            candidates = await self.session.scalars(query)
-            candidates_list = list(candidates.all())
+            candidates_list = await _fetch_candidates(query)
 
         # Debug logging for mode filters
         if mode:

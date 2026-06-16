@@ -7,9 +7,14 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import get_settings
-from app.jobs.digest_generation_job import run_digest_generation
+from app.jobs.digest_generation_job import (
+    compute_digest_coverage,
+    run_digest_generation,
+)
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_language import recompute_source_language
+from app.services.observability.cost_budget import log_budget_projection
+from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 
@@ -50,11 +55,7 @@ async def _digest_watchdog() -> None:
     If coverage < 90 %, relance `run_digest_generation()` qui skip les
     users already fully covered.
     """
-    from sqlalchemy import func, select
-
     from app.database import safe_async_session
-    from app.models.daily_digest import DailyDigest
-    from app.models.user import UserProfile
     from app.utils.time import today_paris
 
     try:
@@ -62,30 +63,18 @@ async def _digest_watchdog() -> None:
             try:
                 today = today_paris()
 
-                total_users = await session.scalar(
-                    select(func.count()).select_from(UserProfile)
+                # Couverture = paires (user_id, is_serene) présentes sur les
+                # total_users * 2 attendues. Calcul factorisé dans
+                # `compute_digest_coverage` (source unique, partagée avec le
+                # résumé de run du job digest).
+                total_users, pair_count, coverage = await compute_digest_coverage(
+                    session, today
                 )
                 if not total_users:
                     logger.info("digest_watchdog_no_users")
                     return
 
-                # Expected coverage = 2 digests per user (normal + serein).
-                # Count distinct (user_id, is_serene) pairs via a GROUP BY
-                # subquery rather than string-concat casts — clearer intent,
-                # no implicit bool→text coercion, portable across backends.
                 expected_pairs = total_users * 2
-                pair_subq = (
-                    select(DailyDigest.user_id, DailyDigest.is_serene)
-                    .where(DailyDigest.target_date == today)
-                    .group_by(DailyDigest.user_id, DailyDigest.is_serene)
-                    .subquery()
-                )
-                pair_count = (
-                    await session.scalar(select(func.count()).select_from(pair_subq))
-                    or 0
-                )
-
-                coverage = pair_count / expected_pairs if expected_pairs else 0
                 logger.info(
                     "digest_watchdog_check",
                     target_date=str(today),
@@ -153,6 +142,10 @@ async def _zombie_session_sweeper() -> None:
                 )
             )
             killed = result.fetchall()
+            # Métrique always-on (enabler observabilité scaling) : rend
+            # l'idle-in-transaction requêtable/visible à chaque passage, même à
+            # 0, sans dépendre du log warning conditionnel ci-dessous.
+            logger.info("db_idle_in_transaction_swept", count=len(killed))
             if killed:
                 logger.warning(
                     "zombie_session_sweeper_killed",
@@ -164,6 +157,35 @@ async def _zombie_session_sweeper() -> None:
                 logger.debug("zombie_session_sweeper_clean")
     except Exception:
         logger.exception("zombie_session_sweeper_failed")
+
+
+async def _pool_health_probe() -> None:
+    """Sonde active du pool DB toutes les 5 min (enabler observabilité scaling).
+
+    `/api/health/pool` ne loggue `db_pool_pressure_high` que lorsqu'il est
+    *appelé* (passif). Cette sonde lit le pool périodiquement pour rendre la
+    pression visible dans structlog/Sentry sans dépendre d'un appel externe,
+    en réutilisant la même introspection (`read_pool_stats`).
+    """
+    import sentry_sdk
+
+    from app.database import engine
+    from app.observability.pool_stats import read_pool_stats
+
+    try:
+        stats = read_pool_stats(engine)
+        usage_pct = stats.get("usage_pct")
+        threshold = settings.pool_alert_threshold_pct
+        if usage_pct is not None and usage_pct >= threshold:
+            logger.warning("db_pool_pressure_high", source="probe", **stats)
+            sentry_sdk.capture_message(
+                f"DB pool pressure high: {usage_pct}% (>= {threshold}%)",
+                level="warning",
+            )
+        else:
+            logger.info("db_pool_probe", **stats)
+    except Exception:
+        logger.exception("pool_health_probe_failed")
 
 
 def start_scheduler() -> None:
@@ -241,6 +263,17 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Projection budget coût API externes (évidence G3 scaling) : conso du mois
+    # courant par provider/call_site + projection ×2.25 (89→200 users), loguée
+    # une fois par jour. Read-only, ne change aucun comportement.
+    scheduler.add_job(
+        log_budget_projection,
+        trigger=CronTrigger(hour=5, minute=0, timezone=_PARIS_TZ),
+        id="cost_budget_projection",
+        name="Cost budget projection (api_usage_events)",
+        replace_existing=True,
+    )
+
     # Zombie session sweeper — kill Supavisor sessions stuck in
     # `idle in transaction` > 5 min (filet de sécurité par-dessus le
     # timeout Postgres + le rollback() en finally de safe_async_session).
@@ -250,6 +283,26 @@ def start_scheduler() -> None:
         id="zombie_session_sweeper",
         name="Zombie session sweeper (idle in tx > 5min)",
         replace_existing=True,
+    )
+
+    # Sonde pool DB active (5 min) — rend la pression pool visible dans
+    # structlog/Sentry sans dépendre d'un appel à /api/health/pool.
+    scheduler.add_job(
+        _pool_health_probe,
+        trigger=IntervalTrigger(minutes=5),
+        id="pool_health_probe",
+        name="DB pool health probe (5min)",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        dispatch_daily_essentiel_pushes,
+        trigger=IntervalTrigger(minutes=5),
+        id="daily_essentiel_push_dispatch",
+        name="Daily Essentiel server push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     scheduler.start()
@@ -263,6 +316,8 @@ def start_scheduler() -> None:
             "purge_deleted_users",
             "recompute_source_language",
             "zombie_session_sweeper",
+            "pool_health_probe",
+            "daily_essentiel_push_dispatch",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="07:30 Europe/Paris",

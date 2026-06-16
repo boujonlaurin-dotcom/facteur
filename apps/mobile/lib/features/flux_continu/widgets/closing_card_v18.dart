@@ -14,18 +14,24 @@ import 'tournee_cta_buttons.dart';
 /// - Heading "Vous êtes à jour" Fraunces 700 24px.
 /// - Description (DM Sans 13, line-height 1.5, max-w 280, centered) — "X
 ///   étape(s) parcourue(s)" or "Tournée terminée" when empty.
-/// - Primary CTA "Continuer le feed" (background #D35400) + ghost CTA
+/// - Primary CTA "Continuer à Flâner" (background #D35400) + ghost CTA
 ///   "Refermer pour aujourd'hui" (border 1.5px rgba(0,0,0,0.1)).
 class ClosingCardV18 extends StatelessWidget {
   final int articleCount;
   final VoidCallback? onContinue;
   final VoidCallback? onClose;
 
+  /// Phrase de fermeture affichée à la place du bouton « Refermer » quand
+  /// [onClose] est null (cas iOS : la fermeture programmatique est interdite
+  /// par l'App Store). Ignorée si [onClose] est fourni (cas Android).
+  final String? closeHint;
+
   const ClosingCardV18({
     super.key,
     required this.articleCount,
     this.onContinue,
     this.onClose,
+    this.closeHint,
   });
 
   @override
@@ -61,8 +67,7 @@ class ClosingCardV18 extends StatelessWidget {
             Transform.rotate(
               angle: -2 * math.pi / 180,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   border: Border.all(
                     color: const Color(0xFF2E7D32),
@@ -109,7 +114,7 @@ class ClosingCardV18 extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: TourneePrimaryButton(
-                label: 'Continuer le feed',
+                label: 'Continuer à Flâner',
                 onTap: onContinue,
               ),
             ),
@@ -120,6 +125,17 @@ class ClosingCardV18 extends StatelessWidget {
                 child: TourneeGhostButton(
                   label: "Refermer pour aujourd'hui",
                   onTap: onClose,
+                ),
+              ),
+            ] else if (closeHint != null) ...[
+              const SizedBox(height: 14),
+              Text(
+                closeHint!,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: colors.textTertiary,
                 ),
               ),
             ],
@@ -135,4 +151,3 @@ class ClosingCardV18 extends StatelessWidget {
     return '$count étape$plural parcourue$plural';
   }
 }
-

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/providers.dart';
@@ -30,10 +31,7 @@ class FeedState {
   final List<Content> items;
   final List<FeedCarouselData> carousels;
 
-  FeedState({
-    required this.items,
-    this.carousels = const [],
-  });
+  FeedState({required this.items, this.carousels = const []});
 }
 
 /// Snapshot capturé juste avant un refresh, pour permettre l'undo.
@@ -53,9 +51,7 @@ class FeedSnapshot {
     required this.impressionsBackup,
   });
 
-  FeedSnapshot copyWith({
-    List<PreviousImpression>? impressionsBackup,
-  }) =>
+  FeedSnapshot copyWith({List<PreviousImpression>? impressionsBackup}) =>
       FeedSnapshot(
         items: items,
         carousels: carousels,
@@ -108,12 +104,14 @@ class FeedFilterSelection {
           keyword == other.keyword;
 
   @override
-  int get hashCode =>
-      Object.hash(sourceId, topic, theme, entity, keyword);
+  int get hashCode => Object.hash(sourceId, topic, theme, entity, keyword);
 }
 
-final feedFilterSelectionProvider =
-    StateProvider<FeedFilterSelection>((ref) => FeedFilterSelection.empty);
+final feedFilterSelectionProvider = StateProvider<FeedFilterSelection>(
+  (ref) => FeedFilterSelection.empty,
+);
+
+final _feedFilterSelectionOwnerProvider = StateProvider<String?>((ref) => null);
 
 /// `true` tant qu'un refresh feed est en vol (filter change, serein toggle,
 /// pull-to-refresh). Permet d'afficher un loader partagé sur les deux écrans
@@ -124,6 +122,45 @@ final feedRefreshingProvider = StateProvider<bool>((ref) => false);
 final feedProvider = AsyncNotifierProvider<FeedNotifier, FeedState>(() {
   return FeedNotifier();
 });
+
+class _FeedAuthGate {
+  final String? userId;
+  final bool isAuthenticated;
+  final bool isEmailConfirmed;
+  final bool needsOnboarding;
+
+  const _FeedAuthGate({
+    required this.userId,
+    required this.isAuthenticated,
+    required this.isEmailConfirmed,
+    required this.needsOnboarding,
+  });
+
+  factory _FeedAuthGate.fromAuthState(AuthState state) {
+    return _FeedAuthGate(
+      userId: state.user?.id,
+      isAuthenticated: state.isAuthenticated,
+      isEmailConfirmed: state.isEmailConfirmed,
+      needsOnboarding: state.needsOnboarding,
+    );
+  }
+
+  bool get canFetch =>
+      isAuthenticated && userId != null && isEmailConfirmed && !needsOnboarding;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is _FeedAuthGate &&
+          userId == other.userId &&
+          isAuthenticated == other.isAuthenticated &&
+          isEmailConfirmed == other.isEmailConfirmed &&
+          needsOnboarding == other.needsOnboarding;
+
+  @override
+  int get hashCode =>
+      Object.hash(userId, isAuthenticated, isEmailConfirmed, needsOnboarding);
+}
 
 class FeedNotifier extends AsyncNotifier<FeedState> {
   // Internal state for pagination
@@ -175,9 +212,21 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   String? get selectedKeyword => _selectedKeyword;
   List<Content> get globalItems => _globalItems;
 
+  /// True quand l'onglet actif est un onglet de découverte (sujet / thème /
+  /// entité). Le bloc principal est alors restreint aux sources suivies
+  /// (`followed_only`) pour un chargement rapide, le bloc « Explorer » charge
+  /// les sources non-suivies en parallèle. Source/mot-clé/vue par défaut → false.
+  bool get _discoveryFiltered =>
+      _selectedTopic != null ||
+      _selectedTheme != null ||
+      _selectedEntity != null;
+
   bool get _isUnfiltered =>
+      _selectedFilter == null &&
       _selectedTopic == null &&
       _selectedTheme == null &&
+      _selectedSourceId == null &&
+      _selectedKeyword == null &&
       _selectedEntity == null;
 
   @override
@@ -189,29 +238,42 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       _widgetPushDebounce?.cancel();
     });
 
-    // Watch auth state to handle logout/user change
-    final authState = ref.watch(authStateProvider);
+    // Watch only the auth identity/gates that can affect feed access.
+    // JWT rotations update AuthState.lastTokenRefreshAt, but must not rebuild
+    // this notifier because rebuilds preserve scroll/list context.
+    final authGate = ref.watch(
+      authStateProvider.select(_FeedAuthGate.fromAuthState),
+    );
 
-    if (!authState.isAuthenticated || authState.user == null) {
-      // R5.1 — drop the static repository-level dedupe state on logout
-      // so the next user (or the same user after re-login) can't see a
-      // stale payload from the previous session.
-      FeedRepository.clearDefaultViewCache();
+    final selectionOwner = ref.read(_feedFilterSelectionOwnerProvider);
+
+    if (!authGate.canFetch) {
+      if (authGate.userId == null) {
+        _resetFiltersToEmpty(syncSelectionProvider: true);
+        _setSelectionOwner(null);
+        FeedRepository.clearDefaultViewCache();
+      } else if (selectionOwner != null && selectionOwner != authGate.userId) {
+        _resetFiltersToEmpty(syncSelectionProvider: true);
+        _setSelectionOwner(authGate.userId);
+        FeedRepository.clearDefaultViewCache();
+      }
       return FeedState(items: []);
+    }
+
+    if (selectionOwner != null && selectionOwner != authGate.userId) {
+      FeedRepository.clearDefaultViewCache();
+      _resetFiltersToEmpty(syncSelectionProvider: true);
+      _setSelectionOwner(authGate.userId);
+    } else {
+      if (selectionOwner == null) {
+        _setSelectionOwner(authGate.userId);
+      }
+      _restoreFiltersFromSelection();
     }
 
     _page = 1;
     _hasNext = true;
     _isLoadingMore = false;
-    _selectedFilter = null; // Reset filter on build/rebuild
-    _selectedTheme = null;
-    _selectedTopic = null;
-    _selectedSourceId = null;
-    _selectedEntity = null;
-    _selectedKeyword = null;
-    // Riverpod interdit de muter un autre provider pendant le build : on
-    // diffère donc le reset au prochain microtick.
-    scheduleMicrotask(_syncSelectionProvider);
 
     // NB: serein toggle is observed in feed_screen.dart (which wraps the
     // refresh in a loading indicator). Listening here as well would cause
@@ -222,10 +284,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // a silent refresh so the next frame is up-to-date. This is the main
     // lever for the "feed takes 4-5s on open" UX issue — subsequent opens in
     // the same 10-minute window become near-instant.
-    final userId = authState.user!.id;
+    final userId = authGate.userId!;
     final cache = ref.read(feedCacheServiceProvider);
     final isSerein = ref.read(sereinToggleProvider).enabled;
-    final cached = (!isSerein) ? cache?.readRaw(userId) : null;
+    final cacheVariant = _cacheVariantForSerein(isSerein);
+    final cached = cache?.readRaw(userId, variant: cacheVariant);
     if (cached != null && cached.isFresh) {
       try {
         final parsed = FeedRepository.parseFeedData(
@@ -246,13 +309,14 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         }
         _globalItems = parsed.items;
         print(
-            '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})');
+          '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})',
+        );
         unawaited(_prefetchForWidget(parsed.items));
         return FeedState(items: parsed.items, carousels: parsed.carousels);
       } catch (e) {
         // Corrupted cache or schema drift — drop silently and fall through.
         print('FeedNotifier: cached feed parse failed, evicting: $e');
-        await cache?.clearForUser(userId);
+        await cache?.clearForUser(userId, variant: cacheVariant);
       }
     }
 
@@ -260,7 +324,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final sw = Stopwatch()..start();
     final response = await _fetchPage(page: 1);
     sw.stop();
-    print('[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)');
+    print(
+      '[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)',
+    );
 
     _globalItems = response.items;
     unawaited(_prefetchForWidget(response.items));
@@ -293,14 +359,17 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
           ...?(currentState?.items
               .where((c) => c.status == ContentStatus.consumed)
               .map((c) => c.id)),
-          ...?(currentState?.carousels.expand((carousel) => carousel.items
-              .where((c) => c.status == ContentStatus.consumed)
-              .map((c) => c.id))),
+          ...?(currentState?.carousels.expand(
+            (carousel) => carousel.items
+                .where((c) => c.status == ContentStatus.consumed)
+                .map((c) => c.id),
+          )),
         };
         if (consumedIds.isEmpty) {
           _globalItems = response.items;
           state = AsyncData(
-              FeedState(items: response.items, carousels: response.carousels));
+            FeedState(items: response.items, carousels: response.carousels),
+          );
           return;
         }
         Content preserve(Content c) => consumedIds.contains(c.id)
@@ -308,13 +377,17 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
             : c;
         final mergedItems = response.items.map(preserve).toList();
         _globalItems = mergedItems;
-        state = AsyncData(FeedState(
-          items: mergedItems,
-          carousels: response.carousels
-              .map((car) =>
-                  car.copyWith(items: car.items.map(preserve).toList()))
-              .toList(),
-        ));
+        state = AsyncData(
+          FeedState(
+            items: mergedItems,
+            carousels: response.carousels
+                .map(
+                  (car) =>
+                      car.copyWith(items: car.items.map(preserve).toList()),
+                )
+                .toList(),
+          ),
+        );
       } catch (e) {
         // Silent: user still sees the cached feed.
         print('FeedNotifier: silent revalidation failed: $e');
@@ -463,8 +536,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     await refresh();
   }
 
-  Future<void> setKeyword(String? keyword, {bool includeUnfollowed = false}) async {
-    if (_selectedKeyword == keyword && _includeUnfollowed == includeUnfollowed) {
+  Future<void> setKeyword(
+    String? keyword, {
+    bool includeUnfollowed = false,
+  }) async {
+    if (_selectedKeyword == keyword &&
+        _includeUnfollowed == includeUnfollowed) {
       return;
     }
     _selectedKeyword = keyword;
@@ -491,6 +568,41 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     await refresh();
   }
 
+  FeedCacheVariant _cacheVariantForSerein(bool isSerein) =>
+      isSerein ? FeedCacheVariant.serein : FeedCacheVariant.normal;
+
+  void _restoreFiltersFromSelection() {
+    final selection = ref.read(feedFilterSelectionProvider);
+    _selectedFilter = null;
+    _selectedSourceId = selection.sourceId;
+    _selectedTopic = selection.topic;
+    _selectedTheme = selection.theme;
+    _selectedEntity = selection.entity;
+    _selectedKeyword = selection.keyword;
+    _includeUnfollowed = false;
+  }
+
+  void _resetFiltersToEmpty({required bool syncSelectionProvider}) {
+    _selectedFilter = null;
+    _selectedTheme = null;
+    _selectedTopic = null;
+    _selectedSourceId = null;
+    _selectedEntity = null;
+    _selectedKeyword = null;
+    _includeUnfollowed = false;
+    if (syncSelectionProvider) {
+      // Riverpod interdit de muter un autre provider pendant le build : on
+      // diffère donc le reset au prochain microtick.
+      scheduleMicrotask(_syncSelectionProvider);
+    }
+  }
+
+  void _setSelectionOwner(String? userId) {
+    scheduleMicrotask(() {
+      ref.read(_feedFilterSelectionOwnerProvider.notifier).state = userId;
+    });
+  }
+
   /// Pushes the current filter selection into [feedFilterSelectionProvider]
   /// so listeners (chips, tabs, funnel badge) rebuild **immediately** on tap,
   /// without waiting for the refresh round-trip.
@@ -511,37 +623,14 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final repository = ref.read(feedRepositoryProvider);
     final isSerein = ref.read(sereinToggleProvider).enabled;
 
-    // Only the page-1 "default" view (no filters, serein off) is cache-worthy:
-    // that's what the user lands on after cold-open or tab switch. Filtered
-    // views and paginated loads bypass the cache entirely.
-    final bool isDefaultView = page == 1 &&
-        !isSerein &&
-        _selectedFilter == null &&
-        _selectedTheme == null &&
-        _selectedTopic == null &&
-        _selectedSourceId == null &&
-        _selectedEntity == null &&
-        _selectedKeyword == null;
+    // Only the page-1 unfiltered view is cache-worthy: that's what the user
+    // lands on after cold-open or tab switch. Normal and serein variants have
+    // separate cache keys. Filtered views and paginated loads bypass the cache.
+    final bool isDefaultView = page == 1 && _isUnfiltered;
 
-    if (isDefaultView) {
+    final cache = ref.read(feedCacheServiceProvider);
+    if (isDefaultView && cache != null) {
       final result = await repository.getFeedWithRaw(
-          page: page,
-          limit: _limit,
-          mode: _selectedFilter,
-          theme: _selectedTheme,
-          topic: _selectedTopic,
-          sourceId: _selectedSourceId,
-          entity: _selectedEntity,
-          keyword: _selectedKeyword,
-          serein: isSerein,
-          forceFresh: forceFresh);
-      _hasNext = result.feed.pagination.hasNext && result.feed.items.isNotEmpty;
-      // Persist in the background — cache write failures never block the UI.
-      _persistDefaultFeedCache(result.raw);
-      return result.feed;
-    }
-
-    final response = await repository.getFeed(
         page: page,
         limit: _limit,
         mode: _selectedFilter,
@@ -550,8 +639,32 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         sourceId: _selectedSourceId,
         entity: _selectedEntity,
         keyword: _selectedKeyword,
-        includeUnfollowed: _includeUnfollowed,
-        serein: isSerein);
+        serein: isSerein,
+        forceFresh: forceFresh,
+      );
+      _hasNext = result.feed.pagination.hasNext && result.feed.items.isNotEmpty;
+      // Persist in the background — cache write failures never block the UI.
+      _persistDefaultFeedCache(
+        result.raw,
+        cache,
+        variant: _cacheVariantForSerein(isSerein),
+      );
+      return result.feed;
+    }
+
+    final response = await repository.getFeed(
+      page: page,
+      limit: _limit,
+      mode: _selectedFilter,
+      theme: _selectedTheme,
+      topic: _selectedTopic,
+      sourceId: _selectedSourceId,
+      entity: _selectedEntity,
+      keyword: _selectedKeyword,
+      includeUnfollowed: _includeUnfollowed,
+      followedOnly: _discoveryFiltered,
+      serein: isSerein,
+    );
 
     // Hybrid pagination: trust the backend's `has_next` (based on the
     // total_candidates pool pre-diversification), but stop anyway if we got
@@ -564,14 +677,16 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
   /// Best-effort persistence of the default feed response for the current
   /// user. Silent on error (cache is a pure optimization).
-  void _persistDefaultFeedCache(dynamic rawData) {
+  void _persistDefaultFeedCache(
+    dynamic rawData,
+    FeedCacheService cache, {
+    required FeedCacheVariant variant,
+  }) {
     final authState = ref.read(authStateProvider);
     final userId = authState.user?.id;
     if (userId == null) return;
-    final cache = ref.read(feedCacheServiceProvider);
-    if (cache == null) return;
     // Fire-and-forget: a failed write must never surface to the UI.
-    unawaited(cache.saveRaw(userId, rawData));
+    unawaited(cache.saveRaw(userId, rawData, variant: variant));
   }
 
   Future<void> loadMore() async {
@@ -605,15 +720,18 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         // All items were duplicates — pagination is fully misaligned (e.g. stale
         // cache vs. heavily updated candidate pool). Stop paging to avoid a loop.
         print(
-            'FeedNotifier: loadMore page $nextPage fully deduplicated (${newItems.length} dupes), stopping pagination.');
+          'FeedNotifier: loadMore page $nextPage fully deduplicated (${newItems.length} dupes), stopping pagination.',
+        );
         _hasNext = false;
         return;
       }
 
-      state = AsyncData(FeedState(
-        items: [...currentItems, ...dedupedNewItems],
-        carousels: currentCarousels, // Keep page 1 carousels
-      ));
+      state = AsyncData(
+        FeedState(
+          items: [...currentItems, ...dedupedNewItems],
+          carousels: currentCarousels, // Keep page 1 carousels
+        ),
+      );
     } catch (e) {
       // Don't replace state with AsyncError — that would wipe the existing
       // feed items on a transient page 2+ failure. Log and stop paging; the
@@ -646,10 +764,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (_isUnfiltered) {
         _globalItems = response.items;
       }
-      state = AsyncData(FeedState(
-        items: response.items,
-        carousels: response.carousels,
-      ));
+      state = AsyncData(
+        FeedState(items: response.items, carousels: response.carousels),
+      );
     } catch (e, stack) {
       // Recovery policy : ne JAMAIS figer le provider en AsyncError si on a
       // déjà des items à l'écran. Un AsyncError wipe `state.value` → tous les
@@ -666,8 +783,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final previous = state.valueOrNull;
       if (previous != null) {
         // ignore: avoid_print
-        print(
-            'FeedNotifier: refresh failed, keeping previous feed state: $e');
+        print('FeedNotifier: refresh failed, keeping previous feed state: $e');
         state = AsyncData(previous);
       } else {
         // Premier chargement jamais abouti : AsyncError est la bonne
@@ -687,7 +803,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   /// Capture un snapshot de l'état UI + backup backend dans
   /// [feedUndoSnapshotProvider] pour permettre l'undo via [undoLastRefresh].
   /// Story 4.5b.
-  Future<void> refreshArticlesWithSnapshot(Set<String> visibleContentIds) async {
+  Future<void> refreshArticlesWithSnapshot(
+    Set<String> visibleContentIds,
+  ) async {
     // Single owner of the snapshot lifecycle: always drop any prior value at
     // the start. We'll either replace it below (happy path) or leave it null
     // (empty visible set, backend failure) — never leak a stale snapshot that
@@ -699,9 +817,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
     // Collect IDs from main feed items (non-consumed + visible)
     final mainIds = currentState.items
-        .where((c) =>
-            c.status != ContentStatus.consumed &&
-            visibleContentIds.contains(c.id))
+        .where(
+          (c) =>
+              c.status != ContentStatus.consumed &&
+              visibleContentIds.contains(c.id),
+        )
         .map((c) => c.id)
         .toSet();
 
@@ -740,10 +860,13 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       final backups = await repository.refreshFeed(allIds);
 
       // 3. Store enriched snapshot for undo (only on success)
-      ref.read(feedUndoSnapshotProvider.notifier).state =
-          snapshot.copyWith(impressionsBackup: backups);
+      ref.read(feedUndoSnapshotProvider.notifier).state = snapshot.copyWith(
+        impressionsBackup: backups,
+      );
     } catch (e) {
-      print('FeedNotifier: refreshArticlesWithSnapshot backend call failed: $e');
+      print(
+        'FeedNotifier: refreshArticlesWithSnapshot backend call failed: $e',
+      );
     }
 
     // 4. Refetch page 1 (always — keeps the gesture responsive even on error)
@@ -762,10 +885,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // 1. Restore UI state optimistically
     _page = snapshot.page;
     _hasNext = snapshot.hasNext;
-    state = AsyncData(FeedState(
-      items: snapshot.items,
-      carousels: snapshot.carousels,
-    ));
+    state = AsyncData(
+      FeedState(items: snapshot.items, carousels: snapshot.carousels),
+    );
 
     // 2. Clear snapshot immediately so double-tap does nothing
     ref.read(feedUndoSnapshotProvider.notifier).state = null;
@@ -787,7 +909,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove from feed
     final updatedItems = List<Content>.from(currentState.items);
     updatedItems.removeWhere((c) => c.id == content.id);
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -854,7 +981,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     );
 
     // Mise à jour optimiste immédiate
-    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
+    state = AsyncData(
+      FeedState(items: updatedItems, carousels: updatedCarousels),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -896,7 +1025,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     );
 
     // Optimistic update
-    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
+    state = AsyncData(
+      FeedState(items: updatedItems, carousels: updatedCarousels),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -916,7 +1047,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     updatedItems.removeWhere((c) => c.id == content.id);
 
     // Optimistic remove
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -936,7 +1072,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final updatedItems = List<Content>.from(currentState.items);
     updatedItems.removeWhere((c) => c.id == content.id);
 
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -945,6 +1086,36 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     } catch (e) {
       // Silent failure — optimistic remove stays
       print('FeedNotifier: swipeDismiss failed for ${content.id}: $e');
+    }
+  }
+
+  /// Hides remotely while retaining the article in local state so the screen
+  /// can replace its exact row with inline feedback.
+  Future<void> markHiddenRemote(Content content) async {
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.hideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
+    } catch (e) {
+      debugPrint(
+        'FeedNotifier: markHiddenRemote failed for ${content.id}: $e',
+      );
+    }
+  }
+
+  /// Confirms removal after the inline feedback has been resolved.
+  void confirmDismiss(String contentId) {
+    removeFromState(contentId);
+  }
+
+  /// Cancels a remote hide while the retained local article stays in place.
+  Future<void> undoHide(Content content) async {
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      await repository.unhideContent(content.id);
+      FeedRepository.clearDefaultViewCache();
+    } catch (e) {
+      debugPrint('FeedNotifier: undoHide failed for ${content.id}: $e');
     }
   }
 
@@ -959,10 +1130,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     if (currentState == null) return;
     final updatedItems = List<Content>.from(currentState.items)
       ..removeWhere((c) => c.id == contentId);
-    state = AsyncData(FeedState(
-      items: updatedItems,
-      carousels: currentState.carousels,
-    ));
+    state = AsyncData(
+      FeedState(items: updatedItems, carousels: currentState.carousels),
+    );
   }
 
   /// Undo a swipe-dismiss: re-insert article at original position.
@@ -974,7 +1144,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final insertIndex = originalIndex.clamp(0, updatedItems.length);
     updatedItems.insert(insertIndex, content);
 
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -992,9 +1167,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     if (currentState == null) return;
 
     // Optimistic remove all from this source
-    final updatedItems =
-        currentState.items.where((c) => c.source.id != content.source.id).toList();
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    final updatedItems = currentState.items
+        .where((c) => c.source.id != content.source.id)
+        .toList();
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -1023,7 +1204,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       if (c.id == content.id) return false;
       return !c.topics.contains(topic);
     }).toList();
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repository = ref.read(feedRepositoryProvider);
@@ -1053,7 +1239,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove of all content from this source
     final updatedItems =
         currentState.items.where((c) => c.source.id != sourceId).toList();
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -1072,7 +1263,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     // Optimistic remove of all content from this theme
     final updatedItems =
         currentState.items.where((c) => c.source.theme != theme).toList();
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -1093,7 +1289,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       return !c.topics.contains(topic);
     }).toList();
 
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -1137,7 +1338,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         .where((c) => c.contentType.name != contentType)
         .toList();
 
-    state = AsyncData(FeedState(items: updatedItems, carousels: state.value?.carousels ?? const []));
+    state = AsyncData(
+      FeedState(
+        items: updatedItems,
+        carousels: state.value?.carousels ?? const [],
+      ),
+    );
 
     try {
       final repo = ref.read(personalizationRepositoryProvider);
@@ -1174,35 +1380,54 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     state = AsyncData(FeedState(items: items, carousels: updatedCarousels));
   }
 
-  Future<void> markContentAsConsumed(Content content) async {
+  void markContentConsumedLocally(String contentId) {
     final currentState = state.value;
-    if (currentState == null) return;
+    if (currentState == null || contentId.isEmpty) return;
 
-    final feedIndex = currentState.items.indexWhere((c) => c.id == content.id);
-
-    final updatedItems = List<Content>.from(currentState.items);
-    if (feedIndex != -1) {
-      updatedItems[feedIndex] =
-          updatedItems[feedIndex].copyWith(status: ContentStatus.consumed);
-    }
-
+    final updatedItems = currentState.items
+        .map(
+          (c) => c.id == contentId
+              ? c.copyWith(status: ContentStatus.consumed)
+              : c,
+        )
+        .toList();
     final updatedCarousels = _updateCarouselItem(
       currentState.carousels,
-      content.id,
+      contentId,
       (c) => c.copyWith(status: ContentStatus.consumed),
     );
+    state = AsyncData(
+      FeedState(items: updatedItems, carousels: updatedCarousels),
+    );
+  }
 
-    state = AsyncData(FeedState(items: updatedItems, carousels: updatedCarousels));
+  Future<void> markContentAsConsumed(Content content) async {
+    markContentConsumedLocally(content.id);
 
     try {
       final repository = ref.read(feedRepositoryProvider);
       await repository.updateContentStatus(content.id, ContentStatus.consumed);
-      // Invalidate in-memory dedupe + Hive cache so the next fetch (silent
-      // revalidation or cold start) returns fresh data with the correct status.
-      FeedRepository.clearDefaultViewCache();
       final userId = ref.read(authStateProvider).user?.id;
       if (userId != null) {
-        unawaited(ref.read(feedCacheServiceProvider)?.clearForUser(userId));
+        final cache = ref.read(feedCacheServiceProvider);
+        if (cache != null) {
+          unawaited(
+            cache.patchContentStatus(
+              userId,
+              content.id,
+              ContentStatus.consumed,
+              variant: FeedCacheVariant.normal,
+            ),
+          );
+          unawaited(
+            cache.patchContentStatus(
+              userId,
+              content.id,
+              ContentStatus.consumed,
+              variant: FeedCacheVariant.serein,
+            ),
+          );
+        }
       }
     } catch (e) {
       // Silent failure, state is already updated optimistically

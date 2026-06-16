@@ -10,7 +10,7 @@ class SourceListItem extends StatelessWidget {
   final Source source;
   final VoidCallback? onTap;
   final VoidCallback? onToggleMute;
-  final VoidCallback? onToggleSubscription;
+
   /// Story 22.1 — ouvre le picker 4-états (callback optionnel).
   /// `true` → la source est actuellement en favori (étoile pleine).
   final VoidCallback? onPickInterestState;
@@ -21,7 +21,6 @@ class SourceListItem extends StatelessWidget {
     required this.source,
     this.onTap,
     this.onToggleMute,
-    this.onToggleSubscription,
     this.onPickInterestState,
     this.isFavorite = false,
   });
@@ -57,7 +56,6 @@ class SourceListItem extends StatelessWidget {
             source: source,
             onToggleTrust: onTap ?? () {},
             onToggleMute: onToggleMute,
-            onToggleSubscription: onToggleSubscription,
           ),
         );
       },
@@ -79,8 +77,7 @@ class SourceListItem extends StatelessWidget {
                 ? Border.all(color: Colors.transparent, width: 1.5)
                 : isTrusted
                     ? Border.all(
-                        color: colors.primary.withOpacity(0.3),
-                        width: 1.5)
+                        color: colors.primary.withOpacity(0.3), width: 1.5)
                     : Border.all(color: Colors.transparent, width: 1.5),
           ),
           child: Row(
@@ -129,8 +126,7 @@ class SourceListItem extends StatelessWidget {
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          Icon(_typeIcon,
-                              color: colors.textTertiary, size: 13),
+                          Icon(_typeIcon, color: colors.textTertiary, size: 13),
                           const SizedBox(width: 5),
                           Flexible(
                             child: Text(
@@ -157,7 +153,8 @@ class SourceListItem extends StatelessWidget {
                   onPressed: onPickInterestState,
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
                   icon: Icon(
                     isFavorite
                         ? PhosphorIcons.star(PhosphorIconsStyle.fill)

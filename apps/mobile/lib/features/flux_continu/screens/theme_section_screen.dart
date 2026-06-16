@@ -5,8 +5,10 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
+import '../../../core/providers/navigation_providers.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../feed/widgets/explore_section.dart';
 import '../../feed/widgets/feed_carousel.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -14,16 +16,12 @@ import '../providers/theme_discovery_provider.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/theme_detail_footer.dart';
+import '../widgets/veille_group_header.dart';
 
 /// Distance to the bottom (in px) at which we trigger the next page of
 /// articles for the current theme. Mirrors the threshold used on the main
 /// Flux Continu screen so the feel of the infinite scroll is identical.
 const double _kLoadMoreLeadingPx = 800.0;
-
-/// Cap on the number of "Explorer de nouvelles sources" articles surfaced.
-/// Past 6 the block stops being a discovery tease and starts to feel like a
-/// secondary feed — kept short on purpose.
-const int _kDiscoveryItemCap = 6;
 
 /// Full-page view of a Tournée du jour theme section (a `FeedThemeSection`).
 ///
@@ -47,17 +45,21 @@ class ThemeSectionScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<ThemeSectionScreen> createState() =>
-      _ThemeSectionScreenState();
+  ConsumerState<ThemeSectionScreen> createState() => _ThemeSectionScreenState();
 }
 
 class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
-  final ScrollController _scroll = ScrollController();
+  final ScrollController _scroll = ScrollController(keepScrollOffset: false);
   bool _loadingMore = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(tourneeLastDedicatedSectionProvider.notifier).state =
+          widget.sectionKeyValue;
+    });
     _scroll.addListener(_onScroll);
   }
 
@@ -93,11 +95,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     return widget.initialSection;
   }
 
-  void _openArticle(BuildContext context, Content article) {
-    context.push(
+  Future<void> _openArticle(BuildContext context, Content article) async {
+    await context.push(
       '${RoutePaths.fluxContinu}/content/${article.id}',
       extra: article,
     );
+    if (mounted) setState(() {});
   }
 
   void _onBackToTournee() {
@@ -105,26 +108,34 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
   }
 
   void _onTapNextSection(FluxSection next) {
+    ref.read(tourneeLastDedicatedSectionProvider.notifier).state = sectionKey(
+      next,
+    );
     final key = Uri.encodeComponent(sectionKey(next));
-    final path = next is FeedThemeSection
-        ? '${RoutePaths.fluxContinu}/theme/$key'
-        : '${RoutePaths.fluxContinu}/section/$key';
+    final path = next is FeedThemeSection && next.kind == SectionKind.source
+        ? '${RoutePaths.fluxContinu}/source/$key'
+        : next is FeedThemeSection
+            ? '${RoutePaths.fluxContinu}/theme/$key'
+            : '${RoutePaths.fluxContinu}/section/$key';
     // pushReplacement so chaining "Sujet suivant" doesn't stack N detail pages.
     // The back arrow always falls back to the Tournée.
-    context.pushReplacement(path, extra: next);
+    context.pushReplacement(tourneeNextSectionLocation(path), extra: next);
   }
 
   /// Builds a carousel restricted to items tagged with [themeSlug] (either
   /// via [Content.topics] or via the source's macro-theme). Returns `null`
   /// when fewer than 2 items match — single-item carousels feel like padding
   /// in this context.
-  FeedCarouselData? _filterCarousel(FeedCarouselData carousel, String themeSlug) {
+  FeedCarouselData? _filterCarousel(
+    FeedCarouselData carousel,
+    String themeSlug,
+  ) {
     final filtered = <Content>[];
     final filteredBadges = <CarouselItemBadge>[];
     for (var i = 0; i < carousel.items.length; i++) {
       final item = carousel.items[i];
-      final matches = item.topics.contains(themeSlug) ||
-          item.source.theme == themeSlug;
+      final matches =
+          item.topics.contains(themeSlug) || item.source.theme == themeSlug;
       if (!matches) continue;
       filtered.add(item);
       if (i < carousel.badges.length) {
@@ -178,10 +189,16 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     final scrollExhausted = !section.hasMore;
     final themeSlug = section.themeSlug;
 
+    // Carrousels + « Explorer plus » + footer (CTA « Sujet suivant ») sont
+    // rendus SOUS la liste chargée, indépendamment de l'exhaustion du scroll
+    // (aligné sur DigestSectionScreen). L'infinite-scroll continue d'ajouter des
+    // pages d'articles AU-DESSUS ; le bloc de clôture reste en bas, toujours
+    // accessible — c'est la seule route fiable vers le deep-dive.
+    //
     // Pré-calcul des carrousels : permet de passer `hasThemeCarousels` à
     // _buildDiscoverySection pour qu'elle décide si la carte "Vous êtes à
     // jour" doit s'afficher (aucun carrousel ET aucun article de découverte).
-    final themeCarousels = (scrollExhausted && themeSlug != null)
+    final themeCarousels = themeSlug != null
         ? _buildThemeCarousels(section, themeSlug)
         : const <Widget>[];
 
@@ -197,32 +214,53 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             illustrationAsset: section.illustrationAsset,
           ),
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
+        if (section.kind == SectionKind.veille)
+          _buildVeilleSliverList(section)
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate((context, index) {
               final item = section.items[index];
               return FluxContinuArticleCard(
                 article: item,
                 onTap: () => _openArticle(context, item),
               );
-            },
-            childCount: section.items.length,
+            }, childCount: section.items.length),
           ),
-        ),
         if (!scrollExhausted)
           SliverToBoxAdapter(
             child: _LoadingMoreIndicator(visible: section.isLoadingMore),
           ),
         ...themeCarousels,
-        if (scrollExhausted && themeSlug != null)
+        if (themeSlug != null)
           ..._buildDiscoverySection(
             section,
             themeSlug,
             hasThemeCarousels: themeCarousels.isNotEmpty,
+            scrollExhausted: scrollExhausted,
           ),
-        if (scrollExhausted) _buildFooterSliver(section),
+        _buildFooterSliver(section),
         const SliverToBoxAdapter(child: SizedBox(height: 40)),
       ],
+    );
+  }
+
+  /// SliverList du feed veille avec en-têtes « Tes sources » / « Couverture
+  /// élargie » dérivés au rendu sur les transitions de `veilleGroup`. Les lignes
+  /// sont reconstruites depuis la liste accumulée → l'en-tête d'un bloc apparaît
+  /// une seule fois, même quand le bloc s'étale sur plusieurs pages.
+  Widget _buildVeilleSliverList(FeedThemeSection section) {
+    final rows = buildVeilleFeedRows(section.items);
+    return SliverList(
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final row = rows[index];
+        return switch (row) {
+          VeilleHeaderRow(:final label) => VeilleGroupHeader(label: label),
+          VeilleArticleRow(:final content) => FluxContinuArticleCard(
+              article: content,
+              onTap: () => _openArticle(context, content),
+            ),
+        };
+      }, childCount: rows.length),
     );
   }
 
@@ -241,7 +279,7 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
 
     return [
       SliverToBoxAdapter(
-        child: _BlockHeader(label: 'À explorer dans ${section.label}'),
+        child: ExploreBlockHeader(label: 'À explorer dans ${section.label}'),
       ),
       SliverList(
         delegate: SliverChildBuilderDelegate(
@@ -262,44 +300,38 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     FeedThemeSection section,
     String themeSlug, {
     bool hasThemeCarousels = false,
+    bool scrollExhausted = false,
   }) {
     final async = ref.watch(themeDiscoveryProvider(themeSlug));
     return async.when(
       data: (items) {
         final alreadyShownIds = section.items.map((c) => c.id).toSet();
-        final discovery = items
-            .where((c) =>
-                !c.isFollowedSource && !alreadyShownIds.contains(c.id))
-            .take(_kDiscoveryItemCap)
-            .toList(growable: false);
+        final discovery = pickExploreItems(items, alreadyShownIds);
 
         if (discovery.isNotEmpty) {
           return [
             const SliverToBoxAdapter(
-              child: _BlockHeader(label: 'Explorer de nouvelles sources'),
+              child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
             ),
             SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final article = discovery[index];
-                  return FluxContinuArticleCard(
-                    article: article,
-                    onTap: () => _openArticle(context, article),
-                  );
-                },
-                childCount: discovery.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final article = discovery[index];
+                return FluxContinuArticleCard(
+                  article: article,
+                  onTap: () => _openArticle(context, article),
+                );
+              }, childCount: discovery.length),
             ),
           ];
         }
 
         // Rien à montrer après les articles personnalisés : ni carrousel
         // éditorial, ni article de découverte → carte "Vous êtes à jour".
-        if (!hasThemeCarousels) {
+        // Gardée sur scrollExhausted pour ne pas annoncer "à jour" alors que
+        // d'autres pages d'articles peuvent encore charger.
+        if (scrollExhausted && !hasThemeCarousels) {
           return [
-            SliverToBoxAdapter(
-              child: _ThemeClosingCard(label: section.label),
-            ),
+            SliverToBoxAdapter(child: _ThemeClosingCard(label: section.label)),
           ];
         }
 
@@ -307,9 +339,9 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
       },
       loading: () => const [
         SliverToBoxAdapter(
-          child: _BlockHeader(label: 'Explorer de nouvelles sources'),
+          child: ExploreBlockHeader(label: 'Explorer de nouvelles sources'),
         ),
-        SliverToBoxAdapter(child: _DiscoverySkeleton()),
+        SliverToBoxAdapter(child: ExploreDiscoverySkeleton()),
       ],
       error: (_, __) => const <Widget>[],
     );
@@ -350,8 +382,7 @@ class _LoadingMoreIndicator extends StatelessWidget {
             height: 14,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor:
-                  AlwaysStoppedAnimation<Color>(colors.textSecondary),
+              valueColor: AlwaysStoppedAnimation<Color>(colors.textSecondary),
             ),
           ),
           const SizedBox(width: 8),
@@ -365,54 +396,6 @@ class _LoadingMoreIndicator extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _BlockHeader extends StatelessWidget {
-  final String label;
-
-  const _BlockHeader({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-      child: Text(
-        label,
-        style: GoogleFonts.dmSans(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: colors.textPrimary,
-        ),
-      ),
-    );
-  }
-}
-
-class _DiscoverySkeleton extends StatelessWidget {
-  const _DiscoverySkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    return Column(
-      children: List.generate(3, (_) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          child: Container(
-            height: 88,
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Colors.black.withValues(alpha: 0.04),
-              ),
-            ),
-          ),
-        );
-      }),
     );
   }
 }
@@ -435,9 +418,7 @@ class _ThemeClosingCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.black.withValues(alpha: 0.05),
-        ),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

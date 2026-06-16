@@ -23,13 +23,13 @@ from app.models.enums import ContentType
 from app.schemas.content import SourceMini
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.services.essentiel_service import (
+    _W_TRENDING,
+    _W_UNE,
     ESSENTIEL_MAX_ARTICLES,
     EssentielUserContext,
     _perspective_score,
     _score_article,
     _source_letter,
-    _W_TRENDING,
-    _W_UNE,
     build_essentiel_response,
 )
 
@@ -136,17 +136,21 @@ def test_build_essentiel_picks_one_article_per_topic():
         assert article.section_label == f"T{i + 1}"
 
 
-def test_build_essentiel_round_robin_when_few_topics():
+def test_build_essentiel_one_subject_per_topic_no_backfill():
+    """Invariant transversal : un topic (= 1 sujet) ne fournit qu'1 article.
+
+    Régression bug 2026-05-31 : un topic « revue de presse » multi-articles
+    (ex: météore couvert par 3 médias) remplissait l'Essentiel avec le même
+    sujet 3×. On préfère désormais rendre < 5 articles plutôt que dupliquer.
+    """
     topics = [_make_topic(rank=1, label="Tech", n_articles=5)]
     digest = _make_digest(topics)
 
     response = build_essentiel_response(digest)
 
-    assert len(response.articles) == ESSENTIEL_MAX_ARTICLES
-    # Tous viennent du même topic, ranks 1..5 de l'essentiel.
-    assert all(a.section_label == "Tech" for a in response.articles)
-    seen_ids = {a.content_id for a in response.articles}
-    assert len(seen_ids) == 5  # déduplication implicite OK
+    # 1 seul sujet disponible → 1 seul article (pas de remplissage intra-topic).
+    assert len(response.articles) == 1
+    assert response.articles[0].section_label == "Tech"
 
 
 def test_build_essentiel_handles_sparse_digest():
@@ -155,9 +159,9 @@ def test_build_essentiel_handles_sparse_digest():
 
     response = build_essentiel_response(digest)
 
-    assert len(response.articles) == 2
+    # Un topic = un sujet → 1 article, jamais 2 angles du même sujet.
+    assert len(response.articles) == 1
     assert response.articles[0].rank == 1
-    assert response.articles[1].rank == 2
 
 
 def test_build_essentiel_empty_when_no_topics():
@@ -175,8 +179,70 @@ def test_build_essentiel_skips_topics_without_articles():
 
     response = build_essentiel_response(digest)
 
-    assert len(response.articles) == 3
+    # Topic vide ignoré ; le topic Tech ne contribue qu'1 article (1 sujet).
+    assert len(response.articles) == 1
     assert all(a.section_label == "Tech" for a in response.articles)
+
+
+def test_build_essentiel_dedup_same_subject_multi_source_topic():
+    """Bug 1 reproduction : 1 topic multi-sources sur le MÊME sujet (météore
+    couvert par 3 médias distincts) ne doit apparaître qu'une fois."""
+    src_home = _make_source("Home Fil actu")
+    src_ouest = _make_source("Ouest-France")
+    src_figaro = _make_source("Le Figaro")
+    meteor = _make_topic(rank=1, label="Météore", theme="science", n_articles=0)
+    meteor.articles = [
+        _make_article(
+            rank=1,
+            title='"300 tonnes de TNT": un météore explose au-dessus des États-Unis',
+            source=src_home,
+            badge="actu",
+        ),
+        _make_article(
+            rank=2,
+            title="Un météore explose au-dessus des États-Unis et se fait entendre",
+            source=src_ouest,
+        ),
+        _make_article(
+            rank=3,
+            title="Un météore explose au-dessus des États-Unis, détonations",
+            source=src_figaro,
+        ),
+    ]
+    other = _make_topic(rank=2, label="Économie", theme="economy", n_articles=1)
+    digest = _make_digest([meteor, other])
+
+    response = build_essentiel_response(digest)
+
+    # Le sujet météore (même topic, 3 sources) n'apparaît qu'une fois.
+    meteor_articles = [a for a in response.articles if "météore" in a.title.lower()]
+    assert len(meteor_articles) == 1
+
+
+def test_build_essentiel_dedup_near_duplicate_titles_across_topics():
+    """Filet anti-doublon de titre : deux topics distincts couvrant le même
+    événement (titres quasi-identiques) ne produisent qu'un seul article."""
+    split_a = _make_topic(rank=1, label="Élection A", theme="politics", n_articles=0)
+    split_a.articles = [
+        _make_article(
+            rank=1,
+            title="Élection présidentielle : large victoire du candidat sortant annoncée",
+            source=_make_source("Le Monde"),
+        )
+    ]
+    split_b = _make_topic(rank=2, label="Élection B", theme="politics", n_articles=0)
+    split_b.articles = [
+        _make_article(
+            rank=1,
+            title="Élection présidentielle : victoire large du candidat sortant",
+            source=_make_source("Le Figaro"),
+        )
+    ]
+    digest = _make_digest([split_a, split_b])
+
+    response = build_essentiel_response(digest)
+
+    assert len(response.articles) == 1
 
 
 def test_build_essentiel_propagates_stale_flag():
@@ -277,7 +343,10 @@ async def test_get_essentiel_401_without_token():
 
 @pytest.mark.asyncio
 async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
-    topics = [_make_topic(rank=1, label="Tech", n_articles=5)]
+    # ≥3 sujets distincts → ≥3 articles, au-dessus du plancher ESSENTIEL_MIN_ARTICLES.
+    topics = [
+        _make_topic(rank=i + 1, label=f"T{i + 1}", n_articles=2) for i in range(3)
+    ]
     digest = _make_digest(topics, is_stale=True)
 
     with (
@@ -305,7 +374,7 @@ async def test_get_essentiel_propagates_stale_fallback(auth_override: UUID):
 
 
 def test_followed_source_promoted_above_unfollowed_competitor():
-    """Cohérence Essentiel ⊆ Tournée : la source non-suivie est filtrée."""
+    """Le tier suivi passe d'abord, puis le pool global frais complète."""
     followed_source = _make_source("Mediapart")
     other_source = _make_source("Le Monde")
     topics = [
@@ -317,9 +386,7 @@ def test_followed_source_promoted_above_unfollowed_competitor():
             theme="politique",
             perspective_count=2,
             articles=[
-                _make_article(
-                    rank=1, title="P-1", source=other_source
-                ),
+                _make_article(rank=1, title="P-1", source=other_source),
             ],
         ),
         DigestTopic(
@@ -330,9 +397,7 @@ def test_followed_source_promoted_above_unfollowed_competitor():
             theme="ecologie",
             perspective_count=2,
             articles=[
-                _make_article(
-                    rank=1, title="C-1", source=followed_source
-                ),
+                _make_article(rank=1, title="C-1", source=followed_source),
             ],
         ),
     ]
@@ -344,9 +409,10 @@ def test_followed_source_promoted_above_unfollowed_competitor():
 
     response = build_essentiel_response(digest, user_context=ctx)
 
-    assert len(response.articles) == 1
+    assert len(response.articles) == 2
     assert response.articles[0].source.id == followed_source.id
     assert response.articles[0].rank == 1
+    assert response.articles[1].source.id == other_source.id
 
 
 def test_user_topic_weight_promotes_lower_ranked_topic():
@@ -521,9 +587,7 @@ def test_tournee_pool_filter_drops_article_older_than_24h():
             theme="politique",
             perspective_count=2,
             articles=[
-                _make_article(
-                    rank=1, title="S-1", source=followed, published_at=stale
-                ),
+                _make_article(rank=1, title="S-1", source=followed, published_at=stale),
             ],
         ),
         DigestTopic(
@@ -546,8 +610,8 @@ def test_tournee_pool_filter_drops_article_older_than_24h():
     assert labels == ["Fresh"]
 
 
-def test_tournee_pool_filter_drops_unfollowed_source():
-    """Un article d'une source non-suivie est retiré du pool Essentiel."""
+def test_followed_pool_is_completed_by_global_fresh_pool():
+    """Un article global frais complète le tier suivi sans le devancer."""
     followed = _make_source("Mediapart")
     curated = _make_source("Le Monde")
     topics = [
@@ -576,7 +640,7 @@ def test_tournee_pool_filter_drops_unfollowed_source():
     response = build_essentiel_response(digest, user_context=ctx)
 
     labels = [a.section_label for a in response.articles]
-    assert labels == ["Followed"]
+    assert labels == ["Followed", "Curated"]
 
 
 def test_tournee_pool_filter_keeps_mixed_topic_partially():
@@ -609,8 +673,8 @@ def test_tournee_pool_filter_keeps_mixed_topic_partially():
     assert response.articles[0].title == "OK"
 
 
-def test_tournee_pool_filter_fallback_when_empties_pool(caplog):
-    """Si le filtre vide tout, on retombe sur le pool pré-filtre + warning."""
+def test_empty_followed_pool_uses_global_fresh_pool_and_logs_metrics(caplog):
+    """Un tier suivi vide utilise directement le pool global frais."""
     followed = _make_source("Mediapart")
     curated = _make_source("Le Monde")
     # Aucun article ne vient d'une source suivie → le filtre videra tout.
@@ -630,13 +694,123 @@ def test_tournee_pool_filter_fallback_when_empties_pool(caplog):
 
     import logging
 
-    with caplog.at_level(logging.WARNING, logger="app.services.essentiel_service"):
+    with caplog.at_level(logging.INFO, logger="app.services.essentiel_service"):
         response = build_essentiel_response(digest, user_context=ctx)
 
-    # Fallback : l'article curated réapparaît plutôt que de servir une carte vide.
     assert len(response.articles) == 1
     assert response.articles[0].section_label == "Only-Curated"
-    assert any("tournee-pool filter emptied" in rec.message for rec in caplog.records)
+    assert any(
+        "followed_pool=0" in rec.message
+        and "supplements=1" in rec.message
+        and "final_count=1" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_followed_pool_two_articles_completed_by_three_global_subjects(caplog):
+    followed_a = _make_source("Mediapart")
+    followed_b = _make_source("Les Jours")
+    global_sources = [_make_source(f"Global {index}") for index in range(3)]
+    titles = [
+        "Budget national adopte au parlement",
+        "Vaccin experimental contre le paludisme",
+        "Seisme majeur dans le Pacifique",
+        "Nouvelle mission spatiale europeenne",
+        "Accord mondial sur les oceans",
+    ]
+    topics = [
+        DigestTopic(
+            topic_id=f"topic-{index}",
+            label=f"Subject {index}",
+            rank=index,
+            reason="Test",
+            theme="politique",
+            perspective_count=2,
+            articles=[
+                _make_article(
+                    rank=1,
+                    title=titles[index - 1],
+                    source=source,
+                )
+            ],
+        )
+        for index, source in enumerate(
+            [followed_a, followed_b, *global_sources], start=1
+        )
+    ]
+    ctx = EssentielUserContext(
+        followed_source_ids=frozenset({followed_a.id, followed_b.id})
+    )
+
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="app.services.essentiel_service"):
+        response = build_essentiel_response(_make_digest(topics), user_context=ctx)
+
+    assert len(response.articles) == 5
+    assert [article.source.id for article in response.articles[:2]] == [
+        followed_a.id,
+        followed_b.id,
+    ]
+    assert any(
+        "followed_pool=2" in rec.message
+        and "supplements=3" in rec.message
+        and "final_count=5" in rec.message
+        for rec in caplog.records
+    )
+
+
+def test_articles_older_than_24_hours_never_backfill_short_card():
+    now = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
+    fresh_topics = [
+        DigestTopic(
+            topic_id=f"fresh-{index}",
+            label=label,
+            rank=index,
+            reason="Test",
+            theme="society",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title=title)],
+        )
+        for index, (label, title) in enumerate(
+            [
+                ("Elections", "Coalition politique apres les elections"),
+                ("Science", "Decouverte medicale contre Alzheimer"),
+                ("Climat", "Canicule exceptionnelle en Europe"),
+            ],
+            start=1,
+        )
+    ]
+    stale_topics = [
+        DigestTopic(
+            topic_id=f"stale-{index}",
+            label=f"Stale {index}",
+            rank=index + 3,
+            reason="Test",
+            theme="society",
+            perspective_count=4,
+            articles=[
+                _make_article(
+                    rank=1,
+                    title=f"Old distinct subject {index}",
+                    published_at=now - timedelta(hours=25),
+                )
+            ],
+        )
+        for index in range(1, 4)
+    ]
+
+    response = build_essentiel_response(
+        _make_digest([*fresh_topics, *stale_topics]),
+        now=now,
+    )
+
+    assert len(response.articles) == 3
+    assert {article.section_label for article in response.articles} == {
+        "Elections",
+        "Science",
+        "Climat",
+    }
 
 
 def test_tournee_pool_filter_noop_when_no_followed_sources():
@@ -679,9 +853,18 @@ async def test_get_essentiel_uses_user_context_from_router(auth_override: UUID):
             reason="Test",
             theme="ecologie",
             perspective_count=2,
-            articles=[
-                _make_article(rank=1, title="C-1", source=followed_source)
-            ],
+            articles=[_make_article(rank=1, title="C-1", source=followed_source)],
+        ),
+        # 3e sujet pour franchir le plancher ESSENTIEL_MIN_ARTICLES (=3) sans
+        # déclencher la complétion 202 ; n'affecte pas le rang du suivi.
+        DigestTopic(
+            topic_id="t3",
+            label="Économie",
+            rank=3,
+            reason="Test",
+            theme="economy",
+            perspective_count=2,
+            articles=[_make_article(rank=1, title="E-1", source=other_source)],
         ),
     ]
     digest = _make_digest(topics)
@@ -720,7 +903,12 @@ async def test_get_essentiel_serein_user_fetches_serein_digest(
     auth_override: UUID,
 ):
     """serein_enabled=True propagates is_serene=True to read_digest_or_fallback."""
-    topics = [_make_topic(rank=1, label="Tech", n_articles=3)]
+    # 3 sujets aux titres distincts → 3 articles (au-dessus du plancher), pas 202.
+    topics = [
+        _make_topic(rank=1, label="Politique", theme="politique", n_articles=1),
+        _make_topic(rank=2, label="Sciences", theme="sciences", n_articles=1),
+        _make_topic(rank=3, label="Cuisine", theme="cuisine", n_articles=1),
+    ]
     digest = _make_digest(topics)
 
     with (
@@ -815,7 +1003,14 @@ def test_sport_relegated_to_slot_5_when_pool_has_4_non_sport():
         topics=["sport"],
     )
     topics = [
-        _topic("Sport", [sport_art], theme="sport", is_trending=True, perspective_count=4, rank=1),
+        _topic(
+            "Sport",
+            [sport_art],
+            theme="sport",
+            is_trending=True,
+            perspective_count=4,
+            rank=1,
+        ),
         _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
         _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
         _topic("Tech", [_art(title="T1")], theme="tech", rank=4),
@@ -838,7 +1033,14 @@ def test_sport_excluded_when_pool_under_4_non_sport():
     sport_src = _src("Ouest-France", theme="sport")
     sport_art = _art(title="F1 GP Canada", source=sport_src, topics=["sport"])
     topics = [
-        _topic("Sport", [sport_art], theme="sport", is_trending=True, perspective_count=5, rank=1),
+        _topic(
+            "Sport",
+            [sport_art],
+            theme="sport",
+            is_trending=True,
+            perspective_count=5,
+            rank=1,
+        ),
         _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
         _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
     ]
@@ -860,7 +1062,14 @@ def test_sport_detected_via_content_topic_even_if_source_theme_is_society():
         topics=["sport"],  # ML a bien classifié "sport"
     )
     topics = [
-        _topic("NBA", [nba_art], theme="sport", is_trending=True, perspective_count=2, rank=1),
+        _topic(
+            "NBA",
+            [nba_art],
+            theme="sport",
+            is_trending=True,
+            perspective_count=2,
+            rank=1,
+        ),
         _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
         _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
         _topic("Tech", [_art(title="T1")], theme="tech", rank=4),
@@ -883,7 +1092,14 @@ def test_sport_detected_via_title_keyword_only():
         topics=[],  # pas de ML
     )
     topics = [
-        _topic("Play-offs", [sport_art], theme="society", is_trending=True, perspective_count=2, rank=1),
+        _topic(
+            "Play-offs",
+            [sport_art],
+            theme="society",
+            is_trending=True,
+            perspective_count=2,
+            rank=1,
+        ),
         _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
         _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
         _topic("Tech", [_art(title="T1")], theme="tech", rank=4),
@@ -904,7 +1120,14 @@ def test_news_bulletin_journal_de_8h_excluded():
         source=france_culture,
     )
     topics = [
-        _topic("Bulletin", [bulletin], theme="culture", is_trending=True, perspective_count=2, rank=1),
+        _topic(
+            "Bulletin",
+            [bulletin],
+            theme="culture",
+            is_trending=True,
+            perspective_count=2,
+            rank=1,
+        ),
         _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
         _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
     ]
@@ -933,7 +1156,10 @@ def test_news_bulletin_chronique_du_excluded():
 
     response = build_essentiel_response(digest)
 
-    assert all(a.title != "Avec Sciences, chronique du lundi 25 mai 2026" for a in response.articles)
+    assert all(
+        a.title != "Avec Sciences, chronique du lundi 25 mai 2026"
+        for a in response.articles
+    )
 
 
 def test_chronique_in_middle_of_title_not_excluded():
@@ -1001,7 +1227,14 @@ def test_reddit_source_excluded():
         source=reddit,
     )
     topics = [
-        _topic("Reddit", [post], theme="society", is_trending=True, perspective_count=3, rank=1),
+        _topic(
+            "Reddit",
+            [post],
+            theme="society",
+            is_trending=True,
+            perspective_count=3,
+            rank=1,
+        ),
         _topic("Politique", [_art(title="P1")], theme="politique", rank=2),
     ]
     digest = _make_digest(topics)
@@ -1041,7 +1274,9 @@ def test_six_perspectives_beats_one_perspective_scoop():
         # Scoop isolé en rank topic 1 (avantage rank), 1 perspective.
         _topic("Climat", [isolated], theme="science", perspective_count=1, rank=1),
         # Sujet relayé en rank topic 2, 6 perspectives.
-        _topic("MO", [very_relayed], theme="international", perspective_count=6, rank=2),
+        _topic(
+            "MO", [very_relayed], theme="international", perspective_count=6, rank=2
+        ),
     ]
     digest = _make_digest(topics)
 
@@ -1063,7 +1298,14 @@ def test_actu_lead_slot_skips_sport_trending():
     )
     regular = _art(title="Politique-1", source=_src("Le Monde"))
     topics = [
-        _topic("Sport", [sport_actu], theme="sport", is_trending=True, perspective_count=5, rank=1),
+        _topic(
+            "Sport",
+            [sport_actu],
+            theme="sport",
+            is_trending=True,
+            perspective_count=5,
+            rank=1,
+        ),
         _topic("Politique", [regular], theme="politique", perspective_count=3, rank=2),
         _topic("Climat", [_art(title="C1")], theme="ecologie", rank=3),
         _topic("Tech", [_art(title="T1")], theme="tech", rank=4),

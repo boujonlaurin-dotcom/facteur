@@ -11,13 +11,22 @@ import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
+import 'features/feed/services/read_sync_service.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
+import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
 import 'core/api/api_client.dart' show ApiGoneNotifier;
 import 'core/ui/notification_service.dart';
+
+const flanerForegroundRefreshThreshold = Duration(minutes: 30);
+
+@visibleForTesting
+bool shouldRefreshFlanerOnForeground(Duration? elapsed) {
+  return elapsed == null || elapsed >= flanerForegroundRefreshThreshold;
+}
 
 /// Application principale Facteur
 class FacteurApp extends ConsumerStatefulWidget {
@@ -43,6 +52,7 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
+      unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
     });
     // Story 23.2 PR-4 : si un endpoint retiré répond 410, afficher un
     // snackbar global "Mise à jour requise". Le ApiClient intercepte tous
@@ -84,13 +94,25 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     } else if (appState == AppLifecycleState.resumed) {
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
+      unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         final elapsed = _backgroundedAt != null
             ? DateTime.now().difference(_backgroundedAt!)
             : null;
+        final router = ref.read(routerProvider);
+        final currentPath = router.routeInformationProvider.value.uri.path;
         if (ref.read(authStateProvider).isAuthenticated &&
-            (elapsed == null || elapsed.inSeconds >= 60)) {
+            currentPath == RoutePaths.fluxContinu &&
+            ref
+                .read(tourneeProgressServiceProvider)
+                .isClosingDismissedTodaySync()) {
+          router.go(RoutePaths.flaner);
+          return;
+        }
+        if (ref.read(authStateProvider).isAuthenticated &&
+            currentPath == RoutePaths.flaner &&
+            shouldRefreshFlanerOnForeground(elapsed)) {
           ref.read(feedProvider.notifier).refresh();
         }
       }
@@ -118,16 +140,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeNotifierProvider);
 
-    // Keep feed preloader alive for the entire authenticated session: it
-    // watches auth state and kicks off `feedProvider.future` in the
-    // background so the Feed tab renders instantly on first tap.
-    ref.watch(feedPreloadProvider);
-
     // Same pattern for the home screen (Flux Continu) — kicks off the 4
     // endpoints in parallel as soon as auth is confirmed, in parallel with
     // GoRouter's splash → /flux-continu redirect. Cuts ~1-2s off the cold
     // open path.
     ref.watch(fluxContinuPreloadProvider);
+
+    // Idem pour l'onglet Flâner (feedProvider) — sans ce watch le feed n'était
+    // jamais préchargé, d'où une ouverture lente du tab. Le provider est
+    // fire-and-forget et gardé par l'âge du cache (cf. feed_preload_provider).
+    ref.watch(feedPreloadProvider);
 
     // Active la re-sync automatique de l'onboarding quand la session devient
     // authentifiée (best-effort, silencieux) — voir onboarding_sync_provider.dart.
@@ -156,7 +178,9 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       DeepLinkService.instance.setAuthenticated(next.isAuthenticated);
       if (next.isAuthenticated) {
         _startAnalyticsSessionIfNeeded();
+        unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
       } else if (prev?.isAuthenticated == true) {
+        ref.read(consumedContentIdsProvider.notifier).state = <String>{};
         _endAnalyticsSessionIfNeeded();
       }
     });
@@ -170,10 +194,14 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: NotificationService.messengerKey,
 
-      // Thème
-      theme: FacteurTheme.lightTheme,
-      darkTheme: FacteurTheme.darkTheme,
-      themeMode: themeMode,
+      // Thème — sélection dynamique parmi 3 palettes (Papier Dessin /
+      // Encre & Nuit / Encre Pure). Pas de fallback `darkTheme` ni de
+      // suivi système : on contrôle entièrement la palette via Hive.
+      theme: switch (themeMode) {
+        AppThemeMode.light => FacteurTheme.lightTheme,
+        AppThemeMode.dark => FacteurTheme.darkTheme,
+        AppThemeMode.oled => FacteurTheme.oledTheme,
+      },
 
       // Router
       routerConfig: router,

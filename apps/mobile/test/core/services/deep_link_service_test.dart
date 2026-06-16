@@ -49,22 +49,22 @@ void main() {
       expect(action.route, '/flux-continu');
     });
 
-    test('feed host → flux continu (FeedScreen supprimé)', () {
+    test('feed host → flâner (FeedScreen supprimé)', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/flux-continu');
+      expect(action.route, '/flaner');
     });
 
-    test('feed/content/<id> → article reader (Flux deep link)', () {
+    test('feed/content/<id> → article reader (Flâner deep link)', () {
       final action = DeepLinkService.parse(
         Uri.parse(
           'io.supabase.facteur://feed/content/abc-123?pos=4&topicId=tech',
         ),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/flux-continu/content/abc-123');
+      expect(action.route, '/flaner/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 4);
       expect(action.topicId, 'tech');
@@ -77,25 +77,64 @@ void main() {
         Uri.parse('io.supabase.facteur:///feed/content/abc-123?pos=7'),
       );
       expect(action.target, WidgetDeepLinkTarget.article);
-      expect(action.route, '/flux-continu/content/abc-123');
+      expect(action.route, '/flaner/content/abc-123');
       expect(action.articleId, 'abc-123');
       expect(action.position, 7);
     });
 
-    test('feed/content/ (id missing) falls back to flux continu', () {
+    test('feed/content/ (id missing) falls back to flâner', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://feed/content/'),
       );
       expect(action.target, WidgetDeepLinkTarget.feed);
-      expect(action.route, '/flux-continu');
+      expect(action.route, '/flaner');
     });
 
-    test('login-callback URI is ignored (handled by Supabase SDK)', () {
+    test('grille host → /grille (mot du jour partagé entre amis)', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://grille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.grille);
+      expect(action.route, '/grille');
+    });
+
+    test('grille bare path (host vide) → /grille', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur:///grille'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.grille);
+      expect(action.route, '/grille');
+    });
+
+    test('login-callback URI is identified as an auth callback', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://login-callback#access_token=xyz'),
       );
-      expect(action.target, WidgetDeepLinkTarget.ignored);
-      expect(action.route, isNull);
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/splash');
+      expect(action.authType, isNull);
+    });
+
+    test('login-callback recovery URI routes to reset password', () {
+      final action = DeepLinkService.parse(
+        Uri.parse(
+          'io.supabase.facteur://login-callback#access_token=xyz&type=recovery',
+        ),
+      );
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/reset-password');
+      expect(action.authType, 'recovery');
+    });
+
+    test('login-callback query recovery also routes to reset password', () {
+      final action = DeepLinkService.parse(
+        Uri.parse(
+          'io.supabase.facteur://login-callback?code=abc&type=recovery',
+        ),
+      );
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/reset-password');
+      expect(action.authType, 'recovery');
     });
 
     test('foreign scheme → unhandled', () {

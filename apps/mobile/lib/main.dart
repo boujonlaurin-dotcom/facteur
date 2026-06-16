@@ -8,6 +8,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:home_widget/home_widget.dart';
@@ -16,9 +17,12 @@ import 'package:flutter_downloader/flutter_downloader.dart';
 import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
+import 'core/api/notification_preferences_api_service.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
+import 'core/services/server_push_service.dart';
 import 'core/ui/notification_service.dart';
+import 'features/flux_continu/services/tournee_progress_service.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:timeago/src/messages/fr_messages.dart'
@@ -32,20 +36,17 @@ Future<void> main() async {
   // pendant l'init. Si DSN absent (dev local sans clé), l'init est skip.
   // Cf. docs/bugs/bug-android-disconnect-race.md (P5 — instrumentation).
   if (SentryConstants.isEnabled) {
-    await SentryFlutter.init(
-      (options) {
-        options.dsn = SentryConstants.dsn;
-        options.environment = SentryConstants.environment;
-        if (SentryConstants.release.isNotEmpty) {
-          options.release = SentryConstants.release;
-        }
-        // Sample 100% des erreurs, pas de perf tracing pour le moment.
-        options.tracesSampleRate = 0.0;
-        // Ne pas envoyer les PII par défaut.
-        options.sendDefaultPii = false;
-      },
-      appRunner: _bootstrap,
-    );
+    await SentryFlutter.init((options) {
+      options.dsn = SentryConstants.dsn;
+      options.environment = SentryConstants.environment;
+      if (SentryConstants.release.isNotEmpty) {
+        options.release = SentryConstants.release;
+      }
+      // Sample 100% des erreurs, pas de perf tracing pour le moment.
+      options.tracesSampleRate = 0.0;
+      // Ne pas envoyer les PII par défaut.
+      options.sendDefaultPii = false;
+    }, appRunner: _bootstrap);
   } else {
     await _bootstrap();
   }
@@ -72,19 +73,37 @@ Future<void> _bootstrap() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
+  // à jour APK : permet au téléchargement de continuer en arrière-plan.
+  // Gate Android-only : sur iOS l'init crash (AppDelegate ne wire pas
+  // setPluginRegistrantCallback) et la feature (sideload APK) ne s'applique
+  // pas. Sur web `dart:io` Platform throw.
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+    } catch (e) {
+      debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+    }
+  }
   await Hive.initFlutter();
 
   final boxesSw = Stopwatch()..start();
-  final boxes = await Future.wait<Box<dynamic>>([
+  final initResults = await Future.wait<Object>([
     _openBoxSafe<dynamic>('settings'),
     _openBoxSafe<dynamic>('auth_prefs'),
     _openBoxSafe<String>('supabase_auth_persistence'),
     _openBoxSafe<String>('feed_cache'),
+    _openBoxSafe<String>('flux_continu_cache'),
+    _openBoxSafe<String>('pending_reads'),
+    SharedPreferences.getInstance(),
   ]);
+  final boxes = initResults.take(6).cast<Box<dynamic>>().toList();
+  final sharedPreferences = initResults[6] as SharedPreferences;
   final authBox = boxes[1];
   final supabaseBox = boxes[2];
   debugPrint(
-      '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (4 boxes parallel)');
+    '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (6 boxes + prefs parallel)',
+  );
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');
   debugPrint(
@@ -130,16 +149,16 @@ Future<void> _bootstrap() async {
         authOptions: FlutterAuthClientOptions(
           localStorage: SupabaseHiveStorage(),
         ),
-        headers: {
-          'X-Client-Info': 'supabase-flutter/2.5.0',
-        },
+        headers: {'X-Client-Info': 'supabase-flutter/2.5.0'},
       ).timeout(
         const Duration(seconds: 10),
         onTimeout: () {
           debugPrint(
-              'Main: Supabase.initialize TIMEOUT 10s — throwing to catch block');
+            'Main: Supabase.initialize TIMEOUT 10s — throwing to catch block',
+          );
           throw TimeoutException(
-              'Supabase.initialize timeout after 10 seconds');
+            'Supabase.initialize timeout after 10 seconds',
+          );
         },
       ),
       _initPosthogSafe(posthog),
@@ -166,10 +185,12 @@ Future<void> _bootstrap() async {
   if (hasSession) {
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
-      unawaited(posthog.identify(
-        userId: user.id,
-        properties: _userIdentifyProperties(user, appVersion: appVersion),
-      ));
+      unawaited(
+        posthog.identify(
+          userId: user.id,
+          properties: _userIdentifyProperties(user, appVersion: appVersion),
+        ),
+      );
       unawaited(_loginRevenueCatSafe(user.id));
     }
   }
@@ -182,10 +203,10 @@ Future<void> _bootstrap() async {
         if (user != null) {
           posthog.identify(
             userId: user.id,
-            properties:
-                _userIdentifyProperties(user, appVersion: appVersion),
+            properties: _userIdentifyProperties(user, appVersion: appVersion),
           );
           unawaited(_loginRevenueCatSafe(user.id));
+          unawaited(_registerServerPushIfEnabled());
         }
         break;
       case AuthChangeEvent.signedOut:
@@ -200,7 +221,14 @@ Future<void> _bootstrap() async {
   debugPrint('[PERF] boot.pre_runapp_ms=${bootSw.elapsedMilliseconds}');
 
   // Lancer l'app
-  runApp(const ProviderScope(child: FacteurApp()));
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(sharedPreferences),
+      ],
+      child: const FacteurApp(),
+    ),
+  );
 
   // Inits différés post-runApp : non bloquants pour la 1ère frame.
   // - Notif scheduling (alarm, permissions, diagnostics)
@@ -208,8 +236,23 @@ Future<void> _bootstrap() async {
   unawaited(_initDeferredServices(posthog: posthog));
 }
 
+Future<void> _registerServerPushIfEnabled() async {
+  final box = await Hive.openBox<dynamic>('settings');
+  final enabled =
+      box.get('push_notifications_enabled', defaultValue: false) as bool;
+  if (enabled) {
+    await ServerPushService.instance.initAndRegister();
+  }
+}
+
 /// Init FlutterDownloader avec fallback silencieux (non-critique).
 Future<void> _initDownloaderSafe() async {
+  // flutter_downloader ne sert qu'à la MAJ in-app par APK (Android uniquement ;
+  // la feature app_update est déjà gardée `!Platform.isAndroid` partout).
+  // Sur iOS, FlutterDownloader.initialize() déclenche un fatalError natif
+  // (setPluginRegistrantCallback absent d'AppDelegate) → crash AU LANCEMENT,
+  // non rattrapable par le try/catch Dart. On skip donc l'init hors Android.
+  if (kIsWeb || !Platform.isAndroid) return;
   try {
     await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
   } catch (e) {
@@ -252,7 +295,10 @@ Future<void> _initRevenueCatSafe() async {
 /// Permet à un achat Web Billing fait depuis la landing — où l'`app_user_id`
 /// est déjà le user_id Supabase — de suivre le bon compte dans l'app.
 Future<void> _loginRevenueCatSafe(String userId) async {
-  if (kIsWeb) return;
+  // Garde isConfigured OBLIGATOIRE : si RevenueCat n'est pas configuré (clé API
+  // absente), Purchases.logIn lève un fatalError NATIF (cf. crash post-login
+  // EXC_BREAKPOINT/PurchasesHybridCommon) que le try/catch Dart ne rattrape PAS.
+  if (kIsWeb || !RevenueCatConstants.isConfigured(isIOS: Platform.isIOS)) return;
   try {
     await Purchases.logIn(userId);
   } catch (e) {
@@ -263,7 +309,9 @@ Future<void> _loginRevenueCatSafe(String userId) async {
 /// Délie l'identité RevenueCat au logout : évite que l'utilisateur suivant
 /// hérite par erreur des entitlements du précédent sur un device partagé.
 Future<void> _logoutRevenueCatSafe() async {
-  if (kIsWeb) return;
+  // Même garde que _loginRevenueCatSafe : Purchases.logOut fatalError natif si
+  // RevenueCat n'est pas configuré.
+  if (kIsWeb || !RevenueCatConstants.isConfigured(isIOS: Platform.isIOS)) return;
   try {
     await Purchases.logOut();
   } catch (e) {
@@ -282,7 +330,8 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
 
   try {
     unawaited(
-        HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback));
+      HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback),
+    );
   } catch (e) {
     debugPrint('Main: Home Widget init failed (non-critical): $e');
   }
@@ -306,32 +355,37 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
     // → on collecte quand même le diagnostic (cf. bug-notifications-stalled).
     final diagFuture = pushNotificationService.getDiagnostics();
     if (pushEnabled) {
-      await pushNotificationService.ensureExactAlarmPermission();
-      // Si une notification personnalisée (avec les sujets du digest) a été
-      // planifiée par DigestNotifier._updateNotificationWithTopics(), on la
-      // préserve — écraser avec le corps statique régresserait la feature.
-      final alreadyScheduled =
-          await pushNotificationService.isDigestNotificationScheduled();
-      if (!alreadyScheduled) {
+      final timeSlot = NotifTimeSlotX.fromWire(
+        settingsBox.get('notif_time_slot') as String?,
+      );
+      final serverRegistered =
+          await ServerPushService.instance.initAndRegister();
+      if (serverRegistered) {
+        await pushNotificationService.cancelDigestNotification();
+      } else {
+        await pushNotificationService.ensureExactAlarmPermission();
         final scheduled =
-            await pushNotificationService.scheduleDailyDigestNotification();
+            await pushNotificationService.scheduleDailyDigestNotification(
+          variant: NotifVariant.variantA,
+          timeSlot: timeSlot,
+        );
         if (!scheduled) {
           debugPrint(
-              'Main: WARNING — digest notification scheduling failed, retrying...');
+            'Main: WARNING — digest notification scheduling failed, retrying...',
+          );
           await pushNotificationService.requestExactAlarmPermission();
           final retryOk =
-              await pushNotificationService.scheduleDailyDigestNotification();
+              await pushNotificationService.scheduleDailyDigestNotification(
+            variant: NotifVariant.variantA,
+            timeSlot: timeSlot,
+          );
           debugPrint('Main: Retry result: $retryOk');
         }
-      } else {
-        debugPrint(
-            'Main: Digest notification already scheduled — skipping static placeholder.');
       }
     }
     bootNotifDiag = await diagFuture;
   } catch (e, s) {
-    debugPrint(
-        'ERROR: Deferred push notifications init failed: $e\n$s');
+    debugPrint('ERROR: Deferred push notifications init failed: $e\n$s');
   }
 
   if (bootNotifDiag != null) {
@@ -386,7 +440,8 @@ Future<Box<T>> _openBoxSafe<T>(String name) async {
   } catch (e) {
     debugPrint('Main: Hive box "$name" corrupted, recreating: $e');
     debugPrint(
-        '[AUTH_TELEMETRY] event=hive_box_corrupted box_name=$name error=$e');
+      '[AUTH_TELEMETRY] event=hive_box_corrupted box_name=$name error=$e',
+    );
     await Hive.deleteBoxFromDisk(name);
     return await Hive.openBox<T>(name);
   }

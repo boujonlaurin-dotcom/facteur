@@ -8,6 +8,16 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Firebase config is supplied per environment in app/src/prod and
+// app/src/staging. Keep local builds without credentials usable.
+if (
+    file("src/prod/google-services.json").exists() ||
+    file("src/staging/google-services.json").exists() ||
+    file("google-services.json").exists()
+) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
@@ -39,6 +49,26 @@ android {
         targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // Canal `beta` = APK side-loaded via GitHub Releases (auto-update intégré,
+    // garde REQUEST_INSTALL_PACKAGES). Canal `playstore` = AAB Play Store
+    // (sans cette permission, pas d'auto-update).
+    flavorDimensions += "channel"
+
+    productFlavors {
+        create("beta") {
+            dimension = "channel"
+            // Conserve le package historique des ~60 testeurs side-load
+            // (com.example.facteur.staging) -> auto-update préservé, aucune réinstall.
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-beta"
+        }
+        create("playstore") {
+            dimension = "channel"
+            // Package définitif Play Store, figé au 1er upload AAB. NE PAS modifier.
+            applicationId = "facteur.app"
+        }
     }
 
     signingConfigs {

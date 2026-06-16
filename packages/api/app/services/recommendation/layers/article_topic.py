@@ -58,14 +58,21 @@ class ArticleTopicLayer(BaseScoringLayer):
         user_interests_lower = {s.lower().strip() for s in context.user_interests}
 
         # Tier 1: content.theme (ML-inferred, most precise)
-        if hasattr(content, "theme") and content.theme:
-            if content.theme.lower().strip() in user_interests_lower:
-                has_theme_match = True
+        if (
+            hasattr(content, "theme")
+            and content.theme
+            and content.theme.lower().strip() in user_interests_lower
+        ):
+            has_theme_match = True
 
         # Tier 2: source.theme (primary)
-        if not has_theme_match and content.source and content.source.theme:
-            if content.source.theme.lower().strip() in user_interests_lower:
-                has_theme_match = True
+        if (
+            not has_theme_match
+            and content.source
+            and content.source.theme
+            and content.source.theme.lower().strip() in user_interests_lower
+        ):
+            has_theme_match = True
 
         # Tier 3: source.secondary_themes
         if (

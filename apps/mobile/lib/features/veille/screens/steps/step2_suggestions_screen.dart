@@ -4,18 +4,20 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
-import '../../models/veille_config.dart';
+import '../../../../shared/widgets/loaders/facteur_loader.dart';
+import '../../models/veille_config_dto.dart';
+import '../../providers/veille_angles_provider.dart';
 import '../../providers/veille_config_provider.dart';
-import '../../providers/veille_preset_topics_provider.dart';
+import '../../providers/veille_themes_provider.dart';
 import '../../widgets/veille_widgets.dart';
 
-/// Step 2 — choix des sujets pour la veille.
+/// Step 2 — angles optionnels pour la veille.
 ///
-/// PR-4 (Story 23.3) : la suggestion LLM des angles a été supprimée. L'écran
-/// affiche les sujets curés du thème (via `veillePresetTopicsProvider`) +
-/// les sujets custom déjà ajoutés ; l'user peut en ajouter d'autres ou tout
-/// passer. Un toggle "Configuration avancée" expose mots-clés libres + brief
-/// éditorial pour les power-users.
+/// Veille C3 (PR-3) : la suggestion LLM des angles est ré-introduite. À
+/// l'entrée du Step 2, on fetch `POST /veille/suggest/angles` (thème + brief)
+/// et on affiche chaque angle comme une carte « titre + grappe de mots-clés
+/// éditable » sélectionnable (opt-in). Le sujet principal est fixé en Step 1.
+/// Un toggle "Configuration avancée" expose les mots-clés libres.
 class Step2SuggestionsScreen extends ConsumerWidget {
   final VoidCallback onClose;
   const Step2SuggestionsScreen({super.key, required this.onClose});
@@ -25,11 +27,27 @@ class Step2SuggestionsScreen extends ConsumerWidget {
     final state = ref.watch(veilleConfigProvider);
     final notifier = ref.read(veilleConfigProvider.notifier);
     final theme = state.selectedTheme;
-    final presetTopicsAsync = theme == null
-        ? const AsyncValue<List<VeilleTopic>>.data(<VeilleTopic>[])
-        : ref.watch(veillePresetTopicsProvider(theme));
+    final anglesAsync = theme == null || !state.angleSuggestionsRequested
+        ? const AsyncValue<List<VeilleAngleSuggestionDto>>.data(
+            <VeilleAngleSuggestionDto>[],
+          )
+        : ref.watch(
+            veilleAnglesProvider((
+              themeId: theme,
+              themeLabel: state.resolvedThemeLabel(
+                veilleThemeLabelForSlug(theme),
+              ),
+              brief: state.editorialBrief ?? '',
+            )),
+          );
 
-    final hasSelection = state.selectedTopics.isNotEmpty;
+    // Story 23.4 — le sujet principal du Step 1 satisfait déjà l'upsert (≥1
+    // topic garanti), donc la CTA n'est plus gatée par une sélection
+    // supplémentaire : angles et preset topics deviennent optionnels.
+    final hasSelection =
+        state.mainTopicSlug != null ||
+        state.selectedTopics.isNotEmpty ||
+        state.selectedSuggestions.isNotEmpty;
 
     return Column(
       children: [
@@ -45,27 +63,40 @@ class Step2SuggestionsScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const VeilleFlowH1('Quels sujets veux-tu suivre ?'),
+                const VeilleFlowH1('Affine ta veille'),
                 const SizedBox(height: 8),
                 Text(
-                  'Coche les sujets qui t\'intéressent dans ce thème. Tu peux '
-                  'aussi en ajouter un sur-mesure, ou passer cette étape.',
+                  state.mainTopicSlug != null
+                      ? 'Ton sujet principal est fixé. Ajoute des angles pour '
+                            'préciser — ou passe directement à la suite.'
+                      : 'Ajoute des angles si tu veux préciser la veille, ou '
+                            'passe directement à la suite.',
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     color: const Color(0xFF5D5B5A),
                     height: 1.45,
                   ),
                 ),
+                if (state.mainTopicSlug != null) ...[
+                  const SizedBox(height: 16),
+                  _MainTopicChip(
+                    label:
+                        state.mainTopicLabel ??
+                        state.topicLabels[state.mainTopicSlug!] ??
+                        state.mainTopicSlug!,
+                  ),
+                ],
                 const SizedBox(height: 22),
-                _TopicsList(
-                  presetTopicsAsync: presetTopicsAsync,
-                  state: state,
-                  notifier: notifier,
-                ),
-                const SizedBox(height: 12),
-                _AddTopicChip(
-                  onTap: () => _openAddTopicSheet(context, notifier),
-                ),
+                _ExistingAnglesSection(state: state, notifier: notifier),
+                if (!state.angleSuggestionsRequested) ...[
+                  _LoadMoreAnglesButton(onTap: notifier.requestMoreAngles),
+                ] else ...[
+                  _AnglesSection(
+                    anglesAsync: anglesAsync,
+                    state: state,
+                    notifier: notifier,
+                  ),
+                ],
                 const SizedBox(height: 24),
                 _AdvancedToggle(
                   expanded: state.advancedMode,
@@ -74,8 +105,6 @@ class Step2SuggestionsScreen extends ConsumerWidget {
                 if (state.advancedMode) ...[
                   const SizedBox(height: 16),
                   _KeywordsSection(state: state, notifier: notifier),
-                  const SizedBox(height: 18),
-                  _BriefSection(state: state, notifier: notifier),
                 ],
               ],
             ),
@@ -84,7 +113,9 @@ class Step2SuggestionsScreen extends ConsumerWidget {
         Container(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: FacteurColors.veilleLineSoft)),
+            border: Border(
+              top: BorderSide(color: FacteurColors.veilleLineSoft),
+            ),
           ),
           child: VeilleCtaButton(
             label: 'Continuer',
@@ -122,151 +153,385 @@ class _SkipButton extends StatelessWidget {
   }
 }
 
-class _TopicsList extends ConsumerWidget {
-  final AsyncValue<List<VeilleTopic>> presetTopicsAsync;
+/// Story 23.4 — chip non-supprimable du sujet principal (fixé en Step 1).
+/// Évite le double-ask et signale que ce sujet gate déjà la veille.
+class _MainTopicChip extends StatelessWidget {
+  final String label;
+  const _MainTopicChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      decoration: BoxDecoration(
+        color: FacteurColors.veilleTint,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: FacteurColors.veille, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            PhosphorIcons.pushPin(PhosphorIconsStyle.fill),
+            size: 16,
+            color: FacteurColors.veille,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SUJET PRINCIPAL',
+                  style: GoogleFonts.courierPrime(
+                    fontSize: 9,
+                    letterSpacing: 0.4,
+                    fontWeight: FontWeight.w700,
+                    color: FacteurColors.veille,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF2C2A29),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExistingAnglesSection extends StatelessWidget {
   final VeilleConfigState state;
   final VeilleConfigNotifier notifier;
-  const _TopicsList({
-    required this.presetTopicsAsync,
+  const _ExistingAnglesSection({required this.state, required this.notifier});
+
+  @override
+  Widget build(BuildContext context) {
+    if (state.selectedSuggestions.isEmpty) return const SizedBox.shrink();
+    final angles = [
+      for (final slug in state.selectedSuggestions)
+        (
+          slug: slug,
+          dto: VeilleAngleSuggestionDto(
+            title: state.topicLabels[slug] ?? slug,
+            keywords: state.angleKeywords[slug] ?? const <String>[],
+            reason: null,
+          ),
+        ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ANGLES SUIVIS',
+            style: GoogleFonts.dmSans(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: const Color(0xFF8B7E63),
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (int i = 0; i < angles.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            _AngleCard(
+              angle: angles[i].dto,
+              state: state,
+              notifier: notifier,
+              slugOverride: angles[i].slug,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadMoreAnglesButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _LoadMoreAnglesButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(PhosphorIcons.sparkle(), size: 15),
+      label: const Text('Proposer plus d’angles'),
+    );
+  }
+}
+
+/// Bloc « Angles suggérés » (LLM). Affiché au-dessus des preset topics.
+/// Pendant le fetch (~10-15 s) : un [FacteurLoader]. Liste vide (LLM KO ou
+/// thème sans angle) → rien (on retombe sur les preset topics → pas de
+/// régression).
+class _AnglesSection extends StatelessWidget {
+  final AsyncValue<List<VeilleAngleSuggestionDto>> anglesAsync;
+  final VeilleConfigState state;
+  final VeilleConfigNotifier notifier;
+  const _AnglesSection({
+    required this.anglesAsync,
     required this.state,
     required this.notifier,
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return presetTopicsAsync.when(
-      loading: () => const _SkeletonList(),
-      error: (_, __) => _renderList(const <VeilleTopic>[]),
-      data: (preset) {
-        // Hydrate les labels une fois pour que `_buildUpsertRequest` les envoie.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          notifier.registerPresetTopicLabels(preset);
-        });
-        return _renderList(preset);
+  Widget build(BuildContext context) {
+    return anglesAsync.when(
+      loading: () => const _AnglesLoading(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (angles) {
+        final visible = angles
+            .where(
+              (a) => !state.selectedSuggestions.contains(
+                VeilleConfigNotifier.angleSlug(a.title),
+              ),
+            )
+            .toList();
+        if (visible.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ANGLES SUGGÉRÉS',
+              style: GoogleFonts.dmSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8,
+                color: const Color(0xFF8B7E63),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Des angles proposés pour ton thème. Touche pour en suivre un — '
+              'tu peux ajuster ses mots-clés.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: const Color(0xFF5D5B5A),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (int i = 0; i < visible.length; i++) ...[
+              if (i > 0) const SizedBox(height: 8),
+              _AngleCard(angle: visible[i], state: state, notifier: notifier),
+            ],
+            const SizedBox(height: 22),
+          ],
+        );
       },
     );
   }
+}
 
-  Widget _renderList(List<VeilleTopic> presetTopics) {
-    final seen = <String>{};
-    final merged = <VeilleTopic>[];
-    for (final t in state.customTopics) {
-      if (seen.add(t.id)) merged.add(t);
-    }
-    for (final t in presetTopics) {
-      if (seen.add(t.id)) merged.add(t);
-    }
-
-    if (merged.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
+class _AnglesLoading extends StatelessWidget {
+  const _AnglesLoading();
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 22),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
         decoration: BoxDecoration(
           color: const Color(0xFFFDFBF7),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: FacteurColors.veilleLineSoft),
         ),
-        child: Text(
-          'Aucun sujet pré-curé pour ce thème. Ajoute un sujet sur-mesure '
-          'ci-dessous ou passe cette étape.',
-          style: GoogleFonts.dmSans(
-            fontSize: 12.5,
-            color: const Color(0xFF5D5B5A),
-            height: 1.4,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const FacteurLoader(width: 56, height: 56),
+            const SizedBox(height: 12),
+            Text(
+              'Recherche des bons angles',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.fraunces(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF2C2A29),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Un angle est une facette précise de ton sujet. Les sélectionner '
+              'avec soin permet de cibler les aspects qui t\'intéressent le plus.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                height: 1.45,
+                color: const Color(0xFF5D5B5A),
+              ),
+            ),
+          ],
         ),
-      );
-    }
-
-    return Column(
-      children: [
-        for (int i = 0; i < merged.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          _TopicRow(
-            topic: merged[i],
-            selected: state.selectedTopics.contains(merged[i].id),
-            onToggle: () => notifier.toggleTopic(merged[i].id),
-          ),
-        ],
-      ],
+      ),
     );
   }
 }
 
-class _TopicRow extends StatelessWidget {
-  final VeilleTopic topic;
-  final bool selected;
-  final VoidCallback onToggle;
-  const _TopicRow({
-    required this.topic,
-    required this.selected,
-    required this.onToggle,
+/// Carte d'un angle LLM : en-tête tapable (checkbox + titre + raison) qui
+/// active/désactive l'angle (opt-in), puis la grappe de mots-clés. Les chips
+/// ne sont éditables (supprimables + ajout) qu'une fois l'angle sélectionné ;
+/// sinon ils s'affichent en aperçu statique.
+class _AngleCard extends StatelessWidget {
+  final VeilleAngleSuggestionDto angle;
+  final VeilleConfigState state;
+  final VeilleConfigNotifier notifier;
+  final String? slugOverride;
+  const _AngleCard({
+    required this.angle,
+    required this.state,
+    required this.notifier,
+    this.slugOverride,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? FacteurColors.veilleTint : Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
+    final slug = slugOverride ?? VeilleConfigNotifier.angleSlug(angle.title);
+    final selected = state.selectedSuggestions.contains(slug);
+    final keywords = selected
+        ? (state.angleKeywords[slug] ?? const <String>[])
+        : angle.keywords;
+    final showChips = keywords.isNotEmpty || selected;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: selected ? FacteurColors.veilleTint : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        onTap: onToggle,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
+        border: Border.all(
+          color: selected ? FacteurColors.veille : FacteurColors.veilleLineSoft,
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? FacteurColors.veille
-                  : FacteurColors.veilleLineSoft,
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 18,
-                height: 18,
-                margin: const EdgeInsets.only(top: 1),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(5),
-                  color: selected ? FacteurColors.veille : Colors.white,
-                  border: Border.all(
-                    color: selected
-                        ? FacteurColors.veille
-                        : const Color(0xFFD2C9BB),
-                    width: 1.5,
-                  ),
-                ),
-                child: selected
-                    ? const Icon(Icons.check, size: 11, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => slugOverride == null
+                  ? notifier.toggleAngle(angle)
+                  : notifier.toggleSuggestion(slug),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      topic.label,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color: const Color(0xFF2C2A29),
+                    Container(
+                      width: 18,
+                      height: 18,
+                      margin: const EdgeInsets.only(top: 1),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(5),
+                        color: selected ? FacteurColors.veille : Colors.white,
+                        border: Border.all(
+                          color: selected
+                              ? FacteurColors.veille
+                              : const Color(0xFFD2C9BB),
+                          width: 1.5,
+                        ),
                       ),
+                      child: selected
+                          ? const Icon(
+                              Icons.check,
+                              size: 11,
+                              color: Colors.white,
+                            )
+                          : null,
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      topic.reason,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 11.5,
-                        height: 1.4,
-                        color: const Color(0xFF959392),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            angle.title,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                              color: const Color(0xFF2C2A29),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+          if (showChips)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: selected
+                  ? _KeywordsSummaryChip(
+                      count: keywords.length,
+                      onTap: () => _openKeywordsManagerSheet(context, slug),
+                    )
+                  : _KeywordsPreviewChip(count: keywords.length),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KeywordsSummaryChip extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+  const _KeywordsSummaryChip({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count == 1 ? '1 mot clé tracké' : '$count mots clés trackés';
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: FacteurColors.veilleTint,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: FacteurColors.veille),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIcons.listBullets(),
+                size: 13,
+                color: FacteurColors.veille,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: FacteurColors.veille,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
+                size: 12,
+                color: FacteurColors.veille,
               ),
             ],
           ),
@@ -276,38 +541,37 @@ class _TopicRow extends StatelessWidget {
   }
 }
 
-class _AddTopicChip extends StatelessWidget {
-  final VoidCallback onTap;
-  const _AddTopicChip({required this.onTap});
+class _KeywordsPreviewChip extends StatelessWidget {
+  final int count;
+  const _KeywordsPreviewChip({required this.count});
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: FacteurColors.veille.withValues(alpha: 0.55),
-            width: 1.5,
+    final label = count == 1 ? '1 mot clé' : '$count mots clés';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FacteurColors.veilleLineSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.listBullets(),
+            size: 12,
+            color: const Color(0xFF8B7E63),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(PhosphorIcons.plus(), size: 16, color: FacteurColors.veille),
-            const SizedBox(width: 10),
-            Text(
-              'Ajouter un sujet',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: FacteurColors.veille,
-              ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              color: const Color(0xFF5D5B5A),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -384,7 +648,10 @@ class _KeywordsSection extends StatelessWidget {
             runSpacing: 6,
             children: [
               for (final kw in state.keywords)
-                _KeywordChip(label: kw, onRemove: () => notifier.removeKeyword(kw)),
+                _KeywordChip(
+                  label: kw,
+                  onRemove: () => notifier.removeKeyword(kw),
+                ),
             ],
           ),
           const SizedBox(height: 10),
@@ -398,44 +665,47 @@ class _KeywordsSection extends StatelessWidget {
   }
 }
 
+/// Chip d'un mot-clé. `onRemove == null` → aperçu statique (pas d'icône X, pas
+/// de tap) ; sinon supprimable au tap.
 class _KeywordChip extends StatelessWidget {
   final String label;
-  final VoidCallback onRemove;
-  const _KeywordChip({required this.label, required this.onRemove});
+  final VoidCallback? onRemove;
+  const _KeywordChip({required this.label, this.onRemove});
 
   @override
   Widget build(BuildContext context) {
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: FacteurColors.veilleLineSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              color: const Color(0xFF2C2A29),
+            ),
+          ),
+          if (onRemove != null) ...[
+            const SizedBox(width: 6),
+            Icon(PhosphorIcons.x(), size: 12, color: const Color(0xFF8B7E63)),
+          ],
+        ],
+      ),
+    );
+    if (onRemove == null) return chip;
     return Material(
-      color: Colors.white,
+      color: Colors.transparent,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: onRemove,
         borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: FacteurColors.veilleLineSoft),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: GoogleFonts.dmSans(
-                  fontSize: 12,
-                  color: const Color(0xFF2C2A29),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Icon(
-                PhosphorIcons.x(),
-                size: 12,
-                color: const Color(0xFF8B7E63),
-              ),
-            ],
-          ),
-        ),
+        child: chip,
       ),
     );
   }
@@ -466,9 +736,7 @@ class _AddKeywordButton extends StatelessWidget {
             Icon(
               PhosphorIcons.plus(),
               size: 12,
-              color: enabled
-                  ? FacteurColors.veille
-                  : const Color(0xFFB8B0A0),
+              color: enabled ? FacteurColors.veille : const Color(0xFFB8B0A0),
             ),
             const SizedBox(width: 4),
             Text(
@@ -476,9 +744,7 @@ class _AddKeywordButton extends StatelessWidget {
               style: GoogleFonts.dmSans(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: enabled
-                    ? FacteurColors.veille
-                    : const Color(0xFFB8B0A0),
+                color: enabled ? FacteurColors.veille : const Color(0xFFB8B0A0),
               ),
             ),
           ],
@@ -488,72 +754,34 @@ class _AddKeywordButton extends StatelessWidget {
   }
 }
 
-class _BriefSection extends StatelessWidget {
-  final VeilleConfigState state;
-  final VeilleConfigNotifier notifier;
-  const _BriefSection({required this.state, required this.notifier});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'BRIEF ÉDITORIAL',
-          style: GoogleFonts.dmSans(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: const Color(0xFF8B7E63),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Précise le format ou l\'angle (analyses long format, focus PME, etc.).',
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            color: const Color(0xFF5D5B5A),
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 10),
-        VeilleEditorialBriefField(
-          value: state.editorialBrief,
-          onChanged: notifier.setEditorialBrief,
-        ),
-      ],
-    );
-  }
-}
-
-class _SkeletonList extends StatelessWidget {
-  const _SkeletonList();
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        4,
-        (i) => Padding(
-          padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
-          child: Container(
-            height: 56,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F0E5),
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-Future<void> _openAddTopicSheet(
+/// Mot-clé libre global (config avancée) → `notifier.addKeyword`.
+Future<void> _openAddKeywordSheet(
   BuildContext context,
   VeilleConfigNotifier notifier,
+) => _showAddKeywordSheet(
+  context,
+  subtitle: 'Sera utilisé pour filtrer les articles (titre, description).',
+  hint: 'Ex : gpt-5',
+  onAdd: notifier.addKeyword,
+);
+
+/// Mot-clé ajouté à la grappe d'un angle → `notifier.addAngleKeyword(slug, …)`.
+Future<void> _openAddAngleKeywordSheet(
+  BuildContext context,
+  VeilleConfigNotifier notifier,
+  String slug,
+) => _showAddKeywordSheet(
+  context,
+  subtitle: 'Affine cet angle — filtre les articles sur ce terme.',
+  hint: 'Ex : régulation',
+  onAdd: (kw) => notifier.addAngleKeyword(slug, kw),
+);
+
+Future<void> _openKeywordsManagerSheet(
+  BuildContext context,
+  String slug,
 ) async {
-  final ctrl = TextEditingController();
-  final result = await showModalBottomSheet<String>(
+  await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.white,
@@ -562,62 +790,98 @@ Future<void> _openAddTopicSheet(
     ),
     builder: (ctx) {
       final viewInsets = MediaQuery.of(ctx).viewInsets;
-      return Padding(
-        padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + viewInsets.bottom),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Ajouter un sujet',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Ex : « IA générative », « Politique numérique européenne »',
-              style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              maxLength: 80,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'Ton sujet',
-                counterText: '',
+      return Consumer(
+        builder: (context, ref, _) {
+          final state = ref.watch(veilleConfigProvider);
+          final notifier = ref.read(veilleConfigProvider.notifier);
+          final keywords = state.angleKeywords[slug] ?? const <String>[];
+          final canAdd =
+              keywords.length < VeilleConfigNotifier.maxAngleKeywords;
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 16 + viewInsets.bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Mots clés trackés',
+                          style: GoogleFonts.fraunces(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF2C2A29),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: Icon(PhosphorIcons.x(), size: 18),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Ils filtrent les articles de cet angle dans le titre et '
+                    'la description.',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12.5,
+                      height: 1.4,
+                      color: const Color(0xFF5D5B5A),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  if (keywords.isEmpty) ...[
+                    Text(
+                      'Aucun mot clé pour cet angle.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12.5,
+                        color: const Color(0xFF8B7E63),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ] else ...[
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final kw in keywords)
+                          _KeywordChip(
+                            label: kw,
+                            onRemove: () =>
+                                notifier.removeAngleKeyword(slug, kw),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  _AddKeywordButton(
+                    enabled: canAdd,
+                    onTap: canAdd
+                        ? () => _openAddAngleKeywordSheet(ctx, notifier, slug)
+                        : () {},
+                  ),
+                ],
               ),
-              onSubmitted: (_) => Navigator.of(ctx).pop(ctrl.text.trim()),
             ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Annuler'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-                  child: const Text('Ajouter'),
-                ),
-              ],
-            ),
-          ],
-        ),
+          );
+        },
       );
     },
   );
-  ctrl.dispose();
-  if (result != null && result.isNotEmpty) notifier.addCustomTopic(result);
 }
 
-Future<void> _openAddKeywordSheet(
-  BuildContext context,
-  VeilleConfigNotifier notifier,
-) async {
+/// Bottom sheet partagé de saisie d'un mot-clé. `onAdd` reçoit le texte trimé
+/// non-vide ; la normalisation/dédupe est faite côté notifier.
+Future<void> _showAddKeywordSheet(
+  BuildContext context, {
+  required String subtitle,
+  required String hint,
+  required void Function(String) onAdd,
+}) async {
   final ctrl = TextEditingController();
   final result = await showModalBottomSheet<String>(
     context: context,
@@ -639,18 +903,18 @@ Future<void> _openAddKeywordSheet(
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Sera utilisé pour filtrer les articles (titre, description).',
-              style: TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF8B7E63)),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               autofocus: true,
               maxLength: 60,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'Ex : gpt-5',
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                hintText: hint,
                 counterText: '',
               ),
               onSubmitted: (_) => Navigator.of(ctx).pop(ctrl.text.trim()),
@@ -676,5 +940,5 @@ Future<void> _openAddKeywordSheet(
     },
   );
   ctrl.dispose();
-  if (result != null && result.isNotEmpty) notifier.addKeyword(result);
+  if (result != null && result.isNotEmpty) onAdd(result);
 }

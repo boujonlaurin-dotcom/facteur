@@ -1,0 +1,75 @@
+name: Build Android AAB (Play Store)
+
+# Déclenché À LA MAIN (onglet Actions > Build Android AAB > Run workflow).
+# Build l'AAB signé du flavor `playstore` (applicationId facteur.app), signé avec
+# la clé d'upload Play (secrets PLAY_UPLOAD_*), et le publie en artifact
+# téléchargeable -> upload manuel dans Play Console > Internal testing.
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'URL API (défaut: production)'
+        required: false
+        default: 'https://facteur-production.up.railway.app/api'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.6'
+          channel: 'stable'
+
+      - name: Decode upload keystore
+        run: echo "${{ secrets.PLAY_UPLOAD_KEYSTORE_BASE64 }}" | base64 --decode > apps/mobile/android/app/facteur-upload.jks
+
+      - name: Create key.properties
+        run: |
+          cat > apps/mobile/android/key.properties <<EOF
+          storePassword=${{ secrets.PLAY_UPLOAD_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
+          keyAlias=${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
+          storeFile=facteur-upload.jks
+          EOF
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Generate icons
+        run: |
+          cd apps/mobile
+          flutter pub run flutter_launcher_icons || true
+
+      - name: Build AAB (playstore flavor)
+        run: |
+          cd apps/mobile
+          flutter build appbundle --release --flavor playstore \
+            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || 'https://facteur-production.up.railway.app/api' }}" \
+            --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
+            --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
+            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
+            --dart-define="POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" \
+            --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
+            --dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}" \
+            --dart-define="SENTRY_ENVIRONMENT=production" \
+            --dart-define="UPDATE_CHANNEL=playstore" \
+            --dart-define="APP_RELEASE_TAG=android-aab-${{ github.run_number }}"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: facteur-playstore-aab
+          path: apps/mobile/build/app/outputs/bundle/playstoreRelease/*.aab
+          if-no-files-found: error

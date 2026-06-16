@@ -111,6 +111,23 @@ class OnboardingAnswers(BaseModel):
     format_preference: str | None = Field("mixed", description="short, long, mixed")
     personal_goal: str | None = Field(None, description="Objectif personnel")
 
+    # Préférences "profondes" ré-aiguillées (onboarding v6) — axes qui
+    # discriminent les sources d'un même thème. Tout est optionnel/additif :
+    # un payload d'un client antérieur (sans ces champs) reste valide.
+    # NB : l'axe "profondeur" réutilise `approach` (direct/detailed), pas de
+    # champ dédié.
+    independence_pref: str | None = Field(
+        None, description="established ou independent (goût de sourcing)"
+    )
+    swipe_liked: list[str] | None = Field(
+        default_factory=list,
+        description="IDs des sources likées au swipe désambiguateur",
+    )
+    swipe_disliked: list[str] | None = Field(
+        default_factory=list,
+        description="IDs des sources rejetées au swipe désambiguateur",
+    )
+
     model_config = ConfigDict(
         populate_by_name=True,
         alias_generator=lambda s: "".join(

@@ -12,10 +12,10 @@ import 'package:facteur/features/feed/widgets/diff_title.dart';
 /// → t=1.
 ///
 /// Spec :
-///   weight = 1.0    → alpha = 0.30 (max)
-///   weight = 0.5    → alpha = 0.20
-///   weight = 0.25   → alpha = 0.12 (floor lisible)
-///   weight = null   → alpha = 0.22 (fallback rétrocompat, sans modulation)
+///   weight = 1.0    → alpha = 0.24 (max)
+///   weight = 0.5    → alpha = 0.16
+///   weight = 0.25   → alpha = 0.10 (floor lisible)
+///   weight = null   → alpha = 0.16 (fallback rétrocompat, sans modulation)
 void main() {
   Widget host(DiffTitle child) {
     return MaterialApp(
@@ -45,96 +45,112 @@ void main() {
   }
 
   group('DiffTitle — weight modulation', () {
-    testWidgets('weight = 1.0 → alpha ≈ 0.30', (tester) async {
-      await tester.pumpWidget(host(DiffTitle(
-        title: 'Macron annonce une réforme',
-        highlightSpans: const [
-          HighlightSpan(
-            start: 7,
-            end: 14,
-            text: 'annonce',
-            bias: 'right',
-            weight: 1.0,
+    testWidgets('weight = 1.0 → alpha ≈ 0.24', (tester) async {
+      await tester.pumpWidget(
+        host(
+          DiffTitle(
+            title: 'Macron annonce une réforme',
+            highlightSpans: const [
+              HighlightSpan(
+                start: 7,
+                end: 14,
+                text: 'annonce',
+                bias: 'right',
+                weight: 1.0,
+              ),
+            ],
+            sharedTokens: const [],
+            biasColor: Colors.red,
+            baseStyle: const TextStyle(fontSize: 14),
+            animateIn: false,
           ),
-        ],
-        sharedTokens: const [],
-        biasColor: Colors.red,
-        baseStyle: const TextStyle(fontSize: 14),
-        animateIn: false,
-      )));
+        ),
+      );
       await tester.pumpAndSettle();
 
       final alpha = keyWashAlpha(tester);
       expect(alpha, isNotNull);
-      expect(alpha!, closeTo(0.30, 0.005));
+      expect(alpha!, closeTo(0.24, 0.005));
     });
 
-    testWidgets('weight = 0.5 → alpha ≈ 0.20', (tester) async {
-      await tester.pumpWidget(host(DiffTitle(
-        title: 'Macron annonce une réforme',
-        highlightSpans: const [
-          HighlightSpan(
-            start: 7,
-            end: 14,
-            text: 'annonce',
-            bias: 'right',
-            weight: 0.5,
+    testWidgets('weight = 0.5 → alpha ≈ 0.16', (tester) async {
+      await tester.pumpWidget(
+        host(
+          DiffTitle(
+            title: 'Macron annonce une réforme',
+            highlightSpans: const [
+              HighlightSpan(
+                start: 7,
+                end: 14,
+                text: 'annonce',
+                bias: 'right',
+                weight: 0.5,
+              ),
+            ],
+            sharedTokens: const [],
+            biasColor: Colors.red,
+            baseStyle: const TextStyle(fontSize: 14),
+            animateIn: false,
           ),
-        ],
-        sharedTokens: const [],
-        biasColor: Colors.red,
-        baseStyle: const TextStyle(fontSize: 14),
-        animateIn: false,
-      )));
+        ),
+      );
       await tester.pumpAndSettle();
 
       final alpha = keyWashAlpha(tester);
       expect(alpha, isNotNull);
-      expect(alpha!, closeTo(0.20, 0.005));
+      expect(alpha!, closeTo(0.16, 0.005));
     });
 
-    testWidgets('weight = 0.25 → alpha ≈ 0.12', (tester) async {
-      await tester.pumpWidget(host(DiffTitle(
-        title: 'Macron annonce une réforme',
-        highlightSpans: const [
-          HighlightSpan(
-            start: 7,
-            end: 14,
-            text: 'annonce',
-            bias: 'right',
-            weight: 0.25,
+    testWidgets('weight = 0.25 → alpha ≈ 0.10', (tester) async {
+      await tester.pumpWidget(
+        host(
+          DiffTitle(
+            title: 'Macron annonce une réforme',
+            highlightSpans: const [
+              HighlightSpan(
+                start: 7,
+                end: 14,
+                text: 'annonce',
+                bias: 'right',
+                weight: 0.25,
+              ),
+            ],
+            sharedTokens: const [],
+            biasColor: Colors.red,
+            baseStyle: const TextStyle(fontSize: 14),
+            animateIn: false,
           ),
-        ],
-        sharedTokens: const [],
-        biasColor: Colors.red,
-        baseStyle: const TextStyle(fontSize: 14),
-        animateIn: false,
-      )));
+        ),
+      );
       await tester.pumpAndSettle();
 
       final alpha = keyWashAlpha(tester);
       expect(alpha, isNotNull);
-      expect(alpha!, closeTo(0.12, 0.005));
+      expect(alpha!, closeTo(0.10, 0.005));
     });
 
-    testWidgets('weight = null → alpha ≈ 0.22 (rétrocompat)', (tester) async {
+    testWidgets('weight = null → alpha ≈ 0.16 (rétrocompat)', (tester) async {
       // C'est le cas pre-PR 5 : l'API ne renvoie pas weight. Le fallback (?? 1.0)
-      // garantit que le rendu est identique à l'avant-PR 6 (alpha = 0.22).
-      await tester.pumpWidget(host(DiffTitle(
-        title: 'Macron annonce une réforme',
-        highlightSpans: const [
-          HighlightSpan(start: 7, end: 14, text: 'annonce', bias: 'right'),
-        ],
-        sharedTokens: const [],
-        biasColor: Colors.red,
-        baseStyle: const TextStyle(fontSize: 14),
-        animateIn: false,
-      )));
+      // garde un rendu visible sans l'intensité maximale.
+      await tester.pumpWidget(
+        host(
+          DiffTitle(
+            title: 'Macron annonce une réforme',
+            highlightSpans: const [
+              HighlightSpan(start: 7, end: 14, text: 'annonce', bias: 'right'),
+            ],
+            sharedTokens: const [],
+            biasColor: Colors.red,
+            baseStyle: const TextStyle(fontSize: 14),
+            animateIn: false,
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       final alpha = keyWashAlpha(tester);
       expect(alpha, isNotNull);
-      expect(alpha!, closeTo(0.22, 0.005));
+      expect(alpha!, closeTo(0.16, 0.005));
     });
   });
 }

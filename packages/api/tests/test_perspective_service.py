@@ -360,6 +360,104 @@ def test_filter_external_perspectives_disabled_via_flag(monkeypatch):
     assert filtered_out == 0
 
 
+# ---------------------------------------------------------------------------
+# Calibration Iter 1 — floor « weak double signal » 0.08 → 0.12
+# Ref : docs/maintenance/maintenance-clustering-calibration.md
+# Pool junk-drawer « Trump » : deux articles ne partageant que l'entité saillante
+# (Trump) + un topic générique (geopolitics) mais parlant d'événements distincts.
+# ---------------------------------------------------------------------------
+
+# Le cas Cuba/Chagos du plan : Jaccard ≈ 0.091, dans la fenêtre [0.08, 0.12).
+# Avant Iter 1 (floor 0.08) → accepté à tort via « weak double signal » (FP).
+# Après Iter 1 (floor 0.12) → rejeté.
+TRUMP_CUBA = {
+    "title": "Cuba : l'ultimatum économique de Trump",
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+TRUMP_CHAGOS = {
+    "title": (
+        "Après le Groenland, Donald Trump convoite un autre territoire, "
+        "l'archipel des îles Chagos"
+    ),
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+
+# Vrai intra-événement (mobilisation anti-projet immobilier Trump en Albanie) :
+# Jaccard ≈ 0.143 ≥ 0.12 → reste accepté après Iter 1 (rappel préservé).
+TRUMP_ALBANIE_A = {
+    "title": (
+        "En Albanie, la mobilisation prend de l'ampleur contre le projet "
+        "immobilier de luxe porté par Trump"
+    ),
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+TRUMP_ALBANIE_B = {
+    "title": (
+        "« Ce serait fatal » : des Albanais continuent à protester contre un "
+        "projet immobilier lié à Trump"
+    ),
+    "topics": ["geopolitics", "usa"],
+    "entities": [json.dumps({"name": "Trump", "type": "PERSON"})],
+}
+
+
+def test_trump_cross_event_rejected_after_floor_calibration():
+    """Cuba ↔ Chagos : même entité Trump + topic geopolitics, événements distincts.
+
+    Jaccard ≈ 0.091 tombe dans la fenêtre [ancien floor 0.08, nouveau floor 0.12) :
+    c'était la fuite « weak double signal » (cf. capture PO « cluster Trump »).
+    Après calibration Iter 1, la porte rejette la paire.
+    """
+    from app.services.perspective_service import PERSPECTIVE_MIN_JACCARD_FLOOR
+
+    seed_tokens = normalize_title(TRUMP_CUBA["title"])
+    seed_disc = {"Trump"}
+    signals = PerspectiveService._topical_signals(
+        seed_tokens,
+        seed_topics={"geopolitics", "usa"},
+        seed_disc_entities=seed_disc,
+        cand_title=TRUMP_CHAGOS["title"],
+        cand_topics=TRUMP_CHAGOS["topics"],
+        cand_entities=TRUMP_CHAGOS["entities"],
+    )
+    # Le signal qui fuyait : topic + entité partagés, Jaccard faible mais > 0.08.
+    assert signals["shared_topics"] >= 1
+    assert signals["shared_entities"] >= 1
+    assert 0.08 <= signals["title_jaccard"] < PERSPECTIVE_MIN_JACCARD_FLOOR
+    # La porte calibrée (floor 0.12) doit rejeter.
+    is_ok, reason = PerspectiveService._is_topically_coherent(signals)
+    assert is_ok is False
+    assert reason == "no_signal"
+
+
+def test_trump_intra_event_still_accepted_after_floor_calibration():
+    """Albanie ↔ Albanie : même événement, Jaccard ≈ 0.143 ≥ 0.12 → reste accepté.
+
+    Garde-fou de rappel : le durcissement du floor ne doit pas casser les vraies
+    paires intra-événement multi-sources qui dépassent le nouveau seuil.
+    """
+    from app.services.perspective_service import PERSPECTIVE_MIN_JACCARD_FLOOR
+
+    seed_tokens = normalize_title(TRUMP_ALBANIE_A["title"])
+    signals = PerspectiveService._topical_signals(
+        seed_tokens,
+        seed_topics={"geopolitics", "usa"},
+        seed_disc_entities={"Trump"},
+        cand_title=TRUMP_ALBANIE_B["title"],
+        cand_topics=TRUMP_ALBANIE_B["topics"],
+        cand_entities=TRUMP_ALBANIE_B["entities"],
+    )
+    assert signals["title_jaccard"] >= PERSPECTIVE_MIN_JACCARD_FLOOR
+    assert signals["shared_topics"] >= 1
+    assert signals["shared_entities"] >= 1
+    is_ok, reason = PerspectiveService._is_topically_coherent(signals)
+    assert is_ok is True
+    assert reason == ""
+
+
 def test_topical_signals_empty_seed_title():
     """Edge case : titre seed vide → tous les candidats rejetés (Jaccard=0)."""
     signals = PerspectiveService._topical_signals(

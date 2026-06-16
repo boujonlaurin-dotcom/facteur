@@ -7,7 +7,7 @@ Couvre les endpoints refondus en filtre temps-réel :
 """
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -160,6 +160,52 @@ class TestConfigCRUD:
         assert len(data["sources"]) == 1
         assert len(data["keywords"]) == 2
         assert data["keywords"][0]["keyword"] == "intelligence artificielle"
+
+    async def test_post_config_persists_angle_keyword_clusters(
+        self, auth_user, curated_tech_source, db_session
+    ):
+        """Story curation : un angle `suggested` + sa grappe → VeilleKeyword liés."""
+        from app.models.veille import VeilleKeyword
+
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [
+                {
+                    "topic_id": "ia-generative",
+                    "label": "IA générative",
+                    "kind": "suggested",
+                    "keywords": ["GPT-5", "Mistral", "gpt-5"],  # dédup attendu
+                }
+            ],
+            "keywords": [{"keyword": "souveraineté", "position": 0}],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        # Round-trip : la grappe niche sous l'angle, le mot-clé global reste à plat.
+        assert len(data["topics"]) == 1
+        assert data["topics"][0]["keywords"] == ["gpt-5", "mistral"]
+        assert [k["keyword"] for k in data["keywords"]] == ["souveraineté"]
+
+        # En base : 2 keywords liés à l'angle + 1 global (veille_topic_id NULL).
+        rows = (
+            (
+                await db_session.execute(
+                    select(VeilleKeyword).where(
+                        VeilleKeyword.veille_config_id == UUID(data["id"])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        linked = [r for r in rows if r.veille_topic_id is not None]
+        globals_ = [r for r in rows if r.veille_topic_id is None]
+        assert len(linked) == 2
+        assert len(globals_) == 1
+        assert globals_[0].keyword == "souveraineté"
 
     async def test_post_config_requires_at_least_one_axis(self, auth_user):
         payload = {
@@ -325,6 +371,33 @@ class TestFavoriteIntegration:
         favs = await self._favorites(db_session, auth_user)
         assert favs == []
 
+    async def test_get_config_self_heals_missing_favorite(
+        self, auth_user, db_session
+    ):
+        """Story 23.4 : une config active orpheline (sans favori — cas proton) est
+        réparée au `GET /config` (self-heal idempotent, commit dédié)."""
+        cfg = VeilleConfig(
+            id=uuid4(),
+            user_id=auth_user,
+            theme_id="tech",
+            theme_label="Tech",
+            status=VeilleStatus.ACTIVE.value,
+        )
+        db_session.add(cfg)
+        await db_session.commit()
+
+        # Orphelin : config active, aucun VeilleFavoriteRef.
+        assert await self._favorites(db_session, auth_user) == []
+
+        async with _client() as c:
+            r = await c.get("/api/veille/config")
+        assert r.status_code == 200
+
+        favs = await self._favorites(db_session, auth_user)
+        assert len(favs) == 1
+        assert favs[0].veille_config_id == cfg.id
+        assert favs[0].interest_slug is None
+
 
 class TestFeed:
     async def test_feed_empty_when_no_config(self, auth_user):
@@ -333,9 +406,14 @@ class TestFeed:
         assert r.status_code == 200
         assert r.json()["items"] == []
 
-    async def test_feed_matches_theme(
+    async def test_feed_source_axis_returns_all_but_theme_not_qualifying(
         self, auth_user, curated_tech_source, tech_content
     ):
+        """La source est un axe fort → ses 3 articles entrent dans le pool.
+
+        Contrat inversé : le thème n'est plus un axe **qualifiant** —
+        `matched_on` n'expose plus "theme" même quand content.theme == config.theme.
+        """
         payload = {
             "theme_id": "tech",
             "theme_label": "Tech",
@@ -348,12 +426,33 @@ class TestFeed:
             r = await c.get("/api/veille/feed?limit=20")
         assert r.status_code == 200
         data = r.json()
-        # 3 articles, mais la source matche pour les 3 → tous reviennent (source axe)
         assert len(data["items"]) == 3
-        # GPT-5 matche aussi theme=tech
         gpt = next(it for it in data["items"] if "GPT-5" in it["title"])
-        assert "theme" in gpt["matched_on"]
         assert "source" in gpt["matched_on"]
+        assert "theme" not in gpt["matched_on"]
+
+    async def test_feed_theme_only_article_excluded(
+        self, auth_user, curated_tech_source, tech_content
+    ):
+        """Config sur un topic précis → un article « thème macro seul » est exclu.
+
+        Le thème étant retiré du prédicat, GPT-5 (topics=["ai","openai"]) entre
+        via le topic "ai" mais l'article Bourse (theme=economy, hors topic, hors
+        source suivie, hors keyword) n'entre jamais dans le pool.
+        """
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
+        }
+        async with _client() as c:
+            await c.post("/api/veille/config", json=payload)
+            r = await c.get("/api/veille/feed?limit=20")
+        items = r.json()["items"]
+        titles = [it["title"] for it in items]
+        assert any("GPT-5" in t for t in titles)
+        assert not any("Bourse" in t for t in titles)
+        assert not any("Vélo" in t for t in titles)
 
     async def test_feed_matches_keyword(
         self, auth_user, curated_tech_source, tech_content
@@ -367,15 +466,195 @@ class TestFeed:
             await c.post("/api/veille/config", json=payload)
             r = await c.get("/api/veille/feed")
         items = r.json()["items"]
-        # Le keyword "vélo" matche l'article Vélo électrique, mais l'axe theme
-        # matche aussi GPT-5 (theme=tech). Donc 2 résultats.
-        assert len(items) == 2
-        velo = next(it for it in items if "Vélo" in it["title"])
+        # Seul l'article "Vélo électrique" matche le keyword. GPT-5 n'entre plus
+        # via le thème (retiré du prédicat) → 1 seul résultat (contrat inversé).
+        assert len(items) == 1
+        velo = items[0]
+        assert "Vélo" in velo["title"]
         assert "keyword" in velo["matched_on"]
+
+
+@pytest_asyncio.fixture
+async def external_ai_content(db_session):
+    """Source NON configurée + article on-topic 'ai' → peuple le Bloc B."""
+    src = Source(
+        id=uuid4(),
+        name="External AI",
+        url="https://ext.example.com",
+        feed_url=f"https://ext.example.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=True,
+    )
+    db_session.add(src)
+    await db_session.commit()
+    article = Content(
+        id=uuid4(),
+        source_id=src.id,
+        title="Percée IA dans un labo externe",
+        url=f"https://ext.example.com/{uuid4()}",
+        description="Une avancée majeure en intelligence artificielle",
+        published_at=datetime.now(UTC) - timedelta(hours=2),
+        content_type=ContentType.ARTICLE,
+        guid=f"ext-ai-{uuid4()}",
+        theme="tech",
+        topics=["ai"],
+    )
+    db_session.add(article)
+    await db_session.commit()
+    return article
+
+
+class TestFeedTwoBlocks:
+    """Refonte curation : deux blocs (group) + pagination plate à la frontière."""
+
+    def _payload(self, source_id):
+        return {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
+            "source_selections": [
+                {"kind": "followed", "source_id": str(source_id)}
+            ],
+        }
+
+    async def test_feed_exposes_group_per_item(
+        self, auth_user, curated_tech_source, tech_content, external_ai_content
+    ):
+        async with _client() as c:
+            await c.post(
+                "/api/veille/config", json=self._payload(curated_tech_source.id)
+            )
+            r = await c.get("/api/veille/feed?limit=50")
+        assert r.status_code == 200
+        items = r.json()["items"]
+        groups = {it["group"] for it in items}
+        assert groups == {"sources", "elargie"}
+        # Articles de la source configurée → Bloc A "sources".
+        for it in items:
+            if "GPT-5" in it["title"]:
+                assert it["group"] == "sources"
+        # Article externe on-topic → Bloc B "elargie".
+        ext = next(it for it in items if "labo externe" in it["title"])
+        assert ext["group"] == "elargie"
+
+    async def test_feed_block_a_before_block_b(
+        self, auth_user, curated_tech_source, tech_content, external_ai_content
+    ):
+        async with _client() as c:
+            await c.post(
+                "/api/veille/config", json=self._payload(curated_tech_source.id)
+            )
+            r = await c.get("/api/veille/feed?limit=50")
+        items = r.json()["items"]
+        groups = [it["group"] for it in items]
+        # Tous les "sources" précèdent tous les "elargie" (concaténation A→B).
+        last_sources = max(i for i, g in enumerate(groups) if g == "sources")
+        first_elargie = min(i for i, g in enumerate(groups) if g == "elargie")
+        assert last_sources < first_elargie
+
+    async def test_feed_pagination_across_block_boundary(
+        self, auth_user, curated_tech_source, tech_content, external_ai_content
+    ):
+        # Gate-all « released » : le Bloc A filtre désormais aussi les sources
+        # configurées (floor + seuil). Pour garder 3 articles on-angle dans le
+        # Bloc A, on qualifie les 3 articles de la source configurée par un axe
+        # (topic « ai » pour GPT-5, mots-clés « bourse »/« vélo » pour les deux
+        # autres) — sinon ils seraient floor-pruned comme source-seuls.
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
+            "keywords": [{"keyword": "bourse"}, {"keyword": "vélo"}],
+            "source_selections": [
+                {"kind": "followed", "source_id": str(curated_tech_source.id)}
+            ],
+        }
+        async with _client() as c:
+            await c.post("/api/veille/config", json=payload)
+            # Bloc A = 3 articles on-angle (source configurée), Bloc B = 1 (externe).
+            page1 = (await c.get("/api/veille/feed?limit=3&offset=0")).json()
+            page2 = (await c.get("/api/veille/feed?limit=3&offset=3")).json()
+        assert len(page1["items"]) == 3
+        assert all(it["group"] == "sources" for it in page1["items"])
+        assert page1["has_more"] is True
+        assert len(page2["items"]) == 1
+        assert page2["items"][0]["group"] == "elargie"
+        assert page2["has_more"] is False
+
+    async def test_config_exposes_source_health(
+        self, auth_user, curated_tech_source, tech_content
+    ):
+        """GET /config remonte la santé du flux (last_article_at + count récent)."""
+        async with _client() as c:
+            await c.post(
+                "/api/veille/config", json=self._payload(curated_tech_source.id)
+            )
+            r = await c.get("/api/veille/config")
+        assert r.status_code == 200
+        source = r.json()["sources"][0]
+        assert source["last_article_at"] is not None
+        assert source["recent_article_count"] == 3
 
 
 class TestSuggestEndpoints:
     """POST /api/veille/suggest/{angles,sources} (Story 23.3)."""
+
+    async def test_resolve_topic_enriches_without_creating_profile(
+        self, auth_user, monkeypatch, db_session
+    ):
+        from app.models.user_topic_profile import UserTopicProfile
+        from app.services.ml import topic_enrichment_service as mod
+        from app.services.ml.topic_enrichment_service import TopicEnrichmentResult
+
+        async def _fake_enrich(self, topic_name):
+            return TopicEnrichmentResult(
+                slug_parent="culture",
+                keywords=["macba", "exposition", "art contemporain"],
+                intent_description="Suivi des expositions à Barcelone",
+                entity_type="LOCATION",
+                canonical_name="Musées contemporains de Barcelone",
+            )
+
+        monkeypatch.setattr(mod.TopicEnrichmentService, "enrich", _fake_enrich)
+        monkeypatch.setattr(mod, "_topic_enrichment_service", None)
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/resolve/topic",
+                json={
+                    "topic": "musées barcelone",
+                    "theme_id": "culture",
+                    "theme_label": "Culture",
+                },
+            )
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["label"] == "Musées contemporains de Barcelone"
+        assert data["topic_id"] == "custom-musees-contemporains-de-barcelone"
+        assert data["keywords"] == ["macba", "exposition", "art contemporain"]
+        assert data["description"] == "Suivi des expositions à Barcelone"
+        assert data["metadata"]["slug_parent"] == "culture"
+
+        rows = (
+            (
+                await db_session.execute(
+                    select(UserTopicProfile).where(
+                        UserTopicProfile.user_id == auth_user
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert rows == []
+
+    async def test_resolve_topic_validates_input(self, auth_user):
+        async with _client() as c:
+            r = await c.post("/api/veille/resolve/topic", json={"topic": ""})
+        assert r.status_code == 422
 
     async def test_suggest_angles_returns_llm_response(self, auth_user, monkeypatch):
         from app.services.veille.llm import angle_suggester as mod
@@ -474,6 +753,177 @@ class TestSuggestEndpoints:
         assert r.status_code == 200
         assert r.json() == {"sources": []}
 
+    async def test_suggest_sources_truncates_overflow_instead_of_422(
+        self, auth_user, monkeypatch
+    ):
+        from app.services.veille.llm import source_suggester as mod
+
+        captured = {}
+
+        async def _fake_empty(self, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        monkeypatch.setattr(mod.SourceSuggester, "suggest_sources", _fake_empty)
+        monkeypatch.setattr(mod, "_source_suggester", None)
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/suggest/sources",
+                json={
+                    "theme_id": "other",
+                    "theme_label": "Niche super pointue",
+                    "brief": "",
+                    "angles": [f"angle-{i}" for i in range(30)],
+                    "keywords": [f"kw-{i}" for i in range(60)],
+                },
+            )
+        assert r.status_code == 200, r.text
+        assert r.json() == {"sources": []}
+        assert len(captured["angles"]) == 20
+        assert len(captured["keywords"]) == 40
+        assert captured["angles"] == [f"angle-{i}" for i in range(20)]
+        assert captured["keywords"] == [f"kw-{i}" for i in range(40)]
+
+
+class TestResolveSourceCandidates:
+    async def test_resolve_candidates_reuses_existing_source(
+        self, auth_user, curated_tech_source, monkeypatch
+    ):
+        from app.services.search import smart_source_search
+
+        async def _should_not_detect(self, url):
+            raise AssertionError("existing source should not trigger RSS detection")
+
+        monkeypatch.setattr(
+            smart_source_search.SmartSourceSearchService,
+            "_detect_with_root_fallback",
+            _should_not_detect,
+        )
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/sources/resolve-candidates",
+                json={
+                    "candidates": [
+                        {
+                            "client_slug": "existing-tech",
+                            "name": "Tech Daily",
+                            "url": curated_tech_source.url,
+                            "why": "Déjà au catalogue",
+                        }
+                    ]
+                },
+            )
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["failed"] == []
+        assert data["resolved"][0]["client_slug"] == "existing-tech"
+        assert data["resolved"][0]["source_id"] == str(curated_tech_source.id)
+
+    async def test_resolve_candidates_creates_source_and_returns_failures(
+        self, auth_user, db_session, monkeypatch
+    ):
+        from app.services.search import smart_source_search
+
+        async def _fake_detect(self, url):
+            if "macba" not in url:
+                return None
+            return (
+                "https://www.macba.cat",
+                {
+                    "feed_url": "https://www.macba.cat/feed.xml",
+                    "name": "MACBA feed",
+                    "type": "rss",
+                    "favicon_url": "https://www.macba.cat/favicon.ico",
+                    "description": "Musée contemporain",
+                },
+            )
+
+        monkeypatch.setattr(
+            smart_source_search.SmartSourceSearchService,
+            "_detect_with_root_fallback",
+            _fake_detect,
+        )
+
+        async with _client() as c:
+            r = await c.post(
+                "/api/veille/sources/resolve-candidates",
+                json={
+                    "candidates": [
+                        {
+                            "client_slug": "niche-macba",
+                            "name": "MACBA",
+                            "url": "https://www.macba.cat",
+                            "why": "Musée officiel",
+                        },
+                        {
+                            "client_slug": "niche-ko",
+                            "name": "Site KO",
+                            "url": "https://ko.test",
+                            "why": None,
+                        },
+                    ]
+                },
+            )
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["resolved"][0]["client_slug"] == "niche-macba"
+        assert data["resolved"][0]["name"] == "MACBA"
+        assert data["resolved"][0]["feed_url"] == "https://www.macba.cat/feed.xml"
+        assert data["resolved"][0]["logo_url"] == "https://www.macba.cat/favicon.ico"
+        assert data["failed"] == [
+            {
+                "client_slug": "niche-ko",
+                "name": "Site KO",
+                "url": "https://ko.test",
+                "reason": "Aucun flux RSS détecté à cette adresse.",
+            }
+        ]
+
+        source_id = UUID(data["resolved"][0]["source_id"])
+        src = await db_session.scalar(select(Source).where(Source.id == source_id))
+        assert src is not None
+        assert src.feed_url == "https://www.macba.cat/feed.xml"
+        assert src.type == SourceType.ARTICLE
+        assert src.theme == "custom"
+
+    async def test_post_config_with_source_id_does_not_detect(
+        self, auth_user, curated_tech_source, monkeypatch
+    ):
+        from app.services import source_service
+
+        async def _should_not_detect(self, url):
+            raise AssertionError("source_id upsert must not detect RSS")
+
+        monkeypatch.setattr(
+            source_service.SourceService, "detect_source", _should_not_detect
+        )
+
+        payload = {
+            "theme_id": "tech",
+            "theme_label": "Tech",
+            "topics": [],
+            "source_selections": [
+                {
+                    "kind": "niche",
+                    "source_id": str(curated_tech_source.id),
+                    "why": "résolue avant submit",
+                    "position": 0,
+                }
+            ],
+            "keywords": [],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sources"][0]["source"]["id"] == str(curated_tech_source.id)
+        assert data["unconnected_sources"] == []
+
 
 class TestOtherThemeIngestion:
     """theme_id='other' (tuile Autre) doit mapper vers theme='custom' à l'ingestion."""
@@ -481,8 +931,8 @@ class TestOtherThemeIngestion:
     async def test_other_theme_niche_source_ingestion(
         self, auth_user, monkeypatch
     ):
-        from unittest.mock import AsyncMock
         from app.services import source_service
+        from app.workers import rss_sync
 
         async def _fake_detect(self, url):
             from types import SimpleNamespace
@@ -496,6 +946,16 @@ class TestOtherThemeIngestion:
             )
 
         monkeypatch.setattr(source_service.SourceService, "detect_source", _fake_detect)
+
+        # Une source niche fraîchement créée doit déclencher un sync immédiat
+        # (sinon sa table `contents` reste vide jusqu'au cycle récurrent).
+        synced: list[str] = []
+
+        async def _fake_sync_source(source_id):
+            synced.append(source_id)
+            return True
+
+        monkeypatch.setattr(rss_sync, "sync_source", _fake_sync_source)
 
         payload = {
             "theme_id": "other",
@@ -520,6 +980,68 @@ class TestOtherThemeIngestion:
         assert data["theme_id"] == "other"
         # La source ingérée doit avoir theme='custom' (mappé depuis 'other')
         assert data["sources"][0]["source"]["theme"] == "custom"
+        # Sync immédiat enfilé pour la source niche créée.
+        assert synced == [data["sources"][0]["source"]["id"]]
+        # Source bien connectée → aucune remontée d'échec.
+        assert data["unconnected_sources"] == []
+
+    async def test_post_config_skips_unresolvable_niche_source(
+        self, auth_user, monkeypatch
+    ):
+        """PYTHON-51 : une source niche dont le flux RSS est introuvable ne doit
+        plus faire échouer tout l'enregistrement (500) — on l'ignore, on garde le
+        reste de la veille."""
+        from app.services import source_service
+
+        async def _fake_detect(self, url):
+            raise ValueError("No RSS feed found")
+
+        monkeypatch.setattr(
+            source_service.SourceService, "detect_source", _fake_detect
+        )
+
+        payload = {
+            "theme_id": "other",
+            "theme_label": "Musées Barcelone",
+            "topics": [
+                {
+                    "topic_id": "expos",
+                    "label": "Expositions",
+                    "kind": "preset",
+                    "position": 0,
+                }
+            ],
+            "source_selections": [
+                {
+                    "kind": "niche",
+                    "niche_candidate": {
+                        "client_slug": "niche-sans-flux",
+                        "name": "Site sans flux",
+                        "url": "https://exemple-sans-rss.test",
+                        "why": None,
+                    },
+                }
+            ],
+            "keywords": [{"keyword": "vernissage", "position": 0}],
+        }
+        async with _client() as c:
+            r = await c.post("/api/veille/config", json=payload)
+
+        # Avant le fix : 500. Après : 200, source ignorée, reste persisté.
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["sources"] == []
+        assert len(data["topics"]) == 1
+        assert len(data["keywords"]) == 1
+        # La source non connectée est remontée au mobile (url + raison) pour
+        # afficher « X sources n'ont pas pu être connectées » + CTA recherche.
+        assert len(data["unconnected_sources"]) == 1
+        assert data["unconnected_sources"][0]["client_slug"] == "niche-sans-flux"
+        assert data["unconnected_sources"][0]["name"] == "Site sans flux"
+        assert (
+            data["unconnected_sources"][0]["url"] == "https://exemple-sans-rss.test"
+        )
+        assert data["unconnected_sources"][0]["reason"]
 
 
 class TestLegacyGoneShims:

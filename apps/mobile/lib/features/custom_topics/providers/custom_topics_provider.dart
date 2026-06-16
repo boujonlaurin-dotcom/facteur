@@ -94,7 +94,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followTopic(name, priorityMultiplier: priorityMultiplier);
+      final created = await repo.followTopic(name,
+          slugParent: slugParent, priorityMultiplier: priorityMultiplier);
 
       // Replace placeholder with server-enriched profile
       if (state.hasValue) {
@@ -241,7 +242,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followEntity(name, entityType);
+      final created =
+          await repo.followEntity(name, entityType, slugParent: slugParent);
       if (state.hasValue) {
         final updated = state.value!
             .map((t) => t.id == placeholder.id ? created : t)
@@ -259,6 +261,20 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       rethrow;
     }
   });
+
+  /// Follow a disambiguation suggestion — entity if typed, plain topic
+  /// otherwise. Shared by `EntityAddSheet` and the source-search « Sujets »
+  /// section so the entity/topic branching lives in one place.
+  Future<UserTopicProfile?> followSuggestion(DisambiguationSuggestion s) {
+    if (s.entityType != null) {
+      return followEntity(
+        s.canonicalName,
+        s.entityType!,
+        slugParent: s.slugParent,
+      );
+    }
+    return followTopic(s.canonicalName, slugParent: s.slugParent);
+  }
 }
 
 // Topic suggestions provider (parameterized by optional theme slug)

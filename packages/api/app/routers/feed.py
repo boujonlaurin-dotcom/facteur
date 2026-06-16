@@ -164,6 +164,16 @@ async def get_personalized_feed(
             "the Tournée du jour theme sections."
         ),
     ),
+    followed_only: bool = Query(
+        False,
+        description=(
+            "When True AND theme/topic/entity is set, restrict candidates to "
+            "followed sources while keeping the chronological order (unlike "
+            "`personalized`). Powers the fast 'followed-first' block of the "
+            "Flâner discovery tabs; the 'Explorer' block fetches unfollowed "
+            "sources separately."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -226,6 +236,7 @@ async def get_personalized_feed(
                 keyword=keyword,
                 include_unfollowed=include_unfollowed,
                 personalized=personalized,
+                followed_only=followed_only,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
             FEED_CACHE.put(user_uuid, payload)
@@ -248,6 +259,7 @@ async def get_personalized_feed(
         keyword=keyword,
         include_unfollowed=include_unfollowed,
         personalized=personalized,
+        followed_only=followed_only,
     )
     return response
 
@@ -270,6 +282,7 @@ async def _compute_feed(
     keyword: str | None,
     include_unfollowed: bool = False,
     personalized: bool = False,
+    followed_only: bool = False,
 ) -> FeedResponse:
     """Run the full recommendation pipeline. Identical to the pre-Round-5
     body of `get_personalized_feed`, extracted for cache-miss reuse."""
@@ -299,6 +312,7 @@ async def _compute_feed(
         serein=serein,
         include_unfollowed=include_unfollowed,
         personalized=personalized,
+        followed_only=followed_only,
     )
 
     # Epic 11: Build clusters from custom topics (reuse from service, no duplicate query)
@@ -382,6 +396,7 @@ async def _compute_feed(
         keyword_overflow=keyword_overflow_data,
         entity_overflow=entity_overflow_data,
         carousels=carousels_data,
+        no_recent_source=service.source_no_recent_source,
     )
 
 
@@ -528,6 +543,7 @@ async def get_tab_counts(
     from sqlalchemy import exists, or_, select
 
     from app.models.content import Content
+    from app.models.enums import InterestState
     from app.models.source import UserSource
     from app.models.user_topic_profile import UserTopicProfile
     from app.schemas.feed import TabCountsResponse
@@ -536,7 +552,10 @@ async def get_tab_counts(
     user_uuid = UUID(current_user_id)
     cutoff = datetime.now(UTC) - timedelta(hours=48)
 
-    followed_stmt = select(UserSource.source_id).where(UserSource.user_id == user_uuid)
+    followed_stmt = select(UserSource.source_id).where(
+        UserSource.user_id == user_uuid,
+        UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+    )
     favorites_stmt = select(UserTopicProfile).where(
         UserTopicProfile.user_id == user_uuid,
         UserTopicProfile.priority_multiplier == 2.0,

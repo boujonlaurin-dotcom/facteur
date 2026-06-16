@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
-import '../../flux_continu/providers/flux_continu_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../providers/feed_provider.dart';
 import '../providers/tab_counts_provider.dart';
@@ -12,7 +11,7 @@ import 'compact_source_chip.dart';
 import 'compact_theme_chip.dart';
 import 'favorite_topic_tabs.dart';
 import 'filter_collapsible_panel.dart';
-import 'interest_filter_sheet.dart';
+import 'pin_subjects_sheet.dart';
 import 'search_filter_sheet.dart';
 
 /// Compact, self-contained version of `FeedScreen._buildFilterBar`, intended
@@ -28,7 +27,10 @@ import 'search_filter_sheet.dart';
 class FeedFilterBar extends ConsumerStatefulWidget {
   final VoidCallback? onAfterChange;
 
-  const FeedFilterBar({super.key, this.onAfterChange});
+  const FeedFilterBar({
+    super.key,
+    this.onAfterChange,
+  });
 
   @override
   ConsumerState<FeedFilterBar> createState() => _FeedFilterBarState();
@@ -50,21 +52,16 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
     final feedItems =
         ref.watch(feedProvider).valueOrNull?.items ?? const <dynamic>[];
     final serverCounts = ref.watch(tabCountsProvider).valueOrNull;
-    final tourneeSlugs = ref
-            .watch(fluxContinuProvider)
-            .valueOrNull
-            ?.tourneeThemeSlugs ??
-        const <String>[];
     return FilterCollapsiblePanel(
       activeCount: selection.activeCount,
       chipsRow: _buildChipsRow(context, selection),
-      leadingContent: FavoriteTopicTabs(
+      collapsedContentBuilder: (filterTrigger) => FavoriteTopicTabs(
         items: feedItems.cast(),
         serverCounts: serverCounts,
         selectedTopicSlug: selection.topic,
         selectedThemeSlug: selection.theme,
         selectedEntitySlug: selection.entity,
-        excludedThemeSlugs: tourneeSlugs,
+        selectedSourceId: selection.sourceId,
         onTabTap: (kind, slug) async {
           // Sheet owns this override ; clear it so the chip label rebuilds
           // from the tapped tab's name on next layout.
@@ -72,11 +69,6 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
             setState(() => _selectedInterestNameOverride = null);
           }
           switch (kind) {
-            case FavoriteTabKind.tous:
-              await notifier.setTopic(null);
-              await notifier.setTheme(null);
-              await notifier.setEntity(null);
-              break;
             case FavoriteTabKind.subjectTopic:
               await notifier.setTopic(slug);
               break;
@@ -86,37 +78,30 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
             case FavoriteTabKind.theme:
               await notifier.setTheme(slug);
               break;
+            case FavoriteTabKind.source:
+              await notifier.setSource(slug);
+              break;
           }
           widget.onAfterChange?.call();
         },
-        onTapActiveTab: () => widget.onAfterChange?.call(),
-        onTapActiveTabRefresh: () {
-          HapticFeedback.mediumImpact();
+        // Taper l'onglet actif vide toute la sélection (feed non filtré). On
+        // remet aussi `setSource(null)` — oublié historiquement — pour bien
+        // désélectionner un onglet source actif.
+        onTapActiveTab: () async {
+          await HapticFeedback.selectionClick();
+          await notifier.setTopic(null);
+          await notifier.setTheme(null);
+          await notifier.setEntity(null);
+          await notifier.setSource(null);
           widget.onAfterChange?.call();
         },
+        // Le « + » des onglets épingle des sujets précis (custom topics) —
+        // le filtrage par thème/source reste assuré par les chips ci-dessous.
         onAddFavorite: () {
           HapticFeedback.mediumImpact();
-          InterestFilterSheet.show(
-            context,
-            currentTopicSlug:
-                selection.topic ?? selection.theme ?? selection.entity,
-            currentIsTheme: selection.theme != null,
-            onInterestSelected:
-                (slug, name, {bool isTheme = false, bool isEntity = false}) async {
-              setState(() {
-                _selectedInterestNameOverride = name;
-              });
-              if (isTheme) {
-                await notifier.setTheme(slug);
-              } else if (isEntity) {
-                await notifier.setEntity(slug);
-              } else {
-                await notifier.setTopic(slug);
-              }
-              widget.onAfterChange?.call();
-            },
-          );
+          showPinSubjectsSheet(context);
         },
+        trailingFilterTrigger: filterTrigger,
       ),
       leadingTrigger: _SearchTrigger(
         active: hasSearch,
@@ -188,8 +173,12 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
             selectedName: _selectedInterestNameOverride,
             selectedIsTheme: selectedIsTheme,
             discreet: true,
-            onInterestChanged: (slug, name,
-                {bool isTheme = false, bool isEntity = false}) async {
+            onInterestChanged: (
+              slug,
+              name, {
+              bool isTheme = false,
+              bool isEntity = false,
+            }) async {
               setState(() {
                 _selectedInterestNameOverride = name;
               });
@@ -215,7 +204,7 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
 
 /// Minimal search trigger — magnifier icon when idle, keyword pill with clear
 /// button when a search is active. Visually aligned with `FilterCollapsiblePanel`
-/// (32 px tall, primary accent when active).
+/// (34 px tall, primary accent when active).
 class _SearchTrigger extends StatelessWidget {
   final bool active;
   final String? keyword;
@@ -238,8 +227,8 @@ class _SearchTrigger extends StatelessWidget {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          height: 38,
-          padding: const EdgeInsets.only(left: 12, right: 4),
+          height: 34,
+          padding: const EdgeInsets.only(left: 10, right: 4),
           decoration: BoxDecoration(
             color: primary.withValues(alpha: 0.12),
             border: Border.all(color: primary),
@@ -250,7 +239,7 @@ class _SearchTrigger extends StatelessWidget {
             children: [
               Icon(
                 PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-                size: 15,
+                size: 14,
                 color: primary,
               ),
               const SizedBox(width: 5),
@@ -271,11 +260,13 @@ class _SearchTrigger extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: onClear,
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 7,
+                  ),
                   child: Icon(
                     PhosphorIcons.x(PhosphorIconsStyle.bold),
-                    size: 13,
+                    size: 12,
                     color: primary,
                   ),
                 ),
@@ -289,11 +280,11 @@ class _SearchTrigger extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        height: 38,
-        width: 38,
+        height: 34,
+        width: 34,
         child: Icon(
           PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-          size: 18,
+          size: 16,
           color: colors.textSecondary,
         ),
       ),

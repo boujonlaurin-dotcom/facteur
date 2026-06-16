@@ -1,3 +1,8 @@
+# Node / Playwright Agent CLI (outillage QA web — cf. package.json)
+node_modules/
+# Scratch de session du Playwright CLI (snapshots, screenshots, logs console)
+.playwright-cli/
+
 # General
 **/.DS_Store
 .AppleDouble
@@ -90,3 +95,9 @@ serve_test.py
 # Logs
 *.log
 facteur-release.jks
+
+# Nix / direnv
+.direnv/
+.envrc.local
+result
+result-*

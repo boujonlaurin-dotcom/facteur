@@ -1,0 +1,125 @@
+# La Grille du jour — noms propres curés (correctif « mots valides refusés »).
+#
+# Noms propres quasi absents de `an-array-of-french-words` (pays, régions,
+# capitales/villes, prénoms courants) qui étaient refusés à tort (ex. ITALIE).
+#
+# ÉDITABLE À LA MAIN. Une entrée par ligne ; `#` = commentaire. Écris en clair :
+# accents et casse libres — le build normalise (MAJUSCULES, sans accent) et ne
+# garde que les entrées de **exactement 6 lettres** A-Z (les autres sont
+# ignorées). Après édition, régénérer le dico committé :
+#   cd packages/api && python -m scripts.build_grille_dictionary
+
+# --- Pays ---
+Italie
+Russie
+Suisse
+Canada
+Brésil
+Angola
+Guinée
+Zambie
+Gambie
+Malawi
+Rwanda
+Serbie
+Chypre
+Belize
+Tuvalu
+Taiwan
+Koweït
+Monaco
+Panama
+Écosse
+
+# --- Régions & territoires ---
+Alsace
+Savoie
+Vendée
+Alaska
+Québec
+Ontario
+Sahara
+Kosovo
+Crimée
+Donbas
+
+# --- Capitales & grandes villes (monde) ---
+Berlin
+Madrid
+Vienne
+Moscou
+Genève
+Zurich
+Munich
+Dublin
+Naples
+Venise
+Ottawa
+Ankara
+Bogota
+Bagdad
+Kaboul
+Boston
+Dallas
+Denver
+
+# --- Villes de France ---
+Nantes
+Rennes
+Cannes
+Calais
+Troyes
+Annecy
+Colmar
+Toulon
+Amiens
+Angers
+Vesoul
+
+# --- Prénoms courants ---
+Thomas
+Martin
+Sophie
+Olivia
+Robert
+Daniel
+Simone
+Nadine
+Denise
+Hélène
+Pierre
+Claude
+Michel
+Albert
+Jérôme
+Maxime
+Julien
+Justin
+Marion
+Céline
+Carmen
+Damien
+Fabien
+Adrien
+Manuel
+Samuel
+Rachel
+Esther
+Agathe
+Jeanne
+Louise
+Margot
+Victor
+Gaston
+Arthur
+Lucile
+Hugues
+Romain
+Morgan
+Éloïse
+Noémie
+Ingrid
+Isabel
+Laurie
+Nathan
+Gérard

@@ -1,30 +1,45 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/widgets/flux_continu_article_card.dart';
-import 'package:facteur/features/flux_continu/widgets/plus_de_button.dart';
+import 'package:facteur/features/feed/widgets/feedback_inline.dart';
+import 'package:facteur/features/flux_continu/widgets/section_banner.dart';
 import 'package:facteur/features/flux_continu/widgets/section_block.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/features/sources/widgets/source_logo_avatar.dart';
+import 'package:facteur/widgets/design/facteur_image.dart';
 
-Widget _wrap(Widget child) {
-  return MaterialApp(
-    theme: ThemeData(extensions: [FacteurPalettes.light]),
-    home: Scaffold(body: SingleChildScrollView(child: child)),
+Widget _wrap(Widget child, {DisplayModeSpec spec = DisplayModeSpec.normal}) {
+  return ProviderScope(
+    // Le spec du mode d'affichage est lu via Hive en prod — court-circuité ici
+    // pour ne pas exiger le bootstrap Hive dans les widget tests.
+    overrides: [
+      displayModeSpecProvider.overrideWith((ref) => spec),
+    ],
+    child: MaterialApp(
+      theme: ThemeData(extensions: [FacteurPalettes.light]),
+      home: Scaffold(body: SingleChildScrollView(child: child)),
+    ),
   );
 }
 
-Content _content(String id) {
+Content _content(String id, {String? thumbnailUrl}) {
   return Content(
     id: id,
     title: 'title-$id',
     url: 'https://x.test/$id',
     contentType: ContentType.article,
     publishedAt: DateTime(2026, 1, 1),
+    thumbnailUrl: thumbnailUrl,
     source: Source(id: 's', name: 'S', type: SourceType.article),
   );
 }
@@ -53,6 +68,7 @@ FeedThemeSection _themeSection({
   int items = 7,
   int coreVisibleCount = 3,
   bool hasMore = false,
+  bool withThumbnails = false,
 }) {
   return FeedThemeSection(
     kind: SectionKind.theme,
@@ -60,26 +76,190 @@ FeedThemeSection _themeSection({
     accent: const Color(0xFF2C3E50),
     coreVisibleCount: coreVisibleCount,
     themeSlug: 'tech',
-    items: List.generate(items, (i) => _content('c$i')),
+    items: List.generate(
+      items,
+      (i) => _content(
+        'c$i',
+        thumbnailUrl: withThumbnails ? 'https://img.test/c$i.jpg' : null,
+      ),
+    ),
     hasMore: hasMore,
   );
 }
+
+FeedThemeSection _sourceSection({
+  int items = 3,
+  String? logoUrl = 'https://logo.test/x.png',
+  bool noRecentSource = false,
+}) {
+  return FeedThemeSection(
+    kind: SectionKind.source,
+    label: 'Le Monde',
+    accent: const Color(0xFF8E44AD),
+    coreVisibleCount: 3,
+    sourceId: 'src1',
+    sourceLogoUrl: logoUrl,
+    items: List.generate(items, (i) => _content('c$i')),
+    hasMore: false,
+    noRecentSource: noRecentSource,
+  );
+}
+
+/// Finder du chevron « > » de navigation rendu dans le titre du banner.
+Finder _chevron() =>
+    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.bold));
 
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
   });
 
-  group('SectionBlock — coreVisibleCount slice', () {
+  group('SectionBlock — section source (PR Sources dans la Tournée)', () {
+    testWidgets('hero rend le logo source (SourceLogoAvatar) avec les cartes',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Logo source rendu dans le hero (pas d'illustration thème).
+      expect(find.byType(SourceLogoAvatar), findsOneWidget);
+      expect(find.byType(FacteurImage), findsOneWidget);
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
+      // Le titre du hero = nom de la source.
+      expect(find.textContaining('Le Monde'), findsOneWidget);
+    });
+
     testWidgets(
-        'FeedThemeSection renders only coreVisibleCount cards when closed',
+        'source sans article : état vide TOUJOURS visible + CTA curation',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 0),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Aucune carte, mais la section reste rendue avec son état vide + CTA.
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(find.text('Voir toute la curation'), findsOneWidget);
+      expect(find.byType(SourceLogoAvatar), findsOneWidget);
+    });
+
+    testWidgets(
+        'source noRecentSource + articles anciens : note « Pas d\'article '
+        'récent. » dans le banner + cartes', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 3, noRecentSource: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Les cartes anciennes sont rendues (pas d'empty-state)…
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
+      expect(find.text('Voir toute la curation'), findsNothing);
+      // …et le banner signale l'absence d'article récent.
+      expect(find.text('Pas d\'article récent.'), findsOneWidget);
+    });
+
+    testWidgets(
+        'source noRecentSource mais SANS article : empty-state, pas la note',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 0, noRecentSource: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Aucun article même ancien → empty-state, et la note ne s'affiche pas.
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(find.text('Voir toute la curation'), findsOneWidget);
+      expect(find.text('Pas d\'article récent.'), findsNothing);
+    });
+  });
+
+  group('SectionBlock — section thème vide (Tournée bugs E2E)', () {
+    testWidgets(
+        'thème favori sans article : empty-state TOUJOURS visible + CTA '
+        '« Ajouter des sources »', (tester) async {
+      var tapped = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 0),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+          onAddSources: () => tapped = true,
+        ),
+      ));
+
+      // Aucune carte, mais la section reste rendue avec son empty-state + CTA.
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(
+        find.textContaining('Rien de neuf récemment sur Tech'),
+        findsOneWidget,
+      );
+      expect(find.text('Ajouter des sources'), findsOneWidget);
+
+      await tester.tap(find.text('Ajouter des sources'));
+      await tester.pumpAndSettle();
+      expect(tapped, isTrue);
+    });
+
+    testWidgets('thème à 1 article rend sa carte (pas d\'empty-state)',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 1),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+          onAddSources: () {},
+        ),
+      ));
+
+      expect(find.byType(FluxContinuArticleCard), findsOneWidget);
+      expect(find.text('Ajouter des sources'), findsNothing);
+    });
+  });
+
+  group('SectionBlock — coreVisibleCount slice', () {
+    testWidgets('nudge anchor targets first card not pending feedback',
+        (tester) async {
+      final anchor = GlobalKey();
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 3),
+          onTapArticle: (_) {},
+          onDismissArticle: (_) {},
+          pendingFeedbackIds: const {'c0'},
+          firstSwipeableCardAnchor: anchor,
+        ),
+      ));
+
+      expect(find.byType(FeedbackInline), findsOneWidget);
+      expect(anchor.currentContext, isNotNull);
+      expect(
+        find.descendant(
+          of: find.byKey(anchor),
+          matching: find.text('title-c1'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('FeedThemeSection renders only coreVisibleCount cards',
         (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(items: 7, coreVisibleCount: 3),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
@@ -87,295 +267,162 @@ void main() {
       expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
     });
 
-    testWidgets(
-        'SeeAllSectionButton label uses (+N) where N = totalCount - '
-        'coreVisibleCount', (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(items: 7, coreVisibleCount: 3),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-        ),
-      ));
-
-      // 7 items - 3 visible = +4 hidden.
-      expect(find.text('Tout lire (+4)'), findsOneWidget);
-    });
-
-    testWidgets(
-        'SeeAllSectionButton hidden when nothing left to show (no overflow, '
-        'no hasMore)', (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(items: 2, coreVisibleCount: 3),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-        ),
-      ));
-
-      expect(find.byType(SeeAllSectionButton), findsNothing);
-    });
-
-    testWidgets(
-        'SeeAllSectionButton appears with hasMore-suffix when backend has '
-        'more pages even if coreVisibleCount exhausts the local items',
+    testWidgets('DigestTopicSection renders only coreVisibleCount cards',
         (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(items: 3, coreVisibleCount: 3, hasMore: true),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-        ),
-      ));
-
-      // hiddenCount = 0 → label falls back to "Tout lire" (no suffix).
-      expect(find.text('Tout lire'), findsOneWidget);
-    });
-  });
-
-  group('SectionBlock — DigestTopicSection CTA', () {
-    testWidgets(
-        'DigestTopicSection with onSeeAll uses SeeAllSectionButton (→) instead '
-        'of PlusDeButton (↓)', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
         ),
       ));
 
-      expect(find.byType(SeeAllSectionButton), findsOneWidget);
-      expect(find.byType(PlusDeButton), findsNothing);
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
     });
   });
 
-  group('SectionBlock — Sujet suivant button', () {
-    testWidgets('renders the button when onNextSection is provided',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          onNextSection: () {},
-        ),
-      ));
-
-      expect(find.byType(NextSectionButton), findsOneWidget);
-      expect(find.text('Section suivante'), findsOneWidget);
-    });
-
-    testWidgets('hides the button when onNextSection is null', (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          // onNextSection deliberately omitted (null)
-        ),
-      ));
-
-      expect(find.byType(NextSectionButton), findsNothing);
-    });
-
-    testWidgets('switches to "Passé" non-interactive state when '
-        'isMarkedForNextSession is true', (tester) async {
-      var taps = 0;
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          isMarkedForNextSession: true,
-          onNextSection: () => taps++,
-        ),
-      ));
-
-      expect(find.text('Passé'), findsOneWidget);
-      expect(find.text('Section suivante'), findsNothing);
-
-      // Tap should be a no-op (parent passes onTap=null when already marked).
-      await tester.tap(find.byType(NextSectionButton));
-      await tester.pump();
-      expect(taps, 0);
-    });
-
-    testWidgets('uses arrow_downward when not marked', (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          onNextSection: () {},
-        ),
-      ));
-
-      final iconInNext = find.descendant(
-        of: find.byType(NextSectionButton),
-        matching: find.byIcon(Icons.arrow_downward),
-      );
-      expect(iconInNext, findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byIcon(Icons.arrow_forward),
-        ),
-        findsNothing,
-      );
-    });
-
-    testWidgets('Passé state has neutral grey background + green check_circle',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          isMarkedForNextSession: true,
-          onNextSection: () {},
-        ),
-      ));
-
-      final container = tester.widget<AnimatedContainer>(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byType(AnimatedContainer),
-        ),
-      );
-      final decoration = container.decoration as BoxDecoration;
-      expect(
-        decoration.color,
-        FacteurPalettes.light.textPrimary.withValues(alpha: 0.05),
-      );
-      expect(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byIcon(Icons.check_circle),
-        ),
-        findsOneWidget,
-      );
-    });
-
+  group('SectionBlock — banner cliquable (Story 10.1, ex-CTA « Tout lire »)',
+      () {
     testWidgets(
-        'optimistic flip: tap shows "Passé" + neutral grey background on the '
-        'next frame even when isMarkedForNextSession stays false',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
-          onSeeAll: () {},
-          isMarkedForNextSession: false,
-          onNextSection: () {},
-        ),
-      ));
-      expect(find.text('Section suivante'), findsOneWidget);
-
-      await tester.tap(find.byType(NextSectionButton));
-      await tester.pump();
-
-      expect(find.text('Passé'), findsOneWidget);
-      final container = tester.widget<AnimatedContainer>(
-        find.descendant(
-          of: find.byType(NextSectionButton),
-          matching: find.byType(AnimatedContainer),
-        ),
-      );
-      expect(
-        (container.decoration as BoxDecoration).color,
-        FacteurPalettes.light.textPrimary.withValues(alpha: 0.05),
-      );
-    });
-  });
-
-  group('SectionBlock — Footer Row', () {
-    testWidgets('wraps Lire plus and Section suivante in the same Row',
+        'le banner porte le chevron de navigation, sans « +X » (retiré PO)',
         (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(items: 7, coreVisibleCount: 3),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          onTapArticle: (_) {},
           onSeeAll: () {},
-          onNextSection: () {},
         ),
       ));
 
-      final voirPlus = find.byType(SeeAllSectionButton);
-      final sujetSuivant = find.byType(NextSectionButton);
-      expect(voirPlus, findsOneWidget);
-      expect(sujetSuivant, findsOneWidget);
-
-      // Both buttons must share a Row ancestor (the footer row).
-      final voirPlusRows =
-          find.ancestor(of: voirPlus, matching: find.byType(Row));
-      final sujetRows =
-          find.ancestor(of: sujetSuivant, matching: find.byType(Row));
-      final voirPlusRowSet =
-          tester.widgetList<Row>(voirPlusRows).toSet();
-      final sujetRowSet = tester.widgetList<Row>(sujetRows).toSet();
-      final shared = voirPlusRowSet.intersection(sujetRowSet);
-      expect(shared, isNotEmpty,
-          reason: 'Lire plus and Section suivante must share a Row ancestor.');
-
-      // Lire plus sits to the left of Section suivante.
-      final voirPlusLeft = tester.getTopLeft(voirPlus).dx;
-      final sujetLeft = tester.getTopLeft(sujetSuivant).dx;
-      expect(voirPlusLeft < sujetLeft, isTrue);
-
-      // 1:1 ratio — both buttons must have roughly the same width
-      // (flex 1 / flex 1 in _SectionFooterRow). Allow a small delta to
-      // account for sub-pixel rounding on different DPRs.
-      final leftWidth = tester.getSize(voirPlus).width;
-      final rightWidth = tester.getSize(sujetSuivant).width;
-      expect(
-        (leftWidth - rightWidth).abs() < 2.0,
-        isTrue,
-        reason:
-            'Lire plus et Section suivante doivent avoir des largeurs égales '
-            '(flex 1/1). Got left=$leftWidth right=$rightWidth.',
-      );
+      // Le « +X » d'overflow a été retiré : seul le chevron signale la nav.
+      expect(find.textContaining(RegExp(r'\+\d')), findsNothing);
+      expect(_chevron(), findsOneWidget);
+      // L'ancien CTA de bas de section a disparu.
+      expect(find.textContaining('Tout lire'), findsNothing);
     });
 
-    testWidgets('tap fires onNextSection exactly once when not marked',
-        (tester) async {
-      var taps = 0;
+    testWidgets(
+        'coreVisibleCount réduit dynamiquement → moins de cartes — '
+        '« cartes ≤ écran »', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
-          section: _themeSection(),
-          isOpen: false,
-          onToggleMore: () {},
-          onTapArticle: (_, __) {},
+          section: _themeSection(items: 7, coreVisibleCount: 2),
+          onTapArticle: (_) {},
           onSeeAll: () {},
-          onNextSection: () => taps++,
         ),
       ));
 
-      await tester.tap(find.byType(NextSectionButton));
-      await tester.pump();
-      expect(taps, 1);
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(2));
+      expect(find.textContaining(RegExp(r'\+\d')), findsNothing);
+    });
+
+    testWidgets(
+        'chevron TOUJOURS rendu quand onSeeAll est câblé, même sans overflow '
+        '(deep-dive = seule route vers carrousels/Explorer) ; pas de +X à 0',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 2, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      expect(_chevron(), findsOneWidget);
+      // hiddenCount = 2 - 3 = -1 → clampé à 0 → pas de « +X » (le « + » nu des
+      // footers de cartes — source non suivie — ne compte pas).
+      expect(find.textContaining(RegExp(r'\+\d')), findsNothing);
+    });
+
+    testWidgets('tap sur le banner déclenche onSeeAll', (tester) async {
+      var opened = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 7, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () => opened = true,
+        ),
+      ));
+
+      await tester.tap(find.byType(SectionBanner));
+      await tester.pumpAndSettle();
+      expect(opened, isTrue);
+    });
+
+    testWidgets('DigestTopicSection avec onSeeAll : banner cliquable aussi',
+        (tester) async {
+      var opened = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () => opened = true,
+        ),
+      ));
+
+      expect(_chevron(), findsOneWidget);
+      await tester.tap(find.byType(SectionBanner));
+      await tester.pumpAndSettle();
+      expect(opened, isTrue);
+    });
+
+    testWidgets(
+        'l\'étoile favorite reste un hit target indépendant du banner '
+        'cliquable', (tester) async {
+      var opened = false;
+      var starred = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 7, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () => opened = true,
+          onTapFavorite: () => starred = true,
+        ),
+      ));
+
+      await tester.tap(
+        find.byIcon(PhosphorIcons.star(PhosphorIconsStyle.fill)),
+      );
+      await tester.pumpAndSettle();
+      expect(starred, isTrue);
+      expect(opened, isFalse);
+    });
+
+    testWidgets('sans onSeeAll : pas de chevron, banner non cliquable',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 7, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(_chevron(), findsNothing);
+      expect(find.textContaining('+4'), findsNothing);
+    });
+  });
+
+  group('SectionBlock — mode Lisible : cap images par section', () {
+    testWidgets(
+        '3 cartes avec image → seules les 2 premières affichent leur image '
+        '(la 3ᵉ tombe en layout texte)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(
+            items: 3,
+            coreVisibleCount: 3,
+            withThumbnails: true,
+          ),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+        spec: DisplayModeSpec.playful,
+      ));
+
+      // 3 cartes rendues, mais seulement 2 images plein-largeur (pas de logo
+      // hero sur une section thème → toute FacteurImage est une image de carte).
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
+      expect(find.byType(FacteurImage), findsNWidgets(2));
     });
   });
 }

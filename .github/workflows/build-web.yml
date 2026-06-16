@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: 'URL de production de l API'
+        description: 'URL staging de l API (build QA)'
         required: true
-        default: 'https://facteur-production.up.railway.app/api'
+        default: 'https://api-staging-40d3.up.railway.app/api'
 
 permissions:
   contents: write
@@ -35,12 +35,14 @@ jobs:
           cd apps/mobile
           flutter build web --release \
             --base-href "/facteur/" \
-            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://facteur-production.up.railway.app/api' }}" \
+            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://api-staging-40d3.up.railway.app/api' }}" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
             --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
             --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
             --dart-define="POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" \
-            --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}"
+            --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
+            --dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN }}" \
+            --dart-define="SENTRY_ENVIRONMENT=${{ vars.SENTRY_ENVIRONMENT || 'staging' }}"
 
       - name: Copy Documentation to Build
         run: |

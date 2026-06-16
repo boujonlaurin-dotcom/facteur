@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_state.dart';
+import '../../digest/providers/serein_toggle_provider.dart';
+import '../services/feed_cache_service.dart';
 import 'feed_provider.dart';
 
 /// R5.1 — minimum age (seconds) of a cached default feed below which the
@@ -24,14 +26,24 @@ const int _preloadSkipIfCacheYoungerThanSeconds = 60;
 /// is already in flight returns the pending future instead of starting a new
 /// one, so re-triggering is safe.
 final feedPreloadProvider = Provider<void>((ref) {
-  final authState = ref.watch(authStateProvider);
+  final authGate = ref.watch(
+    authStateProvider.select(
+      (state) => (
+        userId: state.user?.id,
+        isAuthenticated: state.isAuthenticated,
+        isEmailConfirmed: state.isEmailConfirmed,
+        needsOnboarding: state.needsOnboarding,
+      ),
+    ),
+  );
 
   // Preload gates: authenticated + confirmed + past onboarding. The router
   // won't let an un-confirmed / onboarding user land on /feed anyway, so
   // fetching before these gates would be wasted work.
-  final shouldPreload = authState.isAuthenticated &&
-      authState.isEmailConfirmed &&
-      !authState.needsOnboarding;
+  final shouldPreload =
+      authGate.isAuthenticated &&
+      authGate.isEmailConfirmed &&
+      !authGate.needsOnboarding;
 
   if (!shouldPreload) return;
 
@@ -40,10 +52,14 @@ final feedPreloadProvider = Provider<void>((ref) {
   // `feedProvider` will paint instantly from cache, and we avoid hitting
   // `/api/feed/` for nothing. We only short-circuit on a clearly fresh
   // entry — anything older than the threshold proceeds to preload.
-  final userId = authState.user?.id;
+  final userId = authGate.userId;
   final cache = ref.read(feedCacheServiceProvider);
   if (userId != null && cache != null) {
-    final cached = cache.readRaw(userId);
+    final isSerein = ref.read(sereinToggleProvider).enabled;
+    final cached = cache.readRaw(
+      userId,
+      variant: isSerein ? FeedCacheVariant.serein : FeedCacheVariant.normal,
+    );
     if (cached != null) {
       final age = DateTime.now().difference(cached.savedAt).inSeconds;
       if (age < _preloadSkipIfCacheYoungerThanSeconds) {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../config/theme.dart';
 import '../providers/gamification_preference_provider.dart';
@@ -19,7 +19,6 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _scale;
-  late final Animation<double> _glow;
   bool _hasStartedDailyAnimation = false;
 
   @override
@@ -45,10 +44,6 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
         weight: 45,
       ),
     ]).animate(_controller);
-    _glow = Tween<double>(
-      begin: 0.0,
-      end: 0.30,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
 
   @override
@@ -75,11 +70,8 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
         return streakAsync.when(
           data: (streak) {
             final isActive = streak.currentStreak > 0;
-            final flameColor = colors.primary.withValues(
-              alpha: isActive ? 0.78 : 0.38,
-            );
             final textColor = isActive
-                ? colors.textPrimary
+                ? colors.primary
                 : colors.textSecondary.withValues(alpha: 0.55);
 
             return Semantics(
@@ -99,11 +91,11 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                     ),
                     decoration: BoxDecoration(
                       color: colors.primary.withValues(
-                        alpha: isActive ? 0.04 : 0.02,
+                        alpha: isActive ? 0.03 : 0.015,
                       ),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: colors.primary.withValues(alpha: 0.10),
+                        color: colors.primary.withValues(alpha: 0.06),
                         width: 1,
                       ),
                     ),
@@ -111,30 +103,24 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 29,
+                          height: 29,
                           child: AnimatedBuilder(
                             animation: _controller,
                             builder: (context, child) {
-                              return DecoratedBox(
-                                decoration: BoxDecoration(
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: colors.primary.withValues(
-                                        alpha: _glow.value,
-                                      ),
-                                      blurRadius: 12,
-                                      spreadRadius: 1,
-                                    ),
-                                  ],
-                                ),
-                                child: Transform.scale(
-                                  scale: _scale.value,
-                                  child: Icon(
-                                    PhosphorIcons.fire(PhosphorIconsStyle.fill),
-                                    color: flameColor,
-                                    size: 16,
-                                  ),
+                              return Transform.scale(
+                                scale: _scale.value,
+                                child: SvgPicture.asset(
+                                  'assets/icons/streak_flame.svg',
+                                  width: 29,
+                                  height: 29,
+                                  colorFilter: isActive
+                                      ? null
+                                      : ColorFilter.mode(
+                                          colors.textSecondary
+                                              .withValues(alpha: 0.45),
+                                          BlendMode.srcIn,
+                                        ),
                                 ),
                               );
                             },
@@ -158,10 +144,14 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
           loading: () => Container(
             constraints: const BoxConstraints(minHeight: 36, minWidth: 36),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Icon(
-              PhosphorIcons.fire(PhosphorIconsStyle.regular),
-              size: 16,
-              color: colors.primary.withValues(alpha: 0.3),
+            child: SvgPicture.asset(
+              'assets/icons/streak_flame.svg',
+              width: 29,
+              height: 29,
+              colorFilter: ColorFilter.mode(
+                colors.primary.withValues(alpha: 0.3),
+                BlendMode.srcIn,
+              ),
             ),
           ),
           error: (e, s) {

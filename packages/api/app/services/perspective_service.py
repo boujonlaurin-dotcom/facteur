@@ -1,5 +1,6 @@
 """Perspectives service - hybrid search via DB entities + Google News RSS."""
 
+import asyncio
 import html
 import json
 import os
@@ -15,6 +16,7 @@ import httpx
 import structlog
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from app.services.text_similarity import jaccard_similarity, normalize_title
 
@@ -28,7 +30,10 @@ PERSPECTIVE_TITLE_JACCARD_MIN = 0.30
 # Empêche qu'un seul topic générique ("politics") suffise à valider deux articles
 # sur des sujets radicalement différents (ex: Congo/prisonniers vs Ukraine/trêve)
 # partageant seulement un nom propre omniprésent (Trump, Macron…).
-PERSPECTIVE_MIN_JACCARD_FLOOR = 0.08
+# Calibré sur le gold « event_membership » (Iter 1, 2026-06-09) : 0.08 → 0.12
+# coupe ~36% des FP « weak double signal » (contamination −24%) pour −7,6% de
+# rappel. Cf. docs/maintenance/maintenance-clustering-calibration.md.
+PERSPECTIVE_MIN_JACCARD_FLOOR = 0.12
 PERSPECTIVE_MIN_VALID_RESULTS = 2
 PERSPECTIVE_MIN_BIAS_GROUPS = 2
 # Entités jugées suffisamment discriminantes (LOCATION exclu : trop générique)
@@ -253,6 +258,14 @@ class PerspectiveService:
 
     def _has_db(self) -> bool:
         return self._session_maker is not None or self.db is not None
+
+    def _extract_bias_from_source(self, source, domain: str) -> str:
+        """Bias from an eager-loaded Source, falling back to DOMAIN_BIAS_MAP."""
+        if source is not None and source.bias_stance:
+            stance = source.bias_stance.value
+            if stance != "unknown":
+                return stance
+        return DOMAIN_BIAS_MAP.get(domain, "unknown")
 
     async def resolve_bias(self, domain: str, source_name: str | None = None) -> str:
         """Resolve bias for a domain: DOMAIN_BIAS_MAP first, then DB fallback by URL, then by name."""
@@ -598,7 +611,6 @@ class PerspectiveService:
         entity_names = entity_names[:3]
 
         from app.models.content import Content
-        from app.models.source import Source
 
         cutoff = datetime.now(UTC) - timedelta(hours=time_window_hours)
 
@@ -608,9 +620,12 @@ class PerspectiveService:
             for name in entity_names
         ]
 
+        # Eager-load Content.source so the bias lookup below is in-memory.
+        # Sans selectinload, `resolve_bias(domain)` repartait au DB pour chaque
+        # ligne (N+1 sur /contents/{id}/perspectives — bottom-sheet "Autres regards").
         stmt = (
             select(Content)
-            .join(Source, Content.source_id == Source.id)
+            .options(selectinload(Content.source))
             .where(
                 or_(*entity_filters),
                 Content.source_id != content.source_id,
@@ -678,13 +693,16 @@ class PerspectiveService:
 
             # Extract domain from URL
             domain = self._extract_domain(row.url)
-            bias = await self.resolve_bias(domain)
+
+            source_obj = row.source
+            source_name = (source_obj.name or domain) if source_obj else domain
+            bias = self._extract_bias_from_source(source_obj, domain)
 
             perspectives.append(
                 Perspective(
                     title=row.title,
                     url=row.url,
-                    source_name=domain,  # Best we have without eager-loading source
+                    source_name=source_name,
                     source_domain=domain,
                     bias_stance=bias,
                     published_at=row.published_at.isoformat()
@@ -783,7 +801,7 @@ class PerspectiveService:
             if not domain and not source_name:
                 continue
 
-            bias = await self.resolve_bias(domain=domain, source_name=source_name)
+            bias = self._extract_bias_from_source(source, domain)
 
             result.append(
                 Perspective(
@@ -851,11 +869,36 @@ class PerspectiveService:
                 seen_domains.add(p.source_domain)
                 merged.append(p)
 
-        # Layer 2: Google News with quoted entities + post-filtre titre Jaccard
+        # Layer 2/3: run Google News entity and fallback queries in parallel.
+        # The endpoint may decide not to wait for Google at all (fast-first),
+        # but when this full path is used, avoid entity→fallback serial latency.
         entity_keywords = self.build_entity_query(content.entities, content.title)
-        google_raw = await self.search_perspectives(
-            entity_keywords, exclude_url, exclude_title, exclude_domain
+        fallback_keywords = self.extract_keywords(content.title)
+        google_tasks = [
+            self.search_perspectives(
+                entity_keywords, exclude_url, exclude_title, exclude_domain
+            )
+        ]
+        include_fallback = entity_keywords != fallback_keywords
+        if include_fallback:
+            google_tasks.append(
+                self.search_perspectives(
+                    fallback_keywords, exclude_url, exclude_title, exclude_domain
+                )
+            )
+
+        google_outputs = await asyncio.gather(*google_tasks, return_exceptions=True)
+        google_raw = (
+            google_outputs[0]
+            if google_outputs and not isinstance(google_outputs[0], Exception)
+            else []
         )
+        if google_outputs and isinstance(google_outputs[0], Exception):
+            logger.warning(
+                "perspectives_entity_google_failed",
+                error=str(google_outputs[0]),
+                error_type=type(google_outputs[0]).__name__,
+            )
         google_results, google_filtered = self._filter_external_perspectives(
             seed_tokens, google_raw
         )
@@ -864,13 +907,20 @@ class PerspectiveService:
                 seen_domains.add(p.source_domain)
                 merged.append(p)
 
-        # Layer 3: Fallback if < 6 results and entity query differs from title keywords
-        fallback_keywords = self.extract_keywords(content.title)
         fallback_filtered = 0
-        if len(merged) < 6 and entity_keywords != fallback_keywords:
-            fallback_raw = await self.search_perspectives(
-                fallback_keywords, exclude_url, exclude_title, exclude_domain
+        if include_fallback and len(merged) < 6:
+            fallback_raw = (
+                google_outputs[1]
+                if len(google_outputs) > 1
+                and not isinstance(google_outputs[1], Exception)
+                else []
             )
+            if len(google_outputs) > 1 and isinstance(google_outputs[1], Exception):
+                logger.warning(
+                    "perspectives_fallback_google_failed",
+                    error=str(google_outputs[1]),
+                    error_type=type(google_outputs[1]).__name__,
+                )
             fallback_results, fallback_filtered = self._filter_external_perspectives(
                 seed_tokens, fallback_raw
             )

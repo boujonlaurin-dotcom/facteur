@@ -30,6 +30,11 @@ class ApiConstants {
   /// Timeout des requêtes HTTP
   static const Duration timeout = Duration(seconds: 30);
 
+  /// Timeout dédié au POST `grille/today/guess` — court, pour éviter le hang
+  /// silencieux (clavier figé) quand le réseau traîne. Override du `timeout`
+  /// global de 30 s ; le retry serveur est rendu idempotent côté backend.
+  static const Duration grilleGuessTimeout = Duration(seconds: 12);
+
   /// Nombre d'items par page dans le feed
   static const int feedPageSize = 20;
 }
@@ -244,6 +249,19 @@ class AppUpdateConstants {
   /// Release tag injected by CI (e.g. "beta-20260221-1430")
   static const String releaseTag = String.fromEnvironment('APP_RELEASE_TAG');
 
+  /// Build distribué via Play Store : pas de check version + pas de
+  /// download APK (Play Store gère les MAJ, et REQUEST_INSTALL_PACKAGES
+  /// est banni).
+  static const bool isPlayStoreBuild =
+      bool.fromEnvironment('PLAYSTORE_BUILD');
+
+  /// Update channel injected by CI : "beta" pour le flavor staging (env
+  /// continu), "stable" pour le flavor prod (vrais users). Sélectionne le
+  /// préfixe de tag filtré côté backend : stable→release-, beta→beta-.
+  /// Défaut "stable" → comportement prod pour tout build sans dart-define.
+  static const String updateChannel =
+      String.fromEnvironment('UPDATE_CHANNEL', defaultValue: 'stable');
+
   /// Whether this is a CI-built release (not a dev build)
   static bool get isReleaseBuild => releaseTag.isNotEmpty;
 }
@@ -296,7 +314,7 @@ class SentryConstants {
 class InterestConstants {
   InterestConstants._();
 
-  static const int favoriteCap = 3;
+  static const int favoriteCap = 7;
 }
 
 /// Alias top-level expliciment demandé par le hand-off 22.1.2.
@@ -315,14 +333,16 @@ class ExternalLinks {
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
 }
 
-/// Liens légaux et support — exposés via le backend FastAPI (`/legal/*`).
-/// Synchronisés avec `packages/api/app/routers/legal.py`.
+/// Liens légaux et support — pages statiques servies par le landing facteur.app.
 class LegalLinks {
   LegalLinks._();
 
-  static const String privacy = 'https://api.facteur.app/legal/privacy';
-  static const String terms = 'https://api.facteur.app/legal/terms';
-  static const String supportEmail = 'mailto:support@facteur.app';
+  static const String privacy =
+      'https://facteur.app/politique-confidentialite.html';
+  static const String terms = 'https://facteur.app/conditions-utilisation.html';
+  static const String accountDeletion =
+      'https://facteur.app/supprimer-mon-compte.html';
+  static const String supportEmail = 'mailto:boujon.laurin@gmail.com';
 }
 
 /// Contact direct du créateur — utilisé par le fallback "Quelques pépins"

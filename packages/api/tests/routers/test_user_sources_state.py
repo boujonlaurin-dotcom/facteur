@@ -24,7 +24,7 @@ async def auth_user_with_sources(db_session):
     user_id = uuid4()
     db_session.add(UserProfile(user_id=user_id, onboarding_completed=True))
     sources = []
-    for i in range(4):
+    for i in range(6):
         s = Source(
             id=uuid4(),
             name=f"Source {i}",
@@ -65,12 +65,13 @@ async def auth_user_with_sources(db_session):
 
 @pytest.mark.asyncio
 async def test_get_returns_sources_and_empty_favorites(auth_user_with_sources):
+    _, sources = auth_user_with_sources
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         resp = await ac.get("/api/user/sources")
     assert resp.status_code == 200
     body = resp.json()
-    assert len(body["sources"]) == 4
+    assert len(body["sources"]) == len(sources)
     assert body["favorite_count"] == 0
     assert body["favorite_cap"] == FAVORITE_CAP
 
@@ -127,9 +128,7 @@ async def test_patch_upserts_followed_state_on_unknown_source(db_session):
             "app.routers.user_sources_state.get_posthog_client",
             return_value=MagicMock(),
         ):
-            async with AsyncClient(
-                transport=transport, base_url="http://test"
-            ) as ac:
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:
                 resp = await ac.patch(
                     "/api/user/sources",
                     json={"source_id": str(source.id), "state": "followed"},
@@ -146,7 +145,7 @@ async def test_patch_upserts_followed_state_on_unknown_source(db_session):
 
 @pytest.mark.asyncio
 async def test_source_accepts_more_than_cap_favorites(auth_user_with_sources):
-    """Story 22.2 — cap retiré : un 4e favori est accepté (position=3)."""
+    """Story 22.2 — cap retiré : un 6e favori est accepté (position=5)."""
     _, sources = auth_user_with_sources
     transport = ASGITransport(app=app)
     with patch(
@@ -160,12 +159,12 @@ async def test_source_accepts_more_than_cap_favorites(auth_user_with_sources):
                     json={"source_id": str(s.id), "state": "favorite"},
                 )
                 assert ok.status_code == 200, ok.text
-            ok4 = await ac.patch(
+            ok6 = await ac.patch(
                 "/api/user/sources",
-                json={"source_id": str(sources[3].id), "state": "favorite"},
+                json={"source_id": str(sources[5].id), "state": "favorite"},
             )
-    assert ok4.status_code == 200, ok4.text
-    body = ok4.json()
-    assert body["favorite_count"] == 4
+    assert ok6.status_code == 200, ok6.text
+    body = ok6.json()
+    assert body["favorite_count"] == 6
     positions = sorted(f["position"] for f in body["favorites"])
-    assert positions == [0, 1, 2, 3]
+    assert positions == [0, 1, 2, 3, 4, 5]

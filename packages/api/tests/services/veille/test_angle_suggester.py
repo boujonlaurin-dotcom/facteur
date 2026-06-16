@@ -46,7 +46,9 @@ async def test_suggest_angles_happy_path():
     assert len(angles) == 2
     assert angles[0].title == "Nouvelles expositions"
     assert angles[0].keywords == ["exposition", "vernissage", "macba"]
-    assert angles[0].reason == "Cible les annonces."
+    # `reason` n'est plus généré ni parsé (perf) — toujours None même si le LLM
+    # en renvoie un dans son payload.
+    assert angles[0].reason is None
     assert angles[1].reason is None
 
 

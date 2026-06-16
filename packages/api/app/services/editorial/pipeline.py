@@ -27,6 +27,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.content import Content
+from app.models.enums import SourceType
 from app.models.source import Source
 from app.services.briefing.importance_detector import ImportanceDetector, TopicCluster
 from app.services.editorial.actu_matcher import ActuMatcher
@@ -46,10 +47,53 @@ from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import Perspective, PerspectiveService
 from app.services.title_annotation_service import (
     TitleAnnotationService,
-    get_title_annotation_service,
+    # get_title_annotation_service,  # DÉSACTIVÉ (T1) : réactiver avec la boucle LLM bias
 )
 
 logger = structlog.get_logger()
+
+
+def _is_singleton_podcast(cluster: TopicCluster) -> bool:
+    """Vrai si le cluster n'est couvert que par un seul podcast.
+
+    Les épisodes de podcasts traitent de sujets thématiques spécifiques (ex:
+    Science CQFD) qui ne constituent pas de l'actualité multi-source. On les
+    exclut du pool LLM pour ne pas polluer le digest quotidien avec des sujets
+    de niche qui n'intéressent qu'une seule source.
+    Un cluster podcast + article reste inclus (is_multi_source=True).
+    """
+    if len(cluster.source_domains) > 1 or not cluster.contents:
+        return False
+    src = getattr(cluster.contents[0], "source", None)
+    src_type = getattr(src, "type", None) if src else None
+    try:
+        return bool(src_type) and SourceType(src_type) == SourceType.PODCAST
+    except (ValueError, TypeError):
+        return False
+
+
+def _is_non_actu_cluster(cluster: TopicCluster) -> bool:
+    """Vrai si TOUS les contenus du cluster sont des bulletins/séries/denylist.
+
+    Empêche un sujet « série éditoriale » (ex. « Philippe Jaenada, l'art de la
+    contre-enquête ») ou une source denylistée d'entrer dans le pool même s'il
+    a passé la curation. Réutilise les prédicats partagés avec l'actu_matcher.
+    Un cluster mixte (au moins un contenu d'actu chaude) reste éligible.
+    Cf. bug-actus-du-jour-ranking.md (Partie B).
+    """
+    from app.services.recommendation.filter_presets import (
+        is_denylisted_editorial_source,
+        is_news_bulletin_title,
+    )
+
+    if not cluster.contents:
+        return False
+    return all(
+        is_news_bulletin_title(getattr(c, "title", None))
+        or is_denylisted_editorial_source(c)
+        for c in cluster.contents
+    )
+
 
 # Curation oversample : on demande +buffer sujets de plus que la cible pour
 # absorber les échecs d'actu/deep matching. EDITORIAL_TARGET_SUBJECT_COUNT=5
@@ -170,7 +214,9 @@ class EditorialPipelineService:
         # modes. Clusters are sorted by size desc so the largest — typically
         # the most trending — is kept. Skip the cap if the remaining non-
         # low-priority pool would be too small pour atteindre la cible sujets.
-        sorted_by_size = sorted(clusters, key=lambda c: len(c.source_ids), reverse=True)
+        sorted_by_size = sorted(
+            clusters, key=lambda c: len(c.source_domains), reverse=True
+        )
         capped = cap_low_priority_clusters(sorted_by_size)
         if len(capped) >= _read_target_subject_count():
             dropped = len(sorted_by_size) - len(capped)
@@ -189,6 +235,31 @@ class EditorialPipelineService:
                 capped_size=len(capped),
             )
 
+        # Filtre singletons-podcast : épisodes thématiques d'une seule source
+        # (ex: Science CQFD) exclus du pool — pas de l'actu multi-source.
+        # Un cluster podcast + ≥1 autre source reste inclus.
+        filtered = [c for c in clusters if not _is_singleton_podcast(c)]
+        if dropped := len(clusters) - len(filtered):
+            logger.info(
+                "editorial_pipeline.singleton_podcast_filtered",
+                dropped=dropped,
+                remaining=len(filtered),
+            )
+        clusters = filtered
+
+        # Garde d'éligibilité : écarte les clusters dont TOUS les contenus sont
+        # des bulletins/séries (« …, l'art de la contre-enquête ») ou des
+        # sources denylistées — pas de l'actu chaude. Empêche un sujet série
+        # d'entrer dans le pool même s'il a passé la curation.
+        actu_eligible = [c for c in clusters if not _is_non_actu_cluster(c)]
+        if dropped := len(clusters) - len(actu_eligible):
+            logger.info(
+                "editorial_pipeline.non_actu_cluster_filtered",
+                dropped=dropped,
+                remaining=len(actu_eligible),
+            )
+        clusters = actu_eligible
+
         # ÉTAPE 1B: Pré-sélection "À la Une" — cluster le plus couvert.
         # Cas standard : on prend parmi les clusters "trending" (≥3 sources).
         # Cas creux (week-end / jours fériés) : si aucun cluster ≥3, on
@@ -206,7 +277,7 @@ class EditorialPipelineService:
             if a_la_une_pool:
                 top3 = sorted(
                     a_la_une_pool,
-                    key=lambda c: len(c.source_ids),
+                    key=lambda c: len(c.source_domains),
                     reverse=True,
                 )[:3]
                 a_la_une_topic = await self.curation.select_bonne_nouvelle(top3)
@@ -218,9 +289,9 @@ class EditorialPipelineService:
                     trending=len(trending_clusters),
                 )
         elif a_la_une_pool:
-            top3 = sorted(a_la_une_pool, key=lambda c: len(c.source_ids), reverse=True)[
-                :3
-            ]
+            top3 = sorted(
+                a_la_une_pool, key=lambda c: len(c.source_domains), reverse=True
+            )[:3]
 
             if len(top3) == 1:
                 a_la_une_topic = _cluster_to_une_topic(top3[0])
@@ -317,33 +388,41 @@ class EditorialPipelineService:
         # Skip silencieux si MISTRAL_API_KEY absente (fallback spaCy hors-ligne
         # géré ailleurs). Référence = cluster.label (best title du TopicSelector).
         llm_bias_step_start = time.time()
-        llm_bias_service = LLMBiasAnnotationService()
-        title_service = get_title_annotation_service()
+        # DÉSACTIVÉ (T1) : services instanciés uniquement par la boucle ci-dessous
+        # (désormais commentée). Décommenter avec elle pour réactiver.
+        # llm_bias_service = LLMBiasAnnotationService()
+        # title_service = get_title_annotation_service()
         llm_bias_stats = {
             "cluster_count": 0,
             "variants_annotated": 0,
             "variants_skipped": 0,
             "cache_hits": 0,
         }
-        if llm_bias_service.is_ready:
-            for topic in selected_topics:
-                cluster = cluster_map.get(topic.topic_id)
-                if not cluster or len(cluster.contents) < 2:
-                    continue
-                llm_bias_stats["cluster_count"] += 1
-                try:
-                    await _annotate_cluster_llm_bias(
-                        cluster=cluster,
-                        llm_service=llm_bias_service,
-                        title_service=title_service,
-                        short_session=self._short_session,
-                        stats=llm_bias_stats,
-                    )
-                except Exception:
-                    logger.exception(
-                        "editorial_pipeline.llm_bias_failed",
-                        cluster_id=str(cluster.cluster_id),
-                    )
+        # DÉSACTIVÉ (T1) : le highlighting des biais (surlignage mot-à-mot des
+        # titres) n'est plus affiché côté app → on coupe l'annotation LLM bias
+        # pour supprimer tout appel Mistral du pipeline éditorial. La classe
+        # `LLMBiasAnnotationService` et `_annotate_cluster_llm_bias` restent en
+        # place : réactivation = décommenter la boucle ci-dessous. Le bloc
+        # stats/logging reste (valeurs à zéro, inoffensif).
+        # if llm_bias_service.is_ready:
+        #     for topic in selected_topics:
+        #         cluster = cluster_map.get(topic.topic_id)
+        #         if not cluster or len(cluster.contents) < 2:
+        #             continue
+        #         llm_bias_stats["cluster_count"] += 1
+        #         try:
+        #             await _annotate_cluster_llm_bias(
+        #                 cluster=cluster,
+        #                 llm_service=llm_bias_service,
+        #                 title_service=title_service,
+        #                 short_session=self._short_session,
+        #                 stats=llm_bias_stats,
+        #             )
+        #         except Exception:
+        #             logger.exception(
+        #                 "editorial_pipeline.llm_bias_failed",
+        #                 cluster_id=str(cluster.cluster_id),
+        #             )
         logger.info(
             "editorial_pipeline.llm_bias_done",
             duration_ms=round((time.time() - llm_bias_step_start) * 1000, 2),
@@ -351,7 +430,10 @@ class EditorialPipelineService:
             **llm_bias_stats,
         )
 
-        cluster_map_counts = {c.cluster_id: len(c.source_ids) for c in clusters}
+        # `source_count` reflète les MÉDIAS distincts (domaines), pas les
+        # feeds : 2 flux radiofrance.fr = 1 média. Aligné sur curation.py et le
+        # fix `source_domains` (commit 2667003b). Cf. bug-actus-du-jour-ranking.md.
+        cluster_map_counts = {c.cluster_id: len(c.source_domains) for c in clusters}
         subjects = [
             EditorialSubject(
                 rank=i + 1,
@@ -469,21 +551,29 @@ class EditorialPipelineService:
             if not cluster or not cluster.contents:
                 return
 
-            representative = sorted(
+            # Most-recent-first ordering: the representative (pivot) is the
+            # freshest article, the rest are the "other sources".
+            ordered_contents = sorted(
                 cluster.contents, key=lambda c: c.published_at, reverse=True
-            )[0]
+            )
+            representative = ordered_contents[0]
 
             # Step 1 — cluster-based perspectives (source of truth).
             # Helper is shared with /contents/{id}/perspectives so the
             # endpoint returns the same merged count as this pipeline (the
             # PR #390 invariant still holds between header and bottom sheet).
-            ordered_contents = sorted(
-                cluster.contents, key=lambda c: c.published_at, reverse=True
-            )
+            # Exclure le représentatif — c'est l'article ouvert, pas une
+            # "autre source". Sans ça, perspective_count l'inclut (N) alors
+            # que l'endpoint /perspectives le retire du snapshot (N-1), d'où
+            # un off-by-one permanent card/section + une barre de biais
+            # divergente.
+            ordered_without_rep = [
+                c for c in ordered_contents if c.id != representative.id
+            ]
             try:
                 cluster_perspectives = (
                     await perspective_service.build_cluster_perspectives(
-                        ordered_contents
+                        ordered_without_rep
                     )
                 )
             except Exception:

@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../../config/theme.dart';
 import '../../../../widgets/design/facteur_image.dart';
 import '../models/smart_search_result.dart';
+import 'recent_articles_list.dart';
 
 class SourceResultCard extends StatelessWidget {
   final SmartSearchResult result;
@@ -11,12 +12,17 @@ class SourceResultCard extends StatelessWidget {
   final VoidCallback onPreview;
   final bool isAdded;
 
+  /// Mode preuve (onboarding) : à l'ajout, la carte se transforme en bloc
+  /// « Connecté » avec les derniers articles, au lieu d'ouvrir la modal.
+  final bool showProof;
+
   const SourceResultCard({
     super.key,
     required this.result,
     required this.onAdd,
     required this.onPreview,
     this.isAdded = false,
+    this.showProof = false,
   });
 
   IconData _typeIcon() {
@@ -51,161 +57,223 @@ class SourceResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final recentTitles = result.recentItems.take(3).toList();
+    final proofMode = showProof && isAdded;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: colors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: colors.border),
+        border: Border.all(color: proofMode ? colors.success : colors.border),
       ),
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header: favicon + name + type
-          Row(
-            children: [
-              _buildFavicon(colors),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      result.name,
-                      style: Theme.of(context).textTheme.titleSmall,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Icon(_typeIcon(), size: 14, color: colors.textTertiary),
-                        const SizedBox(width: 4),
-                        Text(
-                          _typeLabel(),
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: colors.textTertiary,
-                                  ),
-                        ),
-                        if (result.inCatalog) ...[
-                          const SizedBox(width: 8),
-                          Icon(
-                              PhosphorIcons.sealCheck(
-                                  PhosphorIconsStyle.fill),
-                              size: 14,
-                              color: colors.primary),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          child: proofMode
+              ? _buildProofView(context, colors)
+              : _buildDefaultView(context, colors),
+        ),
+      ),
+    );
+  }
 
-          // Description
-          if (result.description != null &&
-              result.description!.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              result.description!,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.textSecondary,
-                  ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+  /// Vue preuve « Connecté » : identité de la source + derniers articles.
+  Widget _buildProofView(BuildContext context, FacteurColors colors) {
+    return Column(
+      key: const ValueKey('proof'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(
+              PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+              size: 20,
+              color: colors.success,
             ),
-          ],
-
-          // Recent items
-          if (recentTitles.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(width: 6),
             Text(
-              'Derniers articles :',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              'Connecté',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.success,
                     fontWeight: FontWeight.bold,
                   ),
             ),
-            const SizedBox(height: 6),
-            ...recentTitles.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _buildFavicon(colors),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                result.name,
+                style: Theme.of(context).textTheme.titleSmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (result.recentItems.isNotEmpty)
+          RecentArticlesList(items: result.recentItems)
+        else
+          Text(
+            'Ses prochains articles arrivent dans votre tournée.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
+                ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildDefaultView(BuildContext context, FacteurColors colors) {
+    final recentTitles = result.recentItems.take(3).toList();
+
+    return Column(
+      key: const ValueKey('default'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Header: favicon + name + type
+        Row(
+          children: [
+            _buildFavicon(colors),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    result.name,
+                    style: Theme.of(context).textTheme.titleSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
                     children: [
-                      Icon(
-                          PhosphorIcons.dotOutline(PhosphorIconsStyle.fill),
-                          size: 14,
-                          color: colors.primary),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          item.title,
-                          style: Theme.of(context).textTheme.bodySmall,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      Icon(_typeIcon(), size: 14, color: colors.textTertiary),
+                      const SizedBox(width: 4),
+                      Text(
+                        _typeLabel(),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: colors.textTertiary,
+                            ),
                       ),
+                      if (result.inCatalog) ...[
+                        const SizedBox(width: 8),
+                        Icon(PhosphorIcons.sealCheck(PhosphorIconsStyle.fill),
+                            size: 14, color: colors.primary),
+                      ],
                     ],
                   ),
-                )),
+                ],
+              ),
+            ),
           ],
+        ),
 
-          // CTAs
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: onPreview,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    side: BorderSide(color: colors.border),
-                  ),
-                  child: Text(
-                    'Apercu',
-                    style: TextStyle(color: colors.textSecondary),
-                  ),
+        // Description
+        if (result.description != null && result.description!.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            result.description!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.textSecondary,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: isAdded
-                    ? OutlinedButton.icon(
-                        onPressed: null,
-                        icon: Icon(
-                            PhosphorIcons.checkCircle(
-                                PhosphorIconsStyle.fill),
-                            size: 18,
-                            color: colors.success),
-                        label: Text('Ajoutee',
-                            style: TextStyle(color: colors.success)),
-                        style: OutlinedButton.styleFrom(
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 12),
-                          side: BorderSide(color: colors.success),
-                        ),
-                      )
-                    : ElevatedButton(
-                        onPressed: onAdd,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          backgroundColor: colors.primary,
-                          foregroundColor: colors.textPrimary,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('Ajouter'),
-                      ),
-              ),
-            ],
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
-      ),
+
+        // Recent items
+        if (recentTitles.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Derniers articles :',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 6),
+          ...recentTitles.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Icon(PhosphorIcons.dotOutline(PhosphorIconsStyle.fill),
+                        size: 14, color: colors.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        item.title,
+                        style: Theme.of(context).textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+
+        // CTAs
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: onPreview,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: BorderSide(color: colors.border),
+                ),
+                child: Text(
+                  'Apercu',
+                  style: TextStyle(color: colors.textSecondary),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: isAdded
+                  ? OutlinedButton.icon(
+                      onPressed: null,
+                      icon: Icon(
+                          PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+                          size: 18,
+                          color: colors.success),
+                      label: Text('Ajoutee',
+                          style: TextStyle(color: colors.success)),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        side: BorderSide(color: colors.success),
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: onAdd,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        backgroundColor: colors.primary,
+                        foregroundColor: colors.textPrimary,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Ajouter'),
+                    ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

@@ -1,20 +1,27 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/core/auth/auth_state.dart';
 import 'package:facteur/features/auth/screens/email_confirmation_screen.dart';
+import 'package:hive/hive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 // For debugPrint
 
 // Simple stub for AuthStateNotifier to control state in tests
 class FakeAuthStateNotifier extends AuthStateNotifier {
-  FakeAuthStateNotifier(AuthState initialState) : super() {
-    state = initialState;
-  }
+  FakeAuthStateNotifier(AuthState initialState) : super.test(initialState);
 }
 
 void main() {
+  setUpAll(() {
+    Hive.init(
+      Directory.systemTemp.createTempSync('router_redirection_test').path,
+    );
+  });
+
   testWidgets(
       'Router should redirect to EmailConfirmationScreen if user is logged in but unconfirmed',
       (WidgetTester tester) async {
@@ -103,6 +110,7 @@ void main() {
       user: socialUser,
       isLoading: false,
       needsOnboarding: false,
+      onboardingStatusKnown: true,
     );
 
     final container = ProviderContainer(
@@ -123,7 +131,8 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     // 5. VERIFY: We should NOT be on the EmailConfirmationScreen
     expect(find.byType(EmailConfirmationScreen), findsNothing);

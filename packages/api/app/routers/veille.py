@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import sentry_sdk
 import structlog
 from cachetools import TTLCache
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, select
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy import case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.data.veille_presets import get_presets
@@ -30,10 +33,17 @@ from app.schemas.veille import (
     VeilleAngleSuggestion,
     VeilleConfigResponse,
     VeilleConfigUpsert,
+    VeilleFailedSourceCandidate,
     VeilleFeedArticle,
     VeilleFeedResponse,
     VeilleKeywordResponse,
     VeillePresetResponse,
+    VeilleResolvedSourceCandidate,
+    VeilleResolveSourceCandidate,
+    VeilleResolveSourceCandidatesRequest,
+    VeilleResolveSourceCandidatesResponse,
+    VeilleResolveTopicRequest,
+    VeilleResolveTopicResponse,
     VeilleSourceExample,
     VeilleSourceLite,
     VeilleSourceResponse,
@@ -43,11 +53,15 @@ from app.schemas.veille import (
     VeilleSuggestSourcesRequest,
     VeilleSuggestSourcesResponse,
     VeilleTopicResponse,
+    VeilleUnconnectedSource,
 )
+from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
+from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.rss_parser import RSSParser
+from app.services.search.smart_source_search import SmartSourceSearchService
 from app.services.source_service import SourceService
 from app.services.user_interests_service import ensure_veille_favorite
-from app.services.veille.feed_filter import fetch_veille_feed
+from app.services.veille.feed_filter import fetch_veille_feed, load_veille_filters
 from app.services.veille.llm import get_angle_suggester, get_source_suggester
 
 logger = structlog.get_logger()
@@ -60,6 +74,17 @@ _SOURCE_EXAMPLES_CACHE: TTLCache = TTLCache(maxsize=512, ttl=86400)
 _SOURCE_EXAMPLES_LIMIT = 2
 _SOURCE_EXAMPLES_LOOKBACK_DAYS = 30
 _SOURCE_EXAMPLES_EXCERPT_MAX = 120
+
+
+def _slugify_topic_id(raw: str) -> str:
+    """Slug court compatible `VeilleTopicSelection.topic_id`."""
+    normalized = unicodedata.normalize("NFKD", raw.strip().lower())
+    ascii_only = "".join(c for c in normalized if not unicodedata.combining(c))
+    cleaned = re.sub(r"[^a-z0-9\s-]", "", ascii_only)
+    cleaned = re.sub(r"\s+", "-", cleaned)
+    cleaned = re.sub(r"-+", "-", cleaned).strip("-")
+    base = cleaned or "sujet"
+    return f"custom-{base[:60]}"
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -115,6 +140,9 @@ async def _hydrate_response(
 
     source_ids = [vs.source_id for vs in sources_rows]
     sources_by_id: dict[UUID, Source] = {}
+    # Santé du flux par source (badge config) : dernier article + nb d'articles
+    # sur la fenêtre Bloc A (30 j). Une seule requête agrégée groupée par source.
+    health_by_source: dict[UUID, tuple[datetime | None, int]] = {}
     if source_ids:
         for src in (
             (await db.execute(select(Source).where(Source.id.in_(source_ids))))
@@ -122,6 +150,32 @@ async def _hydrate_response(
             .all()
         ):
             sources_by_id[src.id] = src
+
+        recent_cutoff = datetime.now(UTC) - timedelta(
+            hours=ScoringWeights.VEILLE_CONFIGURED_RECENCY_HOURS
+        )
+        health_rows = (
+            await db.execute(
+                select(
+                    Content.source_id,
+                    func.max(Content.published_at),
+                    func.count(case((Content.published_at >= recent_cutoff, 1))),
+                )
+                .where(Content.source_id.in_(source_ids))
+                .group_by(Content.source_id)
+            )
+        ).all()
+        health_by_source = {
+            sid: (last_at, recent_count or 0)
+            for sid, last_at, recent_count in health_rows
+        }
+
+    # Split mots-clés : globaux (veille_topic_id NULL) vs grappes d'angles.
+    global_keywords = [kw for kw in keywords_rows if kw.veille_topic_id is None]
+    keywords_by_topic: dict[UUID, list[str]] = {}
+    for kw in keywords_rows:
+        if kw.veille_topic_id is not None:
+            keywords_by_topic.setdefault(kw.veille_topic_id, []).append(kw.keyword)
 
     return VeilleConfigResponse(
         id=cfg.id,
@@ -142,6 +196,7 @@ async def _hydrate_response(
                 kind=t.kind,  # type: ignore[arg-type]
                 reason=t.reason,
                 position=t.position,
+                keywords=keywords_by_topic.get(t.id, []),
             )
             for t in topics_rows
         ],
@@ -152,13 +207,15 @@ async def _hydrate_response(
                 kind=vs.kind,  # type: ignore[arg-type]
                 why=vs.why,
                 position=vs.position,
+                last_article_at=health_by_source.get(vs.source_id, (None, 0))[0],
+                recent_article_count=health_by_source.get(vs.source_id, (None, 0))[1],
             )
             for vs in sources_rows
             if vs.source_id in sources_by_id
         ],
         keywords=[
             VeilleKeywordResponse(id=kw.id, keyword=kw.keyword, position=kw.position)
-            for kw in keywords_rows
+            for kw in global_keywords
         ],
     )
 
@@ -173,14 +230,55 @@ def _source_theme_for(veille_theme_id: str) -> str:
     return "custom" if veille_theme_id == "other" else veille_theme_id
 
 
+def _source_type_from_raw(raw: str | None) -> SourceType:
+    """Mappe les types RSS/feedparser vers l'enum `Source.type`."""
+    if raw in ("rss", "atom", None, ""):
+        return SourceType.ARTICLE
+    try:
+        return SourceType(raw)
+    except ValueError:
+        return SourceType.ARTICLE
+
+
+def _source_to_resolved_candidate(
+    source: Source, candidate: VeilleResolveSourceCandidate
+) -> VeilleResolvedSourceCandidate:
+    return VeilleResolvedSourceCandidate(
+        client_slug=candidate.client_slug,
+        source_id=source.id,
+        name=source.name,
+        url=source.url,
+        feed_url=source.feed_url,
+        logo_url=source.logo_url,
+        description=source.description,
+    )
+
+
+async def _find_source_by_url_or_feed(db: AsyncSession, url: str) -> Source | None:
+    return (
+        (
+            await db.execute(
+                select(Source).where(or_(Source.url == url, Source.feed_url == url))
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
 async def _resolve_source_id(
     db: AsyncSession,
     selection,
     theme_id: str,
-) -> UUID:
-    """Renvoie un source_id existant ou ingère le candidat niche."""
+) -> tuple[UUID, bool]:
+    """Renvoie `(source_id, created)`.
+
+    `created=True` uniquement quand une nouvelle ligne `Source` niche vient
+    d'être insérée (→ l'appelant doit enfiler un `sync_source` immédiat pour
+    ingérer son contenu ; cf. plan veille V0, Problème 1).
+    """
     if selection.source_id is not None:
-        return selection.source_id
+        return selection.source_id, False
     if selection.niche_candidate is None:
         raise HTTPException(
             status_code=400,
@@ -197,19 +295,14 @@ async def _resolve_source_id(
         .first()
     )
     if existing is not None:
-        return existing.id
-
-    try:
-        source_type = SourceType(detected.detected_type)
-    except ValueError:
-        source_type = SourceType.ARTICLE
+        return existing.id, False
 
     new_source = Source(
         id=uuid4(),
         name=cand.name or detected.name,
         url=cand.url,
         feed_url=detected.feed_url,
-        type=source_type,
+        type=_source_type_from_raw(str(detected.detected_type)),
         theme=_source_theme_for(theme_id),
         description=detected.description,
         logo_url=detected.logo_url,
@@ -223,7 +316,7 @@ async def _resolve_source_id(
         source_id=str(new_source.id),
         feed_url=new_source.feed_url,
     )
-    return new_source.id
+    return new_source.id, True
 
 
 # ─── Endpoints config ────────────────────────────────────────────────────────
@@ -240,12 +333,134 @@ async def get_config(
         raise HTTPException(
             status_code=404, detail="Aucune veille active pour cet utilisateur."
         )
+
+    # Self-heal (Story 23.4) : répare les configs actives orphelines (config
+    # active mais aucun VeilleFavoriteRef → section veille invisible dans la
+    # Tournée). Idempotent, commit dédié, best-effort : ne bloque jamais le GET.
+    try:
+        await ensure_veille_favorite(db, user_uuid, cfg.id)
+        await db.commit()
+    except Exception:  # noqa: BLE001 — self-heal best-effort
+        await db.rollback()
+        logger.warning("veille.favorite_self_heal_failed", exc_info=True)
+
     return await _hydrate_response(db, cfg)
+
+
+@router.post(
+    "/sources/resolve-candidates",
+    response_model=VeilleResolveSourceCandidatesResponse,
+)
+async def resolve_source_candidates(
+    body: VeilleResolveSourceCandidatesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Résout des candidats source Step 3 sans les attacher à la veille.
+
+    Le mobile peut afficher vite les propositions, les présélectionner, puis
+    appeler ce batch en arrière-plan. Les sources résolues fournissent un
+    `source_id` prêt à être envoyé à `POST /config`, ce qui évite de relancer
+    une détection RSS lente au submit.
+    """
+    UUID(current_user_id)
+    if not body.candidates:
+        return VeilleResolveSourceCandidatesResponse()
+
+    resolved: list[VeilleResolvedSourceCandidate] = []
+    failed: list[VeilleFailedSourceCandidate] = []
+    pending: list[VeilleResolveSourceCandidate] = []
+    seen_slugs: set[str] = set()
+
+    for candidate in body.candidates:
+        if candidate.client_slug in seen_slugs:
+            continue
+        seen_slugs.add(candidate.client_slug)
+        existing = await _find_source_by_url_or_feed(db, candidate.url)
+        if existing is not None:
+            resolved.append(_source_to_resolved_candidate(existing, candidate))
+            continue
+        pending.append(candidate)
+
+    if not pending:
+        return VeilleResolveSourceCandidatesResponse(resolved=resolved, failed=failed)
+
+    search_service = SmartSourceSearchService(db)
+    semaphore = asyncio.Semaphore(5)
+
+    async def _detect(candidate: VeilleResolveSourceCandidate):
+        async with semaphore:
+            return candidate, await search_service.detect_feed(candidate.url)
+
+    try:
+        detections = await asyncio.gather(*(_detect(c) for c in pending))
+    finally:
+        await search_service.close()
+
+    for candidate, detection in detections:
+        if detection is None:
+            failed.append(
+                VeilleFailedSourceCandidate(
+                    client_slug=candidate.client_slug,
+                    name=candidate.name,
+                    url=candidate.url,
+                    reason="Aucun flux RSS détecté à cette adresse.",
+                )
+            )
+            continue
+
+        resolved_url, feed_meta = detection
+        feed_url = feed_meta.get("feed_url")
+        if not feed_url:
+            failed.append(
+                VeilleFailedSourceCandidate(
+                    client_slug=candidate.client_slug,
+                    name=candidate.name,
+                    url=candidate.url,
+                    reason="Aucun flux RSS détecté à cette adresse.",
+                )
+            )
+            continue
+
+        existing = (
+            (await db.execute(select(Source).where(Source.feed_url == feed_url)))
+            .scalars()
+            .first()
+        )
+        if existing is not None:
+            resolved.append(_source_to_resolved_candidate(existing, candidate))
+            continue
+
+        source = Source(
+            id=uuid4(),
+            name=candidate.name or feed_meta.get("name") or resolved_url,
+            url=resolved_url,
+            feed_url=feed_url,
+            type=_source_type_from_raw(feed_meta.get("type")),
+            theme="custom",
+            description=feed_meta.get("description"),
+            logo_url=feed_meta.get("favicon_url"),
+            is_curated=False,
+            is_active=True,
+        )
+        db.add(source)
+        await db.flush()
+        logger.info(
+            "veille.source_candidate_resolved",
+            source_id=str(source.id),
+            client_slug=candidate.client_slug,
+            feed_url=source.feed_url,
+        )
+        resolved.append(_source_to_resolved_candidate(source, candidate))
+
+    await db.commit()
+    return VeilleResolveSourceCandidatesResponse(resolved=resolved, failed=failed)
 
 
 @router.post("/config", response_model=VeilleConfigResponse)
 async def upsert_config(
     body: VeilleConfigUpsert,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -282,24 +497,68 @@ async def upsert_config(
         delete(VeilleKeyword).where(VeilleKeyword.veille_config_id == cfg.id)
     )
 
-    for idx, t in enumerate(body.topics):
-        db.add(
-            VeilleTopic(
-                veille_config_id=cfg.id,
-                topic_id=t.topic_id,
-                label=t.label,
-                kind=t.kind,
-                reason=t.reason,
-                position=idx,
-            )
+    topic_rows = [
+        VeilleTopic(
+            veille_config_id=cfg.id,
+            topic_id=t.topic_id,
+            label=t.label,
+            kind=t.kind,
+            reason=t.reason,
+            position=idx,
         )
+        for idx, t in enumerate(body.topics)
+    ]
+    for topic in topic_rows:
+        db.add(topic)
+    # Un seul flush matérialise tous les topic.id, puis on rattache les grappes.
+    if topic_rows:
+        await db.flush()
+    for topic, t in zip(topic_rows, body.topics, strict=True):
+        for kpos, kw in enumerate(t.keywords):
+            db.add(
+                VeilleKeyword(
+                    veille_config_id=cfg.id,
+                    veille_topic_id=topic.id,
+                    keyword=kw,
+                    position=kpos,
+                )
+            )
 
     seen_source_ids: set[UUID] = set()
+    # Sources niche nouvellement créées → sync immédiat après commit (Problème 1).
+    created_source_ids: list[UUID] = []
+    # Sources niche dont le flux RSS est introuvable → remontées au mobile.
+    unconnected: list[VeilleUnconnectedSource] = []
     for idx, sel in enumerate(body.source_selections):
-        source_id = await _resolve_source_id(db, sel, body.theme_id)
+        try:
+            source_id, created = await _resolve_source_id(db, sel, body.theme_id)
+        except ValueError as exc:
+            # Source niche dont le flux RSS est introuvable au moment du save :
+            # on l'ignore au lieu de faire échouer tout l'enregistrement (PYTHON-51).
+            # detect_source lève ce ValueError AVANT toute écriture DB → on peut
+            # `continue` sans corrompre la session. On remonte l'échec au mobile
+            # via `unconnected_sources` pour proposer une CTA de recherche.
+            url = getattr(sel.niche_candidate, "url", None)
+            logger.warning(
+                "veille.niche_source_skipped",
+                url=url,
+                error=str(exc),
+            )
+            if url:
+                unconnected.append(
+                    VeilleUnconnectedSource(
+                        url=url,
+                        reason="Aucun flux RSS détecté à cette adresse.",
+                        client_slug=getattr(sel.niche_candidate, "client_slug", None),
+                        name=getattr(sel.niche_candidate, "name", None),
+                    )
+                )
+            continue
         if source_id in seen_source_ids:
             continue
         seen_source_ids.add(source_id)
+        if created:
+            created_source_ids.append(source_id)
         db.add(
             VeilleSource(
                 veille_config_id=cfg.id,
@@ -333,6 +592,15 @@ async def upsert_config(
     await db.commit()
     await db.refresh(cfg)
 
+    # Sync immédiat des sources niche fraîchement créées : sans ça leur table
+    # `contents` reste vide jusqu'au prochain cycle récurrent (« source associée
+    # mais aucun article »). Même pattern que POST /api/sources/custom.
+    if created_source_ids:
+        from app.workers.rss_sync import sync_source
+
+        for sid in created_source_ids:
+            background_tasks.add_task(sync_source, str(sid))
+
     try:
         from app.services.posthog_client import get_posthog_client
 
@@ -350,7 +618,9 @@ async def upsert_config(
     except Exception:  # noqa: BLE001 — métrique fire-and-forget
         logger.warning("veille.posthog_capture_failed", exc_info=True)
 
-    return await _hydrate_response(db, cfg)
+    response = await _hydrate_response(db, cfg)
+    response.unconnected_sources = unconnected
+    return response
 
 
 @router.delete("/config", status_code=204)
@@ -408,8 +678,9 @@ async def get_feed(
                 topics=list(content.topics or []),
                 thumbnail_url=content.thumbnail_url,
                 matched_on=axes,  # type: ignore[arg-type]
+                group=group,  # type: ignore[arg-type]
             )
-            for content, axes in items_with_axes
+            for content, axes, group in items_with_axes
         ],
         total=len(items_with_axes),
         limit=limit,
@@ -436,7 +707,7 @@ async def list_presets(db: AsyncSession = Depends(get_db)):
                         Source.is_active.is_(True),
                     )
                     .order_by(Source.name)
-                    .limit(6)
+                    .limit(12)
                 )
             )
             .scalars()
@@ -462,28 +733,44 @@ async def list_presets(db: AsyncSession = Depends(get_db)):
 
 
 async def _fetch_source_examples(
-    db: AsyncSession, source_id: UUID
+    db: AsyncSession,
+    source_id: UUID,
+    keywords: list[str] | None = None,
 ) -> list[VeilleSourceExample]:
-    """Renvoie jusqu'à 2 exemples récents d'une source. Cache TTL 24 h."""
-    cache_key = str(source_id)
+    """Renvoie jusqu'à 2 exemples récents d'une source. Cache TTL 24 h.
+
+    Si `keywords` (issus de la config en cours) sont fournis, on **préfère**
+    les articles de la source qui matchent l'un d'eux (title/description) —
+    les exemples illustrent alors vraiment ce que la veille remontera, plutôt
+    que les 2 derniers articles bruts.
+    """
+    norm_keywords = sorted({k.lower().strip() for k in (keywords or []) if k.strip()})
+    cache_key = f"{source_id}|{'|'.join(norm_keywords)}"
     if cache_key in _SOURCE_EXAMPLES_CACHE:
         return _SOURCE_EXAMPLES_CACHE[cache_key]
 
     cutoff = datetime.now(UTC) - timedelta(days=_SOURCE_EXAMPLES_LOOKBACK_DAYS)
-    contents = (
-        (
-            await db.execute(
-                select(Content)
-                .where(
-                    Content.source_id == source_id,
-                    Content.published_at >= cutoff,
-                )
-                .order_by(Content.published_at.desc())
-                .limit(_SOURCE_EXAMPLES_LIMIT)
-            )
+    base_query = select(Content).where(
+        Content.source_id == source_id,
+        Content.published_at >= cutoff,
+    )
+    if norm_keywords:
+        match_expr = or_(
+            *[
+                Content.title.ilike(f"%{kw}%") | Content.description.ilike(f"%{kw}%")
+                for kw in norm_keywords
+            ]
         )
-        .scalars()
-        .all()
+        # Boost les articles matchant un mot-clé, puis tri par récence.
+        base_query = base_query.order_by(
+            case((match_expr, 1), else_=0).desc(),
+            Content.published_at.desc(),
+        )
+    else:
+        base_query = base_query.order_by(Content.published_at.desc())
+
+    contents = (
+        (await db.execute(base_query.limit(_SOURCE_EXAMPLES_LIMIT))).scalars().all()
     )
     if contents:
         examples = [
@@ -562,12 +849,50 @@ async def get_source_examples(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Renvoie un aperçu (≤2 articles) pour rassurer l'utilisateur au Step 3."""
-    UUID(current_user_id)
-    return await _fetch_source_examples(db, source_id)
+    """Renvoie un aperçu (≤2 articles) pour rassurer l'utilisateur au Step 3.
+
+    Si l'utilisateur a déjà une veille active, on préfère les articles de la
+    source qui matchent ses mots-clés (globaux + grappes d'angles).
+    """
+    user_uuid = UUID(current_user_id)
+    keywords: list[str] = []
+    cfg = await _get_active_config(db, user_uuid)
+    if cfg is not None:
+        filters = await load_veille_filters(db, cfg)
+        keywords = filters.all_keywords
+    return await _fetch_source_examples(db, source_id, keywords=keywords)
 
 
 # ─── Suggesters LLM (Story 23.3) ─────────────────────────────────────────────
+
+
+@router.post("/resolve/topic", response_model=VeilleResolveTopicResponse)
+async def resolve_topic(
+    body: VeilleResolveTopicRequest,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Enrichit un sujet libre pour le flow Veille, sans écrire d'intérêt global."""
+    UUID(current_user_id)
+    service = get_topic_enrichment_service()
+    try:
+        result = await service.enrich(body.topic)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    label = result.canonical_name or body.topic.strip()
+    return VeilleResolveTopicResponse(
+        label=label,
+        topic_id=_slugify_topic_id(label),
+        keywords=result.keywords[:10],
+        description=result.intent_description,
+        metadata={
+            "slug_parent": result.slug_parent,
+            "entity_type": result.entity_type,
+            "canonical_name": result.canonical_name,
+            "theme_id": body.theme_id,
+            "theme_label": body.theme_label,
+        },
+    )
 
 
 @router.post("/suggest/angles", response_model=VeilleSuggestAnglesResponse)
@@ -575,7 +900,7 @@ async def suggest_angles(
     body: VeilleSuggestAnglesRequest,
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """Renvoie 5-8 angles + mots-clés explicites pour un thème + brief.
+    """Renvoie 8-12 angles + mots-clés explicites pour un thème + brief.
 
     Appel synchrone Mistral (~10-15s), cache TTL 24h sur (theme + brief).
     Mobile affiche un HaloLoader pendant l'appel.

@@ -261,6 +261,29 @@ class AnalyticsService {
     await _logEvent('source_remove', {'source_id': sourceId});
   }
 
+  /// Issue de l'enregistrement des sources en fin d'onboarding.
+  ///
+  /// Rend OBSERVABLE en production l'écart "sources demandées → enregistrées".
+  /// Avant, un échec n'était qu'un `debugPrint` (invisible en release) → classe
+  /// de bug "enregistrement silencieux". `failed` = l'appel onboarding lui-même
+  /// n'a pas abouti (tous les retries KO).
+  Future<void> trackOnboardingSourcesRegistered({
+    required int requested,
+    required int created,
+    bool failed = false,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'requested': requested,
+      'created': created,
+      // signal clé pour l'alerting : des sources demandées mais 0 enregistrée
+      'missing': failed ? requested : (requested - created).clamp(0, requested),
+      'failed': failed,
+    };
+    await _logEvent('onboarding_sources_registered', props);
+    await _capturePostHog('onboarding_sources_registered', props);
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Sprint 2 — feature-by-feature events (PR1)
   // ──────────────────────────────────────────────────────────────
@@ -344,6 +367,14 @@ class AnalyticsService {
       'opened_seconds': openedSeconds,
     };
     await _logEvent('perspective_comparison_closed', props);
+  }
+
+  /// Ouverture de la modale « Donner mon avis » (réglages). Trace serveur
+  /// utilisée par la lettre 4 (action give_app_feedback).
+  Future<void> trackAppFeedbackOpened() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('app_feedback_opened', props);
+    await _capturePostHog('app_feedback_opened', props);
   }
 
   /// origin: 'digest' | 'feed' | 'settings'
@@ -511,6 +542,30 @@ class AnalyticsService {
     final props = {'session_id': _sessionId};
     await _logEvent('discover_disable_skipped', props);
     await _capturePostHog('discover_disable_skipped', props);
+  }
+
+  Future<void> trackGeolocPromptShown({required int displayCount}) async {
+    final props = {
+      'session_id': _sessionId,
+      'display_count': displayCount,
+    };
+    await _logEvent('geoloc_prompt_shown', props);
+    await _capturePostHog('geoloc_prompt_shown', props);
+  }
+
+  Future<void> trackGeolocPromptActivated({required bool granted}) async {
+    final props = {
+      'session_id': _sessionId,
+      'granted': granted,
+    };
+    await _logEvent('geoloc_prompt_activated', props);
+    await _capturePostHog('geoloc_prompt_activated', props);
+  }
+
+  Future<void> trackGeolocPromptDismissed() async {
+    final props = {'session_id': _sessionId};
+    await _logEvent('geoloc_prompt_dismissed', props);
+    await _capturePostHog('geoloc_prompt_dismissed', props);
   }
 
   /// target: 'digest' | 'article' | 'feed'.
@@ -696,6 +751,103 @@ class AnalyticsService {
 
     await _logEvent('app_first_launch', {});
     await prefs.setBool('has_launched_before', true);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // La Grille du jour (Story 24.2)
+  // ──────────────────────────────────────────────────────────────
+
+  Future<void> trackGrilleOpened({String? numero, required String statut}) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'statut': statut,
+    };
+    await _logEvent('grille_opened', props);
+    await _capturePostHog('grille_opened', props);
+  }
+
+  Future<void> trackGrilleGuessSubmitted({
+    String? numero,
+    required int essai,
+    required bool valide,
+    String? raison,
+  }) async {
+    await _logEvent('grille_guess_submitted', {
+      'session_id': _sessionId,
+      'numero': numero,
+      'essai': essai,
+      'valide': valide,
+      'raison': raison,
+    });
+  }
+
+  Future<void> trackGrilleCompleted({
+    String? numero,
+    required String statut,
+    required int nbEssais,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'statut': statut,
+      'nb_essais': nbEssais,
+    };
+    await _logEvent('grille_completed', props);
+    await _capturePostHog('grille_completed', props);
+  }
+
+  /// `medium` ∈ `texte | lien`.
+  Future<void> trackGrilleShared({String? numero, required String medium}) async {
+    final props = {
+      'session_id': _sessionId,
+      'numero': numero,
+      'medium': medium,
+    };
+    await _logEvent('grille_shared', props);
+    await _capturePostHog('grille_shared', props);
+  }
+
+  Future<void> trackGrilleLeaderboardOpened({String? numero}) async {
+    await _logEvent('grille_leaderboard_opened', {
+      'session_id': _sessionId,
+      'numero': numero,
+    });
+  }
+
+  Future<void> trackGrilleCtaShown({required String state}) async {
+    await _logEvent('grille_cta_shown', {
+      'session_id': _sessionId,
+      'state': state,
+    });
+  }
+
+  Future<void> trackGrilleCtaTapped({required String state}) async {
+    final props = {'session_id': _sessionId, 'state': state};
+    await _logEvent('grille_cta_tapped', props);
+    await _capturePostHog('grille_cta_tapped', props);
+  }
+
+  /// Tap sur un lien « lire les actus du jour » depuis La Grille (résultat ou
+  /// mini-CTA en cours de jeu).
+  Future<void> trackGrilleActusTapped({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_actus_tapped', props);
+    await _capturePostHog('grille_actus_tapped', props);
+  }
+
+  /// Le joueur a ouvert le vrai article accroché au mot du jour (reveal).
+  Future<void> trackGrilleArticleTapped({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_article_tapped', props);
+    await _capturePostHog('grille_article_tapped', props);
+  }
+
+  /// Le joueur a « donné sa langue au chat » (mot révélé, exclu du classement).
+  Future<void> trackGrilleRevealed({String? numero}) async {
+    final props = {'session_id': _sessionId, 'numero': numero};
+    await _logEvent('grille_revealed', props);
+    await _capturePostHog('grille_revealed', props);
   }
 
   Future<void> _logEvent(

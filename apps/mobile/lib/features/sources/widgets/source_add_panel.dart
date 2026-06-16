@@ -11,6 +11,8 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../repositories/sources_repository.dart';
+import 'catalog_sources_strip.dart';
 import 'community_gems_strip.dart';
 import 'example_chips.dart';
 import 'smart_search_field.dart';
@@ -30,6 +32,17 @@ class SourceAddPanel extends ConsumerStatefulWidget {
   final bool showCommunityGems;
   final bool showAddedNudge;
   final bool autoFocusSearch;
+  final bool veilleMode;
+
+  /// Mode preuve inline (onboarding) : à l'ajout catalogue, la carte de
+  /// résultat se transforme en bloc « Connecté » + derniers articles au lieu
+  /// d'ouvrir la modale détail, et la liste de résultats reste affichée.
+  final bool inlineProof;
+
+  /// `true` quand le panneau est hébergé dans une page qui possède déjà son
+  /// scroll : le contenu est rendu sans [SingleChildScrollView] interne
+  /// (évite le nested-scroll / hauteur non bornée).
+  final bool embedded;
 
   /// Appelé après un ajout réussi, une fois la modale détail fermée.
   /// Le hôte décide de fermer le sheet, naviguer ailleurs, etc.
@@ -47,6 +60,9 @@ class SourceAddPanel extends ConsumerStatefulWidget {
     this.showCommunityGems = true,
     this.showAddedNudge = true,
     this.autoFocusSearch = false,
+    this.veilleMode = false,
+    this.inlineProof = false,
+    this.embedded = false,
     this.onSourceAdded,
   });
 
@@ -65,14 +81,23 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
   bool _searchActive = false;
+  // Caché en champ : dispose() ne doit jamais lire `ref` (StateError pendant
+  // un démontage de shell — même classe de bug que NudgeHost / FLUTTER-2).
+  late final SourcesRepository _sourcesRepository;
 
   @override
   void initState() {
     super.initState();
+    _sourcesRepository = ref.read(sourcesRepositoryProvider);
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode();
     _searchFocusNode.addListener(_handleSearchActivity);
     _searchController.addListener(_handleSearchActivity);
+    // B2 — précharge les pépites en arrière-plan dès l'ouverture pour que le
+    // dépliage du bandeau communautaire soit instantané (le strip est lazy).
+    if (widget.showCommunityGems) {
+      ref.read(trendingSourcesProvider);
+    }
     if (widget.autoFocusSearch) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocusNode.requestFocus();
@@ -84,7 +109,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   void dispose() {
     final query = _currentQuery.trim();
     if (query.isNotEmpty && !_sourceAdded) {
-      ref.read(sourcesRepositoryProvider).logSearchAbandoned(query);
+      _sourcesRepository.logSearchAbandoned(query);
     }
     _searchFocusNode.removeListener(_handleSearchActivity);
     _searchController.removeListener(_handleSearchActivity);
@@ -102,10 +127,10 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   }
 
   SmartSearchQuery get _searchParams => (
-        query: _currentQuery,
-        contentType: _selectedContentType,
-        expand: _expanded,
-      );
+    query: _currentQuery,
+    contentType: _selectedContentType,
+    expand: _expanded,
+  );
 
   void _runSearch([String? query]) {
     final value = (query ?? _searchController.text).trim();
@@ -121,6 +146,11 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
   void _clearSearch() {
     _searchController.clear();
+    _resetSearchState();
+  }
+
+  /// Remet l'état de recherche à zéro (query, résultats).
+  void _resetSearchState() {
     setState(() {
       _currentQuery = '';
       _expanded = false;
@@ -133,9 +163,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       _expanded = false;
     });
     if (value != null) {
-      ref
-          .read(analyticsServiceProvider)
-          .trackAddSourceContentTypeFilter(value);
+      ref.read(analyticsServiceProvider).trackAddSourceContentTypeFilter(value);
     }
   }
 
@@ -146,10 +174,22 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
   Future<void> _addSource(SmartSearchResult result) async {
     try {
-      final repository = ref.read(sourcesRepositoryProvider);
       final sourceId = result.sourceId;
       final hasCatalogId =
           sourceId != null && sourceId.isNotEmpty && sourceId != 'null';
+
+      if (widget.veilleMode) {
+        setState(() {
+          if (hasCatalogId) _addedSourceIds.add(sourceId);
+          _sourceAdded = true;
+          _lastAddedName = result.name;
+        });
+        _resetForNextAdd();
+        widget.onSourceAdded?.call(result);
+        return;
+      }
+
+      final repository = ref.read(sourcesRepositoryProvider);
 
       if (hasCatalogId) {
         await repository.trustSource(sourceId);
@@ -179,6 +219,15 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             .setSourceState(sourceId, InterestState.favorite);
         if (!mounted) return;
 
+        if (widget.inlineProof) {
+          // Preuve inline : la carte transformée (« Connecté » + derniers
+          // articles) reste visible dans la liste — pas de modale, pas de
+          // reset de la recherche (qui démonterait la carte).
+          HapticFeedback.mediumImpact();
+          widget.onSourceAdded?.call(result);
+          return;
+        }
+
         final source = Source(
           id: sourceId,
           name: result.name,
@@ -194,7 +243,14 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         if (!mounted) return;
       } else {
         NotificationService.showSuccess(
-            'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+          'Source ajoutee ! Ses contenus apparaitront dans ton feed.',
+        );
+        if (widget.inlineProof) {
+          // Ajout custom (pas de carte catalogue à transformer) : on garde la
+          // notification et on remonte l'ajout sans vider la recherche.
+          widget.onSourceAdded?.call(result);
+          return;
+        }
       }
       _resetForNextAdd();
       widget.onSourceAdded?.call(result);
@@ -242,7 +298,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         await repository.trustSource(source.id);
         if (mounted) {
           NotificationService.showSuccess(
-              'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+            'Source ajoutee ! Ses contenus apparaitront dans ton feed.',
+          );
         }
       }
       ref.invalidate(trendingSourcesProvider);
@@ -254,10 +311,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
   void _resetForNextAdd() {
     _searchController.clear();
-    setState(() {
-      _currentQuery = '';
-      _expanded = false;
-    });
+    _resetSearchState();
   }
 
   Future<void> _showSourceModal(
@@ -272,28 +326,13 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         source: source,
         recentItems: recentItems,
         onToggleTrust: () => _toggleTrustSource(source),
-        onToggleSubscription: source.id.isNotEmpty
-            ? () {
-                final current = ref
-                        .read(userSourcesProvider)
-                        .valueOrNull
-                        ?.firstWhere(
-                          (s) => s.id == source.id,
-                          orElse: () => source,
-                        )
-                        .hasSubscription ??
-                    source.hasSubscription;
-                ref
-                    .read(userSourcesProvider.notifier)
-                    .toggleSubscription(source.id, current);
-              }
-            : null,
         onCopyFeedUrl: source.isCustom && (source.url?.isNotEmpty ?? false)
             ? () async {
                 await Clipboard.setData(ClipboardData(text: source.url!));
                 if (mounted) {
                   NotificationService.showSuccess(
-                      'URL du flux copiee dans le presse-papiers !');
+                    'URL du flux copiee dans le presse-papiers !',
+                  );
                 }
               }
             : null,
@@ -305,30 +344,40 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
 
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (widget.showIntro && _currentQuery.isEmpty) ...[
+          const SizedBox(height: FacteurSpacing.space6),
+          _buildSearchIntro(colors),
+          const SizedBox(height: FacteurSpacing.space6),
+        ],
+        _buildBreathingSearch(colors),
+        SizedBox(
+          height: _currentQuery.isEmpty
+              ? FacteurSpacing.space8
+              : FacteurSpacing.space4,
+        ),
+        _buildContent(),
+      ],
+    );
+
+    // Hôte avec son propre scroll (page sources onboarding) : pas de
+    // SingleChildScrollView interne.
+    if (widget.embedded) {
+      return Padding(padding: widget.padding, child: content);
+    }
+
     return SingleChildScrollView(
       padding: widget.padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.showIntro && _currentQuery.isEmpty) ...[
-            const SizedBox(height: FacteurSpacing.space6),
-            _buildSearchIntro(colors),
-            const SizedBox(height: FacteurSpacing.space6),
-          ],
-          _buildBreathingSearch(colors),
-          SizedBox(
-              height: _currentQuery.isEmpty
-                  ? FacteurSpacing.space8
-                  : FacteurSpacing.space4),
-          _buildContent(),
-        ],
-      ),
+      child: content,
     );
   }
 
   Widget _buildBreathingSearch(FacteurColors colors) {
-    final glow =
-        _searchActive ? colors.primary.withValues(alpha: 0.18) : Colors.transparent;
+    final glow = _searchActive
+        ? colors.primary.withValues(alpha: 0.18)
+        : Colors.transparent;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 320),
       curve: Curves.easeOut,
@@ -365,7 +414,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     }
 
     final searchAsync = ref.watch(smartSearchProvider(_searchParams));
-    final followedIds = ref
+    final followedIds =
+        ref
             .watch(userSourcesProvider)
             .valueOrNull
             ?.where((s) => s.isTrusted)
@@ -383,7 +433,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           error: (error, _) => _buildErrorState(),
           data: (response) {
             if (response.results.isEmpty) return _buildNoResults();
-            final canExpand = !_expanded &&
+            final canExpand =
+                !_expanded &&
                 response.layersCalled.length == 1 &&
                 response.layersCalled.first == 'catalog';
             return _buildResults(
@@ -393,6 +444,10 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             );
           },
         ),
+        // B3 — les exemples restent visibles pendant la recherche (ne plus
+        // tout cacher dès qu'on tape).
+        const SizedBox(height: FacteurSpacing.space8),
+        ExampleChips(onTap: _onExampleTap),
       ],
     );
   }
@@ -413,13 +468,16 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         ],
         ExampleChips(onTap: _onExampleTap),
         const SizedBox(height: FacteurSpacing.space8),
-        if (widget.showCommunityGems)
+        if (widget.showCommunityGems) ...[
           CommunityGemsStrip(
             onSourceTap: _showSourceModal,
             onGemTap: (sourceId) {
               ref.read(analyticsServiceProvider).trackAddSourceGemTap(sourceId);
             },
           ),
+          const SizedBox(height: FacteurSpacing.space4),
+          CatalogSourcesStrip(onSourceTap: _showSourceModal),
+        ],
       ],
     );
   }
@@ -447,8 +505,11 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           ),
           child: Row(
             children: [
-              Icon(PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
-                  size: 22, color: colors.primary),
+              Icon(
+                PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                size: 22,
+                color: colors.primary,
+              ),
               const SizedBox(width: FacteurSpacing.space3),
               Expanded(
                 child: Column(
@@ -457,9 +518,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
                     Text(
                       name != null ? '« $name » ajoutée' : 'Source ajoutée',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colors.textPrimary,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        color: colors.textPrimary,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -467,15 +528,18 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
                     Text(
                       'Une autre à ajouter ?',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: FacteurSpacing.space2),
-              Icon(PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
-                  size: 18, color: colors.primary),
+              Icon(
+                PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+                size: 18,
+                color: colors.primary,
+              ),
             ],
           ),
         ),
@@ -490,17 +554,18 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         Text(
           'Que veux-tu suivre ?',
           textAlign: TextAlign.center,
-          style: FacteurTypography.serifTitle(colors.textPrimary)
-              .copyWith(fontSize: 28, height: 1.15),
+          style: FacteurTypography.serifTitle(
+            colors.textPrimary,
+          ).copyWith(fontSize: 28, height: 1.15),
         ),
         const SizedBox(height: FacteurSpacing.space2),
         Text(
-          'Tape un nom de média ou colle son URL.\nOn l\'amène dans ton app.',
+          'Tape un nom de média ou colle son URL.\nOn l\'ajoute à ton app.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colors.textSecondary,
-                height: 1.45,
-              ),
+            color: colors.textSecondary,
+            height: 1.45,
+          ),
         ),
         const SizedBox(height: FacteurSpacing.space4),
         _buildSupportedTypesInfo(colors),
@@ -532,9 +597,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             const SizedBox(width: 4),
             Text(
               it.label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: colors.textTertiary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: colors.textTertiary),
             ),
           ],
         );
@@ -558,11 +623,13 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         const SizedBox(height: 12),
         ...results.map((result) {
           final id = result.sourceId;
-          final isAdded = _addedSourceIds.contains(id) ||
+          final isAdded =
+              _addedSourceIds.contains(id) ||
               (id != null && followedIds.contains(id));
           return SourceResultCard(
             result: result,
             isAdded: isAdded,
+            showProof: widget.inlineProof,
             onAdd: () => _addSource(result),
             onPreview: () => _previewSource(result),
           );
@@ -581,9 +648,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           const SizedBox(height: 4),
           Text(
             'Cherche aussi sur YouTube, Reddit et le web.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.textTertiary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
             textAlign: TextAlign.center,
           ),
         ],
@@ -598,22 +665,25 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         padding: const EdgeInsets.all(32.0),
         child: Column(
           children: [
-            Icon(PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-                size: 48, color: colors.textTertiary),
+            Icon(
+              PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
+              size: 48,
+              color: colors.textTertiary,
+            ),
             const SizedBox(height: 16),
             Text(
               'Aucun resultat pour "$_currentQuery"',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               'Essayez avec une URL directe ou d\'autres mots-cles.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.textTertiary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
               textAlign: TextAlign.center,
             ),
           ],
@@ -629,14 +699,17 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         padding: const EdgeInsets.all(32.0),
         child: Column(
           children: [
-            Icon(PhosphorIcons.warning(PhosphorIconsStyle.regular),
-                size: 48, color: colors.error),
+            Icon(
+              PhosphorIcons.warning(PhosphorIconsStyle.regular),
+              size: 48,
+              color: colors.error,
+            ),
             const SizedBox(height: 16),
             Text(
               'Impossible de rechercher pour le moment.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
@@ -653,12 +726,12 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
   static const _contentTypeOptions =
       <({String label, String apiValue, int iconIndex})>[
-    (label: 'Médias', apiValue: 'article', iconIndex: 0),
-    (label: 'Newsletters', apiValue: 'article', iconIndex: 1),
-    (label: 'YouTube', apiValue: 'youtube', iconIndex: 2),
-    (label: 'Reddit', apiValue: 'reddit', iconIndex: 3),
-    (label: 'Podcasts', apiValue: 'podcast', iconIndex: 4),
-  ];
+        (label: 'Médias', apiValue: 'article', iconIndex: 0),
+        (label: 'Newsletters', apiValue: 'article', iconIndex: 1),
+        (label: 'YouTube', apiValue: 'youtube', iconIndex: 2),
+        (label: 'Reddit', apiValue: 'reddit', iconIndex: 3),
+        (label: 'Podcasts', apiValue: 'podcast', iconIndex: 4),
+      ];
 
   IconData _iconForContentType(int idx) {
     switch (idx) {

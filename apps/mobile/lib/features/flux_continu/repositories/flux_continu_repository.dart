@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/api/providers.dart';
 import '../../feed/models/content_model.dart';
+import '../models/flux_continu_models.dart';
 
 /// One entry of `GET /api/users/top-themes`.
 ///
@@ -16,19 +17,62 @@ class TopTheme {
   final double weight;
   final int articleCount;
 
+  /// Story 22.3 — discriminant de slot : `"theme"` (défaut, rétro-compat),
+  /// `"veille"` ou `"source"`. Pour `"source"`, [sourceId] est rempli et le
+  /// mobile route vers `/api/feed?source_id=` au lieu de `?theme=`.
+  final String kind;
+  final String? sourceId;
+
+  /// `"validated"` (défaut, rétro-compat) ou `"suggested"` (section
+  /// « Choisie pour vous »).
+  final String origin;
+
+  /// Ordre du jour calculé par le backend (validées d'abord, puis suggérées
+  /// best-first). Sert à ordonner les suggérées entre elles.
+  final int dailyRank;
+
+  /// Raison de transparence — non null seulement quand [origin] == suggested.
+  final SuggestionReason? reason;
+
   const TopTheme({
     required this.interestSlug,
     required this.weight,
     this.articleCount = 0,
+    this.kind = 'theme',
+    this.sourceId,
+    this.origin = 'validated',
+    this.dailyRank = 0,
+    this.reason,
   });
 
+  /// Raccourci : ce slot est une section « Choisie pour vous ».
+  bool get isSuggested => origin == 'suggested';
+
   factory TopTheme.fromJson(Map<String, dynamic> json) {
+    final rawReason = json['reason'];
     return TopTheme(
       interestSlug: (json['interest_slug'] as String?) ?? '',
       weight: (json['weight'] as num?)?.toDouble() ?? 0.0,
       articleCount: (json['article_count'] as num?)?.toInt() ?? 0,
+      kind: (json['kind'] as String?) ?? 'theme',
+      sourceId: json['source_id'] as String?,
+      origin: (json['origin'] as String?) ?? 'validated',
+      dailyRank: (json['daily_rank'] as num?)?.toInt() ?? 0,
+      reason: rawReason is Map<String, dynamic>
+          ? SuggestionReason.fromJson(rawReason)
+          : null,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'interest_slug': interestSlug,
+    'weight': weight,
+    'article_count': articleCount,
+    'kind': kind,
+    'source_id': sourceId,
+    'origin': origin,
+    'daily_rank': dailyRank,
+  };
 }
 
 /// Repository scoped to the Flux Continu V1.8 feature.
@@ -76,17 +120,24 @@ class FluxContinuRepository {
   /// sectionVeille1 + badge "Ma veille") qui rend matched_on superflu V1.
   Future<FeedResponse> getVeilleFeedItems({
     int limit = 10,
+    int offset = 0,
     bool serein = false,
   }) async {
+    final pageNum = (offset ~/ limit) + 1;
     try {
       final response = await _apiClient.dio.get<dynamic>(
         'veille/feed',
-        queryParameters: {'limit': limit, 'offset': 0, 'serein': serein},
+        queryParameters: {'limit': limit, 'offset': offset, 'serein': serein},
       );
       if (response.statusCode != 200 || response.data is! Map) {
         return FeedResponse(
           items: const [],
-          pagination: Pagination(page: 1, perPage: limit, total: 0, hasNext: false),
+          pagination: Pagination(
+            page: pageNum,
+            perPage: limit,
+            total: 0,
+            hasNext: false,
+          ),
         );
       }
       final data = response.data as Map<String, dynamic>;
@@ -99,7 +150,7 @@ class FluxContinuRepository {
       return FeedResponse(
         items: items,
         pagination: Pagination(
-          page: 1,
+          page: pageNum,
           perPage: limit,
           total: (data['total'] as num?)?.toInt() ?? items.length,
           hasNext: (data['has_more'] as bool?) ?? false,
@@ -110,7 +161,12 @@ class FluxContinuRepository {
       print('FluxContinuRepository: getVeilleFeedItems failed: ${e.message}');
       return FeedResponse(
         items: const [],
-        pagination: Pagination(page: 1, perPage: limit, total: 0, hasNext: false),
+        pagination: Pagination(
+          page: pageNum,
+          perPage: limit,
+          total: 0,
+          hasNext: false,
+        ),
       );
     }
   }
@@ -129,7 +185,10 @@ class FluxContinuRepository {
       'published_at': article['published_at'],
       'thumbnail_url': article['thumbnail_url'],
       'source': article['source'],
-      'topics': article['topics'] ?? const [],
+      'topics': article['topics'] ?? const <String>[],
+      // Bloc de curation (« sources » / « elargie ») — dérive les en-têtes de
+      // section veille au rendu. Absent sur clients/backends pré-refonte → null.
+      'group': article['group'],
       // Content.fromJson tolère ces champs absents — fallback to defaults.
     };
   }

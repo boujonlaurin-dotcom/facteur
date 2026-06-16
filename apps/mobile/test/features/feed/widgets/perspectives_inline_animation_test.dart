@@ -21,21 +21,21 @@ Perspective _persp(String name, String bias) => Perspective(
     );
 
 class _Harness extends StatefulWidget {
-  final bool initialExpanded;
-  const _Harness({required this.initialExpanded});
+  final PerspectivesSectionStatus initialStatus;
+  const _Harness({required this.initialStatus});
   @override
   State<_Harness> createState() => _HarnessState();
 }
 
 class _HarnessState extends State<_Harness> {
-  late bool _expanded;
+  late PerspectivesSectionStatus _status;
   @override
   void initState() {
     super.initState();
-    _expanded = widget.initialExpanded;
+    _status = widget.initialStatus;
   }
 
-  void toggle() => setState(() => _expanded = !_expanded);
+  void ready() => setState(() => _status = PerspectivesSectionStatus.ready);
 
   @override
   Widget build(BuildContext context) {
@@ -44,20 +44,14 @@ class _HarnessState extends State<_Harness> {
         child: SizedBox(
           width: 390,
           child: PerspectivesInlineSection(
+            status: _status,
             perspectives: [
               _persp('Source-Gauche', 'left'),
               _persp('Source-Centre', 'center'),
-              _persp('Source-Droite', 'right'),
             ],
-            biasDistribution: const {'left': 1, 'center': 1, 'right': 1},
+            biasDistribution: const {'left': 1, 'center': 1},
             keywords: const [],
             contentId: 'test',
-            externalSelectedSegments: null,
-            onSegmentTap: (_) {},
-            onClearSegments: () {},
-            onToggle: toggle,
-            isExpanded: _expanded,
-            referenceTitle: 'Titre référence',
           ),
         ),
       ),
@@ -67,13 +61,13 @@ class _HarnessState extends State<_Harness> {
 
 Future<void> _pumpHarness(
   WidgetTester tester, {
-  required bool initialExpanded,
+  required PerspectivesSectionStatus initialStatus,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
         theme: FacteurTheme.lightTheme,
-        home: _Harness(initialExpanded: initialExpanded),
+        home: _Harness(initialStatus: initialStatus),
       ),
     ),
   );
@@ -82,41 +76,41 @@ Future<void> _pumpHarness(
 
 void main() {
   test(
-      'kStartDelay must outlast PerspectivesInlineSection AnimatedSize (250 ms)',
-      () {
-    // The bug the PO reported: when the panel expands, the AnimatedSize
-    // takes 250 ms to grow. If DiffTitle starts its cascade before then,
-    // the highlights finalize while still hidden behind the growing
-    // container and the user perceives them as already there.
-    expect(
-      DiffTitle.kStartDelay.inMilliseconds,
-      greaterThan(250),
-      reason:
-          'kStartDelay must exceed the 250 ms AnimatedSize duration so the '
-          'cascade is visible after the panel finishes expanding.',
-    );
+    'kStartDelay must outlast PerspectivesInlineSection AnimatedSize (250 ms)',
+    () {
+      // Quand la couverture passe en `ready`, l'AnimatedSize grandit en 250 ms.
+      // Si DiffTitle démarrait sa cascade avant, les highlights se figeraient
+      // pendant que le conteneur grandit encore → perçu comme déjà arrivé.
+      expect(
+        DiffTitle.kStartDelay.inMilliseconds,
+        greaterThan(250),
+        reason:
+            'kStartDelay must exceed the 250 ms AnimatedSize so the cascade is '
+            'visible after the carousel appears.',
+      );
+    },
+  );
+
+  testWidgets('status loading → aucun DiffTitle dans l\'arbre', (tester) async {
+    await _pumpHarness(tester, initialStatus: PerspectivesSectionStatus.loading);
+    expect(find.byType(DiffTitle), findsNothing);
+    // Draine le shimmer répétitif au teardown.
+    await tester.pump(const Duration(milliseconds: 100));
   });
 
-  testWidgets('section starts collapsed → no DiffTitle in the tree',
+  testWidgets('transition → ready : les DiffTitle montent (cascade en attente)',
       (tester) async {
-    await _pumpHarness(tester, initialExpanded: false);
-    expect(find.byType(DiffTitle), findsNothing);
-  });
-
-  testWidgets('tap toggle → DiffTitle mounts and is still pending its anim',
-      (tester) async {
-    await _pumpHarness(tester, initialExpanded: false);
+    await _pumpHarness(tester, initialStatus: PerspectivesSectionStatus.loading);
     expect(find.byType(DiffTitle), findsNothing);
 
-    tester.state<_HarnessState>(find.byType(_Harness)).toggle();
+    tester.state<_HarnessState>(find.byType(_Harness)).ready();
     await tester.pump();
 
-    // Right after expand, DiffTitle widgets exist in the tree.
+    // Dès l'arrivée des cartes, les DiffTitle existent.
     expect(find.byType(DiffTitle), findsWidgets);
 
-    // Drain the pending Future.delayed timers so flutter_test doesn't
-    // complain about a pending timer at teardown.
-    await tester.pumpAndSettle(const Duration(seconds: 2));
+    // Draine les Future.delayed/timers en attente.
+    await tester.pump(const Duration(seconds: 1));
     expect(find.byType(DiffTitle), findsWidgets);
   });
 }

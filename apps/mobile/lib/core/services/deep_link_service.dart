@@ -13,20 +13,18 @@ import 'analytics_service.dart';
 /// Supported URIs:
 /// - `io.supabase.facteur://digest` → `/digest`
 /// - `io.supabase.facteur://digest/<contentId>?pos=<n>&topicId=<id>`
-///   → `/feed/content/<contentId>` (article reader, Essentiel deep link)
-/// - `io.supabase.facteur://feed` → `/feed`
+///   → `/flux-continu/content/<contentId>` (article reader, Essentiel deep link)
+/// - `io.supabase.facteur://feed` → `/flaner`
 /// - `io.supabase.facteur://feed/content/<contentId>?pos=<n>&topicId=<id>`
-///   → `/feed/content/<contentId>` (article reader, Flux deep link)
+///   → `/flaner/content/<contentId>` (article reader, Flâner deep link)
 /// - `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`
-///
-/// `io.supabase.facteur://login-callback` is intentionally ignored — Supabase
-/// SDK intercepts it before it reaches us. Anything else falls through to
-/// GoRouter's `errorBuilder`, which is a safety net only.
+/// - `io.supabase.facteur://grille` → `/grille` (« Le mot du jour », partagé
+///   entre amis — ouvre la grille dans l'app au lieu du site facteur.app)
+/// - `io.supabase.facteur://login-callback#...` → auth callback, routed by the
+///   auth state listener. Password recovery opens `/reset-password`.
 class DeepLinkService {
-  DeepLinkService._({
-    AppLinks? appLinks,
-    AnalyticsService? analytics,
-  })  : _appLinks = appLinks ?? AppLinks(),
+  DeepLinkService._({AppLinks? appLinks, AnalyticsService? analytics})
+      : _appLinks = appLinks ?? AppLinks(),
         _analytics = analytics;
 
   /// Test-only factory letting suites inject a fake AppLinks/Analytics.
@@ -73,10 +71,7 @@ class DeepLinkService {
   bool _authenticated = false;
 
   /// Bind the service to the running router and analytics. Idempotent.
-  void bind({
-    required GoRouter router,
-    AnalyticsService? analytics,
-  }) {
+  void bind({required GoRouter router, AnalyticsService? analytics}) {
     _router = router;
     if (analytics != null) {
       _analytics = analytics;
@@ -123,13 +118,13 @@ class DeepLinkService {
   void _handle(Uri uri) {
     debugPrint('DeepLinkService: incoming uri=$uri');
 
-    // Supabase OAuth/email confirmation — let the SDK handle it.
-    if (uri.host == 'login-callback' ||
-        uri.path.startsWith('/login-callback')) {
+    if (uri.scheme != 'io.supabase.facteur') {
       return;
     }
 
-    if (uri.scheme != 'io.supabase.facteur') {
+    final action = parse(uri);
+    if (action.target == WidgetDeepLinkTarget.authCallback) {
+      _route(uri);
       return;
     }
 
@@ -187,6 +182,13 @@ class DeepLinkService {
         _analytics?.trackWidgetAppOpened(target: 'veille');
         router.go(action.route!);
         return;
+      case WidgetDeepLinkTarget.grille:
+        _analytics?.trackWidgetAppOpened(target: 'grille');
+        router.go(action.route!);
+        return;
+      case WidgetDeepLinkTarget.authCallback:
+        router.go(action.route ?? RoutePaths.splash);
+        return;
       case WidgetDeepLinkTarget.ignored:
       case WidgetDeepLinkTarget.unhandled:
         debugPrint('DeepLinkService: unhandled uri=$uri');
@@ -201,7 +203,14 @@ class DeepLinkService {
   static WidgetDeepLinkAction parse(Uri uri) {
     if (uri.host == 'login-callback' ||
         uri.path.startsWith('/login-callback')) {
-      return const WidgetDeepLinkAction(target: WidgetDeepLinkTarget.ignored);
+      final authType = _authCallbackType(uri);
+      return WidgetDeepLinkAction(
+        target: WidgetDeepLinkTarget.authCallback,
+        route: authType == 'recovery'
+            ? RoutePaths.resetPassword
+            : RoutePaths.splash,
+        authType: authType,
+      );
     }
     if (uri.scheme != 'io.supabase.facteur') {
       return const WidgetDeepLinkAction(target: WidgetDeepLinkTarget.unhandled);
@@ -216,6 +225,16 @@ class DeepLinkService {
         (host.isEmpty && segments.isNotEmpty && segments.first == 'feed');
     final isVeille = host == 'veille' ||
         (host.isEmpty && segments.isNotEmpty && segments.first == 'veille');
+    final isGrille = host == 'grille' ||
+        (host.isEmpty && segments.isNotEmpty && segments.first == 'grille');
+
+    if (isGrille) {
+      // « Le mot du jour » partagé entre amis : ouvre la grille dans l'app.
+      return const WidgetDeepLinkAction(
+        target: WidgetDeepLinkTarget.grille,
+        route: RoutePaths.grille,
+      );
+    }
 
     if (isVeille) {
       // La veille n'a plus d'écran dédié — son contenu vit dans la Tournée
@@ -258,22 +277,29 @@ class DeepLinkService {
         if (articleId.isNotEmpty) {
           return WidgetDeepLinkAction(
             target: WidgetDeepLinkTarget.article,
-            route: '/flux-continu/content/$articleId',
+            route: '${RoutePaths.flaner}/content/$articleId',
             articleId: articleId,
             position: int.tryParse(uri.queryParameters['pos'] ?? ''),
             topicId: uri.queryParameters['topicId'],
           );
         }
       }
-      // FeedScreen a été supprimé lors du cleanup post-unification — on
-      // route vers le flux continu (la nouvelle home).
+      // FeedScreen historique — on route vers Flâner, désormais page feed
+      // autonome.
       return const WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.feed,
-        route: RoutePaths.fluxContinu,
+        route: RoutePaths.flaner,
       );
     }
 
     return const WidgetDeepLinkAction(target: WidgetDeepLinkTarget.unhandled);
+  }
+
+  static String? _authCallbackType(Uri uri) {
+    final fromQuery = uri.queryParameters['type'];
+    if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
+    if (uri.fragment.isEmpty) return null;
+    return Uri.splitQueryString(uri.fragment)['type'];
   }
 
   static String? _extractArticleIdFrom(String host, List<String> segments) {
@@ -295,7 +321,16 @@ class DeepLinkService {
   }
 }
 
-enum WidgetDeepLinkTarget { digest, article, feed, veille, ignored, unhandled }
+enum WidgetDeepLinkTarget {
+  digest,
+  article,
+  feed,
+  veille,
+  grille,
+  authCallback,
+  ignored,
+  unhandled,
+}
 
 class WidgetDeepLinkAction {
   final WidgetDeepLinkTarget target;
@@ -303,6 +338,7 @@ class WidgetDeepLinkAction {
   final String? articleId;
   final int? position;
   final String? topicId;
+  final String? authType;
 
   const WidgetDeepLinkAction({
     required this.target,
@@ -310,5 +346,6 @@ class WidgetDeepLinkAction {
     this.articleId,
     this.position,
     this.topicId,
+    this.authType,
   });
 }

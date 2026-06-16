@@ -12,7 +12,11 @@ import '../../../config/topic_labels.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/repositories/personalization_repository.dart';
+import '../../sources/models/source_model.dart';
+import '../../flux_continu/providers/flux_continu_provider.dart';
 import '../../my_interests/widgets/interest_state_pill.dart';
+import '../../sources/widgets/premium_source_connection.dart';
+import '../../sources/widgets/source_detail_modal.dart';
 import '../models/topic_models.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
@@ -88,9 +92,15 @@ class TopicChip extends StatelessWidget {
     ArticleSheetSection initialSection = ArticleSheetSection.topic,
     bool highlightInitialSection = false,
   }) {
+    // Deep-link « source » d'un article → fiche source v2 dédiée
+    // (Story 7.8). Les autres entrées gardent l'ArticleSheet unifiée.
+    if (initialSection == ArticleSheetSection.source &&
+        content.source.name.isNotEmpty) {
+      return showSourceDetailSheet(context, content.source);
+    }
+
     final topicSlug = content.topics.isNotEmpty ? content.topics.first : '';
-    final topicLabel =
-        topicSlug.isNotEmpty ? getTopicLabel(topicSlug) : '';
+    final topicLabel = topicSlug.isNotEmpty ? getTopicLabel(topicSlug) : '';
     return showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -104,6 +114,40 @@ class TopicChip extends StatelessWidget {
           topicLabel: topicLabel,
           initialSection: initialSection,
           highlightInitialSection: highlightInitialSection,
+        ),
+      ),
+    );
+  }
+
+  /// Ouvre la fiche source v2 ([SourceDetailModal]) dans une bottom sheet,
+  /// avec les callbacks trust/mute câblés sur [userSourcesProvider].
+  static Future<void> showSourceDetailSheet(
+    BuildContext context,
+    Source source,
+  ) {
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+        child: Consumer(
+          builder: (context, ref, _) {
+            // État live (trust) pour aligner le libellé du bouton principal.
+            final live = ref
+                    .watch(userSourcesProvider)
+                    .valueOrNull
+                    ?.where((s) => s.id == source.id)
+                    .firstOrNull ??
+                source;
+            return SourceDetailModal(
+              source: live,
+              onToggleTrust: () => ref
+                  .read(userSourcesProvider.notifier)
+                  .toggleTrust(live.id, live.isTrusted),
+            );
+          },
         ),
       ),
     );
@@ -206,43 +250,43 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
 
               // ── Groupe 3: RECOMMANDATION ──
               if (reason != null && reason.breakdown.isNotEmpty) ...[
-              const SizedBox(height: FacteurSpacing.space3),
-              Divider(color: colors.textTertiary.withOpacity(0.2)),
-              const SizedBox(height: FacteurSpacing.space3),
-              Row(
-                children: [
-                  Text(
-                    'RECOMMANDATION',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.textTertiary,
-                      letterSpacing: 1.2,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (reason != null && reason.scoreTotal > 0) ...[
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: colors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: FacteurSpacing.space3),
+                Divider(color: colors.textTertiary.withOpacity(0.2)),
+                const SizedBox(height: FacteurSpacing.space3),
+                Row(
+                  children: [
+                    Text(
+                      'RECOMMANDATION',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.textTertiary,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w600,
                       ),
-                      child: Text(
-                        '${reason.scoreTotal.toInt()} pts',
-                        style: TextStyle(
-                          color: colors.primary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
+                    ),
+                    if (reason != null && reason.scoreTotal > 0) ...[
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${reason.scoreTotal.toInt()} pts',
+                          style: TextStyle(
+                            color: colors.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
-              ),
-              const SizedBox(height: 12),
-              ..._buildBreakdownList(reason!, colors),
-              const SizedBox(height: FacteurSpacing.space2),
+                ),
+                const SizedBox(height: 12),
+                ..._buildBreakdownList(reason!, colors),
+                const SizedBox(height: FacteurSpacing.space2),
               ],
 
               const SizedBox(height: FacteurSpacing.space4),
@@ -320,8 +364,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
       ],
     ];
 
-    final sourceFirst =
-        widget.initialSection == ArticleSheetSection.source;
+    final sourceFirst = widget.initialSection == ArticleSheetSection.source;
 
     if (sourceFirst) {
       return [
@@ -468,10 +511,9 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 child: FilledButton.icon(
                   onPressed: () async {
                     try {
-                      await ref
-                          .read(customTopicsProvider.notifier)
-                          .followTopic(widget.topicLabel,
-                              slugParent: widget.topicSlug);
+                      await ref.read(customTopicsProvider.notifier).followTopic(
+                          widget.topicLabel,
+                          slugParent: widget.topicSlug);
                     } on DioException catch (e) {
                       if (context.mounted) {
                         final detail = e.response?.data;
@@ -488,7 +530,8 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                       }
                     }
                   },
-                  icon: Icon(PhosphorIcons.plus(), size: 16, color: Colors.white),
+                  icon:
+                      Icon(PhosphorIcons.plus(), size: 16, color: Colors.white),
                   label: const Text(
                     'Suivre ce sujet',
                     style: TextStyle(
@@ -502,8 +545,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(FacteurRadius.medium),
+                      borderRadius: BorderRadius.circular(FacteurRadius.medium),
                     ),
                   ),
                 ),
@@ -599,9 +641,8 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
     return Builder(builder: (context) {
       final sourcesAsync = ref.watch(userSourcesProvider);
       final sourceMatch = sourcesAsync.whenOrNull(
-        data: (sources) => sources
-            .where((s) => s.id == widget.content.source.id)
-            .firstOrNull,
+        data: (sources) =>
+            sources.where((s) => s.id == widget.content.source.id).firstOrNull,
       );
       final isTrustedAndActive =
           sourceMatch?.isTrusted == true && sourceMatch?.isMuted != true;
@@ -719,7 +760,8 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
             Navigator.of(context).pop();
             context.pushNamed(RouteNames.sources);
           },
-          icon: Icon(PhosphorIcons.gear(), size: 14, color: colors.textSecondary),
+          icon:
+              Icon(PhosphorIcons.gear(), size: 14, color: colors.textSecondary),
           label: Text(
             'Gérer mes sources',
             style: textTheme.labelMedium?.copyWith(color: colors.textSecondary),
@@ -744,7 +786,8 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                         .toggleTrust(widget.content.source.id, false);
                     ref.invalidate(userSourcesProvider);
                   },
-                  icon: Icon(PhosphorIcons.plus(), size: 16, color: Colors.white),
+                  icon:
+                      Icon(PhosphorIcons.plus(), size: 16, color: Colors.white),
                   label: const Text(
                     'Suivre cette source',
                     style: TextStyle(
@@ -771,13 +814,22 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
               label: 'Ne plus afficher ${widget.content.source.name}',
               isDestructive: true,
               onTap: () async {
-                Navigator.pop(context);
+                // NE PAS pop() avant l'await : fermer la bottom sheet dispose
+                // ce ConsumerState, et `ref` lève alors StateError("Cannot use
+                // ref after the widget was disposed") au retour du await — même
+                // quand le backend a répondu 200. Le catch affichait donc
+                // "Impossible de masquer la source" sur un mute réussi.
+                // On suit le même ordre que le mute de sujet ci-dessus :
+                // await → garde `mounted` → invalidation → pop en dernier.
+                final sourceName = widget.content.source.name;
                 try {
                   final repo = ref.read(personalizationRepositoryProvider);
                   await repo.muteSource(widget.content.source.id);
+                  NotificationService.showInfo('Source $sourceName masquée');
+                  if (!mounted) return;
                   ref.invalidate(personalizationProvider);
-                  NotificationService.showInfo(
-                      'Source ${widget.content.source.name} masquée');
+                  ref.invalidate(fluxContinuProvider);
+                  Navigator.pop(context);
                 } catch (e) {
                   NotificationService.showError(
                       'Impossible de masquer la source');
@@ -814,38 +866,59 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                     fillWidth: true,
                   ),
                 ),
-                Divider(color: _terracotta.withOpacity(0.15), height: 1),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      PhosphorIcons.link(PhosphorIconsStyle.regular),
-                      size: 18,
-                      color:
-                          isSubscribed ? colorScheme.primary : colors.textSecondary,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Associer mon abonnement',
-                        style: textTheme.bodyMedium?.copyWith(
-                          color: colors.textPrimary,
-                          fontWeight: FontWeight.w500,
+                if (widget.content.source.premiumConnection != null ||
+                    isSubscribed) ...[
+                  Divider(color: _terracotta.withOpacity(0.15), height: 1),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        isSubscribed
+                            ? PhosphorIcons.link(PhosphorIconsStyle.fill)
+                            : PhosphorIcons.link(PhosphorIconsStyle.regular),
+                        size: 18,
+                        color: isSubscribed
+                            ? colorScheme.primary
+                            : colors.textSecondary,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          isSubscribed
+                              ? 'Abonnement connecté'
+                              : 'Connecter mon abonnement',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
-                    ),
-                    Switch.adaptive(
-                      value: isSubscribed,
-                      onChanged: (value) {
-                        ref
-                            .read(userSourcesProvider.notifier)
-                            .toggleSubscription(
-                                widget.content.source.id, isSubscribed);
-                      },
-                      activeTrackColor: colorScheme.primary,
-                    ),
-                  ],
-                ),
+                      TextButton(
+                        onPressed: () async {
+                          if (isSubscribed) {
+                            await ref
+                                .read(userSourcesProvider.notifier)
+                                .disconnectSubscription(
+                                    widget.content.source.id);
+                            return;
+                          }
+                          await Navigator.of(context).push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => PremiumSourceConnection(
+                                source: widget.content.source,
+                                onConnected: () => ref
+                                    .read(userSourcesProvider.notifier)
+                                    .connectSubscription(
+                                        widget.content.source.id),
+                              ),
+                            ),
+                          );
+                        },
+                        child: Text(isSubscribed ? 'Dissocier' : 'Connecter'),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -870,8 +943,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
       mainAxisSize: MainAxisSize.min,
       children: widget.content.entities.map((entity) {
         final isEntityFollowed = topics.any(
-          (t) =>
-              t.canonicalName?.toLowerCase() == entity.text.toLowerCase(),
+          (t) => t.canonicalName?.toLowerCase() == entity.text.toLowerCase(),
         );
         final isMuted = mutedTopics.contains(entity.text.toLowerCase());
 
@@ -968,8 +1040,8 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                   },
                   behavior: HitTestBehavior.opaque,
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                     child: Icon(
                       PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
                       size: 16,
@@ -1249,8 +1321,8 @@ class _PulseHighlightState extends State<_PulseHighlight>
         weight: 50,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.0)
-            .chain(CurveTween(curve: Curves.easeIn)),
+        tween:
+            Tween(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeIn)),
         weight: 50,
       ),
     ]).animate(_ctrl);

@@ -3,21 +3,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/theme.dart';
 
 /// YouTube video player widget (Story 5.2)
 ///
-/// Uses flutter_inappwebview with the official YouTube IFrame Player API,
-/// loaded via `initialData` with `baseUrl: https://www.youtube.com`. This is
-/// the canonical fix for Android WebView Error 153 — YouTube checks the
-/// embed page origin, and pointing baseUrl at youtube.com makes the iframe
-/// think it lives on YouTube's own domain (where embedding is always allowed).
+/// Loads the YouTube IFrame Player API via a wrapper page served from our own
+/// backend (`/api/youtube/player?v=...`). Serving the wrapper from a real
+/// https origin gives the embedded YouTube iframe a valid Referer/Origin —
+/// the canonical fix for Android WebView Error 153. (Loading the embed
+/// directly, or via `loadDataWithBaseURL`, fails because Android WebView
+/// doesn't attach an Origin/Referer in those cases, so YouTube refuses the
+/// embed. This mirrors what the old corsproxy.io wrapper did, but self-hosted.)
 ///
-/// A standard Chrome mobile User-Agent is also set (no "wv" marker) so
-/// YouTube doesn't fall back to its WebView block.
-///
-/// The YT.Player JS API provides progress, play state, and playbackRate
-/// (long-press 2x speed boost). Falls back to "open in YouTube" on error.
+/// A standard Chrome mobile User-Agent is also set (no "wv" marker) as
+/// defense in depth. The YT.Player JS API drives progress, play state, and
+/// playbackRate (long-press 2x). Falls back to "open in YouTube" on error.
 class YouTubePlayerWidget extends StatefulWidget {
   final String videoUrl;
   final String title;
@@ -43,6 +44,10 @@ class YouTubePlayerWidget extends StatefulWidget {
 }
 
 class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
+  /// Host of our backend origin — whitelisted in [shouldOverrideUrlLoading].
+  /// Derived once from the (constant) [ApiConstants.baseUrl].
+  static final String _apiHost = WebUri(ApiConstants.baseUrl).host;
+
   InAppWebViewController? _controller;
   String? _videoId;
   double _lastReportedProgress = -1.0;
@@ -88,76 +93,11 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
     return null;
   }
 
-  // ---------------------------------------------------------------------------
-  // HTML page hosting the YouTube IFrame Player API.
-  // Loaded via initialData with baseUrl=https://www.youtube.com so the iframe
-  // origin matches youtube.com (bypasses Error 153).
-  // ---------------------------------------------------------------------------
-
-  String _buildPlayerHtml(String videoId) {
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<style>
-  html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
-  #player { width: 100%; height: 100%; }
-</style>
-</head>
-<body>
-<div id="player"></div>
-<script src="https://www.youtube.com/iframe_api"></script>
-<script>
-  var player;
-  var progressTimer;
-
-  function onYouTubeIframeAPIReady() {
-    player = new YT.Player('player', {
-      videoId: '$videoId',
-      width: '100%',
-      height: '100%',
-      playerVars: {
-        playsinline: 1,
-        rel: 0,
-        modestbranding: 1,
-        autoplay: 0,
-        controls: 1,
-        fs: 1
-      },
-      events: {
-        onReady: function() {
-          progressTimer = setInterval(function() {
-            try {
-              var d = player.getDuration();
-              if (d > 0) {
-                window.flutter_inappwebview.callHandler(
-                  'FlutterProgress', player.getCurrentTime() / d
-                );
-              }
-            } catch (e) {}
-          }, 1000);
-        },
-        onStateChange: function(e) {
-          // YT.PlayerState.PLAYING === 1
-          var isPlaying = e.data === 1 ? 1 : 0;
-          window.flutter_inappwebview.callHandler('FlutterPlayState', isPlaying);
-        },
-        onError: function(e) {
-          window.flutter_inappwebview.callHandler('FlutterError', e.data);
-        }
-      }
-    });
-  }
-
-  window.setPlaybackRate = function(rate) {
-    if (player && player.setPlaybackRate) player.setPlaybackRate(rate);
-  };
-</script>
-</body>
-</html>
-''';
-  }
+  /// URL of the backend-hosted IFrame Player wrapper page for [videoId].
+  /// Served from our real https origin so the YouTube embed gets a valid
+  /// Referer (bypasses Error 153). [ApiConstants.baseUrl] ends with `/`.
+  String _playerUrl(String videoId) =>
+      '${ApiConstants.baseUrl}youtube/player?v=$videoId';
 
   void _startSpeedBoost() {
     setState(() => _isSpeedBoosted = true);
@@ -212,14 +152,9 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
     );
 
     final playerWidget = InAppWebView(
-      // baseUrl=youtube.com aligns the iframe origin with YouTube's own
-      // domain — the canonical fix for embed Error 153 in WebViews.
-      initialData: InAppWebViewInitialData(
-        data: _buildPlayerHtml(_videoId!),
-        baseUrl: WebUri('https://www.youtube.com'),
-        mimeType: 'text/html',
-        encoding: 'utf8',
-      ),
+      // Wrapper page served from our backend origin → the YouTube embed
+      // iframe gets a valid Referer → no Error 153.
+      initialUrlRequest: URLRequest(url: WebUri(_playerUrl(_videoId!))),
       initialSettings: settings,
       onWebViewCreated: (controller) {
         _controller = controller;
@@ -282,7 +217,8 @@ class _YouTubePlayerWidgetState extends State<YouTubePlayerWidget> {
         final uri = navigationAction.request.url;
         if (uri == null) return NavigationActionPolicy.CANCEL;
         final host = uri.host;
-        if (host.endsWith('youtube.com') ||
+        if (host == _apiHost ||
+            host.endsWith('youtube.com') ||
             host.endsWith('youtube-nocookie.com') ||
             host.endsWith('ytimg.com') ||
             host.endsWith('googlevideo.com') ||

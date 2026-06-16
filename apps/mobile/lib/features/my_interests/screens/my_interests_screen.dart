@@ -22,11 +22,9 @@ import '../../custom_topics/providers/personalization_provider.dart';
 import '../../custom_topics/widgets/entity_add_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/repositories/personalization_repository.dart';
-import '../../veille/providers/veille_active_config_provider.dart';
-import '../../veille/providers/veille_repository_provider.dart';
 import '../models/user_interests_state.dart';
 import '../providers/user_interests_provider.dart';
-import '../widgets/favorites_reorderable_section.dart';
+import '../../flux_continu/widgets/tournee_composer_sheet.dart';
 import '../widgets/interest_state_picker_sheet.dart';
 
 const Map<String, String> _apiSlugToMacroLabel = {
@@ -99,91 +97,6 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
           content: const Text('Impossible de mettre à jour cet intérêt.'),
           duration: const Duration(seconds: 3),
         ),
-      );
-    }
-  }
-
-  /// Menu contextuel pour le favori veille — "Modifier" / "Archiver"
-  /// (Story 23.2 PR-4). Pas de InterestStatePickerSheet car les états
-  /// hidden/unfollowed/followed ne s'appliquent pas à la veille :
-  /// elle est soit favorite, soit archivée (DELETE backend).
-  Future<void> _showVeilleMenu(VeilleFavoriteRef refTarget) async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(PhosphorIcons.pencilSimple()),
-              title: const Text('Modifier la veille'),
-              onTap: () => Navigator.of(sheetContext).pop('edit'),
-            ),
-            ListTile(
-              leading: Icon(
-                PhosphorIcons.archive(),
-                color: Colors.red.shade700,
-              ),
-              title: Text(
-                'Archiver',
-                style: TextStyle(color: Colors.red.shade700),
-              ),
-              onTap: () => Navigator.of(sheetContext).pop('archive'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (!mounted) return;
-    if (choice == 'edit') {
-      context.pushNamed(
-        RouteNames.veilleConfig,
-        queryParameters: const {'mode': 'edit'},
-      );
-    } else if (choice == 'archive') {
-      await _confirmAndArchive();
-    }
-  }
-
-  Future<void> _confirmAndArchive() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Archiver la veille ?'),
-        content: const Text(
-          "Ta veille sera retirée de Mes intérêts et de ta Tournée. "
-          'Tu pourras en créer une nouvelle à tout moment.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
-            child: const Text('Archiver'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    if (!mounted) return;
-
-    try {
-      await ref.read(veilleRepositoryProvider).deleteConfig();
-      // Refresh : la config active devient null, le favori veille disparaît
-      // de la liste user_interests.
-      ref.invalidate(veilleActiveConfigProvider);
-      ref.invalidate(userInterestsProvider);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veille archivée')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Impossible d'archiver la veille.")),
       );
     }
   }
@@ -263,9 +176,13 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     required TextTheme textTheme,
   }) {
     final hiddenItems = <_HiddenEntry>[
-      for (final t in interests.themes.where((t) => t.state == InterestState.hidden))
+      for (final t in interests.themes.where(
+        (t) => t.state == InterestState.hidden,
+      ))
         _HiddenEntry.theme(slug: t.interestSlug),
-      for (final c in interests.customTopics.where((c) => c.state == InterestState.hidden))
+      for (final c in interests.customTopics.where(
+        (c) => c.state == InterestState.hidden,
+      ))
         _HiddenEntry.customTopic(id: c.id, name: c.topicName),
     ];
 
@@ -284,47 +201,22 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
             ),
             child: _SereinToggleTile(
               enabled: sereinMode,
-              onChanged: () =>
-                  ref.read(sereinToggleProvider.notifier).toggle(),
+              onChanged: () => ref.read(sereinToggleProvider.notifier).toggle(),
             ),
           ),
           if (!sereinMode) ...[
-            FavoritesReorderableSection<FavoriteRef>(
-              items: interests.favorites
-                  .where((f) => f is! CustomTopicFavoriteRef)
-                  .toList(),
-              keyOf: (ref) => ValueKey('${ref.kind}:${ref.targetId}'),
-              itemBuilder: (context, refItem) => _FavoriteRow(
-                refItem: refItem,
-                interests: interests,
-                onTap: () {
-                  if (refItem is VeilleFavoriteRef) {
-                    _showVeilleMenu(refItem);
-                  } else {
-                    _pickState(
-                      title: _labelFor(refItem, interests),
-                      refTarget: refItem,
-                      currentState: InterestState.favorite,
-                    );
-                  }
-                },
+            // Story « Sources dans la Tournée » — la gestion des favoris
+            // (thèmes + sources + veille, ordre libre, cap 5) est centralisée
+            // dans « Composer ma Tournée ». L'ancienne liste reorderable inline
+            // est remplacée par ce point d'entrée unique.
+            const ComposeTourneeButton(
+              style: ComposeTourneeButtonStyle.secondary,
+              padding: EdgeInsets.fromLTRB(
+                FacteurSpacing.space4,
+                0,
+                FacteurSpacing.space4,
+                FacteurSpacing.space2,
               ),
-              onReorder: (reordered) async {
-                try {
-                  await ref
-                      .read(userInterestsProvider.notifier)
-                      .reorderFavorites(reordered);
-                } catch (e) {
-                  if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content:
-                          Text('Impossible de réordonner les favoris.'),
-                      duration: Duration(seconds: 3),
-                    ),
-                  );
-                }
-              },
             ),
             _PinnedTopicsSection(
               pinned: interests.favorites
@@ -337,7 +229,12 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                 currentState: InterestState.favorite,
               ),
             ),
+            // La création / gestion / archivage de la veille vit désormais dans
+            // l'onglet dédié « Ma veille » des réglages (point d'entrée unique
+            // et découvrable). Les CTAs veille autonomes ont été retirés d'ici
+            // pour éviter l'éparpillement.
           ],
+          if (sereinMode) const _SereinSettingsHeader(),
           ...macroThemeOrder.map((macroLabel) {
             final themeSlug = macroThemeToApiSlug[macroLabel] ?? macroLabel;
             return _ThemeBlock(
@@ -370,8 +267,9 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                   border: Border.all(color: colors.surfaceElevated),
                 ),
                 child: Theme(
-                  data: Theme.of(context)
-                      .copyWith(dividerColor: Colors.transparent),
+                  data: Theme.of(
+                    context,
+                  ).copyWith(dividerColor: Colors.transparent),
                   child: ExpansionTile(
                     initiallyExpanded: false,
                     tilePadding: const EdgeInsets.symmetric(
@@ -391,14 +289,16 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                       ),
                     ),
                     children: hiddenItems
-                        .map((entry) => _HiddenItemRow(
-                              entry: entry,
-                              onRestore: () => _pickState(
-                                title: entry.displayName,
-                                refTarget: entry.refTarget,
-                                currentState: InterestState.hidden,
-                              ),
-                            ))
+                        .map(
+                          (entry) => _HiddenItemRow(
+                            entry: entry,
+                            onRestore: () => _pickState(
+                              title: entry.displayName,
+                              refTarget: entry.refTarget,
+                              currentState: InterestState.hidden,
+                            ),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -409,18 +309,6 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
       ),
     );
   }
-
-  String _labelFor(FavoriteRef ref, UserInterestsState interests) {
-    return switch (ref) {
-      ThemeFavoriteRef(:final slug) => _apiSlugToMacroLabel[slug] ?? slug,
-      CustomTopicFavoriteRef(:final id) => interests.customTopics
-              .where((c) => c.id == id)
-              .map((c) => c.topicName)
-              .firstOrNull ??
-          'Sujet',
-      VeilleFavoriteRef() => 'Ma veille',
-    };
-  }
 }
 
 class _HiddenEntry {
@@ -428,10 +316,11 @@ class _HiddenEntry {
   final String displayName;
   final bool isTheme;
 
-  _HiddenEntry._(
-      {required this.refTarget,
-      required this.displayName,
-      required this.isTheme});
+  _HiddenEntry._({
+    required this.refTarget,
+    required this.displayName,
+    required this.isTheme,
+  });
 
   factory _HiddenEntry.theme({required String slug}) => _HiddenEntry._(
         refTarget: ThemeFavoriteRef(slug: slug),
@@ -439,7 +328,10 @@ class _HiddenEntry {
         isTheme: true,
       );
 
-  factory _HiddenEntry.customTopic({required String id, required String name}) =>
+  factory _HiddenEntry.customTopic({
+    required String id,
+    required String name,
+  }) =>
       _HiddenEntry._(
         refTarget: CustomTopicFavoriteRef(id: id),
         displayName: name,
@@ -456,29 +348,40 @@ class _HeroBlock extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: FacteurSpacing.space4,
-        vertical: FacteurSpacing.space4,
+      padding: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+        FacteurSpacing.space4,
+        FacteurSpacing.space4,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            sereinMode ? 'Vos bonnes nouvelles' : 'Vos centres d\'intérêt',
-            style: textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w700,
+      child: Container(
+        padding: const EdgeInsets.all(FacteurSpacing.space4),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(color: colors.surfaceElevated),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              sereinMode ? 'Vos bonnes nouvelles' : 'Vos centres d\'intérêt',
+              style: FacteurTypography.serifTitle(
+                colors.textPrimary,
+              ).copyWith(fontSize: 20, height: 1.2),
             ),
-          ),
-          const SizedBox(height: FacteurSpacing.space2),
-          Text(
-            sereinMode
-                ? 'Choisissez ce qui reste dans vos bonnes nouvelles. Cochez pour garder, décochez pour mettre de côté.'
-                : 'Étoilez vos favoris pour les voir en tête du flux. Les 3 premiers (ordre modifiable) constituent votre Tournée du jour.',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colors.textSecondary,
+            const SizedBox(height: 6),
+            Text(
+              sereinMode
+                  ? 'Choisissez ce qui reste dans vos bonnes nouvelles. Cochez pour garder, décochez pour mettre de côté.'
+                  : 'Étoilez vos favoris pour les voir en tête du flux. Les 3 premiers (ordre modifiable) constituent votre Tournée du jour.',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textSecondary,
+                height: 1.45,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -559,104 +462,10 @@ class _SereinToggleTile extends StatelessWidget {
   }
 }
 
-class _FavoriteRow extends StatelessWidget {
-  final FavoriteRef refItem;
-  final UserInterestsState interests;
-  final VoidCallback onTap;
-
-  const _FavoriteRow({
-    required this.refItem,
-    required this.interests,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final (label, emoji) = switch (refItem) {
-      ThemeFavoriteRef(:final slug) => (
-          _apiSlugToMacroLabel[slug] ?? slug,
-          getMacroThemeEmoji(_apiSlugToMacroLabel[slug] ?? ''),
-        ),
-      CustomTopicFavoriteRef(:final id) => (
-          interests.customTopics
-                  .where((c) => c.id == id)
-                  .map((c) => c.topicName)
-                  .firstOrNull ??
-              'Sujet',
-          '',
-        ),
-      VeilleFavoriteRef() => ('Ma veille', ''),
-    };
-
-    final isVeille = refItem is VeilleFavoriteRef;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space2,
-          vertical: FacteurSpacing.space2,
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isVeille
-                  ? PhosphorIcons.binoculars(PhosphorIconsStyle.fill)
-                  : PhosphorIcons.star(PhosphorIconsStyle.fill),
-              color: isVeille ? colors.sectionVeille1 : colors.primary,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            if (emoji.isNotEmpty) ...[
-              Text(emoji, style: const TextStyle(fontSize: 14)),
-              const SizedBox(width: 4),
-            ],
-            Expanded(
-              child: Text(
-                label,
-                style: textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colors.textPrimary,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (isVeille) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: colors.sectionVeille1.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'VEILLE',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
-                    color: colors.sectionVeille1,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// CTA "Crée ta veille" — visible quand l'utilisateur n'a pas encore de
-/// veille active dans ses favoris. Tap → flow de configuration (intro
-/// puis 3-steps). Story 23.2 PR-4.
-class _CreateVeilleCta extends StatelessWidget {
-  final VoidCallback onTap;
-  const _CreateVeilleCta({required this.onTap});
+/// En-tête qui encadre la configuration du mode serein (cases à cocher des
+/// sujets) pour la distinguer visuellement du toggle d'activation au-dessus.
+class _SereinSettingsHeader extends StatelessWidget {
+  const _SereinSettingsHeader();
 
   @override
   Widget build(BuildContext context) {
@@ -667,64 +476,47 @@ class _CreateVeilleCta extends StatelessWidget {
         FacteurSpacing.space4,
         FacteurSpacing.space2,
         FacteurSpacing.space4,
-        FacteurSpacing.space3,
+        FacteurSpacing.space2,
       ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        child: Container(
-          padding: const EdgeInsets.all(FacteurSpacing.space3),
-          decoration: BoxDecoration(
-            color: colors.sectionVeille1.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(FacteurRadius.large),
-            border: Border.all(
-              color: colors.sectionVeille1.withValues(alpha: 0.3),
-              width: 1.2,
+      child: Container(
+        padding: const EdgeInsets.all(FacteurSpacing.space3),
+        decoration: BoxDecoration(
+          color: SereinColors.sereinColor.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(FacteurRadius.large),
+          border: Border.all(color: SereinColors.sereinColor.withOpacity(0.25)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              SereinColors.sereinIcon,
+              color: SereinColors.sereinColor,
+              size: 18,
             ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: colors.sectionVeille1.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  PhosphorIcons.binoculars(PhosphorIconsStyle.duotone),
-                  color: colors.sectionVeille1,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Crée ta veille',
-                      style: textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: colors.textPrimary,
-                      ),
+            const SizedBox(width: FacteurSpacing.space2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Paramètres du mode serein',
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Un thème sur-mesure pour ta Tournée du jour',
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colors.textTertiary,
-                      ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Contenu à garder dans vos bonnes nouvelles. '
+                    'Décochez un sujet pour le mettre de côté.',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.textSecondary,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              Icon(
-                PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                size: 14,
-                color: colors.sectionVeille1,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -737,8 +529,11 @@ class _ThemeBlock extends ConsumerWidget {
   final UserInterestsState interests;
   final bool sereinMode;
   final Future<void> Function(InterestState current) onPickThemeState;
-  final Future<void> Function(String topicId, String name, InterestState current)
-      onPickTopicState;
+  final Future<void> Function(
+    String topicId,
+    String name,
+    InterestState current,
+  ) onPickTopicState;
 
   const _ThemeBlock({
     required this.macroLabel,
@@ -754,9 +549,8 @@ class _ThemeBlock extends ConsumerWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    final themeRow = interests.themes
-        .where((t) => t.interestSlug == themeSlug)
-        .firstOrNull;
+    final themeRow =
+        interests.themes.where((t) => t.interestSlug == themeSlug).firstOrNull;
     final themeState = themeRow?.state ?? InterestState.unfollowed;
 
     // slug_parent en DB est un slug fin (ex. 'cinema', 'ai', 'feminism'). On
@@ -764,9 +558,11 @@ class _ThemeBlock extends ConsumerWidget {
     // affiché. Avant : comparaison directe `slugParent == themeSlug` qui
     // masquait ~85% des sujets followed (PR #622).
     final topics = interests.customTopics
-        .where((c) =>
-            getTopicMacroTheme(c.slugParent) == macroLabel &&
-            c.state != InterestState.hidden)
+        .where(
+          (c) =>
+              getTopicMacroTheme(c.slugParent) == macroLabel &&
+              c.state != InterestState.hidden,
+        )
         .toList();
 
     // Hide the whole block in normal mode when there's nothing to show
@@ -802,8 +598,10 @@ class _ThemeBlock extends ConsumerWidget {
             ),
             title: Row(
               children: [
-                Text(getMacroThemeEmoji(macroLabel),
-                    style: const TextStyle(fontSize: 16)),
+                Text(
+                  getMacroThemeEmoji(macroLabel),
+                  style: const TextStyle(fontSize: 16),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -829,8 +627,11 @@ class _ThemeBlock extends ConsumerWidget {
                 ...topics.map(
                   (topic) => _TopicRow(
                     topic: topic,
-                    onPickState: () =>
-                        onPickTopicState(topic.id, topic.topicName, topic.state),
+                    onPickState: () => onPickTopicState(
+                      topic.id,
+                      topic.topicName,
+                      topic.state,
+                    ),
                   ),
                 ),
                 _AddTopicInlineButton(themeSlug: themeSlug),
@@ -874,8 +675,10 @@ class _DiscoverHint extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Text(getMacroThemeEmoji(macroLabel),
-                  style: const TextStyle(fontSize: 16)),
+              Text(
+                getMacroThemeEmoji(macroLabel),
+                style: const TextStyle(fontSize: 16),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -996,10 +799,10 @@ class _SereinTopicRow extends ConsumerWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final customTopicsAsync = ref.watch(customTopicsProvider);
-    final legacyTopic = customTopicsAsync.value
-        ?.where((t) => t.id == topic.id)
-        .firstOrNull;
-    final included = legacyTopic == null ? true : !legacyTopic.excludedFromSerein;
+    final legacyTopic =
+        customTopicsAsync.value?.where((t) => t.id == topic.id).firstOrNull;
+    final included =
+        legacyTopic == null ? true : !legacyTopic.excludedFromSerein;
 
     return Padding(
       padding: const EdgeInsets.symmetric(
@@ -1024,8 +827,9 @@ class _SereinTopicRow extends ConsumerWidget {
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content:
-                                Text('Impossible de mettre à jour ce sujet.'),
+                            content: Text(
+                              'Impossible de mettre à jour ce sujet.',
+                            ),
                             duration: Duration(seconds: 3),
                           ),
                         );
@@ -1185,9 +989,7 @@ class _PinnedTopicsSection extends StatelessWidget {
             Text(
               'Apparaissent comme onglets dans Flâner. '
               'Ils ne remplacent pas vos thèmes favoris.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colors.textTertiary,
-              ),
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
             ),
             const SizedBox(height: FacteurSpacing.space2),
             ...pinned.map((ref) {
@@ -1263,14 +1065,9 @@ class _HiddenItemRow extends StatelessWidget {
       ),
       title: Text(
         entry.displayName,
-        style: textTheme.bodyMedium?.copyWith(
-          color: colors.textSecondary,
-        ),
+        style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
       ),
-      trailing: TextButton(
-        onPressed: onRestore,
-        child: const Text('Modifier'),
-      ),
+      trailing: TextButton(onPressed: onRestore, child: const Text('Modifier')),
     );
   }
 }
@@ -1333,8 +1130,7 @@ class _ContentTypesSection extends ConsumerWidget {
                     value: !isMuted,
                     activeColor: colors.primary,
                     onChanged: (enabled) async {
-                      final repo =
-                          ref.read(personalizationRepositoryProvider);
+                      final repo = ref.read(personalizationRepositoryProvider);
                       if (enabled) {
                         await repo.unmuteContentType(entry.key);
                       } else {
@@ -1352,4 +1148,3 @@ class _ContentTypesSection extends ConsumerWidget {
     );
   }
 }
-

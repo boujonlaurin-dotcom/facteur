@@ -37,7 +37,11 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
     _loadProfile();
   }
 
-  final _supabase = Supabase.instance.client;
+  // Lazy access so simply constructing the notifier doesn't assert on an
+  // uninitialized Supabase instance — this lets widget tests pump a tree
+  // containing the profile avatar. In production Supabase is always
+  // initialized before any provider is read, so behaviour is unchanged.
+  SupabaseClient get _supabase => Supabase.instance.client;
   static const String _boxName = 'user_profile';
   static const String _displayNameKey = 'display_name';
 
@@ -53,10 +57,10 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
     }
 
     // 2. Fetch from Supabase
-    final userId = _supabase.auth.currentUser?.id;
-    if (userId == null) return;
-
     try {
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return;
+
       final response = await _supabase
           .from('user_profiles')
           .select('display_name')
@@ -69,7 +73,8 @@ class UserProfileNotifier extends StateNotifier<UserProfile> {
         await box.put(_displayNameKey, state.displayName);
       }
     } catch (e) {
-      // Silently fail and use cached data
+      // Silently fail and use cached data (also covers test environments
+      // where Supabase isn't initialized).
     }
   }
 

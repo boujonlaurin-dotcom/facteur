@@ -327,6 +327,36 @@ class TestIsNewsBulletinTitle:
             "L'émission du président qu'il faut écouter"
         )
 
+    # --- bug-actus-du-jour-ranking.md (Partie B) : séries éditoriales nommées ---
+
+    def test_serie_jaenada_art_de_la_contre_enquete(self):
+        """« Philippe Jaenada, l'art de la contre-enquête » — série France
+        Culture qui peuplait l'Essentiel malgré le fix anti-doublon."""
+        assert is_news_bulletin_title(
+            "Philippe Jaenada, l'art de la contre-enquête"
+        )
+
+    def test_serie_art_de_typographic_apostrophe(self):
+        assert is_news_bulletin_title("Marguerite Duras, l’art du roman")
+
+    def test_serie_episode_counter_parenthesized(self):
+        assert is_news_bulletin_title("Histoire de la Commune (2/4)")
+
+    def test_serie_episode_counter_with_spaces(self):
+        assert is_news_bulletin_title("Les grandes énigmes ( 1 / 5 )")
+
+    def test_art_de_vivre_article_not_matched(self):
+        """Faux-positif à éviter : « l'art de vivre » sans virgule de série en
+        milieu de titre ne doit pas matcher (pas précédé d'une virgule)."""
+        assert not is_news_bulletin_title(
+            "Comment l'art de vivre à la française séduit le monde"
+        )
+
+    def test_date_without_parens_not_episode_counter(self):
+        """« 15/05 » en fin de titre (date) sans parenthèses ne doit pas être
+        pris pour un compteur d'épisode."""
+        assert not is_news_bulletin_title("Le grand débat du 15/05")
+
 
 class TestIsDenylistedEditorialSource:
     """Sources bloquées du top 10 éditorial."""

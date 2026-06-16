@@ -6,10 +6,11 @@ sont hard-codées pour rester en phase avec le mobile (constante miroir
 `kFavoriteCap` côté Flutter, cf. plan 22.1).
 """
 
-FAVORITE_CAP: int = 3
-"""Cap d'affichage de la « Tournée du jour » (Story 22.2 — révision 2026-05-18).
+FAVORITE_CAP: int = 7
+"""Cap d'affichage de la « Tournée du jour » (Story 22.2 — révision 2026-05-18 ;
+élargi 5 → 7 le 2026-06-08, cf. plan « limites + affordance modal favoris »).
 
-N'est PLUS un cap dur : l'utilisateur peut avoir > 3 favoris ; seuls les 3
+N'est PLUS un cap dur : l'utilisateur peut avoir > 7 favoris ; seuls les 7
 premiers (ordre `position` modifiable) sont retenus pour la Tournée du jour.
 Conservé sous le nom `FAVORITE_CAP` pour compat des imports ; sémantiquement
 équivalent à `DAILY_TOUR_CAP`. Mirror mobile : `dailyTourCap` dans
@@ -21,7 +22,7 @@ MIN_BACKFILL_FAVORITES: int = 2
 
 Story 22.1 — décision PO 2026-05-16 : tout user existant doit avoir ≥ 2
 favoris pour que la tournée du jour (PR2) soit non-vide. Inférieur à
-FAVORITE_CAP (3) pour laisser de la place à la promo mobile post-migration
+FAVORITE_CAP (7) pour laisser de la place à la promo mobile post-migration
 (sync `theme_priority_*` SharedPrefs → POST favoris).
 """
 

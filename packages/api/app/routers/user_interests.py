@@ -4,8 +4,8 @@ Endpoints monté sous `/api/user/interests`. Couvrent l'écran « Mes intérêts
 côté mobile (Thèmes + Sujets + favoris ordonnés). Symétrique pour Sources :
 voir `app/routers/user_sources_state.py`.
 
-Cap (3 favoris pour les intérêts) appliqué par le service ; un dépassement
-remonte en HTTP 422 avec body `{error: "favorite_cap_reached", cap: 3}`.
+Cap (5 favoris pour les intérêts) appliqué par le service ; un dépassement
+remonte en HTTP 422 avec body `{error: "favorite_cap_reached", cap: 5}`.
 """
 
 from uuid import UUID

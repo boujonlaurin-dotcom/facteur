@@ -2,8 +2,8 @@
 
 Couvre les écrans « Mes intérêts » (Thèmes + Sujets) et « Mes sources ». L'enum
 `InterestState` est l'axe sémantique unique (hidden/unfollowed/followed/favorite)
-partagé par les 3 entités. `FAVORITE_CAP=3` n'est plus une limite dure mais le
-cap d'affichage de la « Tournée du jour » (les 3 premiers favoris par position).
+partagé par les 3 entités. `FAVORITE_CAP=5` n'est plus une limite dure mais le
+cap d'affichage de la « Tournée du jour » (les 5 premiers favoris par position).
 """
 
 from typing import Literal
@@ -45,6 +45,9 @@ class CustomTopicInterestResponse(BaseModel):
     slug_parent: str
     state: InterestState
     priority_multiplier: float
+    entity_type: str | None = None
+    canonical_name: str | None = None
+    composite_score: float = 0.0
 
     model_config = ConfigDict(from_attributes=True)
 

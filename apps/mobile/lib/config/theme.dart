@@ -38,6 +38,10 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
   final Color biasUnknown;
   final Color border;
 
+  // Voile des modales (bottom sheets, dialogs) — aligné design-system, nettement
+  // plus doux que `black 0.6` qui virait l'écran de fond au gris/sombre.
+  final Color scrim;
+
   // Flux Continu V1.8 — accents par section éditoriale (Story 21.1)
   final Color sectionEssentiel;
   final Color sectionBonnes;
@@ -68,6 +72,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     required this.biasRight,
     required this.biasUnknown,
     required this.border,
+    required this.scrim,
     required this.sectionEssentiel,
     required this.sectionBonnes,
     required this.sectionVeille1,
@@ -99,6 +104,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
     Color? biasRight,
     Color? biasUnknown,
     Color? border,
+    Color? scrim,
     Color? sectionEssentiel,
     Color? sectionBonnes,
     Color? sectionVeille1,
@@ -128,6 +134,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       biasRight: biasRight ?? this.biasRight,
       biasUnknown: biasUnknown ?? this.biasUnknown,
       border: border ?? this.border,
+      scrim: scrim ?? this.scrim,
       sectionEssentiel: sectionEssentiel ?? this.sectionEssentiel,
       sectionBonnes: sectionBonnes ?? this.sectionBonnes,
       sectionVeille1: sectionVeille1 ?? this.sectionVeille1,
@@ -172,6 +179,7 @@ class FacteurColors extends ThemeExtension<FacteurColors> {
       biasRight: Color.lerp(biasRight, other.biasRight, t)!,
       biasUnknown: Color.lerp(biasUnknown, other.biasUnknown, t)!,
       border: Color.lerp(border, other.border, t)!,
+      scrim: Color.lerp(scrim, other.scrim, t)!,
       sectionEssentiel:
           Color.lerp(sectionEssentiel, other.sectionEssentiel, t)!,
       sectionBonnes: Color.lerp(sectionBonnes, other.sectionBonnes, t)!,
@@ -221,6 +229,7 @@ class FacteurPalettes {
     biasRight: const Color(0xFF0D47A1), // Blue 900
     biasUnknown: const Color(0xFFD7CCC8), // Blue Grey 100
     border: const Color(0xFFD2C7B3),
+    scrim: const Color(0x59000000), // ~0.35 — voile doux sur fond clair
     sectionEssentiel: const Color(0xFFB0470A),
     sectionBonnes: const Color(0xFF2E7D32),
     sectionVeille1: const Color(0xFF2C3E50),
@@ -251,10 +260,43 @@ class FacteurPalettes {
     biasRight: const Color(0xFF1E88E5), // Blue 600
     biasUnknown: const Color(0xFF616161), // Grey 700
     border: const Color(0xFF333333),
+    scrim: const Color(0x59000000), // ~0.35 — voile doux sur fond sombre
     sectionEssentiel: const Color(0xFFD16A2C),
     sectionBonnes: const Color(0xFF4CAF50),
     sectionVeille1: const Color(0xFF5B7187),
     sectionVeille2: const Color(0xFFA569BD),
+  );
+
+  // « Encre Pure » — true black pour écrans OLED (Story 3e thème)
+  static final FacteurColors oled = FacteurColors(
+    backgroundPrimary: const Color(0xFF000000),
+    backgroundSecondary: const Color(0xFF050505),
+    surface: const Color(0xFF0A0A0A),
+    surfaceElevated: const Color(0xFF141414),
+    surfacePaper: const Color(0xFF1A1A1A),
+    primary: const Color(0xFFE74C3C),
+    primaryMuted: const Color(0xFF5A2A25),
+    secondary: const Color(0xFF5D6D7E),
+    success: FacteurColors.sSuccess,
+    warning: FacteurColors.sWarning,
+    error: FacteurColors.sError,
+    info: FacteurColors.sInfo,
+    textPrimary: const Color(0xFFF5F5F5),
+    textSecondary: const Color(0xFFB0B0B0),
+    textTertiary: const Color(0xFF6E6E6E),
+    textStamp: const Color(0xFFE74C3C).withOpacity(0.85),
+    biasLeft: const Color(0xFFFF5252),
+    biasCenterLeft: const Color(0xFFFFCDD2),
+    biasCenter: const Color(0xFF8C8C8C),
+    biasCenterRight: const Color(0xFFBBDEFB),
+    biasRight: const Color(0xFF448AFF),
+    biasUnknown: const Color(0xFF5A5A5A),
+    border: const Color(0xFF1F1F1F),
+    scrim: const Color(0x59000000), // ~0.35 — voile doux sur fond true black
+    sectionEssentiel: const Color(0xFFE07B3D),
+    sectionBonnes: const Color(0xFF66BB6A),
+    sectionVeille1: const Color(0xFF6E8AA3),
+    sectionVeille2: const Color(0xFFBA84D1),
   );
 }
 
@@ -385,6 +427,8 @@ class FacteurTheme {
       _buildTheme(FacteurPalettes.light, Brightness.light);
   static ThemeData get darkTheme =>
       _buildTheme(FacteurPalettes.dark, Brightness.dark);
+  static ThemeData get oledTheme =>
+      _buildTheme(FacteurPalettes.oled, Brightness.dark);
 
   static ThemeData _buildTheme(FacteurColors colors, Brightness brightness) {
     return ThemeData(

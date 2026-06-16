@@ -7,57 +7,136 @@ import '../../feed/repositories/personalization_repository.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../settings/providers/language_preference_provider.dart';
 import '../models/smart_search_result.dart';
+import '../models/source_coverage.dart';
 import '../models/source_model.dart';
+import '../models/source_profile.dart';
 import '../models/theme_source_model.dart';
 import '../repositories/sources_repository.dart';
+import '../services/premium_session_store.dart';
 
 final sourcesRepositoryProvider = Provider<SourcesRepository>((ref) {
   return SourcesRepository(ApiClient(Supabase.instance.client));
 });
 
-typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
-
-final smartSearchProvider = FutureProvider.family<SmartSearchResponse,
-    SmartSearchQuery>((ref, params) async {
-  final trimmed = params.query.trim();
-  if (trimmed.isEmpty) {
-    return const SmartSearchResponse(queryNormalized: '', results: []);
-  }
-  final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.smartSearch(
-    trimmed,
-    contentType: params.contentType,
-    expand: params.expand,
+/// Store de persistance des sessions des sources payantes (cookies média).
+/// Singleton app-wide : un seul `CookieManager`/secure storage partagé entre
+/// le flow de connexion et le reader.
+final premiumSessionStoreProvider = Provider<PremiumSessionStore>((ref) {
+  return PremiumSessionStore(
+    jar: InAppPremiumCookieJar(),
+    secureStore: FlutterSecureKeyValueStore(),
   );
 });
+
+/// Sources auxquelles l'utilisateur a associé un abonnement (dérivé).
+/// Alimente l'écran « Mes abonnements ».
+final subscribedSourcesProvider = Provider<List<Source>>((ref) {
+  final sources =
+      ref.watch(userSourcesProvider).valueOrNull ?? const <Source>[];
+  return sources.where((s) => s.hasSubscription).toList();
+});
+
+/// Followed paid sources that can be connected from « Mes abonnements ».
+final eligibleSubscriptionSourcesProvider = Provider<List<Source>>((ref) {
+  final sources =
+      ref.watch(userSourcesProvider).valueOrNull ?? const <Source>[];
+  return sources
+      .where(
+        (source) =>
+            source.isTrusted &&
+            !source.hasSubscription &&
+            resolvePremiumConnection(source) != null,
+      )
+      .toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+});
+
+typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
+
+final smartSearchProvider =
+    FutureProvider.family<SmartSearchResponse, SmartSearchQuery>((
+      ref,
+      params,
+    ) async {
+      final trimmed = params.query.trim();
+      if (trimmed.isEmpty) {
+        return const SmartSearchResponse(queryNormalized: '', results: []);
+      }
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.smartSearch(
+        trimmed,
+        contentType: params.contentType,
+        expand: params.expand,
+      );
+    });
+
+/// Couverture par thèmes d'une source (fiche source v2). Le cache de Riverpod
+/// évite un refetch quand la fiche se reconstruit (toggles trust/mute…).
+final sourceCoverageProvider = FutureProvider.family<SourceCoverage, String>((
+  ref,
+  sourceId,
+) async {
+  if (sourceId.isEmpty) {
+    return const SourceCoverage(periodLabel: '', totalCount: 0);
+  }
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.fetchCoverage(sourceId, days: 30);
+});
+
+/// Profil unifié d'une source pour la fiche v3 : articles récents (Content
+/// complets), couverture par thèmes, volume et fréquence en un seul appel.
+/// `autoDispose` : libéré à la fermeture de la sheet.
+final sourceProfileProvider = FutureProvider.family
+    .autoDispose<SourceProfile, String>((ref, sourceId) async {
+      if (sourceId.isEmpty) return const SourceProfile();
+      final keepAlive = ref.keepAlive();
+      Timer? disposeTimer;
+      ref.onCancel(() {
+        disposeTimer = Timer(const Duration(minutes: 2), keepAlive.close);
+      });
+      ref.onResume(() {
+        disposeTimer?.cancel();
+        disposeTimer = null;
+      });
+      ref.onDispose(() {
+        disposeTimer?.cancel();
+      });
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.getSourceProfile(sourceId);
+    });
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
   return repository.getTrendingSources(limit: 30);
 });
 
-final themesFollowedProvider =
-    FutureProvider<List<FollowedTheme>>((ref) async {
+final themesFollowedProvider = FutureProvider<List<FollowedTheme>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
   return repository.getThemesFollowed();
 });
 
 final sourcesByThemeProvider =
     FutureProvider.family<ThemeSourcesResponse, String>((ref, slug) async {
-  final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.getSourcesByTheme(slug);
-});
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.getSourcesByTheme(slug);
+    });
 
 final userSourcesProvider =
     AsyncNotifierProvider<UserSourcesNotifier, List<Source>>(() {
-  return UserSourcesNotifier();
-});
+      return UserSourcesNotifier();
+    });
 
 /// Pépites — sources curées poussées dans le feed.
 /// Liste vide si aucun trigger actif, rate-limit, ou cool-down côté backend.
-final pepitesProvider =
-    AsyncNotifierProvider<PepitesNotifier, List<Source>>(() {
-  return PepitesNotifier();
+final pepitesProvider = AsyncNotifierProvider<PepitesNotifier, List<Source>>(
+  () {
+    return PepitesNotifier();
+  },
+);
+
+final pepitesAlwaysProvider = FutureProvider<List<Source>>((ref) async {
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.getPepites(forceShow: true);
 });
 
 class PepitesNotifier extends AsyncNotifier<List<Source>> {
@@ -78,7 +157,6 @@ class PepitesNotifier extends AsyncNotifier<List<Source>> {
       print('PepitesNotifier: [ERROR] dismiss failed: $e\n$stack');
     }
   }
-
 }
 
 class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
@@ -99,14 +177,15 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
           if (source.id == sourceId)
             source.copyWith(isTrusted: !currentlyTrusted)
           else
-            source
+            source,
       ]);
     }
 
     try {
       // ignore: avoid_print
       print(
-          'UserSourcesNotifier: Calling repository.trust/untrust for $sourceId...');
+        'UserSourcesNotifier: Calling repository.trust/untrust for $sourceId...',
+      );
 
       if (currentlyTrusted) {
         await repository.untrustSource(sourceId);
@@ -118,9 +197,7 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
       print('UserSourcesNotifier: Toggle success (persisted to DB)');
       // Le backend peut basculer auto `hide_non_fr_sources` tant que
       // `language_filter_user_set = false` — on resync sans bloquer l'UI.
-      unawaited(
-        ref.read(languagePreferenceProvider.notifier).refresh(),
-      );
+      unawaited(ref.read(languagePreferenceProvider.notifier).refresh());
       // No need to re-fetch entire list: optimistic update is sufficient and avoids race conditions
     } catch (e, stack) {
       // ignore: avoid_print
@@ -130,8 +207,19 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
     }
   }
 
-  Future<void> toggleSubscription(
-      String sourceId, bool currentlySubscribed) async {
+  Future<void> connectSubscription(String sourceId) async {
+    await setSubscription(sourceId, true, rethrowOnError: true);
+  }
+
+  Future<void> disconnectSubscription(String sourceId) async {
+    await setSubscription(sourceId, false);
+  }
+
+  Future<void> setSubscription(
+    String sourceId,
+    bool hasSubscription, {
+    bool rethrowOnError = false,
+  }) async {
     final repository = ref.read(sourcesRepositoryProvider);
 
     // Optimistic Update
@@ -140,22 +228,24 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
       state = AsyncValue.data([
         for (final source in state.value!)
           if (source.id == sourceId)
-            source.copyWith(hasSubscription: !currentlySubscribed)
+            source.copyWith(
+              hasSubscription: hasSubscription,
+              isTrusted: hasSubscription ? true : source.isTrusted,
+            )
           else
-            source
+            source,
       ]);
     }
 
     try {
-      await repository.updateSourceSubscription(
-          sourceId, !currentlySubscribed);
+      await repository.updateSourceSubscription(sourceId, hasSubscription);
       // Story 19.1 — repaint l'avancement Lettres si une action devient validée.
       unawaited(ref.read(lettersProvider.notifier).silentRefresh());
     } catch (e, stack) {
       // ignore: avoid_print
-      print(
-          'UserSourcesNotifier: [ERROR] toggleSubscription failed: $e\n$stack');
+      print('UserSourcesNotifier: [ERROR] setSubscription failed: $e\n$stack');
       state = previousState;
+      if (rethrowOnError) rethrow;
     }
   }
 
@@ -174,7 +264,7 @@ class UserSourcesNotifier extends AsyncNotifier<List<Source>> {
               isTrusted: !currentlyMuted ? false : source.isTrusted,
             )
           else
-            source
+            source,
       ]);
     }
 

@@ -17,7 +17,7 @@ from sqlalchemy import and_, exists, func, literal_column, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.content import Content
-from app.models.enums import BiasStance
+from app.models.enums import BiasStance, InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserPreference
 from app.models.user_topic_profile import UserTopicProfile
@@ -308,28 +308,35 @@ def apply_theme_focus_filter(query, theme_slug: str):
     Optimisé : résout le matching source-level via subquery sur la petite
     table sources (~100 rows), puis utilise deux chemins indexés sur contents
     via BitmapOr :
-      1. Content.source_id IN (source IDs matchant le thème) → ix_contents_source_id
-      2. Content.theme = theme_slug → ix_contents_theme_published
+      1. Content.theme = theme_slug → ix_contents_theme_published
+      2. Content.source_id IN (sources dont le thème PRINCIPAL matche)
+         ET Content.theme IS NULL → ix_contents_source_id
 
     Utilisé par le mode THEME_FOCUS (digest) et le filtre thème (feed).
+
+    NOTE (fix bug curation 2026-05-31) : pour les articles non classifiés
+    (`Content.theme IS NULL`), on ne s'appuie QUE sur le thème **principal** de
+    la source — jamais sur ses `secondary_themes`. Les sources généralistes ont
+    des `secondary_themes` très larges (Le Monde → society/politics/economy/
+    culture/tech/science) : les utiliser pour des articles frais non classifiés
+    déversait chaque article du matin dans des sections sans rapport (un fil
+    « guerre en Ukraine » apparaissant sous Technologie ET Science). Les articles
+    classifiés, eux, passent toujours par le chemin (1) via `content.theme`, donc
+    `secondary_themes` n'apporte rien d'autre que la fuite.
     """
-    # Subquery : source IDs dont le thème principal ou secondaire matche
-    theme_source_ids_subq = select(Source.id).where(
-        or_(
-            Source.theme == theme_slug,
-            Source.secondary_themes.any(theme_slug),
-        )
-    )
+    # Subquery : source IDs dont le thème PRINCIPAL matche (pas les secondaires).
+    primary_theme_source_ids_subq = select(Source.id).where(Source.theme == theme_slug)
     # Deux chemins indexés sur la même table (contents) :
     # 1. Articles classifiés ML dans ce thème → toujours inclus
-    # 2. Articles de sources matchant le thème MAIS pas encore classifiés
-    #    (Content.theme IS NULL) → bénéfice du doute
+    # 2. Articles d'une source dont le thème principal matche MAIS pas encore
+    #    classifiés (Content.theme IS NULL) → bénéfice du doute, borné à la
+    #    section principale de la source.
     # Exclut: articles de sources matchantes mais classifiés dans un AUTRE thème
     return query.where(
         or_(
             Content.theme == theme_slug,
             and_(
-                Content.source_id.in_(theme_source_ids_subq),
+                Content.source_id.in_(primary_theme_source_ids_subq),
                 Content.theme.is_(None),
             ),
         )
@@ -489,6 +496,17 @@ NEWS_BULLETIN_PATTERNS = [
     # « L'humeur du jour », « L'idée du jour » — chronique matinale type
     # France Culture / France Inter.
     r"^\s*l[''’][a-zéèêàâîôûç]+ du jour\b",
+    # --- Séries / feuilletons éditoriaux nommés (France Culture & co.) ---
+    # Épisodes d'une série récurrente : pas de l'actu chaude, ils saturent les
+    # top slots malgré le dédoublonnage par domaine (cf.
+    # bug-actus-du-jour-ranking.md, Partie B). Deux marqueurs robustes :
+    #  - sous-titre de série après virgule : « Philippe Jaenada, l'art de la
+    #    contre-enquête », « …, l'art du roman ».
+    r",\s*l[''’]art (de|du|des|d[''’])\b",
+    #  - compteur d'épisode parenthésé en fin de titre : « (1/4) », « (2 / 5) ».
+    #    Forme canonique des feuilletons ; parenthèses requises pour ne pas
+    #    attraper une date « 15/05 » en fin de titre.
+    r"\(\s*\d{1,2}\s?/\s?\d{1,2}\s*\)\s*$",
 ]
 
 _BULLETIN_RE = re.compile("|".join(NEWS_BULLETIN_PATTERNS), re.IGNORECASE)
@@ -679,7 +697,12 @@ async def calculate_user_bias(session: AsyncSession, user_id: UUID) -> BiasStanc
     Fallback CENTER si aucune source suivie.
     """
     result = await session.execute(
-        select(Source.bias_stance).join(UserSource).where(UserSource.user_id == user_id)
+        select(Source.bias_stance)
+        .join(UserSource)
+        .where(
+            UserSource.user_id == user_id,
+            UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+        )
     )
     biases = result.scalars().all()
 
