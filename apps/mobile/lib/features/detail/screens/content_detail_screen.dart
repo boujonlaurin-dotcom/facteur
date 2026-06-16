@@ -38,7 +38,6 @@ import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
 import '../widgets/article_reader_widget.dart';
-import '../widgets/article_tags_row.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/deep_recommendation_card.dart';
 import '../widgets/youtube_player_widget.dart';
@@ -48,7 +47,6 @@ import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
-import '../../../config/topic_labels.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../lettres/providers/letters_provider.dart';
@@ -2398,7 +2396,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Tous les sujets + entités regroupés en une seule balise « X sujets »
     // (B1) — fini la 2e ligne de chips au-dessus du titre.
-    final subjectCount = content.topics.length + content.entities.length;
+    // La modal n'affiche que le premier topic + toutes les entities.
+    final subjectCount =
+        (content.topics.isNotEmpty ? 1 : 0) + content.entities.length;
 
     // ColoredBox fills the status bar area; SafeArea pushes content below it
     final headerContent = ColoredBox(
@@ -2661,32 +2661,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  Widget _buildTagsRow(BuildContext context, Content content) {
-    final items = [
-      for (final slug in content.topics)
-        ArticleTagItem(
-          label: getTopicLabel(slug),
-          onTap: () => TopicChip.showArticleSheet(context, content),
-        ),
-      for (final entity in content.entities)
-        ArticleTagItem(
-          label: entity.text,
-          onTap: () => TopicChip.showArticleSheet(
-            context,
-            content,
-            initialSection: ArticleSheetSection.entities,
-          ),
-        ),
-    ];
-    return ArticleTagsRow(
-      items: items,
-      onOverflowTap: () => TopicChip.showArticleSheet(
-        context,
-        content,
-        initialSection: ArticleSheetSection.entities,
-      ),
-    );
-  }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
     return ValueListenableBuilder<double>(
@@ -2888,11 +2862,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space3),
                               ],
-                              if (content.entities.isNotEmpty ||
-                                  content.topics.isNotEmpty) ...[
-                                _buildTagsRow(context, content),
-                                const SizedBox(height: FacteurSpacing.space4),
-                              ],
                               PivotWashTitle(
                                 key: ValueKey(
                                   'article-title-wash-'
@@ -2986,6 +2955,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                       'low',
                               divergenceLevel:
                                   _perspectivesResponse?.divergenceLevel,
+                              partial: _perspectivesResponse?.partial ?? false,
                               onOpenAnalysis: _openPerspectivesAnalysis,
                             ),
                           ),
@@ -3445,9 +3415,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             aspectRatio: 16 / 9,
                           ),
                         ),
-                      if (content.entities.isNotEmpty ||
-                          content.topics.isNotEmpty)
-                        _buildTagsRow(context, content),
                       PivotWashTitle(
                         key: ValueKey(
                           'article-title-wash-alt-'
@@ -3552,6 +3519,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     comparisonQuality:
                         _perspectivesResponse?.comparisonQuality ?? 'low',
                     divergenceLevel: _perspectivesResponse?.divergenceLevel,
+                    partial: _perspectivesResponse?.partial ?? false,
                     onOpenAnalysis: _openPerspectivesAnalysis,
                   ),
                   const SizedBox(height: FacteurSpacing.space4),

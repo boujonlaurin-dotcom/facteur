@@ -21,6 +21,7 @@ import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
+import '../../detail/content_preview_mapper.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
@@ -699,6 +700,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (article is DigestItem) {
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
+        extra: article.toPreviewContent(),
       );
     } else if (article is Content) {
       await context.push(
@@ -708,6 +710,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     } else if (article is EssentielArticle) {
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
+        extra: article.toPreviewContent(),
       );
     } else {
       return;
