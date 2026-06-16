@@ -186,27 +186,24 @@ async def get_current_user_id(
     token = credentials.credentials
 
     try:
-        # 1. Obtenir le header pour connaître l'algorithme
+        # 1. Only Supabase ES256 tokens are accepted. Never let the token choose
+        # a legacy symmetric verification branch.
         header = jwt.get_unverified_header(token)
-        alg = header.get("alg", "HS256")
+        alg = header.get("alg")
+        if alg != "ES256":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token algorithm",
+            )
 
-        if alg == "ES256":
-            # 2. Utiliser JWKS pour l'algorithme asymétrique ES256
-            jwks = await fetch_jwks()
-            payload = jwt.decode(
-                token,
-                jwks,
-                algorithms=["ES256"],
-                audience="authenticated",
-            )
-        else:
-            # 3. Utiliser le secret symétrique pour HS256
-            payload = jwt.decode(
-                token,
-                settings.supabase_jwt_secret,
-                algorithms=["HS256"],
-                audience="authenticated",
-            )
+        # 2. Utiliser JWKS pour l'algorithme asymétrique ES256
+        jwks = await fetch_jwks()
+        payload = jwt.decode(
+            token,
+            jwks,
+            algorithms=["ES256"],
+            audience="authenticated",
+        )
 
         user_id = payload.get("sub")
 
