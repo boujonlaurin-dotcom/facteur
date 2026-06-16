@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,7 @@ import '../../../sources/models/source_model.dart';
 import '../../../sources/providers/sources_providers.dart';
 import '../../../sources/widgets/source_add_panel.dart';
 import '../../../sources/widgets/source_detail_modal.dart';
+import '../../../sources/widgets/source_logo_avatar.dart';
 import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
 import '../../providers/onboarding_proof_cache_provider.dart';
@@ -85,7 +88,12 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       swipeDisliked: answers.swipeDisliked ?? const <String>[],
     );
     _recommendation = reco;
-    _suggestions = _computeSuggestions(reco, hasThemes: themes.isNotEmpty);
+    _suggestions = _computeSuggestions(
+      reco,
+      hasThemes: themes.isNotEmpty,
+      excludedIds: swipeLiked.toSet(),
+    );
+    _preloadSuggestionProfiles(_suggestions!);
 
     // Pré-sélection : top `_preselectLimit` des suggestions (déjà triées) +
     // toutes les sources swipées à droite (garanties cochées au reveal, même
@@ -116,14 +124,17 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   List<RecommendedSource> _computeSuggestions(
     SourceRecommendation reco, {
     required bool hasThemes,
+    Set<String> excludedIds = const {},
   }) {
     final specialists = reco.specialists;
     if (hasThemes && (reco.matched.isNotEmpty || specialists.isNotEmpty)) {
-      final sorted = [...reco.matched]..sort((a, b) {
+      final sorted = [...reco.matched]
+        ..sort((a, b) {
           final byScore = b.score.compareTo(a.score);
           return byScore != 0 ? byScore : _byVolumeProxy(a, b);
         });
       return _dedupById([...specialists, ...sorted])
+          .where((r) => !excludedIds.contains(r.source.id))
           .take(_suggestionsLimit)
           .toList();
     }
@@ -135,8 +146,15 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       ...reco.catalog,
     ]..sort(_byVolumeProxy);
     return _dedupById([...specialists, ...pool])
+        .where((r) => !excludedIds.contains(r.source.id))
         .take(_suggestionsLimit)
         .toList();
+  }
+
+  void _preloadSuggestionProfiles(List<RecommendedSource> suggestions) {
+    for (final r in suggestions.take(6)) {
+      ref.read(sourceProfileProvider(r.source.id).future).ignore();
+    }
   }
 
   /// Dédoublonne par `source.id` en conservant le premier passage (les
@@ -151,7 +169,8 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   }
 
   /// Catalogue complet (toutes catégories confondues) pour « Voir tout ».
-  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) => _dedupById([
+  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) =>
+      _dedupById([
         ...reco.specialists,
         ...reco.matched,
         ...reco.perspective,
@@ -179,6 +198,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         source: source,
         onToggleTrust: () => _toggleSource(source.id),
         isSelectedOverride: _selectedSourceIds.contains(source.id),
+        articleOpener: openSourceArticleOnRootNavigator,
       ),
     );
   }
@@ -202,7 +222,9 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     if (sourceId == null || sourceId.isEmpty || sourceId == 'null') return;
 
     setState(() => _selectedSourceIds.add(sourceId));
-    ref.read(onboardingProofCacheProvider.notifier).update(
+    ref
+        .read(onboardingProofCacheProvider.notifier)
+        .update(
           (cache) => {
             ...cache,
             sourceId: SourceProofSeed(
@@ -310,6 +332,13 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   ) {
     final colors = context.facteurColors;
     final suggestions = _suggestions ?? const <RecommendedSource>[];
+    final swipeLikedIds =
+        ref.read(onboardingProvider).answers.swipeLiked ?? const <String>[];
+    final alreadyAdded = [
+      for (final id in swipeLikedIds)
+        for (final source in allSources)
+          if (source.id == id) source,
+    ];
 
     return [
       Text(
@@ -320,12 +349,16 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       const SizedBox(height: FacteurSpacing.space3),
       Text(
         OnboardingStrings.q9Subtitle,
-        style: Theme.of(context)
-            .textTheme
-            .bodyMedium
-            ?.copyWith(color: colors.textSecondary),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
         textAlign: TextAlign.center,
       ),
+
+      if (alreadyAdded.isNotEmpty) ...[
+        const SizedBox(height: FacteurSpacing.space4),
+        _AlreadyAddedSources(sources: alreadyAdded),
+      ],
 
       // ① Suggestions sur mesure (top pré-cochées)
       if (suggestions.isNotEmpty) ...[
@@ -416,9 +449,9 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
               Expanded(
                 child: Text(
                   OnboardingStrings.sourcesAlreadyFollowTitle,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
               AnimatedRotation(
@@ -449,6 +482,66 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       // Autofocus seulement quand l'utilisateur vient de déplier le panneau.
       autoFocusSearch: _addPanelExpanded,
       onSourceAdded: _onSourceAdded,
+    );
+  }
+}
+
+class _AlreadyAddedSources extends StatelessWidget {
+  final List<Source> sources;
+
+  const _AlreadyAddedSources({required this.sources});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Déjà ajoutées',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space2),
+          Wrap(
+            spacing: FacteurSpacing.space2,
+            runSpacing: FacteurSpacing.space2,
+            children: [
+              for (final source in sources)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                    border: Border.all(color: colors.primary.withOpacity(0.18)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SourceLogoAvatar(source: source, size: 22, radius: 6),
+                      const SizedBox(width: 7),
+                      Text(
+                        source.name,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

@@ -62,13 +62,17 @@ Widget _wrap({
   SourceCoverage? coverage,
   List<SmartSearchRecentItem>? recentItems,
   bool? isSelectedOverride,
+  SourceArticleOpener? articleOpener,
   UserSourcesState state = _emptyState,
 }) {
   return ProviderScope(
     overrides: [
-      userSourcesProvider.overrideWith(() => _FakeUserSourcesNotifier([source])),
-      userSourcesStateProvider
-          .overrideWith(() => _FakeUserSourcesStateNotifier(state)),
+      userSourcesProvider.overrideWith(
+        () => _FakeUserSourcesNotifier([source]),
+      ),
+      userSourcesStateProvider.overrideWith(
+        () => _FakeUserSourcesStateNotifier(state),
+      ),
       displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
       sourceCoverageProvider(source.id).overrideWith(
         (_) async =>
@@ -88,6 +92,7 @@ Widget _wrap({
           onToggleMute: () {},
           isSelectedOverride: isSelectedOverride,
           recentItems: recentItems,
+          articleOpener: articleOpener,
         ),
       ),
     ),
@@ -100,8 +105,9 @@ void main() {
   });
 
   group('SourceDetailModal — header & layout', () {
-    testWidgets('renders name, domain, follower signal and description',
-        (tester) async {
+    testWidgets('renders name, domain, follower signal and description', (
+      tester,
+    ) async {
       final source = Source(
         id: 's1',
         name: 'Le Monde',
@@ -121,83 +127,87 @@ void main() {
       expect(find.textContaining('lecteurs'), findsOneWidget);
     });
 
-    testWidgets('frequency chip rendered from profile (header signals)',
-        (tester) async {
-      final source =
-          Source(id: 's1', name: 'Le Monde', type: SourceType.article);
-      // 60 articles, fenêtre 30 j → 2/jour → « quelques-uns/jour ».
+    testWidgets('frequency chip rendered from profile (header signals)', (
+      tester,
+    ) async {
+      final source = Source(
+        id: 's1',
+        name: 'Le Monde',
+        type: SourceType.article,
+      );
+      // 60 articles, fenêtre 30 j → 2/jour → wording naturel.
       const profile = SourceProfile(articles30d: 60);
 
       await tester.pumpWidget(_wrap(source: source, profile: profile));
       await tester.pumpAndSettle();
 
-      expect(find.text('quelques-uns/jour'), findsOneWidget);
+      expect(find.text('quelques articles par jour'), findsOneWidget);
     });
   });
 
-  group('SourceDetailModal — évaluation (cas Le Monde : complète + premium)',
-      () {
-    testWidgets('eval is collapsed by default, expands on tap with gauges',
-        (tester) async {
-      final source = Source(
-        id: 'monde',
-        name: 'Le Monde',
-        url: 'https://lemonde.fr',
-        type: SourceType.article,
-        reliabilityScore: 'high',
-        biasStance: 'center',
-        scoreIndependence: 0.55,
-        scoreRigor: 0.85,
-        scoreUx: 0.70,
-      );
+  group(
+    'SourceDetailModal — évaluation (cas Le Monde : complète + premium)',
+    () {
+      testWidgets('eval is open by default with subtitle below title', (
+        tester,
+      ) async {
+        final source = Source(
+          id: 'monde',
+          name: 'Le Monde',
+          url: 'https://lemonde.fr',
+          type: SourceType.article,
+          reliabilityScore: 'high',
+          biasStance: 'center',
+          scoreIndependence: 0.55,
+          scoreRigor: 0.85,
+          scoreUx: 0.70,
+        );
 
-      await tester.pumpWidget(_wrap(source: source));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(_wrap(source: source));
+        await tester.pumpAndSettle();
 
-      // Collapsed: header title + reliability pill visible, gauges hidden.
-      expect(find.text('Évaluation Facteur'), findsOneWidget);
-      expect(find.text('Solide'), findsOneWidget);
-      expect(find.text('Indépendance'), findsNothing);
+        // Open by default: title, subtitle, reliability and gauges visible.
+        expect(find.text('Évaluation Facteur'), findsOneWidget);
+        expect(find.text('à titre indicatif'), findsOneWidget);
+        expect(find.text('Solide'), findsWidgets);
+        expect(find.text('Indépendance'), findsOneWidget);
+        expect(find.text('Rigueur'), findsOneWidget);
+        expect(find.text('Accessibilité'), findsOneWidget);
+        // Gauge words derived by thresholds.
+        expect(find.text('Correcte'), findsOneWidget); // 0.55
+        expect(find.text('Élevée'), findsOneWidget); // 0.85
+        expect(find.text('Bonne'), findsOneWidget); // 0.70
+        expect(find.text('Voir la méthodologie'), findsOneWidget);
+      });
 
-      // Expand.
-      await tester.tap(find.text('Évaluation Facteur'));
-      await tester.pumpAndSettle();
+      testWidgets(
+          'premium block always visible when premiumConnection != null '
+          'even when not followed', (tester) async {
+        final source = Source(
+          id: 'monde',
+          name: 'Le Monde',
+          type: SourceType.article,
+          isTrusted: false,
+          premiumConnection: const PremiumConnection(
+            loginUrl: 'https://lemonde.fr/login',
+            testUrl: 'https://lemonde.fr/test',
+            isGeneric: true,
+          ),
+        );
 
-      expect(find.text('Indépendance'), findsOneWidget);
-      expect(find.text('Rigueur'), findsOneWidget);
-      expect(find.text('Accessibilité'), findsOneWidget);
-      // Gauge words derived by thresholds.
-      expect(find.text('Correcte'), findsOneWidget); // 0.55
-      expect(find.text('Élevée'), findsOneWidget); // 0.85
-      expect(find.text('Bonne'), findsOneWidget); // 0.70
-      expect(find.text('Voir la méthodologie'), findsOneWidget);
-    });
+        await tester.pumpWidget(_wrap(source: source));
+        await tester.pumpAndSettle();
 
-    testWidgets('premium block always visible when premiumConnection != null '
-        'even when not followed', (tester) async {
-      final source = Source(
-        id: 'monde',
-        name: 'Le Monde',
-        type: SourceType.article,
-        isTrusted: false,
-        premiumConnection: const PremiumConnection(
-          loginUrl: 'https://lemonde.fr/login',
-          testUrl: 'https://lemonde.fr/test',
-          isGeneric: true,
-        ),
-      );
-
-      await tester.pumpWidget(_wrap(source: source));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Gestion de la source'), findsOneWidget);
-      expect(find.text('Associer mon abonnement'), findsOneWidget);
-    });
-  });
+        expect(find.text('Gestion de la source'), findsOneWidget);
+        expect(find.text('Associer mon abonnement'), findsOneWidget);
+      });
+    },
+  );
 
   group('SourceDetailModal — cas Reporterre (jauge null + reco perso)', () {
-    testWidgets('hides null gauge and shows collapsible reco perso',
-        (tester) async {
+    testWidgets('hides null gauge and shows collapsible reco perso', (
+      tester,
+    ) async {
       final source = Source(
         id: 'reporterre',
         name: 'Reporterre',
@@ -212,9 +222,6 @@ void main() {
       );
 
       await tester.pumpWidget(_wrap(source: source));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Évaluation Facteur'));
       await tester.pumpAndSettle();
 
       expect(find.text('Indépendance'), findsOneWidget);
@@ -240,10 +247,14 @@ void main() {
   });
 
   group('SourceDetailModal — couverture (mode normal, profil unifié)', () {
-    testWidgets('renders coverage bars + caption derived from articles_30d',
-        (tester) async {
-      final source =
-          Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
+    testWidgets('renders coverage bars + caption derived from articles_30d', (
+      tester,
+    ) async {
+      final source = Source(
+        id: 'monde',
+        name: 'Le Monde',
+        type: SourceType.article,
+      );
       const profile = SourceProfile(
         articles30d: 3012,
         themeDistribution: [
@@ -268,8 +279,9 @@ void main() {
       );
     });
 
-    testWidgets('hides coverage section when theme_distribution empty',
-        (tester) async {
+    testWidgets('hides coverage section when theme_distribution empty', (
+      tester,
+    ) async {
       final source = Source(id: 'x', name: 'X', type: SourceType.article);
       await tester.pumpWidget(
         _wrap(source: source, profile: const SourceProfile(articles30d: 0)),
@@ -281,10 +293,14 @@ void main() {
   });
 
   group('SourceDetailModal — articles (mode normal, cartes cliquables)', () {
-    testWidgets('renders up to 3 FluxContinuArticleCard from recent_articles',
-        (tester) async {
-      final source =
-          Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
+    testWidgets('renders up to 3 FluxContinuArticleCard from recent_articles', (
+      tester,
+    ) async {
+      final source = Source(
+        id: 'monde',
+        name: 'Le Monde',
+        type: SourceType.article,
+      );
       final profile = SourceProfile(
         recentArticles: [
           _article('a', 'Article A', theme: 'politics'),
@@ -305,6 +321,32 @@ void main() {
       expect(find.text('Article D'), findsNothing);
     });
 
+    testWidgets('articleOpener injecté ouvre sans GoRouter', (tester) async {
+      final source = Source(
+        id: 'monde',
+        name: 'Le Monde',
+        type: SourceType.article,
+      );
+      final opened = <String>[];
+      final profile = SourceProfile(
+        recentArticles: [_article('a', 'Article A', theme: 'politics')],
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          source: source,
+          profile: profile,
+          articleOpener: (_, article) => opened.add(article.id),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Article A'));
+      await tester.pumpAndSettle();
+
+      expect(opened, equals(['a']));
+    });
+
     testWidgets('empty recent_articles → neutral empty card', (tester) async {
       final source = Source(id: 'x', name: 'X', type: SourceType.article);
       await tester.pumpWidget(
@@ -317,8 +359,9 @@ void main() {
   });
 
   group('SourceDetailModal — fallback réseau (/profile en erreur)', () {
-    testWidgets('error → header + éval restent, couverture/articles masqués',
-        (tester) async {
+    testWidgets('error → header + éval restent, couverture/articles masqués', (
+      tester,
+    ) async {
       final source = Source(
         id: 'monde',
         name: 'Le Monde',
@@ -341,10 +384,14 @@ void main() {
   });
 
   group('SourceDetailModal — mode smart-search (recentItems préchargés)', () {
-    testWidgets('renders minimal article cards + coverage from provider',
-        (tester) async {
-      final source =
-          Source(id: 'monde', name: 'Le Monde', type: SourceType.article);
+    testWidgets('renders minimal article cards + coverage from provider', (
+      tester,
+    ) async {
+      final source = Source(
+        id: 'monde',
+        name: 'Le Monde',
+        type: SourceType.article,
+      );
       const coverage = SourceCoverage(
         periodLabel: '30 derniers jours',
         totalCount: 100,
@@ -372,18 +419,27 @@ void main() {
   });
 
   group('SourceDetailModal — réglages conditionnels', () {
-    testWidgets('settings (priority pill) hidden when NOT followed',
-        (tester) async {
-      final notFollowed =
-          Source(id: 'a', name: 'A', type: SourceType.article, isTrusted: false);
+    testWidgets('settings (priority pill) hidden when NOT followed', (
+      tester,
+    ) async {
+      final notFollowed = Source(
+        id: 'a',
+        name: 'A',
+        type: SourceType.article,
+        isTrusted: false,
+      );
       await tester.pumpWidget(_wrap(source: notFollowed));
       await tester.pumpAndSettle();
       expect(find.text('Réglages de suivi'), findsNothing);
     });
 
     testWidgets('settings (priority pill) shown when followed', (tester) async {
-      final followed =
-          Source(id: 'b', name: 'B', type: SourceType.article, isTrusted: true);
+      final followed = Source(
+        id: 'b',
+        name: 'B',
+        type: SourceType.article,
+        isTrusted: true,
+      );
       await tester.pumpWidget(_wrap(source: followed));
       await tester.pumpAndSettle();
       expect(find.text('Réglages de suivi'), findsOneWidget);
@@ -392,10 +448,15 @@ void main() {
   });
 
   group('SourceDetailModal — actions & mute toggle', () {
-    testWidgets('primary action shows "Suivre {nom}" when not followed',
-        (tester) async {
+    testWidgets('primary action shows "Suivre {nom}" when not followed', (
+      tester,
+    ) async {
       final notFollowed = Source(
-          id: 'a', name: 'Mediapart', type: SourceType.article, isTrusted: false);
+        id: 'a',
+        name: 'Mediapart',
+        type: SourceType.article,
+        isTrusted: false,
+      );
       await tester.pumpWidget(_wrap(source: notFollowed));
       await tester.pumpAndSettle();
       expect(find.text('Suivre Mediapart'), findsOneWidget);
@@ -403,7 +464,11 @@ void main() {
 
     testWidgets('primary action shows "Suivie" when followed', (tester) async {
       final followed = Source(
-          id: 'b', name: 'Mediapart', type: SourceType.article, isTrusted: true);
+        id: 'b',
+        name: 'Mediapart',
+        type: SourceType.article,
+        isTrusted: true,
+      );
       await tester.pumpWidget(_wrap(source: followed));
       await tester.pumpAndSettle();
       expect(find.text('Suivie'), findsOneWidget);
@@ -411,25 +476,34 @@ void main() {
 
     testWidgets('onboarding override uses selection labels', (tester) async {
       final source = Source(id: 'c', name: 'Le Pli', type: SourceType.article);
-      await tester.pumpWidget(
-        _wrap(source: source, isSelectedOverride: false),
-      );
+      await tester.pumpWidget(_wrap(source: source, isSelectedOverride: false));
       await tester.pumpAndSettle();
       expect(find.text('Sélectionner cette source'), findsOneWidget);
     });
 
-    testWidgets('mute button shows "Masquer cette source" when not muted',
-        (tester) async {
-      final notMuted =
-          Source(id: 'd', name: 'D', type: SourceType.article, isMuted: false);
+    testWidgets('mute button shows "Masquer cette source" when not muted', (
+      tester,
+    ) async {
+      final notMuted = Source(
+        id: 'd',
+        name: 'D',
+        type: SourceType.article,
+        isMuted: false,
+      );
       await tester.pumpWidget(_wrap(source: notMuted));
       await tester.pumpAndSettle();
       expect(find.text('Masquer cette source'), findsOneWidget);
     });
 
-    testWidgets('mute button shows "Source masquée" when muted', (tester) async {
-      final muted =
-          Source(id: 'e', name: 'E', type: SourceType.article, isMuted: true);
+    testWidgets('mute button shows "Source masquée" when muted', (
+      tester,
+    ) async {
+      final muted = Source(
+        id: 'e',
+        name: 'E',
+        type: SourceType.article,
+        isMuted: true,
+      );
       await tester.pumpWidget(_wrap(source: muted));
       await tester.pumpAndSettle();
       expect(find.text('Source masquée'), findsOneWidget);

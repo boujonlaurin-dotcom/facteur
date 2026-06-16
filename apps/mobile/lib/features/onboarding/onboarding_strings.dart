@@ -24,8 +24,10 @@ class OnboardingStrings {
   static const String intro2Title = 'Ton hub d\'infos fiables.';
   static const String intro2Subtitle =
       'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et sources de qualité.';
-  static const String intro2SubtitlePart1 = 'Facteur est une app Open-Source pour ';
-  static const String intro2SubtitleBold1 = 'retrouver le plaisir de s\'informer';
+  static const String intro2SubtitlePart1 =
+      'Facteur est une app Open-Source pour ';
+  static const String intro2SubtitleBold1 =
+      'retrouver le plaisir de s\'informer';
   static const String intro2SubtitlePart2 = '. Un espace de ';
   static const String intro2SubtitleBold2 = 'confiance';
   static const String intro2SubtitlePart3 = ', qui mêle ';
@@ -53,8 +55,7 @@ class OnboardingStrings {
       "Commençons par vous. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
   static const String q1Subtitle = '';
   static const String q1NoiseLabel = 'Le Bruit';
-  static const String q1NoiseSubtitle =
-      "Trop d'info. Impossible de bien trier";
+  static const String q1NoiseSubtitle = "Trop d'info. Impossible de bien trier";
   static const String q1BiasLabel = 'Les Biais';
   static const String q1BiasSubtitle = 'Je doute constamment de la neutralité';
   static const String q1AnxietyLabel = 'La négativité';
@@ -105,11 +106,12 @@ class OnboardingStrings {
   // Glisser à droite = ça m'intéresse ; gauche = pas pour moi.
   static const String swipeTitle = 'Quels médias suivre ?';
   static const String swipeSubtitle =
-      'Glissez à droite ceux qui vous parlent, à gauche les autres. '
-      'On ajuste vos suggestions en direct.';
+      'Glisse à droite ceux qui te parlent, à gauche les autres. '
+      'On ajuste tes suggestions en direct.';
   static const String swipeLikeHint = 'Ça m\'intéresse';
   static const String swipeSkipHint = 'Pas pour moi';
-  static const String swipeDoneButton = 'Voir mes sources';
+  static const String swipeUndoLabel = 'Revenir au dernier média';
+  static const String swipeDoneButton = 'Voir mes médias';
   // Compteur humanisé à 3 paliers selon l'avancement (current/total). Plus
   // présent qu'un sec « Carte X sur Y », sans em-dash (règle PO).
   static const String swipeProgressStart = 'Premières cartes (%d/%d)';
@@ -137,9 +139,9 @@ class OnboardingStrings {
   static const String swipeReliabilityUnknown = 'Non évaluée';
 
   // Moment de calibration en fin de tri + micro-indice pendant les swipes.
-  static const String swipeRefiningTitle = 'On affine vos sources…';
+  static const String swipeRefiningTitle = 'On affine tes médias…';
   static const String swipeRefiningSubtitle =
-      'On ajuste les suggestions à vos goûts.';
+      'On ajuste les suggestions à tes goûts.';
   static const String swipeCalibratingHint = 'On affine…';
 
   // Q8: Gamification
@@ -178,32 +180,29 @@ class OnboardingStrings {
   // Digest Mode
   static const String digestModeTitle =
       'Quel mode de récap quotidien préférez-vous ?';
-  static const String digestModeSubtitle =
-      'Vous pourrez changer à tout moment.';
+  static const String digestModeSubtitle = 'Tu pourras changer à tout moment.';
 
   // Digest Mode — Rester serein (rich subtitle parts)
   static const String digestModeSereinPart1 =
-      'Certains sujets peuvent être difficiles à lire. Activez le ';
+      'Certains sujets peuvent être difficiles à lire. Active le ';
   static const String digestModeSereinBold1 = 'mode serein';
   static const String digestModeSereinPart2 = ' pour ';
   static const String digestModeSereinBold2 = 'filtrer les contenus anxiogènes';
-  static const String digestModeSereinPart3 = '.\nVous pourrez ';
+  static const String digestModeSereinPart3 = '.\nTu pourras ';
   static const String digestModeSereinBold3 = 'changer d\'avis à tout moment';
   static const String digestModeSereinPart4 =
-      ' grâce au bouton dédié en haut de votre essentiel et du flux.';
+      ' grâce au bouton dédié en haut de ton essentiel et du flux.';
 
   // Réassurance affichée sous les choix du mode serein (sans tiret em).
   static const String digestModeAnytimeNote =
-      'Vous pourrez activer ou désactiver le mode serein à tout moment depuis Mes intérêts.';
+      'Tu pourras affiner ce qui te semble serein depuis les paramètres.';
 
   // Personalised serein CTA (shown on the DigestMode question).
-  static const String personalizeSereinCta =
-      'Personnaliser mon mode serein';
+  static const String personalizeSereinCta = 'Personnaliser mon mode serein';
 
   // Q10: Page sources « sur mesure »
   static const String sourcesSuggestionsTitle = 'Nos suggestions pour vous';
-  static const String sourcesAlreadyFollowTitle =
-      'Vous suivez déjà un média ?';
+  static const String sourcesAlreadyFollowTitle = 'Vous suivez déjà un média ?';
   static const String sourcesSeeAllCatalog = 'Voir tout le catalogue';
 
   // Q10: en-têtes des 4 blocs « sur mesure » (①②③④).
@@ -234,10 +233,9 @@ class OnboardingStrings {
   static const String q9Subtitle =
       'Basé sur vos réponses, voici les médias que Facteur vous recommande.';
   static const String q9SearchHint = 'Rechercher une source...';
-  static const String q9LoadingError = 'Erreur de chargement des sources';
-  static const String q9EmptyList = 'Aucune source disponible';
-  static const String q9NoMatch =
-      'Aucune source ne correspond à votre recherche';
+  static const String q9LoadingError = 'Erreur de chargement des médias';
+  static const String q9EmptyList = 'Aucun média disponible';
+  static const String q9NoMatch = 'Aucun média ne correspond à ta recherche';
 
   // Message de pré-sélection automatique
   static const String q9PreselectionTitle =
@@ -248,8 +246,7 @@ class OnboardingStrings {
       'Ajouter vos abonnements presse';
 
   // Carte d'ajout d'abonnement (style CTA Essentiel) sur la page sources.
-  static const String addSubscriptionCardTitle =
-      'Abonné à un média payant ?';
+  static const String addSubscriptionCardTitle = 'Abonné à un média payant ?';
   static const String addSubscriptionCardSubtitle =
       'Le Monde, Mediapart, L\'Équipe... Connectez vos abonnements pour lire '
       'les articles en entier, directement dans Facteur.';

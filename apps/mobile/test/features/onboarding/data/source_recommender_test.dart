@@ -63,7 +63,8 @@ void main() {
       expect(
         reco.matched.length,
         greaterThanOrEqualTo(5),
-        reason: 'Le fallback fiabilité doit garantir un plancher de suggestions',
+        reason:
+            'Le fallback fiabilité doit garantir un plancher de suggestions',
       );
     });
 
@@ -100,30 +101,38 @@ void main() {
         swipeLiked: const ['off'],
       );
 
-      expect(reco.matched.first.source.id, 'off',
-          reason: 'Le like révélé doit primer sur le match thématique');
-    });
-
-    test('swipeDisliked exclut une source des matched malgré un match thème',
-        () {
-      final sources = [
-        _src('tech-1', theme: 'tech'),
-        _src('tech-2', theme: 'tech'),
-        _src('tech-bad', theme: 'tech'), // 4 - 4 = 0 → exclu des matched
-      ];
-
-      final reco = SourceRecommender.recommend(
-        selectedThemes: const ['tech'],
-        selectedSubtopics: const [],
-        allSources: sources,
-        swipeDisliked: const ['tech-bad'],
+      expect(
+        reco.matched.first.source.id,
+        'off',
+        reason: 'Le like révélé doit primer sur le match thématique',
       );
-
-      final matchedIds = reco.matched.map((r) => r.source.id);
-      expect(matchedIds, containsAll(<String>['tech-1', 'tech-2']));
-      expect(matchedIds, isNot(contains('tech-bad')),
-          reason: 'Le rejet révélé doit retirer la source des suggestions');
     });
+
+    test(
+      'swipeDisliked exclut une source des matched malgré un match thème',
+      () {
+        final sources = [
+          _src('tech-1', theme: 'tech'),
+          _src('tech-2', theme: 'tech'),
+          _src('tech-bad', theme: 'tech'), // 4 - 4 = 0 → exclu des matched
+        ];
+
+        final reco = SourceRecommender.recommend(
+          selectedThemes: const ['tech'],
+          selectedSubtopics: const [],
+          allSources: sources,
+          swipeDisliked: const ['tech-bad'],
+        );
+
+        final matchedIds = reco.matched.map((r) => r.source.id);
+        expect(matchedIds, containsAll(<String>['tech-1', 'tech-2']));
+        expect(
+          matchedIds,
+          isNot(contains('tech-bad')),
+          reason: 'Le rejet révélé doit retirer la source des suggestions',
+        );
+      },
+    );
 
     test('depthPref oriente le tier privilégié', () {
       final sources = [
@@ -150,8 +159,7 @@ void main() {
 
     test('independencePref=independent booste la forte indépendance', () {
       final sources = [
-        _src('indie',
-            theme: 'tech', independence: 0.9, reliability: 'unknown'),
+        _src('indie', theme: 'tech', independence: 0.9, reliability: 'unknown'),
         _src('inst', theme: 'tech', independence: 0.2), // reliability high
       ];
 
@@ -172,24 +180,32 @@ void main() {
   // ─────────────────────────────────────────────────────────────────────────
   group('SourceRecommender — signal pôle généralisé', () {
     Map<String, RecommendedSource> byId(SourceRecommendation r) => {
-          for (final rec in [
-            ...r.matched,
-            ...r.perspective,
-            ...r.gems,
-            ...r.catalog,
-          ])
-            rec.source.id: rec
-        };
+      for (final rec in [
+        ...r.matched,
+        ...r.perspective,
+        ...r.gems,
+        ...r.catalog,
+      ])
+        rec.source.id: rec,
+    };
 
     test('un like booste une source non swipée du même pôle (deep)', () {
       final sources = [
         _src('deep-liked', theme: 'tech', tier: 'deep'),
         // même pôle (deep) mais hors-thème et non swipée → doit être boostée.
-        _src('deep-other',
-            theme: 'sport', tier: 'deep', reliability: 'unknown'),
+        _src(
+          'deep-other',
+          theme: 'sport',
+          tier: 'deep',
+          reliability: 'unknown',
+        ),
         // autre pôle (mainstream) hors-thème → aucun boost.
-        _src('main-other',
-            theme: 'sport', tier: 'mainstream', reliability: 'unknown'),
+        _src(
+          'main-other',
+          theme: 'sport',
+          tier: 'mainstream',
+          reliability: 'unknown',
+        ),
       ];
 
       final reco = SourceRecommender.recommend(
@@ -200,10 +216,16 @@ void main() {
       );
 
       final m = byId(reco);
-      expect(m['deep-other']!.score, greaterThan(0),
-          reason: 'le pôle deep liké booste les autres sources deep');
-      expect(m['deep-other']!.score, greaterThan(m['main-other']!.score),
-          reason: 'le boost vise le pôle, pas les autres pôles');
+      expect(
+        m['deep-other']!.score,
+        greaterThan(0),
+        reason: 'le pôle deep liké booste les autres sources deep',
+      );
+      expect(
+        m['deep-other']!.score,
+        greaterThan(m['main-other']!.score),
+        reason: 'le boost vise le pôle, pas les autres pôles',
+      );
     });
 
     test('un rejet pénalise une autre source du même pôle (deep)', () {
@@ -221,8 +243,11 @@ void main() {
       );
 
       final m = byId(reco);
-      expect(m['deep-other']!.score, lessThan(m['main-other']!.score),
-          reason: 'le rejet du pôle deep pénalise les autres sources deep');
+      expect(
+        m['deep-other']!.score,
+        lessThan(m['main-other']!.score),
+        reason: 'le rejet du pôle deep pénalise les autres sources deep',
+      );
     });
   });
 
@@ -244,39 +269,49 @@ void main() {
 
     test('une reco partageant thème + tier avec une likée reçoit le tag', () {
       final sources = [
-        _src('anchor',
-            name: 'Le Monde', theme: 'tech', tier: 'deep', followers: 999),
+        _src(
+          'anchor',
+          name: 'Le Monde',
+          theme: 'tech',
+          tier: 'deep',
+          followers: 999,
+        ),
         // même thème + même tier (deep) → similaire à l'ancre likée.
         _src('reco', theme: 'tech', tier: 'deep'),
       ];
 
       final reco = SourceRecommender.recommend(
-        selectedThemes: const ['tech'],
+        selectedThemes: const [],
         selectedSubtopics: const [],
         allSources: sources,
         swipeLiked: const ['anchor'],
       );
 
       final tag = similarTagOf(reco, 'reco');
-      expect(tag, isNotNull,
-          reason: 'thème + tier partagés avec une source likée');
+      expect(
+        tag,
+        isNotNull,
+        reason: 'thème + tier partagés avec une source likée',
+      );
       expect(tag!.label, contains('Le Monde'));
     });
 
     test('une reco partageant thème + biais avec une likée reçoit le tag', () {
       final sources = [
-        _src('anchor',
-            name: 'Libération',
-            theme: 'tech',
-            tier: 'mainstream',
-            bias: 'left',
-            followers: 999),
+        _src(
+          'anchor',
+          name: 'Libération',
+          theme: 'tech',
+          tier: 'mainstream',
+          bias: 'left',
+          followers: 999,
+        ),
         // tier différent mais même biais (left) + même thème → similaire.
         _src('reco', theme: 'tech', tier: 'deep', bias: 'left'),
       ];
 
       final reco = SourceRecommender.recommend(
-        selectedThemes: const ['tech'],
+        selectedThemes: const [],
         selectedSubtopics: const [],
         allSources: sources,
         swipeLiked: const ['anchor'],
@@ -305,18 +340,20 @@ void main() {
 
     test('thème commun mais ni tier ni biais partagé : pas de tag', () {
       final sources = [
-        _src('anchor',
-            name: 'Mediapart',
-            theme: 'tech',
-            tier: 'deep',
-            bias: 'left',
-            followers: 999),
+        _src(
+          'anchor',
+          name: 'Mediapart',
+          theme: 'tech',
+          tier: 'deep',
+          bias: 'left',
+          followers: 999,
+        ),
         // même thème mais tier ET biais différents → pas similaire.
         _src('reco', theme: 'tech', tier: 'mainstream', bias: 'right'),
       ];
 
       final reco = SourceRecommender.recommend(
-        selectedThemes: const ['tech'],
+        selectedThemes: const [],
         selectedSubtopics: const [],
         allSources: sources,
         swipeLiked: const ['anchor'],
@@ -324,24 +361,94 @@ void main() {
 
       expect(similarTagOf(reco, 'reco'), isNull);
     });
+
+    test(
+      'limite le tag similaire à 2 occurrences et le masque si tag précis',
+      () {
+        final sources = [
+          _src(
+            'anchor',
+            name: 'Sismique',
+            theme: 'tech',
+            tier: 'deep',
+            followers: 999,
+          ),
+          for (var i = 0; i < 4; i++)
+            _src('similar-$i', theme: 'tech', tier: 'deep'),
+          _src('precise', theme: 'tech', tier: 'deep'),
+        ];
+
+        final recoNoPrecise = SourceRecommender.recommend(
+          selectedThemes: const [],
+          selectedSubtopics: const [],
+          allSources: sources,
+          swipeLiked: const ['anchor'],
+        );
+
+        final allVisible = [
+          ...recoNoPrecise.specialists,
+          ...recoNoPrecise.matched,
+          ...recoNoPrecise.perspective,
+          ...recoNoPrecise.gems,
+        ];
+        final similarToSismique = allVisible
+            .expand((r) => r.tags)
+            .where((t) => t.label == 'Similaire à Sismique')
+            .length;
+
+        expect(similarToSismique, 2);
+
+        final recoPrecise = SourceRecommender.recommend(
+          selectedThemes: const ['tech'],
+          selectedSubtopics: const [],
+          allSources: sources,
+          swipeLiked: const ['anchor'],
+        );
+        expect(
+          similarTagOf(recoPrecise, 'precise'),
+          isNull,
+          reason: 'le tag thème Tech est plus précis que le fallback similaire',
+        );
+      },
+    );
   });
 
   group('SourceRecommender.buildSpanningSet', () {
     test('étale ~8-10 cartes (N par pôle) sur plusieurs pôles', () {
       // 2 candidats « purs » par pôle → set bien rempli (round-robin perPole=2).
       final sources = [
-        _src('deep-1', theme: 'tech', tier: 'deep', reliability: 'unknown',
-            followers: 50),
-        _src('deep-2', theme: 'tech', tier: 'deep', reliability: 'unknown',
-            followers: 40),
+        _src(
+          'deep-1',
+          theme: 'tech',
+          tier: 'deep',
+          reliability: 'unknown',
+          followers: 50,
+        ),
+        _src(
+          'deep-2',
+          theme: 'tech',
+          tier: 'deep',
+          reliability: 'unknown',
+          followers: 40,
+        ),
         _src('indie-1', theme: 'tech', independence: 0.9, bias: 'alternative'),
         _src('indie-2', theme: 'tech', independence: 0.8, bias: 'specialized'),
         _src('est-1', theme: 'tech', independence: 0.2, reliability: 'high'),
         _src('est-2', theme: 'tech', independence: 0.3, reliability: 'high'),
-        _src('main-1', theme: 'tech', tier: 'mainstream',
-            reliability: 'unknown', followers: 100),
-        _src('main-2', theme: 'tech', tier: 'mainstream',
-            reliability: 'unknown', followers: 90),
+        _src(
+          'main-1',
+          theme: 'tech',
+          tier: 'mainstream',
+          reliability: 'unknown',
+          followers: 100,
+        ),
+        _src(
+          'main-2',
+          theme: 'tech',
+          tier: 'mainstream',
+          reliability: 'unknown',
+          followers: 90,
+        ),
         _src('left-1', theme: 'tech', bias: 'left', reliability: 'unknown'),
         _src('right-1', theme: 'tech', bias: 'right', reliability: 'unknown'),
       ];
@@ -357,8 +464,11 @@ void main() {
       final ids = set.map((s) => s.source.id).toList();
       expect(ids.toSet().length, ids.length, reason: 'pas de doublon');
       final poles = set.map((s) => s.pole).toSet();
-      expect(poles.length, greaterThanOrEqualTo(4),
-          reason: 'plusieurs pôles couverts');
+      expect(
+        poles.length,
+        greaterThanOrEqualTo(4),
+        reason: 'plusieurs pôles couverts',
+      );
     });
 
     test('renvoie une liste vide sans source curée', () {
@@ -393,10 +503,22 @@ void main() {
       // Deux sources mainstream identiques sauf le volume — la productive
       // (articles30d élevé) doit être préférée, même avec moins de followers.
       final sources = [
-        _src('quiet', theme: 'tech', tier: 'mainstream', reliability: 'unknown',
-            followers: 1000, articles30d: 0),
-        _src('active', theme: 'tech', tier: 'mainstream', reliability: 'unknown',
-            followers: 10, articles30d: 200),
+        _src(
+          'quiet',
+          theme: 'tech',
+          tier: 'mainstream',
+          reliability: 'unknown',
+          followers: 1000,
+          articles30d: 0,
+        ),
+        _src(
+          'active',
+          theme: 'tech',
+          tier: 'mainstream',
+          reliability: 'unknown',
+          followers: 10,
+          articles30d: 200,
+        ),
       ];
 
       final set = SourceRecommender.buildSpanningSet(
@@ -407,8 +529,11 @@ void main() {
         perPole: 1,
       );
 
-      expect(set.first.source.id, 'active',
-          reason: 'volume prime sur followers à match égal');
+      expect(
+        set.first.source.id,
+        'active',
+        reason: 'volume prime sur followers à match égal',
+      );
     });
   });
 
@@ -426,8 +551,11 @@ void main() {
       );
 
       final ids = reco.matched.map((r) => r.source.id).toList();
-      expect(ids.indexOf('active'), lessThan(ids.indexOf('quiet')),
-          reason: 'le bonus volume départage à match thématique égal');
+      expect(
+        ids.indexOf('active'),
+        lessThan(ids.indexOf('quiet')),
+        reason: 'le bonus volume départage à match thématique égal',
+      );
     });
 
     test('articles30d absent (0) : aucun effet (rétro-compatible)', () {
@@ -458,22 +586,23 @@ void main() {
       required List<String> topics,
       String reliability = 'high',
       String? theme,
-    }) =>
-        Source(
-          id: id,
-          name: 'Source $id',
-          type: SourceType.article,
-          isCurated: true,
-          reliabilityScore: reliability,
-          theme: theme,
-          granularTopics: topics,
-        );
+    }) => Source(
+      id: id,
+      name: 'Source $id',
+      type: SourceType.article,
+      isCurated: true,
+      reliabilityScore: reliability,
+      theme: theme,
+      granularTopics: topics,
+    );
 
     bool hasSpecialistTag(RecommendedSource r) =>
         r.tags.any((t) => t.type == RecommendationTagType.specialist);
 
     test('spécialité dominante ∈ sujets → badge « Spécialisé en X »', () {
-      final sources = [spec('ai', topics: ['ai', 'tech'], theme: 'tech')];
+      final sources = [
+        spec('ai', topics: ['ai', 'tech'], theme: 'tech'),
+      ];
 
       final reco = SourceRecommender.recommend(
         selectedThemes: const ['tech'],
@@ -494,7 +623,9 @@ void main() {
     test('subtopic non dominant → pas de badge spécialiste sur cette source', () {
       // 'ai' n'est PAS la spécialité dominante (tech l'est) → la carte garde un
       // tag thème « IA » mais aucun badge spécialiste.
-      final sources = [spec('s', topics: ['tech', 'ai'], theme: 'tech')];
+      final sources = [
+        spec('s', topics: ['tech', 'ai'], theme: 'tech'),
+      ];
 
       final reco = SourceRecommender.recommend(
         selectedThemes: const ['tech'],
@@ -506,37 +637,45 @@ void main() {
       expect(hasSpecialistTag(card), isFalse);
     });
 
-    test('garantie : un spécialiste hors-matched est remonté dans specialists',
-        () {
-      // 15 sources tech (score 4) saturent matched ; le spécialiste factcheck
-      // (score 2) en serait exclu → la garantie de couverture le rapatrie.
-      final sources = [
-        for (var i = 0; i < 15; i++) spec('tech-$i', topics: const [], theme: 'tech'),
-        spec('fc', topics: const ['factcheck'], reliability: 'unknown'),
-      ];
+    test(
+      'garantie : un spécialiste hors-matched est remonté dans specialists',
+      () {
+        // 15 sources tech (score 4) saturent matched ; le spécialiste factcheck
+        // (score 2) en serait exclu → la garantie de couverture le rapatrie.
+        final sources = [
+          for (var i = 0; i < 15; i++)
+            spec('tech-$i', topics: const [], theme: 'tech'),
+          spec('fc', topics: const ['factcheck'], reliability: 'unknown'),
+        ];
 
-      final reco = SourceRecommender.recommend(
-        selectedThemes: const ['tech'],
-        selectedSubtopics: const ['factcheck'],
-        allSources: sources,
-      );
+        final reco = SourceRecommender.recommend(
+          selectedThemes: const ['tech'],
+          selectedSubtopics: const ['factcheck'],
+          allSources: sources,
+        );
 
-      expect(reco.matched.any((r) => r.source.id == 'fc'), isFalse,
-          reason: 'le spécialiste de faible score ne rentre pas dans matched');
-      final fc = reco.specialists.firstWhere((r) => r.source.id == 'fc');
-      expect(hasSpecialistTag(fc), isTrue);
-      expect(
-        fc.tags
-            .firstWhere((t) => t.type == RecommendationTagType.specialist)
-            .label,
-        'Spécialisé en Fact-checking',
-      );
-      // Pré-coché pour l'effet « wow ».
-      expect(reco.preselectedIds, contains('fc'));
-    });
+        expect(
+          reco.matched.any((r) => r.source.id == 'fc'),
+          isFalse,
+          reason: 'le spécialiste de faible score ne rentre pas dans matched',
+        );
+        final fc = reco.specialists.firstWhere((r) => r.source.id == 'fc');
+        expect(hasSpecialistTag(fc), isTrue);
+        expect(
+          fc.tags
+              .firstWhere((t) => t.type == RecommendationTagType.specialist)
+              .label,
+          'Spécialisé en Fact-checking',
+        );
+        // Pré-coché pour l'effet « wow ».
+        expect(reco.preselectedIds, contains('fc'));
+      },
+    );
 
     test('spécialiste déjà dominant dans matched → pas de doublon', () {
-      final sources = [spec('ai', topics: const ['ai'], theme: 'tech')];
+      final sources = [
+        spec('ai', topics: const ['ai'], theme: 'tech'),
+      ];
 
       final reco = SourceRecommender.recommend(
         selectedThemes: const ['tech'],
@@ -554,7 +693,8 @@ void main() {
       // Deux sujets « pauvres » non couverts par matched ; deux spécialistes
       // distincts disponibles → une carte chacun.
       final sources = [
-        for (var i = 0; i < 15; i++) spec('tech-$i', topics: const [], theme: 'tech'),
+        for (var i = 0; i < 15; i++)
+          spec('tech-$i', topics: const [], theme: 'tech'),
         spec('fc', topics: const ['factcheck'], reliability: 'unknown'),
         spec('rel', topics: const ['relationships'], reliability: 'unknown'),
       ];
