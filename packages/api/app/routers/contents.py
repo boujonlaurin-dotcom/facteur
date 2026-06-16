@@ -969,7 +969,9 @@ def _deep_reco_to_dict(matched: object, matched_content: Content) -> dict:
     """
     source = getattr(matched_content, "source", None)
     ctype = getattr(matched_content, "content_type", None)
-    ctype_str = ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else "article")
+    ctype_str = (
+        ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else "article")
+    )
     published_at = getattr(matched, "published_at", None)
     return {
         "content_id": str(matched.content_id),
