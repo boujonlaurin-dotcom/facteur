@@ -134,3 +134,94 @@ workflows:
         notify:
           success: true
           failure: true
+
+  android-release:
+    name: Android Release (Play Store AAB)
+    instance_type: linux_x2
+    max_build_duration: 60
+
+    environment:
+      # Même version Flutter que iOS (phosphor_flutter pinné).
+      flutter: 3.41.6
+
+      # Keystore d'upload uploadé dans Codemagic (Code signing identities).
+      # Le reference name DOIT être exactement "facteur_upload".
+      # Codemagic expose alors $CM_KEYSTORE_PATH / _PASSWORD / $CM_KEY_ALIAS / _PASSWORD.
+      android_signing:
+        - facteur_upload
+
+      groups:
+        # facteur_secrets : SUPABASE_URL, SUPABASE_ANON_KEY, REVENUECAT_IOS_KEY,
+        #   POSTHOG_API_KEY, SENTRY_DSN, + optionnels API_BASE_URL/POSTHOG_HOST.
+        - facteur_secrets
+        # google_play : GCLOUD_SERVICE_ACCOUNT_CREDENTIALS (JSON service account).
+        - google_play
+
+      vars:
+        APP_DIR: "apps/mobile"
+
+    scripts:
+      - name: Show environment
+        script: |
+          set -euo pipefail
+          flutter --version
+          echo "APP_DIR=$APP_DIR"
+
+      - name: Get Flutter packages
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          flutter pub get
+
+      - name: Generate launcher icons
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          flutter pub run flutter_launcher_icons || true
+
+      - name: Set up key.properties (signature Gradle)
+        script: |
+          set -euo pipefail
+          # build.gradle.kts lit android/key.properties (storePassword/keyPassword/
+          # keyAlias/storeFile). On le génère depuis les variables CM_* fournies
+          # par l'intégration android_signing ci-dessus.
+          cat > "$APP_DIR/android/key.properties" <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=$CM_KEYSTORE_PATH
+          EOF
+
+      - name: Build signed AAB (flavor playstore = production)
+        script: |
+          set -euo pipefail
+          cd "$APP_DIR"
+          flutter build appbundle --release --flavor playstore \
+            --dart-define="API_BASE_URL=${API_BASE_URL:-https://facteur-production.up.railway.app/api}" \
+            --dart-define="SUPABASE_URL=${SUPABASE_URL:-}" \
+            --dart-define="SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \
+            --dart-define="REVENUECAT_IOS_KEY=${REVENUECAT_IOS_KEY:-}" \
+            --dart-define="POSTHOG_API_KEY=${POSTHOG_API_KEY:-}" \
+            --dart-define="POSTHOG_HOST=${POSTHOG_HOST:-https://eu.i.posthog.com}" \
+            --dart-define="SENTRY_DSN=${SENTRY_DSN:-}" \
+            --dart-define="SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}" \
+            --dart-define="UPDATE_CHANNEL=playstore" \
+            --dart-define="APP_RELEASE_TAG=${APP_RELEASE_TAG:-android-1.0.0+${BUILD_NUMBER:-manual}}"
+
+    artifacts:
+      # AAB téléchargeable depuis Codemagic même si le publish Play échoue
+      # -> permet un upload manuel de test dans la Play Console.
+      - $APP_DIR/build/app/outputs/bundle/playstoreRelease/*.aab
+      - $APP_DIR/build/app/outputs/**/mapping.txt
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
+      email:
+        recipients:
+          - boujon.laurin@gmail.com
+        notify:
+          success: true
+          failure: true

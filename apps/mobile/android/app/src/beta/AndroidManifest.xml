@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Canal beta uniquement : déclenche l'installeur Android pour l'APK
+         téléchargé par flutter_downloader. Banni du Play Store. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+</manifest>

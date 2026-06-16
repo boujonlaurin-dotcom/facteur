@@ -1,8 +1,9 @@
-name: Build Android APK (staging)
+name: Build Android APK (beta)
 
-# Env CONTINU : chaque merge sur main builde le flavor `staging`
-# (com.example.facteur.staging, canal beta) consommé par l'app de test interne.
-# Les vrais users passent par weekly-release.yml (flavor prod, canal stable).
+# Env CONTINU : chaque merge sur main builde le flavor `beta`
+# (com.example.facteur.beta, side-loaded GitHub Releases, UPDATE_CHANNEL=beta)
+# consommé par l'app de test interne.
+# Les vrais users passent par weekly-release.yml (flavor beta, UPDATE_CHANNEL=stable).
 on:
   push:
     branches: [ main ]
@@ -65,10 +66,10 @@ jobs:
         id: version
         run: echo "version=beta-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
-      - name: Build APK (staging flavor)
+      - name: Build APK (beta flavor — side-loaded GitHub Releases)
         run: |
           cd apps/mobile
-          flutter build apk --release --flavor staging \
+          flutter build apk --release --flavor beta \
             --build-number=${{ github.run_number }} \
             --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || 'https://api-staging-40d3.up.railway.app/api' }}" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
@@ -84,12 +85,12 @@ jobs:
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: facteur-app-staging-release
-          path: apps/mobile/build/app/outputs/flutter-apk/app-staging-release.apk
+          name: facteur-app-release
+          path: apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk
 
       - name: Rename APK
         run: |
-          mv apps/mobile/build/app/outputs/flutter-apk/app-staging-release.apk \
+          mv apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk \
              apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
 
       - name: Create Beta Release
