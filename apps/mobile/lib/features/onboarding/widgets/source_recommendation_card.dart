@@ -63,7 +63,8 @@ class SourceRecommendationCard extends StatelessWidget {
                     ? FacteurImage(
                         imageUrl: source.logoUrl!,
                         fit: BoxFit.cover,
-                        errorWidget: (_) => _buildLogoFallback(colors, source.name),
+                        errorWidget: (_) =>
+                            _buildLogoFallback(colors, source.name),
                       )
                     : _buildLogoFallback(colors, source.name),
               ),
@@ -81,13 +82,13 @@ class SourceRecommendationCard extends StatelessWidget {
                       Flexible(
                         child: Text(
                           source.name,
-                          style:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: colors.textPrimary,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                  ),
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: colors.textPrimary,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -104,11 +105,11 @@ class SourceRecommendationCard extends StatelessWidget {
                         const SizedBox(width: 3),
                         Text(
                           source.getBiasLabel(),
-                          style:
-                              Theme.of(context).textTheme.labelSmall?.copyWith(
-                                    color: colors.textTertiary,
-                                    fontSize: 10,
-                                  ),
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: colors.textTertiary,
+                                fontSize: 10,
+                              ),
                         ),
                       ],
                       // Badge format (non-article uniquement) : rend le format
@@ -136,13 +137,25 @@ class SourceRecommendationCard extends StatelessWidget {
                     Text(
                       recommendation.reason,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textTertiary,
-                            fontStyle: recommendation.category ==
-                                    SourceCategory.gem
-                                ? FontStyle.italic
-                                : FontStyle.normal,
-                          ),
+                        color: colors.textTertiary,
+                        fontStyle: recommendation.category == SourceCategory.gem
+                            ? FontStyle.italic
+                            : FontStyle.normal,
+                      ),
                       maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (source.followerCount > 0) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      _followerLabel(source.followerCount),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -184,6 +197,10 @@ class SourceRecommendationCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _followerLabel(int count) {
+    return 'Suivi par $count lecteur${count > 1 ? 's' : ''} Facteur';
   }
 
   /// Builds a fallback avatar with the source's initials.
@@ -232,8 +249,7 @@ class SourceRecommendationCard extends StatelessWidget {
       RecommendationTagType.specialist ||
       RecommendationTagType.similar ||
       RecommendationTagType.fiable ||
-      RecommendationTagType.antiBruit =>
-        true,
+      RecommendationTagType.antiBruit => true,
       _ => false,
     };
 
@@ -248,10 +264,10 @@ class SourceRecommendationCard extends StatelessWidget {
       child: Text(
         '$prefix${tag.label}',
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: highlighted ? colors.primary : colors.textSecondary,
-              fontSize: 11,
-              fontWeight: highlighted ? FontWeight.w600 : null,
-            ),
+          color: highlighted ? colors.primary : colors.textSecondary,
+          fontSize: 11,
+          fontWeight: highlighted ? FontWeight.w600 : null,
+        ),
       ),
     );
   }
