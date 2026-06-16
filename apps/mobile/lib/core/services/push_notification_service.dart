@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -23,7 +24,7 @@ class _NotifIds {
   static const veilleDelivery = 3;
 }
 
-/// Service de notifications push locales (FCM non utilisé en v1).
+/// Notifications locales, y compris l'affichage au premier plan des pushes FCM.
 class PushNotificationService {
   PushNotificationService._();
 
@@ -536,6 +537,38 @@ class PushNotificationService {
     await _plugin.cancel(id: _NotifIds.weeklyCommunityPick);
   }
 
+  Future<void> showRemoteNotification(RemoteMessage message) async {
+    final notification = message.notification;
+    if (notification == null) return;
+    final route = message.data['route'] as String? ?? '/digest';
+    const androidDetails = AndroidNotificationDetails(
+      'digest_channel',
+      'Digest quotidien',
+      channelDescription: 'Notification quotidienne quand ton récap est prêt',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: Color(0xFFD35400),
+    );
+    const iosDetails = DarwinNotificationDetails();
+    await _plugin.show(
+      id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch,
+      title: notification.title ?? defaultTitle,
+      body: notification.body ?? defaultBody,
+      notificationDetails: const NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      payload: 'route:$route',
+    );
+  }
+
+  static void openRoute(String route) {
+    final navigator = _navigatorKey?.currentState;
+    if (navigator == null) return;
+    navigator.pushNamedAndRemoveUntil(route, (_) => false);
+  }
+
   // --- Time helpers --------------------------------------------------------
 
   static TimeOfDay _timeOfDayFor(NotifTimeSlot slot) => switch (slot) {
@@ -576,15 +609,14 @@ class PushNotificationService {
       'PushNotificationService: tapped (id: ${response.id}, payload: $payload)',
     );
 
-    final navigator = _navigatorKey?.currentState;
-    if (navigator == null) return;
-
     final route = _routeFromPayload(payload);
-    navigator.pushNamedAndRemoveUntil(route, (_) => false);
+    openRoute(route);
   }
 
   static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) return '/flux-continu';
+    if (payload == null || !payload.startsWith('route:')) {
+      return '/flux-continu';
+    }
     return payload.substring('route:'.length);
   }
 }

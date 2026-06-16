@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # Firebase Admin SDK. JSON brut ou base64 ; vide désactive l'envoi tout en
+    # laissant les endpoints d'enregistrement disponibles.
+    firebase_service_account_json: str = ""
+    firebase_service_account_base64: str = ""
+
     # PostHog (Story 14.1 — retention cohorts)
     posthog_api_key: str = ""
     posthog_host: str = "https://eu.i.posthog.com"
@@ -127,6 +132,10 @@ class Settings(BaseSettings):
     # sonde pool. Purement additif : ne change aucun comportement métier.
     usage_tracking_enabled: bool = True  # kill-switch insert api_usage_events
     pool_alert_threshold_pct: int = 80  # seuil alerte sonde pool périodique (%)
+
+    # Gouvernance coût (PR-S3). Les caps Brave/Mistral search sont désormais
+    # lus depuis api_usage_events (persistant). TTL du cache du COUNT mensuel.
+    cost_budget_cache_ttl_s: int = 120
 
     # GitHub (app update feature)
     github_token: str = ""

@@ -9,7 +9,7 @@ import '../../settings/providers/language_preference_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_coverage.dart';
 import '../models/source_model.dart';
-import '../models/source_recent_items.dart';
+import '../models/source_profile.dart';
 import '../models/theme_source_model.dart';
 import '../repositories/sources_repository.dart';
 import '../services/premium_session_store.dart';
@@ -81,18 +81,17 @@ final sourceCoverageProvider =
   return repository.fetchCoverage(sourceId, days: 30);
 });
 
-/// Derniers articles d'une source pour la fiche v2 (jusqu'à 3, avec thème).
-/// Renvoie une liste vide si la source n'a rien publié récemment.
-final sourceRecentArticlesProvider =
-    FutureProvider.family<List<SmartSearchRecentItem>, String>(
-        (ref, sourceId) async {
-  if (sourceId.isEmpty) return const [];
+/// Profil unifié d'une source pour la fiche v3 : articles récents (Content
+/// complets), couverture par thèmes, volume et fréquence en un seul appel.
+/// `autoDispose` : libéré à la fermeture de la sheet.
+final sourceProfileProvider =
+    FutureProvider.family.autoDispose<SourceProfile, String>((
+  ref,
+  sourceId,
+) async {
+  if (sourceId.isEmpty) return const SourceProfile();
   final repository = ref.watch(sourcesRepositoryProvider);
-  final results = await repository.fetchRecentItems([sourceId], perSource: 3);
-  final match = results
-      .cast<SourceRecentItems?>()
-      .firstWhere((s) => s?.sourceId == sourceId, orElse: () => null);
-  return match?.items ?? const [];
+  return repository.getSourceProfile(sourceId);
 });
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {

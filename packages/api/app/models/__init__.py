@@ -21,6 +21,7 @@ from app.models.host_feed_resolution import HostFeedResolution
 from app.models.learning import UserEntityPreference
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
+from app.models.push_notification import PushDelivery, PushDevice
 from app.models.serene_report import SereneReport
 from app.models.source import Source, UserSource
 from app.models.source_search_log import SourceSearchLog
@@ -82,6 +83,8 @@ __all__ = [
     "UserPersonalization",
     # Notification preferences (push activation v1)
     "UserNotificationPreferences",
+    "PushDevice",
+    "PushDelivery",
     # Collections (Saved Groups)
     "Collection",
     "CollectionItem",

@@ -8,6 +8,10 @@ volée (cf. story 27.1).
 Additive (CREATE TABLE pur) → sûre en expand-contract sur la DB partagée
 staging/prod : le backend prod (ancien code) ignore la table jusqu'au passage
 hebdo. Migration idempotente (no-op si la table existe déjà).
+
+NB : ``down_revision`` est un tuple — cette révision **fusionne** les deux
+heads laissés sur ``main`` (``pn01_server_push`` et ``sc01_drop_ucs_excl_idx``)
+en plus de créer la table, ramenant la chaîne à exactement 1 head.
 """
 
 import sqlalchemy as sa
@@ -16,7 +20,10 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from alembic import op
 
 revision: str = "zz01_content_deep_reco"
-down_revision: str | None = "gh01_grille_hybrid_word"
+down_revision: tuple[str, ...] = (
+    "pn01_server_push",
+    "sc01_drop_ucs_excl_idx",
+)
 branch_labels: str | None = None
 depends_on: str | None = None
 

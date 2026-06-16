@@ -249,6 +249,12 @@ class AppUpdateConstants {
   /// Release tag injected by CI (e.g. "beta-20260221-1430")
   static const String releaseTag = String.fromEnvironment('APP_RELEASE_TAG');
 
+  /// Build distribué via Play Store : pas de check version + pas de
+  /// download APK (Play Store gère les MAJ, et REQUEST_INSTALL_PACKAGES
+  /// est banni).
+  static const bool isPlayStoreBuild =
+      bool.fromEnvironment('PLAYSTORE_BUILD');
+
   /// Update channel injected by CI : "beta" pour le flavor staging (env
   /// continu), "stable" pour le flavor prod (vrais users). Sélectionne le
   /// préfixe de tag filtré côté backend : stable→release-, beta→beta-.

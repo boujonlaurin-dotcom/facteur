@@ -1,7 +1,5 @@
-import asyncio
 import time
 import uuid
-from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -13,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.content import Content
-from app.models.enums import BiasStance, ContentType
+from app.models.enums import BiasStance
 from app.schemas.collection import SaveContentRequest
 from app.schemas.content import (
     ArticleFeedbackRequest,
@@ -24,7 +22,6 @@ from app.schemas.content import (
     NoteUpsertRequest,
 )
 from app.services.collection_service import CollectionService
-from app.services.content_extractor import ContentExtractor
 from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
 from app.services.title_annotation_service import (
@@ -39,15 +36,6 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
-# Round 3 fix (docs/bugs/bug-infinite-load-requests.md — F2.3) :
-# trafilatura.extract peut prendre 10-15s par article. Sans borne, N
-# ouvertures simultanées monopolisent N threads de l'executor par défaut
-# + pressurisent le pool DB au retour (réouverture session pour persist).
-# Cap à 3 extractions concurrentes globales : un user qui ouvre rapidement
-# plusieurs articles ne déclenche pas une tempête parallèle qui sature
-# l'executor ET le pool.
-_EXTRACTION_SEMAPHORE = asyncio.Semaphore(3)
-
 
 @router.get(
     "/{content_id}",
@@ -59,107 +47,13 @@ async def get_content_detail(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Récupère le détail d'un contenu.
-    Enrichit le contenu on-demand via trafilatura si html_content manquant.
-    """
+    """Récupère le détail d'un contenu sans télécharger le site source."""
     service = ContentService(db)
     user_uuid = UUID(current_user_id)
 
     content_data = await service.get_content_detail(content_id, user_uuid)
     if not content_data:
         raise HTTPException(status_code=404, detail="Contenu non trouvé")
-
-    # On-demand enrichment: try to get full content for articles
-    if content_data.get("content_type") == ContentType.ARTICLE:
-        quality = content_data.get("content_quality")
-        extractor = ContentExtractor(download_timeout=10)
-
-        # Compute quality from existing content if not yet done
-        if not quality and (
-            content_data.get("html_content") or content_data.get("description")
-        ):
-            quality = extractor.compute_quality_for_existing(
-                content_data.get("html_content"), content_data.get("description")
-            )
-            content_data["content_quality"] = quality
-
-        # Try trafilatura if content is not full quality
-        # AND no recent extraction attempt (cooldown 6h to prevent retry storms)
-        attempted_at = content_data.get("extraction_attempted_at")
-        cooldown_expired = (
-            attempted_at is None
-            or (datetime.now(UTC) - attempted_at).total_seconds() > 6 * 3600
-        )
-
-        if quality != "full" and cooldown_expired:
-            # Round 2 fix (bug-infinite-load-requests.md item 3) : libère la
-            # session `db` AVANT le `run_in_executor(trafilatura.extract)`
-            # qui peut prendre 15 s. Sans ça la session reste idle-in-tx
-            # pendant toute la durée du thread executor, et chaque ouverture
-            # d'article matin (cold cache) monopolise une conn du pool pour
-            # 15 s. Après extraction, on rouvre une session courte dédiée à
-            # la persistance.
-            try:
-                await db.commit()
-            except Exception:
-                logger.warning("content_detail_precommit_failed", exc_info=True)
-
-            try:
-                # Bornage global (F2.3) : bloque si 3 extractions déjà en
-                # cours pour éviter la saturation executor/pool.
-                async with _EXTRACTION_SEMAPHORE:
-                    result = await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(
-                            None, extractor.extract, content_data["url"]
-                        ),
-                        timeout=15.0,
-                    )
-
-                # Persist enrichment via a short-lived session.
-                async with safe_async_session() as write_session:
-                    stmt = select(Content).where(Content.id == content_id)
-                    db_content = await write_session.scalar(stmt)
-                    if db_content:
-                        db_content.extraction_attempted_at = datetime.now(UTC)
-                        if result.html_content:
-                            content_data["html_content"] = result.html_content
-                            content_data["content_quality"] = result.content_quality
-                            db_content.html_content = result.html_content
-                            db_content.content_quality = result.content_quality
-                            if (
-                                result.reading_time_seconds
-                                and not db_content.duration_seconds
-                            ):
-                                db_content.duration_seconds = (
-                                    result.reading_time_seconds
-                                )
-                                content_data["duration_seconds"] = (
-                                    result.reading_time_seconds
-                                )
-                        elif not db_content.content_quality:
-                            db_content.content_quality = quality or "none"
-                        await write_session.commit()
-
-            except Exception:
-                # Mark attempt even on failure to prevent retry storm.
-                # Courte session dédiée — n'emprunte pas `db` qui est déjà
-                # committée (connexion rendue au pool).
-                try:
-                    async with safe_async_session() as fallback_session:
-                        stmt = select(Content).where(Content.id == content_id)
-                        db_content = await fallback_session.scalar(stmt)
-                        if db_content:
-                            db_content.extraction_attempted_at = datetime.now(UTC)
-                            if not db_content.content_quality:
-                                db_content.content_quality = quality or "none"
-                            await fallback_session.commit()
-                except Exception:
-                    pass  # Don't fail the request over persistence
-                logger.exception(
-                    "on_demand_enrichment_failed",
-                    content_id=str(content_id),
-                )
 
     return content_data
 
@@ -1265,6 +1159,17 @@ async def _attach_highlight_spans(
       `semantic_equiv`, otherwise `"spacy"`. Bubbled up to the response
       header `X-Bias-Annotation-Source` for debugging.
     """
+    # DÉSACTIVÉ (T1) : le highlighting des biais n'est plus affiché côté app.
+    # Court-circuit en tête → aucun span renvoyé (titres rendus en plain par le
+    # front) et plus aucun calcul LLM/spaCy serve-time. Neutralise les 3 sites
+    # d'appel d'un coup. Le header `X-Bias-Annotation-Source` reste valide
+    # ("spacy"). Réactivation triviale = retirer ce bloc. La logique d'origine
+    # est conservée intégralement ci-dessous.
+    for p in perspectives_dicts:
+        p["highlight_spans"] = []
+        p["shared_tokens"] = []
+    return (None, "spacy")
+
     try:
         svc = get_title_annotation_service()
         # Skip the cluster cache lookup when the content isn't clustered —

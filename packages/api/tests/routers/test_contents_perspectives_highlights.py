@@ -33,6 +33,16 @@ from tests.fixtures.fake_spacy import (
     service_with_nlp,
 )
 
+# T1 (couverture v4) : le highlighting des biais n'est plus affiché côté app →
+# `_attach_highlight_spans` est court-circuité en tête et renvoie des spans
+# vides pour toute perspective. Les tests qui exercent la logique LLM/spaCy
+# (désormais inatteignable) sont conservés mais skippés : réactivation = retirer
+# le court-circuit dans `app.routers.contents` ET ce marqueur. Cf. plan T1.
+_HIGHLIGHTING_DISABLED = pytest.mark.skip(
+    reason="T1: highlighting biais désactivé — _attach_highlight_spans court-circuité "
+    "(spans vides). Test conservé pour réactivation future."
+)
+
 # --- Cluster fixture --------------------------------------------------------
 
 
@@ -91,6 +101,7 @@ async def cluster_setup(db_session):
 # --- Tests ------------------------------------------------------------------
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_computes_for_content_without_cluster(db_session):
     """No cluster_id → highlight_spans are still computed via the off-cluster batch.
@@ -172,6 +183,7 @@ async def test_attach_highlight_spans_computes_for_content_without_cluster(db_se
     assert [s["text"] for s in perspectives[0]["shared_tokens"]] == ["Gaza"]
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_no_spans_when_titles_identical(
     db_session, cluster_setup
@@ -214,6 +226,7 @@ async def test_attach_highlight_spans_no_spans_when_titles_identical(
     assert perspectives[0]["highlight_spans"] == []
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_uses_cache_for_in_cluster_perspectives(
     db_session, cluster_setup
@@ -259,6 +272,7 @@ async def test_attach_highlight_spans_uses_cache_for_in_cluster_perspectives(
     assert all(s["bias"] == "left" for s in spans)
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_computes_on_fly_for_google_news_url(
     db_session, cluster_setup
@@ -313,6 +327,7 @@ async def test_attach_highlight_spans_computes_on_fly_for_google_news_url(
     assert all(s["bias"] == "unknown" for s in spans)
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_batches_off_cluster_titles_in_one_executor_hop(
     db_session, cluster_setup
@@ -359,6 +374,7 @@ async def test_attach_highlight_spans_batches_off_cluster_titles_in_one_executor
     assert pipe_calls[1] == ["GN title 1", "GN title 2", "GN title 3"]
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_returns_empty_when_nlp_unavailable(
     db_session, cluster_setup
@@ -386,6 +402,7 @@ async def test_attach_highlight_spans_returns_empty_when_nlp_unavailable(
     assert pivot is None
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_swallows_exceptions(
     db_session, cluster_setup
@@ -412,6 +429,7 @@ async def test_attach_highlight_spans_swallows_exceptions(
     assert pivot is None
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_returns_reference_pivot_and_shared_tokens(
     db_session, cluster_setup
@@ -458,6 +476,7 @@ async def test_attach_highlight_spans_returns_reference_pivot_and_shared_tokens(
     assert "bias" not in shared[0]
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_without_cluster_skips_db_scan(db_session):
     """No cluster_id → cluster cache lookup is skipped (no `WHERE cluster_id IS NULL` scan).
@@ -591,6 +610,7 @@ def _llm_payload(target_spans: list[dict], signature: str) -> dict:
     }
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_uses_llm_when_semantic_equiv_present(
     db_session, cluster_setup
@@ -648,6 +668,7 @@ async def test_attach_highlight_spans_uses_llm_when_semantic_equiv_present(
     assert pivot == {"start": 7, "end": 13, "text": "frappe"}
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_falls_back_to_spacy_when_no_semantic_equiv(
     db_session, cluster_setup
@@ -683,6 +704,7 @@ async def test_attach_highlight_spans_falls_back_to_spacy_when_no_semantic_equiv
         assert span["bias"] == "left"
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_invalidates_llm_on_cluster_signature_mismatch(
     db_session, cluster_setup
@@ -734,6 +756,7 @@ async def test_attach_highlight_spans_invalidates_llm_on_cluster_signature_misma
         assert "weight" not in span  # no LLM fields leaked through
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_clamps_out_of_bounds_llm_spans(
     db_session, cluster_setup
@@ -976,6 +999,7 @@ def test_refine_preserves_llm_fields_on_kept_span():
     assert out[0]["bias"] == "left"
 
 
+@_HIGHLIGHTING_DISABLED
 @pytest.mark.asyncio
 async def test_attach_highlight_spans_drops_low_weight_llm_span_end_to_end(
     db_session, cluster_setup
@@ -1023,3 +1047,50 @@ async def test_attach_highlight_spans_drops_low_weight_llm_span_end_to_end(
     assert source == "llm"
     out = perspectives[0]["highlight_spans"]
     assert [s["text"] for s in out] == ["bombarde"]
+
+
+# --- Nouveau contrat T1 : court-circuit (highlighting désactivé) -------------
+
+
+@pytest.mark.asyncio
+async def test_attach_highlight_spans_short_circuits_to_empty(db_session):
+    """T1 : `_attach_highlight_spans` court-circuite → spans vides pour toute
+    perspective et `(None, "spacy")`, sans toucher la DB ni le service LLM/spaCy.
+
+    Vérifie aussi que d'éventuels spans déjà présents (réponse mise en cache
+    avant la désactivation) sont écrasés à vide.
+    """
+    perspectives = [
+        {
+            "title": "Une frappe sur Gaza fait 20 morts",
+            "url": "https://other.fr/x",
+            "bias_stance": "left",
+            # Spans pré-existants (cache d'avant la désactivation) : doivent être
+            # remplacés par des listes vides.
+            "highlight_spans": [{"start": 0, "end": 3, "text": "Une", "bias": "left"}],
+            "shared_tokens": [{"start": 4, "end": 10, "text": "frappe"}],
+        },
+        {
+            "title": "Frappe meurtrière à Gaza",
+            "url": "https://autre.fr/y",
+            "bias_stance": "right",
+        },
+    ]
+
+    def _boom(*_a, **_kw):  # pragma: no cover - ne doit jamais être appelé
+        raise AssertionError("le service ne doit pas être sollicité (court-circuit T1)")
+
+    with patch("app.routers.contents.get_title_annotation_service", _boom):
+        content = Content(
+            id=uuid4(),
+            source_id=uuid4(),
+            title="Frappe sur Gaza",
+            content_type=ContentType.ARTICLE,
+        )
+        pivot, source = await _attach_highlight_spans(db_session, content, perspectives)
+
+    assert pivot is None
+    assert source == "spacy"
+    for p in perspectives:
+        assert p["highlight_spans"] == []
+        assert p["shared_tokens"] == []

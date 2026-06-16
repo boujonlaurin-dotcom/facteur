@@ -84,6 +84,11 @@ class Source {
   final List<String> secondaryThemes;
   final String sourceTier;
   final int followerCount;
+
+  /// Volume de publication sur 30 j (exposé sur le catalogue par le backend,
+  /// défaut 0 pour les réponses qui ne le calculent pas). Sert au biais
+  /// « sources productives » du recommander d'onboarding.
+  final int articles30d;
   final double priorityMultiplier;
   final bool hasSubscription;
 
@@ -121,6 +126,7 @@ class Source {
     this.secondaryThemes = const [],
     this.sourceTier = 'mainstream',
     this.followerCount = 0,
+    this.articles30d = 0,
     this.priorityMultiplier = 1.0,
     this.hasSubscription = false,
     this.hasPaywall = false,
@@ -152,6 +158,7 @@ class Source {
     List<String>? secondaryThemes,
     String? sourceTier,
     int? followerCount,
+    int? articles30d,
     double? priorityMultiplier,
     bool? hasSubscription,
     bool? hasPaywall,
@@ -182,6 +189,7 @@ class Source {
       secondaryThemes: secondaryThemes ?? this.secondaryThemes,
       sourceTier: sourceTier ?? this.sourceTier,
       followerCount: followerCount ?? this.followerCount,
+      articles30d: articles30d ?? this.articles30d,
       priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
       hasSubscription: hasSubscription ?? this.hasSubscription,
       hasPaywall: hasPaywall ?? this.hasPaywall,
@@ -226,6 +234,7 @@ class Source {
                 const [],
         sourceTier: (json['source_tier'] as String?) ?? 'mainstream',
         followerCount: (json['follower_count'] as int?) ?? 0,
+        articles30d: (json['articles_30d'] as int?) ?? 0,
         priorityMultiplier:
             (json['priority_multiplier'] as num?)?.toDouble() ?? 1.0,
         hasSubscription: (json['has_subscription'] as bool?) ?? false,
@@ -377,7 +386,24 @@ class Source {
       case SourceType.podcast:
         return 'Podcast';
       case SourceType.video:
-        return 'Video';
+        return 'Vidéo';
+    }
+  }
+
+  /// Icône du format, pour le badge type. `null` pour `article` (format
+  /// implicite, jamais badgé) ⇒ le widget [SourceTypeBadge] se masque.
+  IconData? getTypeIcon() {
+    switch (type) {
+      case SourceType.article:
+        return null;
+      case SourceType.youtube:
+        return Icons.smart_display_outlined;
+      case SourceType.podcast:
+        return Icons.podcasts_outlined;
+      case SourceType.video:
+        return Icons.videocam_outlined;
+      case SourceType.reddit:
+        return Icons.forum_outlined;
     }
   }
 }

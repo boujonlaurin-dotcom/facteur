@@ -1,19 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../widgets/design/facteur_button.dart';
+import '../../feed/models/content_model.dart';
 import '../../flux_continu/utils/theme_color_mapping.dart';
+import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../my_interests/widgets/interest_state_pill.dart';
 import '../models/smart_search_result.dart';
-import '../models/source_coverage.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../utils/publication_frequency.dart';
 import 'premium_source_connection.dart';
 import 'source_logo_avatar.dart';
 
@@ -37,7 +41,7 @@ class SourceDetailModal extends ConsumerWidget {
   final VoidCallback? onCopyFeedUrl;
 
   /// Articles récents pré-chargés (ex. smart-search). Quand `null`, la fiche
-  /// les charge elle-même via [sourceRecentArticlesProvider].
+  /// se charge elle-même via [sourceProfileProvider] (mode normal).
   final List<SmartSearchRecentItem>? recentItems;
 
   /// Contexte onboarding : quand non-null, le bouton principal reflète l'état
@@ -120,6 +124,15 @@ class SourceDetailModal extends ConsumerWidget {
 }
 
 /// Contenu défilant : header → éval → couverture → articles → réglages → gestion.
+///
+/// Deux modes :
+/// - **normal** (`recentItems == null`) : un seul [sourceProfileProvider]
+///   alimente couverture, articles (cartes cliquables) et chip fréquence. En
+///   erreur réseau, la fiche tombe sur un **fallback statique** (header + éval
+///   + réglages + gestion) sans jamais bloquer.
+/// - **smart-search** (`recentItems != null`, depuis `source_add_panel`) :
+///   inchangé — couverture via [sourceCoverageProvider], articles préchargés
+///   en carte minimale (la source n'est pas forcément en base).
 class _FsBody extends ConsumerWidget {
   final Source source;
   final List<SmartSearchRecentItem>? recentItems;
@@ -128,13 +141,66 @@ class _FsBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final preloaded = recentItems;
+    if (preloaded != null) {
+      return _assemble(
+        frequencyLabel: null,
+        middle: [
+          _FsCoverageFromProvider(source: source),
+          _FsSection(
+            title: 'Derniers articles',
+            child: _ArticlesContent(items: preloaded),
+          ),
+        ],
+      );
+    }
+
+    final profileAsync = ref.watch(sourceProfileProvider(source.id));
+    final (String? frequencyLabel, List<Widget> middle) = profileAsync.when(
+      loading: () => (
+        null,
+        const [
+          _FsSection(title: 'Couverture par thèmes', child: _CoverageSkeleton()),
+          _FsSection(title: 'Derniers articles', child: _ArticlesSkeleton()),
+        ],
+      ),
+      // Fallback statique : couverture / articles / fréquence masqués, le reste
+      // reste exploitable depuis l'objet Source déjà en main.
+      error: (_, __) => (null, const <Widget>[]),
+      data: (profile) => (
+        humanizeFrequency(profile.articles30d, profile.oldestContentAt),
+        [
+          if (profile.hasCoverage)
+            _FsSection(
+              title: 'Couverture par thèmes',
+              action: '30 derniers jours',
+              child: _CoverageBars(
+                rows: [
+                  for (final t in profile.themeDistribution)
+                    (theme: t.theme, pct: (t.share * 100).round()),
+                ],
+                caption: _coverageCaption(profile.articles30d),
+              ),
+            ),
+          _FsArticlesSection(articles: profile.recentArticles),
+        ],
+      ),
+    );
+    return _assemble(frequencyLabel: frequencyLabel, middle: middle);
+  }
+
+  /// Assemble la fiche autour d'une zone centrale variable. Header, éval,
+  /// réglages et gestion sont communs aux trois états (data/loading/error).
+  Widget _assemble({
+    required String? frequencyLabel,
+    required List<Widget> middle,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FsHeader(source: source),
+        _FsHeader(source: source, frequencyLabel: frequencyLabel),
         _FsEval(source: source),
-        _FsCoverage(source: source),
-        _FsArticles(source: source, preloaded: recentItems),
+        ...middle,
         if (source.isTrusted) _FsSettings(source: source),
         _FsManage(source: source),
       ],
@@ -147,7 +213,12 @@ class _FsBody extends ConsumerWidget {
 // ============================================================
 class _FsHeader extends StatelessWidget {
   final Source source;
-  const _FsHeader({required this.source});
+
+  /// Fréquence de publication humanisée (« ~100/jour »…). `null` hors mode
+  /// normal data (smart-search, loading, fallback erreur).
+  final String? frequencyLabel;
+
+  const _FsHeader({required this.source, this.frequencyLabel});
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +236,20 @@ class _FsHeader extends StatelessWidget {
         'Suivi par ${_formatThousands(followerCount)} '
         '${followerCount > 1 ? 'lecteurs' : 'lecteur'}',
       ));
+    }
+    if (frequencyLabel != null && frequencyLabel!.isNotEmpty) {
+      signals.add(_signal(
+        context,
+        PhosphorIcons.clock(PhosphorIconsStyle.regular),
+        frequencyLabel!,
+      ));
+    }
+    // Format (non-article uniquement) : rend lisible vidéo/podcast/Reddit. Rendu
+    // dans l'idiome « signal » du header plutôt qu'en pill, pour rester cohérent
+    // avec les autres signaux (suiveurs, fréquence).
+    final typeIcon = source.getTypeIcon();
+    if (typeIcon != null) {
+      signals.add(_signal(context, typeIcon, source.getTypeLabel()));
     }
 
     return Padding(
@@ -721,9 +806,12 @@ class _FsRecoPersoState extends State<_FsRecoPerso> {
 // ============================================================
 // 3. Couverture par thèmes
 // ============================================================
-class _FsCoverage extends ConsumerWidget {
+
+/// Couverture par thèmes alimentée par [sourceCoverageProvider] (mode
+/// smart-search : la source n'est pas forcément dans le profil unifié).
+class _FsCoverageFromProvider extends ConsumerWidget {
   final Source source;
-  const _FsCoverage({required this.source});
+  const _FsCoverageFromProvider({required this.source});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -740,16 +828,24 @@ class _FsCoverage extends ConsumerWidget {
         return _FsSection(
           title: 'Couverture par thèmes',
           action: coverage.periodLabel.isNotEmpty ? coverage.periodLabel : null,
-          child: _CoverageBars(coverage: coverage),
+          child: _CoverageBars(
+            rows: [
+              for (final r in coverage.rows) (theme: r.theme, pct: r.pct),
+            ],
+            caption: coverage.caption,
+          ),
         );
       },
     );
   }
 }
 
+/// Barres de couverture par thème : un rang = `(theme brut, pct 0..100)`.
+/// Partagé par les deux sources de données (profil unifié & coverage legacy).
 class _CoverageBars extends StatelessWidget {
-  final SourceCoverage coverage;
-  const _CoverageBars({required this.coverage});
+  final List<({String theme, int pct})> rows;
+  final String? caption;
+  const _CoverageBars({required this.rows, this.caption});
 
   @override
   Widget build(BuildContext context) {
@@ -759,7 +855,7 @@ class _CoverageBars extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final row in coverage.rows) ...[
+        for (final row in rows) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 9),
             child: Row(
@@ -821,10 +917,10 @@ class _CoverageBars extends StatelessWidget {
             ),
           ),
         ],
-        if (coverage.caption != null) ...[
+        if (caption != null) ...[
           const SizedBox(height: 1),
           Text(
-            coverage.caption!,
+            caption!,
             style: textTheme.labelSmall?.copyWith(
               color: colors.textTertiary,
               fontSize: 11.5,
@@ -873,36 +969,97 @@ class _CoverageSkeleton extends StatelessWidget {
 // ============================================================
 // 4. Derniers articles
 // ============================================================
-class _FsArticles extends ConsumerWidget {
-  final Source source;
-  final List<SmartSearchRecentItem>? preloaded;
 
-  const _FsArticles({required this.source, this.preloaded});
+/// Mode normal : articles récents en carte standard [FluxContinuArticleCard]
+/// (tap → reader, read-sync, preview en appui long — gérés par la carte). Les
+/// `Content` viennent complets du profil unifié.
+class _FsArticlesSection extends StatelessWidget {
+  final List<Content> articles;
+  const _FsArticlesSection({required this.articles});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Si des articles ont été pré-chargés (smart-search), on les utilise tels
-    // quels et on évite tout appel réseau.
-    if (preloaded != null) {
-      return _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesContent(items: preloaded!),
-      );
-    }
+  Widget build(BuildContext context) {
+    final visible = articles.take(3).toList();
 
-    final articlesAsync = ref.watch(sourceRecentArticlesProvider(source.id));
-    return articlesAsync.when(
-      loading: () => const _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesSkeleton(),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 26, 16, 14),
+          child: _FsSectionHeader(title: 'Derniers articles'),
+        ),
+        if (visible.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: _ArticlesEmptyCard(message: 'Aucun article récent.'),
+          )
+        else
+          // FluxContinuArticleCard porte 12px de padding horizontal interne ;
+          // +4px ici aligne les cartes sur les 16px du reste de la fiche.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              children: [
+                for (final article in visible)
+                  FluxContinuArticleCard(
+                    article: article,
+                    onTap: () => _openArticle(context, article),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _openArticle(BuildContext context, Content article) {
+    // Reader unique (root navigator) : la sheet reste vivante dessous.
+    context.pushNamed(
+      RouteNames.contentDetail,
+      pathParameters: {'id': article.id},
+      extra: article,
+    );
+  }
+}
+
+/// Carte vide partagée (mode smart-search & mode normal sans article).
+class _ArticlesEmptyCard extends StatelessWidget {
+  final String message;
+  const _ArticlesEmptyCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(
+          color: colors.textTertiary.withValues(alpha: 0.25),
+        ),
       ),
-      error: (_, __) => const _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesContent(items: []),
-      ),
-      data: (items) => _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesContent(items: items),
+      child: Row(
+        children: [
+          Icon(
+            PhosphorIcons.moonStars(PhosphorIconsStyle.regular),
+            size: 22,
+            color: colors.textTertiary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: textTheme.labelMedium?.copyWith(
+                color: colors.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13.5,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -914,41 +1071,11 @@ class _ArticlesContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
     final visible = items.take(3).toList();
 
     if (visible.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-        decoration: BoxDecoration(
-          color: colors.surface.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(FacteurRadius.large),
-          border: Border.all(
-            color: colors.textTertiary.withValues(alpha: 0.25),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              PhosphorIcons.moonStars(PhosphorIconsStyle.regular),
-              size: 22,
-              color: colors.textTertiary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Rien publié ces 7 derniers jours.',
-                style: textTheme.labelMedium?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13.5,
-                  letterSpacing: 0,
-                ),
-              ),
-            ),
-          ],
-        ),
+      return const _ArticlesEmptyCard(
+        message: 'Rien publié ces 7 derniers jours.',
       );
     }
 
@@ -1510,6 +1637,50 @@ class _StarButton extends StatelessWidget {
 // Helpers UI partagés
 // ============================================================
 
+/// En-tête de section seul : titre + filet + action optionnelle. Extrait pour
+/// que la section articles (cartes au padding propre) le réutilise.
+class _FsSectionHeader extends StatelessWidget {
+  final String title;
+  final String? action;
+  const _FsSectionHeader({required this.title, this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        Text(
+          title,
+          style: textTheme.labelLarge?.copyWith(
+            color: colors.textPrimary,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: colors.textPrimary.withValues(alpha: 0.08),
+          ),
+        ),
+        if (action != null) ...[
+          const SizedBox(width: 10),
+          Text(
+            action!,
+            style: textTheme.labelSmall?.copyWith(
+              color: colors.textTertiary,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// En-tête de section : titre + filet + action optionnelle, puis contenu.
 class _FsSection extends StatelessWidget {
   final String title;
@@ -1520,43 +1691,12 @@ class _FsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
-                title,
-                style: textTheme.labelLarge?.copyWith(
-                  color: colors.textPrimary,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  height: 1,
-                  color: colors.textPrimary.withValues(alpha: 0.08),
-                ),
-              ),
-              if (action != null) ...[
-                const SizedBox(width: 10),
-                Text(
-                  action!,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colors.textTertiary,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ],
-            ],
-          ),
+          _FsSectionHeader(title: title, action: action),
           const SizedBox(height: 14),
           child,
         ],
@@ -1667,6 +1807,13 @@ String? _relativeTime(String publishedAt) {
   final date = DateTime.tryParse(publishedAt);
   if (date == null) return null;
   return timeago.format(date, locale: 'fr');
+}
+
+/// Caption couverture en mode normal, dérivée du volume 30 j du profil.
+/// Aligne la copie sur celle calculée côté backend pour `/coverage`.
+String _coverageCaption(int total) {
+  final noun = total == 1 ? 'article publié' : 'articles publiés';
+  return '${_formatThousands(total)} $noun sur la période';
 }
 
 /// Sépare les milliers par une espace fine insécable (« 3 012 »).

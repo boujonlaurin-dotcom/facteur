@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +11,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/web/web_perf.dart';
 import '../../../widgets/design/facteur_card.dart';
+import '../../../widgets/design/facteur_image.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../digest/widgets/markdown_text.dart';
 import '../../digest/widgets/section_divider.dart';
@@ -18,6 +22,7 @@ import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
+import 'coverage_comparison_card.dart';
 import 'coverage_spectrum_bar.dart';
 import 'diff_title.dart';
 
@@ -28,6 +33,12 @@ const String kHighlightIntroText =
     'Le surlignage met en évidence les termes qui '
     'marquent l\'angle éditorial : plus le surlignage '
     'est intense, plus le choix de mot est éditorialisé.';
+
+/// Disclaimer affiché sous l'analyse Facteur — partagé par la zone inline
+/// plein écran ([PerspectivesAnalysisZone]) et le bottom sheet ([_AnalysisSheet]).
+const String kAnalysisDisclaimerText =
+    'Analyse générée par Mistral Large · '
+    "l'IA peut faire des erreurs.";
 
 const String kDivergenceExplanationText =
     'Facteur mesure la divergence en comparant le vocabulaire et le cadrage '
@@ -41,7 +52,7 @@ const String kDivergenceExplanationText =
 /// article interne — plus de webview dupliquée à re-diverger. La route étant
 /// full-screen + swipe-back iOS, fermer le reader ramène sur la sheet de
 /// comparaisons intacte (elle-même sur le root navigator).
-void _openPerspectiveWebView(BuildContext context, Perspective p) {
+void openPerspectiveReader(BuildContext context, Perspective p) {
   context.pushNamed(RouteNames.contentExternal, extra: p);
 }
 
@@ -77,8 +88,10 @@ class Perspective {
   });
 
   factory Perspective.fromJson(Map<String, dynamic> json) {
-    final rawHighlights = json['highlight_spans'] as List<dynamic>?;
-    final rawShared = json['shared_tokens'] as List<dynamic>?;
+    // DÉSACTIVÉ (T1) : le highlighting des biais n'est plus affiché → on ne
+    // parse plus `highlight_spans` / `shared_tokens` ; les champs restent à
+    // `const []` ⇒ DiffTitle rend un titre plain. Réactivation = re-parser ici
+    // (et aux autres sites de construction de Perspective).
     return Perspective(
       title: (json['title'] as String?) ?? '',
       url: (json['url'] as String?) ?? '',
@@ -86,22 +99,17 @@ class Perspective {
       sourceDomain: (json['source_domain'] as String?) ?? '',
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
-      highlightSpans: rawHighlights == null
-          ? const []
-          : rawHighlights
-              .map((e) => HighlightSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
-      sharedTokens: rawShared == null
-          ? const []
-          : rawShared
-              .map((e) => TokenSpan.fromJson(e as Map<String, dynamic>))
-              .toList(),
       language: json['language'] as String?,
     );
   }
 
-  Color getBiasColor(FacteurColors colors) {
-    switch (biasStance) {
+  Color getBiasColor(FacteurColors colors) =>
+      Perspective.colorForStance(biasStance, colors);
+
+  /// Mapping bord politique → couleur. Single source of truth réutilisé par
+  /// [getBiasColor] (instance).
+  static Color colorForStance(String stance, FacteurColors colors) {
+    switch (stance) {
       case 'left':
         return colors.biasLeft;
       case 'center-left':
@@ -689,7 +697,7 @@ class _PerspectiveCard extends ConsumerWidget {
               ? perspective.sourceDomain
               : perspective.url;
           onView?.call(perspectiveId);
-          _openPerspectiveWebView(context, perspective);
+          openPerspectiveReader(context, perspective);
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -798,12 +806,14 @@ class _PerspectiveCard extends ConsumerWidget {
                     if (perspective.sourceDomain.isNotEmpty) ...[
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
-                        child: Image.network(
-                          'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
+                        // Web : proxy backend (CORS) via FacteurImage, sinon le
+                        // canvas CanvasKit taint sur l'URL google directe.
+                        child: FacteurImage(
+                          imageUrl:
+                              'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=32',
                           width: 14,
                           height: 14,
-                          errorBuilder: (_, __, ___) =>
-                              _buildSourcePlaceholder(colors),
+                          errorWidget: (_) => _buildSourcePlaceholder(colors),
                         ),
                       ),
                     ] else
@@ -1273,7 +1283,7 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
             Align(
               alignment: Alignment.centerRight,
               child: Text(
-                'Analyse générée par Mistral Large · l\'IA peut faire des erreurs.',
+                kAnalysisDisclaimerText,
                 style: widget.textTheme.bodySmall?.copyWith(
                   fontSize: 10,
                   fontStyle: FontStyle.italic,
@@ -1336,30 +1346,13 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
   final String comparisonQuality;
   final String? divergenceLevel;
 
-  /// Controlled mode: when provided, the parent owns the filter state.
-  /// Préservé pour compatibilité avec le call-site existant — non utilisé
-  /// par la refonte hi-fi (le spectrum 5-segs est en lecture seule).
-  final Set<String>? externalSelectedSegments;
-  final void Function(String)? onSegmentTap;
-  final VoidCallback? onClearSegments;
-
-  /// Analysis state controlled by the parent screen.
-  final PerspectivesAnalysisState analysisState;
-  final String? analysisText;
-  final VoidCallback? onRequestAnalysis;
-
-  /// Key attached to the analysis result zone so the parent can scroll to it.
-  final Key? analysisZoneKey;
-
   /// Key attached to the first perspective card so the parent can detect
   /// when the user has scrolled past it.
   final Key? firstCardKey;
 
-  /// Whether the section body is expanded. Controlled by the parent.
-  final bool isExpanded;
-
-  /// Called when the user taps the header to toggle collapse/expand.
-  final VoidCallback onToggle;
+  /// Ouvre le bottom sheet « Analyse Facteur » (carte CTA en fin de
+  /// carrousel). Géré par l'écran parent.
+  final VoidCallback? onOpenAnalysis;
 
   final PerspectivesSectionStatus status;
 
@@ -1373,16 +1366,8 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
     this.sourceName = '',
     this.comparisonQuality = 'low',
     this.divergenceLevel,
-    this.externalSelectedSegments,
-    this.onSegmentTap,
-    this.onClearSegments,
-    this.analysisState = PerspectivesAnalysisState.idle,
-    this.analysisText,
-    this.onRequestAnalysis,
-    this.analysisZoneKey,
     this.firstCardKey,
-    this.isExpanded = true,
-    required this.onToggle,
+    this.onOpenAnalysis,
     this.status = PerspectivesSectionStatus.ready,
   });
 
@@ -1394,42 +1379,118 @@ class PerspectivesInlineSection extends ConsumerStatefulWidget {
 enum _EmptyStage { none, fading, collapsed }
 
 // ── Timing de la séquence "aucune source trouvée" ──────────────────────────
-// Ajuster ces 4 valeurs pour calibrer l'animation :
-const _kEmptyReadDelay   = Duration(milliseconds: 2000); // pause avant le fade
-const _kEmptyFadeDuration = Duration(milliseconds: 2000);  // fade 0.28 → 0
-const _kEmptySlideDuration = Duration(milliseconds: 650); // glissement vers la droite
-const _kEmptyInitialOpacity = 0.28;                       // opacité pendant la pause
+// Escamotage doux : pause de lecture (message lisible) → fondu → repli de
+// hauteur. Pas de glissement latéral (jugé abrupt).
+const _kEmptyReadDelay   = Duration(milliseconds: 1800); // pause avant le fade
+const _kEmptyFadeDuration = Duration(milliseconds: 450);  // fondu 1 → 0
+const _kEmptyInitialOpacity = 1.0;                       // message lisible pendant la pause
 // ──────────────────────────────────────────────────────────────────────────
 
-class _PerspectivesInlineSectionState
-    extends ConsumerState<PerspectivesInlineSection> {
-  double _rotationTurns = 0.0;
-  Timer? _emptyDismissTimer;
-  Timer? _emptyCollapseTimer;
-  _EmptyStage _emptyStage = _EmptyStage.none;
-  // Incrementé à chaque transition replié → ouvert : chaque DiffTitle reçoit
-  // ce nombre dans sa Key, ce qui le re-crée et relance sa cascade. Garantit
-  // que l'animation est jouée 1× par ouverture et pas re-déclenchée sur les
-  // setState parents (filter, analysis, etc.).
-  int _animationGeneration = 0;
+/// Carte placeholder shimmer (gabarit carte réel 248×192) pour le squelette de
+/// chargement du carrousel. Reprend l'animation de [CoverageSpectrumBarShimmer].
+class _CoverageCardSkeleton extends StatefulWidget {
+  const _CoverageCardSkeleton();
+
+  @override
+  State<_CoverageCardSkeleton> createState() => _CoverageCardSkeletonState();
+}
+
+class _CoverageCardSkeletonState extends State<_CoverageCardSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    _rotationTurns = widget.isExpanded ? 0.5 : 0.0;
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final baseColor = colors.textTertiary.withValues(alpha: 0.10);
+    final highlightColor = Colors.white.withValues(alpha: 0.30);
+    const radius = BorderRadius.all(Radius.circular(16));
+
+    return SizedBox(
+      width: 248,
+      height: 192,
+      child: ClipRRect(
+        borderRadius: radius,
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final offset = _controller.value * 2.8;
+            return ShaderMask(
+              blendMode: BlendMode.srcATop,
+              shaderCallback: (rect) {
+                return LinearGradient(
+                  begin: Alignment(-1.4 + offset, 0),
+                  end: Alignment(-0.2 + offset, 0),
+                  colors: [
+                    Colors.transparent,
+                    highlightColor,
+                    Colors.transparent,
+                  ],
+                  stops: const [0.0, 0.5, 1.0],
+                ).createShader(rect);
+              },
+              child: child,
+            );
+          },
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: baseColor,
+              borderRadius: radius,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PerspectivesInlineSectionState
+    extends ConsumerState<PerspectivesInlineSection> {
+  Timer? _emptyDismissTimer;
+  Timer? _emptyCollapseTimer;
+  _EmptyStage _emptyStage = _EmptyStage.none;
+  // Incrementé à la transition loading/empty → ready : chaque DiffTitle (porté
+  // par CoverageComparisonCard) reçoit ce nombre dans sa Key, ce qui le re-crée
+  // et joue sa cascade 1× quand les cartes apparaissent — pas re-déclenchée sur
+  // les setState parents.
+  int _animationGeneration = 0;
+
+  // Carte 192 + padding vertical (15 haut + 16 bas). La hauteur fixe borne les
+  // cartes médias et CTA au même gabarit.
+  static const double _kCarouselCardHeight = 192;
+  static const double _kCarouselViewportHeight =
+      _kCarouselCardHeight + 15 + 16;
+
+  @override
+  void initState() {
+    super.initState();
     _syncEmptyDismissal();
   }
 
   @override
   void didUpdateWidget(PerspectivesInlineSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isExpanded != oldWidget.isExpanded) {
-      _rotationTurns += 0.5;
-      if (widget.isExpanded) {
+    if (widget.status != oldWidget.status) {
+      // La cascade DiffTitle se joue 1× à l'arrivée des cartes.
+      if (widget.status == PerspectivesSectionStatus.ready &&
+          oldWidget.status != PerspectivesSectionStatus.ready) {
         _animationGeneration++;
       }
-    }
-    if (widget.status != oldWidget.status) {
       _syncEmptyDismissal();
     }
   }
@@ -1459,9 +1520,11 @@ class _PerspectivesInlineSectionState
     _emptyDismissTimer = Timer(_kEmptyReadDelay, () {
       if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
       setState(() => _emptyStage = _EmptyStage.fading);
-      // Collapse hauteur une fois le slide terminé
-      _emptyCollapseTimer = Timer(_kEmptySlideDuration, () {
-        if (!mounted || widget.status != PerspectivesSectionStatus.empty) return;
+      // Collapse hauteur une fois le fondu terminé
+      _emptyCollapseTimer = Timer(_kEmptyFadeDuration, () {
+        if (!mounted || widget.status != PerspectivesSectionStatus.empty) {
+          return;
+        }
         setState(() => _emptyStage = _EmptyStage.collapsed);
       });
     });
@@ -1479,213 +1542,257 @@ class _PerspectivesInlineSectionState
     return sorted;
   }
 
-  List<Perspective> get _filteredPerspectives {
-    final sorted = _sortedPerspectives;
-    final selected = widget.externalSelectedSegments;
-    if (selected == null || selected.isEmpty) return sorted;
-    return sorted.where((p) => selected.contains(p.biasGroup)).toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final isDark = context.isDarkMode;
     final textTheme = Theme.of(context).textTheme;
-    final variants = _filteredPerspectives.take(8).toList();
+    final variants = _sortedPerspectives.take(8).toList();
     final isReady = widget.status == PerspectivesSectionStatus.ready;
     final isEmpty = widget.status == PerspectivesSectionStatus.empty;
-    final shouldShowHeader = !isEmpty || _emptyStage != _EmptyStage.collapsed;
-    final label = widget.status == PerspectivesSectionStatus.loading
+    final isLoading = widget.status == PerspectivesSectionStatus.loading;
+    final shouldShowBand = !isEmpty || _emptyStage != _EmptyStage.collapsed;
+    final label = (isLoading || isEmpty)
         ? 'Couverture médiatique'
         : 'Couverture médiatique (${widget.perspectives.length})';
-    final labelColor = colors.textPrimary;
-    final shouldShowBody = isReady && widget.isExpanded;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── Bandeau cm-panel-inline : hairlines + label + spectrum + count + caret ──
-        AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          alignment: Alignment.topCenter,
-          child: shouldShowHeader
-              // Disparition empty : à la fin du fade, le bandeau glisse vers la
-              // droite hors écran avant que l'`AnimatedSize` ne replie la
-              // hauteur — sortie franche plutôt qu'un simple collapse vertical.
-              ? AnimatedSlide(
-                  duration: _kEmptySlideDuration,
-                  curve: Curves.easeOutCubic,
-                  offset: isEmpty && _emptyStage != _EmptyStage.none
-                      ? const Offset(1.1, 0)
-                      : Offset.zero,
-                  // Fondu front-loadé : disparaît progressivement avant que le
-                  // slide ne s'amorce.
-                  child: AnimatedOpacity(
-                    duration: _kEmptyFadeDuration,
-                    curve: Curves.easeOut,
-                    opacity: isEmpty ? (_emptyStage != _EmptyStage.none ? 0 : _kEmptyInitialOpacity) : 1,
-                    child: GestureDetector(
-                      onTap: isReady ? widget.onToggle : null,
-                      behavior: HitTestBehavior.opaque,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: BorderSide(
-                              color: Colors.black.withValues(
-                                alpha: isReady ? 0.08 : 0,
-                              ),
-                              width: 1,
-                            ),
-                            bottom: BorderSide(
-                              color: Colors.black.withValues(
-                                alpha: isReady ? 0.08 : 0,
-                              ),
-                              width: 1,
-                            ),
-                          ),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 13,
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      label,
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: labelColor,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (!isEmpty) ...[
-                              const SizedBox(width: 12),
-                              if (widget.status ==
-                                  PerspectivesSectionStatus.loading)
-                                const CoverageSpectrumBarShimmer()
-                              else
-                                CoverageSpectrumBar(
-                                  distribution: widget.biasDistribution,
-                                ),
-                            ],
-                            if (isReady) ...[
-                              const SizedBox(width: 10),
-                              AnimatedRotation(
-                                turns: _rotationTurns,
-                                duration: const Duration(milliseconds: 250),
-                                curve: Curves.easeInOut,
-                                child: Icon(
-                                  PhosphorIcons.caretDown(
-                                    PhosphorIconsStyle.regular,
-                                  ),
-                                  size: 14,
-                                  color: colors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut,
-          alignment: Alignment.topCenter,
-          child: shouldShowBody
-              ? _buildExpandedBody(colors, textTheme, variants)
-              : const SizedBox.shrink(),
-        ),
-      ],
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      alignment: Alignment.topCenter,
+      child: shouldShowBand
+          // Disparition empty : fondu doux du bandeau puis repli de la hauteur
+          // par l'`AnimatedSize` (pas de glissement latéral).
+          ? AnimatedOpacity(
+              duration: _kEmptyFadeDuration,
+              curve: Curves.easeOut,
+              opacity: isEmpty
+                  ? (_emptyStage != _EmptyStage.none
+                      ? 0
+                      : _kEmptyInitialOpacity)
+                  : 1,
+              // Bande frostée edge-to-edge encastrée : teinte crème assombri
+              // translucide (laisse transparaître le parchemin du reader,
+              // reste plus foncée que les cartes) + flou verre + hairline
+              // chaude très douce haut/bas (creux secondaire, pas d'ombre).
+              child: _buildFrostedBand(
+                colors: colors,
+                isDark: isDark,
+                isReady: isReady,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(colors, textTheme, label, isLoading, isEmpty),
+                    if (isReady) ...[
+                      _buildCarousel(variants),
+                      // Libellé de polarisation déplacé SOUS le carrousel
+                      // (le header ne porte plus que le titre + la barre).
+                      _buildBandFooter(colors, textTheme),
+                    ] else if (isLoading) ...[
+                      // Squelette plein-format : la bande garde la stature de
+                      // l'état prêt (sinon un mince filet « ressemble à un bug »).
+                      _buildLoadingSkeleton(),
+                    ] else if (isEmpty) ...[
+                      _buildEmptyMessage(colors, textTheme),
+                    ],
+                  ],
+                ),
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 
-  Widget _buildExpandedBody(
+  /// Coque verre crème encastrée : la bande s'efface *derrière* le plan de
+  /// l'article (secondaire). Teinte crème assombri translucide composée sur le
+  /// parchemin de la page ⇒ rendu plus foncé que les cartes article (`surface
+  /// #FDFBF7`), qui « popent » du coup. Pas d'ombre portée (elle faisait
+  /// flotter/avancer la bande) : seulement une hairline chaude très douce
+  /// top + bottom, lue comme un léger creux. Padding interne `(0,16,0,6)`.
+  Widget _buildFrostedBand({
+    required FacteurColors colors,
+    required bool isDark,
+    required bool isReady,
+    required Widget child,
+  }) {
+    // Teinte quasi-invisible : à peine ~2 % sous le parchemin de la page. La
+    // zone ne se lit plus comme un panneau ; c'est la hairline qui délimite.
+    // Clair : crème translucide très léger. Sombre : backgroundPrimary discret.
+    final tint = isDark
+        ? colors.backgroundPrimary.withValues(alpha: 0.6)
+        : const Color.fromRGBO(232, 222, 203, 0.55);
+    // Web n'a pas de blur (no-op opaque) → teinte composée plus proche du fond.
+    final fallbackColor = isDark
+        ? colors.backgroundPrimary
+        : const Color.fromRGBO(237, 228, 211, 1);
+    // Hairline chaude nette mais fine : c'est la VRAIE séparation (élégante,
+    // marquée). Top + bottom, gardée sur isReady.
+    final hairlineColor = isDark
+        ? Colors.white.withValues(alpha: isReady ? 0.09 : 0)
+        : colors.border.withValues(alpha: isReady ? 0.7 : 0);
+
+    return ClipRect(
+      // ClipRect (bords droits) borne le BackdropFilter → vrai effet verre.
+      child: webBlurFallback(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        fallbackColor: fallbackColor,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: tint,
+            border: Border(
+              top: BorderSide(color: hairlineColor, width: 1),
+              bottom: BorderSide(color: hairlineColor, width: 1),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Header 2 lignes : (titre + barre spectre) / (badge divergence + info).
+  Widget _buildHeader(
     FacteurColors colors,
     TextTheme textTheme,
-    List<Perspective> variants,
+    String label,
+    bool isLoading,
+    bool isEmpty,
   ) {
-    final hasDivergenceBadge = widget.divergenceLevel != null;
-    final shouldShowIntroInfo = variants.isNotEmpty;
-    final shouldShowToolsRow = hasDivergenceBadge || shouldShowIntroInfo;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (shouldShowToolsRow)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: hasDivergenceBadge
-                      // scaleDown : pleine taille (+45 %) quand ça rentre, se
-                      // réduit gracieusement pour le label long « low » sur les
-                      // largeurs serrées plutôt que d'overflow.
-                      ? FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: DivergenceInlineBadge(
-                            divergenceLevel: widget.divergenceLevel,
-                            scale: 1.45,
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                if (shouldShowIntroInfo)
-                  _HighlightInfoButton(
-                    colors: colors,
-                    onTap: () => _showHighlightInfo(context, colors, textTheme),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Ligne 1 : libellé à gauche (FittedBox scaleDown absorbe les titres
+          // longs sans wrap), barre spectre (96 px) épinglée à droite et
+          // centrée verticalement sur le titre.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: colors.textPrimary,
+                    ),
                   ),
+                ),
+              ),
+              if (!isEmpty) ...[
+                const SizedBox(width: 11),
+                SizedBox(
+                  width: 96,
+                  child: isLoading
+                      ? const CoverageSpectrumBarShimmer()
+                      : CoverageSpectrumBar(
+                          distribution: widget.biasDistribution,
+                        ),
+                ),
               ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Pied de bande, sous le carrousel : libellé de polarisation à gauche +
+  /// bouton info (surlignage) à droite. Rendu uniquement quand la couverture
+  /// est prête (le `if (isReady)` du parent garantit déjà la condition).
+  Widget _buildBandFooter(FacteurColors colors, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 0, 10, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: DivergenceInlineBadge(
+              divergenceLevel: widget.divergenceLevel,
+              scale: 1.45,
             ),
           ),
-        for (var i = 0; i < variants.length; i++)
-          _VariantRow(
-            key: ValueKey('variant_${_animationGeneration}_$i'),
-            firstCardKey: i == 0 ? widget.firstCardKey : null,
-            perspective: variants[i],
-            isLast: i == variants.length - 1,
+          const SizedBox(width: 8),
+          _HighlightInfoButton(
+            colors: colors,
+            onTap: () => _showHighlightInfo(context, colors, textTheme),
           ),
-        if (widget.analysisState == PerspectivesAnalysisState.idle)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
-            child: _AnalysisCtaCard(
-              onTap: widget.onRequestAnalysis,
-              state: widget.analysisState,
+        ],
+      ),
+    );
+  }
+
+  /// Carrousel horizontal : cartes de couverture (gap 13) + carte CTA Analyse
+  /// en fin de course. Viewport à hauteur fixe → cartes équi-hauteur.
+  Widget _buildCarousel(List<Perspective> variants) {
+    return SizedBox(
+      height: _kCarouselViewportHeight,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(18, 15, 18, 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < variants.length; i++) ...[
+              if (i > 0) const SizedBox(width: 13),
+              CoverageComparisonCard(
+                key: ValueKey('coverage_${_animationGeneration}_$i'),
+                perspective: variants[i],
+                firstCardKey: i == 0 ? widget.firstCardKey : null,
+              ),
+            ],
+            if (variants.isNotEmpty) const SizedBox(width: 13),
+            _AnalysisCtaCard(
+              onTap: widget.onOpenAnalysis,
+              count: widget.perspectives.length,
             ),
-          ),
-        if (widget.analysisState != PerspectivesAnalysisState.idle)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-            child: PerspectivesAnalysisZone(
-              state: widget.analysisState,
-              text: widget.analysisText,
-              onRequestAnalysis: widget.onRequestAnalysis,
-              colors: colors,
-              textTheme: textTheme,
-              zoneKey: widget.analysisZoneKey,
-            ),
-          ),
-        const SizedBox(height: 16),
-      ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Squelette du carrousel pendant le chargement : 2 cartes placeholder au
+  /// gabarit réel (248×192) avec shimmer, dans le même viewport à hauteur fixe
+  /// que l'état prêt → la bande ne se réduit pas à un filet.
+  Widget _buildLoadingSkeleton() {
+    return const SizedBox(
+      height: _kCarouselViewportHeight,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(18, 15, 18, 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _CoverageCardSkeleton(),
+            SizedBox(width: 13),
+            _CoverageCardSkeleton(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Corps de l'état vide : message explicite, lisible pendant la pause de
+  /// lecture avant l'escamotage en fondu.
+  Widget _buildEmptyMessage(FacteurColors colors, TextTheme textTheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 4, 18, 18),
+      child: Text(
+        "Pas d'autre source trouvée",
+        textAlign: TextAlign.center,
+        style: textTheme.bodySmall?.copyWith(
+          color: colors.textTertiary,
+        ),
+      ),
     );
   }
 
@@ -1961,223 +2068,109 @@ class _PivotWashTitleState extends State<PivotWashTitle>
   }
 }
 
-/// Ligne variante (cm-vrow) — border-left 4 px couleur bias + DiffTitle animé
-/// suivi d'une foot row (favicon + nom + bias label + arrow).
-class _VariantRow extends ConsumerWidget {
-  final Perspective perspective;
-  final bool isLast;
-  final Key? firstCardKey;
-
-  const _VariantRow({
-    super.key,
-    required this.perspective,
-    required this.isLast,
-    this.firstCardKey,
-  });
-
-  String _biasLabel() {
-    switch (perspective.biasStance) {
-      case 'left':
-        return 'GAUCHE';
-      case 'center-left':
-        return 'CENTRE-G';
-      case 'center':
-        return 'CENTRE';
-      case 'center-right':
-        return 'CENTRE-D';
-      case 'right':
-        return 'DROITE';
-      default:
-        return 'SOURCE';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final biasColor = perspective.getBiasColor(colors);
-    return InkWell(
-      key: firstCardKey,
-      onTap: () => _openPerspectiveWebView(context, perspective),
-      child: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            left: BorderSide(color: biasColor, width: 4),
-            bottom: isLast
-                ? BorderSide.none
-                : BorderSide(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    width: 1,
-                  ),
-          ),
-        ),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DiffTitle(
-              title: perspective.title,
-              highlightSpans: perspective.highlightSpans,
-              sharedTokens: perspective.sharedTokens,
-              biasColor: biasColor,
-              baseStyle: textTheme.bodyMedium?.copyWith(
-                    fontSize: 15.5,
-                    height: 1.35,
-                    color: colors.textPrimary,
-                  ) ??
-                  TextStyle(fontSize: 15.5, color: colors.textPrimary),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                if (perspective.sourceDomain.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.network(
-                      'https://www.google.com/s2/favicons?domain=${perspective.sourceDomain}&sz=64',
-                      width: 20,
-                      height: 20,
-                      errorBuilder: (_, __, ___) => _SourceFallback(
-                        name: perspective.sourceName,
-                        colors: colors,
-                      ),
-                    ),
-                  )
-                else
-                  _SourceFallback(name: perspective.sourceName, colors: colors),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    perspective.sourceName,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                      color: colors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _biasLabel(),
-                  style: GoogleFonts.courierPrime(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: biasColor,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const Spacer(),
-                Icon(
-                  PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
-                  size: 14,
-                  color: colors.textTertiary,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SourceFallback extends StatelessWidget {
-  final String name;
-  final FacteurColors colors;
-  const _SourceFallback({required this.name, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: colors.backgroundSecondary,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: colors.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-/// CTA Analyse Facteur — card dashed border, déprioritée. Affiché tant que
-/// l'analyse est `idle` ; les états loading/done/error sont rendus par
-/// [`PerspectivesAnalysisZone`] (qui prend la place visuelle).
+/// Carte CTA « Analyse Facteur » en fin de carrousel — gabarit gradient ocre.
+/// Tap → ouvre le bottom sheet d'analyse (`onTap`, géré par l'écran parent).
 class _AnalysisCtaCard extends StatelessWidget {
   final VoidCallback? onTap;
-  final PerspectivesAnalysisState state;
+  final int count;
 
-  const _AnalysisCtaCard({required this.onTap, required this.state});
+  const _AnalysisCtaCard({required this.onTap, required this.count});
 
   @override
   Widget build(BuildContext context) {
-    if (state != PerspectivesAnalysisState.idle) {
-      return const SizedBox.shrink();
-    }
     final colors = context.facteurColors;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: CustomPaint(
-        painter: _DashedBorderPainter(
-          color: Colors.black.withValues(alpha: 0.12),
-          radius: 12,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                PhosphorIcons.sparkle(PhosphorIconsStyle.regular),
-                size: 18,
-                color: colors.textSecondary,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
+    return SizedBox(
+      width: 190,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFBEFE3), Color(0xFFF4DEC8)],
+            ),
+            border: Border.all(color: colors.primary.withValues(alpha: 0.30)),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 16),
+          // FittedBox(scaleDown) : la carte vit dans un viewport à hauteur
+          // fixe ; si les métriques de police (tests, gros textScale) gonflent
+          // le contenu, on le réduit au lieu d'overflow.
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: SizedBox(
+                width: 160,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: Color.alphaBlend(
+                          colors.primary.withValues(alpha: 0.14),
+                          Colors.white,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                        size: 19,
+                        color: colors.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 9),
                     Text(
                       'Analyse Facteur',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
+                      style: GoogleFonts.fraunces(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        height: 1.1,
                         color: colors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 9),
                     Text(
-                      'Synthèse approfondie en quelques secondes',
+                      'Une synthèse neutre des $count angles, en quelques '
+                      'secondes.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.dmSans(
-                        fontSize: 11,
-                        color: colors.textTertiary,
+                        fontSize: 11.5,
+                        height: 1.45,
+                        color: colors.textSecondary,
                       ),
+                    ),
+                    const SizedBox(height: 9),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Lancer',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: colors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
+                          size: 14,
+                          color: colors.primary,
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                'Lancer →',
-                style: GoogleFonts.dmSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: colors.primary,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -2185,48 +2178,311 @@ class _AnalysisCtaCard extends StatelessWidget {
   }
 }
 
-class _DashedBorderPainter extends CustomPainter {
-  final Color color;
-  final double radius;
-  _DashedBorderPainter({required this.color, required this.radius});
+// ─── Bottom sheet « Analyse Facteur » (reskin du texte `analysis` existant) ───
+
+/// État réactif poussé au bottom sheet d'analyse par l'écran parent.
+class AnalysisSheetData {
+  final PerspectivesAnalysisState state;
+  final String? text;
+
+  const AnalysisSheetData({
+    this.state = PerspectivesAnalysisState.idle,
+    this.text,
+  });
+}
+
+/// Découpe le texte d'analyse en (essentiel partagé, là où ça diverge) sur le
+/// **1ᵉʳ `\n\n`**. Absent → essentiel vide, tout sous « divergent ». Trim.
+({String essentiel, String divergent}) splitAnalysisSections(String raw) {
+  final idx = raw.indexOf('\n\n');
+  if (idx < 0) return (essentiel: '', divergent: raw.trim());
+  return (
+    essentiel: raw.substring(0, idx).trim(),
+    divergent: raw.substring(idx + 2).trim(),
+  );
+}
+
+/// Ouvre le bottom sheet d'analyse. Scrim `rgba(20,16,12,.52)` sans blur ;
+/// reduced-motion → coupe l'anim de montée. Le contenu réagit aux transitions
+/// loading → done/error via `data`.
+Future<void> showAnalysisBottomSheet({
+  required BuildContext context,
+  required ValueListenable<AnalysisSheetData> data,
+  required List<Perspective> perspectives,
+  required VoidCallback onRetry,
+}) {
+  final reduceMotion = MediaQuery.of(context).disableAnimations;
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: const Color.fromARGB(133, 20, 16, 12),
+    sheetAnimationStyle: reduceMotion ? AnimationStyle.noAnimation : null,
+    builder: (sheetContext) => _AnalysisSheet(
+      data: data,
+      perspectives: perspectives,
+      onRetry: onRetry,
+    ),
+  );
+}
+
+class _AnalysisSheet extends StatelessWidget {
+  final ValueListenable<AnalysisSheetData> data;
+  final List<Perspective> perspectives;
+  final VoidCallback onRetry;
+
+  const _AnalysisSheet({
+    required this.data,
+    required this.perspectives,
+    required this.onRetry,
+  });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final mq = MediaQuery.of(context);
+
+    return Container(
+      constraints: BoxConstraints(maxHeight: mq.size.height * 0.86),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Header fixe ──
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Color.alphaBlend(
+                            colors.primary.withValues(alpha: 0.13),
+                            Colors.white,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+                          size: 21,
+                          color: colors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Analyse Facteur',
+                              style: GoogleFonts.fraunces(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.3,
+                                height: 1.12,
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Synthèse neutre · ${perspectives.length} médias',
+                              style: GoogleFonts.courierPrime(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.6,
+                                color: colors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: colors.textPrimary.withValues(alpha: 0.06),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            PhosphorIcons.x(PhosphorIconsStyle.regular),
+                            size: 15,
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Colors.black.withValues(alpha: 0.07),
+                ),
+              ],
+            ),
+          ),
+          // ── Contenu réactif ──
+          Flexible(
+            child: ValueListenableBuilder<AnalysisSheetData>(
+              valueListenable: data,
+              builder: (context, value, _) {
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 26),
+                  child: _buildContent(context, colors, textTheme, value),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
-    final path = Path()..addRRect(rrect);
-    final dashed = _dashPath(path, dashWidth: 4, gapWidth: 4);
-    canvas.drawPath(dashed, paint);
   }
 
-  Path _dashPath(
-    Path source, {
-    required double dashWidth,
-    required double gapWidth,
-  }) {
-    final out = Path();
-    for (final metric in source.computeMetrics()) {
-      double distance = 0;
-      var draw = true;
-      while (distance < metric.length) {
-        final next = distance + (draw ? dashWidth : gapWidth);
-        if (draw) {
-          out.addPath(metric.extractPath(distance, next), Offset.zero);
-        }
-        distance = next;
-        draw = !draw;
-      }
+  Widget _buildContent(
+    BuildContext context,
+    FacteurColors colors,
+    TextTheme textTheme,
+    AnalysisSheetData value,
+  ) {
+    switch (value.state) {
+      case PerspectivesAnalysisState.idle:
+      case PerspectivesAnalysisState.loading:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              _ShimmerLine(
+                width: i == 2 ? 0.6 : (i == 1 ? 0.9 : 1.0),
+                colors: colors,
+              ),
+            ],
+          ],
+        );
+      case PerspectivesAnalysisState.error:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Analyse indisponible',
+              style: textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: onRetry,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  'Réessayer',
+                  style: textTheme.labelLarge?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      case PerspectivesAnalysisState.done:
+        final (:essentiel, :divergent) =
+            splitAnalysisSections(value.text ?? '');
+        final bodyStyle = (textTheme.bodyMedium ?? const TextStyle()).copyWith(
+          fontSize: 14.5,
+          height: 1.62,
+          color: colors.textPrimary,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (essentiel.isNotEmpty) ...[
+              _sectionTitle("1 · L'ESSENTIEL PARTAGÉ", colors),
+              const SizedBox(height: 7),
+              MarkdownText(text: essentiel, style: bodyStyle),
+              const SizedBox(height: 18),
+            ],
+            if (divergent.isNotEmpty) ...[
+              _sectionTitle('2 · LÀ OÙ LES MÉDIAS DIVERGENT', colors),
+              const SizedBox(height: 7),
+              MarkdownText(text: divergent, style: bodyStyle),
+              const SizedBox(height: 18),
+            ],
+            // DÉSACTIVÉ (T1) : section « 3 · LE VOCABULAIRE QUI SÉPARE » retirée
+            // (dérivée du highlighting des biais, désormais coupé). Sections 1 &
+            // 2 (prose Analyse Facteur) + disclaimer conservés.
+            Divider(
+              height: 1,
+              thickness: 1,
+              color: Colors.black.withValues(alpha: 0.07),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  PhosphorIcons.info(PhosphorIconsStyle.regular),
+                  size: 14,
+                  color: colors.textTertiary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    kAnalysisDisclaimerText,
+                    style: textTheme.bodySmall?.copyWith(
+                      fontSize: 11.5,
+                      height: 1.5,
+                      color: colors.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
     }
-    return out;
   }
 
-  @override
-  bool shouldRepaint(covariant _DashedBorderPainter old) =>
-      old.color != color || old.radius != radius;
+  Widget _sectionTitle(String text, FacteurColors colors) {
+    return Text(
+      text,
+      style: GoogleFonts.courierPrime(
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.7,
+        color: colors.primary,
+      ),
+    );
+  }
 }

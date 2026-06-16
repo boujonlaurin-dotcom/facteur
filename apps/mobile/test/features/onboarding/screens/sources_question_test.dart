@@ -11,6 +11,7 @@ import 'package:facteur/core/services/analytics_service.dart';
 import 'package:facteur/features/onboarding/onboarding_strings.dart';
 import 'package:facteur/features/onboarding/providers/onboarding_provider.dart';
 import 'package:facteur/features/onboarding/screens/questions/sources_question.dart';
+import 'package:facteur/features/onboarding/widgets/recommendation_section.dart';
 import 'package:facteur/features/onboarding/widgets/source_recommendation_card.dart';
 import 'package:facteur/features/sources/models/smart_search_result.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
@@ -47,16 +48,19 @@ class _FakeSourcesRepository implements SourcesRepository {
       throw UnimplementedError('${invocation.memberName} non mocké');
 }
 
-/// 9 sources curées « tech » : matched pour des thèmes tech, followerCount
-/// croissant pour vérifier le tri et le cap à 7.
-List<Source> _makeTechSources() => List.generate(9, (i) {
+/// 15 sources curées « tech » (= cap matched), toutes suggérées : matched pour
+/// le thème tech, followerCount décroissant pour exercer le tri volume-proxy.
+/// La première est un gros publieur mainstream (« Grand Média », fort
+/// followerCount) qu'on doit retrouver dans les suggestions.
+List<Source> _makeTechSources() => List.generate(15, (i) {
       return Source(
         id: 'src-$i',
-        name: 'Source $i',
+        name: i == 0 ? 'Grand Média' : 'Source $i',
         type: SourceType.article,
         theme: 'tech',
         isCurated: true,
-        followerCount: 100 - i,
+        sourceTier: 'mainstream',
+        followerCount: i == 0 ? 100000 : 100 - i,
         reliabilityScore: 'high',
       );
     });
@@ -91,89 +95,64 @@ void main() {
   }
 
   testWidgets(
-      'variante curieux : max 7 suggestions pré-cochées, panneau replié',
+      '4 blocs numérotés, ≤18 suggestions, top 9 pré-cochées',
       (tester) async {
     final container = makeContainer(_makeTechSources());
-    // bypassOnboarding pose themes=[tech, international] + intent curious.
+    // bypassOnboarding pose themes=[tech, international].
     container.read(onboardingProvider.notifier).bypassOnboarding();
 
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
-    // Cap à 7 suggestions (9 sources matched disponibles).
-    expect(find.byType(SourceRecommendationCard), findsNWidgets(7));
+    // Les 4 blocs numérotés ①②③④ sont présents.
+    expect(find.byType(RecommendationSectionHeader), findsNWidgets(4));
+
+    // 15 sources matched → 15 cartes suggestions (≤ 18, catalogue replié donc
+    // sans cartes additionnelles).
+    final cards = find.byType(SourceRecommendationCard);
+    expect(tester.widgetList(cards).length, lessThanOrEqualTo(18));
+    expect(cards, findsNWidgets(15));
+
+    // Pré-sélection = top 9 uniquement (le reste affiché décoché).
     expect(
-      find.textContaining(OnboardingStrings.sourcesSuggestionsTitle),
+      find.text(OnboardingStrings.selectedCount(9)),
       findsOneWidget,
     );
 
-    // Pré-sélection = les 7 visibles.
-    expect(
-      find.text(OnboardingStrings.selectedCount(7)),
-      findsOneWidget,
-    );
+    // Le gros publieur mainstream remonte dans les suggestions (volume-proxy).
+    expect(find.text('Grand Média'), findsOneWidget);
 
-    // Panneau d'ajout replié derrière son en-tête.
+    // Bloc ② : panneau d'ajout replié derrière son en-tête.
     expect(
       find.text(OnboardingStrings.sourcesAlreadyFollowTitle),
       findsOneWidget,
     );
     expect(find.byType(SourceAddPanel), findsNothing);
 
-    // Catalogue replié.
+    // Bloc ③ : catalogue replié.
     expect(
       find.text(OnboardingStrings.sourcesSeeAllCatalog),
       findsOneWidget,
     );
-
   });
 
-  testWidgets(
-      'variante je connais : panneau proéminent, suggestions repliées à 5, '
-      'aucune pré-sélection', (tester) async {
-    final container = makeContainer(_makeTechSources());
-    final notifier = container.read(onboardingProvider.notifier);
-    notifier.bypassOnboarding();
-    notifier.selectSourcesIntent('knows');
-
-    await tester.pumpWidget(buildTestWidget(container));
-    await tester.pump(const Duration(milliseconds: 350));
-    await tester.pumpAndSettle();
-
-    // Panneau de recherche visible d'entrée.
-    expect(find.byType(SourceAddPanel), findsOneWidget);
-    expect(find.text(OnboardingStrings.sourcesKnowsTitle), findsOneWidget);
-
-    // Suggestions repliées : 5 visibles + « Voir plus ».
-    expect(find.byType(SourceRecommendationCard), findsNWidgets(5));
-    expect(find.text(OnboardingStrings.sourcesSeeMore), findsOneWidget);
-    expect(find.textContaining(OnboardingStrings.sourcesGuideMeTitle), findsOneWidget);
-
-    // Aucune pré-sélection : le CTA affiche « Passer ».
-    expect(find.text(OnboardingStrings.skipButton), findsOneWidget);
-
-    // « Voir plus » déplie le reste (7 au total).
-    await tester.ensureVisible(find.text(OnboardingStrings.sourcesSeeMore));
-    await tester.tap(find.text(OnboardingStrings.sourcesSeeMore));
-    await tester.pumpAndSettle();
-    expect(find.byType(SourceRecommendationCard), findsNWidgets(7));
-
-  });
-
-  testWidgets('skip intent (défaut curious) : suggestions affichées',
+  testWidgets('panneau d\'ajout dépliable : SourceAddPanel monté au tap',
       (tester) async {
     final container = makeContainer(_makeTechSources());
-    final notifier = container.read(onboardingProvider.notifier);
-    notifier.bypassOnboarding();
-    // sourcesIntent reste 'curious' (défaut bypass) — la page doit matcher.
+    container.read(onboardingProvider.notifier).bypassOnboarding();
 
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining(OnboardingStrings.sourcesSuggestionsTitle),
-      findsOneWidget,
-    );
+    // Replié au départ.
+    expect(find.byType(SourceAddPanel), findsNothing);
 
+    // Déplier « Vous suivez déjà un média ? » → panneau monté.
+    await tester.ensureVisible(
+      find.text(OnboardingStrings.sourcesAlreadyFollowTitle),
+    );
+    await tester.tap(find.text(OnboardingStrings.sourcesAlreadyFollowTitle));
+    await tester.pumpAndSettle();
+    expect(find.byType(SourceAddPanel), findsOneWidget);
   });
 }

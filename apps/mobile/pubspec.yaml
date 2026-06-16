@@ -62,7 +62,9 @@ dependencies:
   # Deep Links (widget tap → in-app routing)
   app_links: ^6.3.2
 
-  # Push Notifications (local, no FCM)
+  # Push Notifications
+  firebase_core: ^4.0.0
+  firebase_messaging: ^16.0.0
   flutter_local_notifications: ^20.0.0
   timezone: ^0.10.0
   flutter_timezone: ^3.0.1
@@ -153,4 +155,3 @@ flutter:
     - assets/loaders/
     - assets/notifications/
     - assets/changelog.json
-

@@ -58,6 +58,7 @@ final appUpdateProvider =
     FutureProvider.autoDispose<AppUpdateInfo?>((ref) async {
   if (kIsWeb || !Platform.isAndroid) return null;
   if (!AppUpdateConstants.isReleaseBuild) return null;
+  if (AppUpdateConstants.isPlayStoreBuild) return null;
 
   try {
     final apiClient = ref.read(apiClientProvider);
