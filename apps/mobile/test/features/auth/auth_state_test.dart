@@ -90,7 +90,10 @@ void main() {
     test('isAuthenticated should return true when user is set', () {
       final user = User(
         id: '123',
-        appMetadata: {'provider': 'email', 'providers': ['email']},
+        appMetadata: {
+          'provider': 'email',
+          'providers': ['email']
+        },
         userMetadata: {},
         aud: 'authenticated',
         createdAt: DateTime.now().toIso8601String(),
@@ -107,7 +110,10 @@ void main() {
       // forceUnconfirmed empêche l'accès même avec une session techniquement valide.
       final user = User(
         id: '123',
-        appMetadata: {'provider': 'email', 'providers': ['email']},
+        appMetadata: {
+          'provider': 'email',
+          'providers': ['email']
+        },
         userMetadata: {},
         aud: 'authenticated',
         createdAt: DateTime.now().toIso8601String(),
@@ -115,13 +121,17 @@ void main() {
       );
       final state = AuthState(user: user, forceUnconfirmed: true);
       expect(state.isEmailConfirmed, isFalse,
-          reason: 'forceUnconfirmed doit prendre la priorité sur emailConfirmedAt');
+          reason:
+              'forceUnconfirmed doit prendre la priorité sur emailConfirmedAt');
     });
 
     test('forceUnconfirmed=false does not block confirmed user', () {
       final user = User(
         id: '123',
-        appMetadata: {'provider': 'email', 'providers': ['email']},
+        appMetadata: {
+          'provider': 'email',
+          'providers': ['email']
+        },
         userMetadata: {},
         aud: 'authenticated',
         createdAt: DateTime.now().toIso8601String(),
@@ -131,7 +141,8 @@ void main() {
       expect(state.isEmailConfirmed, isTrue);
     });
 
-    test('isLoading=true initial state is correct (splash screen during restore)',
+    test(
+        'isLoading=true initial state is correct (splash screen during restore)',
         () {
       // L'état initial d'AuthStateNotifier est isLoading:true.
       // Le router doit rester sur le splash pendant ce temps.
@@ -143,7 +154,10 @@ void main() {
     test('copyWith preserves user when not updated', () {
       final user = User(
         id: '123',
-        appMetadata: {'provider': 'email', 'providers': ['email']},
+        appMetadata: {
+          'provider': 'email',
+          'providers': ['email']
+        },
         userMetadata: {},
         aud: 'authenticated',
         createdAt: DateTime.now().toIso8601String(),
@@ -165,7 +179,10 @@ void main() {
         () {
       final user = User(
         id: '123',
-        appMetadata: {'provider': 'apple', 'providers': ['apple']},
+        appMetadata: {
+          'provider': 'apple',
+          'providers': ['apple']
+        },
         userMetadata: {},
         aud: 'authenticated',
         createdAt: DateTime.now().toIso8601String(),
@@ -200,7 +217,8 @@ void main() {
       expect(updated.lastTokenRefreshAt, ts);
     });
 
-    test('copyWith without lastTokenRefreshAt preserves the previous value', () {
+    test('copyWith without lastTokenRefreshAt preserves the previous value',
+        () {
       final ts = DateTime.utc(2026, 1, 1);
       final state = AuthState(lastTokenRefreshAt: ts);
       final updated = state.copyWith(isLoading: true);
@@ -218,6 +236,17 @@ void main() {
       expect(identical(s1, s2), isFalse);
       expect(s1.lastTokenRefreshAt, t1);
       expect(s2.lastTokenRefreshAt, t2);
+    });
+
+    test('passwordRecoveryPending defaults to false', () {
+      const state = AuthState();
+      expect(state.passwordRecoveryPending, isFalse);
+    });
+
+    test('copyWith can mark password recovery pending', () {
+      const state = AuthState();
+      final updated = state.copyWith(passwordRecoveryPending: true);
+      expect(updated.passwordRecoveryPending, isTrue);
     });
   });
 }

@@ -6,6 +6,7 @@ import '../shared/widgets/navigation/swipe_back_page.dart';
 import '../shared/widgets/navigation/main_shell.dart';
 
 import '../features/auth/screens/login_screen.dart';
+import '../features/auth/screens/reset_password_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
@@ -96,6 +97,7 @@ class RouteNames {
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
+  static const String resetPassword = 'reset-password';
   static const String myInterests = 'my-interests';
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
@@ -138,6 +140,7 @@ class RoutePaths {
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
+  static const String resetPassword = '/reset-password';
   static const String veilleConfig = '/veille/config';
   static const String lettres = '/lettres';
   static const String openLetter = '/lettres/:id';
@@ -195,14 +198,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnLoginPage = matchedLocation == RoutePaths.login;
       final isOnEmailConfirmation =
           matchedLocation == RoutePaths.emailConfirmation;
+      final isOnResetPassword = matchedLocation == RoutePaths.resetPassword;
       final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
-      // Escape hatch: the onboarding "Personnaliser mon mode serein" CTA pushes
-      // the interests screen with ?serein=1. Let that through so the user can
-      // configure their exclusions before completing onboarding.
-      final isOnInterestsFromOnboarding =
-          matchedLocation == RoutePaths.myInterests &&
-              state.uri.queryParameters['serein'] == '1';
+
+      if (authState.passwordRecoveryPending && !isOnResetPassword) {
+        return RoutePaths.resetPassword;
+      }
+
+      if (isOnResetPassword) {
+        return null;
+      }
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -241,9 +247,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // 4. Onboarding : forcer si nécessaire
-      if (authState.needsOnboarding &&
-          !isOnOnboarding &&
-          !isOnInterestsFromOnboarding) {
+      if (authState.needsOnboarding && !isOnOnboarding) {
         return RoutePaths.onboarding;
       }
 
@@ -281,6 +285,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 '',
           );
         },
+      ),
+
+      GoRoute(
+        path: RoutePaths.resetPassword,
+        name: RouteNames.resetPassword,
+        builder: (context, state) => const ResetPasswordScreen(),
       ),
 
       // Onboarding
