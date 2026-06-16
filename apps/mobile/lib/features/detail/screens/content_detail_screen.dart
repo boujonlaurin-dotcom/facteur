@@ -1679,10 +1679,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _perspectivesLoading = false;
           if (response.perspectives.isEmpty) _perspectivesExpanded = false;
         });
-        // Un seul refetch one-shot couvre perspectives partielles ET le matching
-        // deep « Pas de recul » encore en cours (deep_pending) ; on ne double
-        // pas l'appel (LLM-coûteux). Voir _schedulePerspectivesPartialRefetch.
-        if (response.partial || response.deepPending) {
+        // Refetch one-shot pour compléter une réponse perspectives partielle
+        // (chemin live + refresh background). Le « Pas de recul » est désormais
+        // pré-calculé au digest (story 27.1) et toujours résolu côté serveur
+        // (deep_pending=false) : plus de polling deep à l'ouverture.
+        if (response.partial) {
           _schedulePerspectivesPartialRefetch(content.id);
         }
         _maybeTriggerPerspectivesCta();

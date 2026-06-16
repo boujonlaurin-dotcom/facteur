@@ -1,148 +1,123 @@
-"""Unit tests for the « Pas de recul » deep recommendation wiring in the
-perspectives endpoint (reader integration, PR 1).
+"""Unit tests for the pre-computed « Pas de recul » wiring in the perspectives
+endpoint (reader integration, story 27.1).
 
-Covers the pure helpers that attach a deep recommendation to a perspectives
-response body without hitting the DB:
-- ``_deep_reco_to_dict`` — renders a MatchedDeepArticle (+ its Content) as the
-  mobile-ready card dict.
-- ``_apply_deep_from_cache`` — maps the deep cache state (hit / known-empty /
-  pending) onto ``deep_recommendation`` + ``deep_pending``.
-- ``_attach_deep_recommendation`` — schedules a background match on a miss.
+The deep recommendation is now pre-computed once per batch in the editorial
+pipeline and persisted in ``content_deep_recommendations``. The reader only
+*reads* that store — no LLM call at open time. These tests cover:
+- ``_deep_row_to_dict`` — renders a stored reco (matched Content + reason) as
+  the mobile-ready card dict, with a neutral default reason.
+- ``_attach_deep_from_store`` — maps the stored row (match / sentinel / absent)
+  onto ``deep_recommendation`` + ``deep_pending`` (always resolved).
 """
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
-import app.routers.contents as contents
 from app.models.enums import ContentType
-from app.routers.contents import (
-    _DEEP_NO_MATCH,
-    _apply_deep_from_cache,
-    _attach_deep_recommendation,
-    _deep_reco_to_dict,
-)
-from app.services.editorial.schemas import MatchedDeepArticle
+from app.routers.contents import _attach_deep_from_store, _deep_row_to_dict
 
 
-@pytest.fixture(autouse=True)
-def _clear_deep_caches():
-    contents._deep_reco_cache.clear()
-    contents._deep_reco_inflight.clear()
-    yield
-    contents._deep_reco_cache.clear()
-    contents._deep_reco_inflight.clear()
-
-
-class _FakeBackgroundTasks:
-    def __init__(self):
-        self.tasks = []
-
-    def add_task(self, func, *args, **kwargs):
-        self.tasks.append((func, args, kwargs))
-
-
-def _make_matched() -> MatchedDeepArticle:
-    return MatchedDeepArticle(
-        content_id=uuid4(),
+def _make_matched_content() -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid4(),
         title="Pourquoi le système de retraite craque",
-        source_name="The Conversation",
+        url="https://theconversation.com/retraites-123",
+        thumbnail_url="https://img.example/thumb.jpg",
+        content_type=ContentType.ARTICLE,
         source_id=uuid4(),
+        source=SimpleNamespace(
+            name="The Conversation", logo_url="https://img.example/logo.png"
+        ),
         published_at=datetime(2026, 1, 5, tzinfo=UTC),
-        match_reason="Analyse structurelle du modèle",
         description="Un éclairage de fond.",
     )
 
 
-def _make_matched_content() -> MagicMock:
-    c = MagicMock()
-    c.url = "https://theconversation.com/retraites-123"
-    c.thumbnail_url = "https://img.example/thumb.jpg"
-    c.content_type = ContentType.ARTICLE
-    c.source = MagicMock()
-    c.source.logo_url = "https://img.example/logo.png"
-    return c
+class _FakeResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return self._value
 
 
-class TestDeepRecoToDict:
+class _FakeDB:
+    """Returns queued results for successive ``execute`` calls."""
+
+    def __init__(self, *values):
+        self._values = list(values)
+
+    async def execute(self, _stmt):
+        return _FakeResult(self._values.pop(0))
+
+
+class TestDeepRowToDict:
     def test_renders_full_card(self):
-        matched = _make_matched()
         content = _make_matched_content()
-        d = _deep_reco_to_dict(matched, content)
+        d = _deep_row_to_dict(content, "Analyse structurelle du modèle")
 
-        assert d["content_id"] == str(matched.content_id)
-        assert d["title"] == matched.title
+        assert d["content_id"] == str(content.id)
+        assert d["title"] == content.title
         assert d["url"] == content.url
         assert d["thumbnail_url"] == content.thumbnail_url
         assert d["content_type"] == "article"
         assert d["source_name"] == "The Conversation"
         assert d["source_logo_url"] == "https://img.example/logo.png"
-        assert d["published_at"] == matched.published_at.isoformat()
-        assert d["match_reason"] == matched.match_reason
-        assert d["description"] == matched.description
+        assert d["published_at"] == content.published_at.isoformat()
+        assert d["match_reason"] == "Analyse structurelle du modèle"
+        assert d["description"] == content.description
+
+    def test_default_reason_when_none(self):
+        d = _deep_row_to_dict(_make_matched_content(), None)
+        assert d["match_reason"]  # non-empty neutral fallback
 
     def test_youtube_content_type_serialized_as_string(self):
         content = _make_matched_content()
         content.content_type = ContentType.YOUTUBE
-        d = _deep_reco_to_dict(_make_matched(), content)
+        d = _deep_row_to_dict(content, "r")
         assert d["content_type"] == "youtube"
 
 
-class TestApplyDeepFromCache:
-    def test_miss_marks_pending_unresolved(self):
+@pytest.mark.asyncio
+class TestAttachDeepFromStore:
+    async def test_absent_row_yields_no_card(self):
         body: dict = {}
-        resolved = _apply_deep_from_cache(body, "k")
-        assert resolved is False
-        assert body["deep_recommendation"] is None
-        assert body["deep_pending"] is True
-
-    def test_no_match_sentinel_resolves_empty(self):
-        contents._deep_reco_cache["k"] = _DEEP_NO_MATCH
-        body: dict = {}
-        resolved = _apply_deep_from_cache(body, "k")
-        assert resolved is True
+        await _attach_deep_from_store(_FakeDB(None), body, uuid4())
         assert body["deep_recommendation"] is None
         assert body["deep_pending"] is False
 
-    def test_hit_resolves_with_dict(self):
-        deep = {"content_id": "abc", "title": "T"}
-        contents._deep_reco_cache["k"] = deep
+    async def test_sentinel_row_yields_no_card(self):
+        row = SimpleNamespace(matched_content_id=None, match_reason=None)
         body: dict = {}
-        resolved = _apply_deep_from_cache(body, "k")
-        assert resolved is True
-        assert body["deep_recommendation"] == deep
+        await _attach_deep_from_store(_FakeDB(row), body, uuid4())
+        assert body["deep_recommendation"] is None
         assert body["deep_pending"] is False
 
-    def test_miss_preserves_prior_pending_state(self):
-        # A background perspectives refresh rebuilds the body; an in-flight
-        # deep match must not be erased.
-        prev = {"deep_recommendation": None, "deep_pending": True}
+    async def test_match_renders_card(self):
+        matched = _make_matched_content()
+        row = SimpleNamespace(
+            matched_content_id=matched.id, match_reason="Pour comprendre le fond"
+        )
         body: dict = {}
-        resolved = _apply_deep_from_cache(body, "k", prev_body=prev)
-        assert resolved is False
-        assert body["deep_pending"] is True
-
-
-class TestAttachDeepRecommendation:
-    def test_schedules_background_match_on_miss(self):
-        body: dict = {}
-        bg = _FakeBackgroundTasks()
-        cid = uuid4()
-        _attach_deep_recommendation(body, str(cid), cid, "user-1", bg)
-
-        assert body["deep_pending"] is True
-        assert len(bg.tasks) == 1
-        func, args, _ = bg.tasks[0]
-        assert func is contents._compute_deep_reco_background
-        assert args == (str(cid), "user-1")
-
-    def test_no_schedule_when_resolved(self):
-        contents._deep_reco_cache["kk"] = _DEEP_NO_MATCH
-        body: dict = {}
-        bg = _FakeBackgroundTasks()
-        _attach_deep_recommendation(body, "kk", uuid4(), "user-1", bg)
+        await _attach_deep_from_store(_FakeDB(row, matched), body, uuid4())
 
         assert body["deep_pending"] is False
-        assert bg.tasks == []
+        assert body["deep_recommendation"]["content_id"] == str(matched.id)
+        assert body["deep_recommendation"]["match_reason"] == "Pour comprendre le fond"
+
+    async def test_dangling_match_yields_no_card(self):
+        # Row points to a matched_content_id that no longer exists.
+        row = SimpleNamespace(matched_content_id=uuid4(), match_reason="r")
+        body: dict = {}
+        await _attach_deep_from_store(_FakeDB(row, None), body, uuid4())
+        assert body["deep_recommendation"] is None
+        assert body["deep_pending"] is False

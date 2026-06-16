@@ -25,6 +25,7 @@ import structlog
 from sqlalchemy import case as sa_case
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from app.models.content import Content
 from app.models.enums import SourceType
@@ -513,6 +514,15 @@ class EditorialPipelineService:
                 dropped_count=len(empty_dropped),
             )
 
+        # ÉTAPE 3B: Pré-calcul « Pas de recul » (deep matching) — 1×/batch,
+        # persisté par article dans content_deep_recommendations. Le reader lit
+        # cette table au lieu de relancer un matching LLM à l'ouverture (story
+        # 27.1). Best-effort : un échec ici ne doit JAMAIS bloquer le digest.
+        try:
+            await self._precompute_deep_recommendations(subjects)
+        except Exception:
+            logger.exception("editorial_pipeline.deep_precompute_unexpected")
+
         # ÉTAPE 3C: Perspective analysis (batch, parallel)
         # Pass session_maker: chaque resolve_bias / search_internal s'exécute
         # dans sa propre session courte, évitant 6-10 parallel DB calls sur
@@ -879,6 +889,112 @@ class EditorialPipelineService:
             cluster_data=cluster_data,
             generated_at=datetime.now(UTC),
         )
+
+    async def _precompute_deep_recommendations(
+        self, subjects: list[EditorialSubject]
+    ) -> None:
+        """Pré-calcule le « Pas de recul » par article et le persiste.
+
+        Calculé en phase globale (1×/batch) → déduplication inhérente : un seul
+        calcul par sujet, partagé entre tous les users (vs N×users en lazy).
+        Le pivot est l'``actu_article`` du sujet — l'article que le lecteur
+        ouvre depuis le digest — pour rester 1:1 avec la surface reader.
+
+        Persiste une ligne par article dans ``content_deep_recommendations``,
+        y compris une **sentinelle** (matched_content_id NULL) quand aucun match
+        n'est trouvé, afin que le reader n'ait jamais à recalculer à la volée.
+        """
+        from app.services.editorial.deep_matcher import DeepMatcher
+
+        actu_ids = [
+            s.actu_article.content_id
+            for s in subjects
+            if s.actu_article is not None
+        ]
+        if not actu_ids:
+            return
+
+        matcher = DeepMatcher(
+            session=self.session,
+            llm=self.llm,
+            config=self.config,
+            session_maker=self.session_maker,
+        )
+        pool = await matcher._load_deep_articles()
+
+        # Charge les pivots (Content ORM) — match_for_content a besoin de leurs
+        # topics/theme/description/cluster_id, absents de MatchedActuArticle.
+        async with self._short_session() as db:
+            result = await db.execute(
+                select(Content)
+                .options(selectinload(Content.source))
+                .where(Content.id.in_(actu_ids))
+            )
+            pivots = {c.id: c for c in result.scalars().all()}
+
+        rows: list[dict] = []
+        for content_id in actu_ids:
+            pivot = pivots.get(content_id)
+            matched = None
+            if pivot is not None and pool:
+                try:
+                    matched = await matcher.match_for_content(
+                        pivot, deep_articles=pool
+                    )
+                except Exception:
+                    logger.exception(
+                        "editorial_pipeline.deep_precompute_match_failed",
+                        content_id=str(content_id),
+                    )
+            rows.append(
+                {
+                    "content_id": content_id,
+                    "matched_content_id": (
+                        matched.content_id if matched else None
+                    ),
+                    "match_reason": matched.match_reason if matched else None,
+                }
+            )
+
+        await self._upsert_deep_recommendations(rows)
+        logger.info(
+            "editorial_pipeline.deep_precompute_done",
+            total=len(rows),
+            matched=sum(1 for r in rows if r["matched_content_id"] is not None),
+            pool=len(pool),
+        )
+
+    async def _upsert_deep_recommendations(self, rows: list[dict]) -> None:
+        """Upsert (content_id) les recommandations pré-calculées."""
+        if not rows:
+            return
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        from app.models.content_deep_recommendation import ContentDeepRecommendation
+
+        now = datetime.now(UTC)
+        async with self._short_session() as db:
+            stmt = pg_insert(ContentDeepRecommendation).values(
+                [
+                    {
+                        "content_id": r["content_id"],
+                        "matched_content_id": r["matched_content_id"],
+                        "match_reason": r["match_reason"],
+                        "computed_at": now,
+                    }
+                    for r in rows
+                ]
+            )
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["content_id"],
+                set_={
+                    "matched_content_id": stmt.excluded.matched_content_id,
+                    "match_reason": stmt.excluded.match_reason,
+                    "computed_at": stmt.excluded.computed_at,
+                },
+            )
+            await db.execute(stmt)
+            await db.commit()
 
     def run_for_user(
         self,

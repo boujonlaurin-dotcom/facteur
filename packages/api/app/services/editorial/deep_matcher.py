@@ -214,6 +214,7 @@ class DeepMatcher:
     async def match_for_content(
         self,
         content: Content,
+        deep_articles: list[Content] | None = None,
     ) -> MatchedDeepArticle | None:
         """Match a deep ("Pas de recul") article for a single opened article.
 
@@ -226,6 +227,10 @@ class DeepMatcher:
         The opened article and any article sharing its cluster (same event)
         are excluded: a "pas de recul" must add perspective, never echo
         another dispatch on the same story.
+
+        ``deep_articles`` (optional) lets a caller pass a pool loaded once for a
+        whole batch (digest pré-calcul), avoiding one ``_load_deep_articles``
+        query per pivot. Defaults to loading the pool lazily (reader path).
 
         Returns ``None`` when nothing relevant is found — better no deep
         recommendation than a hors-sujet one (same contract as the topic flow).
@@ -246,7 +251,8 @@ class DeepMatcher:
             theme=content.theme,
         )
 
-        deep_articles = await self._load_deep_articles()
+        if deep_articles is None:
+            deep_articles = await self._load_deep_articles()
         if not deep_articles:
             logger.info("deep_matcher.content_no_pool", content_id=str(content.id))
             return None
