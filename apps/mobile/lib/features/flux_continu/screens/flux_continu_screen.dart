@@ -1293,11 +1293,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                               '${RoutePaths.veilleConfig}?mode=edit',
                             )
                         : null,
-                    // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
-                    // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
+                    // CTA « Ajouter des sources » de l'empty-state d'une section
+                    // thème favorite vide → renvoie directement vers la page
+                    // d'ajout de sources (et non plus la modal « Composer ma
+                    // Tournée »). Nom de route globalement unique → pushNamed
+                    // suffit (pas besoin des params parents).
                     onAddSources: section is FeedThemeSection &&
                             section.kind == SectionKind.theme
-                        ? () => showTourneeComposerSheet(context)
+                        ? () => context.pushNamed(RouteNames.addSource)
                         : null,
                     onSeeAll: section is FeedThemeSection
                         ? (section.kind == SectionKind.source
@@ -1610,7 +1613,7 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
     return Semantics(
       label: 'Passage de section',
       child: SizedBox(
-        height: 36,
+        height: 26,
         child: Align(
           alignment: const Alignment(0, -0.68),
           child: AnimatedBuilder(
