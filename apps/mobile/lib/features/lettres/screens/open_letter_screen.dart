@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../navigation/letter_action_route_resolver.dart';
 import '../models/letter.dart';
@@ -16,6 +18,14 @@ import '../widgets/envelope_thumb.dart';
 import '../widgets/letter_action_tile.dart';
 import '../widgets/letter_completion_overlay.dart';
 import '../widgets/progress_toast.dart';
+
+/// Les seules destinations qui sont des onglets de la StatefulShellRoute :
+/// `context.push` y crashe (push sur une branche de shell), `context.go`
+/// bascule l'onglet. Toute autre route (`/settings`, `/veille/config`,
+/// `/saved`, …) est une route empilée → `context.push` (sinon `go` la rend
+/// unique, fond noir + crash au pop).
+bool _isShellTabRoute(String route) =>
+    route == RoutePaths.flaner || route.startsWith(RoutePaths.fluxContinu);
 
 class OpenLetterScreen extends ConsumerStatefulWidget {
   final String letterId;
@@ -396,10 +406,7 @@ class _Body extends ConsumerWidget {
                     action: a,
                     onTap: () async {
                       final route = resolveLetterActionRoute(a);
-                      // Rafraîchir l'UI Progression AVANT de naviguer : les
-                      // destinations sont des onglets shell → context.go (qui
-                      // ne « revient » pas), pas context.push (qui crashe sur
-                      // une branche StatefulShellRoute).
+                      // Rafraîchir l'UI Progression AVANT de naviguer.
                       await ref
                           .read(lettersProvider.notifier)
                           .refreshLetterStatus(letter.id);
@@ -412,7 +419,14 @@ class _Body extends ConsumerWidget {
                               .read(pendingSaveNudgeProvider.notifier)
                               .state = true;
                         }
-                        context.go(route);
+                        // Onglets shell → go (bascule d'onglet) ; routes
+                        // empilées → push (la lettre reste derrière, le pop
+                        // y revient au lieu de vider le navigator → crash).
+                        if (_isShellTabRoute(route)) {
+                          context.go(route);
+                        } else {
+                          unawaited(context.push(route));
+                        }
                       }
                     },
                   ),

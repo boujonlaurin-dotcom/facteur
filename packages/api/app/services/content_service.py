@@ -53,7 +53,6 @@ class ContentService:
             "html_content": content.html_content,
             "audio_url": content.audio_url,
             "content_quality": content.content_quality,
-            "extraction_attempted_at": content.extraction_attempted_at,
             "content_type": content.content_type,
             "duration_seconds": content.duration_seconds,
             "published_at": content.published_at,
@@ -135,8 +134,7 @@ class ContentService:
         result = await self.session.scalars(stmt)
         updated_status = result.one_or_none()
         transitioned_to_consumed = (
-            update_data.status == ContentStatus.CONSUMED
-            and updated_status is not None
+            update_data.status == ContentStatus.CONSUMED and updated_status is not None
         )
 
         if updated_status is None:

@@ -47,7 +47,7 @@ from app.services.llm_bias_annotation_service import LLMBiasAnnotationService
 from app.services.perspective_service import Perspective, PerspectiveService
 from app.services.title_annotation_service import (
     TitleAnnotationService,
-    get_title_annotation_service,
+    # get_title_annotation_service,  # DÉSACTIVÉ (T1) : réactiver avec la boucle LLM bias
 )
 
 logger = structlog.get_logger()
@@ -388,33 +388,41 @@ class EditorialPipelineService:
         # Skip silencieux si MISTRAL_API_KEY absente (fallback spaCy hors-ligne
         # géré ailleurs). Référence = cluster.label (best title du TopicSelector).
         llm_bias_step_start = time.time()
-        llm_bias_service = LLMBiasAnnotationService()
-        title_service = get_title_annotation_service()
+        # DÉSACTIVÉ (T1) : services instanciés uniquement par la boucle ci-dessous
+        # (désormais commentée). Décommenter avec elle pour réactiver.
+        # llm_bias_service = LLMBiasAnnotationService()
+        # title_service = get_title_annotation_service()
         llm_bias_stats = {
             "cluster_count": 0,
             "variants_annotated": 0,
             "variants_skipped": 0,
             "cache_hits": 0,
         }
-        if llm_bias_service.is_ready:
-            for topic in selected_topics:
-                cluster = cluster_map.get(topic.topic_id)
-                if not cluster or len(cluster.contents) < 2:
-                    continue
-                llm_bias_stats["cluster_count"] += 1
-                try:
-                    await _annotate_cluster_llm_bias(
-                        cluster=cluster,
-                        llm_service=llm_bias_service,
-                        title_service=title_service,
-                        short_session=self._short_session,
-                        stats=llm_bias_stats,
-                    )
-                except Exception:
-                    logger.exception(
-                        "editorial_pipeline.llm_bias_failed",
-                        cluster_id=str(cluster.cluster_id),
-                    )
+        # DÉSACTIVÉ (T1) : le highlighting des biais (surlignage mot-à-mot des
+        # titres) n'est plus affiché côté app → on coupe l'annotation LLM bias
+        # pour supprimer tout appel Mistral du pipeline éditorial. La classe
+        # `LLMBiasAnnotationService` et `_annotate_cluster_llm_bias` restent en
+        # place : réactivation = décommenter la boucle ci-dessous. Le bloc
+        # stats/logging reste (valeurs à zéro, inoffensif).
+        # if llm_bias_service.is_ready:
+        #     for topic in selected_topics:
+        #         cluster = cluster_map.get(topic.topic_id)
+        #         if not cluster or len(cluster.contents) < 2:
+        #             continue
+        #         llm_bias_stats["cluster_count"] += 1
+        #         try:
+        #             await _annotate_cluster_llm_bias(
+        #                 cluster=cluster,
+        #                 llm_service=llm_bias_service,
+        #                 title_service=title_service,
+        #                 short_session=self._short_session,
+        #                 stats=llm_bias_stats,
+        #             )
+        #         except Exception:
+        #             logger.exception(
+        #                 "editorial_pipeline.llm_bias_failed",
+        #                 cluster_id=str(cluster.cluster_id),
+        #             )
         logger.info(
             "editorial_pipeline.llm_bias_done",
             duration_ms=round((time.time() - llm_bias_step_start) * 1000, 2),

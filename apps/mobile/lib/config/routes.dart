@@ -6,6 +6,7 @@ import '../shared/widgets/navigation/swipe_back_page.dart';
 import '../shared/widgets/navigation/main_shell.dart';
 
 import '../features/auth/screens/login_screen.dart';
+import '../features/auth/screens/reset_password_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/onboarding/screens/onboarding_screen.dart';
 import '../features/onboarding/screens/conclusion_animation_screen.dart';
@@ -27,6 +28,8 @@ import '../features/sources/screens/add_source_screen.dart';
 import '../features/sources/screens/theme_sources_screen.dart';
 import '../features/settings/screens/profile_screen.dart';
 import '../features/settings/screens/account_screen.dart';
+import '../features/settings/screens/appearance_screen.dart';
+import '../features/settings/screens/source_settings_screen.dart';
 import '../features/settings/screens/subscriptions_screen.dart';
 import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
@@ -84,6 +87,8 @@ class RouteNames {
   static const String addSource = 'add-source';
   static const String settings = 'settings';
   static const String account = 'account';
+  static const String appearance = 'appearance';
+  static const String sourceSettings = 'source-settings';
   static const String subscriptions = 'subscriptions';
   static const String notifications = 'notifications';
   static const String about = 'about';
@@ -92,6 +97,7 @@ class RouteNames {
   static const String quiz = 'quiz';
   static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
+  static const String resetPassword = 'reset-password';
   static const String myInterests = 'my-interests';
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
@@ -122,6 +128,8 @@ class RoutePaths {
   // static const String addSource = '/sources/add'; // Removed for V0
   static const String settings = '/settings';
   static const String account = '/settings/account';
+  static const String appearance = '/settings/appearance';
+  static const String sourceSettings = '/settings/sources/preferences';
   static const String subscriptions = '/settings/subscriptions';
   static const String notifications = '/settings/notifications';
   static const String about = '/settings/about';
@@ -132,6 +140,7 @@ class RoutePaths {
   static const String quiz = '/quiz';
   static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
+  static const String resetPassword = '/reset-password';
   static const String veilleConfig = '/veille/config';
   static const String lettres = '/lettres';
   static const String openLetter = '/lettres/:id';
@@ -189,14 +198,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isOnLoginPage = matchedLocation == RoutePaths.login;
       final isOnEmailConfirmation =
           matchedLocation == RoutePaths.emailConfirmation;
+      final isOnResetPassword = matchedLocation == RoutePaths.resetPassword;
       final isOnOnboarding = matchedLocation == RoutePaths.onboarding ||
           matchedLocation == RoutePaths.onboardingConclusion;
-      // Escape hatch: the onboarding "Personnaliser mon mode serein" CTA pushes
-      // the interests screen with ?serein=1. Let that through so the user can
-      // configure their exclusions before completing onboarding.
-      final isOnInterestsFromOnboarding =
-          matchedLocation == RoutePaths.myInterests &&
-              state.uri.queryParameters['serein'] == '1';
+
+      if (authState.passwordRecoveryPending && !isOnResetPassword) {
+        return RoutePaths.resetPassword;
+      }
+
+      if (isOnResetPassword) {
+        return null;
+      }
 
       // 1. Les utilisateurs non connectés
       if (!isLoggedIn) {
@@ -235,9 +247,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // 4. Onboarding : forcer si nécessaire
-      if (authState.needsOnboarding &&
-          !isOnOnboarding &&
-          !isOnInterestsFromOnboarding) {
+      if (authState.needsOnboarding && !isOnOnboarding) {
         return RoutePaths.onboarding;
       }
 
@@ -275,6 +285,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 '',
           );
         },
+      ),
+
+      GoRoute(
+        path: RoutePaths.resetPassword,
+        name: RouteNames.resetPassword,
+        builder: (context, state) => const ResetPasswordScreen(),
       ),
 
       // Onboarding
@@ -520,6 +536,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 const FullSwipeCupertinoPage(child: ProfileScreen()),
           ),
           GoRoute(
+            path: 'appearance', // /settings/appearance
+            name: RouteNames.appearance,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: AppearanceScreen()),
+          ),
+          GoRoute(
             path: 'sources', // /settings/sources
             name: RouteNames.sources,
             pageBuilder: (context, state) =>
@@ -530,6 +552,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: RouteNames.addSource,
                 pageBuilder: (context, state) =>
                     const FullSwipeCupertinoPage(child: AddSourceScreen()),
+              ),
+              GoRoute(
+                path: 'preferences', // /settings/sources/preferences
+                name: RouteNames.sourceSettings,
+                pageBuilder: (context, state) =>
+                    const FullSwipeCupertinoPage(child: SourceSettingsScreen()),
               ),
               GoRoute(
                 path: 'theme/:slug', // /settings/sources/theme/:slug

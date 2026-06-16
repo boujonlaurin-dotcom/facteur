@@ -1,11 +1,13 @@
 """Schemas source."""
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.enums import SourceType
+from app.schemas.content import ContentResponse
 
 ContentTypeFilter = Literal["article", "youtube", "reddit", "podcast"]
 
@@ -27,6 +29,9 @@ class SourceResponse(BaseModel):
     priority_multiplier: float = 1.0
     has_subscription: bool = False
     content_count: int = 0
+    # Volume de publication sur 30 j (calculé côté catalogue, défaut 0).
+    # Additif/rétro-compatible — aucune colonne DB, aucune migration.
+    articles_30d: int = 0
     follower_count: int = 0
     bias_stance: str = "unknown"
     reliability_score: str = "unknown"
@@ -205,6 +210,9 @@ class SmartSearchRecentItem(BaseModel):
 
     title: str
     published_at: str = ""
+    # Thème inféré (clé brute backend ; mapping label/couleur côté front).
+    # Additif/rétro-compatible : reste None si non fourni par l'appelant.
+    theme: str | None = None
 
 
 class SmartSearchResultItem(BaseModel):
@@ -289,3 +297,53 @@ class ThemesFollowedResponse(BaseModel):
     """Réponse thèmes suivis."""
 
     themes: list[ThemeFollowed]
+
+
+class CoverageRow(BaseModel):
+    """Couverture d'un thème par une source sur la période."""
+
+    theme: str
+    count: int
+    pct: int
+
+
+class CoverageResponse(BaseModel):
+    """Agrégation de la couverture par thème d'une source.
+
+    `theme` reste la clé brute backend ; le mapping label/couleur est fait
+    côté front. `rows` est trié par `count` décroissant, top N + « autres ».
+    """
+
+    period_label: str
+    total_count: int
+    caption: str
+    rows: list[CoverageRow] = []
+
+
+class ThemeShare(BaseModel):
+    """Part d'un thème dans la couverture d'une source (fiche source v3).
+
+    `theme` reste la clé brute backend (mapping label/couleur côté front).
+    `share` ∈ [0, 1] = `count / total` ; le mobile dérive le pourcentage.
+    """
+
+    theme: str
+    count: int
+    share: float
+
+
+class SourceProfileResponse(BaseModel):
+    """Profil unifié d'une source pour la fiche v3.
+
+    Regroupe en une réponse l'identité de la source, sa couverture par thèmes
+    sur 30 jours (`theme_distribution` + `articles_30d`), la date du plus
+    ancien contenu connu (`oldest_content_at`, hors fenêtre, pour clamper le
+    calcul de fréquence côté mobile) et ses articles les plus récents
+    (`Content` complets → carte cliquable standard).
+    """
+
+    source: SourceResponse
+    recent_articles: list[ContentResponse] = []
+    theme_distribution: list[ThemeShare] = []
+    articles_30d: int = 0
+    oldest_content_at: datetime | None = None

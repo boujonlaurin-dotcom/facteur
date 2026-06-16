@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,7 @@ import '../../../sources/models/source_model.dart';
 import '../../../sources/providers/sources_providers.dart';
 import '../../../sources/widgets/source_add_panel.dart';
 import '../../../sources/widgets/source_detail_modal.dart';
+import '../../../sources/widgets/source_logo_avatar.dart';
 import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
 import '../../providers/onboarding_proof_cache_provider.dart';
@@ -19,15 +22,13 @@ import '../../widgets/recommendation_section.dart';
 import '../../widgets/source_catalog_section.dart';
 import '../../widgets/source_recommendation_card.dart';
 
-/// Q10 : page sources adaptative (remplace les ex-pages 1 + 2).
+/// Q10 : page sources « sur mesure », 4 blocs numérotés (①②③④).
 ///
-/// Deux variantes selon la réponse à « Avec quels médias préférez-vous
-/// partir ? » (Q9c) :
-/// - `curious` (défaut) : suggestions en avant (max 7, pré-cochées),
-///   recherche de ses médias repliée dessous ;
-/// - `knows` : recherche smart-search proéminente (avec preuve « Connecté »
-///   à l'ajout), suggestions repliées dessous.
-/// Dans les deux cas : catalogue complet replié + CTA abonnements presse.
+/// ① Suggestions sur mesure (jusqu'à 18 affichées, top 9 + sources likées au
+/// swipe pré-cochées) ; ② Vos médias habituels (panneau d'ajout replié) ;
+/// ③ Explorer le catalogue (replié) ; ④ Vos abonnements presse. (v7 : la
+/// question d'intent a été retirée — tout le monde passe par le swipe puis
+/// cette page unique.)
 class SourcesQuestion extends ConsumerStatefulWidget {
   const SourcesQuestion({super.key});
 
@@ -41,37 +42,25 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   SourceRecommendation? _recommendation;
   List<RecommendedSource>? _suggestions;
 
-  /// Variante figée à l'entrée de la page (changement via retour sur Q9c).
-  late final String _intent;
-
-  bool get _isCurious => _intent != 'knows';
-
-  /// Variante knows : suggestions repliées à 5, « Voir plus » → 7.
-  bool _showAllSuggestions = false;
-
-  /// Variante curious : panneau d'ajout replié derrière un en-tête.
+  /// Panneau d'ajout (« Vous suivez déjà un média ? ») replié derrière un en-tête.
   bool _addPanelExpanded = false;
 
-  /// Cap des suggestions mises en avant (et pré-cochées en curious).
-  static const int _suggestionsLimit = 7;
+  /// Cap des suggestions mises en avant (affichées, cochées ou non).
+  static const int _suggestionsLimit = 18;
 
-  /// Suggestions visibles en variante knows avant « Voir plus ».
-  static const int _knowsVisibleLimit = 5;
+  /// Parmi les suggestions affichées, seules les `_preselectLimit` premières
+  /// (top score) sont pré-cochées ; le reste s'affiche décoché.
+  static const int _preselectLimit = 9;
 
   @override
   void initState() {
     super.initState();
     final existingAnswers = ref.read(onboardingProvider).answers;
-    _intent = existingAnswers.sourcesIntent ?? 'curious';
 
     // Restore existing selections (back navigation or resume)
     final existingSources = existingAnswers.preferredSources;
     if (existingSources != null && existingSources.isNotEmpty) {
       _selectedSourceIds = existingSources.toSet();
-      _hasAppliedPreselection = true;
-    }
-    // La variante knows ne pré-coche rien : l'utilisateur part de ses médias.
-    if (!_isCurious) {
       _hasAppliedPreselection = true;
     }
   }
@@ -84,38 +73,70 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     final subtopics = answers.subtopics ?? [];
     final objectives = answers.objectives ?? [];
 
+    final swipeLiked = answers.swipeLiked ?? const <String>[];
+
     final reco = SourceRecommender.recommend(
       selectedThemes: themes,
       selectedSubtopics: subtopics,
       allSources: allSources,
       objectives: objectives,
+      // Axes "profondeur" ré-aiguillés (v6) : déclaratif (approach +
+      // indépendance) repondéré par le révélé (swipe).
+      depthPref: answers.approach,
+      independencePref: answers.independencePref,
+      swipeLiked: swipeLiked,
+      swipeDisliked: answers.swipeDisliked ?? const <String>[],
     );
     _recommendation = reco;
-    _suggestions = _computeSuggestions(reco, hasThemes: themes.isNotEmpty);
+    _suggestions = _computeSuggestions(
+      reco,
+      hasThemes: themes.isNotEmpty,
+      excludedIds: swipeLiked.toSet(),
+    );
+    _preloadSuggestionProfiles(_suggestions!);
 
-    // Pré-sélection (curious uniquement) : limitée aux suggestions visibles,
-    // au lieu des 13-20 matched+gems d'avant.
+    // Pré-sélection : top `_preselectLimit` des suggestions (déjà triées) +
+    // toutes les sources swipées à droite (garanties cochées au reveal, même
+    // au-delà du rang 9). Le reste des suggestions s'affiche décoché.
     if (!_hasAppliedPreselection) {
       _hasAppliedPreselection = true;
-      _selectedSourceIds = _suggestions!.map((r) => r.source.id).toSet();
+      _selectedSourceIds = {
+        ..._suggestions!.take(_preselectLimit).map((r) => r.source.id),
+        ...swipeLiked,
+      };
     }
   }
 
-  /// Max 7 suggestions : matched triées score desc puis followers desc ;
-  /// sans thèmes (ou sans match), tri pur par followers sur tout le curé.
+  /// Tri à score égal : favorise les gros publieurs mainstream (proxy volume
+  /// front, sans champ backend dédié) puis le `followerCount`. Garantit
+  /// quelques sources « vivantes » parmi les suggestions.
+  static int _byVolumeProxy(RecommendedSource a, RecommendedSource b) {
+    final am = a.source.sourceTier == 'mainstream' ? 1 : 0;
+    final bm = b.source.sourceTier == 'mainstream' ? 1 : 0;
+    if (am != bm) return bm - am; // mainstream d'abord
+    return b.source.followerCount.compareTo(a.source.followerCount);
+  }
+
+  /// Jusqu'à `_suggestionsLimit` suggestions : les **spécialistes garantis** en
+  /// tête (≥1 par sujet choisi, badge « Spécialisé en X ») pour qu'ils survivent
+  /// au cap, puis matched triées score desc + volume-proxy ; sans thèmes (ou sans
+  /// match), tri volume-proxy sur tout le pool.
   List<RecommendedSource> _computeSuggestions(
     SourceRecommendation reco, {
     required bool hasThemes,
+    Set<String> excludedIds = const {},
   }) {
-    int byFollowers(RecommendedSource a, RecommendedSource b) =>
-        b.source.followerCount.compareTo(a.source.followerCount);
-
-    if (hasThemes && reco.matched.isNotEmpty) {
-      final sorted = [...reco.matched]..sort((a, b) {
+    final specialists = reco.specialists;
+    if (hasThemes && (reco.matched.isNotEmpty || specialists.isNotEmpty)) {
+      final sorted = [...reco.matched]
+        ..sort((a, b) {
           final byScore = b.score.compareTo(a.score);
-          return byScore != 0 ? byScore : byFollowers(a, b);
+          return byScore != 0 ? byScore : _byVolumeProxy(a, b);
         });
-      return sorted.take(_suggestionsLimit).toList();
+      return _dedupById([...specialists, ...sorted])
+          .where((r) => !excludedIds.contains(r.source.id))
+          .take(_suggestionsLimit)
+          .toList();
     }
 
     final pool = [
@@ -123,17 +144,39 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       ...reco.perspective,
       ...reco.gems,
       ...reco.catalog,
-    ]..sort(byFollowers);
-    return pool.take(_suggestionsLimit).toList();
+    ]..sort(_byVolumeProxy);
+    return _dedupById([...specialists, ...pool])
+        .where((r) => !excludedIds.contains(r.source.id))
+        .take(_suggestionsLimit)
+        .toList();
+  }
+
+  void _preloadSuggestionProfiles(List<RecommendedSource> suggestions) {
+    for (final r in suggestions.take(6)) {
+      ref.read(sourceProfileProvider(r.source.id).future).ignore();
+    }
+  }
+
+  /// Dédoublonne par `source.id` en conservant le premier passage (les
+  /// spécialistes garantis, placés en tête, priment).
+  static List<RecommendedSource> _dedupById(List<RecommendedSource> list) {
+    final seen = <String>{};
+    final out = <RecommendedSource>[];
+    for (final r in list) {
+      if (seen.add(r.source.id)) out.add(r);
+    }
+    return out;
   }
 
   /// Catalogue complet (toutes catégories confondues) pour « Voir tout ».
-  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) => [
+  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) =>
+      _dedupById([
+        ...reco.specialists,
         ...reco.matched,
         ...reco.perspective,
         ...reco.gems,
         ...reco.catalog,
-      ];
+      ]);
 
   void _toggleSource(String sourceId) {
     HapticFeedback.lightImpact();
@@ -155,6 +198,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         source: source,
         onToggleTrust: () => _toggleSource(source.id),
         isSelectedOverride: _selectedSourceIds.contains(source.id),
+        articleOpener: openSourceArticleOnRootNavigator,
       ),
     );
   }
@@ -178,7 +222,9 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     if (sourceId == null || sourceId.isEmpty || sourceId == 'null') return;
 
     setState(() => _selectedSourceIds.add(sourceId));
-    ref.read(onboardingProofCacheProvider.notifier).update(
+    ref
+        .read(onboardingProofCacheProvider.notifier)
+        .update(
           (cache) => {
             ...cache,
             sourceId: SourceProofSeed(
@@ -270,25 +316,29 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: FacteurSpacing.space6),
-          if (_isCurious)
-            ..._buildCuriousLayout(context, reco, allSources)
-          else
-            ..._buildKnowsLayout(context, reco, allSources),
+          ..._buildSourcesLayout(context, reco, allSources),
           const SizedBox(height: FacteurSpacing.space8),
         ],
       ),
     );
   }
 
-  // ── Variante curious : suggestions d'abord ──────────────────────────────
+  // ── Layout : suggestions d'abord ────────────────────────────────────────
 
-  List<Widget> _buildCuriousLayout(
+  List<Widget> _buildSourcesLayout(
     BuildContext context,
     SourceRecommendation reco,
     List<Source> allSources,
   ) {
     final colors = context.facteurColors;
     final suggestions = _suggestions ?? const <RecommendedSource>[];
+    final swipeLikedIds =
+        ref.read(onboardingProvider).answers.swipeLiked ?? const <String>[];
+    final alreadyAdded = [
+      for (final id in swipeLikedIds)
+        for (final source in allSources)
+          if (source.id == id) source,
+    ];
 
     return [
       Text(
@@ -299,25 +349,33 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       const SizedBox(height: FacteurSpacing.space3),
       Text(
         OnboardingStrings.q9Subtitle,
-        style: Theme.of(context)
-            .textTheme
-            .bodyMedium
-            ?.copyWith(color: colors.textSecondary),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
         textAlign: TextAlign.center,
       ),
 
-      // Suggestions (pré-cochées)
+      if (alreadyAdded.isNotEmpty) ...[
+        const SizedBox(height: FacteurSpacing.space4),
+        _AlreadyAddedSources(sources: alreadyAdded),
+      ],
+
+      // ① Suggestions sur mesure (top pré-cochées)
       if (suggestions.isNotEmpty) ...[
         const RecommendationSectionHeader(
-          emoji: '🎯',
-          title: OnboardingStrings.sourcesSuggestionsTitle,
+          emoji: '①',
+          title: OnboardingStrings.sourcesBlockSuggestionsTitle,
           subtitle: OnboardingStrings.q9PreselectionTitle,
         ),
         ...suggestions.map((r) => _buildSuggestionCard(r)),
       ],
 
-      // « Vous suivez déjà un média ? » → panneau d'ajout replié
-      const SizedBox(height: FacteurSpacing.space4),
+      // ② Vos médias habituels → panneau d'ajout replié
+      const RecommendationSectionHeader(
+        emoji: '②',
+        title: OnboardingStrings.sourcesBlockHabitualTitle,
+        subtitle: OnboardingStrings.sourcesBlockHabitualSubtitle,
+      ),
       _buildAddPanelToggle(context, colors),
       AnimatedSize(
         duration: const Duration(milliseconds: 220),
@@ -328,86 +386,26 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
             : const SizedBox.shrink(),
       ),
 
-      // Catalogue complet replié + abonnements presse
-      const SizedBox(height: FacteurSpacing.space4),
+      // ③ Explorer le catalogue (replié)
+      const RecommendationSectionHeader(
+        emoji: '③',
+        title: OnboardingStrings.sourcesBlockCatalogTitle,
+        subtitle: OnboardingStrings.sourcesBlockCatalogSubtitle,
+      ),
       SourceCatalogSection(
         catalog: _fullCatalog(reco),
         selectedIds: _selectedSourceIds,
         onToggle: _toggleSource,
         onInfoTap: _showSourceDetail,
-        initiallyExpanded: suggestions.isEmpty,
+        initiallyExpanded: false,
       ),
-      const SizedBox(height: FacteurSpacing.space4),
-      AddSubscriptionCard(onTap: () => _openPremiumSheet(allSources)),
-    ];
-  }
 
-  // ── Variante knows : recherche d'abord ──────────────────────────────────
-
-  List<Widget> _buildKnowsLayout(
-    BuildContext context,
-    SourceRecommendation reco,
-    List<Source> allSources,
-  ) {
-    final colors = context.facteurColors;
-    final suggestions = _suggestions ?? const <RecommendedSource>[];
-    final visibleSuggestions = _showAllSuggestions
-        ? suggestions
-        : suggestions.take(_knowsVisibleLimit).toList();
-
-    return [
-      Text(
-        OnboardingStrings.sourcesKnowsTitle,
-        style: Theme.of(context).textTheme.displayLarge,
-        textAlign: TextAlign.center,
+      // ④ Vos abonnements presse
+      const RecommendationSectionHeader(
+        emoji: '④',
+        title: OnboardingStrings.sourcesBlockSubscriptionsTitle,
+        subtitle: OnboardingStrings.sourcesBlockSubscriptionsSubtitle,
       ),
-      const SizedBox(height: FacteurSpacing.space3),
-      Text(
-        'Recherchez vos médias, on les connecte à votre tournée.',
-        style: Theme.of(context)
-            .textTheme
-            .bodyMedium
-            ?.copyWith(color: colors.textSecondary),
-        textAlign: TextAlign.center,
-      ),
-      const SizedBox(height: FacteurSpacing.space2),
-
-      // Panneau d'ajout proéminent (preuve « Connecté » à l'ajout)
-      _buildEmbeddedAddPanel(),
-
-      // « Ou laissez-vous guider » : mêmes suggestions, repliées
-      if (suggestions.isNotEmpty) ...[
-        const SizedBox(height: FacteurSpacing.space4),
-        const RecommendationSectionHeader(
-          emoji: '🎯',
-          title: OnboardingStrings.sourcesGuideMeTitle,
-          subtitle: OnboardingStrings.q9PreselectionTitle,
-        ),
-        ...visibleSuggestions.map((r) => _buildSuggestionCard(r)),
-        if (!_showAllSuggestions && suggestions.length > _knowsVisibleLimit)
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: FacteurSpacing.space2,
-            ),
-            child: TextButton(
-              onPressed: () => setState(() => _showAllSuggestions = true),
-              child: Text(
-                OnboardingStrings.sourcesSeeMore,
-                style: TextStyle(color: colors.primary),
-              ),
-            ),
-          ),
-      ],
-
-      // Catalogue complet replié + abonnements presse
-      const SizedBox(height: FacteurSpacing.space4),
-      SourceCatalogSection(
-        catalog: _fullCatalog(reco),
-        selectedIds: _selectedSourceIds,
-        onToggle: _toggleSource,
-        onInfoTap: _showSourceDetail,
-      ),
-      const SizedBox(height: FacteurSpacing.space4),
       AddSubscriptionCard(onTap: () => _openPremiumSheet(allSources)),
     ];
   }
@@ -451,9 +449,9 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
               Expanded(
                 child: Text(
                   OnboardingStrings.sourcesAlreadyFollowTitle,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
               AnimatedRotation(
@@ -481,10 +479,69 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       showAddedNudge: false,
       inlineProof: true,
       embedded: true,
-      // Autofocus seulement quand l'utilisateur vient de déplier (curious) :
-      // en knows le panneau est visible dès l'entrée, le clavier attendra.
-      autoFocusSearch: _isCurious && _addPanelExpanded,
+      // Autofocus seulement quand l'utilisateur vient de déplier le panneau.
+      autoFocusSearch: _addPanelExpanded,
       onSourceAdded: _onSourceAdded,
+    );
+  }
+}
+
+class _AlreadyAddedSources extends StatelessWidget {
+  final List<Source> sources;
+
+  const _AlreadyAddedSources({required this.sources});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Déjà ajoutées',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space2),
+          Wrap(
+            spacing: FacteurSpacing.space2,
+            runSpacing: FacteurSpacing.space2,
+            children: [
+              for (final source in sources)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                    border: Border.all(color: colors.primary.withOpacity(0.18)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SourceLogoAvatar(source: source, size: 22, radius: 6),
+                      const SizedBox(width: 7),
+                      Text(
+                        source.name,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

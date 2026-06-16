@@ -17,11 +17,12 @@ import 'package:flutter_downloader/flutter_downloader.dart';
 import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
+import 'core/api/notification_preferences_api_service.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
+import 'core/services/server_push_service.dart';
 import 'core/ui/notification_service.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
-import 'features/settings/providers/notifications_settings_provider.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:timeago/src/messages/fr_messages.dart'
@@ -72,6 +73,18 @@ Future<void> _bootstrap() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
+  // à jour APK : permet au téléchargement de continuer en arrière-plan.
+  // Gate Android-only : sur iOS l'init crash (AppDelegate ne wire pas
+  // setPluginRegistrantCallback) et la feature (sideload APK) ne s'applique
+  // pas. Sur web `dart:io` Platform throw.
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+    } catch (e) {
+      debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+    }
+  }
   await Hive.initFlutter();
 
   final boxesSw = Stopwatch()..start();
@@ -193,6 +206,7 @@ Future<void> _bootstrap() async {
             properties: _userIdentifyProperties(user, appVersion: appVersion),
           );
           unawaited(_loginRevenueCatSafe(user.id));
+          unawaited(_registerServerPushIfEnabled());
         }
         break;
       case AuthChangeEvent.signedOut:
@@ -220,6 +234,15 @@ Future<void> _bootstrap() async {
   // - Notif scheduling (alarm, permissions, diagnostics)
   // - Home Widget callback registration
   unawaited(_initDeferredServices(posthog: posthog));
+}
+
+Future<void> _registerServerPushIfEnabled() async {
+  final box = await Hive.openBox<dynamic>('settings');
+  final enabled =
+      box.get('push_notifications_enabled', defaultValue: false) as bool;
+  if (enabled) {
+    await ServerPushService.instance.initAndRegister();
+  }
 }
 
 /// Init FlutterDownloader avec fallback silencieux (non-critique).
@@ -327,36 +350,24 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
         defaultValue: true) as bool;
     bootPushEnabledHive = pushEnabled;
 
-    // Cold start : re-pose la variante B personnalisée avec les derniers
-    // teasers persistés (le home les rafraîchira au 1er load frais). Liste vide
-    // (1er lancement) → variante A générique, acceptable. Clé + lecture
-    // défensive partagées avec le provider (source de vérité).
-    final essentielTeasers = NotificationsSettingsNotifier.readTeasers(
-      settingsBox,
-      NotificationsSettingsNotifier.kEssentielTeasers,
-    );
-    final digestVariant = essentielTeasers.isEmpty
-        ? NotifVariant.variantA
-        : NotifVariant.variantB;
-    final digestSerene = NotificationsSettingsNotifier.readSerein(settingsBox);
-
     // Diagnostic + scheduling sont indépendants : collecter le diagnostic
     // pendant la planification (alarms + permission). `pushEnabled=false`
     // → on collecte quand même le diagnostic (cf. bug-notifications-stalled).
     final diagFuture = pushNotificationService.getDiagnostics();
     if (pushEnabled) {
-      await pushNotificationService.ensureExactAlarmPermission();
-      // Si une notification personnalisée (avec les sujets du digest) a été
-      // planifiée par DigestNotifier._updateNotificationWithTopics(), on la
-      // préserve — écraser avec le corps statique régresserait la feature.
-      final alreadyScheduled =
-          await pushNotificationService.isDigestNotificationScheduled();
-      if (!alreadyScheduled) {
+      final timeSlot = NotifTimeSlotX.fromWire(
+        settingsBox.get('notif_time_slot') as String?,
+      );
+      final serverRegistered =
+          await ServerPushService.instance.initAndRegister();
+      if (serverRegistered) {
+        await pushNotificationService.cancelDigestNotification();
+      } else {
+        await pushNotificationService.ensureExactAlarmPermission();
         final scheduled =
             await pushNotificationService.scheduleDailyDigestNotification(
-          variant: digestVariant,
-          teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
-          serene: digestSerene,
+          variant: NotifVariant.variantA,
+          timeSlot: timeSlot,
         );
         if (!scheduled) {
           debugPrint(
@@ -365,16 +376,11 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
           await pushNotificationService.requestExactAlarmPermission();
           final retryOk =
               await pushNotificationService.scheduleDailyDigestNotification(
-            variant: digestVariant,
-            teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
-            serene: digestSerene,
+            variant: NotifVariant.variantA,
+            timeSlot: timeSlot,
           );
           debugPrint('Main: Retry result: $retryOk');
         }
-      } else {
-        debugPrint(
-          'Main: Digest notification already scheduled — skipping static placeholder.',
-        );
       }
     }
     bootNotifDiag = await diagFuture;

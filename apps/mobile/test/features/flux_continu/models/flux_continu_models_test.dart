@@ -119,10 +119,10 @@ void main() {
     });
 
     test('uses source:<id> for source sections', () {
-      final src = FeedThemeSection(
+      const src = FeedThemeSection(
         kind: SectionKind.source,
         label: 'Le Monde',
-        accent: const Color(0xFF8E44AD),
+        accent: Color(0xFF8E44AD),
         coreVisibleCount: 3,
         sourceId: 'src-uuid',
         sourceLogoUrl: 'https://logo.test/x.png',
@@ -133,20 +133,6 @@ void main() {
   });
 
   group('FluxContinuState', () {
-    test('isOpen defaults to false', () {
-      const state = FluxContinuState();
-      expect(state.isOpen(digestSection()), isFalse);
-      expect(state.isOpen(themeSection(slug: 'tech')), isFalse);
-    });
-
-    test('isOpen reads from moreOpen map keyed by sectionKey', () {
-      final state = FluxContinuState(
-        moreOpen: {sectionKey(digestSection(kind: SectionKind.bonnes)): true},
-      );
-      expect(state.isOpen(digestSection(kind: SectionKind.bonnes)), isTrue);
-      expect(state.isOpen(digestSection(kind: SectionKind.essentiel)), isFalse);
-    });
-
     test('copyWith clears error when clearError is true', () {
       const state = FluxContinuState(error: 'boom');
       final updated = state.copyWith(clearError: true);
@@ -164,11 +150,6 @@ void main() {
       expect(updated.closingDismissed, isTrue);
     });
 
-    test('copyWith preserves moreOpen when not specified', () {
-      const state = FluxContinuState(moreOpen: {'bonnes': true});
-      final updated = state.copyWith(isSerene: true);
-      expect(updated.isOpen(digestSection(kind: SectionKind.bonnes)), isTrue);
-    });
   });
 
   group('FluxSection.hasOverflow', () {
@@ -186,6 +167,28 @@ void main() {
 
     test('FeedThemeSection: totalCount reflects items length', () {
       expect(themeSection(itemCount: 5, core: 2).totalCount, 5);
+    });
+
+    test('FeedThemeSection: noRecentSource defaults to false', () {
+      expect(themeSection().noRecentSource, isFalse);
+    });
+
+    test('FeedThemeSection: copyWith preserves noRecentSource', () {
+      // Piège connu (cf. coreVisibleCount) : un champ oublié dans copyWith
+      // disparaîtrait au 1er recompose. Ici on vérifie qu'il survit quand on
+      // ne le redéfinit pas.
+      final src = FeedThemeSection(
+        kind: SectionKind.source,
+        label: 'Le Monde',
+        accent: const Color(0xFF2C3E50),
+        coreVisibleCount: 3,
+        sourceId: 's1',
+        items: const <Content>[],
+        noRecentSource: true,
+      );
+      final copy = src.copyWith(isLoadingMore: true);
+      expect(copy.noRecentSource, isTrue);
+      expect(src.copyWith(noRecentSource: false).noRecentSource, isFalse);
     });
 
     test('blurb is optional and defaults to null', () {
@@ -287,6 +290,79 @@ void main() {
     test('returns null for an unknown current key', () {
       final a = themeSection(slug: 'tech');
       expect(nextSectionAfter([a], 'theme:nope'), isNull);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Story 22.3 — suggestions « Choisie pour vous »
+  // ---------------------------------------------------------------------------
+
+  group('FeedThemeSection origin/reason (Story 22.3)', () {
+    test('default origin is validated and reason is null', () {
+      final s = themeSection(slug: 'tech');
+      expect(s.origin, SectionOrigin.validated);
+      expect(s.reason, isNull);
+      expect(s.isSuggested, isFalse);
+    });
+
+    test('suggested section carries origin + reason', () {
+      const reason = SuggestionReason(
+        label: 'Tu suis ce thème',
+        breakdown: [SuggestionContribution(label: 'Tu suis ce thème')],
+      );
+      const s = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: Color(0xFF000000),
+        coreVisibleCount: 3,
+        themeSlug: 'tech',
+        items: [],
+        origin: SectionOrigin.suggested,
+        reason: reason,
+      );
+      expect(s.isSuggested, isTrue);
+      expect(s.reason, same(reason));
+    });
+
+    test('copyWith preserves origin + reason (badge survives recompose)', () {
+      const reason = SuggestionReason(label: 'Sources fiables');
+      const s = FeedThemeSection(
+        kind: SectionKind.source,
+        label: 'Le Monde',
+        accent: Color(0xFF000000),
+        coreVisibleCount: 3,
+        sourceId: 'sid',
+        items: [],
+        origin: SectionOrigin.suggested,
+        reason: reason,
+      );
+      final copy = s.copyWith(items: const []);
+      expect(copy.origin, SectionOrigin.suggested);
+      expect(copy.reason, same(reason));
+      expect(copy.isSuggested, isTrue);
+    });
+  });
+
+  group('SuggestionReason.fromJson (Story 22.3)', () {
+    test('parses label + breakdown', () {
+      final r = SuggestionReason.fromJson({
+        'label': 'Tu suis ce thème',
+        'breakdown': [
+          {'label': 'Tu suis ce thème', 'points': 100, 'pillar': 'pertinence'},
+          {'label': '5 articles récents', 'points': 50, 'pillar': 'fraicheur'},
+        ],
+      });
+      expect(r.label, 'Tu suis ce thème');
+      expect(r.breakdown, hasLength(2));
+      expect(r.breakdown.first.label, 'Tu suis ce thème');
+      expect(r.breakdown.first.pillar, 'pertinence');
+      expect(r.breakdown[1].points, 50);
+    });
+
+    test('tolerates missing breakdown', () {
+      final r = SuggestionReason.fromJson({'label': 'Varié pour aujourd\'hui'});
+      expect(r.label, 'Varié pour aujourd\'hui');
+      expect(r.breakdown, isEmpty);
     });
   });
 }

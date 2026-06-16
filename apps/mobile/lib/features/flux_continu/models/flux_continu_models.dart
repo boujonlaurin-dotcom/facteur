@@ -17,10 +17,63 @@ import '../../feed/models/content_model.dart';
 /// réutilisant le payload [FeedThemeSection] (champs `sourceId`/`sourceLogoUrl`).
 enum SectionKind { essentiel, bonnes, theme, veille, source }
 
+/// Origine d'une section de la Tournée du jour (Story 22.3).
+///
+/// `validated` = section **dédiée** (favori épinglé / source Essentiel /
+/// veille) — toujours rendue, jamais masquée par l'algo. `suggested` = section
+/// « Choisie pour vous » qui remplit un slot restant, issue d'un thème/source
+/// que l'utilisateur suit déjà mais n'a pas épinglé. Défaut `validated` →
+/// rétro-compat des payloads/sections qui ne portent pas le champ.
+enum SectionOrigin { validated, suggested }
+
+/// Une puce de transparence d'une suggestion (miroir de `ScoreContribution`
+/// côté backend, cf. `schemas/content.py`). Story 22.3.
+class SuggestionContribution {
+  final String label;
+  final double points;
+  final String? pillar;
+
+  const SuggestionContribution({
+    required this.label,
+    this.points = 0,
+    this.pillar,
+  });
+
+  factory SuggestionContribution.fromJson(Map<String, dynamic> json) {
+    return SuggestionContribution(
+      label: (json['label'] as String?) ?? '',
+      points: (json['points'] as num?)?.toDouble() ?? 0,
+      pillar: json['pillar'] as String?,
+    );
+  }
+}
+
+/// Raison « Pourquoi cette section ? » d'une suggestion (Story 22.3).
+///
+/// `label` = la contribution dominante (titre de la sheet) ; `breakdown` =
+/// 2-3 puces honnêtes construites côté backend depuis les seules composantes
+/// réellement présentes (préférence déclarée / lue + N articles + variété).
+class SuggestionReason {
+  final String label;
+  final List<SuggestionContribution> breakdown;
+
+  const SuggestionReason({required this.label, this.breakdown = const []});
+
+  factory SuggestionReason.fromJson(Map<String, dynamic> json) {
+    return SuggestionReason(
+      label: (json['label'] as String?) ?? '',
+      breakdown: ((json['breakdown'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(SuggestionContribution.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
 /// Stable identity for a section across rebuilds.
 ///
-/// Used as a key into the `moreOpen` map so per-section UI state
-/// survives provider refreshes. For theme sections, the slug or custom topic
+/// Used as a key for per-section UI/dérivations (ordre tournée, dédup…) so
+/// state survives provider refreshes. For theme sections, the slug or custom topic
 /// id discriminates between multiple `kind == theme` instances; system
 /// sections collapse to just their kind name. La section veille collapse à
 /// `'veille'` (un seul par user à V1).
@@ -30,7 +83,7 @@ enum SectionKind { essentiel, bonnes, theme, veille, source }
 ///   - la nouvelle [EssentielSection] (carte hi-fi "L'Essentiel du jour")
 ///     → mappée sur `'essentiel_v3'` ;
 ///   - la [DigestTopicSection] legacy renommée "Actus du jour"
-///     → garde la clé historique `'essentiel'` pour son état `moreOpen`.
+///     → garde la clé historique `'essentiel'`.
 String sectionKey(FluxSection section) {
   return switch (section) {
     EssentielSection() => 'essentiel_v3',
@@ -270,6 +323,17 @@ class FeedThemeSection extends FluxSection {
   /// the "Chargement…" label and ignore taps.
   final bool isLoadingMore;
 
+  /// Story 22.3 — origine de la section. `suggested` ⇒ section « Choisie pour
+  /// vous » (badge + « i » explicatif, dismiss/promotion). Défaut `validated`.
+  final SectionOrigin origin;
+
+  /// Raison de transparence (non null seulement quand [origin] est `suggested`).
+  final SuggestionReason? reason;
+
+  /// Section source : true quand la source n'a aucun article récent (≤72h) et
+  /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
+  final bool noRecentSource;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -283,12 +347,18 @@ class FeedThemeSection extends FluxSection {
     this.currentPage = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.origin = SectionOrigin.validated,
+    this.reason,
+    this.noRecentSource = false,
     super.blurb,
     super.illustrationAsset,
   });
 
   @override
   int get totalCount => items.length;
+
+  /// Raccourci : la section est une suggestion « Choisie pour vous ».
+  bool get isSuggested => origin == SectionOrigin.suggested;
 
   FeedThemeSection copyWith({
     List<Content>? items,
@@ -300,6 +370,7 @@ class FeedThemeSection extends FluxSection {
     // `loadMoreTheme` (qui recopient via copyWith) réinitialiseraient le compte
     // au défaut à chaque recompose — le piège le plus facile à introduire.
     int? coreVisibleCount,
+    bool? noRecentSource,
   }) {
     return FeedThemeSection(
       kind: kind,
@@ -314,6 +385,12 @@ class FeedThemeSection extends FluxSection {
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      // Story 22.3 — origin/reason doivent survivre au dédup/filtre/loadMore
+      // (même piège que coreVisibleCount ci-dessus) : un copyWith qui les
+      // perdrait retirerait le badge « Choisie pour vous » au 1ᵉʳ recompose.
+      origin: origin,
+      reason: reason,
+      noRecentSource: noRecentSource ?? this.noRecentSource,
       blurb: blurb,
       illustrationAsset: illustrationAsset,
     );
@@ -395,10 +472,6 @@ class FluxContinuState {
   /// visible cap. The Grille is not a [FluxSection].
   final int? grilleSlotIndex;
   final bool isSerene;
-  // Per-section UI state keyed by [sectionKey]. String keys (rather than
-  // `SectionKind`) so multiple theme sections (one per favorite, 0..3) keep
-  // independent state — the legacy enum-keyed maps could not represent that.
-  final Map<String, bool> moreOpen;
   // Whether the closing card "Vous êtes à jour" has been dismissed for the
   // day — either via the Continuer/Refermer buttons or by scrolling past it.
   // Persisted day-by-day.
@@ -426,7 +499,6 @@ class FluxContinuState {
     this.sections = const [],
     this.grilleSlotIndex,
     this.isSerene = false,
-    this.moreOpen = const {},
     this.closingDismissed = false,
     this.dismissedIds = const {},
     this.quote,
@@ -439,7 +511,6 @@ class FluxContinuState {
     List<FluxSection>? sections,
     int? grilleSlotIndex,
     bool? isSerene,
-    Map<String, bool>? moreOpen,
     bool? closingDismissed,
     Set<String>? dismissedIds,
     QuoteResponse? quote,
@@ -452,7 +523,6 @@ class FluxContinuState {
       sections: sections ?? this.sections,
       grilleSlotIndex: grilleSlotIndex ?? this.grilleSlotIndex,
       isSerene: isSerene ?? this.isSerene,
-      moreOpen: moreOpen ?? this.moreOpen,
       closingDismissed: closingDismissed ?? this.closingDismissed,
       dismissedIds: dismissedIds ?? this.dismissedIds,
       quote: quote ?? this.quote,
@@ -461,11 +531,6 @@ class FluxContinuState {
       isSkeleton: isSkeleton ?? this.isSkeleton,
     );
   }
-
-  /// Convenience accessor — caller passes the section itself so the key
-  /// derivation stays inside the model. Lets widgets stay agnostic of the
-  /// string-key encoding scheme.
-  bool isOpen(FluxSection section) => moreOpen[sectionKey(section)] ?? false;
 
   /// Slugs of the `FeedThemeSection`s that make up today's tournée — used by
   /// the Explorer filter bar to hide chips for themes the user has already

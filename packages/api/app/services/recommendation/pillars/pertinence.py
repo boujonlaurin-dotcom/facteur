@@ -99,12 +99,14 @@ def _subtopic_label(slug: str) -> str:
 
 def _get_effective_theme(content: Content, user_interests: set[str]) -> str | None:
     """Determine effective theme: content.theme > source.theme > secondary_themes."""
-    if hasattr(content, "theme") and content.theme:
-        if content.theme in user_interests:
-            return content.theme
-    if content.source and content.source.theme:
-        if content.source.theme in user_interests:
-            return content.source.theme
+    if hasattr(content, "theme") and content.theme and content.theme in user_interests:
+        return content.theme
+    if (
+        content.source
+        and content.source.theme
+        and content.source.theme in user_interests
+    ):
+        return content.source.theme
     if content.source and getattr(content.source, "secondary_themes", None):
         matched = set(content.source.secondary_themes) & user_interests
         if matched:
@@ -238,20 +240,26 @@ class PertinencePillar(BasePillar):
     ) -> tuple[float, PillarContribution | None]:
         """3-tier theme matching: content.theme > source.theme > secondary_themes."""
         # Tier 1: Article-level theme (ML-inferred)
-        if hasattr(content, "theme") and content.theme:
-            if content.theme in context.user_interests:
-                label = f"Thème : {_theme_label(content.theme)}"
-                return ScoringWeights.THEME_MATCH, PillarContribution(
-                    label=label, points=ScoringWeights.THEME_MATCH
-                )
+        if (
+            hasattr(content, "theme")
+            and content.theme
+            and content.theme in context.user_interests
+        ):
+            label = f"Thème : {_theme_label(content.theme)}"
+            return ScoringWeights.THEME_MATCH, PillarContribution(
+                label=label, points=ScoringWeights.THEME_MATCH
+            )
 
         # Tier 2: Source primary theme
-        if content.source and content.source.theme:
-            if content.source.theme in context.user_interests:
-                label = f"Thème : {_theme_label(content.source.theme)}"
-                return ScoringWeights.THEME_MATCH, PillarContribution(
-                    label=label, points=ScoringWeights.THEME_MATCH
-                )
+        if (
+            content.source
+            and content.source.theme
+            and content.source.theme in context.user_interests
+        ):
+            label = f"Thème : {_theme_label(content.source.theme)}"
+            return ScoringWeights.THEME_MATCH, PillarContribution(
+                label=label, points=ScoringWeights.THEME_MATCH
+            )
 
         # Tier 3: Source secondary themes (70% of primary)
         if content.source and getattr(content.source, "secondary_themes", None):

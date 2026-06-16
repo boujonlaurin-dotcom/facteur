@@ -24,8 +24,10 @@ class OnboardingStrings {
   static const String intro2Title = 'Ton hub d\'infos fiables.';
   static const String intro2Subtitle =
       'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et sources de qualité.';
-  static const String intro2SubtitlePart1 = 'Facteur est une app Open-Source pour ';
-  static const String intro2SubtitleBold1 = 'retrouver le plaisir de s\'informer';
+  static const String intro2SubtitlePart1 =
+      'Facteur est une app Open-Source pour ';
+  static const String intro2SubtitleBold1 =
+      'retrouver le plaisir de s\'informer';
   static const String intro2SubtitlePart2 = '. Un espace de ';
   static const String intro2SubtitleBold2 = 'confiance';
   static const String intro2SubtitlePart3 = ', qui mêle ';
@@ -53,8 +55,7 @@ class OnboardingStrings {
       "Commençons par vous. \n\nQu'est-ce qui vous épuise le plus avec l'info ?";
   static const String q1Subtitle = '';
   static const String q1NoiseLabel = 'Le Bruit';
-  static const String q1NoiseSubtitle =
-      "Trop d'info. Impossible de bien trier";
+  static const String q1NoiseSubtitle = "Trop d'info. Impossible de bien trier";
   static const String q1BiasLabel = 'Les Biais';
   static const String q1BiasSubtitle = 'Je doute constamment de la neutralité';
   static const String q1AnxietyLabel = 'La négativité';
@@ -69,13 +70,28 @@ class OnboardingStrings {
   static const String q2Option35_44 = '35 - 44 ans';
   static const String q2Option45_plus = '45 ans et plus';
 
-  // Q4: Approach
-  static const String q4Title = 'Vous préférez...';
+  // Q4: Approach → axe "Profondeur" (ré-aiguillé v6).
+  // Cible la profondeur des SOURCES, pas seulement la longueur d'un article.
+  // Valeurs inchangées : direct / detailed.
+  static const String q4Title = 'Vous préférez des sources qui...';
   static const String q4Subtitle = '';
-  static const String q4DirectLabel = 'Aller droit au but';
-  static const String q4DirectSubtitle = 'L\'essentiel, rapidement';
-  static const String q4DetailedLabel = 'Prendre le temps';
-  static const String q4DetailedSubtitle = 'Explorer en profondeur';
+  static const String q4DirectLabel = 'Vont à l\'essentiel';
+  static const String q4DirectSubtitle = 'L\'actu, claire et rapide';
+  static const String q4DetailedLabel = 'Creusent le sujet';
+  static const String q4DetailedSubtitle = 'Analyses et enquêtes de fond';
+
+  // Q5b: Indépendance (nouvelle question v6). Cadrée comme un GOÛT de sourcing,
+  // pas un jugement de fiabilité. Valeurs : established / independent.
+  static const String qIndependenceTitle = 'Côté médias, vous penchez pour...';
+  static const String qIndependenceSubtitle = '';
+  static const String qIndependenceEstablishedLabel =
+      'Les grands médias institutionnels';
+  static const String qIndependenceEstablishedSubtitle =
+      'Installés, connus de tous';
+  static const String qIndependenceIndependentLabel =
+      'Des médias plus spécialisés';
+  static const String qIndependenceIndependentSubtitle =
+      'Moins connus, souvent indépendants';
 
   // Q5: Perspective
   static const String q5Title = 'Vous préférez avoir...';
@@ -85,13 +101,48 @@ class OnboardingStrings {
   static const String q5DetailsLabel = 'Dans le détail';
   static const String q5DetailsSubtitle = 'Aller en profondeur';
 
-  // Q6: Response Style
-  static const String q6Title = 'Quand vous lisez, vous aimez...';
-  static const String q6Subtitle = '';
-  static const String q6DecisiveLabel = 'Des avis tranchés';
-  static const String q6DecisiveSubtitle = 'Pour des opinions claires';
-  static const String q6NuancedLabel = 'Toutes les perspectives';
-  static const String q6NuancedSubtitle = 'Voir tous les angles';
+  // Swipe désambiguateur (Q9c bis, v6) : quelques sources étalées sur les axes
+  // (profondeur, indépendance, perspective) que l'utilisateur trie d'un geste.
+  // Glisser à droite = ça m'intéresse ; gauche = pas pour moi.
+  static const String swipeTitle = 'Quels médias suivre ?';
+  static const String swipeSubtitle =
+      'Glisse à droite ceux qui te parlent, à gauche les autres. '
+      'On ajuste tes suggestions en direct.';
+  static const String swipeLikeHint = 'Ça m\'intéresse';
+  static const String swipeSkipHint = 'Pas pour moi';
+  static const String swipeUndoLabel = 'Revenir au dernier média';
+  static const String swipeDoneButton = 'Voir mes médias';
+  // Compteur humanisé à 3 paliers selon l'avancement (current/total). Plus
+  // présent qu'un sec « Carte X sur Y », sans em-dash (règle PO).
+  static const String swipeProgressStart = 'Premières cartes (%d/%d)';
+  static const String swipeProgressMiddle = 'On affine (%d/%d)';
+  static const String swipeProgressEnd = 'Encore quelques-unes (%d/%d)';
+  // Nudge discret sur la 1ère carte (disparaît au 1er geste).
+  static const String swipeTapHint = 'Touchez pour explorer';
+  // Profil révélé en direct, en phrase inline sous le deck (remplace les chips
+  // du haut). Suivi des libellés de pôles nets-positifs joints par virgules.
+  static const String swipeProfileInline = 'On retient pour ta sélection : ';
+
+  // Étiquettes "pôle" affichées sur les cartes de swipe (1 à 2 tags max).
+  static const String swipePoleDeep = 'Analyse de fond';
+  static const String swipePoleMainstream = 'Actu en continu';
+  static const String swipePoleIndependent = 'Indépendant';
+  static const String swipePoleEstablished = 'Référence';
+  static const String swipePolePerspective = 'Autre angle';
+
+  // Bloc d'infos intrinsèques sur la carte (Tendance + Fiabilité).
+  static const String swipeBiasPrefix = 'Tendance : ';
+  static const String swipeReliabilityPrefix = 'Fiabilité : ';
+  static const String swipeReliabilityHigh = 'Élevée';
+  static const String swipeReliabilityMedium = 'Moyenne';
+  static const String swipeReliabilityLow = 'Limitée';
+  static const String swipeReliabilityUnknown = 'Non évaluée';
+
+  // Moment de calibration en fin de tri + micro-indice pendant les swipes.
+  static const String swipeRefiningTitle = 'On affine tes médias…';
+  static const String swipeRefiningSubtitle =
+      'On ajuste les suggestions à tes goûts.';
+  static const String swipeCalibratingHint = 'On affine…';
 
   // Q8: Gamification
   static const String q8Title =
@@ -129,48 +180,42 @@ class OnboardingStrings {
   // Digest Mode
   static const String digestModeTitle =
       'Quel mode de récap quotidien préférez-vous ?';
-  static const String digestModeSubtitle =
-      'Vous pourrez changer à tout moment.';
+  static const String digestModeSubtitle = 'Tu pourras changer à tout moment.';
 
   // Digest Mode — Rester serein (rich subtitle parts)
   static const String digestModeSereinPart1 =
-      'Certains sujets peuvent être difficiles à lire. Activez le ';
+      'Certains sujets peuvent être difficiles à lire. Active le ';
   static const String digestModeSereinBold1 = 'mode serein';
   static const String digestModeSereinPart2 = ' pour ';
   static const String digestModeSereinBold2 = 'filtrer les contenus anxiogènes';
-  static const String digestModeSereinPart3 = '.\nVous pourrez ';
+  static const String digestModeSereinPart3 = '.\nTu pourras ';
   static const String digestModeSereinBold3 = 'changer d\'avis à tout moment';
   static const String digestModeSereinPart4 =
-      ' grâce au bouton dédié en haut de votre essentiel et du flux.';
+      ' grâce au bouton dédié en haut de ton essentiel et du flux.';
 
   // Réassurance affichée sous les choix du mode serein (sans tiret em).
   static const String digestModeAnytimeNote =
-      'Vous pourrez activer ou désactiver le mode serein à tout moment depuis Mes intérêts.';
+      'Tu pourras affiner ce qui te semble serein depuis les paramètres.';
 
   // Personalised serein CTA (shown on the DigestMode question).
-  static const String personalizeSereinCta =
-      'Personnaliser mon mode serein';
+  static const String personalizeSereinCta = 'Personnaliser mon mode serein';
 
-  // Q9c: Intent sources (routage de la page sources)
-  static const String sourcesIntentTitle =
-      'Avec quels médias préférez-vous partir ?';
-  static const String sourcesIntentCuriousLabel = 'Plutôt curieux';
-  static const String sourcesIntentCuriousSubtitle =
-      'Découvrir des médias selon mes thèmes';
-  static const String sourcesIntentKnowsLabel =
-      'Repartir de ce que je connais';
-  static const String sourcesIntentKnowsSubtitle =
-      'Je sais déjà quels médias je suis';
-
-  // Q10: Page sources adaptative
+  // Q10: Page sources « sur mesure »
   static const String sourcesSuggestionsTitle = 'Nos suggestions pour vous';
-  static const String sourcesAlreadyFollowTitle =
-      'Vous suivez déjà un média ?';
-  static const String sourcesKnowsTitle =
-      'Quels médias suivez-vous déjà ?';
-  static const String sourcesGuideMeTitle = 'Ou laissez-vous guider';
+  static const String sourcesAlreadyFollowTitle = 'Vous suivez déjà un média ?';
   static const String sourcesSeeAllCatalog = 'Voir tout le catalogue';
-  static const String sourcesSeeMore = 'Voir plus';
+
+  // Q10: en-têtes des 4 blocs « sur mesure » (①②③④).
+  static const String sourcesBlockSuggestionsTitle = 'Suggestions sur mesure';
+  static const String sourcesBlockHabitualTitle = 'Vos médias habituels';
+  static const String sourcesBlockHabitualSubtitle =
+      'Ajoutez les médias que vous suivez déjà.';
+  static const String sourcesBlockCatalogTitle = 'Explorer le catalogue';
+  static const String sourcesBlockCatalogSubtitle =
+      'Parcourez toutes les sources disponibles.';
+  static const String sourcesBlockSubscriptionsTitle = 'Vos abonnements presse';
+  static const String sourcesBlockSubscriptionsSubtitle =
+      'Connectez vos abonnements payants pour lire les articles en entier.';
 
   // Preuve instantanée à l'ajout (Wow #1)
   static const String sourceProofConnected = 'Connecté';
@@ -188,10 +233,9 @@ class OnboardingStrings {
   static const String q9Subtitle =
       'Basé sur vos réponses, voici les médias que Facteur vous recommande.';
   static const String q9SearchHint = 'Rechercher une source...';
-  static const String q9LoadingError = 'Erreur de chargement des sources';
-  static const String q9EmptyList = 'Aucune source disponible';
-  static const String q9NoMatch =
-      'Aucune source ne correspond à votre recherche';
+  static const String q9LoadingError = 'Erreur de chargement des médias';
+  static const String q9EmptyList = 'Aucun média disponible';
+  static const String q9NoMatch = 'Aucun média ne correspond à ta recherche';
 
   // Message de pré-sélection automatique
   static const String q9PreselectionTitle =
@@ -202,8 +246,7 @@ class OnboardingStrings {
       'Ajouter vos abonnements presse';
 
   // Carte d'ajout d'abonnement (style CTA Essentiel) sur la page sources.
-  static const String addSubscriptionCardTitle =
-      'Abonné à un média payant ?';
+  static const String addSubscriptionCardTitle = 'Abonné à un média payant ?';
   static const String addSubscriptionCardSubtitle =
       'Le Monde, Mediapart, L\'Équipe... Connectez vos abonnements pour lire '
       'les articles en entier, directement dans Facteur.';

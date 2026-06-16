@@ -1,6 +1,8 @@
 import '../../../core/api/api_client.dart';
 import '../models/smart_search_result.dart';
+import '../models/source_coverage.dart';
 import '../models/source_model.dart';
+import '../models/source_profile.dart';
 import '../models/source_recent_items.dart';
 import '../models/theme_source_model.dart';
 
@@ -255,6 +257,50 @@ class SourcesRepository {
       // ignore: avoid_print
       print('SourcesRepository: [ERROR] fetchRecentItems: $e');
       return [];
+    }
+  }
+
+  /// Couverture par thèmes d'une source sur les [days] derniers jours.
+  /// Best-effort : une erreur renvoie une couverture vide (la section se masque).
+  Future<SourceCoverage> fetchCoverage(
+    String sourceId, {
+    int days = 30,
+  }) async {
+    try {
+      final response = await _apiClient.dio.get<Map<String, dynamic>>(
+        'sources/$sourceId/coverage',
+        queryParameters: {'days': days},
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return SourceCoverage.fromJson(response.data!);
+      }
+      return const SourceCoverage(periodLabel: '', totalCount: 0);
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] fetchCoverage: $e');
+      return const SourceCoverage(periodLabel: '', totalCount: 0);
+    }
+  }
+
+  /// Profil unifié d'une source — fiche source v3
+  /// (`GET /sources/{id}/profile`).
+  ///
+  /// Contrairement à [fetchCoverage] (best-effort → vide), on **propage**
+  /// l'erreur : la fiche s'appuie dessus pour basculer en fallback statique
+  /// (header + éval + réglages) plutôt que d'afficher un état vide trompeur.
+  Future<SourceProfile> getSourceProfile(String sourceId) async {
+    try {
+      final response = await _apiClient.dio.get<Map<String, dynamic>>(
+        'sources/$sourceId/profile',
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return SourceProfile.fromJson(response.data!);
+      }
+      throw Exception('Failed to load source profile');
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] getSourceProfile: $e');
+      rethrow;
     }
   }
 

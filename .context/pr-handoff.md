@@ -1,31 +1,40 @@
-feat(observabilité): instrumentation API externes + sonde pool + résumé digest (scaling WP-E)
+feat(onboarding): sources spécialisées par sujet — re-mapping taxonomie 51-slugs + badge « Spécialisé en X » (Epic 12)
 
-Enabler scaling **purement additif** (aucun impact user-facing, aucun changement de comportement métier). Phase 1 de l'investigation scaling 200 users — *mesurer avant de remédier*. Débloque WP-D (quotas/coûts Mistral), WP-B (digest), WP-A (pool). Doc : `docs/maintenance/maintenance-observabilite-scaling.md`.
+Aligne le vocabulaire des `granular_topics` des **sources** sur la taxonomie **51-slugs** des users/articles et garantit, dans l'écran de reco onboarding, **≥1 source spécialisée visible par sujet sélectionné** (badge « Spécialisé en X »). Livré en **1 PR groupée** (backend data + mobile UI) vers `main`. Additif, **aucune migration Alembic** (`granular_topics`/`is_curated` existent déjà → backfill data gaté PO).
 
-## Volet 1 — Tracking persistant des appels API externes
-- Nouvelle table append-only **`api_usage_events`** (`provider`, `model`, `call_site`, `user_id`, `status`, `latency_ms`, `created_at` + 2 index). Pas de contrainte d'unicité → zéro hot-row contention.
-- Recorder best-effort **`record_api_call`** (`app/services/observability/usage_recorder.py`) : session courte dédiée (`safe_async_session`), jamais bloquant, ne lève jamais, gated par le kill-switch `usage_tracking_enabled`.
-- 6 call sites instrumentés en `try/finally` (capte aussi `error`/`rate_limited`) : `classification_pass1`, `good_news_pass2`, `editorial` (chokepoint unique curation/pipeline/deep/perspective), `veille_suggester`, `smart_search_mistral`, `smart_search_brave`. Compteurs in-memory veille existants **laissés en place** (pas de rebranchement d'enforcement → WP-D).
+## Problème
 
-## Volet 2 — Résumé de run digest always-on
-- `compute_digest_coverage(session, target_date)` factorisé depuis le watchdog (source unique de la couverture, partagée scheduler ↔ job).
-- Log always-on `digest_run_summary` (`duration_seconds`, `total_users`, `success`, `failed`, `coverage_pct`) + `coverage_pct` ajouté à l'event PostHog `digest_generated`. Couverture lue dans une session dédiée best-effort. Aucune nouvelle table.
+Le recommender d'onboarding score `source.granularTopics ∩ user.selectedSubtopics`, mais les deux vivaient dans des **taxonomies incompatibles** : sources en ancien vocab (`social-justice`, `energy-transition`, `data-privacy`…), users/articles en 51-slugs (`inequality`, `energy`, `privacy`…). Résultat : le bonus « spécialiste » ne se déclenchait quasi jamais (~35/51 subtopics sans source curée correspondante) → pas d'effet « wow ». Le catalogue curé (66/296 actives) était aussi trop mince.
 
-## Volet 3 — Sonde pool périodique + métrique idle-in-tx
-- `read_pool_stats(engine)` factorisé (`app/observability/pool_stats.py`), réutilisé par `/api/health/pool` (comportement inchangé) **et** par la nouvelle sonde.
-- Job APScheduler `_pool_health_probe` (interval 5 min) : alerte `db_pool_pressure_high` + `sentry_sdk.capture_message(level="warning")` au seuil `pool_alert_threshold_pct` (défaut 80).
-- `zombie_session_sweeper` émet désormais `db_idle_in_transaction_swept{count}` always-on (idle-in-tx requêtable même à 0).
+## Ce que ça change (user-visible)
 
-## Config (kill-switches)
-`usage_tracking_enabled: bool = True` · `pool_alert_threshold_pct: int = 80`.
+- **Un spécialiste par sujet, dès l'inscription.** Chaque sous-sujet choisi obtient au moins une carte « 🎯 Spécialisé en {sujet} », en tête des suggestions et pré-cochée.
+- **Cartes spécialistes distinctes par sujet** (quand la data le permet), libellés FR via `getTopicLabel` (51 slugs couverts).
 
-## Migration
-`au01_api_usage_events`, `down_revision = gr02_grille_featured_article` (head courant ; `vf02` du plan était dépassé depuis #784). **1 seul head** confirmé via `alembic heads`. Additive pure (CREATE TABLE + 2 index), rollback trivial. `upgrade head` + `downgrade -1` rejoués sur **DB vide** → OK.
+## Technique (additif, sans migration)
 
-## Tests & VERIFY
-- Nouveaux : `tests/test_usage_recorder.py` (kill-switch, best-effort never-raises, coercition user_id, call_site inconnu), `tests/test_pool_observability.py` (`read_pool_stats` saturé/ok/NullPool + sonde alerte/quiet/registration).
-- Non-régression : `tests/ml/`, `tests/editorial/`, `tests/workers/`, `tests/test_digest_generation_job.py`, `tests/test_health_pool.py`, `tests/services/search/` → **tout vert** (~355 tests sur les modules touchés).
-- Intégration live (Postgres) : 1 ligne/appel écrite (Mistral + Brave), kill-switch ⇒ 0 insert, requête WP-D `GROUP BY provider, model, day` OK.
+### Backend / data
+- **`scripts/retag_and_promote_sources.py`** (nouveau, scaffolding CLI dry-run/`--apply`/`--allow-prod`/backup JSON repris d'`apply_source_evaluations.py`) :
+  - **A1 — dérivation `granular_topics`** : sur 90 j, agrège `unnest(contents.topics)` par topic ; `share = n_topic / n_total` ; retient si `n ≥ MIN_COUNT(4)` **et** `share ≥ MIN_SHARE(0.10)`, capé `TOP_K(6)`, **ordonné par share desc** (1er = spécialité dominante = badge). Dérivation vide → on **conserve** les slugs déjà valides et purge l'ancien vocab (jamais de wipe d'un vrai spécialiste mince).
+  - **A2 — promotion catalogue** : `is_active ∧ ¬is_curated ∧ bias≠unknown ∧ reliability∈{medium,high} ∧ articles_30d ≥ 20` → `is_curated=true`.
+  - Sorties : mutation DB gatée + backup JSON ; `--write-csv` régénère `granular_topics`/`Status` de `sources_master.csv` (diff relisible PO, ajoute les promues) ; **audit de couverture** 51 subtopics (≥1 spécialiste partout).
+- **`scripts/validate_taxonomy.py`** : supprime le `VALID_TOPICS` local (ancien vocab) → importe `VALID_TOPIC_SLUGS` (51) + `VALID_THEMES` (9) canoniques. Ferme l'Epic 12 côté sources.
+- **`scripts/_backfill_new_yt.py` + `backfill_youtube_deep.py`** : `granular_topics` hardcodés re-mappés en 51-slugs (sinon ré-introduisaient l'ancien vocab au prochain seed).
+- **NE TOUCHE PAS `secondary_themes`** (vocab macro-thème, consommé par le pipeline digest). Aucune logique digest ne matche sur `granular_topics`.
 
-## Risques & rollback
-Write amplification négligeable (append-only + best-effort + flag, ~3k/j). Rollback à chaud : `usage_tracking_enabled=False` (sans redéploiement schéma) ou `alembic downgrade -1`. Pas de changelog user (PR backend sans impact visible).
+### Mobile / UI
+- **`source_recommender.dart`** : `RecommendationTagType.specialist` ; badge « Spécialisé en X » quand `granularTopics.first ∈ selectedSubtopics` (pas de double chip thème). **Garantie de couverture** `_computeSpecialists` : pour chaque subtopic non couvert par un spécialiste dominant de `matched`, tire le meilleur spécialiste curé restant (dominant → score → fiabilité → volume) ; nouveau champ `SourceRecommendation.specialists` (disjoint, inclus dans `preselectedIds`).
+- **`sources_question.dart`** : spécialistes placés **en tête** des suggestions (survivent au cap 18) + dédup par id.
+- **`source_recommendation_card.dart`** : rendu du chip spécialiste (préfixe 🎯, teinte primary).
+
+## Apply prod (gaté PO, étape séparée post-merge)
+
+`cd packages/api && python3 scripts/retag_and_promote_sources.py --write-csv` (dry-run lecture prod → diff CSV + audit), revue PO, puis `--apply --allow-prod`. Backup JSON conservé. La reco prod en bénéficie aussi (subtopics users prod déjà en 51-slugs), sans régression de matching attendue.
+
+## Tests
+- **Backend** : `tests/scripts/test_retag_and_promote_sources.py` (19 tests purs) — dérivation (seuils, ordre par share, top-K, vocab 51), résolution conservatrice, promotion, audit couverture, régénération CSV.
+- **Mobile** : `source_recommender_test.dart` (+5 tests) — badge dominant, pas de badge sur subtopic non dominant, garantie hors-matched, pas de doublon, cartes distinctes par sujet.
+- `validate_taxonomy` importe 51 slugs + 9 thèmes (vérifié). `flutter analyze` propre sur les fichiers touchés.
+
+## Changelog
+Entrée `unreleased` : `{ "tag": "Sources", "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription." }`

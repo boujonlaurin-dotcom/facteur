@@ -90,6 +90,13 @@ class ScoringWeights:
     # accessible.
     THEMATIC_HARD_FLOOR = 5
 
+    # Repli « pas d'article récent » pour les sections **source** : si aucune
+    # source n'a publié dans la fenêtre adaptative (≤72h), on élargit jusqu'à
+    # 30 j (720h) pour afficher des articles plus anciens plutôt qu'un
+    # empty-state. Le client est notifié via `no_recent_source` (banner =
+    # « Pas d'article récent. »).
+    SOURCE_STALE_FALLBACK_HOURS = 720  # 30 j — repli « pas d'article récent » (source)
+
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
 
     # Bonus léger pour les sources qualitatives (curées par Facteur).
@@ -397,3 +404,43 @@ class ScoringWeights:
 
     # Minimum articles sharing an entity to form an entity CTA group.
     MIN_FOR_ENTITY_GROUPING = 5
+
+    # --- TOURNÉE SMART ARRANGEMENT (Story 22.3 — « Choisie pour vous ») ---
+    # Arrangement quotidien intelligent par-dessus la config déclarée : les
+    # sections « Choisie pour vous » remplissent les slots restants de la Tournée
+    # avec des thèmes/sources suivis-mais-non-épinglés (jamais hors préférences).
+    # Curseur « Fidèle » : majoritairement préférences réelles, la « surprise » =
+    # variation quotidienne (seed daily + Gumbel basse température), pas découverte.
+
+    # Poids du blend `daily_score` (0–1). Doivent sommer à 1.0.
+    #   explicit : 1.0 si le candidat est directement suivi / déclaré à l'onboarding.
+    #   measured : poids interest/subtopic appris + affinité source (0–1).
+    #   quantity : log-saturé sur le nb d'articles récents (rareté → moins).
+    #   quality  : moyenne reliability des sources du thème (signal qualité).
+    TOURNEE_SUGGEST_W_EXPLICIT = 0.40
+    TOURNEE_SUGGEST_W_MEASURED = 0.30
+    TOURNEE_SUGGEST_W_QUANTITY = 0.20
+    TOURNEE_SUGGEST_W_QUALITY = 0.10
+
+    # Composante `explicit` d'un candidat issu de l'élargissement doux (source
+    # on-thème non directement suivie) : plus faible qu'un suivi direct (1.0).
+    TOURNEE_SUGGEST_SOFT_EXPLICIT = 0.5
+
+    # Plancher de contenu : un candidat avec moins de N articles récents (14 j)
+    # est écarté (jour pauvre → moins de suggestions, jamais d'empty-state suggéré).
+    TOURNEE_SUGGEST_CONTENT_FLOOR = 3
+
+    # Saturation log de la composante `quantity` : au-delà, le nb d'articles
+    # n'augmente plus le score (évite qu'un thème bavard domine).
+    TOURNEE_SUGGEST_QUANTITY_SATURATION = 60.0
+
+    # Température Gumbel de la variation quotidienne (basse : ordre stable le
+    # jour, varié le lendemain, sans réordonner brutalement).
+    TOURNEE_SUGGEST_TEMPERATURE = 0.10
+
+    # Plafond de sections « Choisie pour vous » (thèmes + sources confondus).
+    TOURNEE_SUGGEST_SUBCAP = 4
+
+    # Fenêtre de récence (jours) du comptage d'articles par candidat (aligné
+    # sur le filtre 14 j du fallback `get_top_themes`).
+    TOURNEE_SUGGEST_RECENCY_DAYS = 14

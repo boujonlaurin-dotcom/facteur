@@ -15,6 +15,8 @@ import 'package:facteur/features/feed/providers/tab_order_prefs_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
+import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
@@ -304,6 +306,9 @@ void main() {
           () => _StubVeilleActiveConfigNotifier(veilleCfg),
         ),
         sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        // Le cap de fit lit displayModeSpecProvider (box Hive 'settings' non
+        // ouverte en test) ⇒ court-circuit.
+        displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
       ],
     );
     container.read(sereinToggleProvider.notifier).setEnabledLocal(isSerene);
@@ -811,16 +816,12 @@ void main() {
 
   group('fallback canonique gaté (Tournée bugs E2E)', () {
     test(
-        '0 favori + customized=false + 0 source/veille ⇒ fallback canonique '
-        '(compte neuf)', () async {
-      // Prefs vides (setUp) → customized=false → compte réellement neuf.
-      stubFeed(
-        themeIds: {
-          'tech': ['a', 'b'],
-          'environment': ['a', 'b'],
-          'science': ['a', 'b'],
-        },
-      );
+        // Story 22.3 — le triplet canonique codé en dur a été retiré : un
+        // compte neuf sans top-themes ne voit plus tech/environment/science
+        // injectés (le padding vient des suggestions « Choisie pour vous »).
+        '0 favori + customized=false + 0 source/veille + top-themes vide ⇒ '
+        'pas de fallback canonique', () async {
+      stubFeed();
       final container = await buildContainer(
         interests: _interestsState(),
         sourcesState: _sourcesState(),
@@ -835,9 +836,41 @@ void main() {
           .toList();
       expect(
         slugs,
-        containsAll(['tech', 'environment', 'science']),
-        reason: 'un compte neuf garde sa Tournée par défaut',
+        isEmpty,
+        reason: 'plus de triplet canonique codé en dur (Story 22.3)',
       );
+    });
+
+    test(
+        // Story 22.3 — un compte neuf est désormais complété par les sections
+        // suggérées (origin=suggested) servies par le backend, badgées.
+        '0 favori + suggestions backend ⇒ sections « Choisie pour vous »',
+        () async {
+      when(() => fluxRepo.getTopThemes()).thenAnswer(
+        (_) async => const [
+          TopTheme(
+            interestSlug: 'tech',
+            weight: 1.0,
+            articleCount: 4,
+            origin: 'suggested',
+            reason: SuggestionReason(label: 'Tu suis ce thème'),
+          ),
+        ],
+      );
+      stubFeed(themeIds: {'tech': ['a', 'b']});
+      final container = await buildContainer(
+        interests: _interestsState(),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+      );
+      addTearDown(container.dispose);
+
+      await settle(container);
+      final suggested = favoriteSections(container)
+          .where((s) => s.isSuggested)
+          .toList();
+      expect(suggested, hasLength(1));
+      expect(suggested.first.themeSlug, 'tech');
     });
 
     test(

@@ -20,7 +20,9 @@ import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
+import '../../../core/ui/notification_service.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
+import '../../detail/content_preview_mapper.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
@@ -36,6 +38,7 @@ import '../providers/flux_continu_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
+import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
@@ -47,6 +50,7 @@ import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
+import '../widgets/suggestion_reason_sheet.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -530,7 +534,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// only writes when the rounded value actually moves, so the provider recompose
   /// it triggers (→ screen rebuild → this runs again, same value) terminates.
   void _publishUsableHeight(double height) {
-    if (height <= 0) return;
+    // Rejet à la source des mesures aberrantes/transitoires (render box détachée
+    // / recompose hors-écran lors d'un changement de mode) : sous le plancher de
+    // plausibilité, on NE publie PAS — la dernière bonne hauteur reste en place
+    // et le provider ne bascule pas sur un fallback. (kMinPlausibleUsableHeight
+    // ≈ 360, bien sous les ~480px utiles du plus petit téléphone.)
+    if (height < kMinPlausibleUsableHeight) return;
     final rounded = height.roundToDouble();
     final notifier = ref.read(usableViewportHeightProvider.notifier);
     final current = notifier.state;
@@ -660,6 +669,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         .then((_) => _restoreLastDedicatedSection());
   }
 
+  /// Story 22.3 — ouvre la sheet « Pourquoi cette section ? » d'une suggestion
+  /// « Choisie pour vous ». Les actions garder/retirer délèguent au notifier
+  /// (promotion en favori / dismiss local), avec confirmation discrète.
+  void _openSuggestionSheet(
+    BuildContext context,
+    FeedThemeSection section,
+    FluxContinuNotifier notifier,
+  ) {
+    showSuggestionReasonSheet(
+      context,
+      sectionTitle: section.label,
+      reason: section.reason,
+      onKeep: () async {
+        await notifier.promoteSuggestion(section);
+        NotificationService.showSuccess('Ajoutée à tes favoris');
+      },
+      onDismiss: () async {
+        await notifier.dismissSuggestion(section);
+        NotificationService.showSuccess('Suggestion retirée');
+      },
+    );
+  }
+
   /// Opens the dedicated full-page view for a [DigestTopicSection]
   /// (Actus du jour, Bonnes Nouvelles). Mirrors [_openThemeSection].
   void _openDigestSection(BuildContext context, DigestTopicSection section) {
@@ -693,6 +725,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (article is DigestItem) {
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
+        extra: article.toPreviewContent(),
       );
     } else if (article is Content) {
       await context.push(
@@ -702,6 +735,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     } else if (article is EssentielArticle) {
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
+        extra: article.toPreviewContent(),
       );
     } else {
       return;
@@ -1240,6 +1274,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
+      // Story 22.3 — une section suggérée ne porte pas l'étoile « favori »
+      // (elle se gère via son badge « Choisie pour vous » + sheet), pour ne pas
+      // confondre les deux affordances.
+      final isSuggested = section is FeedThemeSection && section.isSuggested;
       // Mode personnalisé : préfixe l'inline « Gérer / Tes N favoris » au-dessus
       // du `SectionBlock`, à l'intérieur du subtree mesuré → l'inline fait
       // partie du bloc de snap de cette section (cf. [inlineTargetIndex]).
@@ -1262,8 +1300,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   tallSections: _tallSections,
                   child: SectionBlock(
                     section: section,
-                    isOpen: state.isOpen(section),
-                    onToggleMore: () => notifier.toggleMore(section),
                     onTapArticle: (a) => _openArticle(context, a),
                     onDismissArticle: _onSwipeDismiss,
                     pendingFeedbackIds: _pendingFeedback,
@@ -1279,8 +1315,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                         : null,
                     onSwipeConversion: _recordSwipeConversion,
                     onLongPressConversion: _recordLongPressConversion,
-                    onTapFavorite: isFavorite
+                    onTapFavorite: isFavorite && !isSuggested
                         ? () => showTourneeComposerSheet(context)
+                        : null,
+                    // Story 22.3 — badge « Choisie pour vous » → sheet explicative.
+                    onTapSuggestionInfo: isSuggested
+                        ? () => _openSuggestionSheet(context, section, notifier)
                         : null,
                     // Story 23.4 — bouton réglages (tune) sur la section veille →
                     // ouvre la config en édition. Réutilisé par le CTA d'état vide.
@@ -1289,11 +1329,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                               '${RoutePaths.veilleConfig}?mode=edit',
                             )
                         : null,
-                    // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
-                    // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
+                    // CTA « Ajouter des sources » de l'empty-state d'une section
+                    // thème favorite vide → renvoie directement vers la page
+                    // d'ajout de sources (et non plus la modal « Composer ma
+                    // Tournée »). Nom de route globalement unique → pushNamed
+                    // suffit (pas besoin des params parents).
                     onAddSources: section is FeedThemeSection &&
                             section.kind == SectionKind.theme
-                        ? () => showTourneeComposerSheet(context)
+                        ? () => context.pushNamed(RouteNames.addSource)
                         : null,
                     onSeeAll: section is FeedThemeSection
                         ? (section.kind == SectionKind.source
@@ -1606,7 +1649,7 @@ class _SectionPassageDotState extends State<_SectionPassageDot>
     return Semantics(
       label: 'Passage de section',
       child: SizedBox(
-        height: 36,
+        height: 26,
         child: Align(
           alignment: const Alignment(0, -0.68),
           child: AnimatedBuilder(

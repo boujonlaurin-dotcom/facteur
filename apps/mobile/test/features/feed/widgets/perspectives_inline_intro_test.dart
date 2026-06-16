@@ -4,20 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/features/feed/widgets/perspectives_bottom_sheet.dart';
 
 Perspective _p(String name, {String bias = 'center'}) => Perspective(
-  title: 'Titre $name',
-  url: 'https://example.com/$name',
-  sourceName: name,
-  sourceDomain: '',
-  biasStance: bias,
-);
+      title: 'Titre $name',
+      url: 'https://example.com/$name',
+      sourceName: name,
+      sourceDomain: '',
+      biasStance: bias,
+    );
 
 Future<void> _pumpInline(
   WidgetTester tester, {
   required List<Perspective> perspectives,
-  bool isExpanded = true,
+  PerspectivesSectionStatus status = PerspectivesSectionStatus.ready,
   String? divergenceLevel,
 }) async {
   await tester.pumpWidget(
@@ -29,6 +30,7 @@ Future<void> _pumpInline(
             child: SizedBox(
               width: 390,
               child: PerspectivesInlineSection(
+                status: status,
                 perspectives: perspectives,
                 biasDistribution: const {'center': 0},
                 keywords: const [],
@@ -36,8 +38,6 @@ Future<void> _pumpInline(
                 sourceBiasStance: 'center',
                 sourceName: 'Test',
                 divergenceLevel: divergenceLevel,
-                isExpanded: isExpanded,
-                onToggle: () {},
               ),
             ),
           ),
@@ -50,74 +50,67 @@ Future<void> _pumpInline(
 
 void main() {
   const introSnippet = "marquent l'angle éditorial";
+  final infoIcon = PhosphorIcons.info(PhosphorIconsStyle.regular);
 
-  testWidgets(
-    'inline expanded + perspectives non vides → intro derrière le bouton info',
-    (tester) async {
-      await _pumpInline(
-        tester,
-        perspectives: [
-          _p('A'),
-          _p('B', bias: 'left'),
-        ],
-      );
+  testWidgets('ready : intro derrière le bouton info de l\'en-tête',
+      (tester) async {
+    await _pumpInline(tester, perspectives: [_p('A'), _p('B', bias: 'left')]);
+    await tester.pump(const Duration(seconds: 1));
 
-      expect(find.textContaining(introSnippet), findsNothing);
+    expect(find.textContaining(introSnippet), findsNothing);
 
-      await tester.tap(
-        find.byIcon(PhosphorIcons.info(PhosphorIconsStyle.regular)).first,
-      );
-      await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(infoIcon).first);
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining(introSnippet), findsOneWidget);
-    },
-  );
+    expect(find.textContaining(introSnippet), findsOneWidget);
+  });
 
-  testWidgets(
-    'inline expanded + perspectives vides → pas d\'intro (rien à introduire)',
-    (tester) async {
-      await _pumpInline(tester, perspectives: const []);
+  testWidgets('loading : ni bouton info ni intro', (tester) async {
+    await _pumpInline(
+      tester,
+      perspectives: const [],
+      status: PerspectivesSectionStatus.loading,
+    );
 
-      expect(find.textContaining(introSnippet), findsNothing);
-    },
-  );
-
-  testWidgets('inline collapsé → pas d\'intro (body non rendu)', (
-    tester,
-  ) async {
-    await _pumpInline(tester, perspectives: [_p('A')], isExpanded: false);
-
+    expect(find.byIcon(infoIcon), findsNothing);
     expect(find.textContaining(introSnippet), findsNothing);
   });
 
-  testWidgets('inline high divergence → badge polarisation rendu', (
-    tester,
-  ) async {
+  testWidgets('ready high divergence → badge POLARISÉ', (tester) async {
     await _pumpInline(
       tester,
-      perspectives: [
-        _p('A'),
-        _p('B', bias: 'right'),
-      ],
+      perspectives: [_p('A'), _p('B', bias: 'right')],
       divergenceLevel: 'high',
     );
+    await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('POLARISÉ'), findsOneWidget);
-    expect(find.textContaining('Forte polarisation'), findsNothing);
   });
 
-  testWidgets('inline low divergence → badge traitements similaires rendu', (
-    tester,
-  ) async {
+  testWidgets('ready low divergence → badge TRAITEMENTS SIMILAIRES',
+      (tester) async {
     await _pumpInline(
       tester,
-      perspectives: [
-        _p('A'),
-        _p('B', bias: 'right'),
-      ],
+      perspectives: [_p('A'), _p('B', bias: 'right')],
       divergenceLevel: 'low',
     );
+    await tester.pump(const Duration(seconds: 1));
 
     expect(find.text('TRAITEMENTS SIMILAIRES'), findsOneWidget);
+  });
+
+  testWidgets('badge de la couverture utilise l’échelle agrandie 1.45',
+      (tester) async {
+    await _pumpInline(
+      tester,
+      perspectives: [_p('A'), _p('B', bias: 'right')],
+      divergenceLevel: 'medium',
+    );
+    await tester.pump(const Duration(seconds: 1));
+
+    final badge = tester.widget<DivergenceInlineBadge>(
+      find.byType(DivergenceInlineBadge),
+    );
+    expect(badge.scale, 1.45);
   });
 }

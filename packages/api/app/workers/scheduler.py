@@ -13,6 +13,8 @@ from app.jobs.digest_generation_job import (
 )
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_language import recompute_source_language
+from app.services.observability.cost_budget import log_budget_projection
+from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 
@@ -261,6 +263,17 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    # Projection budget coût API externes (évidence G3 scaling) : conso du mois
+    # courant par provider/call_site + projection ×2.25 (89→200 users), loguée
+    # une fois par jour. Read-only, ne change aucun comportement.
+    scheduler.add_job(
+        log_budget_projection,
+        trigger=CronTrigger(hour=5, minute=0, timezone=_PARIS_TZ),
+        id="cost_budget_projection",
+        name="Cost budget projection (api_usage_events)",
+        replace_existing=True,
+    )
+
     # Zombie session sweeper — kill Supavisor sessions stuck in
     # `idle in transaction` > 5 min (filet de sécurité par-dessus le
     # timeout Postgres + le rollback() en finally de safe_async_session).
@@ -282,6 +295,16 @@ def start_scheduler() -> None:
         replace_existing=True,
     )
 
+    scheduler.add_job(
+        dispatch_daily_essentiel_pushes,
+        trigger=IntervalTrigger(minutes=5),
+        id="daily_essentiel_push_dispatch",
+        name="Daily Essentiel server push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     scheduler.start()
     logger.info(
         "Scheduler started",
@@ -294,6 +317,7 @@ def start_scheduler() -> None:
             "recompute_source_language",
             "zombie_session_sweeper",
             "pool_health_probe",
+            "daily_essentiel_push_dispatch",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="07:30 Europe/Paris",

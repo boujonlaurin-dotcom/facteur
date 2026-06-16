@@ -40,6 +40,26 @@ class SectionBanner extends StatelessWidget {
   /// initiales si le logo réseau échoue.
   final String? logoUrl;
 
+  /// Story 10.1 — banner cliquable : remplace le CTA « Tout lire » de bas de
+  /// section. Quand non null, le banner entier devient tappable et le titre
+  /// gagne un chevron « > » fin couleur accent. Ignoré en variante [large]
+  /// (page Flâner : pas de navigation de section).
+  final VoidCallback? onTap;
+
+  /// Nombre d'articles non affichés (`totalCount - coreVisibleCount`).
+  /// Rendu en « +X » gris discret après le chevron quand > 0 et [onTap]
+  /// est câblé.
+  final int hiddenCount;
+
+  /// Story 22.3 — quand true, le banner pose un badge « Choisie pour vous »
+  /// au-dessus du titre, tappable via [onTapInfo] (ouvre la sheet « Pourquoi
+  /// cette section ? »). Signale une section suggérée par le facteur.
+  final bool suggested;
+
+  /// Tap sur le badge « Choisie pour vous » → sheet explicative + actions
+  /// (garder / retirer). Null hors sections suggérées.
+  final VoidCallback? onTapInfo;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -50,7 +70,35 @@ class SectionBanner extends StatelessWidget {
     this.onTapSettings,
     this.large = false,
     this.logoUrl,
+    this.onTap,
+    this.hiddenCount = 0,
+    this.suggested = false,
+    this.onTapInfo,
   });
+
+  static final _titleStyleLarge = GoogleFonts.fraunces(
+    fontSize: 24,
+    fontWeight: FontWeight.w700,
+    height: 1.12,
+    letterSpacing: -0.4,
+  );
+
+  static final _titleStyleInline = GoogleFonts.fraunces(
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
+    height: 1.08,
+    letterSpacing: -0.4,
+  );
+
+  static final _blurbStyleLarge = GoogleFonts.dmSans(
+    fontSize: 13,
+    height: 1.42,
+  );
+
+  static final _blurbStyleInline = GoogleFonts.dmSans(
+    fontSize: 12,
+    height: 1.36,
+  );
 
   double _trailingControlReserve() {
     if (onTapSettings != null) return 58;
@@ -69,6 +117,9 @@ class SectionBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    // La variante `large` (page Flâner) reste non navigable : pas de chevron,
+    // pas de +X, pas d'InkWell.
+    final tappable = onTap != null && !large;
     final effectiveBlurb = _displayBlurbFor(title, blurb);
     final hasBlurb = effectiveBlurb != null && effectiveBlurb.trim().isNotEmpty;
     // `width: double.infinity` is required because the parent SectionBlock
@@ -85,13 +136,13 @@ class SectionBanner extends StatelessWidget {
     final borderRadius = large ? largeRadius : inlineRadius;
     final container = Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(0, 3, 0, 5),
+      margin: const EdgeInsets.fromLTRB(0, 2, 0, 4),
       // Thematic sections have no blurb — a single title line doesn't need
       // the taller editorial floor, so we drop it to keep the scroll tight.
       // The `large` page-hero variant gets a taller floor to breathe, while
       // content can still grow naturally when title/blurb wrap.
       constraints: BoxConstraints(
-        minHeight: hasBlurb ? (large ? 140 : 92) : 60,
+        minHeight: hasBlurb ? (large ? 116 : 76) : 48,
       ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -149,12 +200,12 @@ class SectionBanner extends StatelessWidget {
             // down. Add a few px of top inset on the blurb variant to match
             // the thematic dash's apparent inset.
             padding: large
-                ? const EdgeInsets.fromLTRB(22, 24, 16, 20)
+                ? const EdgeInsets.fromLTRB(18, 18, 14, 16)
                 : EdgeInsets.fromLTRB(
-                    20,
-                    hasBlurb ? 20 : 8,
-                    14,
-                    hasBlurb ? 14 : 9,
+                    16,
+                    hasBlurb ? 14 : 6,
+                    12,
+                    hasBlurb ? 11 : 7,
                   ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -170,6 +221,10 @@ class SectionBanner extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (suggested) ...[
+                          _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                          const SizedBox(height: 8),
+                        ],
                         _AccentDash(accent: accent, large: large),
                         Padding(
                           padding: EdgeInsets.only(
@@ -179,36 +234,49 @@ class SectionBanner extends StatelessWidget {
                           child: Text.rich(
                             TextSpan(
                               text: title,
-                              children: onTapFavorite == null
-                                  ? null
-                                  : <InlineSpan>[
-                                      const TextSpan(text: '  '),
-                                      WidgetSpan(
-                                        alignment: PlaceholderAlignment.middle,
-                                        child: _FavoriteStar(
-                                          color: colors.primary,
-                                          onTap: onTapFavorite!,
-                                        ),
+                              children: <InlineSpan>[
+                                if (tappable) ...[
+                                  const TextSpan(text: ' '),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: Transform.translate(
+                                      offset: const Offset(0, 1),
+                                      // Caret calibré sur la nouvelle police de
+                                      // titre (17, post-compaction) et noir
+                                      // (textPrimary) plutôt que gris. La
+                                      // « middle » du glyphe Phosphor tombe ~1px
+                                      // haut sur la cap-height Fraunces → léger
+                                      // nudge bas pour le recentrer optiquement.
+                                      child: Icon(
+                                        PhosphorIcons.caretRight(
+                                            PhosphorIconsStyle.bold),
+                                        size: 16,
+                                        color: colors.textPrimary,
                                       ),
-                                    ],
-                              style: GoogleFonts.fraunces(
-                                fontSize: large ? 28 : 20,
-                                fontWeight: FontWeight.w700,
-                                height: large ? 1.12 : 1.08,
-                                letterSpacing: -0.4,
-                                color: colors.textPrimary,
-                              ),
+                                    ),
+                                  ),
+                                ],
+                                if (onTapFavorite != null) ...[
+                                  const TextSpan(text: '  '),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: _FavoriteStar(
+                                      color: colors.textTertiary,
+                                      onTap: onTapFavorite!,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                              style: (large ? _titleStyleLarge : _titleStyleInline)
+                                  .copyWith(color: colors.textPrimary),
                             ),
                           ),
                         ),
                         if (hasBlurb)
                           Text(
                             effectiveBlurb,
-                            style: GoogleFonts.dmSans(
-                              fontSize: large ? 14 : 12,
-                              height: large ? 1.42 : 1.36,
-                              color: colors.textSecondary,
-                            ),
+                            style: (large ? _blurbStyleLarge : _blurbStyleInline)
+                                .copyWith(color: colors.textSecondary),
                           ),
                       ],
                     ),
@@ -264,7 +332,18 @@ class SectionBanner extends StatelessWidget {
         ],
       ),
     );
-    return container;
+    if (!tappable) return container;
+    // Material transparent + InkWell sur tout le banner : l'étoile favorite
+    // (GestureDetector opaque) et le bouton réglages (InkWell enfant) restent
+    // des hit targets indépendants — le descendant gagne sur l'ancêtre.
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: borderRadius,
+        child: container,
+      ),
+    );
   }
 }
 
@@ -308,6 +387,66 @@ class _SettingsButton extends StatelessWidget {
   }
 }
 
+/// Story 22.3 — pastille « Choisie pour vous » posée au-dessus du titre d'une
+/// section suggérée. Tappable : ouvre la sheet « Pourquoi cette section ? ». Le
+/// « i » signale l'affordance d'explication (transparence totale, PO).
+class _SuggestedBadge extends StatelessWidget {
+  final Color accent;
+  final VoidCallback? onTap;
+
+  const _SuggestedBadge({required this.accent, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 7, 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.34), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+            size: 11,
+            color: accent,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'Choisie pour vous',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+              color: accent,
+            ),
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: 5),
+            Icon(
+              PhosphorIcons.info(PhosphorIconsStyle.bold),
+              size: 12,
+              color: accent.withValues(alpha: 0.85),
+            ),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) return badge;
+    return Semantics(
+      button: true,
+      label: 'Pourquoi cette section est proposée',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: badge,
+      ),
+    );
+  }
+}
+
 class _AccentDash extends StatelessWidget {
   final Color accent;
   final bool large;
@@ -318,9 +457,9 @@ class _AccentDash extends StatelessWidget {
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: Container(
-        width: large ? 34 : 28,
+        width: large ? 28 : 22,
         height: 3,
-        margin: const EdgeInsets.only(bottom: 7),
+        margin: const EdgeInsets.only(bottom: 5),
         decoration: BoxDecoration(
           color: accent.withValues(alpha: 0.78),
           borderRadius: BorderRadius.circular(999),
@@ -352,8 +491,8 @@ class _FavoriteStar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Icon(
             PhosphorIcons.star(PhosphorIconsStyle.fill),
-            size: 14,
-            color: color,
+            size: 16,
+            color: color.withValues(alpha: 0.45),
           ),
         ),
       ),

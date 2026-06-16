@@ -63,21 +63,17 @@ GoRouter _router(Widget home) {
   );
 }
 
-Widget _variantRowHome() {
+Widget _carouselHome() {
   return Scaffold(
     body: SingleChildScrollView(
       child: SizedBox(
         width: 390,
         child: PerspectivesInlineSection(
+          status: PerspectivesSectionStatus.ready,
           perspectives: [_persp('Source-Gauche', 'left')],
           biasDistribution: const {'left': 1},
           keywords: const [],
           contentId: 'test',
-          externalSelectedSegments: null,
-          onSegmentTap: (_) {},
-          onClearSegments: () {},
-          onToggle: () {},
-          isExpanded: true,
         ),
       ),
     ),
@@ -161,9 +157,9 @@ void main() {
   });
 
   testWidgets(
-    '_VariantRow tap → route vers content-external (pas de launchUrl)',
+    'CoverageComparisonCard tap → route vers content-external (pas de launchUrl)',
     (tester) async {
-      await tester.pumpWidget(_app(_variantRowHome()));
+      await tester.pumpWidget(_app(_carouselHome()));
       await tester.pumpAndSettle(const Duration(seconds: 1));
 
       expect(
@@ -176,7 +172,7 @@ void main() {
       final tappable = find.byType(DiffTitle);
       expect(tappable, findsWidgets);
       await tester.tap(tappable.first, warnIfMissed: false);
-      await tester.pumpAndSettle(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle(const Duration(milliseconds: 600));
 
       expect(
         find.byKey(_kExternalReaderMarker),

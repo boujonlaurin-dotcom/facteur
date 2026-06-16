@@ -12,6 +12,7 @@ import '../../feed/providers/feed_provider.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/widgets/feed_card.dart';
 import '../providers/saved_feed_provider.dart';
+import '../../settings/providers/display_mode_provider.dart';
 
 /// Ecran "Tous les articles" sauvegardés (liste plate chronologique).
 class SavedAllScreen extends ConsumerStatefulWidget {
@@ -171,6 +172,7 @@ class _SavedAllScreenState extends ConsumerState<SavedAllScreen> {
                                 child: FeedCard(
                                   content: content,
                                   titleMaxLines: 5,
+                                  displaySpec: ref.watch(displayModeSpecProvider),
                                   isSaved: true,
                                   isLiked: content.isLiked,
                                   onSourceTap: () {

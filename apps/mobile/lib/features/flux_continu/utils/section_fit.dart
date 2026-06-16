@@ -20,9 +20,15 @@
 /// ```
 /// (cf. `_recomputeSnapAnchors` : une section est « tall » exactement quand sa
 /// hauteur dépasse cette même valeur.)
+/// Les hauteurs de cartes dépendent du mode d'affichage choisi par
+/// l'utilisateur : elles vivent dans [DisplayModeSpec] (normal = les
+/// constantes historiques ci-dessous, conservées pour les tests et comme
+/// documentation de la décomposition).
 library;
 
-// ── Regular section (banner + N article cards + « Tout lire » footer) ─────────
+import '../../settings/models/display_mode_spec.dart';
+
+// ── Regular section (banner + N article cards + trailing gap) ────────────────
 
 /// Realistic height (px) of one regular article card
 /// ([FluxContinuArticleCard]). The 78px thumbnail **floors the head row**, so a
@@ -34,19 +40,48 @@ library;
 /// Réglé au plancher réel mesuré (146) pour fitter 3 cartes plus souvent.
 const double kRegularCardHeight = 146;
 
+/// Crédit (px) de la marge basse de la **dernière** carte d'une section. Chaque
+/// carte régulière réserve [kRegularCardHeight] px **dont 12px de marge basse**
+/// (`FluxContinuArticleCard` : `Padding.fromLTRB(12, 0, 12, 12)`). La marge basse
+/// de la *dernière* carte visible n'a aucun contenu — c'est de l'espace blanc qui
+/// peut passer sous le pli sans rien tronquer. On la crédite **une seule fois** au
+/// budget de fit pour ne pas amputer une section à N−1 cartes alors qu'une Nᵉ tient
+/// à 12px près (symptôme : « 3 cartes alors qu'il y a la place pour 4 »). N'élargit
+/// jamais le budget au point de tronquer du contenu réel.
+const double kLastCardBottomMargin = 12;
+
 /// Banner height (px) for a section **without** a blurb (theme / source):
-/// `minHeight 60` + vertical margin (3+5).
-const double kBannerHeightNoBlurb = 68;
+/// `minHeight 48` + vertical margin (2+4). Post-compaction (banner moins
+/// proéminent) — doit matcher la hauteur rendue par `SectionBanner` sinon le
+/// fit ne profite pas du gain de place.
+const double kBannerHeightNoBlurb = 54;
 
 /// Banner height (px) for a section **with** a blurb (Actus du jour, Bonnes
-/// Nouvelles, veille): `minHeight 92` + vertical margin (3+5).
-const double kBannerHeightWithBlurb = 100;
+/// Nouvelles, veille): `minHeight 76` + vertical margin (2+4). Post-compaction.
+const double kBannerHeightWithBlurb = 82;
 
-/// Footer height (px): the always-present "Tout lire (+N)" CTA (≈48) plus the
-/// section's trailing ~10px gap. Réduit (était 70) pour fitter 3 cartes plus
-/// souvent sans toucher au rendu réel ; le filet snap `[fit-net]` reste le
-/// backstop pour le rare titre 4 lignes (~162px).
-const double kSectionFooterHeight = 58;
+/// Footer height (px): le CTA « Tout lire » a disparu (le banner de section
+/// est devenu cliquable) — il ne reste que le spacing de fin de section
+/// (SizedBox 16 du SectionBlock).
+const double kSectionFooterHeight = 16;
+
+/// Plancher de plausibilité (px) du viewport utile mesuré. En dessous, la mesure
+/// est considérée **non fiable** (mesure transitoire / render box détachée au
+/// moment d'un changement de mode d'affichage ou d'une recompose hors-écran) :
+/// le cap est court-circuité (cf. [usableHeight] == null) pour ne pas effondrer
+/// toutes les sections à 1 carte. Même le plus petit téléphone (iPhone SE,
+/// ~480px utiles dans le feed) reste largement au-dessus, donc le « cartes ≤
+/// écran » légitime n'est pas affecté.
+const double kMinPlausibleUsableHeight = 360;
+
+/// Hauteur utile (px) de **secours** quand aucune mesure fiable n'est encore
+/// disponible (1ᵉʳ frame avant la mesure post-layout, ou mesure transitoire
+/// rejetée). On applique malgré tout un cap **dépendant du mode** sur cette
+/// référence plutôt que de retomber sur le compte nominal backend (mode-aveugle :
+/// déborde en Lisible, sous-remplit en Minimaliste). Valeur d'un téléphone
+/// moderne typique → Normal 3 / Minimaliste 4 / Lisible 2, affinés dès l'arrivée
+/// de la vraie mesure.
+const double kReferenceUsableHeight = 640;
 
 // ── Hero card (« Ton Essentiel » — lead + up to 4 mediums) ────────────────────
 
@@ -69,17 +104,21 @@ const double kHeroLeadHeight = 160;
 /// 2 lines Fraunces 16 · height 1.3 ≈ 42) ≈ 88.
 const double kHeroMediumHeight = 88;
 
-/// Conservative height of one regular article card. Exposed as a function (not
-/// just the constant) so call sites read intent and a future per-card refinement
-/// has a single seam.
-double estimateRegularCardHeight() => kRegularCardHeight;
+/// Conservative height of one regular article card, for the user's current
+/// display mode. Exposed as a function (not just the constant) so call sites
+/// read intent and a future per-card refinement has a single seam.
+double estimateRegularCardHeight(
+        [DisplayModeSpec spec = DisplayModeSpec.normal]) =>
+    spec.regularCardHeight;
 
 /// Largest article count in `[minCount, maxCount]` whose stack
 /// (`bannerHeight + count·cardHeight + footerHeight`) fits within
 /// [usableHeight]. **Never returns 0** — a section always shows at least
 /// [minCount] card even when nothing fits (the snap then treats it as a tall
-/// section and the QA net flags it). [maxCount] is the section's default cap
-/// kept as a **ceiling**: fit can only reduce it, never grow it.
+/// section and the QA net flags it). [maxCount] is the **effective ceiling
+/// decided by the caller** : historiquement le cap nominal de la section, mais
+/// l'appelant peut le relever (mode minimaliste : `spec.sectionFitCeiling`)
+/// pour que le fit révèle plus d'articles quand l'écran a de la place.
 int fitVisibleCount({
   required double usableHeight,
   required double bannerHeight,

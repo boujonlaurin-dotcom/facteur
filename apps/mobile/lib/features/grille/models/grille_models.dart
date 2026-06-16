@@ -59,6 +59,12 @@ class GrilleTodayResponse with _$GrilleTodayResponse {
     String? featuredExcerpt,
     String? featuredUrl,
     String? featuredSource,
+    // Sélection hybride : où le mot se cachait dans l'actu réelle.
+    // `hybridField` = "title" | "description" (badge), `hybridSnippet` = texte
+    // exact à afficher, `hybridMatch` = surface à surligner.
+    String? hybridField,
+    String? hybridSnippet,
+    String? hybridMatch,
   }) = _GrilleTodayResponse;
 
   factory GrilleTodayResponse.fromJson(Map<String, dynamic> json) =>
@@ -86,6 +92,9 @@ class GrilleRevealResponse with _$GrilleRevealResponse {
     String? featuredExcerpt,
     String? featuredUrl,
     String? featuredSource,
+    String? hybridField,
+    String? hybridSnippet,
+    String? hybridMatch,
   }) = _GrilleRevealResponse;
 
   factory GrilleRevealResponse.fromJson(Map<String, dynamic> json) =>
@@ -114,6 +123,9 @@ class GrilleGuessResponse with _$GrilleGuessResponse {
     String? featuredExcerpt,
     String? featuredUrl,
     String? featuredSource,
+    String? hybridField,
+    String? hybridSnippet,
+    String? hybridMatch,
   }) = _GrilleGuessResponse;
 
   factory GrilleGuessResponse.fromJson(Map<String, dynamic> json) =>

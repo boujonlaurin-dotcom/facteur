@@ -7,15 +7,23 @@ class SmartSearchRecentItem {
   final String title;
   final String publishedAt;
 
+  /// Thème (slug brut backend) de l'article — additif, rétro-compatible.
+  /// `null` quand le backend ne renvoie pas encore le champ. Le label/couleur
+  /// sont dérivés côté front via le kit Flux continu.
+  final String? theme;
+
   const SmartSearchRecentItem({
     required this.title,
     this.publishedAt = '',
+    this.theme,
   });
 
   factory SmartSearchRecentItem.fromJson(Map<String, dynamic> json) {
+    final rawTheme = (json['theme'] as String?)?.trim();
     return SmartSearchRecentItem(
       title: (json['title'] as String?) ?? '',
       publishedAt: (json['published_at'] as String?) ?? '',
+      theme: (rawTheme == null || rawTheme.isEmpty) ? null : rawTheme,
     );
   }
 }

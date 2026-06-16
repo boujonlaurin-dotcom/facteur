@@ -3,6 +3,7 @@
 // La couverture détaillée du contenu vit dans `manage_favorites_sheet_test.dart`.
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_smart_arrangement_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/tournee_composer_sheet.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
@@ -78,6 +79,9 @@ Widget _host(Widget child) => ProviderScope(
         veilleActiveConfigProvider.overrideWith(() => _StubVeille()),
         grilleRepositoryProvider.overrideWithValue(_NoGrille()),
         sereinToggleProvider.overrideWith((ref) => _StubSerein(ref)),
+        tourneeSmartArrangementProvider.overrideWith(
+          (ref) => TourneeSmartArrangementNotifier(ref),
+        ),
       ],
       child: MaterialApp(
         theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -101,6 +105,22 @@ void main() {
 
     expect(find.text('Mes favoris'), findsOneWidget);
     expect(find.text('BLOCS DE TA PAGE L\'ESSENTIEL'), findsOneWidget);
+  });
+
+  testWidgets('ComposeTourneeButton supports a secondary visual hierarchy',
+      (tester) async {
+    await tester.pumpWidget(
+      _host(
+        const ComposeTourneeButton(
+          style: ComposeTourneeButtonStyle.secondary,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OutlinedButton), findsOneWidget);
+    expect(find.byType(ElevatedButton), findsNothing);
+    expect(find.text('Composer ma Tournée'), findsOneWidget);
   });
 
   testWidgets('showTourneeComposerSheet ouvre la sheet unifiée',

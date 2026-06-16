@@ -25,6 +25,7 @@ _perf_logger = structlog.get_logger("streak_perf")
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.models.user import UserProfile
+from app.schemas.content import ScoreContribution
 from app.schemas.streak import StreakResponse
 from app.schemas.user import (
     AlgorithmProfileResponse,
@@ -301,19 +302,41 @@ async def update_preference(
     return PreferenceUpdateResponse(success=True, key=data.key, value=data.value)
 
 
+class TopThemeReason(BaseModel):
+    """Raison de transparence d'une section « Choisie pour vous » (Story 22.3).
+
+    `label` = la contribution dominante ; `breakdown` = 2-3 puces honnêtes
+    construites depuis les seules composantes réellement présentes. Réutilise la
+    shape `ScoreContribution` du feed/digest (cf. `schemas/content.py`).
+    """
+
+    label: str
+    breakdown: list[ScoreContribution] = []
+
+
 class TopThemeResponse(BaseModel):
     """Un slot de la Tournée du jour.
 
     Pour `kind="veille"`, `interest_slug` est le `theme_id` (slug parent) de la
     `VeilleConfig` et `veille_config_id` est rempli — le mobile dispatche alors
     vers `/api/veille/feed` au lieu de `/api/feed?theme=`.
+
+    Story 22.3 — champs additifs rétro-compatibles : `origin="validated"` par
+    défaut (anciens payloads/clients inchangés) ; les sections « Choisie pour
+    vous » arrivent avec `origin="suggested"`, un `reason` non vide, et un
+    `daily_rank` d'ordre du jour. Une suggestion **source** porte `kind="source"`
+    + `source_id` (le mobile route alors vers `/api/feed?source_id=`).
     """
 
     interest_slug: str
     weight: float
     article_count: int = 0
-    kind: Literal["theme", "veille"] = "theme"
+    kind: Literal["theme", "veille", "source"] = "theme"
     veille_config_id: UUID | None = None
+    source_id: UUID | None = None
+    origin: Literal["validated", "suggested"] = "validated"
+    daily_rank: int = 0
+    reason: TopThemeReason | None = None
 
 
 @router.get("/top-themes", response_model=list[TopThemeResponse])
@@ -426,7 +449,7 @@ async def get_top_themes(
             out.append(
                 TopThemeResponse(interest_slug=slug, weight=1.5, article_count=0)
             )
-        return out[:FAVORITE_CAP]
+        return await _arrange_tournee(db, user_uuid, out[:FAVORITE_CAP])
 
     # Fallback : sort weight desc, exclure les thèmes sans article 14j.
     service = UserService(db)
@@ -447,7 +470,7 @@ async def get_top_themes(
     theme_counts = {row[0]: row[1] for row in count_rows}
 
     themes = sorted(interests, key=lambda i: i.weight, reverse=True)
-    return [
+    validated = [
         TopThemeResponse(
             interest_slug=i.interest_slug,
             weight=i.weight,
@@ -456,6 +479,72 @@ async def get_top_themes(
         for i in themes
         if theme_counts.get(i.interest_slug, 0) > 0
     ][:FAVORITE_CAP]
+    return await _arrange_tournee(db, user_uuid, validated)
+
+
+async def _smart_arrangement_enabled(db: AsyncSession, user_uuid: UUID) -> bool:
+    """Toggle « Choisie pour vous » (Story 22.3).
+
+    Absence de la préférence = activé (default-ON sans migration) ; seule la
+    valeur stockée `"false"` désactive l'arrangement intelligent.
+    """
+    from app.models.user import UserPreference
+
+    value = await db.scalar(
+        sa_select(UserPreference.preference_value).where(
+            UserPreference.user_id == user_uuid,
+            UserPreference.preference_key == "tournee_smart_arrangement",
+        )
+    )
+    return value != "false"
+
+
+async def _arrange_tournee(
+    db: AsyncSession,
+    user_uuid: UUID,
+    validated: list[TopThemeResponse],
+) -> list[TopThemeResponse]:
+    """Affecte les `daily_rank` aux validées et complète les slots restants par
+    des sections « Choisie pour vous » (Story 22.3).
+
+    Les validées gardent leur ordre d'entrée (jamais réordonnées/masquées ici) ;
+    les suggérées remplissent `min(SUBCAP, slots restants)` derrière elles, déjà
+    triées best-first pour aujourd'hui par `TourneeSuggester`. No-op si le toggle
+    est off, s'il ne reste aucun slot, ou si le pool est vide (jour pauvre).
+    """
+    from app.constants import FAVORITE_CAP
+
+    for rank, item in enumerate(validated):
+        item.daily_rank = rank
+
+    remaining = FAVORITE_CAP - len(validated)
+    if remaining <= 0 or not await _smart_arrangement_enabled(db, user_uuid):
+        return validated
+
+    from app.services.recommendation.scoring_config import ScoringWeights
+    from app.services.recommendation.tournee_suggester import TourneeSuggester
+
+    sub_cap = min(ScoringWeights.TOURNEE_SUGGEST_SUBCAP, remaining)
+    validated_slugs = {item.interest_slug for item in validated if item.interest_slug}
+    suggestions = await TourneeSuggester(db).arrange(
+        user_uuid, validated_slugs, sub_cap
+    )
+    rank = len(validated)
+    for s in suggestions:
+        validated.append(
+            TopThemeResponse(
+                interest_slug=s.slug or "",
+                weight=1.0,
+                article_count=s.recent_count,
+                kind="source" if s.kind == "source" else "theme",
+                source_id=s.source_id,
+                origin="suggested",
+                daily_rank=rank,
+                reason=TopThemeReason(label=s.reason_label, breakdown=s.breakdown),
+            )
+        )
+        rank += 1
+    return validated
 
 
 # ─── Account deletion ────────────────────────────────────────────────────────

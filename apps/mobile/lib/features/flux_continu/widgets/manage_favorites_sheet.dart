@@ -23,6 +23,7 @@ import '../../sources/widgets/source_logo_avatar.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart' hide applyOrder;
+import '../providers/tournee_smart_arrangement_provider.dart';
 import '../utils/theme_color_mapping.dart';
 import 'choice_tile.dart';
 
@@ -53,6 +54,8 @@ Future<void> showManageFavoritesSheet(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
+    enableDrag: true,
+    isDismissible: true,
     barrierColor: Colors.black.withValues(alpha: 0.5),
     builder: (ctx) => ClipRect(
       child: BackdropFilter(
@@ -610,7 +613,7 @@ class _ManageFavoritesContentState
       top: false,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.88,
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
         ),
         child: Container(
           decoration: BoxDecoration(
@@ -618,13 +621,16 @@ class _ManageFavoritesContentState
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header fixe : handle cosmétique centré + bouton de fermeture
+              // explicite (chemin garanti 1 tap, le SingleChildScrollView
+              // interne capturant sinon le drag-to-dismiss natif).
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
@@ -632,8 +638,28 @@ class _ManageFavoritesContentState
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                const SizedBox(height: FacteurSpacing.space4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(Icons.close, color: colors.textTertiary),
+                      tooltip: 'Fermer',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: FacteurSpacing.space2),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                 Text(
                   'Mes favoris',
                   style: textTheme.displaySmall?.copyWith(
@@ -823,6 +849,9 @@ class _ManageFavoritesContentState
                 const SizedBox(height: FacteurSpacing.space4),
                 _SectionLabel(label: 'GÉRER', colors: colors),
                 const SizedBox(height: 4),
+                // Story 22.3 — switch discret « Suggestions du facteur » : active
+                // ou non les sections « Choisie pour vous » de la Tournée.
+                const _SmartArrangementSwitch(),
                 ChoiceTile(
                   icon: Icons.rss_feed,
                   accent: colors.sectionVeille1,
@@ -845,8 +874,11 @@ class _ManageFavoritesContentState
                     router.pushNamed(RouteNames.myInterests);
                   },
                 ),
-              ],
-            ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1509,6 +1541,74 @@ class _SectionLabel extends StatelessWidget {
         const SizedBox(width: 6),
         Text('· $counter', style: labelStyle?.copyWith(letterSpacing: 0.2)),
       ],
+    );
+  }
+}
+
+/// Story 22.3 — switch discret « Suggestions du facteur » : active/désactive
+/// les sections « Choisie pour vous » de la Tournée (préférence serveur
+/// `tournee_smart_arrangement`, default-ON). Calqué sur [ChoiceTile].
+class _SmartArrangementSwitch extends ConsumerWidget {
+  const _SmartArrangementSwitch();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final state = ref.watch(tourneeSmartArrangementProvider);
+    final accent = colors.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withValues(alpha: 0.12),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+              color: accent,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Suggestions du facteur',
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Complète ta Tournée avec des thèmes et sources que tu suis.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch.adaptive(
+            value: state.enabled,
+            onChanged: state.isLoading
+                ? null
+                : (_) => ref
+                    .read(tourneeSmartArrangementProvider.notifier)
+                    .toggle(),
+          ),
+        ],
+      ),
     );
   }
 }

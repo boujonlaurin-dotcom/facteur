@@ -730,13 +730,14 @@ class RSSParser:
             if "comments" in type_attr or "comments" in (href or "").lower():
                 continue
 
-            if "rss" in type_attr or "atom" in type_attr or "xml" in type_attr:
-                if href:
-                    if href.startswith("/") or not href.startswith("http"):
-                        found_url = urljoin(url, href)
-                    else:
-                        found_url = href
-                    break
+            if (
+                "rss" in type_attr or "atom" in type_attr or "xml" in type_attr
+            ) and href:
+                if href.startswith("/") or not href.startswith("http"):
+                    found_url = urljoin(url, href)
+                else:
+                    found_url = href
+                break
 
         if found_url:
             logger.info("Found RSS link in HTML", page_url=url, rss_url=found_url)

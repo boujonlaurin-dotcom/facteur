@@ -9,6 +9,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../features/auth/utils/auth_error_messages.dart';
 import '../services/posthog_service.dart';
+import '../services/server_push_service.dart';
 import '../services/widget_service.dart';
 import 'session_refresher.dart';
 
@@ -43,6 +44,11 @@ class AuthState {
   /// Cf. docs/bugs/bug-feed-403-auth-recovery.md.
   final DateTime? lastTokenRefreshAt;
 
+  /// Un lien Supabase de récupération de mot de passe vient d'ouvrir l'app.
+  /// Le router doit présenter l'écran de nouveau mot de passe tant que ce flag
+  /// n'a pas été consommé après `updateUser`.
+  final bool passwordRecoveryPending;
+
   const AuthState({
     this.user,
     this.isLoading = false,
@@ -53,6 +59,7 @@ class AuthState {
     this.forceUnconfirmed = false,
     this.sessionExpired = false,
     this.lastTokenRefreshAt,
+    this.passwordRecoveryPending = false,
   });
 
   bool get isAuthenticated => user != null;
@@ -94,6 +101,7 @@ class AuthState {
     bool? forceUnconfirmed,
     bool? sessionExpired,
     DateTime? lastTokenRefreshAt,
+    bool? passwordRecoveryPending,
   }) {
     return AuthState(
       user: user ?? this.user,
@@ -108,6 +116,8 @@ class AuthState {
       forceUnconfirmed: forceUnconfirmed ?? this.forceUnconfirmed,
       sessionExpired: sessionExpired ?? this.sessionExpired,
       lastTokenRefreshAt: lastTokenRefreshAt ?? this.lastTokenRefreshAt,
+      passwordRecoveryPending:
+          passwordRecoveryPending ?? this.passwordRecoveryPending,
     );
   }
 }
@@ -116,10 +126,14 @@ class AuthState {
 class AuthStateNotifier extends StateNotifier<AuthState>
     with WidgetsBindingObserver {
   AuthStateNotifier() : super(const AuthState(isLoading: true)) {
+    _supabase = Supabase.instance.client;
     _init();
   }
 
-  final _supabase = Supabase.instance.client;
+  @visibleForTesting
+  AuthStateNotifier.test(AuthState initialState) : super(initialState);
+
+  late final SupabaseClient _supabase;
 
   /// Timestamp of the last forceUnconfirmed set. Used to debounce
   /// repeated 403s and avoid redirect loops.
@@ -179,8 +193,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       // uniquement, AVANT de peindre (synchrone, ne bloque rien).
       if (session != null) {
         final user = session.user;
-        final isConfirmed =
-            user.emailConfirmedAt != null ||
+        final isConfirmed = user.emailConfirmedAt != null ||
             (user.appMetadata['providers'] as List<dynamic>?)?.any(
                   (p) => p != 'email',
                 ) ==
@@ -213,44 +226,42 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         // l'unique source du signal d'invalidation (cf.
         // bug-feed-403-auth-recovery.md) — on ne re-pose pas `lastTokenRefreshAt`.
         unawaited(
-          refreshFuture
-              .then((_) {
-                debugPrint('AuthStateNotifier: ✅ Initial refresh done.');
-              })
-              .catchError((Object e) async {
-                if (e is! AuthException) {
-                  // Réseau lent / timeout → garder la session ; le SDK auto-refresh
-                  // (et l'intercepteur 401 single-flight) prendront le relais.
-                  debugPrint(
-                    'AuthStateNotifier: Initial refresh failed (non-auth): $e. Using existing session.',
-                  );
-                  return;
-                }
-                debugPrint(
-                  'AuthStateNotifier: Initial refresh failed (AuthException): ${e.message}',
-                );
-                unawaited(
-                  PostHogService().capture(
-                    event: 'auth_session_expired',
-                    properties: {'reason': 'init_refresh_failed'},
-                  ),
-                );
-                unawaited(
-                  Sentry.captureException(
-                    e,
-                    withScope: (scope) =>
-                        scope.setTag('auth_event', 'init_refresh_failed'),
-                  ),
-                );
-                await _supabase.auth.signOut().timeout(
+          refreshFuture.then((_) {
+            debugPrint('AuthStateNotifier: ✅ Initial refresh done.');
+          }).catchError((Object e) async {
+            if (e is! AuthException) {
+              // Réseau lent / timeout → garder la session ; le SDK auto-refresh
+              // (et l'intercepteur 401 single-flight) prendront le relais.
+              debugPrint(
+                'AuthStateNotifier: Initial refresh failed (non-auth): $e. Using existing session.',
+              );
+              return;
+            }
+            debugPrint(
+              'AuthStateNotifier: Initial refresh failed (AuthException): ${e.message}',
+            );
+            unawaited(
+              PostHogService().capture(
+                event: 'auth_session_expired',
+                properties: {'reason': 'init_refresh_failed'},
+              ),
+            );
+            unawaited(
+              Sentry.captureException(
+                e,
+                withScope: (scope) =>
+                    scope.setTag('auth_event', 'init_refresh_failed'),
+              ),
+            );
+            await _supabase.auth.signOut().timeout(
                   const Duration(seconds: 3),
                   onTimeout: () {},
                 );
-                // Clear user + isLoading + pose sessionExpired (le state authentifié a
-                // déjà été peint à l'étape 6 ; la garde `_fetchAll` des data providers
-                // maintient le squelette jusqu'à cette résolution).
-                state = const AuthState(sessionExpired: true);
-              }),
+            // Clear user + isLoading + pose sessionExpired (le state authentifié a
+            // déjà été peint à l'étape 6 ; la garde `_fetchAll` des data providers
+            // maintient le squelette jusqu'à cette résolution).
+            state = const AuthState(sessionExpired: true);
+          }),
         );
       }
 
@@ -294,6 +305,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       // providers (feedProvider, etc.) qu'ils peuvent re-fetcher avec un
       // access token frais. Cf. docs/bugs/bug-feed-403-auth-recovery.md.
       final bool isTokenRefresh = data.event == AuthChangeEvent.tokenRefreshed;
+      final bool isPasswordRecovery =
+          data.event == AuthChangeEvent.passwordRecovery;
 
       // Éviter les mises à jour inutiles si l'user n'a pas changé.
       // IMPORTANT: si `forceUnconfirmed` est true, on NE court-circuite PAS —
@@ -302,7 +315,10 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       // de confirmation email même après que le backend a validé son email).
       final bool sameUser =
           state.user?.id == user?.id && !state.isLoading && state.user != null;
-      if (sameUser && !state.forceUnconfirmed && !isTokenRefresh) {
+      if (sameUser &&
+          !state.forceUnconfirmed &&
+          !isTokenRefresh &&
+          !isPasswordRecovery) {
         final bool emailStatusChanged =
             state.user?.emailConfirmedAt != user?.emailConfirmedAt;
         if (!emailStatusChanged) {
@@ -312,8 +328,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       if (state.user == null && user == null && !state.isLoading) return;
 
       // Vérifier si l'email est maintenant confirmé pour reset forceUnconfirmed
-      final isNowConfirmed =
-          user?.emailConfirmedAt != null ||
+      final isNowConfirmed = user?.emailConfirmedAt != null ||
           (user?.appMetadata['providers'] as List<dynamic>?)?.any(
                 (p) => p != 'email',
               ) ==
@@ -327,9 +342,11 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         isLoading: false,
         forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
         lastTokenRefreshAt: isTokenRefresh ? DateTime.now() : null,
+        passwordRecoveryPending:
+            isPasswordRecovery ? true : state.passwordRecoveryPending,
       );
 
-      if (user != null && isNewSignIn) {
+      if (user != null && (isNewSignIn || isPasswordRecovery)) {
         // Check onboarding on first sign-in (new user appearing).
         _loadSessionProfile();
       }
@@ -361,10 +378,14 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       ),
     );
     final expiredUserId = state.user?.id;
+    await ServerPushService.instance.revokeCurrentDevice().timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
     await _supabase.auth.signOut().timeout(
-      const Duration(seconds: 3),
-      onTimeout: () {},
-    );
+          const Duration(seconds: 3),
+          onTimeout: () {},
+        );
     if (expiredUserId != null) {
       await _clearPendingReadsForUser(expiredUserId);
     }
@@ -375,6 +396,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     debugPrint('AuthStateNotifier: signOut() explicitly called. TRACE:');
     debugPrint(StackTrace.current.toString());
     final signedOutUserId = state.user?.id;
+    await ServerPushService.instance.revokeCurrentDevice();
     await _supabase.auth.signOut();
     final box = await Hive.openBox<dynamic>('auth_prefs');
     await box.delete('remember_me'); // Reset preference on sign out
@@ -415,8 +437,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     final prefix = 'read:$userId:';
     await pendingReads.deleteAll(
       pendingReads.keys.whereType<String>().where(
-        (key) => key.startsWith(prefix),
-      ),
+            (key) => key.startsWith(prefix),
+          ),
     );
   }
 
@@ -445,8 +467,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         .refresh()
         .then((_) => debugPrint('AuthStateNotifier: Resume refresh done.'))
         .catchError((Object e) {
-          debugPrint('AuthStateNotifier: Resume refresh failed: $e');
-        });
+      debugPrint('AuthStateNotifier: Resume refresh failed: $e');
+    });
   }
 
   @override
@@ -605,10 +627,21 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
+  String _nativeAuthCallbackUrl() => 'io.supabase.facteur://login-callback';
+
+  String _webAuthCallbackUrl() => Uri(
+        scheme: Uri.base.scheme,
+        host: Uri.base.host,
+        path: Uri.base.path,
+      ).toString();
+
   Future<void> sendPasswordResetEmail(String email) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      await _supabase.auth.resetPasswordForEmail(email);
+      await _supabase.auth.resetPasswordForEmail(
+        email,
+        redirectTo: kIsWeb ? _webAuthCallbackUrl() : _nativeAuthCallbackUrl(),
+      );
       state = state.copyWith(isLoading: false);
     } on AuthException catch (e) {
       state = state.copyWith(
@@ -620,6 +653,38 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       state = state.copyWith(
         isLoading: false,
         error: 'Une erreur est survenue lors de l\'envoi de l\'email',
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> updatePasswordFromRecovery(String password) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      await _supabase.auth.updateUser(UserAttributes(password: password));
+      try {
+        await SessionRefresher.instance.refresh();
+      } catch (e) {
+        debugPrint(
+          'AuthStateNotifier: Post-password-update refresh failed: $e',
+        );
+      }
+      state = state.copyWith(
+        isLoading: false,
+        passwordRecoveryPending: false,
+        forceUnconfirmed: false,
+      );
+      await _checkOnboardingStatus();
+    } on AuthException catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
+      rethrow;
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Une erreur est survenue lors du changement de mot de passe',
       );
       rethrow;
     }
@@ -768,21 +833,29 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// Sur AuthException, recheck `currentSession` avant de déconnecter — un
   /// refresh concurrent a peut-être déjà obtenu une session valide.
   /// Cf. docs/bugs/bug-android-disconnect-race.md.
-  Future<void> refreshUser() async {
+  Future<bool> refreshUser({bool forceSessionRefresh = false}) async {
     // Skip the network call once the user is known confirmed — the
     // EmailConfirmationScreen polls every 6 s and the router redirect can lag,
     // so without this guard we'd burn a GET /auth/v1/user per tick after
     // confirmation for nothing.
-    if (state.isEmailConfirmed) return;
+    if (state.isEmailConfirmed && !forceSessionRefresh) return true;
 
     try {
+      if (forceSessionRefresh) {
+        try {
+          await SessionRefresher.instance.refresh();
+        } catch (e) {
+          debugPrint(
+            'AuthStateNotifier: Forced session refresh failed: $e',
+          );
+        }
+      }
       debugPrint('AuthStateNotifier: Refreshing user via getUser()...');
       final userResponse = await _supabase.auth.getUser();
       final freshUser = userResponse.user;
-      if (freshUser == null) return;
+      if (freshUser == null) return false;
 
-      final isNowConfirmed =
-          freshUser.emailConfirmedAt != null ||
+      final isNowConfirmed = freshUser.emailConfirmedAt != null ||
           (freshUser.appMetadata['providers'] as List<dynamic>?)?.any(
                 (p) => p != 'email',
               ) ==
@@ -807,12 +880,16 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       final emailStatusChanged =
           state.user?.emailConfirmedAt != freshUser.emailConfirmedAt;
       final forceFlagChanged = state.forceUnconfirmed && isNowConfirmed;
-      if (!emailStatusChanged && !forceFlagChanged) return;
+      if (!emailStatusChanged && !forceFlagChanged) return isNowConfirmed;
 
       state = state.copyWith(
         user: freshUser,
         forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
       );
+      if (isNowConfirmed) {
+        await _checkOnboardingStatus();
+      }
+      return isNowConfirmed;
     } on AuthException catch (e) {
       debugPrint(
         'AuthStateNotifier: Refresh failed (AuthException): ${e.message}',
@@ -826,7 +903,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         debugPrint(
           'AuthStateNotifier: Concurrent refresh recovered session — not signing out.',
         );
-        return;
+        return state.isEmailConfirmed;
       }
 
       // Détecter si le refresh token est vraiment expiré/invalide.
@@ -844,9 +921,11 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         debugPrint('AuthStateNotifier: Refresh token expired. Ending session.');
         await handleSessionExpired(reason: 'refresh_token_expired');
       }
+      return state.isEmailConfirmed;
     } catch (e) {
       // Erreur réseau ou autre — ne rien faire, le SDK auto-refresh réessaiera
       debugPrint('AuthStateNotifier ERROR: Failed to refresh user: $e');
+      return state.isEmailConfirmed;
     }
   }
 

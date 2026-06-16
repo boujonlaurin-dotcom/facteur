@@ -1,57 +1,73 @@
-# QA Handoff — Story 26.2 : Lettres 3 et 4 du Facteur
+# QA Handoff — Onboarding sources : re-mapping taxonomie + badge « Spécialisé en X »
 
-> Ce fichier est rempli par l'agent dev à la fin du développement, après validation du PO.
-> Il sert d'input à la commande /validate-feature de l'agent QA.
+> Rempli par l'agent dev après VERIFY. Input de `/validate-feature` (agent QA Chrome).
 
 ## Feature développée
 
-Deux nouvelles lettres au catalogue backend (letter_3 « Ta tournée s'organise »,
-letter_4 « Facteur de fond »), backfill automatique pour les users existants,
-et 3 actions demandées par le PO : note sur un article sauvegardé, masquer
-3 sources, donner son avis sur l'app (nouvel event `app_feedback_opened` émis
-à l'ouverture de la modale « Donner mon avis »).
+Pendant l'onboarding, l'écran de reco sources devient « wow » : chaque sujet (subtopic)
+sélectionné obtient **au moins une source spécialisée visible**, badgée « Spécialisé en X ».
+Côté backend, un script aligne le vocabulaire des `granular_topics` des sources sur la
+taxonomie 51-slugs des users/articles (re-dérivée du contenu réellement publié) et élargit
+le catalogue curé. Côté mobile, le recommender ajoute un badge spécialiste sur la spécialité
+dominante d'une source, **et** une garantie de couverture qui rapatrie le meilleur spécialiste
+curé pour tout sujet choisi non couvert (carte distincte par sujet, pré-cochée).
+
+> ⚠️ La partie data (re-tag + promotion en base) est **gatée PO** et tourne séparément
+> (`scripts/retag_and_promote_sources.py --apply --allow-prod`) après merge. La validation QA
+> ci-dessous porte sur l'**UI mobile** (badge + visibilité). Sur l'env staging, l'effet plein
+> n'apparaît qu'une fois la base re-taggée ; le badge et la garantie restent testables avec
+> les `granular_topics` déjà présents.
 
 ## PR associée
-
-À créer via /go (base main). Branche : boujonlaurin-dotcom/progression-pr2-new-letters.
+<!-- gh pr view --web après /go -->
 
 ## Écrans impactés
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| Onboarding — Sources (« sur mesure ») | flow onboarding, étape sources | Modifié |
 
-- **Progression** (`/lettres`) : 5 lettres au lieu de 3 ; letter_3 s'active
-  automatiquement pour un user qui avait fini letter_2.
-- **Réglages** (`/settings`) : le tap sur « Donner mon avis » émet l'event
-  analytics (aucun changement visuel).
-- Navigation depuis une action de lettre : nouvelles destinations
-  (`/veille/config`, `/saved`, `/settings/sources/add`, `/settings`, `/flaner`).
+## Scénarios de test
 
-## Scénarios
+### Scénario 1 : Happy path — sujet avec spécialiste
+**Parcours** :
+1. Lancer l'onboarding, choisir des thèmes (ex. Tech, Société) puis des sous-sujets variés
+   (ex. `IA`, `Climat`).
+2. Passer le swipe de calibration, arriver sur l'écran « ① Suggestions sur mesure ».
+**Résultat attendu** : pour chaque sous-sujet choisi qui dispose d'un spécialiste curé, une
+carte porte un chip teinté primary **« 🎯 Spécialisé en {sujet} »** (ex. « Spécialisé en
+Intelligence artificielle »). Ces cartes apparaissent **en tête** des suggestions et sont
+**pré-cochées**.
 
-### Happy path
+### Scénario 2 : Edge case — sujets « pauvres »
+**Parcours** :
+1. Refaire l'onboarding en choisissant des sous-sujets réputés minces
+   (ex. `Fact-checking`, `Relations et amour`, `Jeux vidéo`).
+**Résultat attendu** : au moins une carte « Spécialisé en X » remonte pour chacun **quand la
+data le permet** (cartes distinctes par sujet). Si aucun spécialiste curé n'existe pour un
+sujet sur l'env testé, pas de carte fantôme et pas d'erreur — dégradation propre.
 
-1. Ouvrir Progression → vérifier 5 lettres, letter_3/4 affichées (upcoming ou
-   active selon l'avancement du compte).
-2. Tap sur chaque action de letter_3 → vérifier la redirection :
-   - « Créer ta première veille » → écran de config veille
-   - « Enregistrer 5 articles » → Flâner
-   - « Écrire une note sur un article sauvegardé » → écran Sauvegardés
-   - « Masquer 3 sources » → Flâner
-   - « Ajouter 5 chaînes YouTube » → ajout de source
-3. Tap sur « Donner ton avis sur l'app » (letter_4) → ouverture des réglages ;
-   tap « Donner mon avis » → modale feedback + requête réseau analytics
-   (`app_feedback_opened`) sans erreur.
-4. Compléter une action (ex. masquer 3 sources depuis un article) → revenir
-   sur Progression → l'action passe cochée après refresh.
-
-### Edge cases
-
-- User existant (3 rows) : GET /api/letters → 200, pas d'erreur, 5 lettres.
-- User ayant déjà tout fini (L0-L2 archivées) : letter_3 doit être active.
-- Note vide ou espaces → ne valide pas « Écrire une note ».
-- Console sans erreurs, réseau sans 4xx/5xx inattendus sur tous ces flux.
+### Scénario 3 : Pas de doublon / cohérence des chips
+**Parcours** :
+1. Choisir un sujet dont la source dominante matche (ex. une source dont la spécialité
+   dominante est exactement le sujet choisi).
+**Résultat attendu** : la carte montre **un seul** chip « Spécialisé en X » (pas de double
+chip « X » thème + « Spécialisé en X »). La source n'apparaît pas deux fois.
 
 ## Critères d'acceptation
+- [ ] ≥1 carte « Spécialisé en {sujet} » visible par sous-sujet sélectionné (quand un
+      spécialiste curé existe).
+- [ ] Le badge utilise le bon libellé FR (`getTopicLabel`) pour les 51 slugs.
+- [ ] Les cartes spécialistes sont en tête des suggestions et pré-cochées.
+- [ ] Pas de doublon de carte ni de double chip thème+spécialiste.
+- [ ] Console sans erreur, pas de requête 4xx/5xx inattendue.
 
-- [ ] 5 lettres visibles, ordre 00→04, grades cohérents avec le ladder
-- [ ] Aucune erreur pour les users existants (backfill silencieux)
-- [ ] Chaque action redirige vers un écran où le geste est faisable
-- [ ] Event `app_feedback_opened` émis au tap « Donner mon avis »
+## Zones de risque
+- Spécialité dominante = `granularTopics.first` : dépend de l'ordre (par share desc) écrit par
+  le re-tag backend. Sur un env non encore re-taggé, l'ordre vient du seed CSV.
+- Cap des suggestions (`_suggestionsLimit = 18`) : les spécialistes sont placés en tête pour
+  survivre au cap — vérifier qu'ils ne sont jamais tronqués.
+
+## Dépendances
+- Aucune nouvelle API. Sérialisation existante `granular_topics` / `articles_30d`
+  (`schemas/source.py`, `routers/sources.py`). Pas de migration Alembic.
+- Effet data complet conditionné à l'apply prod gaté PO du script de re-tag/promotion.

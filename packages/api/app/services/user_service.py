@@ -40,6 +40,14 @@ ALLOWED_PREFERENCE_KEYS: frozenset[str] = frozenset(
         "format_preference",
         "personal_goal",
         "acquisition_source",
+        # Axes "profondeur" ré-aiguillés (onboarding v6).
+        "independence_pref",
+        "swipe_liked_count",
+        "swipe_disliked_count",
+        # Story 22.3 — arrangement intelligent de la Tournée (« Choisie pour
+        # vous »). Absence = activé ; seul "false" désactive (default-ON sans
+        # migration). Toggle exposé dans « Composer ma Tournée ».
+        "tournee_smart_arrangement",
     }
 )
 
@@ -159,6 +167,21 @@ class UserService:
             "personal_goal": answers.personal_goal,
             "serein_enabled": ("true" if answers.digest_mode == "serein" else "false")
             if answers.digest_mode is not None
+            else None,
+            # Axe indépendance (établis vs indépendants) — réutilisable par le
+            # feed plus tard. Préférence déclarée, persistée telle quelle.
+            "independence_pref": answers.independence_pref,
+            # Résultat du swipe désambiguateur : on persiste un agrégat compact
+            # (compteurs) plutôt que les IDs bruts — tient dans
+            # preference_value (String(100)) et suffit comme signal d'engagement.
+            # L'effet immédiat du swipe (pré-sélection + repondération au reveal)
+            # est entièrement côté client. L'affinité par source → pillars du
+            # feed reste un follow-up explicite (cf. story, hors scope).
+            "swipe_liked_count": str(len(answers.swipe_liked))
+            if answers.swipe_liked
+            else None,
+            "swipe_disliked_count": str(len(answers.swipe_disliked))
+            if answers.swipe_disliked
             else None,
         }
 

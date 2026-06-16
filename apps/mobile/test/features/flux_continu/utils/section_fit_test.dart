@@ -1,10 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:facteur/features/flux_continu/utils/section_fit.dart';
+import 'package:facteur/features/settings/models/display_mode_spec.dart';
 
 void main() {
   group('fitVisibleCount', () {
     // Section chrome = banner + footer. With the no-blurb banner that is
-    // 68 + 58 = 126 px of fixed chrome, then each card is 146 px.
+    // 54 + 16 = 70 px of fixed chrome, then each card is 146 px.
     const banner = kBannerHeightNoBlurb;
     const footer = kSectionFooterHeight;
     final card = estimateRegularCardHeight();
@@ -24,7 +25,7 @@ void main() {
     });
 
     test('a mid screen drops to 2', () {
-      // 126 + 2·146 = 418 fits, 126 + 3·146 = 564 does not.
+      // 70 + 2·146 = 362 fits, 70 + 3·146 = 508 does not.
       expect(fit(500), 2);
     });
 
@@ -48,10 +49,10 @@ void main() {
     });
 
     test('a blurb banner reserves more chrome, so it can fit fewer cards', () {
-      // Same usable height, the with-blurb banner (100) leaves 32 px less.
-      // Pick a height where the extra 32 px tips 3 → 2.
-      // no-blurb: 126 + 3·146 = 564 ; with-blurb: 158 + 3·146 = 596.
-      const usable = 590.0;
+      // Same usable height, the with-blurb banner (82) leaves 28 px less.
+      // Pick a height where the extra 28 px tips 3 → 2.
+      // no-blurb: 70 + 3·146 = 508 ; with-blurb: 98 + 3·146 = 536.
+      const usable = 520.0;
       final noBlurb = fitVisibleCount(
         usableHeight: usable,
         bannerHeight: kBannerHeightNoBlurb,
@@ -72,7 +73,8 @@ void main() {
   });
 
   group('fitHeroCount', () {
-    int fit(double usable, {int maxCount = 5, int minCount = 1}) => fitHeroCount(
+    int fit(double usable, {int maxCount = 5, int minCount = 1}) =>
+        fitHeroCount(
           usableHeight: usable,
           chromeHeight: kHeroChromeHeight,
           leadHeight: kHeroLeadHeight,
@@ -106,6 +108,103 @@ void main() {
     test('result never exceeds maxCount (= min(5, articles.length))', () {
       expect(fit(5000, maxCount: 2), 2);
       expect(fit(5000, maxCount: 4), 4);
+    });
+  });
+
+  group('display modes', () {
+    test('estimateRegularCardHeight defaults to the normal mode constant', () {
+      expect(estimateRegularCardHeight(), kRegularCardHeight);
+      expect(
+        estimateRegularCardHeight(DisplayModeSpec.normal),
+        kRegularCardHeight,
+      );
+    });
+
+    int fitFor(DisplayModeSpec spec, double usable, {int maxCount = 5}) =>
+        fitVisibleCount(
+          usableHeight: usable,
+          bannerHeight: kBannerHeightNoBlurb,
+          footerHeight: kSectionFooterHeight,
+          cardHeight: estimateRegularCardHeight(spec),
+          maxCount: maxCount,
+        );
+
+    test('at equal viewport, minimal fits ≥ normal and playful fits ≤', () {
+      for (final usable in [400.0, 600.0, 800.0, 1000.0]) {
+        final minimal = fitFor(DisplayModeSpec.minimal, usable);
+        final normal = fitFor(DisplayModeSpec.normal, usable);
+        final playful = fitFor(DisplayModeSpec.playful, usable);
+        expect(minimal, greaterThanOrEqualTo(normal), reason: 'usable=$usable');
+        expect(playful, lessThanOrEqualTo(normal), reason: 'usable=$usable');
+      }
+    });
+
+    test(
+        'chaque mode porte son plafond de fit : normal 4, minimal 6, '
+        'ludique 3', () {
+      expect(DisplayModeSpec.normal.sectionFitCeiling, 4);
+      expect(DisplayModeSpec.minimal.sectionFitCeiling, 6);
+      expect(DisplayModeSpec.playful.sectionFitCeiling, 3);
+    });
+
+    // Réplique le calcul du provider `_capSectionToFit` :
+    // maxCount = max(1, min(ceiling, totalCount)) ; minCount soft (1).
+    int fitForMode(DisplayModeSpec spec, double usable, {int totalCount = 10}) {
+      final ceiling = spec.sectionFitCeiling!;
+      final maxCount =
+          (ceiling < totalCount ? ceiling : totalCount).clamp(1, 1 << 30);
+      return fitVisibleCount(
+        usableHeight: usable,
+        bannerHeight: kBannerHeightNoBlurb,
+        footerHeight: kSectionFooterHeight,
+        cardHeight: estimateRegularCardHeight(spec),
+        maxCount: maxCount,
+      );
+    }
+
+    test(
+        'minimal : le fit MONTE jusqu\'au plafond 6 selon le viewport '
+        '(cible 4-6)', () {
+      // Chrome 70 + N·126 : 4 cartes = 574, 5 = 700, 6 = 826.
+      expect(fitForMode(DisplayModeSpec.minimal, 600), 4);
+      expect(fitForMode(DisplayModeSpec.minimal, 720), 5);
+      // Écran géant : plafonné à 6 (et non 7+).
+      expect(fitForMode(DisplayModeSpec.minimal, 1000), 6);
+      // Le pool réel borne la montée (min(ceiling, totalCount)).
+      expect(fitForMode(DisplayModeSpec.minimal, 1000, totalCount: 4), 4);
+      // Petit écran : le fit redescend (plancher soft 1).
+      expect(fitForMode(DisplayModeSpec.minimal, 300), 1);
+    });
+
+    test('normal : grandit jusqu\'à 4 quand l\'écran le permet (cible 3-4)',
+        () {
+      // Chrome 70 + N·146 : 3 = 508, 4 = 654.
+      expect(fitForMode(DisplayModeSpec.normal, 600), 3);
+      expect(fitForMode(DisplayModeSpec.normal, 700), 4);
+      // Plafonné à 4 même sur écran géant.
+      expect(fitForMode(DisplayModeSpec.normal, 5000), 4);
+    });
+
+    test('ludique : 2-3 cartes selon le viewport, plafonné à 3', () {
+      // Chrome 70 + N·272 : 2 = 614, 3 = 886.
+      expect(fitForMode(DisplayModeSpec.playful, 640), 2);
+      expect(fitForMode(DisplayModeSpec.playful, 920), 3);
+      // Plafonné à 3 même sur écran géant.
+      expect(fitForMode(DisplayModeSpec.playful, 5000), 3);
+    });
+
+    test('hero fit follows the same ordering with mode heights', () {
+      int heroFor(DisplayModeSpec spec) => fitHeroCount(
+            usableHeight: 620,
+            chromeHeight: kHeroChromeHeight,
+            leadHeight: spec.heroLeadHeight,
+            mediumHeight: spec.heroMediumHeight,
+            maxCount: 5,
+          );
+      expect(heroFor(DisplayModeSpec.minimal),
+          greaterThanOrEqualTo(heroFor(DisplayModeSpec.normal)));
+      expect(heroFor(DisplayModeSpec.playful),
+          lessThanOrEqualTo(heroFor(DisplayModeSpec.normal)));
     });
   });
 }

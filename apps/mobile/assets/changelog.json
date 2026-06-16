@@ -1,20 +1,76 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Ta Tournée se complète chaque jour avec des sections « Choisie pour vous », à partir des thèmes et sources que tu suis. Un tap sur le badge explique le pourquoi ; tu peux garder ou retirer, et tout désactiver d'un switch."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Ouverture d'article instantanée depuis l'Essentiel : titre, image et source s'affichent tout de suite, sans écran blanc."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Sections plus aérées et plus d'articles à l'écran : une source sans actu récente affiche désormais ses articles plus anciens plutôt qu'un vide."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription."
+    },
+    {
+      "tag": "Notifications",
+      "summary": "Ton Essentiel du jour arrive maintenant par notification, même app fermée : un rappel fiable le matin pour ton moment de lecture."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Une fiche source repensée : articles récents, thèmes couverts et fréquence de publication."
+    },
+    {
+      "tag": "Couverture médiatique",
+      "summary": "La couverture médiatique reste affichée sous l'article : compare les titres dans un carrousel, et « Analyse Facteur » remonte une synthèse neutre en un tap. Présentation allégée et plus lisible, qui se détache mieux de l'article."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "En-tête d'article épuré : un tap sur la source ouvre sa fiche, et les titres comparés s'affichent plus sobrement."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Tri des sources plus clair et plus fluide : carte lisible, un seul tampon, et un temps « on affine » en fin de tri."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et suggestions plus pertinentes."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Calibre tes suggestions d'un geste : un tri tactile de quelques médias, vivant et explorable, qui ajuste tout ton feed en direct."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Sources les plus actives mises en avant, et le format (vidéo, podcast…) affiché d'un coup d'œil."
+    },
+    {
+      "tag": "Corrections",
+      "summary": "Saisie d'un sujet plus fluide à l'onboarding, fermeture évidente de la modal Favoris, et navigation des lettres de progression fiabilisée."
+    },
+    {
+      "tag": "Grille",
+      "summary": "Le mot du jour vient d'un vrai titre de l'actu, et on te montre où il se cachait."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Fiche source repensée : présentation du média en premier, évaluation accessible et repliée."
+    },
+    {
+      "tag": "Affichage",
+      "summary": "Choisis ton mode d'affichage des articles : normal, minimaliste ou lisible."
+    },
+    {
       "tag": "Progression",
       "summary": "Deux nouvelles lettres du Facteur : des défis de curation (veille, notes, sources) et un palier de fond pour les lecteurs assidus."
     },
     {
-      "tag": "Progression",
-      "summary": "Mon courrier devient Progression : grades de facteur, niveau sur ton avatar et un écran plus clair pour suivre tes étapes."
-    },
-    {
-      "tag": "Progression",
-      "summary": "Ton grade de facteur et ta progression s'affichent directement en haut du fil."
-    },
-    {
-      "tag": "Notif",
-      "summary": "Notification du matin plus courte, et un ton plus doux quand le mode Serein est activé."
+      "tag": "Tournée",
+      "summary": "Sections plus légères : le titre de section devient cliquable pour tout lire, fini le bouton en bas."
     },
     {
       "tag": "Flâner",

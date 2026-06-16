@@ -6,9 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
@@ -72,8 +70,9 @@ class SettingsSheet extends ConsumerWidget {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Réglages',
-                    style: FacteurTypography.serifTitle(colors.textPrimary)
-                        .copyWith(fontSize: 28, height: 1.15),
+                    style: FacteurTypography.serifTitle(
+                      colors.textPrimary,
+                    ).copyWith(fontSize: 28, height: 1.15),
                   ),
                 ),
               ),
@@ -97,8 +96,6 @@ class SettingsSheet extends ConsumerWidget {
                       _ContentShortcuts(),
                       SizedBox(height: FacteurSpacing.space4),
                       _FeedbackTile(),
-                      SizedBox(height: FacteurSpacing.space4),
-                      _LegalShortcuts(),
                     ],
                   ),
                 ),
@@ -320,15 +317,6 @@ class _ContentShortcuts extends ConsumerWidget {
       child: Column(
         children: [
           _ShortcutTile(
-            icon: PhosphorIcons.envelope(PhosphorIconsStyle.regular),
-            label: 'Progression',
-            onTap: () {
-              Navigator.of(context).pop();
-              context.pushNamed(RouteNames.lettres);
-            },
-          ),
-          const _Divider(),
-          _ShortcutTile(
             icon: PhosphorIcons.bookOpen(PhosphorIconsStyle.regular),
             label: 'Mes sources',
             onTap: () => context.pushNamed(RouteNames.sources),
@@ -348,6 +336,12 @@ class _ContentShortcuts extends ConsumerWidget {
             onTap: () => hasVeille
                 ? _showVeilleManageMenu(context, ref)
                 : context.pushNamed(RouteNames.veilleConfig),
+          ),
+          const _Divider(),
+          _ShortcutTile(
+            icon: PhosphorIcons.palette(PhosphorIconsStyle.regular),
+            label: 'Apparence',
+            onTap: () => context.pushNamed(RouteNames.appearance),
           ),
           const _Divider(),
           _ShortcutTile(
@@ -376,10 +370,7 @@ Future<void> _showVeilleManageMenu(BuildContext context, WidgetRef ref) async {
             onTap: () => Navigator.of(sheetContext).pop('edit'),
           ),
           ListTile(
-            leading: Icon(
-              PhosphorIcons.archive(),
-              color: Colors.red.shade700,
-            ),
+            leading: Icon(PhosphorIcons.archive(), color: Colors.red.shade700),
             title: Text(
               'Archiver',
               style: TextStyle(color: Colors.red.shade700),
@@ -401,7 +392,10 @@ Future<void> _showVeilleManageMenu(BuildContext context, WidgetRef ref) async {
   }
 }
 
-Future<void> _confirmAndArchiveVeille(BuildContext context, WidgetRef ref) async {
+Future<void> _confirmAndArchiveVeille(
+  BuildContext context,
+  WidgetRef ref,
+) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -431,9 +425,9 @@ Future<void> _confirmAndArchiveVeille(BuildContext context, WidgetRef ref) async
     ref.invalidate(veilleActiveConfigProvider);
     ref.invalidate(userInterestsProvider);
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Veille archivée')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Veille archivée')));
   } catch (_) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -493,44 +487,6 @@ class _FeedbackTile extends ConsumerWidget {
   }
 }
 
-class _LegalShortcuts extends StatelessWidget {
-  const _LegalShortcuts();
-
-  Future<void> _open(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _SheetCard(
-      child: Column(
-        children: [
-          _ShortcutTile(
-            icon: PhosphorIcons.shieldCheck(PhosphorIconsStyle.regular),
-            label: 'Politique de confidentialité',
-            onTap: () => _open(LegalLinks.privacy),
-          ),
-          const _Divider(),
-          _ShortcutTile(
-            icon: PhosphorIcons.fileText(PhosphorIconsStyle.regular),
-            label: 'Conditions d\'utilisation',
-            onTap: () => _open(LegalLinks.terms),
-          ),
-          const _Divider(),
-          _ShortcutTile(
-            icon: PhosphorIcons.lifebuoy(PhosphorIconsStyle.regular),
-            label: 'Contacter le support',
-            onTap: () => _open(LegalLinks.supportEmail),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ShortcutTile extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -559,9 +515,9 @@ class _ShortcutTile extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w500,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
               ),
             ),
             Icon(
@@ -584,10 +540,7 @@ class _Divider extends StatelessWidget {
     final colors = context.facteurColors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space4),
-      child: Container(
-        height: 1,
-        color: colors.border.withOpacity(0.5),
-      ),
+      child: Container(height: 1, color: colors.border.withOpacity(0.5)),
     );
   }
 }

@@ -7,7 +7,9 @@ import '../../feed/repositories/personalization_repository.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../settings/providers/language_preference_provider.dart';
 import '../models/smart_search_result.dart';
+import '../models/source_coverage.dart';
 import '../models/source_model.dart';
+import '../models/source_profile.dart';
 import '../models/theme_source_model.dart';
 import '../repositories/sources_repository.dart';
 import '../services/premium_session_store.dart';
@@ -34,6 +36,21 @@ final subscribedSourcesProvider = Provider<List<Source>>((ref) {
   return sources.where((s) => s.hasSubscription).toList();
 });
 
+/// Followed paid sources that can be connected from « Mes abonnements ».
+final eligibleSubscriptionSourcesProvider = Provider<List<Source>>((ref) {
+  final sources =
+      ref.watch(userSourcesProvider).valueOrNull ?? const <Source>[];
+  return sources
+      .where(
+        (source) =>
+            source.isTrusted &&
+            !source.hasSubscription &&
+            resolvePremiumConnection(source) != null,
+      )
+      .toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+});
+
 typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
 
 final smartSearchProvider =
@@ -51,6 +68,41 @@ final smartSearchProvider =
         contentType: params.contentType,
         expand: params.expand,
       );
+    });
+
+/// Couverture par thèmes d'une source (fiche source v2). Le cache de Riverpod
+/// évite un refetch quand la fiche se reconstruit (toggles trust/mute…).
+final sourceCoverageProvider = FutureProvider.family<SourceCoverage, String>((
+  ref,
+  sourceId,
+) async {
+  if (sourceId.isEmpty) {
+    return const SourceCoverage(periodLabel: '', totalCount: 0);
+  }
+  final repository = ref.watch(sourcesRepositoryProvider);
+  return repository.fetchCoverage(sourceId, days: 30);
+});
+
+/// Profil unifié d'une source pour la fiche v3 : articles récents (Content
+/// complets), couverture par thèmes, volume et fréquence en un seul appel.
+/// `autoDispose` : libéré à la fermeture de la sheet.
+final sourceProfileProvider = FutureProvider.family
+    .autoDispose<SourceProfile, String>((ref, sourceId) async {
+      if (sourceId.isEmpty) return const SourceProfile();
+      final keepAlive = ref.keepAlive();
+      Timer? disposeTimer;
+      ref.onCancel(() {
+        disposeTimer = Timer(const Duration(minutes: 2), keepAlive.close);
+      });
+      ref.onResume(() {
+        disposeTimer?.cancel();
+        disposeTimer = null;
+      });
+      ref.onDispose(() {
+        disposeTimer?.cancel();
+      });
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.getSourceProfile(sourceId);
     });
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {

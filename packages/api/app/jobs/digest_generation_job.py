@@ -78,9 +78,7 @@ async def compute_digest_coverage(
         .group_by(DailyDigest.user_id, DailyDigest.is_serene)
         .subquery()
     )
-    pair_count = (
-        await session.scalar(select(func.count()).select_from(pair_subq)) or 0
-    )
+    pair_count = await session.scalar(select(func.count()).select_from(pair_subq)) or 0
     coverage = pair_count / expected_pairs if expected_pairs else 0.0
     return total_users, pair_count, coverage
 
@@ -566,19 +564,21 @@ class DigestGenerationJob:
         target_date: datetime.date,
         editorial_ctx_pour_vous,
     ) -> None:
-        """Accroche l'actu du jour qui matche le mot de la Grille (best-effort).
+        """Sélection hybride du mot du jour depuis l'actu réelle (best-effort).
 
-        Fige un snapshot (titre/extrait/url/source) sur le `GrillePuzzle` du jour
-        depuis le contexte éditorial global pour_vous. Entièrement isolé : toute
-        erreur est loggée + remontée à Sentry mais n'altère JAMAIS la génération
-        du digest (le mot du jour est secondaire). Idempotent.
+        Extrait le mot du jour du corpus d'actu, le fige avec son occurrence
+        exacte (titre/desc + surface) sur le `GrillePuzzle` du jour. Le contexte
+        éditorial pour_vous n'est qu'un *bonus* de scoring (peut être None : la
+        sélection retombe sur le corpus brut). Entièrement isolé : toute erreur
+        est loggée + remontée à Sentry mais n'altère JAMAIS la génération du
+        digest (le mot du jour est secondaire). Idempotent.
         """
-        if editorial_ctx_pour_vous is None:
-            return
         try:
-            from app.services.grille_matcher import match_grille_featured_article
+            from app.services.grille_matcher import apply_hybrid_word
+            from app.services.grille_seed import ensure_daily_puzzle
 
-            matched = await match_grille_featured_article(
+            await ensure_daily_puzzle(session, target_date)
+            matched = await apply_hybrid_word(
                 session, target_date, editorial_ctx_pour_vous
             )
             await session.commit()

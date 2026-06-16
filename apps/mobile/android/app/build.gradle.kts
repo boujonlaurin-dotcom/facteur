@@ -8,6 +8,16 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Firebase config is supplied per environment in app/src/prod and
+// app/src/staging. Keep local builds without credentials usable.
+if (
+    file("src/prod/google-services.json").exists() ||
+    file("src/staging/google-services.json").exists() ||
+    file("google-services.json").exists()
+) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
