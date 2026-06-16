@@ -116,6 +116,10 @@ class FeedResponse(BaseModel):
     keyword_overflow: list[KeywordOverflowInfo] = []
     entity_overflow: list[EntityOverflowInfo] = []
     carousels: list[CarouselInfo] = []
+    # Section source : True quand la source n'a aucun article récent (≤72h) et
+    # que le feed a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
+    # Additif (défaut False) : rétro-compat clients anciens, aucune migration DB.
+    no_recent_source: bool = False
 
 
 class TabCountsResponse(BaseModel):

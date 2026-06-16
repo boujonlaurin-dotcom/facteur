@@ -304,9 +304,7 @@ class DeepMatcher:
                     candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
                 )
 
-        return self._fallback_pick(
-            candidates, min_score=self.FALLBACK_MIN_SCORE_NO_LLM
-        )
+        return self._fallback_pick(candidates, min_score=self.FALLBACK_MIN_SCORE_NO_LLM)
 
     @staticmethod
     def _entity_names(content: Content) -> set[str]:

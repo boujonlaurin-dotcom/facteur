@@ -107,13 +107,23 @@ class SectionBlock extends StatelessWidget {
     final cards = _buildCards();
     final hiddenCount =
         (section.totalCount - section.coreVisibleCount).clamp(0, 999);
+    // Section source sans article récent (≤72h) mais avec des cartes plus
+    // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
+    // la blurb du banner. L'empty-state (aucun article même vieux) reste géré
+    // par _buildCards et n'affiche pas cette note.
+    final effectiveBlurb = section is FeedThemeSection &&
+            section.kind == SectionKind.source &&
+            section.noRecentSource &&
+            section.items.isNotEmpty
+        ? 'Pas d\'article récent.'
+        : section.blurb;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionBanner(
           title: section.label,
           accent: section.accent,
-          blurb: section.blurb,
+          blurb: effectiveBlurb,
           illustrationAsset: section.illustrationAsset,
           // PR « Sources dans la Tournée » — hero logo source à la place de
           // l'illustration thème.

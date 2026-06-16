@@ -5,6 +5,14 @@
       "summary": "Ta Tournée se complète chaque jour avec des sections « Choisie pour vous », à partir des thèmes et sources que tu suis. Un tap sur le badge explique le pourquoi ; tu peux garder ou retirer, et tout désactiver d'un switch."
     },
     {
+      "tag": "Lecture",
+      "summary": "Ouverture d'article instantanée depuis l'Essentiel : titre, image et source s'affichent tout de suite, sans écran blanc."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Sections plus aérées et plus d'articles à l'écran : une source sans actu récente affiche désormais ses articles plus anciens plutôt qu'un vide."
+    },
+    {
       "tag": "Sources",
       "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription."
     },

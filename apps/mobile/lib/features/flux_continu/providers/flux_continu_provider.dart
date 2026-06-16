@@ -747,7 +747,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // inventer de carte.
     final minCount = math.min(2, s.totalCount);
     final fitCap = fitVisibleCount(
-      usableHeight: usableHeight,
+      // Crédit de la marge basse de la dernière carte (espace blanc sous le pli,
+      // aucun contenu) : sinon une section reste à N−1 alors qu'une Nᵉ carte tient
+      // à 12px près — cf. kLastCardBottomMargin.
+      usableHeight: usableHeight + kLastCardBottomMargin,
       bannerHeight: hasBlurb ? kBannerHeightWithBlurb : kBannerHeightNoBlurb,
       // Le footer (gap de fin de section) glisse hors écran au scroll : il ne
       // doit pas coûter une carte → exclu du budget.
@@ -1542,6 +1545,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       hasMore: hasMore,
       origin: origin,
       reason: reason,
+      noRecentSource: feed?.noRecentSource ?? false,
     );
   }
 

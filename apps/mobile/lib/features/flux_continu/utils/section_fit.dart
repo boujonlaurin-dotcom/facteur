@@ -40,13 +40,25 @@ import '../../settings/models/display_mode_spec.dart';
 /// Réglé au plancher réel mesuré (146) pour fitter 3 cartes plus souvent.
 const double kRegularCardHeight = 146;
 
+/// Crédit (px) de la marge basse de la **dernière** carte d'une section. Chaque
+/// carte régulière réserve [kRegularCardHeight] px **dont 12px de marge basse**
+/// (`FluxContinuArticleCard` : `Padding.fromLTRB(12, 0, 12, 12)`). La marge basse
+/// de la *dernière* carte visible n'a aucun contenu — c'est de l'espace blanc qui
+/// peut passer sous le pli sans rien tronquer. On la crédite **une seule fois** au
+/// budget de fit pour ne pas amputer une section à N−1 cartes alors qu'une Nᵉ tient
+/// à 12px près (symptôme : « 3 cartes alors qu'il y a la place pour 4 »). N'élargit
+/// jamais le budget au point de tronquer du contenu réel.
+const double kLastCardBottomMargin = 12;
+
 /// Banner height (px) for a section **without** a blurb (theme / source):
-/// `minHeight 60` + vertical margin (3+5).
-const double kBannerHeightNoBlurb = 68;
+/// `minHeight 48` + vertical margin (2+4). Post-compaction (banner moins
+/// proéminent) — doit matcher la hauteur rendue par `SectionBanner` sinon le
+/// fit ne profite pas du gain de place.
+const double kBannerHeightNoBlurb = 54;
 
 /// Banner height (px) for a section **with** a blurb (Actus du jour, Bonnes
-/// Nouvelles, veille): `minHeight 92` + vertical margin (3+5).
-const double kBannerHeightWithBlurb = 100;
+/// Nouvelles, veille): `minHeight 76` + vertical margin (2+4). Post-compaction.
+const double kBannerHeightWithBlurb = 82;
 
 /// Footer height (px): le CTA « Tout lire » a disparu (le banner de section
 /// est devenu cliquable) — il ne reste que le spacing de fin de section

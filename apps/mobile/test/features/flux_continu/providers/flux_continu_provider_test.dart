@@ -1122,8 +1122,9 @@ void main() {
 
         final state = await settle(container);
         final theme = state.sections.whereType<FeedThemeSection>().single;
-        // Normal sur la référence 640 : floor((640-68)/146)=3, borné [2,4] ⇒ 3.
-        expect(theme.coreVisibleCount, 3);
+        // Normal sur la référence 640 (banner 54, footer 0, +12 crédit marge
+        // basse) : floor((640-54+12)/146)=4, borné [2,4] ⇒ 4.
+        expect(theme.coreVisibleCount, 4);
       },
     );
 
@@ -1202,16 +1203,18 @@ void main() {
 
       final state = await settle(container);
       final theme = state.sections.whereType<FeedThemeSection>().single;
-      expect(theme.coreVisibleCount, 2);
+      // 500px utiles, banner 54, footer 0, +12 crédit marge basse :
+      // floor((500-54+12)/146)=3, borné [2,4] ⇒ 3.
+      expect(theme.coreVisibleCount, 3);
 
       // Dismissing an item routes through _filterSections → copyWith, which must
-      // NOT reset the capped coreVisibleCount back to the default 3.
+      // NOT reset the capped coreVisibleCount.
       container.read(fluxContinuProvider.notifier).confirmDismiss('x4');
       await pumpEventQueue(times: 2);
 
       final after = container.read(fluxContinuProvider).requireValue;
       final themeAfter = after.sections.whereType<FeedThemeSection>().single;
-      expect(themeAfter.coreVisibleCount, 2);
+      expect(themeAfter.coreVisibleCount, 3);
       expect(themeAfter.items.map((c) => c.id), isNot(contains('x4')));
     });
   });

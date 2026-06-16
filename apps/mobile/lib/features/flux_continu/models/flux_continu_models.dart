@@ -330,6 +330,10 @@ class FeedThemeSection extends FluxSection {
   /// Raison de transparence (non null seulement quand [origin] est `suggested`).
   final SuggestionReason? reason;
 
+  /// Section source : true quand la source n'a aucun article récent (≤72h) et
+  /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
+  final bool noRecentSource;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -345,6 +349,7 @@ class FeedThemeSection extends FluxSection {
     this.isLoadingMore = false,
     this.origin = SectionOrigin.validated,
     this.reason,
+    this.noRecentSource = false,
     super.blurb,
     super.illustrationAsset,
   });
@@ -365,6 +370,7 @@ class FeedThemeSection extends FluxSection {
     // `loadMoreTheme` (qui recopient via copyWith) réinitialiseraient le compte
     // au défaut à chaque recompose — le piège le plus facile à introduire.
     int? coreVisibleCount,
+    bool? noRecentSource,
   }) {
     return FeedThemeSection(
       kind: kind,
@@ -384,6 +390,7 @@ class FeedThemeSection extends FluxSection {
       // perdrait retirerait le badge « Choisie pour vous » au 1ᵉʳ recompose.
       origin: origin,
       reason: reason,
+      noRecentSource: noRecentSource ?? this.noRecentSource,
       blurb: blurb,
       illustrationAsset: illustrationAsset,
     );
