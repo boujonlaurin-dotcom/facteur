@@ -27,6 +27,7 @@ VALUES
     ('user_favorite_interests', true, true),
     ('user_favorite_sources', true, true),
     ('veille_keywords', true, true),
+    ('grille_game_states', true, true),
     ('serene_reports', true, false),
     ('digest_generation_state', false, true),
     ('failed_source_attempts', false, true),
@@ -35,7 +36,10 @@ VALUES
     ('classification_queue', false, true),
     ('source_search_cache', false, true),
     ('editorial_highlights_history', false, true),
-    ('cluster_title_annotations', false, true);
+    ('cluster_title_annotations', false, true),
+    ('grille_puzzles', false, true),
+    ('event_rsvps', false, true),
+    ('api_usage_events', false, true);
 
 DO $$
 DECLARE

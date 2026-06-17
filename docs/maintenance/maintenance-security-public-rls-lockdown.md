@@ -46,6 +46,7 @@ hors scope et ne doivent pas être embarqués dans la PR.
 | `user_favorite_interests` | User-owned via `user_id` | `authenticated` own rows |
 | `user_favorite_sources` | User-owned via `user_id` | `authenticated` own rows |
 | `veille_keywords` | Fille de `veille_configs` | `authenticated` via veille owner |
+| `grille_game_states` | User-owned via `user_id` | `authenticated` own rows |
 | `serene_reports` | User-owned via `user_id`, si présente | `authenticated` own rows |
 | `digest_generation_state` | Backend-only lifecycle | aucun grant `anon/authenticated` |
 | `failed_source_attempts` | Backend-only telemetry | aucun grant `anon/authenticated` |
@@ -55,6 +56,9 @@ hors scope et ne doivent pas être embarqués dans la PR.
 | `source_search_cache` | Backend-only cache | aucun grant `anon/authenticated` |
 | `editorial_highlights_history` | Backend-only cache/history | aucun grant `anon/authenticated` |
 | `cluster_title_annotations` | Backend-only annotation cache | aucun grant `anon/authenticated` |
+| `grille_puzzles` | Backend-only game content | aucun grant `anon/authenticated` |
+| `event_rsvps` | Backend-only event emails | aucun grant `anon/authenticated` |
+| `api_usage_events` | Backend-only telemetry | aucun grant `anon/authenticated` |
 
 ## Validation
 
@@ -67,7 +71,7 @@ hors scope et ne doivent pas être embarqués dans la PR.
 
 ## Checklist PR / Post-déploiement
 
-- [ ] `python -m alembic heads` affiche seulement `sec01_lock_down_public_rls`.
+- [ ] `python -m alembic heads` affiche un seul head.
 - [ ] `alembic upgrade head` passe sur une base locale ou éphémère.
 - [ ] Le script metadata-only passe sans lire de données métier.
 - [ ] Supabase Advisor ne remonte plus `rls_disabled_in_public` pour les tables
