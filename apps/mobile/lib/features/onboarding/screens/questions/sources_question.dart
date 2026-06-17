@@ -213,6 +213,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       backgroundColor: Colors.transparent,
       builder: (context) => PremiumSourcesSheet(
         allSources: allSources,
+        selectedSourceIds: _selectedSourceIds,
       ),
     );
   }

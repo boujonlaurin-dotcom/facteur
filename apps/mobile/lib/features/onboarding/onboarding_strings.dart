@@ -108,6 +108,7 @@ class OnboardingStrings {
       'On ajuste tes suggestions en direct.';
   static const String swipeLikeHint = 'Ça m\'intéresse';
   static const String swipeSkipHint = 'Pas pour moi';
+  static const String swipeUndoLabel = 'Revenir au dernier média';
   static const String swipeDoneButton = 'Voir mes médias';
   // Compteur humanisé à 3 paliers selon l'avancement (current/total). Plus
   // présent qu'un sec « Carte X sur Y », sans em-dash (règle PO).
