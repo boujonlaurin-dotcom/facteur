@@ -44,6 +44,7 @@ class ScoredArticle:
     score: float
     reason: str
     breakdown: list[DigestScoreBreakdown] = field(default_factory=list)
+    pillar_scores: dict[str, float] = field(default_factory=dict)
     is_followed_source: bool = False
 
 
@@ -410,7 +411,7 @@ class TopicSelector:
         UNE_BONUS = 12.0  # ~35/300 from old scale
 
         article_scores: list[
-            tuple[Content, float, str, list[DigestScoreBreakdown]]
+            tuple[Content, float, str, list[DigestScoreBreakdown], dict[str, float]]
         ] = []
 
         for content in cluster.contents:
@@ -455,7 +456,9 @@ class TopicSelector:
 
             # Build reason
             reason = self._article_reason(content, context, breakdown)
-            article_scores.append((content, score, reason, breakdown))
+            article_scores.append(
+                (content, score, reason, breakdown, dict(pillar_result.pillar_scores))
+            )
 
         # Sort by score desc
         article_scores.sort(key=lambda x: x[1], reverse=True)
@@ -468,20 +471,21 @@ class TopicSelector:
             )
 
             seed = compute_seed(str(context.user_id), granularity="daily")
-            # Wrap full tuples for randomized_sort: T = (content, reason, breakdown)
+            # Wrap full tuples for randomized_sort:
+            # T = (content, reason, breakdown, pillar_scores)
             wrapped = [
-                ((content, reason, breakdown), score)
-                for content, score, reason, breakdown in article_scores
+                ((content, reason, breakdown, pillar_scores), score)
+                for content, score, reason, breakdown, pillar_scores in article_scores
             ]
             randomized = randomized_sort(
                 wrapped,
                 temperature=ScoringWeights.DIGEST_RANDOMIZATION_TEMPERATURE,
                 seed=seed,
             )
-            article_scores = [(t[0], s, t[1], t[2]) for t, s in randomized]
+            article_scores = [(t[0], s, t[1], t[2], t[3]) for t, s in randomized]
 
             # Add randomization transparency
-            for _content, _score, _reason, bd in article_scores:
+            for _content, _score, _reason, bd, _pillar_scores in article_scores:
                 bd.append(
                     DigestScoreBreakdown(
                         label="Hasard pour diversifier",
@@ -495,7 +499,7 @@ class TopicSelector:
         selected: list[ScoredArticle] = []
         used_sources: set[UUID] = set()
 
-        for content, score, reason, breakdown in article_scores:
+        for content, score, reason, breakdown, pillar_scores in article_scores:
             if len(selected) >= max_articles:
                 break
             if content.source_id in used_sources:
@@ -507,6 +511,7 @@ class TopicSelector:
                     score=score,
                     reason=reason,
                     breakdown=breakdown,
+                    pillar_scores=pillar_scores,
                     is_followed_source=content.source_id in context.followed_source_ids,
                 )
             )

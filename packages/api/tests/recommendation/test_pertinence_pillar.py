@@ -1,7 +1,10 @@
 """Tests unitaires pour PertinencePillar — Theme Mismatch Malus."""
+
 from datetime import datetime
 from unittest.mock import MagicMock
 from uuid import uuid4
+
+import pytest
 
 from app.services.recommendation.pillars.pertinence import PertinencePillar
 from app.services.recommendation.scoring_config import ScoringWeights
@@ -29,9 +32,7 @@ class MockContent:
         self.duration_seconds = None
 
 
-def _context(
-    user_interests=None, user_subtopics=None, user_custom_topics=None
-):
+def _context(user_interests=None, user_subtopics=None, user_custom_topics=None):
     return ScoringContext(
         user_profile=MagicMock(id=uuid4()),
         user_interests=set(user_interests or []),
@@ -74,9 +75,7 @@ class TestThemeMismatchMalus:
     def test_no_malus_when_subtopic_matches(self):
         """Sous-thème matche → pas de malus, même si thème ne matche pas."""
         content = MockContent(theme="sports", source_theme="sports", topics=["ai"])
-        context = _context(
-            user_interests={"tech"}, user_subtopics={"ai"}
-        )
+        context = _context(user_interests={"tech"}, user_subtopics={"ai"})
 
         pillar = PertinencePillar()
         raw, contribs = pillar.compute_raw(content, context)
@@ -122,3 +121,36 @@ class TestThemeMismatchMalus:
 
         assert result.raw_score == ScoringWeights.THEME_MISMATCH_MALUS
         assert result.normalized_score == 0.0
+
+
+class TestSubtopicPositionWeighting:
+    def test_primary_topic_scores_higher_than_secondary_topic(self):
+        """A match at topics[0] should outrank the same match at topics[1]."""
+        pillar = PertinencePillar()
+        context = _context(user_subtopics={"ai"})
+
+        primary = MockContent(topics=["ai", "climate"])
+        secondary = MockContent(topics=["climate", "ai"])
+
+        primary_score, _ = pillar._score_subtopics(primary, context)
+        secondary_score, _ = pillar._score_subtopics(secondary, context)
+
+        assert primary_score == pytest.approx(ScoringWeights.TOPIC_MATCH)
+        assert secondary_score == pytest.approx(
+            ScoringWeights.TOPIC_MATCH * ScoringWeights.SUBTOPIC_POSITION_FACTOR
+        )
+        assert primary_score > secondary_score
+
+    def test_max_matches_keep_article_order_and_position_factor(self):
+        """Only the first two matching topics count, with position decay."""
+        pillar = PertinencePillar()
+        content = MockContent(topics=["ai", "tech", "cybersecurity"])
+        context = _context(user_subtopics={"ai", "tech", "cybersecurity"})
+
+        score, contributions = pillar._score_subtopics(content, context)
+
+        expected = ScoringWeights.TOPIC_MATCH * (
+            1.0 + ScoringWeights.SUBTOPIC_POSITION_FACTOR
+        )
+        assert score == pytest.approx(expected)
+        assert contributions[0].label == "Sujet : IA, Tech"

@@ -151,6 +151,7 @@ class DigestItem:
     rank: int
     reason: str
     breakdown: list[DigestScoreBreakdown] | None = None
+    pillar_scores: dict[str, float] | None = None
 
 
 @dataclass
@@ -543,10 +544,10 @@ class DigestSelector:
                 scoring_time = time.time() - step_start
 
                 non_zero_scores = [
-                    s for _, s, _ in scored_candidates_with_breakdown if s > 0
+                    s for _, s, _, _ in scored_candidates_with_breakdown if s > 0
                 ]
                 zero_scores = [
-                    s for _, s, _ in scored_candidates_with_breakdown if s == 0
+                    s for _, s, _, _ in scored_candidates_with_breakdown if s == 0
                 ]
 
                 logger.info(
@@ -557,7 +558,7 @@ class DigestSelector:
                     zero_count=len(zero_scores),
                     max_score=round(
                         max(
-                            (s for _, s, _ in scored_candidates_with_breakdown),
+                            (s for _, s, _, _ in scored_candidates_with_breakdown),
                             default=0,
                         ),
                         2,
@@ -586,7 +587,9 @@ class DigestSelector:
             user_source_items = []
             curated_items = []
 
-            for i, (content, score, reason, breakdown) in enumerate(selected, 1):
+            for i, (content, score, reason, breakdown, pillar_scores) in enumerate(
+                selected, 1
+            ):
                 digest_items.append(
                     DigestItem(
                         content=content,
@@ -594,6 +597,7 @@ class DigestSelector:
                         rank=i,
                         reason=reason,
                         breakdown=breakdown,
+                        pillar_scores=pillar_scores,
                     )
                 )
                 # Track source type
@@ -1222,7 +1226,7 @@ class DigestSelector:
         if score_inputs:
             try:
                 scored = await self._score_candidates(score_inputs, context, mode=mode)
-                score_map = {c.id: sc for c, sc, _bd in scored}
+                score_map = {c.id: sc for c, sc, _bd, _pillar_scores in scored}
             except Exception:
                 # Dégradation sûre : sans scoring on garde l'ordre run_for_user.
                 logger.exception(
@@ -1334,7 +1338,7 @@ class DigestSelector:
         candidates: list[Content],
         context: DigestContext,
         mode: str = "pour_vous",
-    ) -> list[tuple[Content, float, list[DigestScoreBreakdown]]]:
+    ) -> list[tuple[Content, float, list[DigestScoreBreakdown], dict[str, float]]]:
         """Score les candidats via le moteur de piliers unifié (PillarScoringEngine).
 
         Le scoring (pertinence/source/fraîcheur/qualité + pénalités) est entièrement
@@ -1444,7 +1448,14 @@ class DigestSelector:
                     breakdown_count=len(breakdown),
                 )
 
-                scored.append((content, final_score, breakdown))
+                scored.append(
+                    (
+                        content,
+                        final_score,
+                        breakdown,
+                        dict(pillar_result.pillar_scores),
+                    )
+                )
             except Exception as e:
                 logger.error(
                     "digest_scoring_failed",
@@ -1457,7 +1468,7 @@ class DigestSelector:
                     exc_info=True,
                 )
                 # Attribuer un score minimal pour ne pas bloquer
-                scored.append((content, 0.0, breakdown))
+                scored.append((content, 0.0, breakdown, {}))
 
         # Trier par score décroissant
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -1466,12 +1477,15 @@ class DigestSelector:
 
     def _select_with_diversity(
         self,
-        scored_candidates: list[tuple[Content, float, list[DigestScoreBreakdown]]],
+        scored_candidates: list[
+            tuple[Content, float, list[DigestScoreBreakdown]]
+            | tuple[Content, float, list[DigestScoreBreakdown], dict[str, float]]
+        ],
         target_count: int,
         mode: str = "pour_vous",
         initial_source_counts: dict[UUID, int] | None = None,
         initial_theme_counts: dict[str, int] | None = None,
-    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown]]]:
+    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown], dict[str, float]]]:
         """Sélectionne les articles avec contraintes de diversité.
 
         Contraintes:
@@ -1485,14 +1499,14 @@ class DigestSelector:
             initial_theme_counts: Compteurs thème pré-existants (pour continuité entre passes)
 
         Returns:
-            Liste de tuples (Content, score, reason, breakdown)
+            Liste de tuples (Content, score, reason, breakdown, pillar_scores)
         """
         DIVERSITY_DIVISOR = ScoringWeights.DIGEST_DIVERSITY_DIVISOR
 
         effective_max_per_theme = self.constraints.MAX_PER_THEME
 
         # Count distinct sources in candidate pool for fallback decision
-        distinct_sources = {c.source_id for c, _, _ in scored_candidates}
+        distinct_sources = {candidate[0].source_id for candidate in scored_candidates}
         effective_max_per_source = self.constraints.MAX_PER_SOURCE
 
         if len(distinct_sources) < self.constraints.TARGET_DIGEST_SIZE:
@@ -1508,7 +1522,13 @@ class DigestSelector:
         source_counts: dict[UUID, int] = defaultdict(int, initial_source_counts or {})
         theme_counts: dict[str, int] = defaultdict(int, initial_theme_counts or {})
 
-        for content, score, breakdown in scored_candidates:
+        for candidate in scored_candidates:
+            if len(candidate) == 3:
+                content, score, breakdown = candidate
+                pillar_scores = {}
+            else:
+                content, score, breakdown, pillar_scores = candidate
+
             if len(selected) >= target_count:
                 break
 
@@ -1549,7 +1569,7 @@ class DigestSelector:
             reason = self._generate_reason(
                 content, source_counts, theme_counts, breakdown
             )
-            selected.append((content, final_score, reason, breakdown))
+            selected.append((content, final_score, reason, breakdown, pillar_scores))
             source_counts[source_id] += 1
             if theme:
                 theme_counts[theme] += 1
@@ -1643,7 +1663,7 @@ class DigestSelector:
         context: DigestContext,
         trending_context: GlobalTrendingContext,
         target_count: int,
-    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown]]]:
+    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown], dict[str, float]]]:
         """Sélection hybride en 2 passes : trending + personnalisé.
 
         Pass 1 : Sélectionner les articles trending/une pertinents pour l'utilisateur
@@ -1696,8 +1716,10 @@ class DigestSelector:
         )
 
         # === PASSE 1 : Score et sélection trending ===
-        _4t = list[tuple[Content, float, str, list[DigestScoreBreakdown]]]
-        pass1_selected: _4t = []
+        _5t = list[
+            tuple[Content, float, str, list[DigestScoreBreakdown], dict[str, float]]
+        ]
+        pass1_selected: _5t = []
         if trending_candidates:
             scored_trending = await self._score_candidates(
                 trending_candidates,
@@ -1706,9 +1728,11 @@ class DigestSelector:
             )
 
             # Ajouter les bonus trending/une
-            _3t = list[tuple[Content, float, list[DigestScoreBreakdown]]]
-            boosted_trending: _3t = []
-            for content, score, breakdown in scored_trending:
+            _4t = list[
+                tuple[Content, float, list[DigestScoreBreakdown], dict[str, float]]
+            ]
+            boosted_trending: _4t = []
+            for content, score, breakdown, pillar_scores in scored_trending:
                 bonus = 0.0
                 bd_copy = list(breakdown)
 
@@ -1732,7 +1756,9 @@ class DigestSelector:
                         )
                     )
 
-                boosted_trending.append((content, score + bonus, bd_copy))
+                boosted_trending.append(
+                    (content, score + bonus, bd_copy, pillar_scores)
+                )
 
             # Trier par score boosté décroissant
             boosted_trending.sort(key=lambda x: x[1], reverse=True)
@@ -1748,7 +1774,7 @@ class DigestSelector:
 
         # === PASSE 2 : Compléter avec personnalisé ===
         remaining_count = target_count - len(pass1_selected)
-        pass2_selected: _4t = []
+        pass2_selected: _5t = []
 
         if remaining_count > 0 and personalized_candidates:
             scored_personalized = await self._score_candidates(
@@ -1760,7 +1786,7 @@ class DigestSelector:
             # Construire les compteurs existants depuis pass 1 pour continuité diversité
             pass1_source_counts: dict[UUID, int] = defaultdict(int)
             pass1_theme_counts: dict[str, int] = defaultdict(int)
-            for content, _, _, _ in pass1_selected:
+            for content, _, _, _, _ in pass1_selected:
                 pass1_source_counts[content.source_id] += 1
                 theme = getattr(content, "theme", None)
                 if not theme and content.source:

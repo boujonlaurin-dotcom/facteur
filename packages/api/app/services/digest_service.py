@@ -296,6 +296,19 @@ def _count_digest_items(digest_items) -> int:
     return len(digest_items) if digest_items else 0
 
 
+def _serialize_breakdown(breakdown) -> list[dict]:
+    """Serialize score breakdown contributions for the daily_digest JSONB."""
+    return [
+        {
+            "label": b.label,
+            "points": b.points,
+            "is_positive": b.is_positive,
+            "pillar": b.pillar,
+        }
+        for b in (breakdown or [])
+    ]
+
+
 # --- Serein quotes -----------------------------------------------------------
 
 from pathlib import Path as _Path
@@ -1728,6 +1741,8 @@ class DigestService:
                 if item.content.source
                 else None,
                 "score": float(item.score),
+                "final_score": float(item.score),
+                "pillar_scores": getattr(item, "pillar_scores", None) or {},
                 "entities": item.content.entities or [],
             }
 
@@ -1743,10 +1758,7 @@ class DigestService:
                     breakdown_count=len(breakdown),
                     breakdown_labels=[b.label for b in breakdown[:3]],
                 )
-                item_data["breakdown"] = [
-                    {"label": b.label, "points": b.points, "is_positive": b.is_positive}
-                    for b in breakdown
-                ]
+                item_data["breakdown"] = _serialize_breakdown(breakdown)
             else:
                 logger.warning(
                     "no_breakdown_available_for_digest_item",
@@ -1819,15 +1831,10 @@ class DigestService:
                             if a.content.source
                             else None,
                             "score": float(a.score),
+                            "final_score": float(a.score),
+                            "pillar_scores": a.pillar_scores or {},
                             "is_followed_source": a.is_followed_source,
-                            "breakdown": [
-                                {
-                                    "label": b.label,
-                                    "points": b.points,
-                                    "is_positive": b.is_positive,
-                                }
-                                for b in (a.breakdown or [])
-                            ],
+                            "breakdown": _serialize_breakdown(a.breakdown),
                         }
                         for j, a in enumerate(tg.articles)
                     ],
@@ -2123,6 +2130,7 @@ class DigestService:
                         label=b.get("label", ""),
                         points=b.get("points", 0.0),
                         is_positive=b.get("is_positive", True),
+                        pillar=b.get("pillar"),
                     )
                     for b in breakdown_data
                     if isinstance(b, dict) and b.get("label")
@@ -2533,6 +2541,7 @@ class DigestService:
                         label=b.get("label", ""),
                         points=b.get("points", 0.0),
                         is_positive=b.get("is_positive", True),
+                        pillar=b.get("pillar"),
                     )
                     for b in breakdown_raw
                     if isinstance(b, dict) and b.get("label")

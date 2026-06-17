@@ -14,7 +14,16 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from apscheduler.triggers.cron import CronTrigger
 
-from app.workers.scheduler import _digest_watchdog, start_scheduler, stop_scheduler
+from app.services.recommendation.scoring_config import ScoringWeights
+from app.workers.scheduler import (
+    SUBTOPIC_DECAY_HOUR_PARIS,
+    SUBTOPIC_DECAY_MINUTE_PARIS,
+    _digest_watchdog,
+    decay_user_subtopic_weights,
+    decayed_subtopic_weight,
+    start_scheduler,
+    stop_scheduler,
+)
 
 
 class TestScheduler:
@@ -251,6 +260,36 @@ class TestDigestJobConfiguration:
                 f"Expected minute=15, got {trigger.fields[6]}"
             )
 
+    def test_scheduler_includes_subtopic_weight_decay_job(self):
+        """Verify learned subtopic weights decay before the daily digest."""
+        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            captured_jobs = {}
+
+            def capture_add_job(*args, **kwargs):
+                job_id = kwargs.get("id")
+                if job_id:
+                    captured_jobs[job_id] = {
+                        "func": args[0] if args else kwargs.get("func"),
+                        "trigger": kwargs.get("trigger"),
+                        "name": kwargs.get("name"),
+                    }
+
+            mock_scheduler.add_job = capture_add_job
+
+            start_scheduler()
+
+            assert "subtopic_weight_decay" in captured_jobs
+            job = captured_jobs["subtopic_weight_decay"]
+            assert job["func"].__name__ == "decay_user_subtopic_weights"
+            assert job["name"] == "Subtopic Weight Decay"
+            trigger = job["trigger"]
+            assert isinstance(trigger, CronTrigger)
+            assert str(trigger.fields[5]) == str(SUBTOPIC_DECAY_HOUR_PARIS)
+            assert str(trigger.fields[6]) == str(SUBTOPIC_DECAY_MINUTE_PARIS)
+
     def test_scheduled_restart_job_is_not_registered(self):
         """Regression guard: `scheduled_restart` was a temporary SIGTERM-based
         mitigation for a SQLAlchemy pool leak. Railway's `restartPolicyType:
@@ -297,6 +336,47 @@ class TestDigestJobConfiguration:
             assert "veille_stuck_cleanup" not in job_ids, (
                 f"veille_stuck_cleanup job should not be registered. Jobs: {job_ids}"
             )
+
+
+class TestSubtopicWeightDecay:
+    """Daily subtopic decay should move learned weights toward neutral 1.0."""
+
+    def test_decayed_subtopic_weight_moves_toward_neutral(self):
+        assert decayed_subtopic_weight(3.0) == pytest.approx(
+            1.0 + (3.0 - 1.0) * ScoringWeights.SUBTOPIC_DECAY
+        )
+        assert decayed_subtopic_weight(3.0) < 3.0
+        assert decayed_subtopic_weight(0.1) == pytest.approx(
+            1.0 + (0.1 - 1.0) * ScoringWeights.SUBTOPIC_DECAY
+        )
+        assert decayed_subtopic_weight(0.1) > 0.1
+        assert decayed_subtopic_weight(1.0) == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_decay_job_runs_one_bulk_update(self):
+        from contextlib import asynccontextmanager
+
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=Mock(rowcount=42))
+        mock_session.commit = AsyncMock()
+
+        @asynccontextmanager
+        async def fake_session_manager():
+            yield mock_session
+
+        with patch(
+            "app.database.safe_async_session",
+            side_effect=lambda: fake_session_manager(),
+        ):
+            await decay_user_subtopic_weights()
+
+        mock_session.execute.assert_awaited_once()
+        statement, params = mock_session.execute.await_args.args
+        sql = str(statement)
+        assert "UPDATE user_subtopics" in sql
+        assert "SET weight = 1.0 + (weight - 1.0) * :decay" in sql
+        assert params == {"decay": ScoringWeights.SUBTOPIC_DECAY}
+        mock_session.commit.assert_awaited_once()
 
 
 class TestDigestWatchdogCoverage:
