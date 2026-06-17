@@ -912,13 +912,48 @@ class EditorialPipelineService:
         y compris une **sentinelle** (matched_content_id NULL) quand aucun match
         n'est trouvé, afin que le reader n'ait jamais à recalculer à la volée.
         """
-        from app.services.editorial.deep_matcher import DeepMatcher
-
         actu_ids = [
             s.actu_article.content_id for s in subjects if s.actu_article is not None
         ]
+        await self.precompute_deep_recommendations_for_content_ids(
+            actu_ids,
+            refresh_existing=True,
+        )
+
+    async def precompute_deep_recommendations_for_content_ids(
+        self,
+        content_ids: list[UUID] | set[UUID] | tuple[UUID, ...],
+        *,
+        refresh_existing: bool = True,
+    ) -> None:
+        """Pré-calcule le « Pas de recul » pour une liste d'articles.
+
+        ``compute_global_context`` utilise ``refresh_existing=True`` pour
+        rafraîchir les sujets globaux du batch. Le job de digest utilise
+        ``False`` sur les IDs réellement persistés par-user afin de backfiller
+        les articles personnalisés sans refaire les matches déjà écrits.
+        """
+        from app.models.content_deep_recommendation import ContentDeepRecommendation
+        from app.services.editorial.deep_matcher import DeepMatcher
+
+        actu_ids = list(dict.fromkeys(content_ids))
         if not actu_ids:
             return
+
+        if not refresh_existing:
+            async with self._short_session() as db:
+                existing_result = await db.execute(
+                    select(ContentDeepRecommendation.content_id).where(
+                        ContentDeepRecommendation.content_id.in_(actu_ids)
+                    )
+                )
+                existing_ids = set(existing_result.scalars().all())
+            actu_ids = [
+                content_id for content_id in actu_ids if content_id not in existing_ids
+            ]
+            if not actu_ids:
+                logger.info("editorial_pipeline.deep_precompute_all_cached")
+                return
 
         matcher = DeepMatcher(
             session=self.session,

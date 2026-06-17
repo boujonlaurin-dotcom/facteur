@@ -6,6 +6,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.jobs.digest_generation_job import (
+    _extract_editorial_actu_ids_from_items,
+)
 from app.services.editorial.schemas import (
     EditorialPipelineResult,
     EditorialSubject,
@@ -119,6 +122,45 @@ class TestEditorialBatchHandling:
         assert job.stats["failed"] == 0
 
     @pytest.mark.asyncio
+    async def test_generate_digest_returns_persisted_editorial_actu_ids(
+        self, job, mock_session
+    ):
+        """Pas de recul precompute uses the actu ids actually served to readers."""
+        user_id = uuid4()
+        target_date = datetime.date.today()
+        editorial_result = _make_editorial_result()
+
+        mock_digest = Mock()
+        mock_digest.id = uuid4()
+        mock_session.scalar = AsyncMock(return_value=None)
+
+        with (
+            patch("app.jobs.digest_generation_job.DigestSelector") as mock_selector_cls,
+            patch("app.services.digest_service.DigestService") as mock_svc_cls,
+            patch("app.jobs.digest_generation_job.select"),
+        ):
+            mock_selector = AsyncMock()
+            mock_selector.select_for_user = AsyncMock(return_value=editorial_result)
+            mock_selector_cls.return_value = mock_selector
+
+            mock_svc = AsyncMock()
+            mock_svc._create_digest_record_editorial = AsyncMock(
+                return_value=mock_digest
+            )
+            mock_svc_cls.return_value = mock_svc
+
+            result = await job._generate_digest_for_user(
+                mock_session, user_id, target_date, None
+            )
+
+        expected = {
+            subject.actu_article.content_id
+            for subject in editorial_result.subjects
+            if subject.actu_article is not None
+        }
+        assert result == expected
+
+    @pytest.mark.asyncio
     async def test_editorial_pipeline_result_empty_subjects_fails(
         self, job, mock_session
     ):
@@ -200,6 +242,42 @@ class TestVariantIsolation:
         assert job.stats["failed"] == 1
 
 
+class TestDeepPrecomputeIdExtraction:
+    """Extract real reader lookup ids from persisted editorial digest JSON."""
+
+    def test_extracts_only_subject_actu_ids(self):
+        actu_id = uuid4()
+        extra_id = uuid4()
+
+        result = _extract_editorial_actu_ids_from_items(
+            {
+                "format_version": "editorial_v2",
+                "subjects": [
+                    {
+                        "actu_article": {"content_id": str(actu_id)},
+                        "extra_actu_articles": [{"content_id": str(extra_id)}],
+                    },
+                    {"actu_article": None},
+                ],
+            }
+        )
+
+        assert result == {actu_id}
+
+    def test_ignores_non_editorial_or_bad_payloads(self):
+        assert (
+            _extract_editorial_actu_ids_from_items([{"content_id": str(uuid4())}])
+            == set()
+        )
+        assert _extract_editorial_actu_ids_from_items({"subjects": "bad"}) == set()
+        assert (
+            _extract_editorial_actu_ids_from_items(
+                {"subjects": [{"actu_article": {"content_id": "not-a-uuid"}}]}
+            )
+            == set()
+        )
+
+
 class TestGlobalCandidatePool:
     """The batch job should fetch a user-agnostic candidate pool for editorial ctx."""
 
@@ -274,7 +352,6 @@ class TestFollowedSourceSlice:
     @pytest.mark.asyncio
     async def test_followed_slice_unioned_and_deduped(self, job):
         """A followed-source article past the top-200 cut is added, deduped."""
-        from app.models.source import Source
 
         followed_src = uuid4()
         # recency slice: c1 (other source), c2 (followed, already present)
