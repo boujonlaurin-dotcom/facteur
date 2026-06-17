@@ -69,6 +69,49 @@ PROMO_WINDOW_DAYS = 30  # fenêtre du volume pour la promotion
 PROMO_MIN_VOLUME = 20  # articles_30d mini pour promouvoir
 PROMO_RELIABILITY = {"medium", "high"}
 
+# Vocab hérité (sources.granular_topics) -> 51-slugs valides. Appliqué AVANT le
+# purge dans `resolve_new_topics` : sans cette map, une source à faible activité
+# (dérivation vide) perdrait ses slugs hérités au lieu de les convertir.
+# Surensemble de `SLUG_MIGRATION_MAP` (e12a0001, slugs préférence user) étendu à
+# tout le vocab observé dans `sources.granular_topics` en prod (2026-06-17).
+# Idempotente : un slug déjà valide n'apparaît pas en clé -> passe inchangé.
+EXTENDED_MIGRATION_MAP: dict[str, str] = {
+    # --- hérité de e12a0001 (slugs préférence user) ---
+    "crypto": "finance",
+    "social-justice": "justice",
+    "housing": "realestate",
+    "energy-transition": "energy",
+    "macro": "economy",
+    "media-critics": "media",
+    "elections": "politics",
+    "institutions": "politics",
+    "fundamental-research": "science",
+    "applied-science": "science",
+    "middle-east": "middleeast",
+    "physics": "science",
+    "biology": "science",
+    "arts": "art",
+    "french-politics": "politics",
+    "labor": "work",
+    "macroeconomics": "economy",
+    # --- extensions vocab curation (présents dans sources.granular_topics) ---
+    "democracy": "politics",
+    "labor-market": "work",
+    "data-privacy": "privacy",
+    "justice-system": "justice",
+    "work-reform": "work",
+    "venture-capital": "finance",
+    "taxation": "economy",
+    "trade": "economy",
+    "quantum": "science",
+    "pollution": "environment",
+    "robotics": "tech",
+    "activism": "inequality",  # décision PO (cluster social-justice)
+    "cleantech": "environment",  # décision PO
+    "circular-economy": "environment",
+    "regulation": "politics",
+}
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_CSV = PROJECT_ROOT / "sources" / "sources_master.csv"
 
@@ -179,17 +222,22 @@ def resolve_new_topics(
     existing: list[str] | None,
     *,
     valid_slugs: set[str] = VALID_TOPIC_SLUGS,
+    migration: dict[str, str] = EXTENDED_MIGRATION_MAP,
 ) -> list[str] | None:
     """Décide la valeur `granular_topics` finale, conservatrice.
 
     - Dérivation non vide -> elle gagne (data-driven, ordonnée par share).
-    - Dérivation vide -> on **garde** les slugs déjà valides et on **purge**
-      l'ancien vocab (slug hors 51). Jamais de wipe d'un vrai spécialiste mince.
-      Renvoie None quand il ne reste rien.
+    - Dérivation vide -> on **remappe** le vocab hérité connu vers les 51-slugs
+      (via `migration`), puis on ne garde que les slugs valides en dédupliquant
+      dans l'ordre. Jamais de wipe d'un vrai spécialiste mince, et plus de purge
+      sèche d'un slug mappable. Renvoie None quand il ne reste rien.
+      Idempotent : un slug déjà valide passe inchangé.
     """
     if derived:
         return derived
-    cleaned = [t for t in (existing or []) if t in valid_slugs]
+    remapped = (migration.get(t, t) for t in (existing or []))
+    # dict.fromkeys = dédup en conservant l'ordre de 1re occurrence (idiome maison).
+    cleaned = list(dict.fromkeys(t for t in remapped if t in valid_slugs))
     return cleaned or None
 
 

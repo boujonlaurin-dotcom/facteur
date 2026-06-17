@@ -8,7 +8,9 @@ régénération CSV (update colonnes + append promues + préservation commentair
 
 from __future__ import annotations
 
+from app.services.ml.classification_service import VALID_TOPIC_SLUGS
 from scripts.retag_and_promote_sources import (
+    EXTENDED_MIGRATION_MAP,
     Promotion,
     SourceMeta,
     compute_plan,
@@ -90,18 +92,58 @@ def test_resolve_derived_wins():
     assert resolve_new_topics(["politics"], ["social-justice"]) == ["politics"]
 
 
-def test_resolve_empty_derived_purges_old_vocab_keeps_valid():
-    # "social-justice" (ancien vocab) purgé, "health" (valide) conservé.
-    assert resolve_new_topics([], ["social-justice", "health"]) == ["health"]
+def test_resolve_empty_derived_remaps_old_vocab_keeps_valid():
+    # "social-justice" remappé -> "justice" (au lieu d'être purgé), "health"
+    # (déjà valide) conservé. Ordre préservé.
+    assert resolve_new_topics([], ["social-justice", "health"]) == [
+        "justice",
+        "health",
+    ]
 
 
-def test_resolve_empty_derived_all_old_vocab_becomes_none():
-    assert resolve_new_topics([], ["social-justice", "energy-transition"]) is None
+def test_resolve_empty_derived_remaps_in_order():
+    # Remap sans collision, ordre conservé : social-justice->justice,
+    # democracy->politics, health (valide).
+    assert resolve_new_topics([], ["social-justice", "democracy", "health"]) == [
+        "justice",
+        "politics",
+        "health",
+    ]
+
+
+def test_resolve_empty_derived_dedupes_collisions_from_remap():
+    # Deux slugs hérités convergent vers le même 51-slug -> un seul, ordre 1re occ.
+    assert resolve_new_topics([], ["elections", "democracy", "institutions"]) == [
+        "politics",
+    ]
+
+
+def test_resolve_empty_derived_unmapped_invalid_becomes_none():
+    # Slugs hors-51 ET hors-map : aucune conversion possible -> None.
+    assert resolve_new_topics([], ["foo-old", "bar-baz"]) is None
+
+
+def test_resolve_empty_derived_idempotent_on_valid_slugs():
+    # Déjà 51-slugs : inchangé (la map ne les touche pas).
+    assert resolve_new_topics([], ["justice", "politics", "health"]) == [
+        "justice",
+        "politics",
+        "health",
+    ]
 
 
 def test_resolve_empty_derived_preserves_thin_valid_specialist():
     # Spécialiste mince déjà en 51-slugs : on ne wipe pas faute d'articles.
     assert resolve_new_topics([], ["factcheck"]) == ["factcheck"]
+
+
+def test_extended_migration_map_targets_are_all_valid_slugs():
+    # Garde-fou : toute cible de remap DOIT être un 51-slug valide, sinon le
+    # remap réinjecterait du vocab périmé. Les clés ne doivent jamais être valides
+    # (sinon entrée inutile / risque d'idempotence cassée).
+    for old, new in EXTENDED_MIGRATION_MAP.items():
+        assert new in VALID_TOPIC_SLUGS, f"cible invalide: {old} -> {new}"
+        assert old not in VALID_TOPIC_SLUGS, f"clé déjà valide: {old}"
 
 
 # --------------------------------------------------------------------------- #
