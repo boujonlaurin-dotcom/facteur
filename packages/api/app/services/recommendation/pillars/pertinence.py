@@ -281,22 +281,34 @@ class PertinencePillar(BasePillar):
         if not context.user_subtopics or not content.topics:
             return 0.0, []
 
-        content_topics = {t.lower().strip() for t in content.topics if t}
         user_subtopics = {s.lower().strip() for s in context.user_subtopics}
-        matches = content_topics & user_subtopics
-        match_count = min(len(matches), ScoringWeights.TOPIC_MAX_MATCHES)
 
-        if match_count == 0:
+        matched_topics: list[tuple[str, float]] = []
+        seen_topics: set[str] = set()
+        for index, raw_topic in enumerate(content.topics):
+            topic = raw_topic.lower().strip() if isinstance(raw_topic, str) else ""
+            if not topic or topic in seen_topics:
+                continue
+            seen_topics.add(topic)
+            if topic not in user_subtopics:
+                continue
+
+            position_factor = ScoringWeights.SUBTOPIC_POSITION_FACTOR**index
+            matched_topics.append((topic, position_factor))
+            if len(matched_topics) >= ScoringWeights.TOPIC_MAX_MATCHES:
+                break
+
+        if not matched_topics:
             return 0.0, []
 
         weights = context.user_subtopic_weights
-        matched_list = sorted(matches)[:match_count]
+        matched_list = [topic for topic, _ in matched_topics]
         score = 0.0
         boosted_topics = []
 
-        for topic in matched_list:
+        for topic, position_factor in matched_topics:
             w = weights.get(topic, 1.0)
-            score += ScoringWeights.TOPIC_MATCH * w
+            score += ScoringWeights.TOPIC_MATCH * w * position_factor
             if w > 1.0:
                 boosted_topics.append(topic)
 

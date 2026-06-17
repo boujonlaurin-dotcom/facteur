@@ -126,6 +126,8 @@ class ScoringWeights:
     # Réduit de 60→45 car content.theme capture déjà le signal broad.
     TOPIC_MATCH = 45.0
     TOPIC_MAX_MATCHES = 2  # Max 90pts (2 x 45)
+    SUBTOPIC_POSITION_FACTOR = 0.6
+    SUBTOPIC_DECAY = 0.98
 
     # Bonus de précision : si article a match thème ET sous-thème
     # Réduit de 20→18.
