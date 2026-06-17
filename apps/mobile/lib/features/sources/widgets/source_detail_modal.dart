@@ -180,9 +180,20 @@ class _FsBody extends ConsumerWidget {
           _FsSection(title: 'Derniers articles', child: _ArticlesSkeleton()),
         ],
       ),
-      // Fallback statique : couverture / articles / fréquence masqués, le reste
-      // reste exploitable depuis l'objet Source déjà en main.
-      error: (_, __) => (null, const <Widget>[]),
+      // Fallback gracieux : `/profile` a échoué (réseau/5xx). Plutôt que de
+      // tout masquer (fiche « presque vide »), on retombe sur la couverture via
+      // l'endpoint indépendant `/coverage` (best-effort, se masque seul si lui
+      // aussi échoue) et on propose un retry sur la zone articles. La fréquence
+      // reste masquée (elle dépend du profil).
+      error: (_, __) => (
+        null,
+        [
+          _FsCoverageFromProvider(source: source),
+          _FsArticlesUnavailable(
+            onRetry: () => ref.invalidate(sourceProfileProvider(source.id)),
+          ),
+        ],
+      ),
       data: (profile) => (
         humanizeFrequency(profile.articles30d, profile.oldestContentAt),
         [
@@ -1093,6 +1104,104 @@ class _ArticlesEmptyCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Zone articles en erreur réseau (mode normal) : message sobre + retry, au
+/// lieu de masquer la section. Le tap relance [sourceProfileProvider] ; si le
+/// retry réussit, la fiche bascule sur la branche `data` complète.
+class _FsArticlesUnavailable extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _FsArticlesUnavailable({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _FsSectionHeader(title: 'Derniers articles'),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            decoration: BoxDecoration(
+              color: colors.surface.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(FacteurRadius.large),
+              border: Border.all(
+                color: colors.textTertiary.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  PhosphorIcons.warningCircle(PhosphorIconsStyle.regular),
+                  size: 22,
+                  color: colors.textTertiary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Contenu momentanément indisponible.',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13.5,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _RetryChip(onTap: onRetry),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pilule « Réessayer » (relance un provider). Réutilisable dans la fiche.
+class _RetryChip extends StatelessWidget {
+  final VoidCallback onTap;
+  const _RetryChip({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return InkWell(
+      borderRadius: BorderRadius.circular(FacteurRadius.pill),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: colors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(FacteurRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.arrowClockwise(PhosphorIconsStyle.regular),
+              size: 14,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'Réessayer',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }

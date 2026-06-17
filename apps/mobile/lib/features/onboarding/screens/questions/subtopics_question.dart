@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../../../core/providers/analytics_provider.dart';
@@ -36,6 +37,10 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   late final PageController _pageController;
   int _currentTheme = 0;
   final Set<int> _visitedPages = {0};
+
+  /// Brève phase « validé » sur la carte courante avant le scroll horizontal
+  /// vers le thème suivant.
+  bool _isValidatingCurrentPage = false;
 
   List<String> get _selectedThemes =>
       ref.read(onboardingProvider).answers.themes ?? [];
@@ -292,17 +297,57 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                     itemCount: selectedThemes.length,
                     itemBuilder: (context, index) {
                       final theme = _resolveTheme(selectedThemes[index]);
+                      final isValidating = index == _currentTheme &&
+                          _isValidatingCurrentPage;
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          // Extent supplémentaire quand le clavier monte, sinon
-                          // le champ « sujet custom » reste caché derrière lui.
-                          padding: EdgeInsets.only(
-                            bottom: MediaQuery.viewInsetsOf(context).bottom +
-                                FacteurSpacing.space6,
+                        child: AnimatedScale(
+                          scale: isValidating ? 0.96 : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          child: AnimatedOpacity(
+                            opacity: isValidating ? 0.7 : 1.0,
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            child: Stack(
+                              children: [
+                                SingleChildScrollView(
+                                  physics: const BouncingScrollPhysics(),
+                                  // Extent supplémentaire quand le clavier monte,
+                                  // sinon le champ « sujet custom » reste caché
+                                  // derrière lui.
+                                  padding: EdgeInsets.only(
+                                    bottom:
+                                        MediaQuery.viewInsetsOf(context).bottom +
+                                            FacteurSpacing.space6,
+                                  ),
+                                  child: _buildThemeCard(
+                                    theme,
+                                    includeHeader: false,
+                                  ),
+                                ),
+                                if (isValidating)
+                                  Positioned.fill(
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(
+                                          FacteurSpacing.space3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade500,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          PhosphorIcons.check(),
+                                          color: Colors.white,
+                                          size: 28,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                          child: _buildThemeCard(theme, includeHeader: false),
                         ),
                       );
                     },
@@ -324,7 +369,9 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           ElevatedButton(
             onPressed: _saving
                 ? null
-                : (isLastPage ? _onContinuePressed : _goToNextPage),
+                : (isLastPage
+                    ? _onContinuePressed
+                    : _validateAndGoToNextPage),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 24),
             ),
@@ -424,6 +471,17 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  /// Joue un bref état « validé » sur la carte courante (scale/opacité +
+  /// check vert) puis enchaîne le scroll vers le thème suivant.
+  Future<void> _validateAndGoToNextPage() async {
+    setState(() => _isValidatingCurrentPage = true);
+    HapticFeedback.selectionClick();
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    setState(() => _isValidatingCurrentPage = false);
+    _goToNextPage();
   }
 
   Future<void> _onContinuePressed() async {

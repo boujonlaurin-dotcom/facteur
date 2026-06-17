@@ -37,14 +37,14 @@ void main() {
         findsOneWidget);
     expect(find.text('LM un'), findsNothing);
 
-    // 1er tick (800ms) : premier titre (round-robin : LM un).
-    await tester.pump(const Duration(milliseconds: 800));
+    // 1er tick (1000ms) : premier titre (round-robin : LM un).
+    await tester.pump(const Duration(milliseconds: 1000));
     expect(find.text('LM un'), findsOneWidget);
 
     // 2e tick : LB un (entrelacé), 3e tick : LM deux.
-    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 1000));
     expect(find.text('LB un'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 1000));
     expect(find.text('LM deux'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text(OnboardingStrings.conclusionLiveCounter(3, 2)),
@@ -56,7 +56,7 @@ void main() {
     await tester.pumpWidget(buildTestWidget([
       _entry('s1', 'Le Monde', ['LM un']),
     ]));
-    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 1000));
     expect(find.text('LM un'), findsOneWidget);
 
     // L'endpoint répond : s1 enrichi (dédup du titre déjà vu) + s2 ajouté.
@@ -69,8 +69,8 @@ void main() {
     expect(find.text('LM un'), findsOneWidget);
 
     // Les nouveaux arrivent à la suite.
-    await tester.pump(const Duration(milliseconds: 800));
-    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 1000));
+    await tester.pump(const Duration(milliseconds: 1000));
     await tester.pumpAndSettle();
     expect(find.text('LM deux'), findsOneWidget);
     expect(find.text('LB un'), findsOneWidget);

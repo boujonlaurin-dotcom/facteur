@@ -65,6 +65,14 @@ const String _kEssentielBlurb =
 const String _kActusDuJourBlurb = 'Les sujets les + couverts en France.';
 const String _kBonnesBlurb = 'Un peu de douceur...';
 
+/// Plancher de topics pour « Actus du jour » (DigestTopicSection kind=essentiel).
+/// Sans plancher, un digest pauvre (compte neuf / onboarding) n'expose qu'un
+/// seul topic → une carte isolée perçue comme un « Essentiel à 1 article ». On
+/// masque la section sous ce seuil, à l'image du garde 202 de la carte hi-fi.
+/// Bonnes Nouvelles (kind=bonnes) conserve un plancher de 1 (peut légitimement
+/// être courte hors mode serein).
+const int _kActusMinTopics = 2;
+
 /// Hard cap on the number of favorite theme sections rendered in the tournée.
 /// Mirrors `kFavoriteCap = 7` in the my_interests provider — the value is
 /// duplicated here only because the maps key by sectionKey and we slice the
@@ -437,6 +445,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       accent: _kEssentielAccent,
       illustration: _kEssentielIllustration,
       coreVisibleCount: 3,
+      minTopics: _kActusMinTopics,
     );
     _bonnes = _buildDigestSection(
       digest: dual?.serein,
@@ -915,9 +924,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           final kept = topics
               .where((t) => seen.add(pickTopicLead(t).contentId))
               .toList(growable: false);
-          // Post-filtre : une section Actus du jour vidée par le dedup ne doit
-          // pas laisser un bandeau orphelin → on la retire.
-          if (kept.isEmpty) continue;
+          // Post-filtre : le dedup peut faire retomber « Actus du jour » sous
+          // son plancher (kind=essentiel) → on réapplique le seuil pour éviter
+          // un bandeau réduit à une carte isolée. Les autres DigestTopicSection
+          // (Bonnes Nouvelles) ne sont retirées que si totalement vidées.
+          final minKept = s.kind == SectionKind.essentiel ? _kActusMinTopics : 1;
+          if (kept.length < minKept) continue;
           result.add(
             DigestTopicSection(
               kind: s.kind,
@@ -1181,12 +1193,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required Color accent,
     required String illustration,
     required int coreVisibleCount,
+    int minTopics = 1,
   }) {
     final topics = digest?.topics
             .where((t) => t.articles.isNotEmpty)
             .toList(growable: false) ??
         const <DigestTopic>[];
-    if (topics.isEmpty) return null;
+    if (topics.length < minTopics) return null;
     return DigestTopicSection(
       kind: kind,
       label: label,

@@ -526,9 +526,11 @@ class SourceService:
     ) -> SourceResponse | None:
         """Met à jour le has_subscription d'une source.
 
-        La connexion positive exige une config premium explicite côté source,
-        puis crée le lien UserSource si nécessaire. La dissociation reste
-        autorisée même si la config source a été retirée.
+        La connexion positive exige une connexion premium résolue : config
+        explicite, domaine curé, ou fallback générique pour source paywalled.
+        La config curée améliore donc l'expérience sans servir de whitelist
+        bloquante. La dissociation reste autorisée même si la config source a
+        été retirée.
         """
         user_uuid = UUID(user_id)
         source_uuid = UUID(source_id)

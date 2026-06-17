@@ -194,12 +194,15 @@ DigestTopic _digestTopic(String id) => DigestTopic(
       articles: [_digestItem('digest-$id')],
     );
 
+// 2 topics : « Actus du jour » (kind=essentiel) doit franchir le plancher
+// `_kActusMinTopics` du provider, sinon la section est masquée et l'ordre
+// favoris → Actus → Bonnes ne peut pas être vérifié.
 DigestResponse _digest(String id) => DigestResponse(
       digestId: id,
       userId: 'u',
       targetDate: DateTime(2026, 1, 1),
       generatedAt: DateTime(2026, 1, 1),
-      topics: [_digestTopic(id)],
+      topics: [_digestTopic('$id-a'), _digestTopic('$id-b')],
     );
 
 void main() {

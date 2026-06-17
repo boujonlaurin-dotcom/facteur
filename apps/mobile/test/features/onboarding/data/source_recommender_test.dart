@@ -641,10 +641,10 @@ void main() {
     test(
       'garantie : un spécialiste hors-matched est remonté dans specialists',
       () {
-        // 15 sources tech (score 4) saturent matched ; le spécialiste factcheck
+        // 20 sources tech (score 4) saturent matched ; le spécialiste factcheck
         // (score 2) en serait exclu → la garantie de couverture le rapatrie.
         final sources = [
-          for (var i = 0; i < 15; i++)
+          for (var i = 0; i < 20; i++)
             spec('tech-$i', topics: const [], theme: 'tech'),
           spec('fc', topics: const ['factcheck'], reliability: 'unknown'),
         ];
@@ -694,7 +694,7 @@ void main() {
       // Deux sujets « pauvres » non couverts par matched ; deux spécialistes
       // distincts disponibles → une carte chacun.
       final sources = [
-        for (var i = 0; i < 15; i++)
+        for (var i = 0; i < 20; i++)
           spec('tech-$i', topics: const [], theme: 'tech'),
         spec('fc', topics: const ['factcheck'], reliability: 'unknown'),
         spec('rel', topics: const ['relationships'], reliability: 'unknown'),

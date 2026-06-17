@@ -513,14 +513,6 @@ class _SwipeDisambiguatorQuestionState
                 textAlign: TextAlign.center,
               ),
             ),
-            if (_canUndoSwipe) ...[
-              const SizedBox(height: FacteurSpacing.space6),
-              TextButton.icon(
-                onPressed: _undoLastSwipe,
-                icon: const Icon(Icons.undo_rounded, size: 18),
-                label: const Text(OnboardingStrings.swipeUndoLabel),
-              ),
-            ],
           ],
         ),
       ),

@@ -63,6 +63,11 @@ class PremiumConnectionResponse(BaseModel):
     # du CTA ("Associer" vs "Connecter").
     is_generic: bool = False
 
+    @staticmethod
+    def is_explicitly_disabled(config: object) -> bool:
+        """True when a source opts out of the WebView subscription flow."""
+        return isinstance(config, dict) and config.get("enabled") is False
+
     @classmethod
     def from_config(cls, config: object) -> "PremiumConnectionResponse | None":
         if not isinstance(config, dict) or config.get("enabled") is not True:
@@ -98,6 +103,10 @@ class PremiumConnectionResponse(BaseModel):
            URL http(s) valide → fallback générique (login=test=home de la source,
            ``is_generic=True``) ;
         4. sinon ``None``.
+
+        ``premium_connection_config.enabled = false`` est un opt-out explicite :
+        il sert de blocklist pour les sources dont la connexion WebView est
+        connue comme incompatible, et bloque donc aussi la map curée/le fallback.
         """
         # Import local : évite un cycle schemas → services au chargement.
         from app.services.premium_curated_sources import (
@@ -105,7 +114,11 @@ class PremiumConnectionResponse(BaseModel):
             is_paywalled_source,
         )
 
-        explicit = cls.from_config(getattr(source, "premium_connection_config", None))
+        config = getattr(source, "premium_connection_config", None)
+        if cls.is_explicitly_disabled(config):
+            return None
+
+        explicit = cls.from_config(config)
         if explicit is not None:
             return explicit
 

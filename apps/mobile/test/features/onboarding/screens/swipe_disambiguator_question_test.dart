@@ -321,35 +321,6 @@ void main() {
   );
 
   testWidgets(
-    'bouton retour pendant l\'overlay final : annule la fin et restaure la carte',
-    (tester) async {
-      final container = makeContainer([_src('solo', tier: 'mainstream')]);
-      await tester.pumpWidget(buildTestWidget(container));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-
-      expect(find.text(OnboardingStrings.swipeRefiningTitle), findsOneWidget);
-      expect(find.text(OnboardingStrings.swipeUndoLabel), findsOneWidget);
-
-      await tester.tap(find.text(OnboardingStrings.swipeUndoLabel));
-      await tester.pumpAndSettle();
-
-      expect(find.text(OnboardingStrings.swipeRefiningTitle), findsNothing);
-      expect(find.text('Source solo'), findsOneWidget);
-
-      await tester.pump(const Duration(milliseconds: 1500));
-      expect(container.read(onboardingProvider).answers.swipeLiked, isNull);
-      expect(
-        container.read(onboardingProvider).currentQuestionIndex,
-        isNot(Section3Question.sources.index),
-      );
-    },
-  );
-
-  testWidgets(
     'fiche source : CTA like ferme la modal une seule fois et avance la carte',
     (tester) async {
       final sources = [

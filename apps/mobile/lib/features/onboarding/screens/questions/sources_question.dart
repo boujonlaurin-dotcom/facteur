@@ -54,11 +54,11 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   static const int _sectionCount = 4;
 
   /// Cap des suggestions mises en avant (affichées, cochées ou non).
-  static const int _suggestionsLimit = 18;
+  static const int _suggestionsLimit = 20;
 
   /// Parmi les suggestions affichées, seules les `_preselectLimit` premières
   /// (top score) sont pré-cochées ; le reste s'affiche décoché.
-  static const int _preselectLimit = 9;
+  static const int _preselectLimit = 12;
 
   @override
   void initState() {
@@ -379,6 +379,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         subtitleWhenCollapsed: selectedSummary,
         description: OnboardingStrings.sourcesBlockSuggestionsDesc,
         expanded: _openSection == 1,
+        validated: _openSection > 1,
         onToggle: () => setState(() => _openSection = 1),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -412,6 +413,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         subtitleWhenCollapsed: OnboardingStrings.sourcesBlockHabitualSubtitle,
         description: OnboardingStrings.sourcesBlockHabitualDesc,
         expanded: _openSection == 2,
+        validated: _openSection > 2,
         onToggle: () => setState(() => _openSection = 2),
         child: _buildEmbeddedAddPanel(),
       ),
@@ -424,6 +426,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         subtitleWhenCollapsed: OnboardingStrings.sourcesBlockCatalogSubtitle,
         description: OnboardingStrings.sourcesBlockCatalogDesc,
         expanded: _openSection == 3,
+        validated: _openSection > 3,
         onToggle: () => setState(() => _openSection = 3),
         child: SourceCatalogSection(
           catalog: _fullCatalog(reco),
