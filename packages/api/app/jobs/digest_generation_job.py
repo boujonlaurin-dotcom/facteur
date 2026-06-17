@@ -51,6 +51,46 @@ from app.utils.time import today_paris
 logger = structlog.get_logger()
 
 
+def _extract_editorial_actu_ids_from_items(items: Any) -> set[UUID]:
+    """Extract persisted editorial ``actu_article`` ids from DailyDigest.items."""
+    if not isinstance(items, dict):
+        return set()
+
+    subjects = items.get("subjects")
+    if not isinstance(subjects, list):
+        return set()
+
+    content_ids: set[UUID] = set()
+    for subject in subjects:
+        if not isinstance(subject, dict):
+            continue
+        actu = subject.get("actu_article")
+        if not isinstance(actu, dict):
+            continue
+        raw_content_id = actu.get("content_id")
+        if not raw_content_id:
+            continue
+        try:
+            content_ids.add(UUID(str(raw_content_id)))
+        except (TypeError, ValueError):
+            logger.warning(
+                "digest_generation_deep_precompute_bad_content_id",
+                content_id=str(raw_content_id),
+            )
+    return content_ids
+
+
+def _extract_editorial_actu_ids_from_result(
+    result: EditorialPipelineResult,
+) -> set[UUID]:
+    """Extract the article ids the reader will use for Pas de recul lookup."""
+    return {
+        subject.actu_article.content_id
+        for subject in result.subjects
+        if subject.actu_article is not None
+    }
+
+
 async def compute_digest_coverage(
     session: AsyncSession, target_date: datetime.date
 ) -> tuple[int, int, float]:
@@ -630,12 +670,13 @@ class DigestGenerationJob:
         the missing serein variant.
         """
         semaphore = asyncio.Semaphore(self.concurrency_limit)
+        deep_precompute_ids: set[UUID] = set()
 
-        async def process_with_limit(user_id: UUID) -> None:
+        async def process_with_limit(user_id: UUID) -> set[UUID]:
             # Open a fresh session per user so errors don't poison peers
             async with semaphore, safe_async_session() as user_session:
                 try:
-                    await self._generate_digest_for_user(
+                    content_ids = await self._generate_digest_for_user(
                         user_session,
                         user_id,
                         target_date,
@@ -644,6 +685,7 @@ class DigestGenerationJob:
                         editorial_ctx_serein,
                     )
                     await user_session.commit()
+                    return content_ids
                 except Exception as e:
                     # Per-user failure is contained here; log and move on
                     await user_session.rollback()
@@ -673,10 +715,14 @@ class DigestGenerationJob:
                             "digest_generation_state_record_failed",
                             user_id=str(user_id),
                         )
+                    return set()
 
         # Premier passage
         tasks = [process_with_limit(uid) for uid in user_ids]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        first_pass_results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in first_pass_results:
+            if isinstance(result, set):
+                deep_precompute_ids.update(result)
 
         async def _missing_pairs() -> list[tuple[UUID, bool]]:
             """Return (user_id, is_serene) pairs missing from daily_digest."""
@@ -710,7 +756,10 @@ class DigestGenerationJob:
             await asyncio.sleep(backoff_seconds)
 
             retry_tasks = [process_with_limit(uid) for uid in missing_user_ids]
-            await asyncio.gather(*retry_tasks, return_exceptions=True)
+            retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
+            for result in retry_results:
+                if isinstance(result, set):
+                    deep_precompute_ids.update(result)
 
         # Final audit log
         final_missing = await _missing_pairs()
@@ -724,6 +773,42 @@ class DigestGenerationJob:
                 ],
             )
 
+        await self._precompute_deep_recommendations_for_digest_ids(deep_precompute_ids)
+
+    async def _precompute_deep_recommendations_for_digest_ids(
+        self,
+        content_ids: set[UUID],
+    ) -> None:
+        """Backfill Pas de recul rows for articles actually served in digests."""
+        if not content_ids:
+            return
+
+        try:
+            from app.services.editorial.pipeline import EditorialPipelineService
+
+            async with safe_async_session() as session:
+                pipeline = EditorialPipelineService(
+                    session,
+                    session_maker=safe_async_session,
+                )
+                try:
+                    await pipeline.precompute_deep_recommendations_for_content_ids(
+                        content_ids,
+                        refresh_existing=False,
+                    )
+                finally:
+                    await pipeline.close()
+            logger.info(
+                "digest_generation_deep_precompute_batch_done",
+                total=len(content_ids),
+            )
+        except Exception as exc:
+            logger.exception(
+                "digest_generation_deep_precompute_batch_failed",
+                total=len(content_ids),
+                error=str(exc),
+            )
+
     async def _generate_digest_for_user(
         self,
         session: AsyncSession,
@@ -732,7 +817,7 @@ class DigestGenerationJob:
         global_trending_context: GlobalTrendingContext | None = None,
         editorial_ctx_pour_vous=None,
         editorial_ctx_serein=None,
-    ) -> None:
+    ) -> set[UUID]:
         """Génère les deux digests (normal + serein) pour un utilisateur.
 
         Args:
@@ -744,6 +829,7 @@ class DigestGenerationJob:
             editorial_ctx_serein: Contexte éditorial pré-calculé (mode serein)
         """
         self.stats["processed"] += 1
+        deep_precompute_ids: set[UUID] = set()
 
         try:
             # Load user profile to get per-user daily article count
@@ -811,6 +897,9 @@ class DigestGenerationJob:
                             is_serene=is_serene,
                         )
                         self.stats["skipped"] += 1
+                        deep_precompute_ids.update(
+                            _extract_editorial_actu_ids_from_items(existing.items)
+                        )
                         await state_mark_success(
                             session, user_id, target_date, is_serene
                         )
@@ -862,6 +951,9 @@ class DigestGenerationJob:
                             is_serene=is_serene,
                         )
                         if digest:
+                            deep_precompute_ids.update(
+                                _extract_editorial_actu_ids_from_result(digest_items)
+                            )
                             # Delete stale (non-editorial) digest now that
                             # the new editorial_v1 is safely created.
                             if stale_digest:
@@ -963,6 +1055,8 @@ class DigestGenerationJob:
             # Re-raise so the caller in _process_batch can record the
             # failure in a fresh session after rolling this one back.
             raise
+
+        return deep_precompute_ids
 
 
 # Fonction principale pour l'export
