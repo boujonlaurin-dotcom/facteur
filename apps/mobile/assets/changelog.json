@@ -1,6 +1,8 @@
 {
   "unreleased": [
     {
+      "tag": "Pas de recul",
+      "summary": "L'analyse de fond « Pas de recul » s'affiche désormais instantanément à l'ouverture d'un article, sans attente."
       "tag": "Onboarding",
       "summary": "Choix de tes médias repensé : sections claires qui s'ouvrent une à une, et un ton plus direct dans tout le questionnaire."
     },
