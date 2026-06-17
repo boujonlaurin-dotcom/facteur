@@ -24,14 +24,18 @@ def test_source_service_has_logger():
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import get_db
+from app.dependencies import get_current_user_id
+from app.main import app
 from app.models.enums import InterestState, SourceType
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile
 from app.models.user_favorites import UserFavoriteSource
-from app.schemas.source import SourceDetectResponse
+from app.schemas.source import SourceDetectResponse, SourceResponse
 from app.services.source_service import SourceService
 
 
@@ -105,6 +109,127 @@ async def test_add_custom_source_idempotent(db_session: AsyncSession, fake_detec
     )
     rows = result.scalars().all()
     assert len(rows) == 1
+
+
+async def _fake_user():
+    return str(uuid4())
+
+
+class _DummyDB:
+    async def commit(self):
+        return None
+
+
+async def _fake_db():
+    yield _DummyDB()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"url": "http://127.0.0.1/feed"},
+        {"url": "localhost.localdomain"},
+    ],
+)
+async def test_detect_route_rejects_private_internal_url(payload):
+    app.dependency_overrides[get_current_user_id] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            with patch(
+                "app.routers.sources._log_failed_source_attempt",
+                new_callable=AsyncMock,
+            ):
+                resp = await ac.post("/api/sources/detect", json=payload)
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_custom_route_rejects_private_internal_url():
+    app.dependency_overrides[get_current_user_id] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            with patch(
+                "app.routers.sources._log_failed_source_attempt",
+                new_callable=AsyncMock,
+            ):
+                resp = await ac.post(
+                    "/api/sources/custom", json={"url": "http://127.0.0.1/feed"}
+                )
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["https://www.example.com/feed", "vert.eco"])
+async def test_detect_route_public_url_success_mocked(url, fake_detection):
+    app.dependency_overrides[get_current_user_id] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            with patch.object(
+                SourceService,
+                "detect_source",
+                new_callable=AsyncMock,
+                return_value=fake_detection,
+            ):
+                resp = await ac.post("/api/sources/detect", json={"url": url})
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    assert resp.status_code == 200
+    assert resp.json()["feed_url"] == fake_detection.feed_url
+
+
+@pytest.mark.asyncio
+async def test_custom_route_public_url_success_mocked():
+    response = SourceResponse(
+        id=uuid4(),
+        name="Vert",
+        url="https://vert.eco",
+        type=SourceType.ARTICLE,
+        theme="environment",
+        description=None,
+        logo_url=None,
+        is_curated=False,
+        is_custom=True,
+        is_trusted=True,
+        content_count=0,
+    )
+
+    app.dependency_overrides[get_current_user_id] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            with patch.object(
+                SourceService,
+                "add_custom_source",
+                new_callable=AsyncMock,
+                return_value=response,
+            ):
+                resp = await ac.post(
+                    "/api/sources/custom", json={"url": "https://vert.eco"}
+                )
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    assert resp.status_code == 200
+    assert resp.json()["url"] == "https://vert.eco"
 
 
 @pytest.mark.asyncio
