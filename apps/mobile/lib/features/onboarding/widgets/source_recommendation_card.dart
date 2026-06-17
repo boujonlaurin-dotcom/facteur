@@ -5,6 +5,7 @@ import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../sources/models/source_model.dart';
 import '../data/source_recommender.dart';
+import 'source_reco_tag.dart';
 
 /// Card widget for a recommended source in the onboarding sources screen.
 ///
@@ -139,7 +140,7 @@ class SourceRecommendationCard extends StatelessWidget {
                           _buildTypeChip(context, source),
                         if (showReason)
                           ...recommendation.tags
-                              .map((tag) => _buildTag(context, tag)),
+                              .map((tag) => SourceRecoTag(tag: tag)),
                       ],
                     ),
                   ],
@@ -273,45 +274,4 @@ class SourceRecommendationCard extends StatelessWidget {
     );
   }
 
-  /// Builds a small chip for a recommendation tag.
-  Widget _buildTag(BuildContext context, RecommendationTag tag) {
-    final colors = context.facteurColors;
-
-    final prefix = switch (tag.type) {
-      RecommendationTagType.topic => '',
-      RecommendationTagType.specialist => '\u{1F3AF} ', // \ud83c\udfaf
-      RecommendationTagType.antiBruit => '\u{1F507} ',
-      RecommendationTagType.fiable => '\u2713 ',
-      RecommendationTagType.serein => '\u2600 ',
-      RecommendationTagType.similar => '\u2248 ', // \u2248
-    };
-
-    // Les chips \u00ab pourquoi \u00bb (sp\u00e9cialiste / similaire / fiable / anti-bruit)
-    // ressortent en teinte primary ; les tags purement th\u00e9matiques restent neutres.
-    final highlighted = switch (tag.type) {
-      RecommendationTagType.specialist ||
-      RecommendationTagType.similar ||
-      RecommendationTagType.fiable ||
-      RecommendationTagType.antiBruit => true,
-      _ => false,
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: highlighted
-            ? colors.primary.withOpacity(0.08)
-            : colors.textPrimary.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(FacteurRadius.pill),
-      ),
-      child: Text(
-        '$prefix${tag.label}',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: highlighted ? colors.primary : colors.textSecondary,
-          fontSize: 11,
-          fontWeight: highlighted ? FontWeight.w600 : null,
-        ),
-      ),
-    );
-  }
 }

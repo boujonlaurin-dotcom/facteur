@@ -18,8 +18,8 @@ import '../../providers/onboarding_provider.dart';
 import '../../widgets/add_subscription_card.dart';
 import '../../widgets/onboarding_toggle_section.dart';
 import '../../widgets/premium_sources_sheet.dart';
+import '../../widgets/source_carousel.dart';
 import '../../widgets/source_catalog_section.dart';
-import '../../widgets/source_recommendation_card.dart';
 
 /// Q10 : page sources « sur mesure », 4 blocs numérotés (①②③④).
 ///
@@ -40,6 +40,11 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   bool _hasAppliedPreselection = false;
   SourceRecommendation? _recommendation;
   List<RecommendedSource>? _suggestions;
+
+  /// Sources likées au swipe, résolues en [Source] : récapitulées en tête de la
+  /// section 1 (puces discrètes « Déjà ajoutés »), exclues des suggestions et
+  /// pré-cochées.
+  List<Source> _alreadyAdded = const [];
 
   /// Accordéon piloté : index de la section ouverte (1→4). Une seule à la fois ;
   /// le bouton « Suivant » ouvre la suivante, et sur la dernière il valide.
@@ -96,6 +101,12 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       hasThemes: themes.isNotEmpty,
       excludedIds: swipeLiked.toSet(),
     );
+    // Récap « Déjà ajoutés » : sources likées au swipe, dans l'ordre du like.
+    final byId = {for (final s in allSources) s.id: s};
+    _alreadyAdded = [
+      for (final id in swipeLiked)
+        if (byId[id] != null) byId[id]!,
+    ];
     _preloadSuggestionProfiles(_suggestions!);
 
     // Pré-sélection : top `_preselectLimit` des suggestions (déjà triées) +
@@ -369,18 +380,28 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         description: OnboardingStrings.sourcesBlockSuggestionsDesc,
         expanded: _openSection == 1,
         onToggle: () => setState(() => _openSection = 1),
-        child: suggestions.isEmpty
-            ? Text(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_alreadyAdded.isNotEmpty)
+              _AlreadyAddedSources(sources: _alreadyAdded),
+            if (suggestions.isEmpty)
+              Text(
                 OnboardingStrings.q9EmptyList,
                 style: Theme.of(context)
                     .textTheme
                     .bodyMedium
                     ?.copyWith(color: colors.textSecondary),
               )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: suggestions.map(_buildSuggestionCard).toList(),
+            else
+              SourceCarousel(
+                sources: suggestions,
+                selectedIds: _selectedSourceIds,
+                onToggle: _toggleSource,
+                onInfoTap: _showSourceDetail,
               ),
+          ],
+        ),
       ),
       const SizedBox(height: FacteurSpacing.space4),
 
@@ -429,18 +450,6 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
 
   // ── Briques partagées ────────────────────────────────────────────────────
 
-  Widget _buildSuggestionCard(RecommendedSource r) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
-      child: SourceRecommendationCard(
-        recommendation: r,
-        isSelected: _selectedSourceIds.contains(r.source.id),
-        onToggle: () => _toggleSource(r.source.id),
-        onInfoTap: () => _showSourceDetail(r.source),
-      ),
-    );
-  }
-
   Widget _buildEmbeddedAddPanel() {
     return SourceAddPanel(
       padding: EdgeInsets.zero,
@@ -456,6 +465,9 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   }
 }
 
+/// Récap discret des sources déjà ajoutées (likées au swipe), en tête de la
+/// section « Tes suggestions » : libellé léger + puces fines (logo ~18px + nom,
+/// fond très subtil). Ces sources sont déjà cochées et hors des suggestions.
 class _AlreadyAddedSources extends StatelessWidget {
   final List<Source> sources;
 
@@ -465,44 +477,40 @@ class _AlreadyAddedSources extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     return Padding(
-      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Déjà ajoutées',
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: colors.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
+            'Déjà ajoutés',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.textTertiary,
+                ),
           ),
-          const SizedBox(height: FacteurSpacing.space2),
+          const SizedBox(height: 6),
           Wrap(
-            spacing: FacteurSpacing.space2,
-            runSpacing: FacteurSpacing.space2,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               for (final source in sources)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
+                    horizontal: 8,
+                    vertical: 5,
                   ),
                   decoration: BoxDecoration(
-                    color: colors.primary.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
-                    border: Border.all(color: colors.primary.withOpacity(0.18)),
+                    color: colors.textPrimary.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(FacteurRadius.pill),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      SourceLogoAvatar(source: source, size: 22, radius: 6),
-                      const SizedBox(width: 7),
+                      SourceLogoAvatar(source: source, size: 18, radius: 5),
+                      const SizedBox(width: 6),
                       Text(
                         source.name,
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              color: colors.textPrimary,
-                              fontWeight: FontWeight.w600,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.textSecondary,
                             ),
                       ),
                     ],
