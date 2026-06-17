@@ -4,7 +4,7 @@ import '../../../config/theme.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/widgets/theme_filter_chips.dart';
 import '../data/source_recommender.dart';
-import '../widgets/source_recommendation_card.dart';
+import '../widgets/source_carousel.dart';
 
 /// Catalogue des médias à parcourir, filtrable par thème via des chips
 /// horizontales — reprend le pattern de la feature « Catalogue de sources » de
@@ -65,17 +65,15 @@ class _SourceCatalogSectionState extends State<SourceCatalogSection> {
             ),
           )
         else
-          ...filtered.map(
-            (r) => Padding(
-              padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
-              child: SourceRecommendationCard(
-                recommendation: r,
-                isSelected: widget.selectedIds.contains(r.source.id),
-                onToggle: () => widget.onToggle(r.source.id),
-                onInfoTap: () => widget.onInfoTap(r.source),
-                showReason: false,
-              ),
-            ),
+          SourceCarousel(
+            // Recrée le carrousel (et son PageController) au changement de
+            // filtre pour repartir de la 1ère carte du thème.
+            key: ValueKey(_selectedTheme),
+            sources: filtered,
+            selectedIds: widget.selectedIds,
+            onToggle: widget.onToggle,
+            onInfoTap: widget.onInfoTap,
+            showReason: false,
           ),
       ],
     );
