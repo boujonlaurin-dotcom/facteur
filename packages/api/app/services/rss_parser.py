@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.utils.url_safety import validate_url_for_fetch
 
 logger = structlog.get_logger()
 
@@ -99,7 +100,7 @@ class RSSParser:
     def __init__(self):
         self.client = httpx.AsyncClient(
             timeout=7.0,
-            follow_redirects=True,
+            follow_redirects=False,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                 "Accept-Language": "en-US,en;q=0.9",
@@ -111,6 +112,31 @@ class RSSParser:
         await self.client.aclose()
 
     # ─── Helpers ──────────────────────────────────────────────────
+
+    async def _safe_get(
+        self,
+        url: str,
+        *,
+        max_redirects: int = 5,
+        **kwargs,
+    ) -> httpx.Response:
+        """GET a URL after SSRF validation, validating every redirect target."""
+        current_url = validate_url_for_fetch(url)
+        for _ in range(max_redirects + 1):
+            response = await self.client.get(
+                current_url,
+                follow_redirects=False,
+                **kwargs,
+            )
+            if response.status_code not in {301, 302, 303, 307, 308}:
+                return response
+
+            location = response.headers.get("location")
+            if not location:
+                return response
+            current_url = validate_url_for_fetch(urljoin(current_url, location))
+
+        raise ValueError("Too many redirects while fetching URL")
 
     @staticmethod
     def _is_feed_content_type(response: httpx.Response) -> bool:
@@ -143,21 +169,35 @@ class RSSParser:
 
         try:
             async with AsyncSession(impersonate="chrome", timeout=10) as s:
-                resp = await s.get(
-                    url,
-                    headers={
-                        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    },
-                )
-                if resp.status_code == 200:
-                    logger.info("curl-cffi fallback succeeded", url=url)
-                    return resp.text
-                logger.warning(
-                    "curl-cffi fallback returned non-200",
-                    url=url,
-                    status=resp.status_code,
-                )
+                current_url = validate_url_for_fetch(url)
+                for _ in range(6):
+                    resp = await s.get(
+                        current_url,
+                        allow_redirects=False,
+                        headers={
+                            "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        },
+                    )
+                    if resp.status_code in {301, 302, 303, 307, 308}:
+                        location = resp.headers.get("location")
+                        if not location:
+                            break
+                        current_url = validate_url_for_fetch(
+                            urljoin(current_url, location)
+                        )
+                        continue
+                    if resp.status_code == 200:
+                        logger.info("curl-cffi fallback succeeded", url=current_url)
+                        return resp.text
+                    logger.warning(
+                        "curl-cffi fallback returned non-200",
+                        url=current_url,
+                        status=resp.status_code,
+                    )
+                    break
+        except ValueError:
+            raise
         except Exception as e:
             logger.warning("curl-cffi fetch failed", url=url, error=str(e))
         return None
@@ -208,7 +248,7 @@ class RSSParser:
         loop = asyncio.get_event_loop()
 
         try:
-            response = await self.client.get(url)
+            response = await self._safe_get(url)
             response.raise_for_status()
             content = response.text
         except Exception as e:
@@ -266,7 +306,7 @@ class RSSParser:
         try:
             if handle:
                 # forHandle works for @handle URLs
-                resp = await self.client.get(
+                resp = await self._safe_get(
                     "https://www.googleapis.com/youtube/v3/channels",
                     params={"forHandle": handle, "part": "id", "key": api_key},
                 )
@@ -284,7 +324,7 @@ class RSSParser:
 
             if custom_name:
                 # Search for custom URL name
-                resp = await self.client.get(
+                resp = await self._safe_get(
                     "https://www.googleapis.com/youtube/v3/search",
                     params={
                         "q": custom_name,
@@ -314,7 +354,7 @@ class RSSParser:
     async def _channel_id_from_video_page(self, url: str) -> str | None:
         """Extract channel_id from a YouTube video watch page HTML."""
         try:
-            resp = await self.client.get(url)
+            resp = await self._safe_get(url)
             if resp.status_code == 200:
                 match = re.search(r'"channelId":"(UC[\w-]+)"', resp.text)
                 if match:
@@ -330,7 +370,7 @@ class RSSParser:
     async def _channel_id_from_html(self, url: str) -> str | None:
         """Fallback: try to extract channelId from page HTML via regex."""
         try:
-            resp = await self.client.get(url)
+            resp = await self._safe_get(url)
             if resp.status_code == 200:
                 match = re.search(r'"channelId":"(UC[\w-]+)"', resp.text)
                 if match:
@@ -398,7 +438,7 @@ class RSSParser:
         for index_url in to_try:
             html: str | None = None
             try:
-                resp = await self.client.get(index_url)
+                resp = await self._safe_get(index_url)
             except Exception as e:
                 logger.debug(
                     "Feed index page fetch failed",
@@ -484,7 +524,7 @@ class RSSParser:
         for candidate in candidates[:10]:
             feed_text: str | None = None
             try:
-                resp = await self.client.get(candidate)
+                resp = await self._safe_get(candidate)
             except Exception:
                 resp = None
 
@@ -530,6 +570,7 @@ class RSSParser:
         5. Expanded suffix fallback with Content-Type validation.
         """
         logger.info("Detecting feed", url=url)
+        validate_url_for_fetch(url)
         loop = asyncio.get_event_loop()
         detection_log: list[str] = []
 
@@ -539,7 +580,7 @@ class RSSParser:
             logger.info("Domain override matched", url=url, feed_url=override_feed)
             detection_log.append(f"override={override_feed}")
             try:
-                resp = await self.client.get(override_feed)
+                resp = await self._safe_get(override_feed)
                 if resp.status_code == 200:
                     feed_data = await loop.run_in_executor(
                         None, feedparser.parse, resp.text
@@ -566,7 +607,7 @@ class RSSParser:
             )
             detection_log.append(f"platform_transform={transformed_url}")
             try:
-                resp = await self.client.get(transformed_url)
+                resp = await self._safe_get(transformed_url)
                 if resp.status_code == 200:
                     feed_data = await loop.run_in_executor(
                         None, feedparser.parse, resp.text
@@ -591,7 +632,7 @@ class RSSParser:
             rss_url = f"https://www.reddit.com/r/{subreddit}/.rss"
             logger.info("Reddit URL detected", subreddit=subreddit, rss_url=rss_url)
             try:
-                feed_resp = await self.client.get(rss_url)
+                feed_resp = await self._safe_get(rss_url)
                 feed_resp.raise_for_status()
                 reddit_feed = await loop.run_in_executor(
                     None, feedparser.parse, feed_resp.text
@@ -618,7 +659,7 @@ class RSSParser:
         if "youtube.com/feeds/videos.xml" in url:
             logger.info("YouTube feed URL detected, parsing directly", url=url)
             try:
-                feed_resp = await self.client.get(url)
+                feed_resp = await self._safe_get(url)
                 feed_resp.raise_for_status()
                 yt_feed = await loop.run_in_executor(
                     None, feedparser.parse, feed_resp.text
@@ -648,7 +689,7 @@ class RSSParser:
                     rss_url=rss_url,
                 )
                 try:
-                    feed_resp = await self.client.get(rss_url)
+                    feed_resp = await self._safe_get(rss_url)
                     feed_resp.raise_for_status()
                     yt_feed = await loop.run_in_executor(
                         None, feedparser.parse, feed_resp.text
@@ -668,7 +709,7 @@ class RSSParser:
         # ── Stage 1: Fetch URL (httpx → curl-cffi fallback) ────────
         content = None
         try:
-            response = await self.client.get(url)
+            response = await self._safe_get(url)
             logger.info("Fetched URL", url=url, status_code=response.status_code)
 
             if self._is_antibot_response(response.status_code, response.text):
@@ -744,7 +785,7 @@ class RSSParser:
             detection_log.append(f"link_alternate={found_url}")
             if found_url != url:
                 try:
-                    feed_resp = await self.client.get(found_url)
+                    feed_resp = await self._safe_get(found_url)
                     feed_resp.raise_for_status()
                     found_feed_data = await loop.run_in_executor(
                         None, feedparser.parse, feed_resp.text
@@ -787,7 +828,7 @@ class RSSParser:
             detection_log.append(f"a_tag_scan={len(candidate_urls)}_candidates")
             for candidate in candidate_urls[:5]:
                 try:
-                    cand_resp = await self.client.get(candidate)
+                    cand_resp = await self._safe_get(candidate)
                     if cand_resp.status_code != 200:
                         continue
                     if self._is_feed_content_type(cand_resp):
@@ -844,7 +885,7 @@ class RSSParser:
             try_url = url.rstrip("/") + suffix
             async with suffix_sem:
                 try:
-                    resp = await self.client.get(try_url)
+                    resp = await self._safe_get(try_url)
                 except Exception:
                     return None
                 suffix_tried["n"] += 1
