@@ -100,11 +100,17 @@ workflows:
           # fetched into Codemagic). This step applies it to the Xcode project.
           xcode-project use-profiles
 
+      - name: Generate store build number
+        script: |
+          set -euo pipefail
+          echo "STORE_BUILD_NUMBER=$(date +%s)" >> "$CM_ENV"
+
       - name: Build signed iOS IPA
         script: |
           set -euo pipefail
           cd "$APP_DIR"
           flutter build ipa --release \
+            --build-number="$STORE_BUILD_NUMBER" \
             --export-options-plist="$HOME/export_options.plist" \
             --dart-define="API_BASE_URL=${API_BASE_URL:-https://facteur-production.up.railway.app/api}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL:-}" \
@@ -192,11 +198,17 @@ workflows:
           storeFile=$CM_KEYSTORE_PATH
           EOF
 
+      - name: Generate store build number
+        script: |
+          set -euo pipefail
+          echo "STORE_BUILD_NUMBER=$(date +%s)" >> "$CM_ENV"
+
       - name: Build signed AAB (flavor playstore = production)
         script: |
           set -euo pipefail
           cd "$APP_DIR"
           flutter build appbundle --release --flavor playstore \
+            --build-number="$STORE_BUILD_NUMBER" \
             --dart-define="API_BASE_URL=${API_BASE_URL:-https://facteur-production.up.railway.app/api}" \
             --dart-define="SUPABASE_URL=${SUPABASE_URL:-}" \
             --dart-define="SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}" \

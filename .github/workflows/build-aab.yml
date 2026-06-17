@@ -52,10 +52,15 @@ jobs:
           cd apps/mobile
           flutter pub run flutter_launcher_icons || true
 
+      - name: Generate store build number
+        id: store_build
+        run: echo "build_number=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Build AAB (playstore flavor)
         run: |
           cd apps/mobile
           flutter build appbundle --release --flavor playstore \
+            --build-number=${{ steps.store_build.outputs.build_number }} \
             --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || 'https://facteur-production.up.railway.app/api' }}" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
             --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
