@@ -1,4 +1,7 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Présent pour matérialiser le flavor Gradle. Aucune permission
-         supplémentaire au-delà de src/main/AndroidManifest.xml. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Flavor Play Store : retire REQUEST_INSTALL_PACKAGES, injectee par open_filex (auto-update APK side-load). Bannie du Play Store, inutile ici car les MAJ passent par le Store. -->
+    <uses-permission
+        android:name="android.permission.REQUEST_INSTALL_PACKAGES"
+        tools:node="remove" />
 </manifest>
