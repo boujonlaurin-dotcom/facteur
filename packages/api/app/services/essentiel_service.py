@@ -34,10 +34,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import exists, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models.enums import ContentType, InterestState, SourceType
+from app.models.content import Content, UserContentStatus
+from app.models.enums import ContentStatus, ContentType, InterestState, SourceType
+from app.models.source import Source
+from app.schemas.content import SourceMini
 from app.schemas.digest import DigestResponse, DigestTopic, DigestTopicArticle
 from app.schemas.essentiel import EssentielArticle, EssentielKind, EssentielResponse
 from app.services.language_user_filter import (
@@ -56,6 +60,15 @@ logger = logging.getLogger(__name__)
 
 ESSENTIEL_MAX_ARTICLES = 5
 ESSENTIEL_MAX_PER_SOURCE = 2  # Diversité dure : max 2 articles d'une même source.
+
+# Plancher de qualité : en-dessous de ce nombre d'articles issus du digest, on
+# complète depuis les sources suivies/favorites de l'utilisateur ; si le total
+# reste < ESSENTIEL_MIN_ARTICLES, le router renvoie 202 ``preparing`` plutôt
+# qu'une carte pauvre (1-2 articles).
+ESSENTIEL_MIN_ARTICLES = 3
+# Taille du pool de candidats frais piochés dans les sources suivies pour la
+# complétion — borne le SELECT, on ne garde au plus que les slots manquants.
+ESSENTIEL_SUPPLEMENT_CANDIDATE_CAP = 30
 
 # Fenêtre de fraîcheur commune aux deux tiers de sélection. Les sources
 # suivies sont prioritaires, puis le pool éditorial global frais complète.
@@ -682,3 +695,177 @@ def build_essentiel_response(
         articles=articles,
         is_stale_fallback=digest.is_stale_fallback,
     )
+
+
+def _content_to_essentiel_article(
+    content: Content,
+    rank: int,
+    ctx: EssentielUserContext,
+) -> EssentielArticle:
+    """Projette un `Content` brut (complément sources suivies) en EssentielArticle.
+
+    Utilisé par le fallback de complétion quand le digest produit < 3 articles.
+    L'article vient forcément d'une source suivie/favorite → `is_followed_source`
+    est toujours vrai ; pas de topic transversal d'origine, on retombe sur le nom
+    de la source comme libellé de section et `perspective_count=0`.
+    """
+    source = SourceMini.model_validate(content.source)
+    return EssentielArticle(
+        content_id=content.id,
+        title=content.title,
+        url=content.url,
+        thumbnail_url=content.thumbnail_url,
+        published_at=content.published_at,
+        source=source,
+        source_letter=_source_letter(content.source.name),
+        kind=EssentielKind.THEME,
+        theme=content.theme,
+        section_label=content.source.name,
+        perspective_count=0,
+        rank=rank,
+        is_followed_source=True,
+        is_followed_topic=bool(content.theme and content.theme in ctx.topic_weights),
+        is_actu_du_jour=False,
+        language=content.language,
+    )
+
+
+async def _fetch_followed_source_supplements(
+    db: AsyncSession,
+    user_id: UUID,
+    ctx: EssentielUserContext,
+    *,
+    is_serene: bool,
+    existing: list[EssentielArticle],
+    limit: int,
+    now: datetime | None = None,
+) -> list[EssentielArticle]:
+    """Complète l'Essentiel avec des articles frais des sources suivies/favorites.
+
+    Déclenché quand le digest produit moins de `ESSENTIEL_MIN_ARTICLES`. Pour
+    borner la surface éditoriale, on ne pioche que dans les sources explicitement
+    suivies/favorites (`followed_source_ids`), fenêtre de fraîcheur commune
+    (`ESSENTIEL_TOURNEE_WINDOW`), en excluant :
+    - contenus lus (`status == CONSUMED`) ou masqués (`is_hidden`),
+    - sources mutées et sujets mutés (`muted_topic_slugs`),
+    - doublons de contenu/source (cap 2/source)/sujet déjà présents,
+    - en mode serein, tout `Content.is_serene != True`,
+    - podcasts/vidéos/Reddit/bulletins (mêmes critères que le digest).
+    """
+    if limit <= 0:
+        return []
+    candidate_source_ids = list(ctx.followed_source_ids - ctx.muted_source_ids)
+    if not candidate_source_ids:
+        return []
+
+    cutoff = (now or datetime.now(UTC)) - ESSENTIEL_TOURNEE_WINDOW
+    already_read_or_hidden = exists().where(
+        UserContentStatus.content_id == Content.id,
+        UserContentStatus.user_id == user_id,
+        or_(
+            UserContentStatus.is_hidden,
+            UserContentStatus.status == ContentStatus.CONSUMED,
+        ),
+    )
+
+    query = (
+        select(Content)
+        .join(Content.source)
+        .options(selectinload(Content.source))
+        .where(Content.source_id.in_(candidate_source_ids))
+        .where(Content.published_at >= cutoff)
+        .where(Content.content_type == ContentType.ARTICLE)
+        .where(~already_read_or_hidden)
+        .where(Source.is_active.is_(True))
+        .order_by(Content.published_at.desc())
+        .limit(ESSENTIEL_SUPPLEMENT_CANDIDATE_CAP)
+    )
+    if is_serene:
+        query = query.where(Content.is_serene.is_(True))
+
+    candidates = (await db.execute(query)).scalars().all()
+    if not candidates:
+        return []
+
+    # Dédup contre les articles déjà retenus (digest) : content_id, cap source,
+    # similarité de titre — mêmes garde-fous que `_pick_transversal_articles`.
+    seen_content_ids = {a.content_id for a in existing}
+    source_count: dict[UUID, int] = {}
+    for article in existing:
+        source_count[article.source.id] = source_count.get(article.source.id, 0) + 1
+    picked_title_tokens = [normalize_title(a.title) for a in existing if a.title]
+
+    supplements: list[EssentielArticle] = []
+    rank = len(existing) + 1
+    for content in candidates:
+        if len(supplements) >= limit:
+            break
+        if content.id in seen_content_ids:
+            continue
+        source = content.source
+        if (source.type or "").lower() in _EXCLUDED_SOURCE_TYPES:
+            continue
+        if is_news_bulletin_title(content.title):
+            continue
+        if ctx.muted_topic_slugs and ctx.muted_topic_slugs.intersection(
+            content.topics or ()
+        ):
+            continue
+        if source_count.get(source.id, 0) >= ESSENTIEL_MAX_PER_SOURCE:
+            continue
+        tokens = normalize_title(content.title)
+        if tokens and any(
+            jaccard_similarity(tokens, prev) >= ScoringWeights.TOPIC_CLUSTER_THRESHOLD
+            for prev in picked_title_tokens
+            if prev
+        ):
+            continue
+        supplements.append(_content_to_essentiel_article(content, rank, ctx))
+        seen_content_ids.add(content.id)
+        source_count[source.id] = source_count.get(source.id, 0) + 1
+        picked_title_tokens.append(tokens)
+        rank += 1
+
+    return supplements
+
+
+async def build_essentiel_response_with_supplements(
+    db: AsyncSession,
+    user_id: UUID,
+    digest: DigestResponse,
+    *,
+    user_context: EssentielUserContext,
+    is_serene: bool,
+    now: datetime | None = None,
+) -> EssentielResponse:
+    """Construit l'Essentiel depuis le digest, puis complète si < 3 articles.
+
+    1. Projection digest → jusqu'à 5 articles transversaux (logique historique).
+    2. Si le résultat est < `ESSENTIEL_MIN_ARTICLES`, complète jusqu'à
+       `ESSENTIEL_MAX_ARTICLES` avec des articles frais des sources suivies.
+    3. Le router décide ensuite du 202 ``preparing`` si le total reste < 3.
+    """
+    response = build_essentiel_response(digest, user_context=user_context, now=now)
+    if len(response.articles) >= ESSENTIEL_MIN_ARTICLES:
+        return response
+
+    supplements = await _fetch_followed_source_supplements(
+        db,
+        user_id,
+        user_context,
+        is_serene=is_serene,
+        existing=response.articles,
+        limit=ESSENTIEL_MAX_ARTICLES - len(response.articles),
+        now=now,
+    )
+    if not supplements:
+        return response
+
+    merged = list(response.articles) + supplements
+    logger.info(
+        "essentiel_supplemented digest_count=%d supplements=%d final_count=%d",
+        len(response.articles),
+        len(supplements),
+        len(merged),
+    )
+    return response.model_copy(update={"articles": merged})

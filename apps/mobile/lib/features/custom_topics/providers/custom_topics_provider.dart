@@ -94,7 +94,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followTopic(name, priorityMultiplier: priorityMultiplier);
+      final created = await repo.followTopic(name,
+          slugParent: slugParent, priorityMultiplier: priorityMultiplier);
 
       // Replace placeholder with server-enriched profile
       if (state.hasValue) {
@@ -241,7 +242,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followEntity(name, entityType);
+      final created =
+          await repo.followEntity(name, entityType, slugParent: slugParent);
       if (state.hasValue) {
         final updated = state.value!
             .map((t) => t.id == placeholder.id ? created : t)

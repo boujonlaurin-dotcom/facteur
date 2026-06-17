@@ -874,6 +874,7 @@ void main() {
         );
       },
     );
+
   });
 
   group('FluxContinuNotifier — dedup inter-sections', () {
@@ -1420,14 +1421,38 @@ void main() {
   });
 }
 
-/// Stub EssentielRepository returning exactly one [EssentielArticle] so the
-/// hi-fi section is built during the coexistence test.
+/// Stub EssentielRepository centré sur un [EssentielArticle] précis (dont les
+/// tests de coexistence/dédup vérifient la présence), complété par 2 articles de
+/// remplissage pour atteindre le plancher d'affichage de la carte hi-fi
+/// (`_kEssentielMinArticles` = 3). Le primary reste en tête (rank 1).
 class _OneArticleEssentielRepository implements EssentielRepository {
   _OneArticleEssentielRepository(this._article);
   final EssentielArticle _article;
 
   @override
-  Future<List<EssentielArticle>?> fetch() async => [_article];
+  Future<List<EssentielArticle>?> fetch() async => [
+        _article,
+        EssentielArticle(
+          contentId: '${_article.contentId}-filler-1',
+          title: 'Filler 1',
+          url: 'https://x.test/${_article.contentId}-filler-1',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 2,
+        ),
+        EssentielArticle(
+          contentId: '${_article.contentId}-filler-2',
+          title: 'Filler 2',
+          url: 'https://x.test/${_article.contentId}-filler-2',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 3,
+        ),
+      ];
 }
 
 /// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.

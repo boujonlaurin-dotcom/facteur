@@ -1,7 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../../sources/models/smart_search_result.dart';
@@ -9,13 +10,14 @@ import '../../../sources/models/source_model.dart';
 import '../../../sources/providers/sources_providers.dart';
 import '../../../sources/widgets/source_add_panel.dart';
 import '../../../sources/widgets/source_detail_modal.dart';
+import '../../../sources/widgets/source_logo_avatar.dart';
 import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
 import '../../providers/onboarding_proof_cache_provider.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../widgets/add_subscription_card.dart';
+import '../../widgets/onboarding_toggle_section.dart';
 import '../../widgets/premium_sources_sheet.dart';
-import '../../widgets/recommendation_section.dart';
 import '../../widgets/source_catalog_section.dart';
 import '../../widgets/source_recommendation_card.dart';
 
@@ -39,8 +41,12 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   SourceRecommendation? _recommendation;
   List<RecommendedSource>? _suggestions;
 
-  /// Panneau d'ajout (« Vous suivez déjà un média ? ») replié derrière un en-tête.
-  bool _addPanelExpanded = false;
+  /// Accordéon piloté : index de la section ouverte (1→4). Une seule à la fois ;
+  /// le bouton « Suivant » ouvre la suivante, et sur la dernière il valide.
+  int _openSection = 1;
+
+  /// Nombre total de sections de l'accordéon.
+  static const int _sectionCount = 4;
 
   /// Cap des suggestions mises en avant (affichées, cochées ou non).
   static const int _suggestionsLimit = 18;
@@ -85,7 +91,12 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       swipeDisliked: answers.swipeDisliked ?? const <String>[],
     );
     _recommendation = reco;
-    _suggestions = _computeSuggestions(reco, hasThemes: themes.isNotEmpty);
+    _suggestions = _computeSuggestions(
+      reco,
+      hasThemes: themes.isNotEmpty,
+      excludedIds: swipeLiked.toSet(),
+    );
+    _preloadSuggestionProfiles(_suggestions!);
 
     // Pré-sélection : top `_preselectLimit` des suggestions (déjà triées) +
     // toutes les sources swipées à droite (garanties cochées au reveal, même
@@ -116,14 +127,17 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   List<RecommendedSource> _computeSuggestions(
     SourceRecommendation reco, {
     required bool hasThemes,
+    Set<String> excludedIds = const {},
   }) {
     final specialists = reco.specialists;
     if (hasThemes && (reco.matched.isNotEmpty || specialists.isNotEmpty)) {
-      final sorted = [...reco.matched]..sort((a, b) {
+      final sorted = [...reco.matched]
+        ..sort((a, b) {
           final byScore = b.score.compareTo(a.score);
           return byScore != 0 ? byScore : _byVolumeProxy(a, b);
         });
       return _dedupById([...specialists, ...sorted])
+          .where((r) => !excludedIds.contains(r.source.id))
           .take(_suggestionsLimit)
           .toList();
     }
@@ -135,8 +149,15 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       ...reco.catalog,
     ]..sort(_byVolumeProxy);
     return _dedupById([...specialists, ...pool])
+        .where((r) => !excludedIds.contains(r.source.id))
         .take(_suggestionsLimit)
         .toList();
+  }
+
+  void _preloadSuggestionProfiles(List<RecommendedSource> suggestions) {
+    for (final r in suggestions.take(6)) {
+      ref.read(sourceProfileProvider(r.source.id).future).ignore();
+    }
   }
 
   /// Dédoublonne par `source.id` en conservant le premier passage (les
@@ -151,7 +172,8 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   }
 
   /// Catalogue complet (toutes catégories confondues) pour « Voir tout ».
-  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) => _dedupById([
+  List<RecommendedSource> _fullCatalog(SourceRecommendation reco) =>
+      _dedupById([
         ...reco.specialists,
         ...reco.matched,
         ...reco.perspective,
@@ -179,6 +201,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         source: source,
         onToggleTrust: () => _toggleSource(source.id),
         isSelectedOverride: _selectedSourceIds.contains(source.id),
+        articleOpener: openSourceArticleOnRootNavigator,
       ),
     );
   }
@@ -202,7 +225,9 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     if (sourceId == null || sourceId.isEmpty || sourceId == 'null') return;
 
     setState(() => _selectedSourceIds.add(sourceId));
-    ref.read(onboardingProofCacheProvider.notifier).update(
+    ref
+        .read(onboardingProofCacheProvider.notifier)
+        .update(
           (cache) => {
             ...cache,
             sourceId: SourceProofSeed(
@@ -225,6 +250,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final sourcesAsync = ref.watch(userSourcesProvider);
+    final isLastSection = _openSection >= _sectionCount;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -256,21 +282,27 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
           ),
         ),
 
-        // Continue button
+        // Bouton « Suivant » piloté : tant qu'on n'est pas sur la dernière
+        // section, il ouvre la suivante ; sur la dernière il valide la page.
         Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: FacteurSpacing.space6,
             vertical: FacteurSpacing.space4,
           ),
           child: ElevatedButton(
-            onPressed: _continue,
+            onPressed: isLastSection
+                ? _continue
+                : () => setState(() => _openSection++),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 24),
             ),
             child: Text(
-              _selectedSourceIds.isEmpty
-                  ? OnboardingStrings.skipButton
-                  : OnboardingStrings.selectedCount(_selectedSourceIds.length),
+              !isLastSection
+                  ? OnboardingStrings.nextButton
+                  : (_selectedSourceIds.isEmpty
+                      ? OnboardingStrings.skipButton
+                      : OnboardingStrings.selectedCount(
+                          _selectedSourceIds.length)),
             ),
           ),
         ),
@@ -301,7 +333,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     );
   }
 
-  // ── Layout : suggestions d'abord ────────────────────────────────────────
+  // ── Layout : accordéon piloté (1 section ouverte à la fois) ─────────────
 
   List<Widget> _buildSourcesLayout(
     BuildContext context,
@@ -310,6 +342,8 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
   ) {
     final colors = context.facteurColors;
     final suggestions = _suggestions ?? const <RecommendedSource>[];
+    final selectedSummary =
+        OnboardingStrings.finalizeSourcesSummary(_selectedSourceIds.length);
 
     return [
       Text(
@@ -320,60 +354,76 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       const SizedBox(height: FacteurSpacing.space3),
       Text(
         OnboardingStrings.q9Subtitle,
-        style: Theme.of(context)
-            .textTheme
-            .bodyMedium
-            ?.copyWith(color: colors.textSecondary),
+        style: Theme.of(
+          context,
+        ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
         textAlign: TextAlign.center,
       ),
+      const SizedBox(height: FacteurSpacing.space6),
 
-      // ① Suggestions sur mesure (top pré-cochées)
-      if (suggestions.isNotEmpty) ...[
-        const RecommendationSectionHeader(
-          emoji: '①',
-          title: OnboardingStrings.sourcesBlockSuggestionsTitle,
-          subtitle: OnboardingStrings.q9PreselectionTitle,
-        ),
-        ...suggestions.map((r) => _buildSuggestionCard(r)),
-      ],
+      // ① Tes suggestions (top pré-cochées)
+      OnboardingToggleSection(
+        index: 1,
+        title: OnboardingStrings.sourcesBlockSuggestionsTitle,
+        subtitleWhenCollapsed: selectedSummary,
+        description: OnboardingStrings.sourcesBlockSuggestionsDesc,
+        expanded: _openSection == 1,
+        onToggle: () => setState(() => _openSection = 1),
+        child: suggestions.isEmpty
+            ? Text(
+                OnboardingStrings.q9EmptyList,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: colors.textSecondary),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: suggestions.map(_buildSuggestionCard).toList(),
+              ),
+      ),
+      const SizedBox(height: FacteurSpacing.space4),
 
-      // ② Vos médias habituels → panneau d'ajout replié
-      const RecommendationSectionHeader(
-        emoji: '②',
+      // ② Tes médias habituels → panneau d'ajout
+      OnboardingToggleSection(
+        index: 2,
         title: OnboardingStrings.sourcesBlockHabitualTitle,
-        subtitle: OnboardingStrings.sourcesBlockHabitualSubtitle,
+        subtitleWhenCollapsed: OnboardingStrings.sourcesBlockHabitualSubtitle,
+        description: OnboardingStrings.sourcesBlockHabitualDesc,
+        expanded: _openSection == 2,
+        onToggle: () => setState(() => _openSection = 2),
+        child: _buildEmbeddedAddPanel(),
       ),
-      _buildAddPanelToggle(context, colors),
-      AnimatedSize(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        alignment: Alignment.topCenter,
-        child: _addPanelExpanded
-            ? _buildEmbeddedAddPanel()
-            : const SizedBox.shrink(),
-      ),
+      const SizedBox(height: FacteurSpacing.space4),
 
-      // ③ Explorer le catalogue (replié)
-      const RecommendationSectionHeader(
-        emoji: '③',
+      // ③ Explorer le catalogue (filtrage par thème)
+      OnboardingToggleSection(
+        index: 3,
         title: OnboardingStrings.sourcesBlockCatalogTitle,
-        subtitle: OnboardingStrings.sourcesBlockCatalogSubtitle,
+        subtitleWhenCollapsed: OnboardingStrings.sourcesBlockCatalogSubtitle,
+        description: OnboardingStrings.sourcesBlockCatalogDesc,
+        expanded: _openSection == 3,
+        onToggle: () => setState(() => _openSection = 3),
+        child: SourceCatalogSection(
+          catalog: _fullCatalog(reco),
+          selectedIds: _selectedSourceIds,
+          onToggle: _toggleSource,
+          onInfoTap: _showSourceDetail,
+        ),
       ),
-      SourceCatalogSection(
-        catalog: _fullCatalog(reco),
-        selectedIds: _selectedSourceIds,
-        onToggle: _toggleSource,
-        onInfoTap: _showSourceDetail,
-        initiallyExpanded: false,
-      ),
+      const SizedBox(height: FacteurSpacing.space4),
 
-      // ④ Vos abonnements presse
-      const RecommendationSectionHeader(
-        emoji: '④',
+      // ④ Tes abonnements presse
+      OnboardingToggleSection(
+        index: 4,
         title: OnboardingStrings.sourcesBlockSubscriptionsTitle,
-        subtitle: OnboardingStrings.sourcesBlockSubscriptionsSubtitle,
+        subtitleWhenCollapsed:
+            OnboardingStrings.sourcesBlockSubscriptionsSubtitle,
+        description: OnboardingStrings.sourcesBlockSubscriptionsDesc,
+        expanded: _openSection == 4,
+        onToggle: () => setState(() => _openSection = 4),
+        child: AddSubscriptionCard(onTap: () => _openPremiumSheet(allSources)),
       ),
-      AddSubscriptionCard(onTap: () => _openPremiumSheet(allSources)),
     ];
   }
 
@@ -391,53 +441,6 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
     );
   }
 
-  /// En-tête repliable « Vous suivez déjà un média ? » (variante curious).
-  Widget _buildAddPanelToggle(BuildContext context, FacteurColors colors) {
-    return Semantics(
-      button: true,
-      expanded: _addPanelExpanded,
-      label: OnboardingStrings.sourcesAlreadyFollowTitle,
-      child: InkWell(
-        onTap: () => setState(() => _addPanelExpanded = !_addPanelExpanded),
-        borderRadius: BorderRadius.circular(FacteurRadius.medium),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: FacteurSpacing.space2,
-            vertical: FacteurSpacing.space3,
-          ),
-          child: Row(
-            children: [
-              Icon(
-                PhosphorIcons.magnifyingGlass(),
-                size: 20,
-                color: colors.textSecondary,
-              ),
-              const SizedBox(width: FacteurSpacing.space2),
-              Expanded(
-                child: Text(
-                  OnboardingStrings.sourcesAlreadyFollowTitle,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ),
-              AnimatedRotation(
-                turns: _addPanelExpanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: Icon(
-                  PhosphorIcons.caretDown(),
-                  size: 18,
-                  color: colors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmbeddedAddPanel() {
     return SourceAddPanel(
       padding: EdgeInsets.zero,
@@ -446,9 +449,69 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
       showAddedNudge: false,
       inlineProof: true,
       embedded: true,
-      // Autofocus seulement quand l'utilisateur vient de déplier le panneau.
-      autoFocusSearch: _addPanelExpanded,
+      // Autofocus quand la section « médias habituels » est ouverte.
+      autoFocusSearch: _openSection == 2,
       onSourceAdded: _onSourceAdded,
+    );
+  }
+}
+
+class _AlreadyAddedSources extends StatelessWidget {
+  final List<Source> sources;
+
+  const _AlreadyAddedSources({required this.sources});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Déjà ajoutées',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: colors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space2),
+          Wrap(
+            spacing: FacteurSpacing.space2,
+            runSpacing: FacteurSpacing.space2,
+            children: [
+              for (final source in sources)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                    border: Border.all(color: colors.primary.withOpacity(0.18)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SourceLogoAvatar(source: source, size: 22, radius: 6),
+                      const SizedBox(width: 7),
+                      Text(
+                        source.name,
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

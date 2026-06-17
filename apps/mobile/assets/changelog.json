@@ -3,6 +3,10 @@
     {
       "tag": "Pas de recul",
       "summary": "L'analyse de fond « Pas de recul » s'affiche désormais instantanément à l'ouverture d'un article, sans attente."
+      "tag": "Onboarding",
+      "summary": "Choix de tes médias repensé : sections claires qui s'ouvrent une à une, et un ton plus direct dans tout le questionnaire."
+    },
+    {
       "tag": "Tournée",
       "summary": "Ta Tournée se complète chaque jour avec des sections « Choisie pour vous », à partir des thèmes et sources que tu suis. Un tap sur le badge explique le pourquoi ; tu peux garder ou retirer, et tout désactiver d'un switch."
     },

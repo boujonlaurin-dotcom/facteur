@@ -106,12 +106,35 @@ void main() {
       expect(action.route, '/grille');
     });
 
-    test('login-callback URI is ignored (handled by Supabase SDK)', () {
+    test('login-callback URI is identified as an auth callback', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://login-callback#access_token=xyz'),
       );
-      expect(action.target, WidgetDeepLinkTarget.ignored);
-      expect(action.route, isNull);
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/splash');
+      expect(action.authType, isNull);
+    });
+
+    test('login-callback recovery URI routes to reset password', () {
+      final action = DeepLinkService.parse(
+        Uri.parse(
+          'io.supabase.facteur://login-callback#access_token=xyz&type=recovery',
+        ),
+      );
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/reset-password');
+      expect(action.authType, 'recovery');
+    });
+
+    test('login-callback query recovery also routes to reset password', () {
+      final action = DeepLinkService.parse(
+        Uri.parse(
+          'io.supabase.facteur://login-callback?code=abc&type=recovery',
+        ),
+      );
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/reset-password');
+      expect(action.authType, 'recovery');
     });
 
     test('foreign scheme → unhandled', () {

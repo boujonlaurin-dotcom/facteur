@@ -20,10 +20,8 @@ import 'analytics_service.dart';
 /// - `io.supabase.facteur://veille/dashboard` → `/veille/dashboard`
 /// - `io.supabase.facteur://grille` → `/grille` (« Le mot du jour », partagé
 ///   entre amis — ouvre la grille dans l'app au lieu du site facteur.app)
-///
-/// `io.supabase.facteur://login-callback` is intentionally ignored — Supabase
-/// SDK intercepts it before it reaches us. Anything else falls through to
-/// GoRouter's `errorBuilder`, which is a safety net only.
+/// - `io.supabase.facteur://login-callback#...` → auth callback, routed by the
+///   auth state listener. Password recovery opens `/reset-password`.
 class DeepLinkService {
   DeepLinkService._({AppLinks? appLinks, AnalyticsService? analytics})
       : _appLinks = appLinks ?? AppLinks(),
@@ -120,13 +118,13 @@ class DeepLinkService {
   void _handle(Uri uri) {
     debugPrint('DeepLinkService: incoming uri=$uri');
 
-    // Supabase OAuth/email confirmation — let the SDK handle it.
-    if (uri.host == 'login-callback' ||
-        uri.path.startsWith('/login-callback')) {
+    if (uri.scheme != 'io.supabase.facteur') {
       return;
     }
 
-    if (uri.scheme != 'io.supabase.facteur') {
+    final action = parse(uri);
+    if (action.target == WidgetDeepLinkTarget.authCallback) {
+      _route(uri);
       return;
     }
 
@@ -188,6 +186,9 @@ class DeepLinkService {
         _analytics?.trackWidgetAppOpened(target: 'grille');
         router.go(action.route!);
         return;
+      case WidgetDeepLinkTarget.authCallback:
+        router.go(action.route ?? RoutePaths.splash);
+        return;
       case WidgetDeepLinkTarget.ignored:
       case WidgetDeepLinkTarget.unhandled:
         debugPrint('DeepLinkService: unhandled uri=$uri');
@@ -202,7 +203,14 @@ class DeepLinkService {
   static WidgetDeepLinkAction parse(Uri uri) {
     if (uri.host == 'login-callback' ||
         uri.path.startsWith('/login-callback')) {
-      return const WidgetDeepLinkAction(target: WidgetDeepLinkTarget.ignored);
+      final authType = _authCallbackType(uri);
+      return WidgetDeepLinkAction(
+        target: WidgetDeepLinkTarget.authCallback,
+        route: authType == 'recovery'
+            ? RoutePaths.resetPassword
+            : RoutePaths.splash,
+        authType: authType,
+      );
     }
     if (uri.scheme != 'io.supabase.facteur') {
       return const WidgetDeepLinkAction(target: WidgetDeepLinkTarget.unhandled);
@@ -287,6 +295,13 @@ class DeepLinkService {
     return const WidgetDeepLinkAction(target: WidgetDeepLinkTarget.unhandled);
   }
 
+  static String? _authCallbackType(Uri uri) {
+    final fromQuery = uri.queryParameters['type'];
+    if (fromQuery != null && fromQuery.isNotEmpty) return fromQuery;
+    if (uri.fragment.isEmpty) return null;
+    return Uri.splitQueryString(uri.fragment)['type'];
+  }
+
   static String? _extractArticleIdFrom(String host, List<String> segments) {
     if (host == 'digest') {
       if (segments.isNotEmpty) return segments.first;
@@ -312,6 +327,7 @@ enum WidgetDeepLinkTarget {
   feed,
   veille,
   grille,
+  authCallback,
   ignored,
   unhandled,
 }
@@ -322,6 +338,7 @@ class WidgetDeepLinkAction {
   final String? articleId;
   final int? position;
   final String? topicId;
+  final String? authType;
 
   const WidgetDeepLinkAction({
     required this.target,
@@ -329,5 +346,6 @@ class WidgetDeepLinkAction {
     this.articleId,
     this.position,
     this.topicId,
+    this.authType,
   });
 }

@@ -72,8 +72,10 @@ final smartSearchProvider =
 
 /// Couverture par thèmes d'une source (fiche source v2). Le cache de Riverpod
 /// évite un refetch quand la fiche se reconstruit (toggles trust/mute…).
-final sourceCoverageProvider =
-    FutureProvider.family<SourceCoverage, String>((ref, sourceId) async {
+final sourceCoverageProvider = FutureProvider.family<SourceCoverage, String>((
+  ref,
+  sourceId,
+) async {
   if (sourceId.isEmpty) {
     return const SourceCoverage(periodLabel: '', totalCount: 0);
   }
@@ -84,15 +86,24 @@ final sourceCoverageProvider =
 /// Profil unifié d'une source pour la fiche v3 : articles récents (Content
 /// complets), couverture par thèmes, volume et fréquence en un seul appel.
 /// `autoDispose` : libéré à la fermeture de la sheet.
-final sourceProfileProvider =
-    FutureProvider.family.autoDispose<SourceProfile, String>((
-  ref,
-  sourceId,
-) async {
-  if (sourceId.isEmpty) return const SourceProfile();
-  final repository = ref.watch(sourcesRepositoryProvider);
-  return repository.getSourceProfile(sourceId);
-});
+final sourceProfileProvider = FutureProvider.family
+    .autoDispose<SourceProfile, String>((ref, sourceId) async {
+      if (sourceId.isEmpty) return const SourceProfile();
+      final keepAlive = ref.keepAlive();
+      Timer? disposeTimer;
+      ref.onCancel(() {
+        disposeTimer = Timer(const Duration(minutes: 2), keepAlive.close);
+      });
+      ref.onResume(() {
+        disposeTimer?.cancel();
+        disposeTimer = null;
+      });
+      ref.onDispose(() {
+        disposeTimer?.cancel();
+      });
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.getSourceProfile(sourceId);
+    });
 
 final trendingSourcesProvider = FutureProvider<List<Source>>((ref) async {
   final repository = ref.watch(sourcesRepositoryProvider);
