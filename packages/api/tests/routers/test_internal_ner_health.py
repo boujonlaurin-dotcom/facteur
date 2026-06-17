@@ -14,6 +14,9 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 from tests.fixtures.fake_spacy import FakeDoc, FakeNlp, FakeToken, service_with_nlp
 
+ADMIN_TOKEN = "s3cr3t"
+ADMIN_HEADERS = {"X-Admin-Token": ADMIN_TOKEN}
+
 
 @pytest_asyncio.fixture
 async def client():
@@ -71,11 +74,11 @@ async def test_ner_health_reports_available_when_nlp_loaded(client):
             return_value=fake_svc,
         ),
     ):
-        mock_settings.return_value.admin_api_token = "s3cr3t"
+        mock_settings.return_value.admin_api_token = ADMIN_TOKEN
         response = await client.get(
             "/api/internal/admin/ner-health",
             params={"sample_title": "Tsahal frappe Gaza"},
-            headers={"X-Admin-Token": "s3cr3t"},
+            headers=ADMIN_HEADERS,
         )
 
     assert response.status_code == 200
@@ -97,10 +100,10 @@ async def test_ner_health_reports_unavailable_when_nlp_missing(client):
             return_value=fake_svc,
         ),
     ):
-        mock_settings.return_value.admin_api_token = "s3cr3t"
+        mock_settings.return_value.admin_api_token = ADMIN_TOKEN
         response = await client.get(
             "/api/internal/admin/ner-health",
-            headers={"X-Admin-Token": "s3cr3t"},
+            headers=ADMIN_HEADERS,
         )
 
     assert response.status_code == 200
@@ -117,10 +120,10 @@ async def test_internal_sync_with_valid_admin_token_reaches_handler(client):
             new=AsyncMock(return_value={"sources_synced": 2}),
         ) as mock_sync,
     ):
-        mock_settings.return_value.admin_api_token = "s3cr3t"
+        mock_settings.return_value.admin_api_token = ADMIN_TOKEN
         response = await client.post(
             "/api/internal/sync",
-            headers={"X-Admin-Token": "s3cr3t"},
+            headers=ADMIN_HEADERS,
         )
 
     assert response.status_code == 200

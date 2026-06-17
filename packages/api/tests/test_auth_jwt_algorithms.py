@@ -24,6 +24,7 @@ async def test_hs256_token_rejected_before_decode():
         await get_current_user_id(credentials)
 
     assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Invalid token: unsupported algorithm"
     mock_decode.assert_not_called()
 
 
