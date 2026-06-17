@@ -101,8 +101,8 @@ class OnboardingStrings {
 
   // Swipe désambiguateur (Q9c bis, v6) : quelques sources étalées sur les axes
   // (profondeur, indépendance, perspective) que l'utilisateur trie d'un geste.
-  // Glisser à droite = ça m'intéresse ; gauche = pas pour moi.
-  static const String swipeTitle = 'Quels médias suivre ?';
+  // Glisser à droite = ça m'intéresse ; gauche = pas pour moi. (Le titre statique
+  // a été remplacé par des en-têtes dynamiques par groupe, cf. swipeGroup*.)
   static const String swipeSubtitle =
       'Glisse à droite ceux qui te parlent, à gauche les autres. '
       'On ajuste tes suggestions en direct.';
@@ -116,7 +116,18 @@ class OnboardingStrings {
   static const String swipeProgressMiddle = 'On affine (%d/%d)';
   static const String swipeProgressEnd = 'Encore quelques-unes (%d/%d)';
   // Nudge discret sur la 1ère carte (disparaît au 1er geste).
-  static const String swipeTapHint = 'Touche pour explorer';
+  static const String swipeTapHint = 'Touche pour ouvrir le média';
+
+  // En-têtes dynamiques par groupe de cartes (mix type + thème). Le libellé
+  // affiché suit le groupe de la carte du dessus et change d'un bloc à l'autre.
+  // Tournure douce/humaine, sans em-dash (règle PO). « %s » = libellé de thème.
+  static const String swipeGroupThemedDeep = 'Pour creuser %s…';
+  static const String swipeGroupThemedDefault = 'Un peu de %s…';
+  static const String swipeGroupDeep = 'Pour aller au fond…';
+  static const String swipeGroupIndependent = 'Des médias indépendants';
+  static const String swipeGroupEstablished = 'Quelques médias traditionnels';
+  static const String swipeGroupMainstream = 'L\'actu au quotidien';
+  static const String swipeGroupPerspective = 'Un autre point de vue';
   // Profil révélé en direct, en phrase inline sous le deck (remplace les chips
   // du haut). Suivi des libellés de pôles nets-positifs joints par virgules.
   static const String swipeProfileInline = 'On retient pour ta sélection : ';
