@@ -915,9 +915,7 @@ class EditorialPipelineService:
         from app.services.editorial.deep_matcher import DeepMatcher
 
         actu_ids = [
-            s.actu_article.content_id
-            for s in subjects
-            if s.actu_article is not None
+            s.actu_article.content_id for s in subjects if s.actu_article is not None
         ]
         if not actu_ids:
             return
@@ -946,9 +944,7 @@ class EditorialPipelineService:
             matched = None
             if pivot is not None and pool:
                 try:
-                    matched = await matcher.match_for_content(
-                        pivot, deep_articles=pool
-                    )
+                    matched = await matcher.match_for_content(pivot, deep_articles=pool)
                 except Exception:
                     logger.exception(
                         "editorial_pipeline.deep_precompute_match_failed",
@@ -957,9 +953,7 @@ class EditorialPipelineService:
             rows.append(
                 {
                     "content_id": content_id,
-                    "matched_content_id": (
-                        matched.content_id if matched else None
-                    ),
+                    "matched_content_id": (matched.content_id if matched else None),
                     "match_reason": matched.match_reason if matched else None,
                 }
             )

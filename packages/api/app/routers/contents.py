@@ -960,14 +960,16 @@ def _deep_row_to_dict(matched_content: Content, match_reason: str | None) -> dic
     ctype_str = (
         ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else "article")
     )
-    published_at = getattr(matched, "published_at", None)
+    published_at = getattr(matched_content, "published_at", None)
     return {
         "content_id": str(matched_content.id),
         "title": matched_content.title,
         "url": matched_content.url,
         "thumbnail_url": matched_content.thumbnail_url,
         "content_type": ctype_str,
-        "source_id": str(matched_content.source_id) if matched_content.source_id else None,
+        "source_id": str(matched_content.source_id)
+        if matched_content.source_id
+        else None,
         "source_name": source.name if source else None,
         "source_logo_url": source.logo_url if source else None,
         "published_at": published_at.isoformat() if published_at else None,
@@ -1010,12 +1012,16 @@ async def _attach_deep_from_store(
         return
 
     matched_content = (
-        await db.execute(
-            select(Content)
-            .options(joinedload(Content.source))
-            .where(Content.id == row.matched_content_id)
+        (
+            await db.execute(
+                select(Content)
+                .options(joinedload(Content.source))
+                .where(Content.id == row.matched_content_id)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if matched_content is None:
         return
 
