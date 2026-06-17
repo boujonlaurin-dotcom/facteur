@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../config/topic_labels.dart';
 import '../../sources/models/source_model.dart';
+import '../onboarding_strings.dart';
 
 /// Category of a recommended source.
 enum SourceCategory { matched, perspective, gem, catalog }
@@ -91,6 +92,21 @@ class SpanningSource {
   final Source source;
   final SwipeAxisPole pole;
   const SpanningSource({required this.source, required this.pole});
+}
+
+/// Un bloc contigu de cartes du swipe partageant un même pôle d'axe, avec un
+/// en-tête humain (« mix type + thème »). L'ordre des groupes est piloté par
+/// les préférences déclarées (indépendance / profondeur) ; cf.
+/// [SourceRecommender.buildSpanningGroups].
+class SwipeGroup {
+  final SwipeAxisPole pole;
+  final String label;
+  final List<SpanningSource> cards;
+  const SwipeGroup({
+    required this.pole,
+    required this.label,
+    required this.cards,
+  });
 }
 
 /// Computes personalized source recommendations based on user's onboarding choices.
@@ -814,6 +830,160 @@ class SourceRecommender {
     }
 
     return result;
+  }
+
+  /// Organise le spanning set en **groupes contigus** par pôle d'axe, avec un
+  /// en-tête humain par groupe, l'ordre des groupes étant piloté par les
+  /// préférences déclarées.
+  ///
+  /// Fonction *pure* (testable) : s'appuie sur [buildSpanningSet] pour le choix
+  /// des cartes (mêmes cartes ⇒ même calibration, le signal par pôle étant
+  /// agrégé au reveal indépendamment de l'ordre), puis :
+  /// - regroupe les cartes par pôle en préservant l'ordre d'apparition ;
+  /// - ordonne les groupes selon [independencePref] (`independent` ⇒ mener avec
+  ///   indépendants/fond ; `established` ⇒ mener avec références/grands médias)
+  ///   et [depthPref] (`detailed` ⇒ remonter le fond). Le pôle `perspective`
+  ///   ferme toujours la marche ;
+  /// - libelle chaque groupe en « mix type + thème » : si le groupe est cohérent
+  ///   sur un thème des prefs (thème dominant), spécialise (« Pour creuser … »),
+  ///   sinon libellé par pôle.
+  static List<SwipeGroup> buildSpanningGroups({
+    required List<String> selectedThemes,
+    required List<String> selectedSubtopics,
+    required List<Source> allSources,
+    String? independencePref,
+    String? depthPref,
+    int maxCards = 10,
+    int perPole = 2,
+  }) {
+    final set = buildSpanningSet(
+      selectedThemes: selectedThemes,
+      selectedSubtopics: selectedSubtopics,
+      allSources: allSources,
+      maxCards: maxCards,
+      perPole: perPole,
+    );
+    if (set.isEmpty) return const [];
+
+    // Regroupe par pôle en préservant l'ordre d'apparition des pôles ET des
+    // cartes (LinkedHashMap garde l'ordre d'insertion).
+    final byPole = <SwipeAxisPole, List<SpanningSource>>{};
+    for (final s in set) {
+      (byPole[s.pole] ??= <SpanningSource>[]).add(s);
+    }
+
+    final orderedPoles = byPole.keys.toList()
+      ..sort(
+        (a, b) => _poleOrderWeight(
+          a,
+          independencePref,
+          depthPref,
+        ).compareTo(_poleOrderWeight(b, independencePref, depthPref)),
+      );
+
+    return [
+      for (final pole in orderedPoles)
+        SwipeGroup(
+          pole: pole,
+          label: _groupLabel(pole, byPole[pole]!, selectedThemes),
+          cards: byPole[pole]!,
+        ),
+    ];
+  }
+
+  /// Poids d'ordonnancement d'un groupe (plus petit = plus tôt). `perspective`
+  /// reste toujours en fin (poids élevé non touché par les prefs).
+  static double _poleOrderWeight(
+    SwipeAxisPole pole,
+    String? independencePref,
+    String? depthPref,
+  ) {
+    var w = switch (pole) {
+      SwipeAxisPole.mainstream => 2.0,
+      SwipeAxisPole.established => 2.5,
+      SwipeAxisPole.deep => 3.0,
+      SwipeAxisPole.independent => 4.0,
+      SwipeAxisPole.perspective => 9.0,
+    };
+    if (independencePref == 'independent') {
+      w = switch (pole) {
+        SwipeAxisPole.independent => 0.0,
+        SwipeAxisPole.deep => 1.0,
+        SwipeAxisPole.mainstream => 5.0,
+        SwipeAxisPole.established => 6.0,
+        SwipeAxisPole.perspective => 9.0,
+      };
+    } else if (independencePref == 'established') {
+      w = switch (pole) {
+        SwipeAxisPole.established => 0.0,
+        SwipeAxisPole.mainstream => 1.0,
+        SwipeAxisPole.deep => 4.0,
+        SwipeAxisPole.independent => 6.0,
+        SwipeAxisPole.perspective => 9.0,
+      };
+    }
+    // Préférence « analyse de fond » : remonte le fond (jamais devant
+    // perspective, qui garde son poids élevé).
+    if (depthPref == 'detailed' && pole == SwipeAxisPole.deep) {
+      w -= 2.5;
+    }
+    return w;
+  }
+
+  /// Libellé d'un groupe : « mix type + thème ». Spécialise si le groupe est
+  /// cohérent sur un thème des prefs (majorité stricte des cartes), sinon
+  /// libellé par pôle. Le pôle `perspective` (relatif) n'est jamais thématisé.
+  static String _groupLabel(
+    SwipeAxisPole pole,
+    List<SpanningSource> cards,
+    List<String> selectedThemes,
+  ) {
+    if (pole != SwipeAxisPole.perspective && selectedThemes.isNotEmpty) {
+      final themed = _dominantPrefTheme(cards, selectedThemes);
+      if (themed != null) {
+        final label = cards
+            .firstWhere((c) => c.source.theme == themed)
+            .source
+            .getThemeLabel();
+        final template = pole == SwipeAxisPole.deep
+            ? OnboardingStrings.swipeGroupThemedDeep
+            : OnboardingStrings.swipeGroupThemedDefault;
+        return template.replaceFirst('%s', label);
+      }
+    }
+    return switch (pole) {
+      SwipeAxisPole.deep => OnboardingStrings.swipeGroupDeep,
+      SwipeAxisPole.independent => OnboardingStrings.swipeGroupIndependent,
+      SwipeAxisPole.established => OnboardingStrings.swipeGroupEstablished,
+      SwipeAxisPole.mainstream => OnboardingStrings.swipeGroupMainstream,
+      SwipeAxisPole.perspective => OnboardingStrings.swipeGroupPerspective,
+    };
+  }
+
+  /// Thème dominant (parmi les prefs) d'un groupe de cartes : thème principal
+  /// le plus fréquent qui appartient aux thèmes choisis, retenu seulement s'il
+  /// couvre une **majorité stricte** des cartes du groupe (groupe « cohérent »).
+  static String? _dominantPrefTheme(
+    List<SpanningSource> cards,
+    List<String> selectedThemes,
+  ) {
+    final counts = <String, int>{};
+    for (final c in cards) {
+      final t = c.source.theme;
+      if (t != null && selectedThemes.contains(t)) {
+        counts[t] = (counts[t] ?? 0) + 1;
+      }
+    }
+    if (counts.isEmpty) return null;
+    String? best;
+    var bestCount = 0;
+    counts.forEach((theme, count) {
+      if (count > bestCount) {
+        bestCount = count;
+        best = theme;
+      }
+    });
+    return bestCount * 2 > cards.length ? best : null;
   }
 
   /// Pôle(s) d'axe *intrinsèque(s)* d'une source — utilisé pour généraliser le

@@ -1,73 +1,67 @@
-# QA Handoff — Onboarding sources : re-mapping taxonomie + badge « Spécialisé en X »
+# QA Handoff — Onboarding : polish du « cœur » sélection des sources
 
-> Rempli par l'agent dev après VERIFY. Input de `/validate-feature` (agent QA Chrome).
-
-## Feature développée
-
-Pendant l'onboarding, l'écran de reco sources devient « wow » : chaque sujet (subtopic)
-sélectionné obtient **au moins une source spécialisée visible**, badgée « Spécialisé en X ».
-Côté backend, un script aligne le vocabulaire des `granular_topics` des sources sur la
-taxonomie 51-slugs des users/articles (re-dérivée du contenu réellement publié) et élargit
-le catalogue curé. Côté mobile, le recommender ajoute un badge spécialiste sur la spécialité
-dominante d'une source, **et** une garantie de couverture qui rapatrie le meilleur spécialiste
-curé pour tout sujet choisi non couvert (carte distincte par sujet, pré-cochée).
-
-> ⚠️ La partie data (re-tag + promotion en base) est **gatée PO** et tourne séparément
-> (`scripts/retag_and_promote_sources.py --apply --allow-prod`) après merge. La validation QA
-> ci-dessous porte sur l'**UI mobile** (badge + visibilité). Sur l'env staging, l'effet plein
-> n'apparaît qu'une fois la base re-taggée ; le badge et la garantie restent testables avec
-> les `granular_topics` déjà présents.
-
-## PR associée
-<!-- gh pr view --web après /go -->
+Branche : `boujonlaurin-dotcom/onboarding-source-selection-polish` (base `main`).
+Backend non touché. Feature UI only.
 
 ## Écrans impactés
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Onboarding — Sources (« sur mesure ») | flow onboarding, étape sources | Modifié |
 
-## Scénarios de test
+1. **Swipe de calibration** (`SwipeDisambiguatorQuestion`, Q9c)
+2. **Page « Tes médias, sur mesure »** (`SourcesQuestion`, Q10)
 
-### Scénario 1 : Happy path — sujet avec spécialiste
-**Parcours** :
-1. Lancer l'onboarding, choisir des thèmes (ex. Tech, Société) puis des sous-sujets variés
-   (ex. `IA`, `Climat`).
-2. Passer le swipe de calibration, arriver sur l'écran « ① Suggestions sur mesure ».
-**Résultat attendu** : pour chaque sous-sujet choisi qui dispose d'un spécialiste curé, une
-carte porte un chip teinté primary **« 🎯 Spécialisé en {sujet} »** (ex. « Spécialisé en
-Intelligence artificielle »). Ces cartes apparaissent **en tête** des suggestions et sont
-**pré-cochées**.
+## Setup
 
-### Scénario 2 : Edge case — sujets « pauvres »
-**Parcours** :
-1. Refaire l'onboarding en choisissant des sous-sujets réputés minces
-   (ex. `Fact-checking`, `Relations et amour`, `Jeux vidéo`).
-**Résultat attendu** : au moins une carte « Spécialisé en X » remonte pour chacun **quand la
-data le permet** (cartes distinctes par sujet). Si aucun spécialiste curé n'existe pour un
-sujet sur l'env testé, pas de carte fantôme et pas d'erreur — dégradation propre.
+- Build web Flutter, viewport mobile **390x844**, sémantique activée au boot
+  (cf. skill `facteur-qa-web`).
+- Parcourir l'onboarding jusqu'au swipe (répondre thèmes/sujets pour avoir des
+  groupes thématisés), puis continuer jusqu'à la page sur-mesure.
 
-### Scénario 3 : Pas de doublon / cohérence des chips
-**Parcours** :
-1. Choisir un sujet dont la source dominante matche (ex. une source dont la spécialité
-   dominante est exactement le sujet choisi).
-**Résultat attendu** : la carte montre **un seul** chip « Spécialisé en X » (pas de double
-chip « X » thème + « Spécialisé en X »). La source n'apparaît pas deux fois.
+## Scénarios — Swipe (B)
+
+- **En-tête dynamique (B.2)** : plus de titre statique « Quels médias suivre ? ».
+  Un en-tête par **groupe** s'affiche (ex. « L'actu au quotidien »,
+  « Des médias indépendants », « Pour aller au fond… », « Un autre point de
+  vue », ou thématisé « Pour creuser Tech & Innovation… »). Il **change** quand
+  on passe d'un bloc de cartes au suivant (transition douce).
+  - Edge : l'ordre des blocs suit les prefs — répondre « médias spécialisés »
+    (independent) doit mener avec indépendants/fond ; « grands médias »
+    (established) avec références/grands médias.
+- **Hint (B.1)** : sous la carte, texte renommé **« Touche pour ouvrir le
+  média »** (visible sur la 1ʳᵉ carte, disparaît au 1ᵉʳ geste), rapproché du bas
+  du deck.
+- **Centrage (B.3)** : le deck est centré verticalement (plus d'espace mort en
+  haut depuis la suppression du gros titre).
+- **Undo (B.4)** : 3 boutons ronds sur une ligne — **undo discret (plus petit,
+  gris) à gauche** de (X) et (♥). Invisible tant qu'aucun vote ; (X)/(♥) restent
+  centrés (placeholder symétrique). L'undo de l'overlay final reste inchangé.
+
+## Scénarios — Page sur-mesure (A)
+
+- **Déjà ajoutés (A.1)** : en tête de la section 1, puces **discrètes** (libellé
+  léger « Déjà ajoutés », logos ~18px), alimentées par les sources likées au
+  swipe. Ces sources sont hors carrousel et déjà cochées.
+- **Carrousels (A.2)** : sections 1 (suggestions) **et** 3 (catalogue) en
+  **carrousel horizontal** (swipe latéral, ~1,2 carte visible, peek sur la
+  suivante). Le filtre par thème (section 3) repart de la 1ʳᵉ carte.
+- **Cartes (A.3/A.4)** : cartes portrait — logo + nom + pastille de biais en
+  tête ; **aspects matchés** (tags : thème, « Spécialisé en X », « ≈ Similaire à
+  … », fiable/anti-bruit/serein) mis en valeur au cœur ; cercle de sélection
+  ≥44px ; tap carte → modale détail.
 
 ## Critères d'acceptation
-- [ ] ≥1 carte « Spécialisé en {sujet} » visible par sous-sujet sélectionné (quand un
-      spécialiste curé existe).
-- [ ] Le badge utilise le bon libellé FR (`getTopicLabel`) pour les 51 slugs.
-- [ ] Les cartes spécialistes sont en tête des suggestions et pré-cochées.
-- [ ] Pas de doublon de carte ni de double chip thème+spécialiste.
-- [ ] Console sans erreur, pas de requête 4xx/5xx inattendue.
 
-## Zones de risque
-- Spécialité dominante = `granularTopics.first` : dépend de l'ordre (par share desc) écrit par
-  le re-tag backend. Sur un env non encore re-taggé, l'ordre vient du seed CSV.
-- Cap des suggestions (`_suggestionsLimit = 18`) : les spécialistes sont placés en tête pour
-  survivre au cap — vérifier qu'ils ne sont jamais tronqués.
+- En-tête de swipe change visiblement entre groupes ; aucun em-dash.
+- Carrousels fluides, peek visible ; sélection/desélection OK ; modale détail OK.
+- Console sans erreurs ; pas de 4xx/5xx réseau inattendus.
 
-## Dépendances
-- Aucune nouvelle API. Sérialisation existante `granular_topics` / `articles_30d`
-  (`schemas/source.py`, `routers/sources.py`). Pas de migration Alembic.
-- Effet data complet conditionné à l'apply prod gaté PO du script de re-tag/promotion.
+## Vérifs déjà passées (dev)
+
+- `flutter test test/features/onboarding` → **84 passed** (dont nouveaux tests
+  `buildSpanningGroups` : ordre par prefs, libellé thème vs pôle, dégradation).
+- `flutter analyze` sur les fichiers touchés → propre (seuls infos `withOpacity`
+  pré-existantes, conformes au reste du code).
+
+## Note hors-scope (à signaler)
+
+`apps/mobile/assets/changelog.json` était **JSON invalide sur `main`** (deux
+entrées `unreleased` fusionnées par un mauvais merge → parsing cassé). Réparé
+dans cette PR + ajout de l'entrée « Onboarding » de la feature.

@@ -6,6 +6,7 @@ from app.models.classification_queue import ClassificationQueue
 from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
+from app.models.content_deep_recommendation import ContentDeepRecommendation
 from app.models.curation import CurationAnnotation
 from app.models.daily_digest import DailyDigest
 from app.models.digest_completion import DigestCompletion
@@ -60,6 +61,8 @@ __all__ = [
     # Content models
     "Content",
     "UserContentStatus",
+    # Pré-calcul « Pas de recul » (Story 27.1)
+    "ContentDeepRecommendation",
     # Classification Queue (US-2)
     "ClassificationQueue",
     # Analytics

@@ -5,6 +5,7 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.jobs.digest_generation_job import (
@@ -15,6 +16,7 @@ from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_language import recompute_source_language
 from app.services.observability.cost_budget import log_budget_projection
 from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
+from app.services.recommendation.scoring_config import ScoringWeights
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 
@@ -39,8 +41,48 @@ _PARIS_TZ = pytz.timezone("Europe/Paris")
 # sont déjà dans le pool candidat.
 DIGEST_CRON_HOUR_PARIS = 7
 DIGEST_CRON_MINUTE_PARIS = 30
+SUBTOPIC_DECAY_HOUR_PARIS = 7
+SUBTOPIC_DECAY_MINUTE_PARIS = 20
 
 scheduler: AsyncIOScheduler | None = None
+
+
+def decayed_subtopic_weight(
+    weight: float, decay: float = ScoringWeights.SUBTOPIC_DECAY
+) -> float:
+    """Return a subtopic weight moved one daily step toward neutral 1.0."""
+    return 1.0 + (weight - 1.0) * decay
+
+
+async def decay_user_subtopic_weights() -> None:
+    """Apply the daily O(1) decay to all learned subtopic weights."""
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    UPDATE user_subtopics
+                    SET weight = 1.0 + (weight - 1.0) * :decay
+                    WHERE weight != 1.0
+                    """
+                ),
+                {"decay": ScoringWeights.SUBTOPIC_DECAY},
+            )
+            await session.commit()
+            logger.info(
+                "subtopic_weight_decay_completed",
+                decay=ScoringWeights.SUBTOPIC_DECAY,
+                rowcount=getattr(result, "rowcount", None),
+            )
+    except Exception as exc:
+        logger.error(
+            "subtopic_weight_decay_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
 
 
 async def _digest_watchdog() -> None:
@@ -216,6 +258,22 @@ def start_scheduler() -> None:
         ),
         id="daily_digest",
         name="Daily Digest Generation",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+    )
+
+    # Daily learned-subtopic decay (07h20 Paris) so digest scoring at 07h30
+    # uses weights nudged toward neutral without requiring a schema migration.
+    scheduler.add_job(
+        decay_user_subtopic_weights,
+        trigger=CronTrigger(
+            hour=SUBTOPIC_DECAY_HOUR_PARIS,
+            minute=SUBTOPIC_DECAY_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
+        id="subtopic_weight_decay",
+        name="Subtopic Weight Decay",
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,

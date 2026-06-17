@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:facteur/features/onboarding/data/source_recommender.dart';
+import 'package:facteur/features/onboarding/onboarding_strings.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 
 Source _curated(String id, {String reliability = 'high', String? theme}) {
@@ -707,6 +708,124 @@ void main() {
 
       final specialistIds = reco.specialists.map((r) => r.source.id).toSet();
       expect(specialistIds, containsAll(<String>['fc', 'rel']));
+    });
+  });
+
+  group('SourceRecommender.buildSpanningGroups — groupes contigus', () {
+    // Un représentant net par pôle (mainstream / deep / indépendant / établi).
+    List<Source> spanningDeck() => [
+          _src('main', tier: 'mainstream', articles30d: 50),
+          _src('deep', tier: 'deep', articles30d: 50),
+          _src('indie', independence: 0.9, bias: 'alternative'),
+          _src('estab', reliability: 'high', independence: 0.2),
+        ];
+
+    int poleIndex(List<SwipeGroup> groups, SwipeAxisPole pole) =>
+        groups.indexWhere((g) => g.pole == pole);
+
+    test('regroupe les cartes en blocs contigus par pôle (pas de doublon)', () {
+      final groups = SourceRecommender.buildSpanningGroups(
+        selectedThemes: const [],
+        selectedSubtopics: const [],
+        allSources: spanningDeck(),
+      );
+      // Un groupe par pôle présent, chaque pôle apparaît une seule fois.
+      final poles = groups.map((g) => g.pole).toList();
+      expect(poles.toSet().length, poles.length);
+      // Mêmes cartes que le spanning set sous-jacent (calibration inchangée).
+      final flat = groups.expand((g) => g.cards).map((c) => c.source.id).toSet();
+      expect(flat, {'main', 'deep', 'indie', 'estab'});
+    });
+
+    test('independencePref « independent » mène avec indépendant/fond', () {
+      final groups = SourceRecommender.buildSpanningGroups(
+        selectedThemes: const [],
+        selectedSubtopics: const [],
+        allSources: spanningDeck(),
+        independencePref: 'independent',
+      );
+      expect(
+        poleIndex(groups, SwipeAxisPole.independent),
+        lessThan(poleIndex(groups, SwipeAxisPole.mainstream)),
+      );
+      expect(
+        poleIndex(groups, SwipeAxisPole.deep),
+        lessThan(poleIndex(groups, SwipeAxisPole.established)),
+      );
+    });
+
+    test('independencePref « established » mène avec établis/grands médias', () {
+      final groups = SourceRecommender.buildSpanningGroups(
+        selectedThemes: const [],
+        selectedSubtopics: const [],
+        allSources: spanningDeck(),
+        independencePref: 'established',
+      );
+      expect(
+        poleIndex(groups, SwipeAxisPole.established),
+        lessThan(poleIndex(groups, SwipeAxisPole.independent)),
+      );
+      expect(
+        poleIndex(groups, SwipeAxisPole.mainstream),
+        lessThan(poleIndex(groups, SwipeAxisPole.independent)),
+      );
+    });
+
+    test('depthPref « detailed » remonte le groupe « fond » en tête', () {
+      final groups = SourceRecommender.buildSpanningGroups(
+        selectedThemes: const [],
+        selectedSubtopics: const [],
+        allSources: spanningDeck(),
+        depthPref: 'detailed',
+      );
+      expect(groups.first.pole, SwipeAxisPole.deep);
+    });
+
+    test('libellé thématique quand le groupe est cohérent sur un thème pref',
+        () {
+      final sources = [
+        _src('d1', tier: 'deep', theme: 'tech'),
+        _src('d2', tier: 'deep', theme: 'tech'),
+        _src('m1', tier: 'mainstream', theme: 'society'),
+      ];
+      final groups = SourceRecommender.buildSpanningGroups(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+      );
+
+      final deepGroup =
+          groups.firstWhere((g) => g.pole == SwipeAxisPole.deep);
+      expect(
+        deepGroup.label,
+        OnboardingStrings.swipeGroupThemedDeep
+            .replaceFirst('%s', 'Tech & Innovation'),
+      );
+
+      // Le groupe mainstream (thème society hors prefs) garde un libellé de pôle.
+      final mainGroup =
+          groups.firstWhere((g) => g.pole == SwipeAxisPole.mainstream);
+      expect(mainGroup.label, OnboardingStrings.swipeGroupMainstream);
+    });
+
+    test('catalogue minimal : dégrade en un groupe à libellé de pôle', () {
+      final groups = SourceRecommender.buildSpanningGroups(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: [_src('only', tier: 'mainstream')],
+      );
+      expect(groups, isNotEmpty);
+      expect(groups.expand((g) => g.cards).length, 1);
+      expect(groups.first.label, OnboardingStrings.swipeGroupMainstream);
+    });
+
+    test('aucune source → aucun groupe', () {
+      final groups = SourceRecommender.buildSpanningGroups(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: const [],
+      );
+      expect(groups, isEmpty);
     });
   });
 }

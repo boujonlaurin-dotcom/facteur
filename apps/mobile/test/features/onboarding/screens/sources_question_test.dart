@@ -12,7 +12,8 @@ import 'package:facteur/features/onboarding/onboarding_strings.dart';
 import 'package:facteur/features/onboarding/data/source_recommender.dart';
 import 'package:facteur/features/onboarding/providers/onboarding_provider.dart';
 import 'package:facteur/features/onboarding/screens/questions/sources_question.dart';
-import 'package:facteur/features/onboarding/widgets/recommendation_section.dart';
+import 'package:facteur/features/onboarding/widgets/onboarding_toggle_section.dart';
+import 'package:facteur/features/onboarding/widgets/source_carousel.dart';
 import 'package:facteur/features/onboarding/widgets/source_recommendation_card.dart';
 import 'package:facteur/features/sources/models/smart_search_result.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
@@ -104,9 +105,9 @@ void main() {
     );
   }
 
-  testWidgets('4 blocs numérotés, ≤18 suggestions, top 9 pré-cochées', (
-    tester,
-  ) async {
+  testWidgets(
+      '4 sections en accordéon, ≤18 suggestions, top 9 pré-cochées',
+      (tester) async {
     final container = makeContainer(_makeTechSources());
     // bypassOnboarding pose themes=[tech, international].
     container.read(onboardingProvider.notifier).bypassOnboarding();
@@ -114,49 +115,64 @@ void main() {
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
-    // Les 4 blocs numérotés ①②③④ sont présents.
-    expect(find.byType(RecommendationSectionHeader), findsNWidgets(4));
+    // Les 4 sections numérotées ①②③④ de l'accordéon sont présentes.
+    expect(find.byType(OnboardingToggleSection), findsNWidgets(4));
 
-    // 15 sources matched → 15 cartes suggestions (≤ 18, catalogue replié donc
-    // sans cartes additionnelles).
-    final cards = find.byType(SourceRecommendationCard);
-    expect(tester.widgetList(cards).length, lessThanOrEqualTo(18));
-    expect(cards, findsNWidgets(15));
-
-    // Pré-sélection = top 9 uniquement (le reste affiché décoché).
-    expect(find.text(OnboardingStrings.selectedCount(9)), findsOneWidget);
+    // Section 1 ouverte par défaut : suggestions rendues dans un carrousel
+    // horizontal (15 sources matched, ≤ 18). Les sections 2/3/4 repliées n'ont
+    // pas de carrousel monté → un seul SourceCarousel sur l'écran.
+    final carousel = tester.widget<SourceCarousel>(
+      find.byType(SourceCarousel),
+    );
+    expect(carousel.sources.length, lessThanOrEqualTo(18));
+    expect(carousel.sources.length, 15);
 
     // Le gros publieur mainstream remonte dans les suggestions (volume-proxy).
-    expect(find.text('Grand Média'), findsOneWidget);
-
-    // Bloc ② : panneau d'ajout replié derrière son en-tête.
     expect(
-      find.text(OnboardingStrings.sourcesAlreadyFollowTitle),
-      findsOneWidget,
+      carousel.sources.any((r) => r.source.name == 'Grand Média'),
+      isTrue,
     );
+
+    // Sur la 1ère section, le bouton bas est « Suivant » (pas la validation).
+    expect(find.text(OnboardingStrings.nextButton), findsOneWidget);
+
+    // Les titres des sections repliées 2/3/4 restent visibles dans l'accordéon.
+    expect(find.text(OnboardingStrings.sourcesBlockHabitualTitle),
+        findsOneWidget);
+    expect(find.text(OnboardingStrings.sourcesBlockCatalogTitle),
+        findsOneWidget);
+    expect(find.text(OnboardingStrings.sourcesBlockSubscriptionsTitle),
+        findsOneWidget);
+
+    // Sections 2 & 3 repliées : contenus lourds non montés.
     expect(find.byType(SourceAddPanel), findsNothing);
 
-    // Bloc ③ : catalogue replié.
-    expect(find.text(OnboardingStrings.sourcesSeeAllCatalog), findsOneWidget);
+    // « Suivant » 3× → dernière section : le bouton valide avec le compte de
+    // pré-sélection (top 9 uniquement, le reste décoché).
+    for (var i = 0; i < 3; i++) {
+      await tester.ensureVisible(find.text(OnboardingStrings.nextButton));
+      await tester.tap(find.text(OnboardingStrings.nextButton));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text(OnboardingStrings.selectedCount(9)), findsOneWidget);
   });
 
-  testWidgets('panneau d\'ajout dépliable : SourceAddPanel monté au tap', (
-    tester,
-  ) async {
+  testWidgets('section « médias habituels » : SourceAddPanel monté au tap',
+      (tester) async {
     final container = makeContainer(_makeTechSources());
     container.read(onboardingProvider.notifier).bypassOnboarding();
 
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
-    // Replié au départ.
+    // Section 2 repliée au départ.
     expect(find.byType(SourceAddPanel), findsNothing);
 
-    // Déplier « Vous suivez déjà un média ? » → panneau monté.
+    // Ouvrir « Tes médias habituels » → panneau d'ajout monté.
     await tester.ensureVisible(
-      find.text(OnboardingStrings.sourcesAlreadyFollowTitle),
+      find.text(OnboardingStrings.sourcesBlockHabitualTitle),
     );
-    await tester.tap(find.text(OnboardingStrings.sourcesAlreadyFollowTitle));
+    await tester.tap(find.text(OnboardingStrings.sourcesBlockHabitualTitle));
     await tester.pumpAndSettle();
     expect(find.byType(SourceAddPanel), findsOneWidget);
   });
@@ -184,23 +200,27 @@ void main() {
       await tester.pumpWidget(buildTestWidget(container));
       await tester.pumpAndSettle();
 
-      expect(find.text('Déjà ajoutées'), findsOneWidget);
+      // Récap discret « Déjà ajoutés » alimenté par la source likée au swipe.
+      expect(find.text('Déjà ajoutés'), findsOneWidget);
       expect(find.text('Sismique'), findsOneWidget);
-      expect(
-        find.text(OnboardingStrings.selectedCount(10)),
-        findsOneWidget,
-        reason: '9 suggestions précochées + la source likée déjà validée',
-      );
 
-      final suggestionCards = tester
-          .widgetList<SourceRecommendationCard>(
-            find.byType(SourceRecommendationCard),
-          )
-          .toList();
+      // La source likée est exclue du carrousel de suggestions.
+      final carousel = tester.widget<SourceCarousel>(
+        find.byType(SourceCarousel),
+      );
       expect(
-        suggestionCards.map((c) => c.recommendation.source.id),
+        carousel.sources.map((r) => r.source.id),
         isNot(contains('sismique')),
       );
+
+      // Sur la dernière section, le bouton porte le compte sélectionné :
+      // 9 suggestions précochées + la source likée déjà validée = 10.
+      for (var i = 0; i < 3; i++) {
+        await tester.ensureVisible(find.text(OnboardingStrings.nextButton));
+        await tester.tap(find.text(OnboardingStrings.nextButton));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text(OnboardingStrings.selectedCount(10)), findsOneWidget);
     },
   );
 

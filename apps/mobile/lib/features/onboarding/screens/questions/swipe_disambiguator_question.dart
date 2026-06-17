@@ -54,6 +54,10 @@ class _SwipeDisambiguatorQuestionState
     with SingleTickerProviderStateMixin {
   /// File des cartes restantes : le **dernier** élément est la carte du dessus.
   List<SpanningSource>? _queue;
+
+  /// Libellé d'en-tête (groupe) par id de source : l'en-tête affiche celui de la
+  /// carte du dessus et change quand on passe d'un bloc à l'autre.
+  final Map<String, String> _groupLabelById = {};
   int _total = 0;
   final List<String> _liked = [];
   final List<String> _disliked = [];
@@ -124,18 +128,30 @@ class _SwipeDisambiguatorQuestionState
   void _ensureBuilt(List<Source> sources) {
     if (_queue != null) return;
     final answers = ref.read(onboardingProvider).answers;
-    final set = SourceRecommender.buildSpanningSet(
+    // Groupes contigus par pôle, ordonnés par les prefs déclarées (le set de
+    // cartes est inchangé ⇒ même calibration), chaque carte portant le libellé
+    // d'en-tête de son groupe.
+    final groups = SourceRecommender.buildSpanningGroups(
       selectedThemes: answers.themes ?? const [],
       selectedSubtopics: answers.subtopics ?? const [],
       allSources: sources,
+      independencePref: answers.independencePref,
+      depthPref: answers.approach,
     );
-    _queue = set.reversed.toList(); // dernier = première carte montrée
-    _total = set.length;
+    final flat = <SpanningSource>[];
+    for (final group in groups) {
+      for (final card in group.cards) {
+        flat.add(card);
+        _groupLabelById[card.source.id] = group.label;
+      }
+    }
+    _queue = flat.reversed.toList(); // dernier = première carte montrée
+    _total = flat.length;
     _preloadTopProfiles();
 
     // Rien à montrer (catalogue indisponible / thèmes trop pauvres) → on saute
     // l'étape sans bloquer le parcours.
-    if (set.isEmpty) {
+    if (flat.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _complete());
     }
   }
@@ -330,6 +346,8 @@ class _SwipeDisambiguatorQuestionState
         final queue = _queue ?? const <SpanningSource>[];
         final remaining = queue.length;
         final current = _total - remaining + 1;
+        final groupLabel =
+            queue.isNotEmpty ? (_groupLabelById[queue.last.source.id] ?? '') : '';
 
         final content = Padding(
           padding: const EdgeInsets.symmetric(
@@ -339,32 +357,50 @@ class _SwipeDisambiguatorQuestionState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: FacteurSpacing.space4),
-              Text(
-                OnboardingStrings.swipeTitle,
-                style: Theme.of(context).textTheme.displayLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: FacteurSpacing.space3),
+              // En-tête dynamique : libellé du groupe de la carte du dessus
+              // (remplace l'ancien titre statique), animé au changement de bloc.
+              if (groupLabel.isNotEmpty)
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: Text(
+                    groupLabel,
+                    key: ValueKey(groupLabel),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              const SizedBox(height: FacteurSpacing.space2),
               Text(
                 OnboardingStrings.swipeSubtitle,
                 style: Theme.of(
                   context,
-                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
+                ).textTheme.bodySmall?.copyWith(color: colors.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: FacteurSpacing.space2),
               if (remaining > 0)
                 Text(
                   _humanizedProgress(current, _total),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: colors.textSecondary,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
                         fontWeight: FontWeight.w600,
                       ),
                   textAlign: TextAlign.center,
                 ),
               _buildCalibratingHint(context),
-              Expanded(child: _buildCardArea(context, queue)),
-              _buildTapHint(context, isFirstCard: remaining == _total),
+              // Deck centré verticalement dans l'espace restant, avec l'indice
+              // « toucher » directement sous la carte (B.1 + B.3).
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(child: _buildCardArea(context, queue)),
+                    _buildTapHint(context, isFirstCard: remaining == _total),
+                  ],
+                ),
+              ),
               if (remaining > 0) ...[
                 _buildProfileInline(context),
                 _buildActions(context, queue.last),
@@ -789,7 +825,7 @@ class _SwipeDisambiguatorQuestionState
       child: !show
           ? const SizedBox(width: double.infinity)
           : Padding(
-              padding: const EdgeInsets.only(top: FacteurSpacing.space3),
+              padding: const EdgeInsets.only(top: FacteurSpacing.space2),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -811,40 +847,68 @@ class _SwipeDisambiguatorQuestionState
     );
   }
 
+  /// Diamètre extérieur du bouton « revenir » secondaire (et de son placeholder
+  /// symétrique) : garde (X)/(V) centrés que l'undo soit visible ou non.
+  static const double _undoButtonSize = 44;
+
   Widget _buildActions(BuildContext context, SpanningSource top) {
     final colors = context.facteurColors;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (_canUndoSwipe) ...[
-          TextButton.icon(
-            onPressed: _undoLastSwipe,
-            icon: const Icon(Icons.undo_rounded, size: 18),
-            label: const Text(OnboardingStrings.swipeUndoLabel),
-          ),
-          const SizedBox(height: FacteurSpacing.space2),
-        ],
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _actionButton(
-              context,
-              icon: Icons.close_rounded,
-              color: colors.textSecondary,
-              tooltip: OnboardingStrings.swipeSkipHint,
-              onTap: () => _flingOut(top, liked: false),
-            ),
-            const SizedBox(width: FacteurSpacing.space8),
-            _actionButton(
-              context,
-              icon: Icons.favorite_rounded,
-              color: colors.success,
-              tooltip: OnboardingStrings.swipeLikeHint,
-              onTap: () => _flingOut(top, liked: true),
-            ),
-          ],
+        // « Revenir au média précédent » discret, à gauche de (X)/(V). Réserve
+        // toujours sa place (placeholder) pour ne pas décaler le centre.
+        SizedBox(
+          width: _undoButtonSize,
+          height: _undoButtonSize,
+          child: _canUndoSwipe ? _undoButton(context) : null,
         ),
+        const SizedBox(width: FacteurSpacing.space6),
+        _actionButton(
+          context,
+          icon: Icons.close_rounded,
+          color: colors.textSecondary,
+          tooltip: OnboardingStrings.swipeSkipHint,
+          onTap: () => _flingOut(top, liked: false),
+        ),
+        const SizedBox(width: FacteurSpacing.space8),
+        _actionButton(
+          context,
+          icon: Icons.favorite_rounded,
+          color: colors.success,
+          tooltip: OnboardingStrings.swipeLikeHint,
+          onTap: () => _flingOut(top, liked: true),
+        ),
+        const SizedBox(width: FacteurSpacing.space6),
+        // Placeholder symétrique (équilibre l'undo de gauche).
+        const SizedBox(width: _undoButtonSize, height: _undoButtonSize),
       ],
+    );
+  }
+
+  /// Bouton circulaire secondaire « revenir au média précédent » : plus petit et
+  /// plus discret que (X)/(V), icône `undo_rounded` en teinte tertiaire.
+  Widget _undoButton(BuildContext context) {
+    final colors = context.facteurColors;
+    return Semantics(
+      button: true,
+      label: OnboardingStrings.swipeUndoLabel,
+      child: Material(
+        color: colors.surface,
+        shape: CircleBorder(side: BorderSide(color: colors.border)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _undoLastSwipe,
+          child: Padding(
+            padding: const EdgeInsets.all(FacteurSpacing.space3),
+            child: Icon(
+              Icons.undo_rounded,
+              color: colors.textTertiary,
+              size: 20,
+            ),
+          ),
+        ),
+      ),
     );
   }
 

@@ -5,26 +5,33 @@ Couvre:
 - Decay factor 0.70 appliqué aux sources répétées
 - Maximum 1 article par source (fallback à 2 si < 7 sources distinctes)
 - Minimum 4 sources différentes
-- Retourne des 4-tuples (content, score, reason, breakdown)
+- Retourne des 5-tuples (content, score, reason, breakdown, pillar_scores)
 - Gestion des cas limites (peu de candidats, source unique)
 - Sélection hybride deux passes (trending + personnalisé)
 - Continuité diversité entre passes
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from uuid import uuid4
-from datetime import datetime, timezone, timedelta
 from collections import defaultdict
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
 
-from app.services.digest_selector import DigestSelector, DigestContext, DiversityConstraints, GlobalTrendingContext
+import pytest
+
 from app.schemas.digest import DigestScoreBreakdown
-
+from app.services.digest_selector import (
+    DigestContext,
+    DigestSelector,
+    DiversityConstraints,
+    GlobalTrendingContext,
+)
 
 # ─── Factories ────────────────────────────────────────────────────────────────
 
 
-def make_source(name="Test Source", theme="tech", is_curated=False, secondary_themes=None):
+def make_source(
+    name="Test Source", theme="tech", is_curated=False, secondary_themes=None
+):
     """Factory pour créer un objet Source mocké."""
     source = Mock()
     source.id = uuid4()
@@ -36,13 +43,15 @@ def make_source(name="Test Source", theme="tech", is_curated=False, secondary_th
     return source
 
 
-def make_content(source=None, topics=None, published_at=None, content_type=None, theme=None):
+def make_content(
+    source=None, topics=None, published_at=None, content_type=None, theme=None
+):
     """Factory pour créer un objet Content mocké."""
     content = Mock()
     content.id = uuid4()
     content.source = source or make_source()
     content.source_id = content.source.id
-    content.published_at = published_at or datetime.now(timezone.utc)
+    content.published_at = published_at or datetime.now(UTC)
     content.topics = topics
     content.content_type = content_type
     content.theme = theme
@@ -61,15 +70,17 @@ def make_scored_candidates(contents_with_scores):
         contents_with_scores: list of (content, score) or (content, score, breakdown)
 
     Returns:
-        list of (content, score, breakdown) — format d'entrée de _select_with_diversity
+        list of (content, score, breakdown, pillar_scores) — format d'entrée
+        de _select_with_diversity
     """
     result = []
     for item in contents_with_scores:
         if len(item) == 3:
-            result.append(item)
+            content, score, breakdown = item
+            result.append((content, score, breakdown, {}))
         else:
             content, score = item
-            result.append((content, score, []))
+            result.append((content, score, [], {}))
     return result
 
 
@@ -89,7 +100,7 @@ def selector(mock_session):
     Note: on patche rec_service pour éviter l'initialisation
     de RecommendationService qui nécessite une vraie session DB.
     """
-    with patch('app.services.digest_selector.RecommendationService'):
+    with patch("app.services.digest_selector.RecommendationService"):
         sel = DigestSelector(mock_session)
     return sel
 
@@ -102,7 +113,7 @@ class TestSelectWithDiversity:
 
     Cette méthode est synchrone (pas de DB), donc testable directement.
     Elle prend des scored_candidates triés par score et retourne
-    des 4-tuples (content, decayed_score, reason, breakdown).
+    des 5-tuples (content, decayed_score, reason, breakdown, pillar_scores).
     """
 
     def test_selects_exactly_target_count(self, selector):
@@ -119,8 +130,8 @@ class TestSelectWithDiversity:
 
         assert len(selected) == 7
 
-    def test_returns_four_tuple(self, selector):
-        """Each result element is a 4-tuple (content, score, reason, breakdown)."""
+    def test_returns_five_tuple(self, selector):
+        """Each result carries content, score, reason, breakdown, pillar_scores."""
         source = make_source()
         content = make_content(source=source)
         scored = [(content, 100.0, [])]
@@ -128,12 +139,13 @@ class TestSelectWithDiversity:
         selected = selector._select_with_diversity(scored, target_count=1)
 
         assert len(selected) == 1
-        # Unpack 4 values — must not raise ValueError
-        content_out, score_out, reason_out, breakdown_out = selected[0]
+        # Unpack 5 values — must not raise ValueError
+        content_out, score_out, reason_out, breakdown_out, pillar_scores = selected[0]
         assert content_out is content
         assert isinstance(score_out, float)
         assert isinstance(reason_out, str)
         assert isinstance(breakdown_out, list)
+        assert isinstance(pillar_scores, dict)
 
     def test_diversity_max_one_per_source_with_enough_sources(self, selector):
         """With >= 7 distinct sources, max 1 article per source."""
@@ -148,11 +160,13 @@ class TestSelectWithDiversity:
 
         # Count articles per source — should be max 1 each
         source_counts = defaultdict(int)
-        for content, _, _, _ in selected:
+        for content, _, _, _, _ in selected:
             source_counts[content.source_id] += 1
 
         for source_id, count in source_counts.items():
-            assert count <= 1, f"Source {source_id} has {count} articles (max 1 with >= 7 sources)"
+            assert count <= 1, (
+                f"Source {source_id} has {count} articles (max 1 with >= 7 sources)"
+            )
 
     def test_diversity_fallback_max_two_per_source_with_few_sources(self, selector):
         """With < 7 distinct sources, fallback to max 2 per source."""
@@ -175,11 +189,13 @@ class TestSelectWithDiversity:
 
         # Count articles per source — should allow up to 2
         source_counts = defaultdict(int)
-        for content, _, _, _ in selected:
+        for content, _, _, _, _ in selected:
             source_counts[content.source_id] += 1
 
         for source_id, count in source_counts.items():
-            assert count <= 2, f"Source {source_id} has {count} articles (max 2 with < 7 sources)"
+            assert count <= 2, (
+                f"Source {source_id} has {count} articles (max 2 with < 7 sources)"
+            )
 
     def test_decay_factor_applied(self, selector):
         """Score should decrease with repeated source selection (÷2 divisor).
@@ -199,8 +215,8 @@ class TestSelectWithDiversity:
         selected = selector._select_with_diversity(candidates, target_count=2)
 
         assert len(selected) == 2
-        _, score1, _, _ = selected[0]
-        _, score2, _, _ = selected[1]
+        _, score1, _, _, _ = selected[0]
+        _, score2, _, _, _ = selected[1]
 
         # First article: no penalty → score = 100.0
         assert score1 == pytest.approx(100.0)
@@ -219,7 +235,7 @@ class TestSelectWithDiversity:
         selected = selector._select_with_diversity(candidates, target_count=7)
 
         # Scores should be in descending order (all from different sources, no decay)
-        scores = [score for _, score, _, _ in selected]
+        scores = [score for _, score, _, _, _ in selected]
         assert scores == sorted(scores, reverse=True)
 
     def test_fewer_candidates_than_target(self, selector):
@@ -273,7 +289,7 @@ class TestSelectWithDiversity:
 
         # Count articles per theme
         theme_counts = defaultdict(int)
-        for content, _, _, _ in selected:
+        for content, _, _, _, _ in selected:
             theme = content.source.theme
             theme_counts[theme] += 1
 
@@ -296,8 +312,8 @@ class TestSelectWithDiversity:
 
         selected = selector._select_with_diversity(candidates, target_count=2)
 
-        _, score1, _, _ = selected[0]
-        _, score2, _, _ = selected[1]
+        _, score1, _, _, _ = selected[0]
+        _, score2, _, _, _ = selected[1]
 
         # First: 220 (no penalty)
         assert score1 == pytest.approx(220.0)
@@ -312,7 +328,7 @@ class TestSelectWithDiversity:
 
         selected = selector._select_with_diversity(candidates, target_count=1)
 
-        _, _, reason, _ = selected[0]
+        _, _, reason, _, _ = selected[0]
         assert reason  # Non-empty
         assert isinstance(reason, str)
         assert len(reason) > 0
@@ -322,21 +338,29 @@ class TestSelectWithDiversity:
         source = make_source(name="Breakdown Source", theme="tech")
         content = make_content(source=source)
         breakdown_input = [
-            DigestScoreBreakdown(label="Thème matché : tech", points=70.0, is_positive=True),
-            DigestScoreBreakdown(label="Source de confiance", points=50.0, is_positive=True),
+            DigestScoreBreakdown(
+                label="Thème matché : tech", points=70.0, is_positive=True
+            ),
+            DigestScoreBreakdown(
+                label="Source de confiance", points=50.0, is_positive=True
+            ),
         ]
         candidates = [(content, 120.0, breakdown_input)]
 
         selected = selector._select_with_diversity(candidates, target_count=1)
 
-        _, _, _, breakdown_out = selected[0]
+        _, _, _, breakdown_out, pillar_scores = selected[0]
         assert len(breakdown_out) == 2
         assert breakdown_out[0].label == "Thème matché : tech"
         assert breakdown_out[1].points == 50.0
+        assert pillar_scores == {}
 
     def test_mixed_sources_diversity(self, selector):
         """With 7 different sources and varied scores, all 7 sources represented."""
-        sources = [make_source(name=f"Source {chr(65+i)}", theme=f"theme{i}") for i in range(7)]
+        sources = [
+            make_source(name=f"Source {chr(65 + i)}", theme=f"theme{i}")
+            for i in range(7)
+        ]
         candidates = []
         for i, source in enumerate(sources):
             content = make_content(source=source)
@@ -345,7 +369,7 @@ class TestSelectWithDiversity:
         selected = selector._select_with_diversity(candidates, target_count=7)
 
         assert len(selected) == 7
-        unique_sources = set(c.source_id for c, _, _, _ in selected)
+        unique_sources = {c.source_id for c, _, _, _, _ in selected}
         assert len(unique_sources) == 7
 
     def test_empty_candidates_returns_empty(self, selector):
@@ -381,8 +405,10 @@ class TestDiversityConstraints:
     def test_diversity_divisor_value(self):
         """Verify diversity divisor is 2 (score ÷ 2) as per algorithm spec."""
         from app.services.recommendation.scoring_config import ScoringWeights
-        assert ScoringWeights.DIGEST_DIVERSITY_DIVISOR == 2, \
+
+        assert ScoringWeights.DIGEST_DIVERSITY_DIVISOR == 2, (
             "Diversity divisor should be 2 (score ÷ 2)"
+        )
 
 
 # ─── Tests: Diversity Revue de Presse (÷2 Penalty) ────────────────────────────
@@ -406,13 +432,18 @@ class TestDiversityRevueDePresse:
 
         # The 2nd article should have "Diversité revue de presse" in its breakdown
         assert len(selected) == 2
-        second_article_breakdown = selected[1][3]  # (content, score, reason, breakdown)
+        second_article_breakdown = selected[1][3]
         diversity_labels = [b.label for b in second_article_breakdown]
-        assert "Diversité revue de presse" in diversity_labels, \
+        assert "Diversité revue de presse" in diversity_labels, (
             f"Expected 'Diversité revue de presse' in breakdown, got: {diversity_labels}"
+        )
 
         # The penalty should be -100 (200 / 2)
-        diversity_entry = next(b for b in second_article_breakdown if b.label == "Diversité revue de presse")
+        diversity_entry = next(
+            b
+            for b in second_article_breakdown
+            if b.label == "Diversité revue de presse"
+        )
         assert diversity_entry.points == -100.0
         assert diversity_entry.is_positive is False
 
@@ -481,8 +512,6 @@ class TestDiversityInitialCounts:
 
         # source_a article should be skipped (max 1 per source with >= 7 distinct)
         # With < 7 sources, fallback to max 2 → source_a gets penalty ÷2
-        # But the key test: source_a count starts at 1
-        source_ids = [c.source_id for c, _, _, _ in selected]
         # source_b and source_c should be selected first (no prior count)
         assert len(selected) == 2
 
@@ -494,8 +523,8 @@ class TestDiversityInitialCounts:
 
         candidates = [
             (make_content(source=sources[0]), 200.0, []),  # tech (already at 2 → skip)
-            (make_content(source=sources[3]), 150.0, []),   # other0
-            (make_content(source=sources[4]), 120.0, []),   # other1
+            (make_content(source=sources[3]), 150.0, []),  # other0
+            (make_content(source=sources[4]), 120.0, []),  # other1
         ]
 
         # theme "tech" already has 2 articles from pass 1
@@ -507,7 +536,7 @@ class TestDiversityInitialCounts:
 
         # tech article should be skipped (max 2 per theme)
         themes = []
-        for content, _, _, _ in selected:
+        for content, _, _, _, _ in selected:
             themes.append(content.source.theme)
         assert "tech" not in themes
         assert len(selected) == 2
@@ -515,16 +544,23 @@ class TestDiversityInitialCounts:
     def test_no_initial_counts_matches_original_behavior(self, selector):
         """Sans compteurs initiaux, le comportement est identique à l'original."""
         sources = [make_source(name=f"S{i}", theme=f"t{i}") for i in range(7)]
-        candidates = [(make_content(source=s), 100.0 - i * 10, []) for i, s in enumerate(sources)]
+        candidates = [
+            (make_content(source=s), 100.0 - i * 10, []) for i, s in enumerate(sources)
+        ]
 
         selected_default = selector._select_with_diversity(candidates, target_count=7)
         selected_explicit = selector._select_with_diversity(
-            candidates, target_count=7, initial_source_counts=None, initial_theme_counts=None,
+            candidates,
+            target_count=7,
+            initial_source_counts=None,
+            initial_theme_counts=None,
         )
 
         # Both should select same articles in same order
         assert len(selected_default) == len(selected_explicit)
-        for (c1, s1, _, _), (c2, s2, _, _) in zip(selected_default, selected_explicit):
+        for (c1, s1, _, _, _), (c2, s2, _, _, _) in zip(
+            selected_default, selected_explicit, strict=True
+        ):
             assert c1.id == c2.id
             assert s1 == s2
 
@@ -560,13 +596,21 @@ class TestTwoPassSelection:
         return GlobalTrendingContext(
             trending_content_ids=set(),
             une_content_ids=set(),
-            computed_at=datetime.now(timezone.utc),
+            computed_at=datetime.now(UTC),
         )
 
     @pytest.mark.asyncio
     async def test_two_pass_with_trending(self, selector, context, trending_context):
         """Les articles trending sont sélectionnés en passe 1, le reste en passe 2."""
-        themes = ["tech", "science", "culture", "economy", "politics", "environment", "international"]
+        themes = [
+            "tech",
+            "science",
+            "culture",
+            "economy",
+            "politics",
+            "environment",
+            "international",
+        ]
         sources = [make_source(name=f"Source {i}", theme=themes[i]) for i in range(7)]
         context.user_interests = set(themes)
 
@@ -577,7 +621,7 @@ class TestTwoPassSelection:
         all_candidates = [trending_content] + perso_contents
 
         async def mock_score(candidates, ctx, mode="pour_vous"):
-            return [(c, 100.0, []) for c in candidates]
+            return [(c, 100.0, [], {}) for c in candidates]
 
         selector._score_candidates = mock_score
 
@@ -600,7 +644,9 @@ class TestTwoPassSelection:
         assert "Sujet du jour" in labels
 
     @pytest.mark.asyncio
-    async def test_two_pass_trending_relevance_filter(self, selector, context, trending_context):
+    async def test_two_pass_trending_relevance_filter(
+        self, selector, context, trending_context
+    ):
         """Articles trending hors thèmes/sources utilisateur → pool personnalisé."""
         # Source avec thème "sports" (PAS dans user_interests)
         source_sports = make_source(name="L'Équipe", theme="sports")
@@ -613,7 +659,7 @@ class TestTwoPassSelection:
         trending_context.trending_content_ids = {trending_but_irrelevant.id}
 
         async def mock_score(candidates, ctx, mode="pour_vous"):
-            return [(c, 100.0, []) for c in candidates]
+            return [(c, 100.0, [], {}) for c in candidates]
 
         selector._score_candidates = mock_score
 
@@ -628,14 +674,24 @@ class TestTwoPassSelection:
         # Les deux articles devraient être sélectionnés mais sans bonus trending
         assert len(selected) == 2
         # Pas de "Sujet du jour" dans le breakdown car l'article n'est pas pertinent
-        for _, _, _, breakdown in selected:
+        for _, _, _, breakdown, _ in selected:
             labels = [b.label for b in breakdown]
             assert "Sujet du jour" not in labels
 
     @pytest.mark.asyncio
-    async def test_two_pass_full_personalized_fallback(self, selector, context, trending_context):
+    async def test_two_pass_full_personalized_fallback(
+        self, selector, context, trending_context
+    ):
         """Sans contenu trending, le digest est 100% personnalisé."""
-        themes = ["tech", "science", "culture", "economy", "politics", "environment", "international"]
+        themes = [
+            "tech",
+            "science",
+            "culture",
+            "economy",
+            "politics",
+            "environment",
+            "international",
+        ]
         sources = [make_source(name=f"S{i}", theme=themes[i]) for i in range(7)]
         contents = [make_content(source=s) for s in sources]
         context.user_interests = set(themes)
@@ -644,7 +700,7 @@ class TestTwoPassSelection:
         assert len(trending_context.trending_content_ids) == 0
 
         async def mock_score(candidates, ctx, mode="pour_vous"):
-            return [(c, 100.0 - i * 10, []) for i, c in enumerate(candidates)]
+            return [(c, 100.0 - i * 10, [], {}) for i, c in enumerate(candidates)]
 
         selector._score_candidates = mock_score
 
@@ -657,13 +713,15 @@ class TestTwoPassSelection:
 
         assert len(selected) == 7
         # Aucun breakdown ne contient "Sujet du jour" ou "À la une"
-        for _, _, _, breakdown in selected:
+        for _, _, _, breakdown, _ in selected:
             labels = [b.label for b in breakdown]
             assert "Sujet du jour" not in labels
             assert "À la une" not in labels
 
     @pytest.mark.asyncio
-    async def test_two_pass_diversity_continuity(self, selector, context, trending_context):
+    async def test_two_pass_diversity_continuity(
+        self, selector, context, trending_context
+    ):
         """Pass 2 respecte les source/theme counts de pass 1."""
         # Source A trending, Source A aussi dans perso → max 1 per source
         source_a = make_source(name="Source A", theme="tech")
@@ -671,8 +729,9 @@ class TestTwoPassSelection:
         source_c = make_source(name="Source C", theme="culture")
 
         # Construire assez de sources pour que max_per_source = 1
-        extra_sources = [make_source(name=f"Extra{i}", theme=f"extra{i}") for i in range(5)]
-        all_sources = [source_a, source_b, source_c] + extra_sources
+        extra_sources = [
+            make_source(name=f"Extra{i}", theme=f"extra{i}") for i in range(5)
+        ]
 
         trending_article = make_content(source=source_a)
         perso_article_same_source = make_content(source=source_a)
@@ -681,12 +740,26 @@ class TestTwoPassSelection:
         perso_extras = [make_content(source=s) for s in extra_sources]
 
         trending_context.trending_content_ids = {trending_article.id}
-        context.user_interests = {"tech", "science", "culture", "extra0", "extra1", "extra2", "extra3", "extra4"}
+        context.user_interests = {
+            "tech",
+            "science",
+            "culture",
+            "extra0",
+            "extra1",
+            "extra2",
+            "extra3",
+            "extra4",
+        }
 
-        all_candidates = [trending_article, perso_article_same_source, perso_article_b, perso_article_c] + perso_extras
+        all_candidates = [
+            trending_article,
+            perso_article_same_source,
+            perso_article_b,
+            perso_article_c,
+        ] + perso_extras
 
         async def mock_score(candidates, ctx, mode="pour_vous"):
-            return [(c, 200.0 - i * 10, []) for i, c in enumerate(candidates)]
+            return [(c, 200.0 - i * 10, [], {}) for i, c in enumerate(candidates)]
 
         selector._score_candidates = mock_score
 
@@ -699,7 +772,7 @@ class TestTwoPassSelection:
 
         # Compter les articles par source
         source_counts = defaultdict(int)
-        for content, _, _, _ in selected:
+        for content, _, _, _, _ in selected:
             source_counts[content.source_id] += 1
 
         # source_a ne devrait pas avoir plus de 1 article (pass1 trending + continuité)
@@ -708,19 +781,23 @@ class TestTwoPassSelection:
     @pytest.mark.asyncio
     async def test_two_pass_trending_capped(self, selector, context, trending_context):
         """Pass 1 ne sélectionne pas plus que ceil(target * ratio) articles."""
-        from app.services.recommendation.scoring_config import ScoringWeights
         from math import ceil
+
+        from app.services.recommendation.scoring_config import ScoringWeights
 
         sources = [make_source(name=f"S{i}", theme="tech") for i in range(10)]
         # 8 articles trending (plus que le cap)
         trending_contents = [make_content(source=sources[i]) for i in range(8)]
-        perso_contents = [make_content(source=sources[8]), make_content(source=sources[9])]
+        perso_contents = [
+            make_content(source=sources[8]),
+            make_content(source=sources[9]),
+        ]
 
         trending_context.trending_content_ids = {c.id for c in trending_contents}
         context.user_interests = {"tech"}
 
         async def mock_score(candidates, ctx, mode="pour_vous"):
-            return [(c, 100.0, []) for c in candidates]
+            return [(c, 100.0, [], {}) for c in candidates]
 
         selector._score_candidates = mock_score
 
@@ -734,7 +811,8 @@ class TestTwoPassSelection:
 
         # Compter les articles trending dans la sélection
         trending_in_selection = sum(
-            1 for c, _, _, bd in selected
+            1
+            for c, _, _, bd, _ in selected
             if any(b.label == "Sujet du jour" for b in bd)
         )
 
@@ -742,7 +820,9 @@ class TestTwoPassSelection:
         assert trending_in_selection <= max_trending
 
     @pytest.mark.asyncio
-    async def test_trending_bonus_in_breakdown(self, selector, context, trending_context):
+    async def test_trending_bonus_in_breakdown(
+        self, selector, context, trending_context
+    ):
         """Les labels 'Sujet du jour' et 'À la une' apparaissent dans le breakdown."""
         source = make_source(name="Le Monde", theme="tech")
         content_both = make_content(source=source)
@@ -753,7 +833,7 @@ class TestTwoPassSelection:
         context.user_interests = {"tech"}
 
         async def mock_score(candidates, ctx, mode="pour_vous"):
-            return [(c, 100.0, []) for c in candidates]
+            return [(c, 100.0, [], {}) for c in candidates]
 
         selector._score_candidates = mock_score
 
@@ -774,6 +854,7 @@ class TestTwoPassSelection:
         trending_entry = next(b for b in breakdown if b.label == "Sujet du jour")
         une_entry = next(b for b in breakdown if b.label == "À la une")
         from app.services.recommendation.scoring_config import ScoringWeights
+
         assert trending_entry.points == ScoringWeights.DIGEST_TRENDING_BONUS
         assert une_entry.points == ScoringWeights.DIGEST_UNE_BONUS
 
@@ -791,11 +872,17 @@ class TestGenerateReasonTrending:
 
         breakdown = [
             DigestScoreBreakdown(label="Sujet du jour", points=45.0, is_positive=True),
-            DigestScoreBreakdown(label="Sous-thème : AI", points=45.0, is_positive=True),
-            DigestScoreBreakdown(label="Source de confiance", points=35.0, is_positive=True),
+            DigestScoreBreakdown(
+                label="Sous-thème : AI", points=45.0, is_positive=True
+            ),
+            DigestScoreBreakdown(
+                label="Source de confiance", points=35.0, is_positive=True
+            ),
         ]
 
-        reason = selector._generate_reason(content, defaultdict(int), defaultdict(int), breakdown)
+        reason = selector._generate_reason(
+            content, defaultdict(int), defaultdict(int), breakdown
+        )
         assert reason == "Sujet du jour"
 
     def test_une_reason_takes_priority(self, selector):
@@ -805,10 +892,14 @@ class TestGenerateReasonTrending:
 
         breakdown = [
             DigestScoreBreakdown(label="À la une", points=35.0, is_positive=True),
-            DigestScoreBreakdown(label="Thème matché : tech", points=50.0, is_positive=True),
+            DigestScoreBreakdown(
+                label="Thème matché : tech", points=50.0, is_positive=True
+            ),
         ]
 
-        reason = selector._generate_reason(content, defaultdict(int), defaultdict(int), breakdown)
+        reason = selector._generate_reason(
+            content, defaultdict(int), defaultdict(int), breakdown
+        )
         assert reason == "À la une"
 
     def test_no_trending_falls_through_to_subtopic(self, selector):
@@ -817,23 +908,27 @@ class TestGenerateReasonTrending:
         content = make_content(source=source)
 
         breakdown = [
-            DigestScoreBreakdown(label="Sous-thème : AI", points=45.0, is_positive=True),
+            DigestScoreBreakdown(
+                label="Sous-thème : AI", points=45.0, is_positive=True
+            ),
         ]
 
-        reason = selector._generate_reason(content, defaultdict(int), defaultdict(int), breakdown)
+        reason = selector._generate_reason(
+            content, defaultdict(int), defaultdict(int), breakdown
+        )
         assert reason == "Thème : AI"
 
 
 # ─── Helpers: pillar engine ──────────────────────────────────────────────────
 
 
-def make_pillar_result(final_score=100.0, contributions=None):
+def make_pillar_result(final_score=100.0, contributions=None, pillar_scores=None):
     """Construit un PillarScoreResult minimal pour mocker pillar_engine."""
     from app.services.recommendation.scoring_engine import PillarScoreResult
 
     return PillarScoreResult(
         final_score=final_score,
-        pillar_scores={},
+        pillar_scores=pillar_scores or {},
         contributions=contributions or [],
     )
 
@@ -869,7 +964,7 @@ class TestScoreCandidatesSportPenalty:
 
         sport_src = make_source(name="Sport Source", theme="sport")
         tech_src = make_source(name="Tech Source", theme="tech")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         sport_content = make_content(source=sport_src, theme="sport", published_at=now)
         tech_content = make_content(source=tech_src, theme="tech", published_at=now)
 
@@ -885,7 +980,7 @@ class TestScoreCandidatesSportPenalty:
             [sport_content, tech_content], context, mode="pour_vous"
         )
 
-        by_id = {c.id: (s, bd) for c, s, bd in scored}
+        by_id = {c.id: (s, bd) for c, s, bd, _ in scored}
         sport_score, sport_breakdown = by_id[sport_content.id]
         tech_score, _ = by_id[tech_content.id]
 
@@ -905,7 +1000,7 @@ class TestScoreCandidatesSportPenalty:
         from app.services.recommendation.scoring_config import ScoringWeights
 
         sport_src = make_source(name="Sport Source", theme="sport")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         sport_content = make_content(source=sport_src, theme="sport", published_at=now)
 
         selector.rec_service = Mock()
@@ -919,7 +1014,7 @@ class TestScoreCandidatesSportPenalty:
             [sport_content], context, mode="serein"
         )
 
-        _, _, breakdown = scored[0]
+        _, _, breakdown, _ = scored[0]
         sport_entry = next(
             (b for b in breakdown if b.label == "Sport (priorité réduite)"), None
         )
@@ -930,7 +1025,7 @@ class TestScoreCandidatesSportPenalty:
     async def test_sport_detected_via_topics(self, selector, context):
         """Article non-sport en theme mais avec 'sport' dans topics est pénalisé."""
         src = make_source(name="Mixed Source", theme="tech")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         content = make_content(
             source=src, theme="tech", topics=["sport", "football"], published_at=now
         )
@@ -943,9 +1038,37 @@ class TestScoreCandidatesSportPenalty:
         )
 
         scored = await selector._score_candidates([content], context, mode="pour_vous")
-        _, _, breakdown = scored[0]
+        _, _, breakdown, _ = scored[0]
         labels = [b.label for b in breakdown]
         assert "Sport (priorité réduite)" in labels
+
+    @pytest.mark.asyncio
+    async def test_score_candidates_returns_pillar_scores(self, selector, context):
+        """Pillar scores are returned for persistence in daily_digest.items."""
+        src = make_source(name="Tech Source", theme="tech")
+        content = make_content(source=src, theme="tech")
+        pillar_scores = {
+            "pertinence": 70.0,
+            "source": 55.0,
+            "fraicheur": 90.0,
+            "qualite": 25.0,
+        }
+
+        selector.rec_service = Mock()
+        selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
+        selector.rec_service.pillar_engine = Mock()
+        selector.rec_service.pillar_engine.compute_score = Mock(
+            return_value=make_pillar_result(
+                final_score=80.0,
+                pillar_scores=pillar_scores,
+            )
+        )
+
+        scored = await selector._score_candidates([content], context, mode="pour_vous")
+
+        _, score, _, returned_pillar_scores = scored[0]
+        assert score == 80.0
+        assert returned_pillar_scores == pillar_scores
 
 
 # ─── Tests: unified pillar scoring (P0) ───────────────────────────────────────
@@ -999,7 +1122,7 @@ class TestScoreCandidatesUnifiedPillars:
     ):
         """Une source suivie reçoit une contribution mappée avec pillar='source'."""
         self._wire_real_engine(selector)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         followed_content = make_content(
             source=followed_src, theme="tech", published_at=now
         )
@@ -1009,7 +1132,7 @@ class TestScoreCandidatesUnifiedPillars:
             [followed_content, other_content], context, mode="pour_vous"
         )
 
-        by_id = {c.id: bd for c, _, bd in scored}
+        by_id = {c.id: bd for c, _, bd, _ in scored}
         followed_bd = by_id[followed_content.id]
         other_bd = by_id[other_content.id]
 
@@ -1024,7 +1147,7 @@ class TestScoreCandidatesUnifiedPillars:
     ):
         """Tout égal par ailleurs, l'article d'une source suivie score plus haut."""
         self._wire_real_engine(selector)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         followed_content = make_content(
             source=followed_src, theme="tech", published_at=now
         )
@@ -1034,7 +1157,7 @@ class TestScoreCandidatesUnifiedPillars:
             [followed_content, other_content], context, mode="pour_vous"
         )
 
-        by_id = {c.id: s for c, s, _ in scored}
+        by_id = {c.id: s for c, s, _, _ in scored}
         assert by_id[followed_content.id] > by_id[other_content.id]
 
     @pytest.mark.asyncio
@@ -1043,13 +1166,11 @@ class TestScoreCandidatesUnifiedPillars:
     ):
         """La récence vient uniquement du FraicheurPillar, comptée une seule fois."""
         self._wire_real_engine(selector)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         content = make_content(source=followed_src, theme="tech", published_at=now)
 
-        scored = await selector._score_candidates(
-            [content], context, mode="pour_vous"
-        )
-        _, _, breakdown = scored[0]
+        scored = await selector._score_candidates([content], context, mode="pour_vous")
+        _, _, breakdown, _ = scored[0]
 
         fraicheur_contribs = [b for b in breakdown if b.pillar == "fraicheur"]
         # Exactement une contribution de récence (pas de préférence de récence
@@ -1072,10 +1193,10 @@ class TestScoreCandidatesUnifiedPillars:
     ):
         """Aucune contribution 'Source suivie' si l'article n'est d'aucune source suivie."""
         self._wire_real_engine(selector)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         content = make_content(source=other_src, theme="tech", published_at=now)
 
         scored = await selector._score_candidates([content], context, mode="pour_vous")
-        _, _, breakdown = scored[0]
+        _, _, breakdown, _ = scored[0]
         labels = [b.label for b in breakdown]
         assert "Source suivie" not in labels

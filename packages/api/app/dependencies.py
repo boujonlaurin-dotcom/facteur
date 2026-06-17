@@ -186,17 +186,17 @@ async def get_current_user_id(
     token = credentials.credentials
 
     try:
-        # 1. Only Supabase ES256 tokens are accepted. Never let the token choose
-        # a legacy symmetric verification branch.
+        # 1. Obtenir le header uniquement pour vérifier l'algorithme annoncé.
         header = jwt.get_unverified_header(token)
         alg = header.get("alg")
+
         if alg != "ES256":
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token algorithm",
+                detail="Invalid token: unsupported algorithm",
             )
 
-        # 2. Utiliser JWKS pour l'algorithme asymétrique ES256
+        # 2. Utiliser exclusivement les JWKS Supabase pour l'algorithme ES256.
         jwks = await fetch_jwks()
         payload = jwt.decode(
             token,

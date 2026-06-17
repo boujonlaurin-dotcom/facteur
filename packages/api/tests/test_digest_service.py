@@ -204,6 +204,58 @@ class TestApplyAction:
         assert isinstance(result["applied_at"], datetime)
 
 
+class TestCreateDigestRecord:
+    """Tests for the persisted daily_digest.items payload."""
+
+    @pytest.mark.asyncio
+    async def test_persists_pillar_scores_and_final_score(self, service, mock_session):
+        from app.schemas.digest import DigestScoreBreakdown
+        from app.services.digest_selector import DigestItem
+
+        source = Mock()
+        source.name = "Test Source"
+        content = Mock()
+        content.id = uuid4()
+        content.title = "Test article"
+        content.source = source
+        content.entities = []
+
+        item = DigestItem(
+            content=content,
+            score=87.5,
+            rank=1,
+            reason="Thème : Tech",
+            breakdown=[
+                DigestScoreBreakdown(
+                    label="Source suivie",
+                    points=35.0,
+                    is_positive=True,
+                    pillar="source",
+                )
+            ],
+            pillar_scores={
+                "pertinence": 70.0,
+                "source": 55.0,
+                "fraicheur": 90.0,
+                "qualite": 25.0,
+            },
+        )
+
+        digest = await service._create_digest_record(
+            user_id=uuid4(),
+            target_date=date.today(),
+            digest_items=[item],
+        )
+
+        stored = digest.items[0]
+        assert stored["score"] == 87.5
+        assert stored["final_score"] == 87.5
+        assert stored["pillar_scores"] == item.pillar_scores
+        assert stored["breakdown"][0]["pillar"] == "source"
+        mock_session.add.assert_called_once_with(digest)
+        mock_session.flush.assert_awaited_once()
+
+
 # ─── Tests: complete_digest ───────────────────────────────────────────────────
 
 
@@ -322,9 +374,7 @@ class TestCompleteDigest:
         ]
         assert len(upserts) == 1
 
-        compiled = str(
-            upserts[0].compile(dialect=postgresql.dialect())
-        ).lower()
+        compiled = str(upserts[0].compile(dialect=postgresql.dialect())).lower()
         assert "on conflict" in compiled
         assert "do update" in compiled
 
@@ -1188,9 +1238,7 @@ async def test_editorial_label_falls_back_to_actu_title(
         patch.object(
             service, "_get_batch_action_states", new=AsyncMock(return_value={})
         ),
-        patch.object(
-            service, "_compute_target_size", new=AsyncMock(return_value=5)
-        ),
+        patch.object(service, "_compute_target_size", new=AsyncMock(return_value=5)),
     ):
         response = await service._build_editorial_response(digest, digest.user_id)
 

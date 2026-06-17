@@ -1,6 +1,9 @@
-import pytest
+import socket
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.services.rss_parser import RSSParser, DetectedFeed
+
+import pytest
+
+from app.services.rss_parser import RSSParser
 
 
 class AttrDict(dict):
@@ -35,6 +38,15 @@ class BadFeed:
         self.entries = []
         self.feed = {}
         self.version = ""
+
+
+@pytest.fixture(autouse=True)
+def mock_public_dns(monkeypatch):
+    def _getaddrinfo(host, port, *args, **kwargs):
+        address = "10.0.0.5" if host == "private.example.test" else "93.184.216.34"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port or 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _getaddrinfo)
 
 
 # ─── Existing Tests ───────────────────────────────────────────────
@@ -621,3 +633,66 @@ async def test_error_diagnostics_include_detection_log():
     assert "No RSS feed found" in error_msg
     assert "Tried:" in error_msg
     assert "direct_parse=fail" in error_msg
+
+
+# ─── SSRF Guard Tests ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_detect_private_ip_rejected_before_fetch():
+    parser = RSSParser()
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        with pytest.raises(ValueError):
+            await parser.detect("http://127.0.0.1/feed")
+
+    mock_get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_redirect_to_private_ip_rejected_before_final_fetch():
+    parser = RSSParser()
+
+    redirect = MagicMock()
+    redirect.status_code = 302
+    redirect.headers = {"location": "http://127.0.0.1/feed"}
+    redirect.text = ""
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = redirect
+        with pytest.raises(ValueError):
+            await parser.detect("https://example.com")
+
+    assert mock_get.await_count == 1
+    assert mock_get.await_args.args[0] == "https://example.com"
+
+
+@pytest.mark.asyncio
+async def test_discovered_private_candidate_is_not_fetched():
+    parser = RSSParser()
+
+    main_response = MagicMock()
+    main_response.text = """
+    <html><body>
+        <a href="https://private.example.test/feed.xml">RSS</a>
+    </body></html>
+    """
+    main_response.status_code = 200
+    main_response.headers = {"content-type": "text/html"}
+    main_response.raise_for_status = MagicMock()
+
+    not_found = MagicMock()
+    not_found.status_code = 404
+    not_found.text = "Not Found"
+    not_found.headers = {"content-type": "text/html"}
+
+    async def mock_get(url, **kwargs):
+        assert "private.example.test" not in url
+        if url == "https://example.com":
+            return main_response
+        return not_found
+
+    with patch("httpx.AsyncClient.get", side_effect=mock_get):
+        with patch("feedparser.parse", return_value=BadFeed()):
+            with pytest.raises(ValueError, match="No RSS feed found"):
+                await parser.detect("https://example.com")

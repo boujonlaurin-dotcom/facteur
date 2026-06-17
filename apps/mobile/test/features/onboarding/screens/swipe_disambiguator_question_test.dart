@@ -45,6 +45,22 @@ Source _src(
   );
 }
 
+/// Ordre des cartes tel que l'écran l'aplatit : groupes contigus (sans prefs),
+/// concaténés. Sert à prédire la carte du dessus et l'en-tête dynamique.
+List<SpanningSource> _flatGroups(List<Source> sources) =>
+    SourceRecommender.buildSpanningGroups(
+      selectedThemes: const [],
+      selectedSubtopics: const [],
+      allSources: sources,
+    ).expand((g) => g.cards).toList();
+
+String _topGroupLabel(List<Source> sources) =>
+    SourceRecommender.buildSpanningGroups(
+      selectedThemes: const [],
+      selectedSubtopics: const [],
+      allSources: sources,
+    ).first.label;
+
 void main() {
   setUpAll(() {
     Hive.init(Directory.systemTemp.createTempSync('onb_swipe_test').path);
@@ -77,16 +93,19 @@ void main() {
     );
   }
 
-  testWidgets('rend le titre et les boutons d\'action', (tester) async {
-    final container = makeContainer([
+  testWidgets('rend l\'en-tête dynamique et les boutons d\'action',
+      (tester) async {
+    final sources = [
       _src('main', tier: 'mainstream'),
       _src('deep', tier: 'deep'),
       _src('indie', independence: 0.9, bias: 'alternative'),
-    ]);
+    ];
+    final container = makeContainer(sources);
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
-    expect(find.text(OnboardingStrings.swipeTitle), findsOneWidget);
+    // En-tête dynamique = libellé du groupe de la carte du dessus.
+    expect(find.text(_topGroupLabel(sources)), findsOneWidget);
     // La carte du dessus + ses boutons d'action (like / pas pour moi).
     expect(find.byIcon(Icons.favorite_rounded), findsOneWidget);
     expect(find.byIcon(Icons.close_rounded), findsOneWidget);
@@ -184,12 +203,13 @@ void main() {
   testWidgets('compteur humanisé + pas de chips de profil au départ', (
     tester,
   ) async {
-    final container = makeContainer(_richDeck());
+    final deck = _richDeck();
+    final container = makeContainer(deck);
     await tester.pumpWidget(buildTestWidget(container));
     await tester.pumpAndSettle();
 
-    // Nouveau titre.
-    expect(find.text('Quels médias suivre ?'), findsOneWidget);
+    // En-tête dynamique par groupe (remplace l'ancien titre statique).
+    expect(find.text(_topGroupLabel(deck)), findsOneWidget);
     // Compteur humanisé (palier « début »), plus jamais l'ancien « Carte X sur Y ».
     expect(find.textContaining('Premières cartes'), findsOneWidget);
     expect(find.textContaining('Carte '), findsNothing);
@@ -204,11 +224,8 @@ void main() {
     'précharge uniquement les 3 profils visibles et ignore les erreurs',
     (tester) async {
       final sources = _richDeck();
-      final expected = SourceRecommender.buildSpanningSet(
-        selectedThemes: const [],
-        selectedSubtopics: const [],
-        allSources: sources,
-      ).take(3).map((s) => s.source.id).toSet();
+      final expected =
+          _flatGroups(sources).take(3).map((s) => s.source.id).toSet();
       final preloaded = <String>[];
       final container = ProviderContainer(
         overrides: [
@@ -234,7 +251,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.text(OnboardingStrings.swipeTitle), findsOneWidget);
+      expect(find.text(OnboardingStrings.swipeSubtitle), findsOneWidget);
       expect(preloaded.toSet(), expected);
     },
   );
@@ -264,33 +281,32 @@ void main() {
     'bouton retour : restaure la dernière carte et permet de revoter',
     (tester) async {
       final sources = _richDeck();
-      final firstCard = SourceRecommender.buildSpanningSet(
-        selectedThemes: const [],
-        selectedSubtopics: const [],
-        allSources: sources,
-      ).first;
+      final firstCard = _flatGroups(sources).first;
       final container = makeContainer(sources);
       await tester.pumpWidget(buildTestWidget(container));
       await tester.pumpAndSettle();
 
       expect(find.text(firstCard.source.name), findsOneWidget);
+      // Pas d'undo tant qu'aucun vote.
+      expect(find.byIcon(Icons.undo_rounded), findsNothing);
 
       await tester.tap(find.widgetWithIcon(InkWell, Icons.favorite_rounded));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text(OnboardingStrings.swipeUndoLabel), findsOneWidget);
+      // Le bouton « revenir » discret (icône seule) apparaît à gauche de X/V.
+      expect(find.byIcon(Icons.undo_rounded), findsOneWidget);
       expect(find.text(firstCard.source.name), findsNothing);
       expect(
         find.textContaining(OnboardingStrings.swipeProfileInline),
         findsOneWidget,
       );
 
-      await tester.tap(find.text(OnboardingStrings.swipeUndoLabel));
+      await tester.tap(find.widgetWithIcon(InkWell, Icons.undo_rounded));
       await tester.pumpAndSettle();
 
       expect(find.text(firstCard.source.name), findsOneWidget);
-      expect(find.text(OnboardingStrings.swipeUndoLabel), findsNothing);
+      expect(find.byIcon(Icons.undo_rounded), findsNothing);
       expect(
         find.textContaining(OnboardingStrings.swipeProfileInline),
         findsNothing,
@@ -300,7 +316,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
 
-      expect(find.text(OnboardingStrings.swipeUndoLabel), findsOneWidget);
+      expect(find.byIcon(Icons.undo_rounded), findsOneWidget);
     },
   );
 
@@ -336,15 +352,21 @@ void main() {
   testWidgets(
     'fiche source : CTA like ferme la modal une seule fois et avance la carte',
     (tester) async {
-      final container = makeContainer([
+      final sources = [
         _src('indie', independence: 0.9, bias: 'alternative'),
         _src('deep', tier: 'deep'),
-      ]);
+      ];
+      // L'ordre du deck suit les groupes contigus : on lit la carte du dessus
+      // et la suivante depuis l'aplatissement, sans présumer l'ordre.
+      final flat = _flatGroups(sources);
+      final top = flat.first.source;
+      final next = flat[1].source;
+      final container = makeContainer(sources);
       await tester.pumpWidget(buildTestWidget(container));
       await tester.pumpAndSettle();
 
-      expect(find.text('Source indie'), findsOneWidget);
-      await tester.tap(find.text('Source indie'));
+      expect(find.text(top.name), findsOneWidget);
+      await tester.tap(find.text(top.name));
       await tester.pumpAndSettle();
 
       expect(find.text('Sélectionner cette source'), findsNothing);
@@ -359,7 +381,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(find.text('Gestion de la source'), findsNothing);
-      expect(find.text('Source deep'), findsOneWidget);
+      expect(find.text(next.name), findsOneWidget);
 
       await tester.tap(find.widgetWithIcon(InkWell, Icons.close_rounded));
       await tester.pump();
@@ -369,11 +391,11 @@ void main() {
 
       expect(
         container.read(onboardingProvider).answers.swipeLiked,
-        equals(['indie']),
+        equals([top.id]),
       );
       expect(
         container.read(onboardingProvider).answers.swipeDisliked,
-        equals(['deep']),
+        equals([next.id]),
       );
     },
   );
