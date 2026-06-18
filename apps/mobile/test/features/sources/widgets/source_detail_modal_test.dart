@@ -148,7 +148,7 @@ void main() {
   group(
     'SourceDetailModal — évaluation (cas Le Monde : complète + premium)',
     () {
-      testWidgets('eval is open by default with subtitle below title', (
+      testWidgets('eval is collapsed by default then shows A-E badges', (
         tester,
       ) async {
         final source = Source(
@@ -166,22 +166,28 @@ void main() {
         await tester.pumpWidget(_wrap(source: source));
         await tester.pumpAndSettle();
 
-        // Open by default: title, subtitle, reliability and gauges visible.
+        // Collapsed by default: title, subtitle and summary visible.
         expect(find.text('Évaluation Facteur'), findsOneWidget);
         expect(find.text('à titre indicatif'), findsOneWidget);
         expect(find.text('Solide'), findsWidgets);
+        expect(find.text('Indépendance'), findsNothing);
+        expect(find.text('Rigueur'), findsNothing);
+        expect(find.text('Accessibilité'), findsNothing);
+
+        await tester.tap(find.text('Évaluation Facteur'));
+        await tester.pumpAndSettle();
+
         expect(find.text('Indépendance'), findsOneWidget);
         expect(find.text('Rigueur'), findsOneWidget);
         expect(find.text('Accessibilité'), findsOneWidget);
-        // Gauge words derived by thresholds.
-        expect(find.text('Correcte'), findsOneWidget); // 0.55
-        expect(find.text('Élevée'), findsOneWidget); // 0.85
-        expect(find.text('Bonne'), findsOneWidget); // 0.70
+        // Grades derived by thresholds: 0.55=C, 0.85=A, 0.70=B.
+        expect(find.text('A'), findsOneWidget);
+        expect(find.text('B'), findsOneWidget);
+        expect(find.text('C'), findsOneWidget);
         expect(find.text('Voir la méthodologie'), findsOneWidget);
       });
 
-      testWidgets(
-          'premium block always visible when premiumConnection != null '
+      testWidgets('premium block always visible when premiumConnection != null '
           'even when not followed', (tester) async {
         final source = Source(
           id: 'monde',
@@ -222,6 +228,9 @@ void main() {
       );
 
       await tester.pumpWidget(_wrap(source: source));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Évaluation Facteur'));
       await tester.pumpAndSettle();
 
       expect(find.text('Indépendance'), findsOneWidget);
@@ -277,6 +286,31 @@ void main() {
         find.text('3\u202F012 articles publiés sur la période'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('keeps top 3 themes and merges the rest into Autres', (
+      tester,
+    ) async {
+      final source = Source(id: 'x', name: 'X', type: SourceType.article);
+      const profile = SourceProfile(
+        articles30d: 100,
+        themeDistribution: [
+          ThemeShare(theme: 'politics', count: 30, share: 0.30),
+          ThemeShare(theme: 'economy', count: 25, share: 0.25),
+          ThemeShare(theme: 'science', count: 20, share: 0.20),
+          ThemeShare(theme: 'culture', count: 15, share: 0.15),
+          ThemeShare(theme: 'other', count: 10, share: 0.10),
+        ],
+      );
+
+      await tester.pumpWidget(_wrap(source: source, profile: profile));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Politique'), findsOneWidget);
+      expect(find.text('Économie'), findsOneWidget);
+      expect(find.text('Culture'), findsNothing);
+      expect(find.text('Autres'), findsOneWidget);
+      expect(find.text('25 %'), findsWidgets);
     });
 
     testWidgets('hides coverage section when theme_distribution empty', (
@@ -382,7 +416,10 @@ void main() {
         // muette : message d'indisponibilité + bouton « Réessayer ».
         expect(find.text('Couverture par thèmes'), findsNothing);
         expect(find.text('Derniers articles'), findsOneWidget);
-        expect(find.text('Contenu momentanément indisponible.'), findsOneWidget);
+        expect(
+          find.text('Contenu momentanément indisponible.'),
+          findsOneWidget,
+        );
         expect(find.text('Réessayer'), findsOneWidget);
       },
     );
