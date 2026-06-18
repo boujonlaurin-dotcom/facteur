@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Onboarding",
+      "summary": "Un tour guidé te présente tes pages dès la première ouverture."
+    },
+    {
+      "tag": "Onboarding",
       "summary": "Sélection des médias plus fluide : davantage de suggestions, petites animations de validation à chaque étape, et un écran de fin qui va jusqu'au bout avant de t'emmener dans l'app."
     },
     {
