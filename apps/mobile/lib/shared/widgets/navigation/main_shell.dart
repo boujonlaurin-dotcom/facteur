@@ -8,6 +8,8 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../../features/app_update/providers/app_update_provider.dart';
 import '../../../features/feed/widgets/profile_avatar_button.dart';
 import '../../../features/gamification/widgets/streak_indicator.dart';
+import '../../../features/tour/tour_anchors.dart';
+import '../../../features/tour/widgets/guided_tour_bridge.dart';
 import '../../../widgets/design/facteur_logo.dart';
 import 'main_bottom_nav.dart';
 
@@ -26,7 +28,15 @@ class MainShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return ColoredBox(
       color: context.facteurColors.backgroundPrimary,
-      child: navigationShell,
+      // [GuidedTourBridge] monté une seule fois ici (stable tant qu'on est dans
+      // le shell, jamais démonté au changement d'onglet) : il pilote le tour
+      // guidé post-onboarding via l'overlay racine.
+      child: Stack(
+        children: [
+          navigationShell,
+          const GuidedTourBridge(),
+        ],
+      ),
     );
   }
 }
@@ -65,6 +75,11 @@ class MainTabPageScaffold extends ConsumerWidget {
           offset: footerVisible ? Offset.zero : const Offset(0, 1),
           child: MainBottomNav(
             currentIndex: currentIndex,
+            // Ancre du tour guidé sur l'onglet Essentiel (co-cible de l'étape 1).
+            // Posée uniquement par le scaffold Essentiel : les deux branches
+            // restent montées (keepAlive), une clé partagée serait dupliquée.
+            essentielTabAnchorKey:
+                currentIndex == 0 ? tourEssentielFooterTabKey : null,
             onSelect: (index) {
               // Tout tap d'onglet redonne le footer (évite un footer « collé »
               // masqué au changement de page).
@@ -87,7 +102,10 @@ class MainTabPageScaffold extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          const _SharedTopHeader(),
+          // L'ancre profil du tour guidé n'est posée que sur le header Essentiel
+          // (étapes 4/5 y naviguent) — clé unique malgré les deux branches
+          // montées simultanément.
+          _SharedTopHeader(attachTourAvatarKey: currentIndex == 0),
           Expanded(child: child),
         ],
       ),
@@ -101,7 +119,11 @@ class MainTabPageScaffold extends ConsumerWidget {
 /// Repris du header historique de `FluxContinuScreen` afin de garder l'apparence
 /// identique sur les deux pages racines.
 class _SharedTopHeader extends StatelessWidget {
-  const _SharedTopHeader();
+  /// Pose [tourProfileAvatarKey] autour de l'avatar profil (étapes 4/5 du tour
+  /// guidé). Activé sur le seul header Essentiel pour garder la clé unique.
+  final bool attachTourAvatarKey;
+
+  const _SharedTopHeader({this.attachTourAvatarKey = false});
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +145,9 @@ class _SharedTopHeader extends StatelessWidget {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: Consumer(
+              child: KeyedSubtree(
+                key: attachTourAvatarKey ? tourProfileAvatarKey : null,
+                child: Consumer(
                 builder: (context, ref, _) {
                   final hasUpdate =
                       ref
@@ -158,6 +182,7 @@ class _SharedTopHeader extends StatelessWidget {
                     ],
                   );
                 },
+                ),
               ),
             ),
           ],

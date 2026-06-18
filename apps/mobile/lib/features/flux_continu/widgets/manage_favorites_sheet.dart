@@ -20,6 +20,7 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
+import '../../tour/tour_anchors.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart' hide applyOrder;
@@ -50,6 +51,11 @@ Future<void> showManageFavoritesSheet(
   BuildContext context, {
   ManageFavoritesEntry entry = ManageFavoritesEntry.essentiel,
 }) {
+  // NB z-order : on N'utilise PAS `useRootNavigator: true` à dessein. La feuille
+  // vit ainsi dans le navigator de **branche**, ce qui laisse l'overlay racine
+  // du tour guidé ([tourFavorisSheetKey]) se rendre au-dessus pour la cerner
+  // (cf. plan tour guidé, étape 2). Repasser en root navigator casserait le
+  // spotlight de l'étape « Compose ta Tournée ».
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -57,10 +63,13 @@ Future<void> showManageFavoritesSheet(
     enableDrag: true,
     isDismissible: true,
     barrierColor: Colors.black.withValues(alpha: 0.5),
-    builder: (ctx) => ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: _ManageFavoritesContent(entry: entry),
+    builder: (ctx) => KeyedSubtree(
+      key: tourFavorisSheetKey,
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: _ManageFavoritesContent(entry: entry),
+        ),
       ),
     ),
   );

@@ -1,67 +1,58 @@
-# QA Handoff — Onboarding : polish du « cœur » sélection des sources
+# QA Handoff — Tour guidé Facteur (coach-mark post-onboarding)
 
-Branche : `boujonlaurin-dotcom/onboarding-source-selection-polish` (base `main`).
-Backend non touché. Feature UI only.
+> Rempli par l'agent dev. Input de `/validate-feature` (Playwright Agent CLI).
+
+## Feature développée
+Tour guidé en 5 étapes joué **une seule fois juste après l'onboarding**. Il pilote la vraie app (bascule d'onglet, ouvre la feuille « Mes favoris », scrolle l'Essentiel) et présente : l'Essentiel + ta Tournée, la réorganisation, Flâner, puis spotlight de l'avatar profil pour Réglages et Mon courrier. À la fin (« Terminer » ou « Passer »), la main est rendue aux modales post-onboarding existantes (thème puis notifications).
+
+## PR associée
+À créer vers `main` (`--base main`).
 
 ## Écrans impactés
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| L'Essentiel (Flux Continu) | `/flux-continu` | Modifié (ancres hero + 1ʳᵉ section + avatar) |
+| Flâner | `/flaner` | Modifié (étape 3, voile centré) |
+| Feuille « Mes favoris » | bottom sheet (branche) | Modifié (ancre spotlight) |
+| Overlay tour guidé | overlay racine | Nouveau |
 
-1. **Swipe de calibration** (`SwipeDisambiguatorQuestion`, Q9c)
-2. **Page « Tes médias, sur mesure »** (`SourcesQuestion`, Q10)
+## Scénarios de test
 
-## Setup
+### Scénario 1 : Happy path (5 étapes complètes)
+1. Compléter l'onboarding jusqu'à l'écran de conclusion → arrivée sur L'Essentiel.
+2. **Étape 1/5** : coach card en bas, spotlight sur le hero « L'Essentiel du jour » + onglet Essentiel. Cliquer « Suivant ».
+3. **Étape 2/5 (a)** : l'app scrolle vers la 1ʳᵉ section de la Tournée, spotlight dessus. « Suivant ».
+4. **Étape 2/5 (b)** : la feuille « Mes favoris » s'ouvre, spotlight la cerne par-dessus. Pastille toujours « 2 / 5 ». « Suivant ».
+5. **Étape 3/5** : bascule sur Flâner, voile plein, coach card centrée. « Suivant ».
+6. **Étape 4/5** : retour Essentiel, spotlight de l'avatar profil (haut-droite). « Suivant ».
+7. **Étape 5/5** : même avatar profil, bouton « Terminer ».
+8. **Terminer** → carte « C'est parti ! » brève → puis enchaînement des modales thème puis notifications.
 
-- Build web Flutter, viewport mobile **390x844**, sémantique activée au boot
-  (cf. skill `facteur-qa-web`).
-- Parcourir l'onboarding jusqu'au swipe (répondre thèmes/sujets pour avoir des
-  groupes thématisés), puis continuer jusqu'à la page sur-mesure.
+**Attendu** : 5 puces de progression, pastille « N / 5 », pas d'écran gris, pas d'erreur console, pas de 4xx/5xx.
 
-## Scénarios — Swipe (B)
+### Scénario 2 : « Passer » à n'importe quelle étape
+1. Démarrer le tour, cliquer « Passer » dès l'étape 1.
+**Attendu** : overlay retiré, enchaînement direct vers les modales thème/notifications.
 
-- **En-tête dynamique (B.2)** : plus de titre statique « Quels médias suivre ? ».
-  Un en-tête par **groupe** s'affiche (ex. « L'actu au quotidien »,
-  « Des médias indépendants », « Pour aller au fond… », « Un autre point de
-  vue », ou thématisé « Pour creuser Tech & Innovation… »). Il **change** quand
-  on passe d'un bloc de cartes au suivant (transition douce).
-  - Edge : l'ordre des blocs suit les prefs — répondre « médias spécialisés »
-    (independent) doit mener avec indépendants/fond ; « grands médias »
-    (established) avec références/grands médias.
-- **Hint (B.1)** : sous la carte, texte renommé **« Touche pour ouvrir le
-  média »** (visible sur la 1ʳᵉ carte, disparaît au 1ᵉʳ geste), rapproché du bas
-  du deck.
-- **Centrage (B.3)** : le deck est centré verticalement (plus d'espace mort en
-  haut depuis la suppression du gros titre).
-- **Undo (B.4)** : 3 boutons ronds sur une ligne — **undo discret (plus petit,
-  gris) à gauche** de (X) et (♥). Invisible tant qu'aucun vote ; (X)/(♥) restent
-  centrés (placeholder symétrique). L'undo de l'overlay final reste inchangé.
+### Scénario 3 : Une seule fois
+1. Tour terminé, fermer/rouvrir l'app (même utilisateur).
+**Attendu** : le tour ne rejoue pas ; les modales post-onboarding (si encore dues) jouent directement.
 
-## Scénarios — Page sur-mesure (A)
-
-- **Déjà ajoutés (A.1)** : en tête de la section 1, puces **discrètes** (libellé
-  léger « Déjà ajoutés », logos ~18px), alimentées par les sources likées au
-  swipe. Ces sources sont hors carrousel et déjà cochées.
-- **Carrousels (A.2)** : sections 1 (suggestions) **et** 3 (catalogue) en
-  **carrousel horizontal** (swipe latéral, ~1,2 carte visible, peek sur la
-  suivante). Le filtre par thème (section 3) repart de la 1ʳᵉ carte.
-- **Cartes (A.3/A.4)** : cartes portrait — logo + nom + pastille de biais en
-  tête ; **aspects matchés** (tags : thème, « Spécialisé en X », « ≈ Similaire à
-  … », fiable/anti-bruit/serein) mis en valeur au cœur ; cercle de sélection
-  ≥44px ; tap carte → modale détail.
+### Scénario 4 : Edge — feuille favoris refermée au doigt (étape 2b)
+1. À l'étape « Compose ta Tournée », fermer la feuille par swipe vers le bas (au lieu de « Suivant »).
+**Attendu** : auto-avance vers l'étape Flâner (pas de voile orphelin bloquant).
 
 ## Critères d'acceptation
+- [ ] Le tour pilote réellement l'app entre les étapes.
+- [ ] Étapes 4 & 5 restent sur l'accueil et spotlight l'avatar profil (pas de navigation Settings/Courrier).
+- [ ] Joué une seule fois, post-onboarding, aucun point d'entrée « Revoir ».
+- [ ] Tour d'abord, puis modales thème/notifications.
+- [ ] Pas d'em-dash dans la copy (règle PO).
 
-- En-tête de swipe change visiblement entre groupes ; aucun em-dash.
-- Carrousels fluides, peek visible ; sélection/desélection OK ; modale détail OK.
-- Console sans erreurs ; pas de 4xx/5xx réseau inattendus.
+## Zones de risque
+- **Ancre pas encore layoutée** après bascule d'onglet (slide 260ms) / scroll → voile plein tant que la cible n'est pas mesurée/visible, rect recalculé chaque frame.
+- **Z-order** : overlay inséré dans l'overlay **racine** ; la feuille favoris reste en navigator de branche (ne PAS passer `useRootNavigator: true`).
+- **GlobalKeys uniques** : avatar + onglet Essentiel ancrés uniquement côté Essentiel (les deux branches sont montées simultanément).
 
-## Vérifs déjà passées (dev)
-
-- `flutter test test/features/onboarding` → **84 passed** (dont nouveaux tests
-  `buildSpanningGroups` : ordre par prefs, libellé thème vs pôle, dégradation).
-- `flutter analyze` sur les fichiers touchés → propre (seuls infos `withOpacity`
-  pré-existantes, conformes au reste du code).
-
-## Note hors-scope (à signaler)
-
-`apps/mobile/assets/changelog.json` était **JSON invalide sur `main`** (deux
-entrées `unreleased` fusionnées par un mauvais merge → parsing cassé). Réparé
-dans cette PR + ajout de l'entrée « Onboarding » de la feature.
+## Dépendances
+Aucune (frontend pur, persistance locale `SharedPreferences` clé `nudge.guided_tour.seen.<userId>`). Nécessite un compte qui vient de finir l'onboarding.

@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../tour/tour_anchors.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
@@ -45,7 +46,10 @@ class EssentielHiFiCard extends ConsumerWidget {
         ? articles.sublist(1, articles.length > 5 ? 5 : articles.length)
         : const <EssentielArticle>[];
 
-    return Container(
+    return KeyedSubtree(
+      // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
+      key: tourEssentielHeroKey,
+      child: Container(
       margin: const EdgeInsets.fromLTRB(
         FacteurSpacing.space3,
         FacteurSpacing.space2,
@@ -94,6 +98,7 @@ class EssentielHiFiCard extends ConsumerWidget {
             ],
           ],
         ),
+      ),
       ),
     );
   }

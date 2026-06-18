@@ -1,66 +1,33 @@
-# Volet « Pas de recul » (deep reco) dans le reader — backend + mobile
+## Tour guidé Facteur (coach-mark post-onboarding)
 
-## Résumé
-Réactive le moteur « Pas de recul » (désactivé au post-unification cleanup) et
-l'expose **par article ouvert** : l'endpoint `GET /contents/{id}/perspectives`
-renvoie une recommandation d'article de fond (`deep_recommendation`), et le
-reader la rend tout en bas, sous la « Couverture médiatique ». Premier étage de
-la dimension « deep » de l'app. **Aucune migration Alembic.**
+Tour guidé en 5 étapes joué **une seule fois juste après l'onboarding**, qui pilote la vraie app pour présenter ses pages principales. Il s'insère **avant** les modales post-onboarding existantes (thème puis notifications).
 
-## Changements — Backend
-- **`deep_matcher.py`** : nouvelle méthode `match_for_content(content)` — variante
-  reader de `match_for_topics`. Dérive un pseudo-angle depuis l'article ouvert
-  (titre + topics + theme), réutilise tel quel `_load_deep_articles` / `_prefilter`
-  / `_expand_query` / `_llm_evaluate` / `_fallback_pick`. Exclut l'article ouvert
-  **et** tout article du même cluster (pas une autre dépêche du même évènement).
-  Helper `_entity_names` tolérant aux deux formats d'entités (JSON & `name:type`).
-- **`routers/contents.py`** : cache dédié `_deep_reco_cache` (TTL 2h) + sentinelle
-  `_DEEP_NO_MATCH` + garde in-flight. Le matching tourne en **background**
-  (`_compute_deep_reco_background`) car il fait 2 appels LLM — on ne bloque pas
-  l'ouverture du reader, exactement comme le pattern partiel/refresh des
-  perspectives. `deep_recommendation` (dict|null) + `deep_pending` (bool) sont
-  attachés aux 3 chemins de retour (cache hit / snapshot digest / live) et
-  préservés à travers le refresh background.
-- **`editorial_prompts.yaml`** : prompt `deep_matching` décommenté. **`config.py`** :
-  commentaire TODO nettoyé.
+### Parcours (6 états joués, 5 puces)
+1. **1/5** — hero « L'Essentiel du jour » + onglet Essentiel (scroll top).
+2. **2/5 (a)** — scroll vers la 1ʳᵉ section de la Tournée (`ensureVisible`).
+3. **2/5 (b)** — ouverture de la vraie feuille « Mes favoris », spotlight par-dessus.
+4. **3/5** — bascule onglet Flâner, voile plein, carte centrée.
+5. **4/5** — retour accueil, spotlight de l'avatar profil (Réglages).
+6. **5/5** — même avatar (Mon courrier), bouton « Terminer ».
+7. **done** — carte « C'est parti », puis main rendue aux modales.
 
-## Changements — Mobile
-- **`feed_repository.dart`** : modèle `DeepRecommendation` + champs
-  `deepRecommendation` / `deepPending` sur `PerspectivesResponse` (+ parsing JSON,
-  rétro-compatible : clés absentes ⇒ `null` / `false`).
-- **`deep_recommendation_card.dart`** (nouveau) : carte « Pas de recul »
-  (médaillon 🔭, titre, raison de match, source ; tap → ouvre l'article dans le
-  reader). Palette dérivée des tokens `colors.*` ⇒ cohérent clair/sombre/oled.
-- **`content_detail_screen.dart`** : rendu de la carte en bas du reader (gardé par
-  `deep_recommendation != null && !_isExternal`), `_openDeepReco()` (push route
-  `content/:id`), et refetch one-shot étendu à `deepPending` (pas de double appel
-  LLM-coûteux).
+### Architecture
+- **Machine à états Riverpod** (`GuidedTourController`, `keepAlive`) — survit aux changements d'onglet/feuilles, **ne touche jamais `BuildContext`**. `start(onComplete)` gate le flag « vu » (scopé user) ; `next()`/`skip()`/`finish()` → `done` + `onComplete` tiré une seule fois.
+- **Bridge racine** (`GuidedTourBridge`, monté une fois dans `MainShell`) — exécute les effets de bord (navigation, ouverture feuille, scroll) et insère l'`OverlayEntry` dans l'overlay **racine** (au-dessus de la feuille favoris qui vit en branche).
+- **Overlay** — scrim `#2C2A29` α0.72 + découpe spotlight (`Path`/`BlendMode.clear`, contour `#E8943F`), rect relu live depuis le `RenderBox` des `GlobalKey` à chaque frame (suit slide/scroll). Coach card : avatar Facteur, pastille « N/5 », titre Fraunces, corps DM Sans, 5 puces, Passer/Suivant/Terminer.
 
-## Contrat API (nouveaux champs de la réponse perspectives)
-```
-deep_recommendation: {
-  content_id, title, url, thumbnail_url, content_type,
-  source_id, source_name, source_logo_url, published_at,
-  match_reason, description
-} | null
-deep_pending: bool   # true = matching en cours en background → mobile doit refetch
-```
+### Garde « une seule fois »
+Double verrou : démarrage seulement depuis le chemin post-onboarding (`postOnboardingFlowPendingProvider`) **et** flag persistant `nudge.guided_tour.seen.<userId>` (namespace `nudge.`, scopé user comme `NudgeStorage`).
 
-## Tests
-- `tests/editorial/test_deep_matcher.py` : `TestMatchForContent` (sélection LLM,
-  exclusion self, exclusion même cluster, pool vide, pivot maigre, fallback no-LLM)
-  + `TestEntityNames`. **25/25 verts.**
-- `tests/routers/test_contents_deep_reco.py` (nouveau) : helpers `_deep_reco_to_dict`,
-  `_apply_deep_from_cache`, `_attach_deep_recommendation`. **8/8 verts.**
-- `deep_recommendation_card_test.dart` (nouveau) + `feed_repository_perspectives_test.dart`
-  (étendu : parsing `deep_recommendation` / `deep_pending`).
-- 1 seul head Alembic, aucune migration.
+### Fichiers
+- **Nouveaux** : `lib/features/tour/` (models/tour_step, providers/guided_tour_controller, tour_anchors, tour_strings, tour_ids, widgets/guided_tour_bridge|overlay|coach_card).
+- **Édités** : `flux_continu_screen.dart` (split `_runPostOnboardingFlow` → tour puis `_runPostOnboardingModals`, listen `tourScrollTargetProvider`, ancre 1ʳᵉ section), `essentiel_hi_fi_card.dart` (ancre hero), `main_shell.dart` (montage bridge + ancre avatar), `main_bottom_nav.dart` (ancre onglet), `manage_favorites_sheet.dart` (ancre feuille + note z-order), `navigation_providers.dart` (`tourScrollTargetProvider`), `changelog.json`.
 
-## Vérif manuelle suggérée (avant merge)
-`uvicorn` local + `curl /contents/{id}/perspectives` → `deep_pending:true` au 1er
-appel, puis `deep_recommendation` peuplé au 2e (article avec sujet couvert par une
-source `source_tier='deep'`) ; `null` sur un fait divers.
+### Tests
+- `test/features/tour/guided_tour_controller_test.dart` — séquence complète, displayIndex (2/5 mutualisé), skip/finish → done + flag persisté + onComplete une fois, no-op si déjà vu.
+- `test/features/tour/guided_tour_overlay_test.dart` — coach card (titre/pastille/puces/boutons), « Terminer » en dernière étape, carte de conclusion, voile plein sans ancre.
+- `flutter analyze` : 0 nouvelle erreur. Tests des fichiers touchés (essentiel_hi_fi_card, main_bottom_nav, flux_continu) : verts.
 
-## Suite
-- Chantier curation deep (séparé) : labelliser plus de sources `source_tier='deep'`
-  + chaînes YouTube + reportages.
+### Notes
+- Frontend pur, aucune migration / endpoint.
+- Reste à faire avant deploy : `/validate-feature` Playwright (handoff dans `.context/qa-handoff.md`).

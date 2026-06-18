@@ -21,10 +21,14 @@ class MainBottomNav extends StatelessWidget {
   /// Appelé au tap d'un onglet (actif ou non). Le parent arbitre la suite.
   final ValueChanged<int> onSelect;
 
+  /// Ancre optionnelle du tour guidé posée sur l'onglet « L'Essentiel ».
+  final GlobalKey? essentielTabAnchorKey;
+
   const MainBottomNav({
     super.key,
     required this.currentIndex,
     required this.onSelect,
+    this.essentielTabAnchorKey,
   });
 
   static const BorderRadius _topRadius = BorderRadius.vertical(
@@ -70,10 +74,13 @@ class MainBottomNav extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: _FooterTab(
-                        label: 'L’Essentiel',
-                        selected: currentIndex == 0,
-                        onTap: () => onSelect(0),
+                      child: KeyedSubtree(
+                        key: essentielTabAnchorKey,
+                        child: _FooterTab(
+                          label: 'L’Essentiel',
+                          selected: currentIndex == 0,
+                          onTap: () => onSelect(0),
+                        ),
                       ),
                     ),
                     Expanded(
