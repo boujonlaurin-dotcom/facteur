@@ -31,6 +31,8 @@ import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
+import '../../tour/providers/guided_tour_controller.dart';
+import '../../tour/tour_anchors.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
@@ -908,12 +910,28 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// 3. la modal d'activation des notifications.
   /// La page Essentiel chargée sert de fond aux modales : à leur fermeture elle
   /// est révélée intacte (plus d'écran gris ni de contexte démonté).
+  /// Façade post-onboarding : consomme le flag (anti-replay), puis joue le tour
+  /// guidé **d'abord** ; à sa conclusion (`onComplete`, tiré une seule fois sur
+  /// finish/skip — ou immédiatement si le tour a déjà été vu), enchaîne les
+  /// modales (dialog customs échoués → thème → notif). `onComplete` est exécuté
+  /// par le controller (état Riverpod stable) : on re-garde `mounted` à l'entrée
+  /// de [_runPostOnboardingModals], jamais de `ref` après démontage.
   Future<void> _runPostOnboardingFlow() async {
     if (!mounted) return;
     final failedCustomTopics = ref.read(postOnboardingFlowPendingProvider);
     if (failedCustomTopics == null) return;
     // Consomme le flag immédiatement : un refetch/rebuild ne doit pas rejouer.
     ref.read(postOnboardingFlowPendingProvider.notifier).state = null;
+
+    await ref.read(guidedTourControllerProvider.notifier).start(
+          onComplete: () => unawaited(_runPostOnboardingModals(failedCustomTopics)),
+        );
+  }
+
+  /// Les modales historiques, jouées une fois le tour guidé conclu. Le `failed`
+  /// est capturé dans la closure `onComplete` pour survivre à la durée du tour.
+  Future<void> _runPostOnboardingModals(List<String> failedCustomTopics) async {
+    if (!mounted) return;
 
     if (mounted && failedCustomTopics.isNotEmpty) {
       // Dialog bloquant : les bottom sheets suivants poseraient un barrier qui
@@ -969,6 +987,25 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _restoreLastDedicatedSection();
+      });
+    });
+    // Tour guidé (étape « descends dans tes cartes ») : le bridge pose la clé
+    // de la section à révéler ; on l'`ensureVisible` puis on remet à null.
+    ref.listen<GlobalKey?>(tourScrollTargetProvider, (_, key) {
+      if (key == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = key.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+            alignment: 0.1,
+          );
+        }
+        if (mounted) {
+          ref.read(tourScrollTargetProvider.notifier).state = null;
+        }
       });
     });
     // Flow post-onboarding : joué une seule fois quand Essentiel a chargé ses
@@ -1287,7 +1324,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         SliverToBoxAdapter(
           child: KeyedSubtree(
             key: _sectionKeys[i],
-            child: Column(
+            // Ancre du tour guidé (étape 2 — 1ʳᵉ section de contenu après le
+            // hero). `inlineTargetIndex` désigne déjà cette section.
+            child: KeyedSubtree(
+              key: i == inlineTargetIndex ? tourActusSectionKey : null,
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (showInlineHere)
@@ -1348,6 +1389,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   ),
                 ),
               ],
+            ),
             ),
           ),
         ),
