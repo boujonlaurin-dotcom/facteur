@@ -12,9 +12,11 @@ class OnboardingAnswers {
 
   // Section 2
   final String? perspective; // big_picture, details
-  final String? responseStyle; // decisive, nuanced (deprecated v6 — plus demandé)
+  final String?
+  responseStyle; // decisive, nuanced (deprecated v6 — plus demandé)
   final String? independencePref; // established, independent (axe v6)
-  final String? contentRecency; // kept nullable for backward compat (deprecated)
+  final String?
+  contentRecency; // kept nullable for backward compat (deprecated)
   final bool? gamificationEnabled;
   final int? dailyArticleCount; // 3, 5, 7
   final String? digestMode; // pour_vous, serein, perspective
@@ -102,32 +104,32 @@ class OnboardingAnswers {
   }
 
   Map<String, dynamic> toJson() => {
-        'objective': objectives?.join(','),
-        'age_range': ageRange,
-        'gender': gender,
-        'approach': approach,
-        'perspective': perspective,
-        'response_style': responseStyle,
-        'independence_pref': independencePref,
-        'content_recency': contentRecency,
-        'gamification_enabled': gamificationEnabled,
-        'weekly_goal': dailyArticleCount,
-        'digest_mode': digestMode,
-        'themes': themes,
-        'subtopics': subtopics,
-        'preferred_sources': preferredSources,
-        'format_preference': formatPreference,
-        'personal_goal': personalGoal,
-        'swipe_liked': swipeLiked,
-        'swipe_disliked': swipeDisliked,
-      };
+    'objective': objectives?.join(','),
+    'age_range': ageRange,
+    'gender': gender,
+    'approach': approach,
+    'perspective': perspective,
+    'response_style': responseStyle,
+    'independence_pref': independencePref,
+    'content_recency': contentRecency,
+    'gamification_enabled': gamificationEnabled,
+    'weekly_goal': dailyArticleCount,
+    'digest_mode': digestMode,
+    'themes': themes,
+    'subtopics': subtopics,
+    'preferred_sources': preferredSources,
+    'format_preference': formatPreference,
+    'personal_goal': personalGoal,
+    'swipe_liked': swipeLiked,
+    'swipe_disliked': swipeDisliked,
+  };
 
   /// Sérialisation locale (Hive) : ajoute les champs hors payload API.
   /// `toJson()` reste le contrat exact de POST /users/onboarding.
   Map<String, dynamic> toLocalJson() => {
-        ...toJson(),
-        'sources_intent': sourcesIntent,
-      };
+    ...toJson(),
+    'sources_intent': sourcesIntent,
+  };
 
   factory OnboardingAnswers.fromJson(Map<String, dynamic> json) {
     // Parse objective: could be comma-separated string (new) or single string (old)
@@ -152,13 +154,12 @@ class OnboardingAnswers {
       themes: (json['themes'] as List<dynamic>?)?.cast<String>(),
       subtopics: (json['subtopics'] as List<dynamic>?)?.cast<String>(),
       sourcesIntent: json['sources_intent'] as String?,
-      preferredSources:
-          (json['preferred_sources'] as List<dynamic>?)?.cast<String>(),
+      preferredSources: (json['preferred_sources'] as List<dynamic>?)
+          ?.cast<String>(),
       formatPreference: json['format_preference'] as String?,
       personalGoal: json['personal_goal'] as String?,
       swipeLiked: (json['swipe_liked'] as List<dynamic>?)?.cast<String>(),
-      swipeDisliked:
-          (json['swipe_disliked'] as List<dynamic>?)?.cast<String>(),
+      swipeDisliked: (json['swipe_disliked'] as List<dynamic>?)?.cast<String>(),
     );
   }
 }
@@ -307,28 +308,11 @@ class OnboardingState {
       currentSection == OnboardingSection.sourcePreferences &&
       currentSection3Question == Section3Question.finalize;
 
-  /// Indique si la question courante peut être passée (« Passer ») avec un
-  /// défaut sain. Les écrans d'intro / réaction / sources / finalize ne le sont
-  /// pas. Voir [OnboardingNotifier.skipCurrentQuestion].
-  bool get isSkippable {
-    switch (currentSection) {
-      case OnboardingSection.overview:
-        return currentSection1Question == Section1Question.objective &&
-            !showReaction;
-      case OnboardingSection.appPreferences:
-        return currentSection2Question == Section2Question.approach ||
-            currentSection2Question == Section2Question.independence;
-      case OnboardingSection.sourcePreferences:
-        // Thèmes + sous-thèmes ne sont plus skippables (décision PO) : ces deux
-        // étapes structurent toute la perso et ont déjà un gate « >=1 sélection »
-        // côté bouton Continuer. Le swipe de calibration est désormais
-        // obligatoire (v7, « tout le monde swipe ») : il dégrade gracieusement
-        // (set vide → auto-skip) et n'a donc pas besoin d'un « Passer ». Seul le
-        // mode digest garde un défaut sain et reste passable.
-        final q = currentSection3Question;
-        return q == Section3Question.digestMode;
-    }
-  }
+  /// Le bouton « Passer » n'est plus exposé dans l'onboarding.
+  ///
+  /// [OnboardingNotifier.skipCurrentQuestion] reste disponible pour les tests et
+  /// les compatibilités internes qui ont besoin d'appliquer les défauts sains.
+  bool get isSkippable => false;
 
   OnboardingState copyWith({
     OnboardingSection? currentSection,
@@ -402,8 +386,9 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
           currentSection: savedSection != null && savedSection is int
               ? OnboardingSection.values[savedSection]
               : state.currentSection,
-          currentQuestionIndex:
-              savedQuestion is int ? savedQuestion : state.currentQuestionIndex,
+          currentQuestionIndex: savedQuestion is int
+              ? savedQuestion
+              : state.currentQuestionIndex,
         );
       }
     } catch (e) {
@@ -611,15 +596,13 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
   /// on ouvre la page Mes Intérêts, et au retour l'utilisateur retrouve la
   /// question "Rester serein ?" avec "Oui" déjà coché — prêt à continuer.
   void markDigestMode(String mode) {
-    state = state.copyWith(
-      answers: state.answers.copyWith(digestMode: mode),
-    );
+    state = state.copyWith(answers: state.answers.copyWith(digestMode: mode));
     _saveAnswers();
   }
 
   /// Passe la question courante en appliquant un défaut sain, puis avance.
-  /// Branché sur le bouton « Passer » de [OnboardingScreen] (visible quand
-  /// [OnboardingState.isSkippable]).
+  /// Conservé pour compatibilité interne/test uniquement : aucun bouton UI ne
+  /// l'expose depuis [OnboardingState.isSkippable].
   void skipCurrentQuestion() {
     switch (state.currentSection) {
       case OnboardingSection.overview:
@@ -822,8 +805,8 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
 /// Provider de l'état d'onboarding
 final onboardingProvider =
     StateNotifierProvider<OnboardingNotifier, OnboardingState>((ref) {
-  return OnboardingNotifier();
-});
+      return OnboardingNotifier();
+    });
 
 /// Provider pour vérifier si Section 1 est complète
 final isSection1CompleteProvider = Provider<bool>((ref) {
@@ -847,8 +830,7 @@ final isSection2CompleteProvider = Provider<bool>((ref) {
 final isSection3CompleteProvider = Provider<bool>((ref) {
   final state = ref.watch(onboardingProvider);
   final answers = state.answers;
-  return answers.themes != null &&
-      answers.themes!.isNotEmpty;
+  return answers.themes != null && answers.themes!.isNotEmpty;
 });
 
 /// Provider pour vérifier si l'onboarding est complet

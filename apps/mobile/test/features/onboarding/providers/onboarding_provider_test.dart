@@ -30,8 +30,7 @@ void main() {
       expect(Section2Question.independence.index, 1);
     });
 
-    test(
-        'Section3Question : sourcesIntent retiré, swipe après subtopics, '
+    test('Section3Question : sourcesIntent retiré, swipe après subtopics, '
         'digestMode avant finalize', () {
       expect(Section3Question.values, hasLength(6));
       expect(Section3Question.themes.index, 0);
@@ -49,9 +48,9 @@ void main() {
   // ──────────────────────────────────────────────────────────────────────
   group('Section 3 sequence (gating anxiety)', () {
     OnboardingState stateWith(List<String> objectives) => OnboardingState(
-          currentSection: OnboardingSection.sourcePreferences,
-          answers: OnboardingAnswers(objectives: objectives),
-        );
+      currentSection: OnboardingSection.sourcePreferences,
+      answers: OnboardingAnswers(objectives: objectives),
+    );
 
     test('sans anxiety : digestMode retiré, swipe présent (5)', () {
       final s = stateWith(['noise']);
@@ -74,10 +73,10 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // isSkippable : quelles questions exposent le bouton « Passer ».
+  // isSkippable : aucun écran n'expose plus le bouton « Passer ».
   // ──────────────────────────────────────────────────────────────────────
   group('isSkippable', () {
-    test('objective skippable, pas les intros ni la réaction', () {
+    test('overview: intros, objective et réaction non skippables', () {
       expect(
         const OnboardingState(
           currentQuestionIndex: 0, // intro1
@@ -88,7 +87,7 @@ void main() {
         OnboardingState(
           currentQuestionIndex: Section1Question.objective.index,
         ).isSkippable,
-        isTrue,
+        isFalse,
       );
       expect(
         OnboardingState(
@@ -99,40 +98,40 @@ void main() {
       );
     });
 
-    test('approach et independence skippables', () {
+    test('approach et independence non skippables', () {
       expect(
         OnboardingState(
           currentSection: OnboardingSection.appPreferences,
           currentQuestionIndex: Section2Question.approach.index,
         ).isSkippable,
-        isTrue,
+        isFalse,
       );
       expect(
         OnboardingState(
           currentSection: OnboardingSection.appPreferences,
           currentQuestionIndex: Section2Question.independence.index,
         ).isSkippable,
-        isTrue,
+        isFalse,
       );
     });
 
     test(
-        'seul digestMode skippable en Section 3 '
-        '(swipe inconditionnel v7), pas themes/subtopics/swipe/sources/finalize',
-        () {
-      OnboardingState s3(Section3Question q) => OnboardingState(
-            currentSection: OnboardingSection.sourcePreferences,
-            currentQuestionIndex: q.index,
-          );
-      // Décision PO : thèmes + sous-thèmes ne sont plus skippables ; le swipe
-      // est désormais obligatoire (« tout le monde swipe »).
-      expect(s3(Section3Question.themes).isSkippable, isFalse);
-      expect(s3(Section3Question.subtopics).isSkippable, isFalse);
-      expect(s3(Section3Question.swipe).isSkippable, isFalse);
-      expect(s3(Section3Question.digestMode).isSkippable, isTrue);
-      expect(s3(Section3Question.sources).isSkippable, isFalse);
-      expect(s3(Section3Question.finalize).isSkippable, isFalse);
-    });
+      'Section 3: themes/subtopics/swipe/sources/digest/finalize non skippables',
+      () {
+        OnboardingState s3(Section3Question q) => OnboardingState(
+          currentSection: OnboardingSection.sourcePreferences,
+          currentQuestionIndex: q.index,
+        );
+        // Décision PO : thèmes + sous-thèmes ne sont plus skippables ; le swipe
+        // est désormais obligatoire (« tout le monde swipe »).
+        expect(s3(Section3Question.themes).isSkippable, isFalse);
+        expect(s3(Section3Question.subtopics).isSkippable, isFalse);
+        expect(s3(Section3Question.swipe).isSkippable, isFalse);
+        expect(s3(Section3Question.digestMode).isSkippable, isFalse);
+        expect(s3(Section3Question.sources).isSkippable, isFalse);
+        expect(s3(Section3Question.finalize).isSkippable, isFalse);
+      },
+    );
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -257,30 +256,36 @@ void main() {
   // completeSwipe : enregistre les votes et enchaîne sur la page sources.
   // ──────────────────────────────────────────────────────────────────────
   group('completeSwipe', () {
-    test('enregistre les votes likés/rejetés puis avance vers sources',
-        () async {
-      final c = ProviderContainer();
-      addTearDown(c.dispose);
-      await _settle();
-      final n = c.read(onboardingProvider.notifier);
+    test(
+      'enregistre les votes likés/rejetés puis avance vers sources',
+      () async {
+        final c = ProviderContainer();
+        addTearDown(c.dispose);
+        await _settle();
+        final n = c.read(onboardingProvider.notifier);
 
-      n.continueAfterReaction();
-      n.skipCurrentQuestion(); // → independence
-      n.skipCurrentQuestion(); // → Section 3 themes
-      n.skipCurrentQuestion(); // themes → swipe
+        n.continueAfterReaction();
+        n.skipCurrentQuestion(); // → independence
+        n.skipCurrentQuestion(); // → Section 3 themes
+        n.skipCurrentQuestion(); // themes → swipe
 
-      n.completeSwipe(['liked-1', 'liked-2'], ['disliked-1']);
-      expect(c.read(onboardingProvider).answers.swipeLiked,
-          equals(['liked-1', 'liked-2']));
-      expect(c.read(onboardingProvider).answers.swipeDisliked,
-          equals(['disliked-1']));
+        n.completeSwipe(['liked-1', 'liked-2'], ['disliked-1']);
+        expect(
+          c.read(onboardingProvider).answers.swipeLiked,
+          equals(['liked-1', 'liked-2']),
+        );
+        expect(
+          c.read(onboardingProvider).answers.swipeDisliked,
+          equals(['disliked-1']),
+        );
 
-      await _settle();
-      expect(
-        c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.sources.index,
-      );
-    });
+        await _settle();
+        expect(
+          c.read(onboardingProvider).currentQuestionIndex,
+          Section3Question.sources.index,
+        );
+      },
+    );
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -337,43 +342,45 @@ void main() {
   // (parcours curieux → le swipe est dans la séquence).
   // ──────────────────────────────────────────────────────────────────────
   group('goBack (Section 3)', () {
-    test('depuis sources, goBack remonte la séquence avec swipe, sans digestMode',
-        () async {
-      final c = ProviderContainer();
-      addTearDown(c.dispose);
-      await _settle();
-      final n = c.read(onboardingProvider.notifier);
+    test(
+      'depuis sources, goBack remonte la séquence avec swipe, sans digestMode',
+      () async {
+        final c = ProviderContainer();
+        addTearDown(c.dispose);
+        await _settle();
+        final n = c.read(onboardingProvider.notifier);
 
-      n.selectObjectives(['noise']);
-      n.continueAfterReaction();
-      n.skipCurrentQuestion(); // approach → independence
-      n.skipCurrentQuestion(); // → Section 3 themes
-      n.skipCurrentQuestion(); // themes → swipe
-      n.completeSwipe(const [], const []); // swipe → sources
-      await _settle();
-      expect(
-        c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.sources.index,
-      );
+        n.selectObjectives(['noise']);
+        n.continueAfterReaction();
+        n.skipCurrentQuestion(); // approach → independence
+        n.skipCurrentQuestion(); // → Section 3 themes
+        n.skipCurrentQuestion(); // themes → swipe
+        n.completeSwipe(const [], const []); // swipe → sources
+        await _settle();
+        expect(
+          c.read(onboardingProvider).currentQuestionIndex,
+          Section3Question.sources.index,
+        );
 
-      n.goBack();
-      expect(
-        c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.swipe.index,
-      );
+        n.goBack();
+        expect(
+          c.read(onboardingProvider).currentQuestionIndex,
+          Section3Question.swipe.index,
+        );
 
-      n.goBack();
-      expect(
-        c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.subtopics.index,
-      );
+        n.goBack();
+        expect(
+          c.read(onboardingProvider).currentQuestionIndex,
+          Section3Question.subtopics.index,
+        );
 
-      n.goBack();
-      expect(
-        c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.themes.index,
-      );
-    });
+        n.goBack();
+        expect(
+          c.read(onboardingProvider).currentQuestionIndex,
+          Section3Question.themes.index,
+        );
+      },
+    );
   });
 
   group('OnboardingAnswers', () {

@@ -26,8 +26,8 @@ import 'source_logo_avatar.dart';
 /// Espace fine insécable (U+202F) — avant `? ! : ;`, milliers, unités.
 const String _nnbsp = ' ';
 
-typedef SourceArticleOpener = void Function(
-    BuildContext context, Content article);
+typedef SourceArticleOpener =
+    void Function(BuildContext context, Content article);
 
 /// Fiche source v2 — présentation du média d'abord, évaluation repliée.
 ///
@@ -80,7 +80,8 @@ class SourceDetailModal extends ConsumerWidget {
 
     // Source live depuis le provider : trust/mute/abo restent synchro quand on
     // les bascule depuis la fiche elle-même.
-    final liveSource = ref
+    final liveSource =
+        ref
             .watch(userSourcesProvider)
             .valueOrNull
             ?.where((s) => s.id == source.id)
@@ -357,10 +358,10 @@ class _FsHeader extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0,
-              ),
+            color: colors.textSecondary,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0,
+          ),
         ),
       ],
     );
@@ -379,7 +380,7 @@ class _FsEval extends StatefulWidget {
 }
 
 class _FsEvalState extends State<_FsEval> {
-  bool _open = true;
+  bool _open = false;
 
   @override
   Widget build(BuildContext context) {
@@ -392,7 +393,8 @@ class _FsEvalState extends State<_FsEval> {
       widget.source.reliabilityScore,
       colors,
     );
-    final hasEval = widget.source.reliabilityScore != 'unknown' ||
+    final hasEval =
+        widget.source.reliabilityScore != 'unknown' ||
         widget.source.scoreIndependence != null ||
         widget.source.scoreRigor != null ||
         widget.source.scoreUx != null;
@@ -478,8 +480,9 @@ class _FsEvalState extends State<_FsEval> {
                   const SizedBox(width: 6),
                   AnimatedRotation(
                     turns: _open ? 0.5 : 0,
-                    duration:
-                        reduceMotion ? Duration.zero : FacteurDurations.fast,
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : FacteurDurations.fast,
                     child: Icon(
                       PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
                       size: 14,
@@ -516,19 +519,20 @@ class _FsEvalState extends State<_FsEval> {
     Color reliabilityColor,
   ) {
     final source = widget.source;
-    final gauges = <Widget>[];
-    void addGauge(String name, double? value) {
+    final badges = <Widget>[];
+    void addBadge(String name, double? value) {
       if (value == null) return; // masquer si null
-      gauges.add(_FsGauge(name: name, value: value));
+      badges.add(_FsGradeBadge(name: name, value: value));
     }
 
-    addGauge('Indépendance', source.scoreIndependence);
-    addGauge('Rigueur', source.scoreRigor);
-    addGauge('Accessibilité', source.scoreUx);
+    addBadge('Indépendance', source.scoreIndependence);
+    addBadge('Rigueur', source.scoreRigor);
+    addBadge('Accessibilité', source.scoreUx);
 
     final reason = source.recommendationReason?.trim();
     final recoBy = source.recommendedBy?.trim();
-    final hasRecoPerso = recoBy != null &&
+    final hasRecoPerso =
+        recoBy != null &&
         recoBy.isNotEmpty &&
         reason != null &&
         reason.isNotEmpty;
@@ -549,14 +553,14 @@ class _FsEvalState extends State<_FsEval> {
             ),
           ),
         ),
-        if (gauges.isNotEmpty) ...[
+        if (badges.isNotEmpty) ...[
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (var i = 0; i < gauges.length; i++) ...[
+              for (var i = 0; i < badges.length; i++) ...[
                 if (i > 0) const SizedBox(width: 12),
-                Expanded(child: gauges[i]),
+                Expanded(child: badges[i]),
               ],
             ],
           ),
@@ -646,11 +650,11 @@ class _FsEvalState extends State<_FsEval> {
         Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w500,
-                fontSize: 12.5,
-                letterSpacing: 0,
-              ),
+            color: colors.textSecondary,
+            fontWeight: FontWeight.w500,
+            fontSize: 12.5,
+            letterSpacing: 0,
+          ),
         ),
         value,
       ],
@@ -658,16 +662,18 @@ class _FsEvalState extends State<_FsEval> {
   }
 }
 
-/// Jauge fine pour un pilier d'évaluation (barre + mot dérivé par seuils).
-class _FsGauge extends StatelessWidget {
+/// Badge de note pour un pilier d'évaluation (A à E).
+class _FsGradeBadge extends StatelessWidget {
   final String name;
   final double value;
-  const _FsGauge({required this.name, required this.value});
+  const _FsGradeBadge({required this.name, required this.value});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final grade = _gradeForScore(value);
+    final color = _gradeColor(grade, colors);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -682,24 +688,24 @@ class _FsGauge extends StatelessWidget {
             letterSpacing: 0,
           ),
         ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(2),
-          child: LinearProgressIndicator(
-            value: value.clamp(0.0, 1.0),
-            minHeight: 4,
-            backgroundColor: colors.textPrimary.withValues(alpha: 0.09),
-            valueColor: AlwaysStoppedAnimation<Color>(colors.secondary),
+        const SizedBox(height: 6),
+        Container(
+          width: 34,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(FacteurRadius.small),
+            border: Border.all(color: color.withValues(alpha: 0.34)),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          _gaugeWord(value),
-          style: textTheme.labelSmall?.copyWith(
-            color: colors.textSecondary,
-            fontWeight: FontWeight.w600,
-            fontSize: 11,
-            letterSpacing: 0,
+          child: Text(
+            grade,
+            style: textTheme.labelMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              letterSpacing: 0,
+            ),
           ),
         ),
       ],
@@ -724,11 +730,11 @@ class _BiasPill extends StatelessWidget {
       child: Text(
         source.getBiasLabel(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-              letterSpacing: 0,
-            ),
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+          letterSpacing: 0,
+        ),
       ),
     );
   }
@@ -752,8 +758,9 @@ class _FsRecoPersoState extends State<_FsRecoPerso> {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
-    final initial =
-        widget.name.trim().isEmpty ? '?' : widget.name.trim()[0].toUpperCase();
+    final initial = widget.name.trim().isEmpty
+        ? '?'
+        : widget.name.trim()[0].toUpperCase();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -795,8 +802,9 @@ class _FsRecoPersoState extends State<_FsRecoPerso> {
                 ),
                 AnimatedRotation(
                   turns: _open ? 0.5 : 0,
-                  duration:
-                      reduceMotion ? Duration.zero : FacteurDurations.fast,
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : FacteurDurations.fast,
                   child: Icon(
                     PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
                     size: 14,
@@ -881,11 +889,12 @@ class _CoverageBars extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final displayRows = _compactCoverageRows(rows);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final row in rows) ...[
+        for (final row in displayRows) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 9),
             child: Row(
@@ -1195,10 +1204,10 @@ class _RetryChip extends StatelessWidget {
             Text(
               'Réessayer',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                  ),
+                color: colors.primary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
             ),
           ],
         ),
@@ -1316,11 +1325,11 @@ class _ThemeTag extends StatelessWidget {
       child: Text(
         _coverageLabel(theme),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: colors.textSecondary,
-              fontWeight: FontWeight.w600,
-              fontSize: 10,
-              letterSpacing: 0.2,
-            ),
+          color: colors.textSecondary,
+          fontWeight: FontWeight.w600,
+          fontSize: 10,
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }
@@ -1488,8 +1497,8 @@ class _FsPremium extends ConsumerWidget {
     final title = linked
         ? 'Abonnement associé'
         : (source.premiumConnection!.isGeneric
-            ? 'Associer mon abonnement'
-            : 'Connecter mon abonnement');
+              ? 'Associer mon abonnement'
+              : 'Connecter mon abonnement');
 
     return InkWell(
       borderRadius: BorderRadius.circular(FacteurRadius.large),
@@ -1669,11 +1678,12 @@ class _FsActionBar extends ConsumerWidget {
 
     final followLabel = inOnboarding
         ? (isSelected
-            ? 'Retirer de ma sélection'
-            : (selectLabel ?? 'Sélectionner cette source'))
+              ? 'Retirer de ma sélection'
+              : (selectLabel ?? 'Sélectionner cette source'))
         : (isSelected ? 'Suivie' : 'Suivre ${source.name}');
 
-    final isFavorite = ref
+    final isFavorite =
+        ref
             .watch(userSourcesStateProvider)
             .valueOrNull
             ?.favorites
@@ -1764,8 +1774,9 @@ class _StarButton extends StatelessWidget {
               : PhosphorIcons.star(PhosphorIconsStyle.regular),
           size: 19,
           color: isFavorite ? colors.primary : colors.textSecondary,
-          semanticLabel:
-              isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris',
+          semanticLabel: isFavorite
+              ? 'Retirer des favoris'
+              : 'Ajouter aux favoris',
         ),
       ),
     );
@@ -1869,15 +1880,6 @@ class _Skel extends StatelessWidget {
 // Helpers data / copy
 // ============================================================
 
-/// Mot dérivé par seuils client pour une jauge d'évaluation (0–1).
-String _gaugeWord(double value) {
-  if (value >= 0.85) return 'Élevée';
-  if (value >= 0.65) return 'Bonne';
-  if (value >= 0.5) return 'Correcte';
-  if (value >= 0.35) return 'Limitée';
-  return 'Faible';
-}
-
 /// Copie fiabilité alignée : Solide / Mitigée / Fragile / Pas encore évaluée.
 String _reliabilityLabel(String reliabilityScore) {
   switch (reliabilityScore) {
@@ -1926,6 +1928,62 @@ Color _coverageColor(String theme, FacteurColors colors) {
   }
   if (themeMap.containsKey(slug)) return visualFor(slug).accent;
   return getThemeColor(slug, colors);
+}
+
+List<({String theme, int pct})> _compactCoverageRows(
+  List<({String theme, int pct})> rows,
+) {
+  final merged = <String, int>{};
+  for (final row in rows) {
+    final theme = row.theme.trim();
+    if (theme.isEmpty) continue;
+    final key = _isOtherCoverageTheme(theme) ? 'autres' : theme.toLowerCase();
+    merged[key] = (merged[key] ?? 0) + row.pct;
+  }
+
+  final regular = <({String theme, int pct})>[];
+  var otherPct = 0;
+  for (final entry in merged.entries) {
+    if (_isOtherCoverageTheme(entry.key)) {
+      otherPct += entry.value;
+    } else {
+      regular.add((theme: entry.key, pct: entry.value));
+    }
+  }
+  regular.sort((a, b) => b.pct.compareTo(a.pct));
+
+  final top = regular.take(3).toList();
+  final overflow = regular.skip(3).fold<int>(0, (sum, row) => sum + row.pct);
+  final otherTotal = otherPct + overflow;
+  if (otherTotal > 0) top.add((theme: 'autres', pct: otherTotal));
+  return top;
+}
+
+bool _isOtherCoverageTheme(String theme) {
+  final slug = theme.toLowerCase();
+  return slug == 'autres' || slug == 'other' || slug == 'others';
+}
+
+String _gradeForScore(double score) {
+  if (score >= 0.8) return 'A';
+  if (score >= 0.6) return 'B';
+  if (score >= 0.4) return 'C';
+  if (score >= 0.2) return 'D';
+  return 'E';
+}
+
+Color _gradeColor(String grade, FacteurColors colors) {
+  switch (grade) {
+    case 'A':
+    case 'B':
+      return colors.secondary;
+    case 'C':
+    case 'D':
+    case 'E':
+      return colors.textTertiary;
+    default:
+      return colors.textTertiary;
+  }
 }
 
 /// Domaine lisible à partir d'une URL de source (sans `www.`).
