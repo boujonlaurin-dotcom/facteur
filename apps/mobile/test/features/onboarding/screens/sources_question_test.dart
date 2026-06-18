@@ -106,7 +106,7 @@ void main() {
   }
 
   testWidgets(
-      '4 sections en accordéon, ≤18 suggestions, top 9 pré-cochées',
+      '4 sections en accordéon, ≤20 suggestions, top 12 pré-cochées',
       (tester) async {
     final container = makeContainer(_makeTechSources());
     // bypassOnboarding pose themes=[tech, international].
@@ -119,12 +119,12 @@ void main() {
     expect(find.byType(OnboardingToggleSection), findsNWidgets(4));
 
     // Section 1 ouverte par défaut : suggestions rendues dans un carrousel
-    // horizontal (15 sources matched, ≤ 18). Les sections 2/3/4 repliées n'ont
+    // horizontal (15 sources matched, ≤ 20). Les sections 2/3/4 repliées n'ont
     // pas de carrousel monté → un seul SourceCarousel sur l'écran.
     final carousel = tester.widget<SourceCarousel>(
       find.byType(SourceCarousel),
     );
-    expect(carousel.sources.length, lessThanOrEqualTo(18));
+    expect(carousel.sources.length, lessThanOrEqualTo(20));
     expect(carousel.sources.length, 15);
 
     // Le gros publieur mainstream remonte dans les suggestions (volume-proxy).
@@ -148,13 +148,13 @@ void main() {
     expect(find.byType(SourceAddPanel), findsNothing);
 
     // « Suivant » 3× → dernière section : le bouton valide avec le compte de
-    // pré-sélection (top 9 uniquement, le reste décoché).
+    // pré-sélection (top 12 uniquement, le reste décoché).
     for (var i = 0; i < 3; i++) {
       await tester.ensureVisible(find.text(OnboardingStrings.nextButton));
       await tester.tap(find.text(OnboardingStrings.nextButton));
       await tester.pumpAndSettle();
     }
-    expect(find.text(OnboardingStrings.selectedCount(9)), findsOneWidget);
+    expect(find.text(OnboardingStrings.selectedCount(12)), findsOneWidget);
   });
 
   testWidgets('section « médias habituels » : SourceAddPanel monté au tap',
@@ -214,13 +214,13 @@ void main() {
       );
 
       // Sur la dernière section, le bouton porte le compte sélectionné :
-      // 9 suggestions précochées + la source likée déjà validée = 10.
+      // 12 suggestions précochées + la source likée déjà validée = 13.
       for (var i = 0; i < 3; i++) {
         await tester.ensureVisible(find.text(OnboardingStrings.nextButton));
         await tester.tap(find.text(OnboardingStrings.nextButton));
         await tester.pumpAndSettle();
       }
-      expect(find.text(OnboardingStrings.selectedCount(10)), findsOneWidget);
+      expect(find.text(OnboardingStrings.selectedCount(13)), findsOneWidget);
     },
   );
 

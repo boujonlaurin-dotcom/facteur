@@ -1,6 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Onboarding",
+      "summary": "Sélection des médias plus fluide : davantage de suggestions, petites animations de validation à chaque étape, et un écran de fin qui va jusqu'au bout avant de t'emmener dans l'app."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Fiches sources plus complètes pendant l'inscription (couverture, fréquence, derniers articles), cartes de sélection mieux alignées, et plus de carte « Actus du jour » réduite à un seul article."
+    },
+    {
       "tag": "Pas de recul",
       "summary": "L'analyse de fond « Pas de recul » s'affiche désormais instantanément à l'ouverture d'un article, sans attente."
     },

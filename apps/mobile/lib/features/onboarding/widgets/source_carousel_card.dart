@@ -90,28 +90,35 @@ class SourceCarouselCard extends StatelessWidget {
             ),
 
             // ── Pastille de biais (display-only) ──────────────────────────
-            if (source.biasStance != 'unknown') ...[
-              const SizedBox(height: FacteurSpacing.space2),
-              Row(
-                children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: source.getBiasColor(),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    source.getBiasLabel(),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.textTertiary,
+            // Slot réservé à hauteur fixe : même quand le biais est inconnu,
+            // l'espace est conservé pour que le cœur (tags/raison) démarre à la
+            // même hauteur sur toutes les cartes → carrousel visuellement
+            // aligné au swipe (sinon les cartes sans biais « remontent »).
+            const SizedBox(height: FacteurSpacing.space2),
+            SizedBox(
+              height: 18,
+              child: source.biasStance == 'unknown'
+                  ? null
+                  : Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            color: source.getBiasColor(),
+                            shape: BoxShape.circle,
+                          ),
                         ),
-                  ),
-                ],
-              ),
-            ],
+                        const SizedBox(width: 6),
+                        Text(
+                          source.getBiasLabel(),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colors.textTertiary,
+                              ),
+                        ),
+                      ],
+                    ),
+            ),
 
             const SizedBox(height: FacteurSpacing.space3),
 

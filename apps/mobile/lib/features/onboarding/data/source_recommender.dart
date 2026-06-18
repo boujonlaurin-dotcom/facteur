@@ -114,7 +114,7 @@ class SwipeGroup {
 /// Replaces the static ThemeToSourcesMapping with dynamic scoring using
 /// source.theme, source.granularTopics, source.secondaryThemes, and source.sourceTier.
 class SourceRecommender {
-  static const int _maxMatched = 15;
+  static const int _maxMatched = 20;
   static const int _minMatched = 10;
   static const int _maxPerspective = 5;
   static const int _maxGems = 5;

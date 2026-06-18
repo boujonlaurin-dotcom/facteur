@@ -89,6 +89,21 @@ def test_from_source_paywall_config_only_is_generic_using_source_url():
     assert resp.test_url == resp.login_url
 
 
+def test_from_source_disabled_config_blocks_curated_and_generic_fallback():
+    curated = _stub(
+        url="https://www.lemonde.fr/section/x",
+        premium_connection_config={"enabled": False},
+    )
+    assert PremiumConnectionResponse.from_source(curated, curated_map=MAP) is None
+
+    generic = _stub(
+        url="https://unknown-paper.example/news/x",
+        premium_connection_config={"enabled": False},
+        paywall_config={"keywords": ["réservé aux abonnés"]},
+    )
+    assert PremiumConnectionResponse.from_source(generic, curated_map=MAP) is None
+
+
 def test_from_source_free_source_returns_none():
     src = _stub(url="https://free-paper.example/")
     assert PremiumConnectionResponse.from_source(src, curated_map=MAP) is None

@@ -359,28 +359,63 @@ void main() {
   });
 
   group('SourceDetailModal — fallback réseau (/profile en erreur)', () {
-    testWidgets('error → header + éval restent, couverture/articles masqués', (
-      tester,
-    ) async {
-      final source = Source(
-        id: 'monde',
-        name: 'Le Monde',
-        type: SourceType.article,
-        reliabilityScore: 'high',
-      );
+    testWidgets(
+      'error → identité/éval restent + zone articles propose un retry',
+      (tester) async {
+        final source = Source(
+          id: 'monde',
+          name: 'Le Monde',
+          type: SourceType.article,
+          reliabilityScore: 'high',
+        );
 
-      await tester.pumpWidget(
-        _wrap(source: source, profileError: Exception('network down')),
-      );
-      await tester.pumpAndSettle();
+        // /profile en erreur ET /coverage vide (pire cas réseau).
+        await tester.pumpWidget(
+          _wrap(source: source, profileError: Exception('network down')),
+        );
+        await tester.pumpAndSettle();
 
-      // La fiche ne bloque jamais : identité + éval toujours là.
-      expect(find.text('Le Monde'), findsOneWidget);
-      expect(find.text('Évaluation Facteur'), findsOneWidget);
-      // Sections data-dépendantes masquées.
-      expect(find.text('Couverture par thèmes'), findsNothing);
-      expect(find.text('Derniers articles'), findsNothing);
-    });
+        // La fiche ne bloque jamais : identité + éval toujours là.
+        expect(find.text('Le Monde'), findsOneWidget);
+        expect(find.text('Évaluation Facteur'), findsOneWidget);
+        // Couverture masquée (/coverage vide), mais la zone articles n'est plus
+        // muette : message d'indisponibilité + bouton « Réessayer ».
+        expect(find.text('Couverture par thèmes'), findsNothing);
+        expect(find.text('Derniers articles'), findsOneWidget);
+        expect(find.text('Contenu momentanément indisponible.'), findsOneWidget);
+        expect(find.text('Réessayer'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'error → couverture retombe sur /coverage (endpoint indépendant)',
+      (tester) async {
+        final source = Source(
+          id: 'monde',
+          name: 'Le Monde',
+          type: SourceType.article,
+        );
+        const coverage = SourceCoverage(
+          periodLabel: '30 derniers jours',
+          totalCount: 100,
+          caption: '100 articles publiés sur la période',
+          rows: [CoverageRow(theme: 'politics', count: 100, pct: 100)],
+        );
+
+        // /profile KO mais /coverage OK → la couverture reste visible.
+        await tester.pumpWidget(
+          _wrap(
+            source: source,
+            profileError: Exception('network down'),
+            coverage: coverage,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Couverture par thèmes'), findsOneWidget);
+        expect(find.text('Réessayer'), findsOneWidget);
+      },
+    );
   });
 
   group('SourceDetailModal — mode smart-search (recentItems préchargés)', () {

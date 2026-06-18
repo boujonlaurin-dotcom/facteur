@@ -160,7 +160,7 @@ async def test_subscription_false_clears_timestamps(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_subscription_true_rejects_non_allowlisted_source(
+async def test_subscription_true_rejects_free_non_paywalled_source(
     db_session: AsyncSession,
 ):
     source = Source(
@@ -172,6 +172,31 @@ async def test_subscription_true_rejects_non_allowlisted_source(
         theme="society",
         is_curated=True,
         is_active=True,
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    with pytest.raises(PremiumConnectionNotEnabled):
+        await SourceService(db_session).update_source_subscription(
+            str(uuid4()), str(source.id), True
+        )
+
+
+@pytest.mark.asyncio
+async def test_subscription_true_rejects_explicitly_disabled_premium_flow(
+    db_session: AsyncSession,
+):
+    source = Source(
+        id=uuid4(),
+        name="Blocked Paywalled Source",
+        url="https://blocked.example.com",
+        feed_url=f"https://blocked.example.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="society",
+        is_curated=True,
+        is_active=True,
+        paywall_config={"keywords": ["réservé aux abonnés"]},
+        premium_connection_config={"enabled": False},
     )
     db_session.add(source)
     await db_session.flush()

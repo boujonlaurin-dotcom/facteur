@@ -934,7 +934,8 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{});
 
       // Topic A's lead shares the hi-fi card's contentId → it must be dropped.
-      // Topic B is untouched → "Actus du jour" survives with one topic.
+      // Topics B & C survive → 2 topics restants, au-dessus du plancher
+      // `_kActusMinTopics` → « Actus du jour » reste affichée sans le doublon.
       final container = makeDedupContainer(
         hiFiContentId: 'shared-1',
         topics: const [
@@ -947,6 +948,11 @@ void main() {
             topicId: 't2',
             label: 'Topic B',
             articles: [DigestItem(contentId: 'b1', title: 'B')],
+          ),
+          DigestTopic(
+            topicId: 't3',
+            label: 'Topic C',
+            articles: [DigestItem(contentId: 'c1', title: 'C')],
           ),
         ],
       );
@@ -966,7 +972,43 @@ void main() {
       final actusLeadIds =
           actus.topics.map((t) => pickTopicLead(t).contentId).toList();
       expect(actusLeadIds, isNot(contains('shared-1')));
-      expect(actusLeadIds, contains('b1'));
+      expect(actusLeadIds, containsAll(<String>['b1', 'c1']));
+    });
+
+    test(
+        'Actus du jour tombée sous le plancher après dedup est masquée '
+        '(pas de carte isolée)', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      // 2 topics au build (≥ plancher), mais le dedup retire le doublon → 1
+      // topic restant < `_kActusMinTopics` → section masquée plutôt qu'1 carte.
+      final container = makeDedupContainer(
+        hiFiContentId: 'shared-1',
+        topics: const [
+          DigestTopic(
+            topicId: 't1',
+            label: 'Topic A',
+            articles: [DigestItem(contentId: 'shared-1', title: 'A')],
+          ),
+          DigestTopic(
+            topicId: 't2',
+            label: 'Topic B',
+            articles: [DigestItem(contentId: 'b1', title: 'B')],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(state.sections.whereType<EssentielSection>(), hasLength(1));
+      expect(
+        state.sections
+            .whereType<DigestTopicSection>()
+            .where((s) => s.kind == SectionKind.essentiel),
+        isEmpty,
+        reason: 'Une Actus du jour réduite à 1 topic par le dedup est masquée',
+      );
     });
 
     test('Actus du jour disappears entirely when fully deduped', () async {
@@ -1232,6 +1274,8 @@ void main() {
           rank: 1,
         );
 
+    // 2 topics : « Actus du jour » doit franchir le plancher `_kActusMinTopics`
+    // (sinon la section est masquée et le base-only n'aurait aucun contenu réel).
     DigestResponse digestWithTopics() => DigestResponse(
           digestId: 'd1',
           userId: 'u1',
@@ -1242,6 +1286,11 @@ void main() {
               topicId: 't1',
               label: 'Topic A',
               articles: [DigestItem(contentId: 'topic-a-1', title: 'A')],
+            ),
+            DigestTopic(
+              topicId: 't2',
+              label: 'Topic B',
+              articles: [DigestItem(contentId: 'topic-b-1', title: 'B')],
             ),
           ],
         );

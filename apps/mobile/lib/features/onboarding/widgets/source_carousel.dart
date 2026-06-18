@@ -43,8 +43,9 @@ class _SourceCarouselState extends State<SourceCarousel> {
   @override
   void initState() {
     super.initState();
-    // ~1,2 carte visible : la suivante dépasse (peek) pour signaler le swipe.
-    _controller = PageController(viewportFraction: 0.82);
+    // Cartes un peu plus étroites : la suivante dépasse davantage (peek) pour
+    // mieux signaler le swipe et faciliter le parcours du carrousel.
+    _controller = PageController(viewportFraction: 0.74);
   }
 
   @override
