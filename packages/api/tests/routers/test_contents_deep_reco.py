@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import ProgrammingError
 
 from app.models.enums import ContentType
 from app.routers.contents import _attach_deep_from_store, _deep_row_to_dict
@@ -121,3 +122,34 @@ class TestAttachDeepFromStore:
         await _attach_deep_from_store(_FakeDB(row, None), body, uuid4())
         assert body["deep_recommendation"] is None
         assert body["deep_pending"] is False
+
+    async def test_missing_store_table_degrades_without_raising(self):
+        # Regression (staging drift): the ``content_deep_recommendations`` table
+        # may not exist yet on the shared DB (migration zz01 unapplied). The
+        # store read must NOT propagate — otherwise the whole /perspectives
+        # response 500s, blanking « Couverture médiatique » + « Pas de recul ».
+        class _RaisingDB:
+            def __init__(self):
+                self.rolled_back = False
+
+            async def execute(self, _stmt):
+                raise ProgrammingError(
+                    'relation "content_deep_recommendations" does not exist',
+                    {},
+                    Exception("UndefinedTable"),
+                )
+
+            async def rollback(self):
+                self.rolled_back = True
+
+        db = _RaisingDB()
+        body: dict = {"perspectives": ["already", "built"]}
+        # Must not raise.
+        await _attach_deep_from_store(db, body, uuid4())
+
+        assert body["deep_recommendation"] is None
+        assert body["deep_pending"] is False
+        # Pre-existing response payload is untouched.
+        assert body["perspectives"] == ["already", "built"]
+        # Aborted transaction was cleared so request teardown stays clean.
+        assert db.rolled_back is True
