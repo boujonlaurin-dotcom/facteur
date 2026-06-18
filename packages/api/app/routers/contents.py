@@ -993,6 +993,7 @@ async def _attach_deep_from_store(
     card. ``deep_pending`` is always resolved — the reader never polls again.
     """
     from sqlalchemy import select
+    from sqlalchemy.exc import SQLAlchemyError
     from sqlalchemy.orm import joinedload
 
     from app.models.content import Content
@@ -1001,33 +1002,51 @@ async def _attach_deep_from_store(
     response_body["deep_pending"] = False
     response_body["deep_recommendation"] = None
 
-    row = (
-        await db.execute(
-            select(ContentDeepRecommendation).where(
-                ContentDeepRecommendation.content_id == content_id
-            )
-        )
-    ).scalar_one_or_none()
-    if row is None or row.matched_content_id is None:
-        return
-
-    matched_content = (
-        (
+    try:
+        row = (
             await db.execute(
-                select(Content)
-                .options(joinedload(Content.source))
-                .where(Content.id == row.matched_content_id)
+                select(ContentDeepRecommendation).where(
+                    ContentDeepRecommendation.content_id == content_id
+                )
             )
-        )
-        .scalars()
-        .first()
-    )
-    if matched_content is None:
-        return
+        ).scalar_one_or_none()
+        if row is None or row.matched_content_id is None:
+            return
 
-    response_body["deep_recommendation"] = _deep_row_to_dict(
-        matched_content, row.match_reason
-    )
+        matched_content = (
+            (
+                await db.execute(
+                    select(Content)
+                    .options(joinedload(Content.source))
+                    .where(Content.id == row.matched_content_id)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if matched_content is None:
+            return
+
+        response_body["deep_recommendation"] = _deep_row_to_dict(
+            matched_content, row.match_reason
+        )
+    except SQLAlchemyError as e:
+        # The deep-reco store may be unavailable — e.g. migration ``zz01`` not
+        # yet applied to the shared Supabase DB (schema drift). The « Pas de
+        # recul » card is strictly optional: degrade to no card rather than let
+        # a missing/erroring store 500 the whole /perspectives response, which
+        # would also blank out « Couverture médiatique » (both render from the
+        # same body). Defaults above already yield a clean "no card".
+        logger.warning(
+            "deep_reco_store_unavailable",
+            content_id=str(content_id),
+            error=str(e),
+        )
+        # Clear the aborted transaction so request teardown stays clean.
+        try:
+            await db.rollback()
+        except Exception:  # pragma: no cover - best-effort cleanup
+            pass
 
 
 # --------------------------------------------------------------------------- #
