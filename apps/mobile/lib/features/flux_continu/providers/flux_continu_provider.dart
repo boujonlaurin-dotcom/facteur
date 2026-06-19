@@ -90,6 +90,14 @@ const int _kMaxFavoriteSourceSections = 7;
 /// pagination.hasNext (computed from a pre-compression candidate count) says.
 const int _kThemeSectionPageLimit = 10;
 
+/// Borne de concurrence du fan-out Phase 2 (cold-open). Le backend tourne sous
+/// un **unique worker uvicorn** et le scoring perso est CPU-bound : tirer les
+/// ~10 appels `personalized=true` d'un coup les sérialise côté serveur et fait
+/// blinder le wall-clock d'ouverture sur la section la plus lente (timeout 8s
+/// ⇒ +10s ressentis). On en garde au plus 3 en vol, dans l'ordre de rendu, en
+/// émettant l'état au fur et à mesure (cf. [_fanOutSectionsProgressive]).
+const int _kPhase2FanoutConcurrency = 3;
+
 /// Usable scroll height (px) of the Flux Continu viewport, threaded from
 /// [FluxContinuScreen] (the only place that can measure it post-layout):
 /// ```
@@ -494,22 +502,21 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(isSerene));
     }
 
-    // Phase 2 — fan-out thèmes + sources + suggérées « Choisie pour vous », puis
-    // recompose avec le set complet (réutilise le pattern de
-    // _refetchThemesOnly/_refetchSourcesOnly).
+    // Phase 2 — fan-out **progressif et borné** des sections thèmes + sources +
+    // suggérées « Choisie pour vous ». On part des listes vides (réinitialisées
+    // plus haut) et on les remplit au fur et à mesure : le premier rendu n'est
+    // plus bloqué sur la section la plus lente (l'ancien `Future.wait` global),
+    // et la charge serveur est bornée (1 worker uvicorn → recos perso
+    // sérialisées). Réutilise les fetch/build unitaires existants
+    // (_fetchOneTheme/_fetchOneSource + builders).
     final suggestions = [for (final t in topThemes) if (t.isSuggested) t];
-    final fetched = await Future.wait([
-      _fetchThemeSections(
-        favorites,
-        isSerene,
-        isExplicitFavorite: !picked.isFallback,
-      ),
-      _fetchSourceSections(favoriteSources, isSerene),
-      _fetchSuggestedSections(suggestions, isSerene),
-    ]);
-    _themes = fetched[0];
-    _sources = fetched[1];
-    _suggested = fetched[2];
+    await _fanOutSectionsProgressive(
+      favorites: favorites,
+      isExplicitFavorite: !picked.isFallback,
+      favoriteSources: favoriteSources,
+      suggestions: suggestions,
+      isSerene: isSerene,
+    );
 
     return _compose(isSerene);
   }
@@ -1325,7 +1332,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         // « Choisie pour vous » (suggestions backend, jamais hors préférences),
         // pas par des macro-thèmes statiques. On ne garde ici que les thèmes
         // réellement **validés** et pondérés (`origin=="validated"`) ; les
-        // suggérées du même payload transitent par `_fetchSuggestedSections`.
+        // suggérées du même payload transitent par le fan-out progressif
+        // (`_fanOutSectionsProgressive` → `_buildSuggestedSection`).
         final valid = topFallback
             .where((t) => !t.isSuggested && themeMap.containsKey(t.interestSlug))
             .map<FavoriteRef>((t) => ThemeFavoriteRef(slug: t.interestSlug))
@@ -1358,30 +1366,47 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     );
     final sections = <FeedThemeSection>[];
     for (var i = 0; i < favorites.length; i++) {
-      final favRef = favorites[i];
-      final feed = feeds[i];
-      final section = switch (favRef) {
-        ThemeFavoriteRef(:final slug) => _buildThemeSection(
-            feed: feed,
-            label: visualFor(slug).label,
-            accent: visualFor(slug).accent,
-            themeSlug: slug,
-            isExplicitFavorite: isExplicitFavorite,
-          ),
-        CustomTopicFavoriteRef(:final id) => _buildThemeSection(
-            feed: feed,
-            label: _customTopicLabel(interestsState, id),
-            accent: _customTopicAccent(interestsState, id),
-            customTopicId: id,
-            isExplicitFavorite: isExplicitFavorite,
-          ),
-        // Story 23.2 PR-4 : la veille devient une section Tournée dédiée
-        // avec son propre accent et label, calculée séparément des thèmes.
-        VeilleFavoriteRef() => _buildVeilleSection(feed),
-      };
+      final section = _buildFavoriteThemeSection(
+        favorites[i],
+        feeds[i],
+        isExplicitFavorite: isExplicitFavorite,
+        interestsState: interestsState,
+      );
       if (section != null) sections.add(section);
     }
     return sections;
+  }
+
+  /// Construit la section d'un favori thème / sujet / veille à partir de son
+  /// `FeedResponse` déjà fetché. Extrait de [_fetchThemeSections] pour être
+  /// partagé avec le fan-out progressif ([_fanOutSectionsProgressive]).
+  FeedThemeSection? _buildFavoriteThemeSection(
+    FavoriteRef favRef,
+    FeedResponse? feed, {
+    required bool isExplicitFavorite,
+    UserInterestsState? interestsState,
+  }) {
+    final interests =
+        interestsState ?? ref.read(userInterestsProvider).valueOrNull;
+    return switch (favRef) {
+      ThemeFavoriteRef(:final slug) => _buildThemeSection(
+          feed: feed,
+          label: visualFor(slug).label,
+          accent: visualFor(slug).accent,
+          themeSlug: slug,
+          isExplicitFavorite: isExplicitFavorite,
+        ),
+      CustomTopicFavoriteRef(:final id) => _buildThemeSection(
+          feed: feed,
+          label: _customTopicLabel(interests, id),
+          accent: _customTopicAccent(interests, id),
+          customTopicId: id,
+          isExplicitFavorite: isExplicitFavorite,
+        ),
+      // Story 23.2 PR-4 : la veille devient une section Tournée dédiée
+      // avec son propre accent et label, calculée séparément des thèmes.
+      VeilleFavoriteRef() => _buildVeilleSection(feed),
+    };
   }
 
   List<FavoriteRef> _pickExplicitFavorites(List<FavoriteRef> favorites) {
@@ -1586,74 +1611,170 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           ? tourneeSourceKey(s.sourceId!)
           : tourneeThemeKey(s.interestSlug);
 
-  /// Résout chaque suggestion (`origin=="suggested"`) en section, en fetchant le
-  /// même top classé que les sections validées (`personalized:true`, hérite du
-  /// mode serein). Filtre amont les suggestions déjà masquées (dismiss) ou
-  /// vivant en onglet Flâner — évite des round-trips inutiles. Les suggestions
-  /// dont le feed du jour revient **vide** sont droppées (jour pauvre → moins de
-  /// suggestions, jamais d'empty-state « Choisie pour vous »).
-  Future<List<FeedThemeSection>> _fetchSuggestedSections(
-    List<TopTheme> suggestions,
-    bool isSerene,
-  ) async {
-    if (suggestions.isEmpty) return const [];
+  /// Suggestions « Choisie pour vous » réellement fetchables : filtre amont
+  /// celles déjà masquées (dismiss) ou vivant en onglet Flâner — évite des
+  /// round-trips inutiles.
+  List<TopTheme> _usableSuggestions(List<TopTheme> suggestions) {
     final tournee = ref.read(tourneeOrderPrefsProvider);
     final flanerKeys = ref.read(tabOrderPrefsProvider).toSet();
-    final usable = [
+    return [
       for (final s in suggestions)
         if (!tournee.hiddenKeys.contains(_suggestionKey(s)) &&
             !flanerKeys.contains(_suggestionKey(s)))
           s,
     ];
-    if (usable.isEmpty) return const [];
+  }
 
+  /// Construit la section d'une suggestion (`origin=="suggested"`) à partir de
+  /// son `FeedResponse` déjà fetché. Réutilise les builders validés
+  /// ([_buildSourceSection]/[_buildThemeSection]) en ne surchargeant que
+  /// `origin`/`reason`. Une suggestion dont le feed du jour est **vide** est
+  /// droppée (renvoie `null`) — jamais d'empty-state « Choisie pour vous » ;
+  /// `isExplicitFavorite: true` empêche le builder thème de re-couper sous 2.
+  FeedThemeSection? _buildSuggestedSection(
+    TopTheme s,
+    FeedResponse? feed,
+    Map<String, Source> sourceById,
+  ) {
+    if ((feed?.items ?? const <Content>[]).isEmpty) return null;
+    if (s.kind == 'source' && s.sourceId != null) {
+      final src = sourceById[s.sourceId!];
+      if (src == null) return null;
+      return _buildSourceSection(
+        feed: feed,
+        source: src,
+        origin: SectionOrigin.suggested,
+        reason: s.reason,
+      );
+    }
+    final visual = visualFor(s.interestSlug);
+    return _buildThemeSection(
+      feed: feed,
+      label: visual.label,
+      accent: visual.accent,
+      isExplicitFavorite: true,
+      themeSlug: s.interestSlug,
+      origin: SectionOrigin.suggested,
+      reason: s.reason,
+    );
+  }
+
+  /// Fan-out **progressif et borné** des sections Tournée (Phase 2 du cold-open).
+  ///
+  /// Remplace l'ancien `Future.wait` global qui attendait les ~10 appels
+  /// `personalized=true` d'un coup (sérialisés sous l'unique worker uvicorn →
+  /// wall-clock d'ouverture plafonné par le timeout 8s, soit +10s ressentis).
+  /// À la place :
+  ///   - au plus [_kPhase2FanoutConcurrency] requêtes en vol (borne la charge
+  ///     serveur et fait remonter les premières sections vite) ;
+  ///   - les tâches partent dans l'ordre de rendu (thèmes → sources → veille →
+  ///     suggérées), donc les sections au-dessus de la ligne de flottaison se
+  ///     résolvent en premier ;
+  ///   - [_compose] est émis dès qu'une section arrive (remplissage progressif)
+  ///     au lieu d'un unique recompose final.
+  ///
+  /// Réutilise les fetch/build unitaires existants : `_fetchOneTheme` /
+  /// `_fetchOneSource` + `_buildFavoriteThemeSection` / `_buildSourceSection` /
+  /// `_buildSuggestedSection`. Les sections étant clés par `sectionKey` dans
+  /// [_tourneeSectionByKey], l'ordre d'arrivée dans `_themes`/`_sources`/
+  /// `_suggested` n'affecte pas l'ordre de rendu (fixé par `_orderedTourneeKeys`).
+  Future<void> _fanOutSectionsProgressive({
+    required List<FavoriteRef> favorites,
+    required bool isExplicitFavorite,
+    required List<SourceFavoriteRef> favoriteSources,
+    required List<TopTheme> suggestions,
+    required bool isSerene,
+  }) async {
+    final interestsState = ref.read(userInterestsProvider).valueOrNull;
     final catalog =
         ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
     final sourceById = {for (final s in catalog) s.id: s};
 
-    final feeds = await Future.wait(
-      usable.map((s) {
-        if (s.kind == 'source' && s.sourceId != null) {
-          return _fetchOneSource(s.sourceId!, isSerene);
-        }
-        return _fetchOneTheme(ThemeFavoriteRef(slug: s.interestSlug), isSerene);
-      }),
-    );
+    // Sources favorites résolues au catalogue (mêmes règles que
+    // [_fetchSourceSections] : un favori absent du catalogue est ignoré).
+    final resolvedSources = <Source>[
+      for (final fav in favoriteSources)
+        if (sourceById[fav.sourceId] != null) sourceById[fav.sourceId]!,
+    ];
+    final usableSuggestions = _usableSuggestions(suggestions);
 
-    // Réutilise les builders validés ([_buildSourceSection]/[_buildThemeSection])
-    // en ne surchargeant que `origin`/`reason`. Une suggestion dont le feed du
-    // jour est vide est droppée ici (jamais d'empty-state « Choisie pour vous » ;
-    // `isExplicitFavorite: true` empêche le builder thème de re-couper sous 2).
-    final sections = <FeedThemeSection>[];
-    for (var i = 0; i < usable.length; i++) {
-      final s = usable[i];
-      final feed = feeds[i];
-      if ((feed?.items ?? const <Content>[]).isEmpty) continue;
-      final FeedThemeSection? section;
-      if (s.kind == 'source' && s.sourceId != null) {
-        final src = sourceById[s.sourceId!];
-        if (src == null) continue;
-        section = _buildSourceSection(
-          feed: feed,
-          source: src,
-          origin: SectionOrigin.suggested,
-          reason: s.reason,
-        );
-      } else {
-        final visual = visualFor(s.interestSlug);
-        section = _buildThemeSection(
-          feed: feed,
-          label: visual.label,
-          accent: visual.accent,
-          isExplicitFavorite: true,
-          themeSlug: s.interestSlug,
-          origin: SectionOrigin.suggested,
-          reason: s.reason,
-        );
-      }
-      if (section != null) sections.add(section);
+    void emit() => state = AsyncData(_compose(isSerene));
+
+    // Squelette commun fetch→build→append→emit : seul varie le fetch, le
+    // builder et la liste cible. `append` est invoqué uniquement si la section
+    // est non-nulle ; l'émission est systématique (remplissage progressif).
+    Future<void> sectionTask(
+      Future<FeedResponse?> Function() fetch,
+      FeedThemeSection? Function(FeedResponse? feed) build,
+      void Function(FeedThemeSection section) append,
+    ) async {
+      final section = build(await fetch());
+      if (section != null) append(section);
+      emit();
     }
-    return sections;
+
+    final tasks = <Future<void> Function()>[
+      // Thèmes / sujets / veille (ordre favoris = tête de Tournée).
+      for (final favRef in favorites)
+        () => sectionTask(
+              () => _fetchOneTheme(favRef, isSerene),
+              (feed) => _buildFavoriteThemeSection(
+                favRef,
+                feed,
+                isExplicitFavorite: isExplicitFavorite,
+                interestsState: interestsState,
+              ),
+              (section) => _themes = [..._themes, section],
+            ),
+      // Sources favorites.
+      for (final src in resolvedSources)
+        () => sectionTask(
+              () => _fetchOneSource(src.id, isSerene),
+              (feed) => _buildSourceSection(feed: feed, source: src),
+              (section) => _sources = [..._sources, section],
+            ),
+      // Suggérées « Choisie pour vous ».
+      for (final s in usableSuggestions)
+        () => sectionTask(
+              () => (s.kind == 'source' && s.sourceId != null)
+                  ? _fetchOneSource(s.sourceId!, isSerene)
+                  : _fetchOneTheme(
+                      ThemeFavoriteRef(slug: s.interestSlug),
+                      isSerene,
+                    ),
+              (feed) => _buildSuggestedSection(s, feed, sourceById),
+              (section) => _suggested = [..._suggested, section],
+            ),
+    ];
+
+    await _runWithConcurrency(tasks, _kPhase2FanoutConcurrency);
+    // Recompose final : garantit un état cohérent même si toutes les tâches
+    // ont renvoyé une section nulle (rien émis dans la boucle).
+    emit();
+  }
+
+  /// Exécute [tasks] avec au plus [maxConcurrent] en vol simultanément, en
+  /// démarrant les tâches dans l'ordre fourni (les premières partent en
+  /// premier — priorise les sections visibles). Ne lève jamais : chaque tâche
+  /// borne déjà ses erreurs réseau via [_safe].
+  Future<void> _runWithConcurrency(
+    List<Future<void> Function()> tasks,
+    int maxConcurrent,
+  ) async {
+    if (tasks.isEmpty) return;
+    var next = 0;
+    Future<void> worker() async {
+      // `next++` est atomique ici : aucun `await` entre la lecture et
+      // l'incrément (Dart mono-thread), donc deux workers ne prennent jamais
+      // le même index.
+      while (next < tasks.length) {
+        final i = next++;
+        await tasks[i]();
+      }
+    }
+
+    final count = math.min(maxConcurrent, tasks.length);
+    await Future.wait([for (var w = 0; w < count; w++) worker()]);
   }
 
   /// Retire une suggestion de la Tournée (dismiss). Mémoire **locale** via
