@@ -13,7 +13,9 @@ class ArticleReaderWidget extends StatelessWidget {
   final void Function(String url)? onLinkTap;
   final Widget? header;
   final Widget? footer;
+  final double footerSpacing;
   final bool shrinkWrap;
+
   /// When non-null, replaces the HTML body with this widget (e.g. skeleton).
   final Widget? bodyPlaceholder;
 
@@ -25,6 +27,7 @@ class ArticleReaderWidget extends StatelessWidget {
     this.onLinkTap,
     this.header,
     this.footer,
+    this.footerSpacing = FacteurSpacing.space8,
     this.shrinkWrap = false,
     this.bodyPlaceholder,
   });
@@ -50,9 +53,9 @@ class ArticleReaderWidget extends StatelessWidget {
         if (bodyPlaceholder != null)
           bodyPlaceholder!
         else
-        Html(
-          data: content,
-          style: {
+          Html(
+            data: content,
+            style: {
               'body': Style(
                 fontSize: FontSize(17),
                 lineHeight: const LineHeight(1.7),
@@ -61,9 +64,7 @@ class ArticleReaderWidget extends StatelessWidget {
                 margin: Margins.zero,
                 padding: HtmlPaddings.zero,
               ),
-              'p': Style(
-                margin: Margins.only(bottom: 16),
-              ),
+              'p': Style(margin: Margins.only(bottom: 16)),
               'h1': Style(
                 fontSize: FontSize(24),
                 fontWeight: FontWeight.w600,
@@ -86,13 +87,11 @@ class ArticleReaderWidget extends StatelessWidget {
                 color: colors.textSecondary,
                 textDecoration: TextDecoration.none,
               ),
-              'img': Style(
-                margin: Margins.symmetric(vertical: 16),
-              ),
+              'img': Style(margin: Margins.symmetric(vertical: 16)),
               'blockquote': Style(
                 border: Border(
                   left: BorderSide(
-                    color: colors.primary.withOpacity(0.5),
+                    color: colors.primary.withValues(alpha: 0.5),
                     width: 3,
                   ),
                 ),
@@ -101,18 +100,10 @@ class ArticleReaderWidget extends StatelessWidget {
                 fontStyle: FontStyle.italic,
                 color: colors.textSecondary,
               ),
-              'ul': Style(
-                margin: Margins.only(bottom: 16),
-              ),
-              'ol': Style(
-                margin: Margins.only(bottom: 16),
-              ),
-              'li': Style(
-                margin: Margins.only(bottom: 8),
-              ),
-              'figure': Style(
-                margin: Margins.symmetric(vertical: 16),
-              ),
+              'ul': Style(margin: Margins.only(bottom: 16)),
+              'ol': Style(margin: Margins.only(bottom: 16)),
+              'li': Style(margin: Margins.only(bottom: 8)),
+              'figure': Style(margin: Margins.symmetric(vertical: 16)),
               'figcaption': Style(
                 fontSize: FontSize(14),
                 color: colors.textTertiary,
@@ -120,16 +111,9 @@ class ArticleReaderWidget extends StatelessWidget {
                 margin: Margins.only(top: 8),
               ),
               // Defensive: prevent leftover divs/iframes/asides from creating gaps
-              'div': Style(
-                margin: Margins.zero,
-                padding: HtmlPaddings.zero,
-              ),
-              'iframe': Style(
-                display: Display.none,
-              ),
-              'aside': Style(
-                display: Display.none,
-              ),
+              'div': Style(margin: Margins.zero, padding: HtmlPaddings.zero),
+              'iframe': Style(display: Display.none),
+              'aside': Style(display: Display.none),
             },
             onLinkTap: (url, _, __) async {
               if (url != null) {
@@ -144,12 +128,12 @@ class ArticleReaderWidget extends StatelessWidget {
               }
             },
           ),
-          if (footer != null) ...[
-            const SizedBox(height: FacteurSpacing.space8),
-            footer!,
-          ],
+        if (footer != null) ...[
+          if (footerSpacing > 0) SizedBox(height: footerSpacing),
+          footer!,
         ],
-      );
+      ],
+    );
 
     if (shrinkWrap) {
       return Padding(
