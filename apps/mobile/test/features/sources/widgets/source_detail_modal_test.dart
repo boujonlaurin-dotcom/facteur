@@ -177,6 +177,10 @@ void main() {
         await tester.tap(find.text('Évaluation Facteur'));
         await tester.pumpAndSettle();
 
+        // The reliability scale is no longer inline (no duplicate): the eval
+        // value 'Solide' appears exactly once (in the collapsed summary).
+        expect(find.text('Solide'), findsOneWidget);
+        expect(find.text('Échelle de fiabilité'), findsNothing);
         expect(find.text('Indépendance'), findsOneWidget);
         expect(find.text('Rigueur'), findsOneWidget);
         expect(find.text('Accessibilité'), findsOneWidget);
@@ -187,7 +191,61 @@ void main() {
         expect(find.text('Voir la méthodologie'), findsOneWidget);
       });
 
-      testWidgets('premium block always visible when premiumConnection != null '
+      testWidgets(
+        'reliability (i) opens the scale sheet with the three explanations',
+        (tester) async {
+          final source = Source(
+            id: 'monde',
+            name: 'Le Monde',
+            type: SourceType.article,
+            reliabilityScore: 'high',
+          );
+
+          await tester.pumpWidget(_wrap(source: source));
+          await tester.pumpAndSettle();
+
+          // The (i) sits next to the reliability label in the collapsed summary.
+          final infoIcon = find.bySemanticsLabel('Échelle de fiabilité');
+          expect(infoIcon, findsOneWidget);
+
+          await tester.tap(infoIcon);
+          await tester.pumpAndSettle();
+
+          // Sheet titled + 3 explanations.
+          expect(find.text('Échelle de fiabilité'), findsOneWidget);
+          expect(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is RichText &&
+                  widget.text.toPlainText() == 'Solide = fiabilité élevée',
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is RichText &&
+                  widget.text.toPlainText() ==
+                      'Mitigée = points de vigilance',
+            ),
+            findsOneWidget,
+          );
+          expect(
+            find.byWidgetPredicate(
+              (widget) =>
+                  widget is RichText &&
+                  widget.text.toPlainText() == 'Fragile = prudence renforcée',
+            ),
+            findsOneWidget,
+          );
+
+          // The eval stays collapsed: tapping (i) did not reveal the badges.
+          expect(find.text('Voir la méthodologie'), findsNothing);
+        },
+      );
+
+      testWidgets(
+          'premium block always visible when premiumConnection != null '
           'even when not followed', (tester) async {
         final source = Source(
           id: 'monde',
@@ -253,6 +311,54 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  group('SourceDetailModal — enrichissement via /profile (depuis le reader)', () {
+    testWidgets(
+      'light source (SourceMini) gains followers, scores and description '
+      'once /profile responds',
+      (tester) async {
+        // SourceMini léger tel que sérialisé par le reader : ni lecteurs,
+        // ni scores, ni description, éval inconnue.
+        final light = Source(
+          id: 'monde',
+          name: 'Le Monde',
+          type: SourceType.article,
+        );
+        // /profile renvoie la source complète.
+        final profile = SourceProfile(
+          source: Source(
+            id: 'monde',
+            name: 'Le Monde',
+            type: SourceType.article,
+            reliabilityScore: 'high',
+            followerCount: 1240,
+            description: 'Quotidien de référence.',
+            scoreIndependence: 0.55,
+            scoreRigor: 0.85,
+            scoreUx: 0.70,
+          ),
+        );
+
+        await tester.pumpWidget(_wrap(source: light, profile: profile));
+        await tester.pumpAndSettle();
+
+        // Signal lecteurs + description réapparaissent.
+        expect(find.textContaining('lecteurs'), findsOneWidget);
+        expect(find.text('Quotidien de référence.'), findsOneWidget);
+
+        // L'éval enrichie expose les badges A-E une fois dépliée.
+        await tester.tap(find.text('Évaluation Facteur'));
+        await tester.pumpAndSettle();
+        expect(find.text('Indépendance'), findsOneWidget);
+        expect(find.text('Rigueur'), findsOneWidget);
+        expect(find.text('Accessibilité'), findsOneWidget);
+        // 0.85 → A, 0.70 → B, 0.55 → C.
+        expect(find.text('A'), findsOneWidget);
+        expect(find.text('B'), findsOneWidget);
+        expect(find.text('C'), findsOneWidget);
+      },
+    );
   });
 
   group('SourceDetailModal — couverture (mode normal, profil unifié)', () {

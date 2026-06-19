@@ -1043,10 +1043,10 @@ async def _attach_deep_from_store(
             error=str(e),
         )
         # Clear the aborted transaction so request teardown stays clean.
-        try:
+        import contextlib
+
+        with contextlib.suppress(Exception):  # pragma: no cover - best-effort cleanup
             await db.rollback()
-        except Exception:  # pragma: no cover - best-effort cleanup
-            pass
 
 
 # --------------------------------------------------------------------------- #

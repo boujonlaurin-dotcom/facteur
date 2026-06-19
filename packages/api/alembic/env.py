@@ -54,9 +54,18 @@ MIGRATION_CONNECT_ARGS = {
     "prepare_threshold": None,  # Disable prepared statements (required for PgBouncer transaction mode)
     # 30s TCP connect timeout — prevents infinite hang if session-mode port is unreachable
     "connect_timeout": 30,
-    # Pass timeout options directly to PostgreSQL server via connection options
-    # 10 min statement timeout, 2 min lock timeout
-    "options": "-c statement_timeout=600000 -c lock_timeout=120000",
+    # Pass timeout options directly to PostgreSQL server via connection options.
+    # 10 min statement timeout, 2 min lock timeout, and CRUCIALLY disable the
+    # idle-in-transaction timeout: the whole upgrade runs in ONE transaction
+    # (see do_run_migrations) and the `postgres` role carries a 60s
+    # ``idle_in_transaction_session_timeout`` (ALTER ROLE), which otherwise
+    # kills a multi-migration catch-up mid-flight (FATAL: terminating
+    # connection due to idle-in-transaction timeout) → full rollback → the
+    # shared Supabase DB stays frozen at an old revision.
+    "options": (
+        "-c statement_timeout=600000 -c lock_timeout=120000 "
+        "-c idle_in_transaction_session_timeout=0"
+    ),
 }
 
 # Interpret the config file for Python logging.
@@ -96,6 +105,13 @@ def do_run_migrations(connection: Connection) -> None:
         # because the same backend connection is used for the entire transaction.
         connection.execute(text("SET LOCAL statement_timeout = '0'"))
         connection.execute(text("SET LOCAL lock_timeout = '120s'"))
+        # SET LOCAL has the highest precedence — it overrides the `postgres`
+        # role's 60s idle_in_transaction_session_timeout for THIS transaction,
+        # so a long mg01→head catch-up over the shared DB can't be killed for
+        # in-transaction idle. Belt-and-suspenders with the connect-arg option.
+        connection.execute(
+            text("SET LOCAL idle_in_transaction_session_timeout = '0'")
+        )
         context.run_migrations()
     print("[alembic] Migrations completed successfully", flush=True)
 

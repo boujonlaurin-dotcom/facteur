@@ -158,6 +158,7 @@ class _FsBody extends ConsumerWidget {
     final preloaded = recentItems;
     if (preloaded != null) {
       return _assemble(
+        display: source,
         frequencyLabel: null,
         middle: [
           _FsCoverageFromProvider(source: source),
@@ -217,23 +218,57 @@ class _FsBody extends ConsumerWidget {
         ],
       ),
     );
-    return _assemble(frequencyLabel: frequencyLabel, middle: middle);
+    // Enrichit la fiche avec la source complète du profil (`/profile` renvoie
+    // un `SourceResponse` complet). Ouverte depuis le reader, le `source` initial
+    // est un `SourceMini` léger (lecteurs / scores / description / reco / premium
+    // absents). Dès que `/profile` répond, on superpose ces champs manquants —
+    // sans écraser l'état mutable réactif (`isTrusted`/`isMuted`/`hasSubscription`)
+    // qui vient du `liveSource` (`userSourcesProvider`) et doit rester synchro si
+    // l'utilisateur bascule suivi/masquage depuis la fiche. Loading/error :
+    // on garde le `source` léger inchangé.
+    final display = _enrich(source, profileAsync.valueOrNull?.source);
+    return _assemble(
+      display: display,
+      frequencyLabel: frequencyLabel,
+      middle: middle,
+    );
+  }
+
+  /// Superpose les champs descriptifs de [enriched] (depuis `/profile`) sur le
+  /// [base] réactif, en préservant l'état mutable de suivi/masquage du `base`.
+  Source _enrich(Source base, Source? enriched) {
+    if (enriched == null) return base;
+    return base.copyWith(
+      followerCount: enriched.followerCount,
+      description: enriched.description,
+      scoreIndependence: enriched.scoreIndependence,
+      scoreRigor: enriched.scoreRigor,
+      scoreUx: enriched.scoreUx,
+      reliabilityScore: enriched.reliabilityScore,
+      biasStance: enriched.biasStance,
+      biasOrigin: enriched.biasOrigin,
+      recommendedBy: enriched.recommendedBy,
+      recommendationReason: enriched.recommendationReason,
+      premiumConnection: enriched.premiumConnection,
+    );
   }
 
   /// Assemble la fiche autour d'une zone centrale variable. Header, éval,
   /// réglages et gestion sont communs aux trois états (data/loading/error).
+  /// [display] = source à afficher (enrichie via `/profile` quand disponible).
   Widget _assemble({
+    required Source display,
     required String? frequencyLabel,
     required List<Widget> middle,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FsHeader(source: source, frequencyLabel: frequencyLabel),
-        _FsEval(source: source),
+        _FsHeader(source: display, frequencyLabel: frequencyLabel),
+        _FsEval(source: display),
         ...middle,
-        if (source.isTrusted) _FsSettings(source: source),
-        _FsManage(source: source),
+        if (display.isTrusted) _FsSettings(source: display),
+        _FsManage(source: display),
       ],
     );
   }
@@ -466,6 +501,23 @@ class _FsEvalState extends State<_FsEval> {
                             letterSpacing: 0,
                           ),
                         ),
+                        const SizedBox(width: 4),
+                        // (i) discret : ouvre l'échelle de fiabilité sans
+                        // déclencher le toggle replier/déplier (le
+                        // GestureDetector gagne l'arène de gestes du tap).
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _showReliabilityScaleSheet(context),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              PhosphorIcons.info(PhosphorIconsStyle.regular),
+                              size: 14,
+                              color: colors.textTertiary,
+                              semanticLabel: 'Échelle de fiabilité',
+                            ),
+                          ),
+                        ),
                       ],
                     )
                   else
@@ -497,13 +549,7 @@ class _FsEvalState extends State<_FsEval> {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 2, 14, 14),
               child: hasEval
-                  ? _buildEvalBody(
-                      context,
-                      colors,
-                      textTheme,
-                      reliabilityLabel,
-                      reliabilityColor,
-                    )
+                  ? _buildEvalBody(context, colors, textTheme)
                   : _buildNotEvaluated(context, colors, textTheme),
             ),
         ],
@@ -515,8 +561,6 @@ class _FsEvalState extends State<_FsEval> {
     BuildContext context,
     FacteurColors colors,
     TextTheme textTheme,
-    String reliabilityLabel,
-    Color reliabilityColor,
   ) {
     final source = widget.source;
     final badges = <Widget>[];
@@ -540,21 +584,7 @@ class _FsEvalState extends State<_FsEval> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _evalRow(
-          context,
-          'Fiabilité',
-          Text(
-            reliabilityLabel,
-            style: textTheme.labelMedium?.copyWith(
-              color: reliabilityColor,
-              fontWeight: FontWeight.w700,
-              fontSize: 12.5,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
         if (badges.isNotEmpty) ...[
-          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -601,6 +631,93 @@ class _FsEvalState extends State<_FsEval> {
         const SizedBox(height: 12),
         _buildFooter(context, colors, textTheme),
       ],
+    );
+  }
+
+  /// Mini feuille « Échelle de fiabilité » (idiome app). Trois lignes
+  /// explicatives, déclenchée par le `(i)` du résumé d'éval. Sortie du corps
+  /// déplié pour que la valeur de fiabilité n'apparaisse qu'une seule fois.
+  void _showReliabilityScaleSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final colors = sheetContext.facteurColors;
+        final textTheme = Theme.of(sheetContext).textTheme;
+
+        Widget item(String label, String description) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: RichText(
+              text: TextSpan(
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.4,
+                  fontSize: 13.5,
+                  letterSpacing: 0,
+                ),
+                children: [
+                  TextSpan(
+                    text: label,
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  TextSpan(text: ' = $description'),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.backgroundPrimary,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 2),
+                  child: Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colors.textTertiary.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Échelle de fiabilité',
+                        style: FacteurTypography.serifTitle(
+                          colors.textPrimary,
+                        ).copyWith(fontSize: 18, letterSpacing: -0.3),
+                      ),
+                      const SizedBox(height: 14),
+                      item('Solide', 'fiabilité élevée'),
+                      item('Mitigée', 'points de vigilance'),
+                      item('Fragile', 'prudence renforcée'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -696,13 +813,13 @@ class _FsGradeBadge extends StatelessWidget {
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(FacteurRadius.small),
-            border: Border.all(color: color.withValues(alpha: 0.34)),
+            border: Border.all(color: color.withValues(alpha: 0.22)),
           ),
           child: Text(
             grade,
             style: textTheme.labelMedium?.copyWith(
               color: color,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               fontSize: 13,
               letterSpacing: 0,
             ),
@@ -1972,15 +2089,18 @@ String _gradeForScore(double score) {
   return 'E';
 }
 
+/// Couleur de note A-E, sobre : positif (A/B), neutre (C), attention discrète
+/// (D/E → `warning`, pas `error` trop agressif pour un signal indicatif).
 Color _gradeColor(String grade, FacteurColors colors) {
   switch (grade) {
     case 'A':
     case 'B':
-      return colors.secondary;
+      return colors.success;
     case 'C':
+      return colors.textSecondary;
     case 'D':
     case 'E':
-      return colors.textTertiary;
+      return colors.warning;
     default:
       return colors.textTertiary;
   }

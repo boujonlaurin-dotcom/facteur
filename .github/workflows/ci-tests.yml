@@ -22,7 +22,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install linter
-        run: pip install ruff
+        # Pinned: an unpinned ruff silently auto-upgrades and enables new lint
+        # rules, turning untouched files red and blocking every PR of the day
+        # (recurring drift). Bump deliberately when adopting a new ruff version.
+        run: pip install ruff==0.15.14
 
       - name: Ruff check
         run: cd packages/api && ruff check app/

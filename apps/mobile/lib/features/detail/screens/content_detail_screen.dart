@@ -307,8 +307,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Le wash du titre de référence se déclenche quand la couverture est prête
   /// (la section est désormais toujours dépliée — plus de toggle).
-  bool get _showPivot =>
-      _perspectivesStatus == PerspectivesSectionStatus.ready;
+  bool get _showPivot => _perspectivesStatus == PerspectivesSectionStatus.ready;
 
   List<Perspective> get _inlinePerspectives {
     final response = _perspectivesResponse;
@@ -332,8 +331,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // État réactif du bottom sheet « Analyse Facteur ». Le sheet écoute ce
   // notifier pour refléter loading → done/error sans rebuild de l'écran.
-  final ValueNotifier<AnalysisSheetData> _analysisSheetData =
-      ValueNotifier(const AnalysisSheetData());
+  final ValueNotifier<AnalysisSheetData> _analysisSheetData = ValueNotifier(
+    const AnalysisSheetData(),
+  );
 
   /// `true` lorsqu'on lit une "autre source" (perspective) : URL seule, pas de
   /// Content backend ⇒ pas de fetch / perspectives / tracking.
@@ -2443,166 +2443,133 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     child: Row(
                       children: [
                         Flexible(
-                          child: GestureDetector(
-                            onTap: () => TopicChip.showArticleSheet(
-                              context,
-                              content,
-                              initialSection: ArticleSheetSection.source,
-                            ),
-                            behavior: HitTestBehavior.opaque,
-                            child: Row(
-                              children: [
-                                // Source logo (28px, fallback initiales)
-                                SourceLogoAvatar(
-                                  source: content.source,
-                                  size: 28,
-                                  radius: 10,
+                          child: Material(
+                            color: Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () => TopicChip.showArticleSheet(
+                                context,
+                                content,
+                                initialSection: ArticleSheetSection.source,
+                              ),
+                              child: Ink(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
                                 ),
-                                const SizedBox(width: 8),
-
-                                // Source Name + Time + Badges
-                                Flexible(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      // Ligne 1 : Nom (mini-chip) + Badges
-                                      Row(
+                                decoration: BoxDecoration(
+                                  color: colors.backgroundSecondary,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: colors.border.withValues(alpha: 0.6),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SourceLogoAvatar(
+                                      source: content.source,
+                                      size: 26,
+                                      radius: 9,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Flexible(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          Flexible(
-                                            child: Opacity(
-                                              opacity: 0.9,
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: Color.lerp(
-                                                    colors.backgroundSecondary,
-                                                    Colors.black,
-                                                    0.003,
-                                                  )!,
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
+                                          Text(
+                                            content.source.name,
+                                            style: textTheme.labelMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                  color: colors.textPrimary,
                                                 ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 1),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                PhosphorIcons.clock(
+                                                  PhosphorIconsStyle.regular,
+                                                ),
+                                                size: 11,
+                                                color: colors.textTertiary,
+                                              ),
+                                              const SizedBox(width: 3),
+                                              Flexible(
                                                 child: Text(
-                                                  content.source.name,
-                                                  style: textTheme.labelMedium
+                                                  timeago
+                                                      .format(
+                                                        content.publishedAt,
+                                                        locale: 'fr_short',
+                                                      )
+                                                      .replaceAll(
+                                                        'il y a ',
+                                                        '',
+                                                      ),
+                                                  style: textTheme.bodySmall
                                                       ?.copyWith(
-                                                        fontWeight:
-                                                            FontWeight.bold,
                                                         color:
-                                                            colors.textPrimary,
+                                                            colors.textTertiary,
+                                                        fontSize: 11,
                                                       ),
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
                                                 ),
                                               ),
-                                            ),
-                                          ),
-                                          // Étoile = indicateur non-cliquable
-                                          // accolé au nom (favori = pleine
-                                          // primary, suivi = creuse tertiary,
-                                          // non-suivi = rien). Le tap est géré
-                                          // par le GestureDetector parent →
-                                          // ouvre la modal source (le suivi /
-                                          // favori s'y font désormais).
-                                          if (effectiveState ==
-                                                  InterestState.favorite ||
-                                              effectiveState ==
-                                                  InterestState.followed) ...[
-                                            const SizedBox(width: 5),
-                                            Icon(
-                                              effectiveState ==
-                                                      InterestState.favorite
-                                                  ? PhosphorIcons.star(
-                                                      PhosphorIconsStyle.fill,
-                                                    )
-                                                  : PhosphorIcons.star(
-                                                      PhosphorIconsStyle.regular,
-                                                    ),
-                                              size: 14,
-                                              color: effectiveState ==
-                                                      InterestState.favorite
-                                                  ? colors.primary
-                                                  : colors.textTertiary,
-                                            ),
-                                          ],
-                                          // Editorial badge (digest articles)
-                                          if (content.editorialBadge !=
-                                              null) ...[
-                                            const SizedBox(width: 6),
-                                            EditorialBadge.chip(
-                                                  content.editorialBadge,
-                                                  context: context,
-                                                ) ??
-                                                const SizedBox.shrink(),
-                                          ],
-                                          // Gear icon — same scale as bias dot
-                                          const SizedBox(width: 4),
-                                          Material(
-                                            color: Colors.transparent,
-                                            shape: const CircleBorder(),
-                                            clipBehavior: Clip.antiAlias,
-                                            child: InkWell(
-                                              onTap: () =>
-                                                  TopicChip.showArticleSheet(
-                                                    context,
-                                                    content,
-                                                    initialSection:
-                                                        ArticleSheetSection
-                                                            .source,
-                                                  ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(
-                                                  3,
-                                                ),
-                                                child: Icon(
-                                                  PhosphorIcons.gear(
-                                                    PhosphorIconsStyle.regular,
-                                                  ),
-                                                  size: 11,
-                                                  color: colors.textTertiary,
-                                                ),
-                                              ),
-                                            ),
+                                            ],
                                           ),
                                         ],
                                       ),
-                                      const SizedBox(height: 1),
-                                      // Ligne 2 : Temps relatif (icône + format court)
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            PhosphorIcons.clock(
-                                              PhosphorIconsStyle.regular,
-                                            ),
-                                            size: 11,
-                                            color: colors.textTertiary,
-                                          ),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            timeago
-                                                .format(
-                                                  content.publishedAt,
-                                                  locale: 'fr_short',
-                                                )
-                                                .replaceAll('il y a ', ''),
-                                            style: textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: colors.textTertiary,
-                                                  fontSize: 11,
-                                                ),
-                                          ),
-                                        ],
+                                    ),
+                                    if (effectiveState ==
+                                            InterestState.favorite ||
+                                        effectiveState ==
+                                            InterestState.followed) ...[
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        effectiveState == InterestState.favorite
+                                            ? PhosphorIcons.star(
+                                                PhosphorIconsStyle.fill,
+                                              )
+                                            : PhosphorIcons.star(
+                                                PhosphorIconsStyle.regular,
+                                              ),
+                                        size: 14,
+                                        color:
+                                            effectiveState ==
+                                                InterestState.favorite
+                                            ? colors.primary
+                                            : colors.textTertiary,
                                       ),
                                     ],
-                                  ),
+                                    if (content.editorialBadge != null) ...[
+                                      const SizedBox(width: 6),
+                                      EditorialBadge.chip(
+                                            content.editorialBadge,
+                                            context: context,
+                                          ) ??
+                                          const SizedBox.shrink(),
+                                    ],
+                                    const SizedBox(width: 5),
+                                    Icon(
+                                      PhosphorIcons.caretRight(
+                                        PhosphorIconsStyle.regular,
+                                      ),
+                                      size: 13,
+                                      color: colors.textTertiary,
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -2661,7 +2628,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ],
     );
   }
-
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
     return ValueListenableBuilder<double>(
@@ -2920,6 +2886,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             bodyPlaceholder: !_contentResolved
                                 ? _buildArticleBodySkeleton(colors)
                                 : null,
+                            footerSpacing: isPartial
+                                ? 0
+                                : FacteurSpacing.space8,
                             footer: SizedBox(
                               height: _kFooterContentHeight + bottomInset,
                             ),
@@ -2943,24 +2912,29 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               perspectives: _inlinePerspectives,
                               biasDistribution:
                                   _perspectivesResponse?.biasDistribution ??
-                                      const {},
+                                  const {},
                               keywords:
                                   _perspectivesResponse?.keywords ?? const [],
                               sourceBiasStance:
                                   _perspectivesResponse?.sourceBiasStance ??
-                                      'unknown',
+                                  'unknown',
                               sourceName: _content?.source.name ?? '',
                               contentId: widget.contentId,
                               comparisonQuality:
                                   _perspectivesResponse?.comparisonQuality ??
-                                      'low',
+                                  'low',
                               divergenceLevel:
                                   _perspectivesResponse?.divergenceLevel,
                               partial: _perspectivesResponse?.partial ?? false,
                               onOpenAnalysis: _openPerspectivesAnalysis,
                             ),
                           ),
-                          const SizedBox(height: FacteurSpacing.space4),
+                          SizedBox(
+                            height:
+                                _kFooterContentHeight +
+                                bottomInset +
+                                FacteurSpacing.space4,
+                          ),
                         ],
 
                         // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
@@ -3496,8 +3470,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   const SizedBox(height: FacteurSpacing.space4),
                   DeepRecommendationCard(
                     reco: _perspectivesResponse!.deepRecommendation!,
-                    onTap: () =>
-                        _openDeepReco(_perspectivesResponse!.deepRecommendation!),
+                    onTap: () => _openDeepReco(
+                      _perspectivesResponse!.deepRecommendation!,
+                    ),
                   ),
                 ],
 
