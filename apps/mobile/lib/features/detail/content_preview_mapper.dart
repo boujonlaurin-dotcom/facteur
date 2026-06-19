@@ -15,14 +15,15 @@ import '../sources/models/source_model.dart';
 extension EssentielArticlePreview on EssentielArticle {
   /// Construit un [Content] partiel à partir d'une carte Essentiel.
   ///
-  /// `EssentielArticle` n'a pas de description ⇒ le corps reste en shimmer
-  /// jusqu'au fetch (attendu, périmètre Levier 1).
+  /// `description` (chapô) est servie par `/api/essentiel` → l'aperçu au
+  /// long-press montre un corps dès le 1er frame ; le fetch complète ensuite.
   Content toPreviewContent() {
     return Content(
       id: contentId,
       title: title,
       url: url,
       thumbnailUrl: thumbnailUrl,
+      description: description,
       contentType: ContentType.article,
       publishedAt: publishedAt,
       source: Source(

@@ -12,6 +12,7 @@ import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:facteur/widgets/design/video_play_overlay.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
@@ -170,62 +171,7 @@ class _FeedCardState extends State<FeedCard>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Tappable area: image + body (isolated from footer buttons)
-                  GestureDetector(
-                    onTapDown: (_) => _pressController.forward(),
-                    onTapUp: (_) => _pressController.reverse(),
-                    onTapCancel: () => _pressController.reverse(),
-                    onTap: widget.onTap != null
-                        ? () async {
-                            await HapticFeedback.mediumImpact();
-                            widget.onTap?.call();
-                          }
-                        : null,
-                    onLongPressStart: widget.onLongPressStart != null
-                        ? (details) async {
-                            await HapticFeedback.mediumImpact();
-                            widget.onLongPressStart?.call(details);
-                          }
-                        : null,
-                    onLongPressMoveUpdate: widget.onLongPressMoveUpdate,
-                    onLongPressEnd: widget.onLongPressEnd != null
-                        ? (details) {
-                            _pressController.reverse();
-                            widget.onLongPressEnd?.call(details);
-                          }
-                        : null,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Red accent line for video cards
-                        if (isVideo)
-                          Container(
-                            height: 3,
-                            color: const Color(0xFFFF0000),
-                          ),
-
-                        // 1. Image (Header) — masquée en mode minimaliste.
-                        if (widget.displaySpec.showImages)
-                          FacteurThumbnail(
-                          imageUrl: widget.content.thumbnailUrl,
-                          aspectRatio: widget.displaySpec.feedImageAspectRatio ??
-                              widget.imageAspectRatio,
-                          borderRadius: isVideo
-                              ? BorderRadius.zero
-                              : const BorderRadius.vertical(
-                                  top: Radius.circular(FacteurRadius.small)),
-                          onError: widget.onImageError,
-                          overlay: isVideo ? const VideoPlayOverlay() : null,
-                          durationLabel: isVideo && widget.content.durationSeconds != null
-                              ? _formatDuration(widget.content.durationSeconds!)
-                              : null,
-                          isVideo: isVideo,
-                        ),
-
-                        // 2. Body (Title + Meta)
-                        _buildBody(context, colors, textTheme),
-                      ],
-                    ),
-                  ),
+                  _buildTappableArea(context, colors, textTheme, isVideo),
 
                 // 3. Footer (Source + Actions) — outside tap area
                 Container(
@@ -598,6 +544,93 @@ class _FeedCardState extends State<FeedCard>
       return KeyedSubtree(key: widget.cardAnchorKey!, child: card);
     }
     return card;
+  }
+
+  /// Zone tap (image + corps), isolée du footer. Le long-press y est câblé via
+  /// un [RawGestureDetector] qui fournit un [LongPressGestureRecognizer] à
+  /// deadline raccourcie (300 ms au lieu de 500). Dans les carrousels la carte
+  /// vit dans une `PageView` (viewportFraction 0.88) : avec la deadline par
+  /// défaut, toute dérive du doigt > kTouchSlop avant 500 ms laissait le
+  /// `DragGestureRecognizer` parent gagner l'arène et annuler l'aperçu. 300 ms
+  /// déclare le long-press vainqueur avant que la dérive ne s'accumule, tout en
+  /// restant assez long pour ne pas se confondre avec un tap ou un fling. Le
+  /// recognizer n'est monté que si [FeedCard.onLongPressStart] est non-null
+  /// (les call sites non-carrousel passent null → comportement inchangé).
+  Widget _buildTappableArea(
+    BuildContext context,
+    FacteurColors colors,
+    TextTheme textTheme,
+    bool isVideo,
+  ) {
+    // GestureDetector interne : taps + pilotage de l'anim de pression (scale).
+    final tappable = GestureDetector(
+      onTapDown: (_) => _pressController.forward(),
+      onTapUp: (_) => _pressController.reverse(),
+      onTapCancel: () => _pressController.reverse(),
+      onTap: widget.onTap != null
+          ? () async {
+              await HapticFeedback.mediumImpact();
+              widget.onTap?.call();
+            }
+          : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Red accent line for video cards
+          if (isVideo)
+            Container(
+              height: 3,
+              color: const Color(0xFFFF0000),
+            ),
+
+          // 1. Image (Header) — masquée en mode minimaliste.
+          if (widget.displaySpec.showImages)
+            FacteurThumbnail(
+              imageUrl: widget.content.thumbnailUrl,
+              aspectRatio: widget.displaySpec.feedImageAspectRatio ??
+                  widget.imageAspectRatio,
+              borderRadius: isVideo
+                  ? BorderRadius.zero
+                  : const BorderRadius.vertical(
+                      top: Radius.circular(FacteurRadius.small)),
+              onError: widget.onImageError,
+              overlay: isVideo ? const VideoPlayOverlay() : null,
+              durationLabel:
+                  isVideo && widget.content.durationSeconds != null
+                      ? _formatDuration(widget.content.durationSeconds!)
+                      : null,
+              isVideo: isVideo,
+            ),
+
+          // 2. Body (Title + Meta)
+          _buildBody(context, colors, textTheme),
+        ],
+      ),
+    );
+
+    if (widget.onLongPressStart == null) return tappable;
+
+    return RawGestureDetector(
+      gestures: {
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+          () => LongPressGestureRecognizer(
+            duration: const Duration(milliseconds: 300),
+          ),
+          (recognizer) => recognizer
+            ..onLongPressStart = (details) async {
+              await HapticFeedback.mediumImpact();
+              widget.onLongPressStart?.call(details);
+            }
+            ..onLongPressMoveUpdate = widget.onLongPressMoveUpdate
+            ..onLongPressEnd = (details) {
+              _pressController.reverse();
+              widget.onLongPressEnd?.call(details);
+            },
+        ),
+      },
+      child: tappable,
+    );
   }
 
   Widget _buildBody(

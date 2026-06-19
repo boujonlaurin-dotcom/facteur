@@ -144,6 +144,7 @@ class EssentielArticle {
   final String contentId;
   final String title;
   final String url;
+  final String? description;
   final String? thumbnailUrl;
   final DateTime publishedAt;
   final String sourceName;
@@ -172,6 +173,7 @@ class EssentielArticle {
     required this.sourceLetter,
     required this.sectionLabel,
     required this.rank,
+    this.description,
     this.thumbnailUrl,
     this.kind = SectionKind.theme,
     this.theme,
@@ -193,6 +195,7 @@ class EssentielArticle {
       contentId: (json['content_id'] as String?) ?? '',
       title: (json['title'] as String?) ?? '',
       url: (json['url'] as String?) ?? '',
+      description: json['description'] as String?,
       thumbnailUrl: json['thumbnail_url'] as String?,
       publishedAt:
           DateTime.tryParse(json['published_at'] as String? ?? '') ??
@@ -218,6 +221,7 @@ class EssentielArticle {
     'content_id': contentId,
     'title': title,
     'url': url,
+    'description': description,
     'thumbnail_url': thumbnailUrl,
     'published_at': publishedAt.toIso8601String(),
     'source': {'name': sourceName},

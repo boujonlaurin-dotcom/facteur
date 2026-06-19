@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "La fin de tournée est plus incarnée : un récap de ce que tu as lu et des idées d'activités à faire maintenant, hors de l'écran. L'aperçu au long-press marche aussi sur ton Essentiel et dans tous les carrousels d'articles."
+    },
+    {
       "tag": "Onboarding",
       "summary": "Un tour guidé te présente tes pages dès la première ouverture."
     },
