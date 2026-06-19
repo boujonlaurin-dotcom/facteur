@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/explore_section.dart';
@@ -288,6 +289,13 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             child: FeedCarousel(
               data: filtered[index],
               onArticleTap: (c) => _openArticle(context, c),
+              onLongPressStart: (c, _) =>
+                  ArticlePreviewOverlay.show(context, c),
+              onLongPressMoveUpdate: (details) =>
+                  ArticlePreviewOverlay.updateScroll(
+                details.localOffsetFromOrigin.dy,
+              ),
+              onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
             ),
           ),
           childCount: filtered.length,
