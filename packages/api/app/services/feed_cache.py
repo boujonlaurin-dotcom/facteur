@@ -1,6 +1,9 @@
-"""In-memory per-user cache for the default `/api/feed/` page-1 view.
+"""In-memory per-user cache for `/api/feed/` page-1 views.
 
 Round 5 fix (`docs/bugs/bug-infinite-load-requests.md`).
+Extended (app-load slowdown investigation) to cache the **personalized
+Tournée sections** — the ~10 parallel `personalized=true` calls fired at
+cold-open, the single hottest transaction (p95 ~10 s).
 
 Why this exists
 ---------------
@@ -10,33 +13,42 @@ revalidate + preload + 403 retries multiply `/api/feed/?page=1` calls per
 user session. Each call pays the full price: 500 candidate scoring + 7-12
 sequential SELECTs in `_build_carousels` = 1.5-5 s holding 2 DB connections.
 
-Within a 30-second window the output is ~99 % identical (same scoring
-inputs, same candidate pool, same user state). Recomputing is wasted work.
+The same recompute-every-time problem hits the personalized Tournée sections
+even harder: a cold-open fans out ~10 `personalized=true` calls (one per
+theme/topic/source section), none of which were cache-eligible — every open,
+pull-to-refresh, or re-fetch paid the full pillars scoring pipeline again.
+
+Within a short window the output is ~99 % identical (same scoring inputs,
+same candidate pool, same user state). Recomputing is wasted work.
 
 Design
 ------
-- **Per-user**, in-memory dict, keyed by `user_id`.
-- TTL configurable via `FEED_CACHE_TTL_SECONDS` env var (default 30 s,
-  set to `0` to disable the cache entirely without redeploy — kill switch).
-- **Single-flight via per-user `asyncio.Lock`** to prevent thundering herd
-  on cache miss (concurrent first requests for the same user serialise on
-  the lock; the 2nd+ pick up the cached value populated by the 1st).
+- **Per-user, per-variant**, in-memory dict, keyed by `(user_id, variant)`.
+  `variant is None` = the default page-1 view (unchanged behavior). A
+  non-None `variant` string identifies a personalized section view (derived
+  from theme/topic/source_id/serein/limit by the caller).
+- TTL configurable via env (default view: `FEED_CACHE_TTL_SECONDS`, default
+  30 s; personalized: `FEED_CACHE_PERSONALIZED_TTL_SECONDS`, default 60 s).
+  Either set to `0` to disable that class of caching without redeploy —
+  independent kill switches.
+- **Single-flight via per-key `asyncio.Lock`** to prevent thundering herd
+  on cache miss (concurrent first requests for the same key serialise on the
+  lock; the 2nd+ pick up the cached value populated by the 1st).
 - **Eviction by writes** — every endpoint that mutates user state
   (`save`, `like`, `hide`, `mute`, `impress`, `refresh`) MUST call
-  `FEED_CACHE.invalidate(user_id)`. Stale-but-correct is acceptable for
-  passive reads (30 s blink); inconsistent-after-write is not.
-- **Cache key scope** = the *default* mobile view only:
+  `FEED_CACHE.invalidate(user_id)`, which purges **all** variants for that
+  user (default + every personalized section). Stale-but-correct is
+  acceptable for passive reads (blink); inconsistent-after-write is not.
+- **Default-view key scope** = the *default* mobile view only:
   `offset == 0` + `limit == 20` + no filter (mode/theme/topic/source/entity
-  /keyword) + `serein == False` + `saved_only == False`. Filtered/paginated
-  views bypass the cache entirely (lower volume, harder to invalidate
-  correctly, lower ROI).
+  /keyword) + `serein == False` + `saved_only == False` + not personalized.
 - **Hit telemetry** — hit/miss counters logged every 60 s on stderr so
   we can validate the hit rate without external infra.
 
 Memory budget
 -------------
-~150 KB per cached payload × 100 DAU ceiling ≈ 15 MB worst case. Safe on
-a 1 GB Railway pod.
+Default payload ~150 KB; personalized section payloads ~50 KB × ~10 sections.
+~50-65 MB worst case at 100 DAU ceiling. Safe on a 1 GB Railway pod.
 """
 
 from __future__ import annotations
@@ -50,16 +62,33 @@ from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
+# Cache key = (user_id, variant). `variant is None` ⇒ default page-1 view.
+_CacheKey = tuple[UUID, str | None]
+
 
 def _ttl_from_env() -> float:
-    """Read TTL from env. Returns `0.0` (cache disabled) on parse failure
-    or explicit `FEED_CACHE_TTL_SECONDS=0`."""
+    """Read default-view TTL from env. Returns `0.0` (cache disabled) on parse
+    failure or explicit `FEED_CACHE_TTL_SECONDS=0`."""
     raw = os.environ.get("FEED_CACHE_TTL_SECONDS", "30")
     try:
         return max(0.0, float(raw))
     except ValueError:
         logger.warning("feed_cache_invalid_ttl raw=%s, defaulting to 30s", raw)
         return 30.0
+
+
+def _personalized_ttl_from_env() -> float:
+    """Read personalized-section TTL from env. Returns `0.0` (personalized
+    caching disabled) on parse failure or explicit
+    `FEED_CACHE_PERSONALIZED_TTL_SECONDS=0`."""
+    raw = os.environ.get("FEED_CACHE_PERSONALIZED_TTL_SECONDS", "60")
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        logger.warning(
+            "feed_cache_invalid_personalized_ttl raw=%s, defaulting to 60s", raw
+        )
+        return 60.0
 
 
 @dataclass
@@ -69,17 +98,26 @@ class _Entry:
 
 
 class FeedPageCache:
-    """Per-user TTL cache with single-flight semantics.
+    """Per-user, per-variant TTL cache with single-flight semantics.
 
     Thread-safety note: every method assumes it runs on the same asyncio
-    event loop. The `_locks` dict is mutated only inside `_lock()` which is
+    event loop. The `_locks` dict is mutated only inside `lock()` which is
     called from coroutines — no cross-thread access.
     """
 
-    def __init__(self, ttl_seconds: float | None = None) -> None:
+    def __init__(
+        self,
+        ttl_seconds: float | None = None,
+        personalized_ttl_seconds: float | None = None,
+    ) -> None:
         self._ttl = ttl_seconds if ttl_seconds is not None else _ttl_from_env()
-        self._entries: dict[UUID, _Entry] = {}
-        self._locks: dict[UUID, asyncio.Lock] = {}
+        self._personalized_ttl = (
+            personalized_ttl_seconds
+            if personalized_ttl_seconds is not None
+            else _personalized_ttl_from_env()
+        )
+        self._entries: dict[_CacheKey, _Entry] = {}
+        self._locks: dict[_CacheKey, asyncio.Lock] = {}
         self._hits = 0
         self._misses = 0
         self._invalidations = 0
@@ -90,31 +128,51 @@ class FeedPageCache:
         return self._ttl
 
     @property
+    def personalized_ttl_seconds(self) -> float:
+        return self._personalized_ttl
+
+    @property
     def enabled(self) -> bool:
+        """True if *any* class of caching is active (default or personalized)."""
+        return self.default_enabled or self.personalized_enabled
+
+    @property
+    def default_enabled(self) -> bool:
         return self._ttl > 0
 
-    def lock(self, user_id: UUID) -> asyncio.Lock:
-        """Return (or lazily create) the asyncio.Lock for `user_id`.
+    @property
+    def personalized_enabled(self) -> bool:
+        return self._personalized_ttl > 0
+
+    def _ttl_for(self, variant: str | None) -> float:
+        """TTL applied to a key: default-view TTL for `variant is None`, the
+        personalized TTL otherwise."""
+        return self._ttl if variant is None else self._personalized_ttl
+
+    def lock(self, user_id: UUID, variant: str | None = None) -> asyncio.Lock:
+        """Return (or lazily create) the asyncio.Lock for `(user_id, variant)`.
 
         Public so callers can do the canonical pattern:
-            async with FEED_CACHE.lock(user_id):
-                hit = FEED_CACHE.get(user_id)
+            async with FEED_CACHE.lock(user_id, variant):
+                hit = FEED_CACHE.get(user_id, variant)
                 if hit: return hit
                 payload = compute(...)
-                FEED_CACHE.put(user_id, payload)
+                FEED_CACHE.put(user_id, payload, variant)
                 return payload
         """
-        lock = self._locks.get(user_id)
+        key = (user_id, variant)
+        lock = self._locks.get(key)
         if lock is None:
             lock = asyncio.Lock()
-            self._locks[user_id] = lock
+            self._locks[key] = lock
         return lock
 
-    def get(self, user_id: UUID) -> bytes | None:
-        """Return cached payload if fresh, else `None`. Updates hit/miss counters."""
+    def get(self, user_id: UUID, variant: str | None = None) -> bytes | None:
+        """Return cached payload for `(user_id, variant)` if fresh, else `None`.
+        Updates hit/miss counters."""
         if not self.enabled:
             return None
-        entry = self._entries.get(user_id)
+        entry = self._entries.get((user_id, variant))
         now = time.monotonic()
         if entry is None or entry.expires_at < now:
             self._misses += 1
@@ -124,18 +182,29 @@ class FeedPageCache:
         self._maybe_flush_telemetry(now)
         return entry.payload
 
-    def put(self, user_id: UUID, payload: bytes) -> None:
-        """Store `payload` for `user_id` with TTL."""
-        if not self.enabled:
+    def put(self, user_id: UUID, payload: bytes, variant: str | None = None) -> None:
+        """Store `payload` for `(user_id, variant)` with the variant's TTL.
+
+        No-op when the relevant TTL class is disabled (default view when
+        `FEED_CACHE_TTL_SECONDS=0`, personalized when
+        `FEED_CACHE_PERSONALIZED_TTL_SECONDS=0`)."""
+        ttl = self._ttl_for(variant)
+        if ttl <= 0:
             return
-        self._entries[user_id] = _Entry(
-            expires_at=time.monotonic() + self._ttl,
+        self._entries[(user_id, variant)] = _Entry(
+            expires_at=time.monotonic() + ttl,
             payload=payload,
         )
 
     def invalidate(self, user_id: UUID) -> None:
-        """Drop `user_id` cache entry (called by every write endpoint)."""
-        if self._entries.pop(user_id, None) is not None:
+        """Drop **all** cached variants for `user_id` (default + personalized).
+
+        Called by every write endpoint. A single call counts as one
+        invalidation regardless of how many variants it purged."""
+        keys = [key for key in self._entries if key[0] == user_id]
+        for key in keys:
+            del self._entries[key]
+        if keys:
             self._invalidations += 1
 
     def stats(self) -> dict[str, int | float]:
@@ -148,6 +217,7 @@ class FeedPageCache:
             "size": len(self._entries),
             "hit_rate": (self._hits / total) if total else 0.0,
             "ttl_seconds": self._ttl,
+            "personalized_ttl_seconds": self._personalized_ttl,
         }
 
     def reset_stats(self) -> None:
@@ -168,13 +238,14 @@ class FeedPageCache:
         s = self.stats()
         logger.info(
             "feed_cache_stats hits=%d misses=%d invalidations=%d "
-            "size=%d hit_rate=%.2f ttl=%.0fs",
+            "size=%d hit_rate=%.2f ttl=%.0fs perso_ttl=%.0fs",
             s["hits"],
             s["misses"],
             s["invalidations"],
             s["size"],
             s["hit_rate"],
             s["ttl_seconds"],
+            s["personalized_ttl_seconds"],
         )
         self._last_flush_at = now
 

@@ -128,6 +128,64 @@ def _is_default_view(
     )
 
 
+def _is_personalized_section_view(
+    *,
+    offset: int,
+    content_type: ContentType | None,
+    mode: FeedFilterMode | None,
+    theme: str | None,
+    topic: str | None,
+    saved_only: bool,
+    has_note: bool,
+    source_id: str | None,
+    entity: str | None,
+    keyword: str | None,
+    include_unfollowed: bool,
+    followed_only: bool,
+    personalized: bool,
+) -> bool:
+    """Eligibility predicate for the personalized-section cache.
+
+    Targets the ~10 parallel `personalized=true` calls the mobile app fires at
+    cold-open for the Tournée du jour sections — the single hottest transaction
+    (p95 ~10 s, app-load slowdown investigation). Each call is keyed by exactly
+    one of theme / topic / source_id; the limit is folded into the cache
+    variant (cf. `_personalized_variant`) rather than pinned here, since the
+    sections fetch with a section-specific page size, not the default 20.
+    """
+    return (
+        personalized
+        and offset == 0
+        and content_type is None
+        and mode is None
+        and not saved_only
+        and not has_note
+        and entity is None
+        and keyword is None
+        and not include_unfollowed
+        and not followed_only
+        # Exactly one section selector — theme, topic, or source_id.
+        and ((theme is not None) + (topic is not None) + (source_id is not None)) == 1
+    )
+
+
+def _personalized_variant(
+    *,
+    theme: str | None,
+    topic: str | None,
+    source_id: str | None,
+    serein: bool,
+    limit: int,
+) -> str:
+    """Stable cache-variant key for a personalized section view.
+
+    Derived from the section selector (theme | topic | source_id), the serein
+    mode, and the page size. `limit` is included so a section re-fetched with a
+    different page size never serves a wrong-sized payload. Always non-None, so
+    it never collides with the default-view key (`variant is None`)."""
+    return f"p|t={theme}|tp={topic}|s={source_id}|sr={int(serein)}|l={limit}"
+
+
 @router.get("/", response_model=FeedResponse)
 async def get_personalized_feed(
     limit: int = Query(20, ge=1, le=50),
@@ -187,10 +245,22 @@ async def get_personalized_feed(
     filter, serein off). Hit retourne le payload sérialisé sans recompute.
     Single-flight via `FEED_CACHE.lock(user_id)` pour éviter le thundering
     herd au cache miss.
+
+    Fix ralentissement ouverture — les vues `personalized=true` des sections
+    Tournée (theme/topic/source) sont désormais cache-éligibles sous une clé
+    composite `(user, variant)` (TTL `FEED_CACHE_PERSONALIZED_TTL_SECONDS`,
+    60s), avec le même pattern single-flight. Coupe le recompute du pipeline
+    piliers sur les ~10 appels parallèles du cold-open.
     """
     user_uuid = UUID(current_user_id)
 
-    cache_eligible = FEED_CACHE.enabled and _is_default_view(
+    # Resolve cache eligibility + the key variant. `variant is None` ⇒ the
+    # default page-1 view (R5). A non-None variant ⇒ a personalized Tournée
+    # section (app-load slowdown fix). Both classes share the get→compute→put
+    # single-flight path below; only the key and TTL differ.
+    cache_eligible = False
+    cache_variant: str | None = None
+    if FEED_CACHE.default_enabled and _is_default_view(
         limit=limit,
         offset=offset,
         content_type=content_type,
@@ -204,19 +274,44 @@ async def get_personalized_feed(
         entity=entity,
         keyword=keyword,
         personalized=personalized,
-    )
+    ):
+        cache_eligible = True
+        cache_variant = None
+    elif FEED_CACHE.personalized_enabled and _is_personalized_section_view(
+        offset=offset,
+        content_type=content_type,
+        mode=mode,
+        theme=theme,
+        topic=topic,
+        saved_only=saved_only,
+        has_note=has_note,
+        source_id=source_id,
+        entity=entity,
+        keyword=keyword,
+        include_unfollowed=include_unfollowed,
+        followed_only=followed_only,
+        personalized=personalized,
+    ):
+        cache_eligible = True
+        cache_variant = _personalized_variant(
+            theme=theme,
+            topic=topic,
+            source_id=source_id,
+            serein=serein,
+            limit=limit,
+        )
 
     if cache_eligible:
         # Fast path: cached and fresh → no DB work, no Pydantic.
-        cached = FEED_CACHE.get(user_uuid)
+        cached = FEED_CACHE.get(user_uuid, cache_variant)
         if cached is not None:
             return Response(content=cached, media_type="application/json")
 
-        # Single-flight: serialize concurrent first-misses for the same user.
-        # 2nd+ waiters re-check after acquiring the lock and pick up the
-        # payload populated by the 1st.
-        async with FEED_CACHE.lock(user_uuid):
-            cached = FEED_CACHE.get(user_uuid)
+        # Single-flight: serialize concurrent first-misses for the same
+        # (user, variant). 2nd+ waiters re-check after acquiring the lock and
+        # pick up the payload populated by the 1st.
+        async with FEED_CACHE.lock(user_uuid, cache_variant):
+            cached = FEED_CACHE.get(user_uuid, cache_variant)
             if cached is not None:
                 return Response(content=cached, media_type="application/json")
             response = await _compute_feed(
@@ -239,7 +334,7 @@ async def get_personalized_feed(
                 followed_only=followed_only,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
-            FEED_CACHE.put(user_uuid, payload)
+            FEED_CACHE.put(user_uuid, payload, cache_variant)
             return Response(content=payload, media_type="application/json")
 
     response = await _compute_feed(

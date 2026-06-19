@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Ouverture nettement plus rapide : tes sections apparaissent l'une après l'autre dès qu'elles sont prêtes, au lieu d'attendre que tout charge d'un coup."
+    },
+    {
       "tag": "Sources",
       "summary": "Fiche source plus complète depuis un article : lecteurs, notes, description et reco réapparaissent, avec une échelle de fiabilité accessible d'un tap."
     },
