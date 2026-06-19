@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/article_preview_modal.dart';
+import '../../detail/content_preview_mapper.dart';
 import '../../tour/tour_anchors.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
@@ -522,7 +524,9 @@ class _LeadTile extends StatelessWidget {
     final chipAccent = _accentFor(article, accent);
     return Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: _ArticlePreviewGesture(
+        article: article,
+        child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),
         // Lu : grise la tuile (0.6) + coche verte, comme les autres sections
@@ -583,6 +587,7 @@ class _LeadTile extends StatelessWidget {
             ],
           ),
         ),
+        ),
       ),
     );
   }
@@ -604,7 +609,9 @@ class _MediumTile extends StatelessWidget {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     return Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: _ArticlePreviewGesture(
+        article: article,
+        child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
         // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
@@ -659,7 +666,31 @@ class _MediumTile extends StatelessWidget {
             ],
           ),
         ),
+        ),
       ),
+    );
+  }
+}
+
+/// Aperçu au long-press, partagé par [_LeadTile] et [_MediumTile] (cf.
+/// flux_continu_article_card.dart). Pas de swipe (choix PO) ni d'haptique
+/// (cohérence FluxContinuArticleCard). Les tuiles vivent dans un scroll
+/// vertical → pas de conflit d'arène, le long-press gagne de façon fiable.
+class _ArticlePreviewGesture extends StatelessWidget {
+  final EssentielArticle article;
+  final Widget child;
+
+  const _ArticlePreviewGesture({required this.article, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: (_) =>
+          ArticlePreviewOverlay.show(context, article.toPreviewContent()),
+      onLongPressMoveUpdate: (d) =>
+          ArticlePreviewOverlay.updateScroll(d.localOffsetFromOrigin.dy),
+      onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+      child: child,
     );
   }
 }

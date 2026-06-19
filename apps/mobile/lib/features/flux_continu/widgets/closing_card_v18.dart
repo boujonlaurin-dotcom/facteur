@@ -1,9 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
+import '../providers/weather_provider.dart';
+import '../utils/closing_activity.dart';
 import 'tournee_cta_buttons.dart';
 
 /// Closing card displayed after the four Flux Continu sections.
@@ -16,7 +19,7 @@ import 'tournee_cta_buttons.dart';
 ///   étape(s) parcourue(s)" or "Tournée terminée" when empty.
 /// - Primary CTA "Continuer à Flâner" (background #D35400) + ghost CTA
 ///   "Refermer pour aujourd'hui" (border 1.5px rgba(0,0,0,0.1)).
-class ClosingCardV18 extends StatelessWidget {
+class ClosingCardV18 extends ConsumerWidget {
   final int articleCount;
   final VoidCallback? onContinue;
   final VoidCallback? onClose;
@@ -26,17 +29,27 @@ class ClosingCardV18 extends StatelessWidget {
   /// par l'App Store). Ignorée si [onClose] est fourni (cas Android).
   final String? closeHint;
 
+  /// Récap personnalisé de ce qui a été lu (« Tu as lu sur la Tech (4)… »).
+  /// Null quand rien n'a été lu → retombe sur [_stepLabel].
+  final String? recapLine;
+
   const ClosingCardV18({
     super.key,
     required this.articleCount,
     this.onContinue,
     this.onClose,
     this.closeHint,
+    this.recapLine,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
+    // Météo en cours/échec → null → pickClosingActivities retombe sur
+    // l'intérieur (carte calme, pas de spinner). La logique vit dans la
+    // fonction pure.
+    final condition = ref.watch(weatherProvider).valueOrNull?.condition;
+    final activities = pickClosingActivities(condition: condition);
     return Container(
       margin: const EdgeInsets.fromLTRB(18, 30, 18, 24),
       clipBehavior: Clip.antiAlias,
@@ -101,7 +114,7 @@ class ClosingCardV18 extends StatelessWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 280),
               child: Text(
-                _stepLabel(articleCount),
+                recapLine ?? _stepLabel(articleCount),
                 textAlign: TextAlign.center,
                 style: GoogleFonts.dmSans(
                   fontSize: 13,
@@ -110,6 +123,8 @@ class ClosingCardV18 extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 18),
+            _ActivitySuggestions(activities: activities),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -149,5 +164,68 @@ class ClosingCardV18 extends StatelessWidget {
     if (count <= 0) return 'Tournée terminée';
     final plural = count > 1 ? 's' : '';
     return '$count étape$plural parcourue$plural';
+  }
+}
+
+/// Bloc discret « Et si tu en profitais pour… » : trois propositions tangibles
+/// hors-écran à faire maintenant. Toujours affiché (même si rien n'a été lu) —
+/// c'est la valeur ajoutée de la fin de tournée. Reste léger : pas de CTA, juste
+/// des invitations tournées en question.
+class _ActivitySuggestions extends StatelessWidget {
+  final List<ClosingActivity> activities;
+
+  const _ActivitySuggestions({required this.activities});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    if (activities.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Et si tu en profitais pour…',
+          style: GoogleFonts.dmSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: colors.textTertiary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: colors.primary.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
+          ),
+          child: Column(
+            children: [
+              for (final activity in activities)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  child: Row(
+                    children: [
+                      Text(activity.emoji, style: const TextStyle(fontSize: 17)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          activity.prompt,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            height: 1.3,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }
