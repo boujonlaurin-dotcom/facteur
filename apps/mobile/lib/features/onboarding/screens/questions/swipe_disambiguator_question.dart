@@ -466,19 +466,22 @@ class _SwipeDisambiguatorQuestionState
   /// Micro-indice « On affine… » qui pulse brièvement après chaque vote.
   Widget _buildCalibratingHint(BuildContext context) {
     final colors = context.facteurColors;
-    return AnimatedOpacity(
+    return AnimatedSize(
       duration: const Duration(milliseconds: 220),
-      opacity: _hintVisible ? 1.0 : 0.0,
-      child: Padding(
-        padding: const EdgeInsets.only(top: FacteurSpacing.space2),
-        child: Text(
-          OnboardingStrings.swipeCalibratingHint,
-          style: Theme.of(
-            context,
-          ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
-          textAlign: TextAlign.center,
-        ),
-      ),
+      curve: Curves.easeInOut,
+      child: _hintVisible
+          ? Padding(
+              padding: const EdgeInsets.only(top: FacteurSpacing.space2),
+              child: Text(
+                OnboardingStrings.swipeCalibratingHint,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: colors.textTertiary),
+                textAlign: TextAlign.center,
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 
