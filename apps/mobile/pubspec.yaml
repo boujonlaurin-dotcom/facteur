@@ -115,12 +115,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icons/logo_facteur_app_icon.png"
+  image_path_android: "assets/icons/logo_android_icon.png"
+  image_path_ios: "assets/icons/logo_facteur_app_icon_ios.png"
   adaptive_icon_background: "#E07A5F"
-  adaptive_icon_foreground: "assets/icons/logo_facteur_app_icon.png"
+  adaptive_icon_foreground: "assets/icons/logo_android_icon.png"
   web:
     generate: true
-    image_path: "assets/icons/facteur_logo.png"
+    image_path: "assets/icons/logo_android_icon.png"
     background_color: "#E07A5F"
     theme_color: "#E07A5F"
 

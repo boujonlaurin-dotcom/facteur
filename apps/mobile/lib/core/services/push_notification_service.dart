@@ -253,7 +253,6 @@ class PushNotificationService {
       name: senderName,
       key: 'facteur',
       important: true,
-      icon: DrawableResourceAndroidIcon('facteur_avatar'),
     );
     final androidDetails = AndroidNotificationDetails(
       'digest_channel',
@@ -321,7 +320,6 @@ class PushNotificationService {
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
-      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         communityBody,
         contentTitle: communityTitle,
@@ -371,9 +369,8 @@ class PushNotificationService {
 
     const sender = Person(
       name: senderName,
-      key: 'facteur_goodnews',
+      key: 'facteur',
       important: true,
-      icon: DrawableResourceAndroidIcon('facteur_goodnews'),
     );
     final androidDetails = AndroidNotificationDetails(
       'good_news_channel',
