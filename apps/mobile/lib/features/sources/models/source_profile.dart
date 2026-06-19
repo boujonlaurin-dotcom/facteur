@@ -1,4 +1,5 @@
 import '../../feed/models/content_model.dart';
+import 'source_model.dart';
 
 /// Part d'un thème dans la couverture d'une source — fiche source v3
 /// (`GET /sources/{id}/profile`).
@@ -40,11 +41,20 @@ class SourceProfile {
   final int articles30d;
   final DateTime? oldestContentAt;
 
+  /// Source complète renvoyée par `/profile` ([SourceResponse] backend).
+  /// Contrairement au `SourceMini` léger qui ouvre la fiche depuis le reader,
+  /// elle porte `follower_count`, les scores A-E, `description`, la reco perso
+  /// et `premium_connection`. Nullable → rétro-compatible (tests / payloads
+  /// anciens sans ce champ). La fiche l'utilise pour enrichir l'affichage dès
+  /// que `/profile` répond.
+  final Source? source;
+
   const SourceProfile({
     this.recentArticles = const [],
     this.themeDistribution = const [],
     this.articles30d = 0,
     this.oldestContentAt,
+    this.source,
   });
 
   bool get hasCoverage => themeDistribution.isNotEmpty;
@@ -52,12 +62,16 @@ class SourceProfile {
 
   factory SourceProfile.fromJson(Map<String, dynamic> json) {
     final rawOldest = json['oldest_content_at'];
+    final rawSource = json['source'];
     return SourceProfile(
       recentArticles: _parseList(json['recent_articles'], Content.fromJson),
       themeDistribution:
           _parseList(json['theme_distribution'], ThemeShare.fromJson),
       articles30d: (json['articles_30d'] as num?)?.toInt() ?? 0,
       oldestContentAt: rawOldest is String ? DateTime.tryParse(rawOldest) : null,
+      source: rawSource is Map<String, dynamic>
+          ? Source.fromJson(rawSource)
+          : null,
     );
   }
 

@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Sources",
+      "summary": "Fiche source plus complète depuis un article : lecteurs, notes, description et reco réapparaissent, avec une échelle de fiabilité accessible d'un tap."
+    },
+    {
       "tag": "Onboarding",
       "summary": "Sélection des médias plus fluide : davantage de suggestions, petites animations de validation à chaque étape, et un écran de fin qui va jusqu'au bout avant de t'emmener dans l'app."
     },
