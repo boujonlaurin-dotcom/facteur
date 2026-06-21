@@ -355,7 +355,7 @@ class NotificationsSettingsNotifier
       final pushService = PushNotificationService();
       final granted = await pushService.requestPermission();
       if (!granted) return;
-      await pushService.requestExactAlarmPermission();
+      await pushService.requestExactAlarmPermission(userInitiated: true);
     }
     await _commit(state.copyWith(goodNewsEnabled: value));
   }
@@ -385,7 +385,7 @@ class NotificationsSettingsNotifier
       final pushService = PushNotificationService();
       final granted = await pushService.requestPermission();
       if (!granted) return;
-      await pushService.requestExactAlarmPermission();
+      await pushService.requestExactAlarmPermission(userInitiated: true);
     }
     await _commit(state.copyWith(notifVeilleEnabled: value));
   }

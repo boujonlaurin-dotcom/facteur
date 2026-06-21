@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
@@ -32,6 +33,7 @@ import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
+import '../../settings/widgets/display_mode_bottom_sheet.dart';
 import '../../tour/providers/guided_tour_controller.dart';
 import '../../tour/tour_anchors.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
@@ -959,6 +961,22 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
     if (mounted) {
       await showThemeChoiceBottomSheet(context, ref);
+    }
+
+    // Modal de choix d'affichage (Normal / Minimaliste / Ludique), jouée une
+    // seule fois en fin d'onboarding, entre le thème et la modal notif. Gardée
+    // par un flag Hive persistant (belt-and-suspenders : ce flow ne tourne déjà
+    // qu'une fois). Sheet dismissible (pas de barrier non-fermable) → non
+    // intrusive, conforme à la directive PO « conservateur ».
+    if (mounted) {
+      final settingsBox = await Hive.openBox<dynamic>('settings');
+      final displayModeModalSeen =
+          settingsBox.get('display_mode_modal_seen', defaultValue: false)
+              as bool;
+      if (!displayModeModalSeen && mounted) {
+        await showDisplayModeBottomSheet(context, ref);
+        await settingsBox.put('display_mode_modal_seen', true);
+      }
     }
 
     if (mounted) {
