@@ -127,7 +127,9 @@ class ServerPushService {
     if (!enabled) return;
     final slot = NotifTimeSlotX.fromWire(box.get('notif_time_slot') as String?);
     final localPush = PushNotificationService();
-    await localPush.ensureExactAlarmPermission();
+    // Pas de demande exact-alarm automatique ici (rejouée à chaque FCM raté →
+    // pop-up « Alarmes et rappels » intempestif, cf. bug-modals-intrusives).
+    // Planification directe : retombe en mode inexact si la permission manque.
     await localPush.scheduleDailyDigestNotification(
       timeSlot: slot,
       variant: NotifVariant.variantA,

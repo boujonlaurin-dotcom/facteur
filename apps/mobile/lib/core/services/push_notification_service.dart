@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -94,32 +95,45 @@ class PushNotificationService {
     return true;
   }
 
-  Future<bool> requestExactAlarmPermission() async {
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (androidPlugin != null) {
-      final canSchedule =
-          await androidPlugin.canScheduleExactNotifications() ?? false;
-      if (!canSchedule) {
-        final granted =
-            await androidPlugin.requestExactAlarmsPermission() ?? false;
-        debugPrint(
-            'PushNotificationService: Exact alarm permission requested: $granted');
-        return granted;
-      }
-      return true;
-    }
-    return true;
-  }
+  /// Clé Hive (box `settings`) : marque qu'on a déjà ouvert au moins une fois
+  /// l'écran système « Alarmes et rappels ». Garde one-shot pour les chemins
+  /// automatiques — le pop-up ne doit jamais se rouvrir tout seul après un 1er
+  /// refus (cf. bug-modals-intrusives).
+  static const exactAlarmAskedKey = 'notif_exact_alarm_asked';
 
-  Future<bool> ensureExactAlarmPermission() async {
+  /// Ouvre l'écran système Android « Alarmes et rappels » pour demander la
+  /// permission d'alarme exacte (une `Activity` séparée).
+  ///
+  /// [userInitiated] : `true` UNIQUEMENT quand l'appel découle d'une action
+  /// utilisateur explicite (modal d'activation, toggle Réglages) — l'écran OS
+  /// est alors (ré)ouvert même après un refus précédent. `false` (défaut) pour
+  /// tout chemin automatique : une garde Hive one-shot ([exactAlarmAskedKey])
+  /// empêche de rouvrir l'écran après une 1ère demande, et la planification
+  /// retombe silencieusement en mode inexact.
+  Future<bool> requestExactAlarmPermission({bool userInitiated = false}) async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin == null) return true;
+
     final canSchedule =
         await androidPlugin.canScheduleExactNotifications() ?? false;
     if (canSchedule) return true;
-    return await androidPlugin.requestExactAlarmsPermission() ?? false;
+
+    final box = await Hive.openBox<dynamic>('settings');
+    if (!userInitiated &&
+        (box.get(exactAlarmAskedKey, defaultValue: false) as bool)) {
+      debugPrint(
+        'PushNotificationService: exact alarm already requested once - '
+        'skip auto re-prompt (inexact scheduling)',
+      );
+      return false;
+    }
+
+    await box.put(exactAlarmAskedKey, true);
+    final granted = await androidPlugin.requestExactAlarmsPermission() ?? false;
+    debugPrint(
+        'PushNotificationService: Exact alarm permission requested: $granted');
+    return granted;
   }
 
   // --- Copy variants -------------------------------------------------------

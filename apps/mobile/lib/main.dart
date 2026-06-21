@@ -346,8 +346,14 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
     await pushNotificationService.init();
 
     final settingsBox = Hive.box<dynamic>('settings');
+    // Opt-in STRICT : sur install fraîche (clé Hive absente, avant toute
+    // réponse à la modal d'activation) le push est considéré désactivé.
+    // `defaultValue: false` aligne cette lecture sur les deux autres
+    // (_registerServerPushIfEnabled + server_push_service) — sinon le boot
+    // croyait le push actif et déclenchait scheduling + permissions
+    // (pop-up « Alarmes et rappels » intempestif, cf. bug-modals-intrusives).
     final pushEnabled = settingsBox.get('push_notifications_enabled',
-        defaultValue: true) as bool;
+        defaultValue: false) as bool;
     bootPushEnabledHive = pushEnabled;
 
     // Diagnostic + scheduling sont indépendants : collecter le diagnostic
@@ -363,7 +369,12 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
       if (serverRegistered) {
         await pushNotificationService.cancelDigestNotification();
       } else {
-        await pushNotificationService.ensureExactAlarmPermission();
+        // Planification directe : AUCUNE demande de permission exact-alarm
+        // automatique. Si la permission n'est pas accordée, la notif tombe
+        // silencieusement en mode inexact (cf. scheduleDailyDigestNotification).
+        // Le pop-up OS « Alarmes et rappels » ne doit jamais se rouvrir tout
+        // seul (bug-modals-intrusives) ; l'opt-in exact-alarm est strictement
+        // initié par l'utilisateur (modal d'activation / Réglages).
         final scheduled =
             await pushNotificationService.scheduleDailyDigestNotification(
           variant: NotifVariant.variantA,
@@ -371,15 +382,8 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
         );
         if (!scheduled) {
           debugPrint(
-            'Main: WARNING — digest notification scheduling failed, retrying...',
+            'Main: WARNING - digest notification scheduling failed (inexact)',
           );
-          await pushNotificationService.requestExactAlarmPermission();
-          final retryOk =
-              await pushNotificationService.scheduleDailyDigestNotification(
-            variant: NotifVariant.variantA,
-            timeSlot: timeSlot,
-          );
-          debugPrint('Main: Retry result: $retryOk');
         }
       }
     }

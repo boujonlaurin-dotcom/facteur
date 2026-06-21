@@ -106,7 +106,11 @@ class _NotificationActivationModalState
 
     final granted = await PushNotificationService().requestPermission();
     if (granted) {
-      await PushNotificationService().requestExactAlarmPermission();
+      // Action utilisateur explicite (confirmation de la modal) : on autorise
+      // l'ouverture de l'écran OS « Alarmes et rappels » même après un refus
+      // antérieur (cf. garde one-shot requestExactAlarmPermission).
+      await PushNotificationService()
+          .requestExactAlarmPermission(userInitiated: true);
     }
 
     if (widget.trigger == ActivationTrigger.veille) {
