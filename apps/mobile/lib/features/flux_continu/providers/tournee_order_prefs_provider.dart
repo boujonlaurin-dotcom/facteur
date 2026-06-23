@@ -32,7 +32,7 @@ const _kLegacyVeilleHiddenKey = 'tournee_veille_hidden_v1';
 const _kTourneeCustomizedKey = 'tournee_customized_v1';
 
 /// Cap d'affichage de la Tournée du jour, partagé provider + composer.
-const int kTourneeVisibleCap = 7;
+const int kTourneeVisibleCap = 10;
 
 /// Clé d'un thème favori dans l'ordre Tournée (= `sectionKey` d'une section thème).
 String tourneeThemeKey(String slug) => 'theme:$slug';

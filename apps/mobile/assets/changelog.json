@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Tournée du jour plus fiable : tes thèmes et sources favoris s'affichent du premier coup."
+    },
+    {
       "tag": "Notifications",
       "summary": "Fini les demandes d'autorisation à répétition : Facteur ne te sollicite plus qu'une fois, et plus jamais pendant ta lecture."
     },
