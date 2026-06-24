@@ -39,21 +39,24 @@ class DeepRecommendationCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(13, 14, 13, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
+            // Fondu primary → surface, plus doux et léger qu'avant : teinte
+            // discrète qui s'efface vers la surface (3 stops lissés).
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                primary.withValues(alpha: 0.14),
-                primary.withValues(alpha: 0.05),
+                primary.withValues(alpha: 0.08),
+                primary.withValues(alpha: 0.03),
                 colors.surface,
               ],
+              stops: const [0.0, 0.4, 1.0],
             ),
-            border: Border.all(color: primary.withValues(alpha: 0.10)),
+            border: Border.all(color: primary.withValues(alpha: 0.07)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.10),
-                offset: const Offset(0, 2),
-                blurRadius: 4,
+                color: Colors.black.withValues(alpha: 0.05),
+                offset: const Offset(0, 1),
+                blurRadius: 6,
               ),
             ],
           ),
@@ -141,6 +144,11 @@ class _Medallion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Désature légèrement les deux extrémités vers la surface : couleur « moins
+    // marquée » sans perdre la chaleur ni le point focal lumineux du radial.
+    final surface = context.facteurColors.surface;
+    final softPrimary = Color.lerp(primary, surface, 0.12)!;
+    final softDeep = Color.lerp(deep, surface, 0.12)!;
     return Container(
       width: 44,
       height: 44,
@@ -149,7 +157,7 @@ class _Medallion extends StatelessWidget {
         gradient: RadialGradient(
           center: const Alignment(-0.4, -0.5), // focal ~30% / 25%
           radius: 0.9,
-          colors: [primary, deep],
+          colors: [softPrimary, softDeep],
           stops: const [0.0, 0.8],
         ),
       ),

@@ -184,12 +184,12 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 }
 
 /// Height of the header content area (below the status bar).
-/// = top padding (16) + icon row (~36) + bottom padding (8) + 2px safety margin.
-const double _kHeaderContentHeight = 62;
+/// = top padding (12) + icon row (~37) + bottom padding (8) + 2px safety margin.
+const double _kHeaderContentHeight = 57;
 
 /// Visual bottom of the header for overlay anchoring (progress bar, sticky headers).
 /// Slightly less than the true bottom to guarantee 1px overlap and eliminate rounding gaps.
-const double _kHeaderVisualBottom = 59;
+const double _kHeaderVisualBottom = 54;
 
 /// Height of the footer content area (above the safe-area bottom inset).
 /// = vertical padding (12+12) + button row height (44).
@@ -925,7 +925,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (_footerPermanent.value) return;
     final footerHeight =
         _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
-    _footerOffset.value = (_footerOffset.value + delta / footerHeight).clamp(
+    // Hide a touch faster than it reveals: bias downward (hide) deltas so the
+    // footer clears the way more readily when the user scrolls into the article.
+    final adjusted = delta > 0 ? delta * 1.4 : delta;
+    _footerOffset.value = (_footerOffset.value + adjusted / footerHeight).clamp(
       0.0,
       1.0,
     );
@@ -944,7 +947,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _applyChromeOffsetDelta(delta);
     }
     _scrollStopTimer?.cancel();
-    _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
+    _scrollStopTimer = Timer(const Duration(seconds: 10), () {
       if (mounted) _animateFooterTo(0.0);
     });
   }
@@ -2408,7 +2411,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         bottom: false,
         child: Container(
           padding: const EdgeInsets.only(
-            top: FacteurSpacing.space4,
+            top: FacteurSpacing.space3,
             bottom: FacteurSpacing.space2,
             left: FacteurSpacing.space2,
             right: FacteurSpacing.space2,
@@ -2456,7 +2459,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               child: Ink(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 8,
-                                  vertical: 6,
+                                  vertical: 5,
                                 ),
                                 decoration: BoxDecoration(
                                   color: colors.backgroundSecondary,
@@ -2636,8 +2639,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
         final clamped = progress.clamp(0.0, 1.0);
-        // Grey→primary color with progressive opacity (20%→100%)
-        final alpha = 0.2 + (clamped * 0.8); // 20% at start → 100% at end
+        // Grey→primary lerp, but opacity stays capped so the bar reads discreet
+        // even at full progress (15% at start → ~50% max at end).
+        final alpha = 0.15 + (clamped * 0.35);
         final barColor = Color.lerp(
           Colors.grey.shade400,
           colors.primary,
@@ -2648,12 +2652,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
           builder: (context, smoothProgress, _) => SizedBox(
-            height: 6.5,
+            height: 3.5,
             child: LinearProgressIndicator(
               value: smoothProgress,
               backgroundColor: Colors.transparent,
               valueColor: AlwaysStoppedAnimation<Color>(barColor),
-              minHeight: 6.5,
+              minHeight: 3.5,
             ),
           ),
         );
