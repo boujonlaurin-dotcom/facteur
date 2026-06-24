@@ -318,7 +318,7 @@ void main() {
 
   test(
       'plusieurs sources favorites respectent l\'ordre par position et le '
-      'cap (parité thèmes = 7)', () async {
+      'cap (parité thèmes = 10)', () async {
     stubFeed(
       themeIds: const {},
       sourceIds: {
@@ -330,6 +330,9 @@ void main() {
         'f': ['f1', 'f2'],
         'g': ['g1', 'g2'],
         'h': ['h1', 'h2'],
+        'i': ['i1', 'i2'],
+        'j': ['j1', 'j2'],
+        'k': ['k1', 'k2'],
       },
     );
     final container = await buildContainer(
@@ -343,6 +346,9 @@ void main() {
         SourceFavoriteRef(sourceId: 'e', position: 4),
         SourceFavoriteRef(sourceId: 'h', position: 7),
         SourceFavoriteRef(sourceId: 'g', position: 6),
+        SourceFavoriteRef(sourceId: 'j', position: 9),
+        SourceFavoriteRef(sourceId: 'i', position: 8),
+        SourceFavoriteRef(sourceId: 'k', position: 10),
       ]),
       catalog: [
         _source('a'),
@@ -353,6 +359,9 @@ void main() {
         _source('f'),
         _source('g'),
         _source('h'),
+        _source('i'),
+        _source('j'),
+        _source('k'),
       ],
       tourneeOrder: const [
         'source:a',
@@ -363,6 +372,9 @@ void main() {
         'source:f',
         'source:g',
         'source:h',
+        'source:i',
+        'source:j',
+        'source:k',
       ],
     );
     addTearDown(container.dispose);
@@ -373,7 +385,7 @@ void main() {
         .map((s) => s.sourceId)
         .toList();
 
-    // Triées par position (a..h) puis capées à 7 → a,b,c,d,e,f,g.
-    expect(sources, ['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+    // Triées par position (a..k) puis capées à 10 → a,b,c,d,e,f,g,h,i,j.
+    expect(sources, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']);
   });
 }
