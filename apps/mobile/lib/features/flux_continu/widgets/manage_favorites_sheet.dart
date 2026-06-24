@@ -23,6 +23,7 @@ import '../../sources/widgets/source_logo_avatar.dart';
 import '../../tour/tour_anchors.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
+import '../providers/flux_continu_provider.dart' show fluxContinuProvider;
 import '../providers/tournee_order_prefs_provider.dart' hide applyOrder;
 import '../providers/tournee_smart_arrangement_provider.dart';
 import '../utils/theme_color_mapping.dart';
@@ -462,6 +463,11 @@ class _ManageFavoritesContentState
     final tournee = ref.watch(tourneeOrderPrefsProvider);
     final tabOrder = ref.watch(tabOrderPrefsProvider);
     final isSerene = ref.watch(sereinToggleProvider).enabled;
+    // Cohérence Tournée — clés favorites maigres (peu d'articles aujourd'hui).
+    // Set vide si la Tournée n'est pas (encore) chargée → aucun indicateur
+    // (dégradation propre).
+    final thinKeys = ref.watch(fluxContinuProvider).valueOrNull?.thinFavoriteKeys ??
+        const <String>{};
 
     // ── Membership ────────────────────────────────────────────────────────
     final favoriteThemeSlugs = <String>[
@@ -716,6 +722,7 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kTourneeVisibleCap,
                     capLabel: 'Hors Tournée du jour ($kTourneeVisibleCap)',
+                    thinKeys: thinKeys,
                     // Destination du déplacement = Flâner ⇒ puces brun Flâner.
                     moveAccent: _kFlanerAccent,
                     onReorder: (oldIndex, newIndex) {
@@ -759,6 +766,9 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kMaxFavoriteTabs,
                     capLabel: 'Hors onglets ($kMaxFavoriteTabs)',
+                    // Les favoris Flâner ne sont pas dans la Tournée → aucune clé
+                    // ne matche, mais on garde le câblage uniforme.
+                    thinKeys: thinKeys,
                     // Destination du déplacement = Essentiel ⇒ puces ocre.
                     moveAccent: _kEssentielAccent,
                     onReorder: (oldIndex, newIndex) {
@@ -926,6 +936,9 @@ class _FavList extends StatelessWidget {
   final void Function(_FavItem item) onMove;
   final void Function(_FavItem item)? onSubjectVeille;
 
+  /// Clés favorites maigres (Tournée) → micro-indicateur « Peu d'articles ».
+  final Set<String> thinKeys;
+
   const _FavList({
     required this.items,
     required this.colors,
@@ -938,6 +951,7 @@ class _FavList extends StatelessWidget {
     required this.moveLabel,
     required this.moveAccent,
     required this.onMove,
+    this.thinKeys = const {},
     this.onSubjectVeille,
   });
 
@@ -967,6 +981,7 @@ class _FavList extends StatelessWidget {
               index: index,
               dimmed: dimmed,
               colors: colors,
+              thin: thinKeys.contains(item.key),
               moveIcon: moveIcon,
               moveTooltip: moveTooltip,
               moveLabel: moveLabel,
@@ -1030,6 +1045,10 @@ class _FavRow extends StatelessWidget {
   final int index;
   final bool dimmed;
   final FacteurColors colors;
+
+  /// Cohérence Tournée — ce favori a peu d'articles aujourd'hui (≤1 survivant
+  /// post-dédup) → micro-indicateur ambre près du libellé.
+  final bool thin;
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
@@ -1049,6 +1068,7 @@ class _FavRow extends StatelessWidget {
     required this.moveAccent,
     required this.onRemove,
     required this.onMove,
+    this.thin = false,
     this.onSubjectVeille,
   });
 
@@ -1093,7 +1113,7 @@ class _FavRow extends StatelessWidget {
                             style: const TextStyle(fontSize: 16),
                           ),
                         const SizedBox(width: 10),
-                        Expanded(
+                        Flexible(
                           child: Text(
                             item.label,
                             style: TextStyle(
@@ -1105,6 +1125,11 @@ class _FavRow extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (thin) ...[
+                          const SizedBox(width: 6),
+                          const _ThinBadge(),
+                        ],
+                        const Spacer(),
                       ],
                     ),
                   ),
@@ -1159,6 +1184,52 @@ class _FavRow extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Micro-indicateur « Peu d'articles » d'un favori maigre (≤1 survivant
+/// post-dédup ce jour). Pilule ambre discrète réutilisant le style des badges
+/// existants (cf. `_SuggestedBadge`/`_MoveChip`). Signale dans la modal les
+/// favoris peu fournis — surtout visibles dans la zone « Hors Tournée du jour ».
+class _ThinBadge extends StatelessWidget {
+  const _ThinBadge();
+
+  // Ambre : aligné sur les tons d'avertissement doux de l'app.
+  static const Color _amber = Color(0xFFB45309);
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Peu d\'articles aujourd\'hui',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(7, 3, 8, 3),
+        decoration: BoxDecoration(
+          color: _amber.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _amber.withValues(alpha: 0.30), width: 0.8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.warningCircle(PhosphorIconsStyle.fill),
+              size: 11,
+              color: _amber,
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              'Peu d\'articles',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+                color: _amber,
+              ),
+            ),
+          ],
         ),
       ),
     );

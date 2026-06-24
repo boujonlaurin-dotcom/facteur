@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Tournée",
+      "summary": "Tes sections favorites les mieux fournies remontent en haut, et celles à un seul article sont complétées automatiquement."
+    },
+    {
+      "tag": "Tournée",
       "summary": "Tournée du jour plus fiable : tes thèmes et sources favoris s'affichent du premier coup."
     },
     {

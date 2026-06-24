@@ -34,6 +34,15 @@ const _kTourneeCustomizedKey = 'tournee_customized_v1';
 /// Cap d'affichage de la Tournée du jour, partagé provider + composer.
 const int kTourneeVisibleCap = 10;
 
+/// Seuils de cohérence d'affichage des sections favorites (thème/source) après
+/// la dédup inter-sections. Une section **maigre** (≤ [kThinSectionMaxItems]
+/// survivants) est dépriorisée sous les **riches** (≥ [kRichSectionMinItems])
+/// quand au moins [kThinDemotionRichThreshold] sections riches existent — pour
+/// que le contenu dense remonte au-dessus du pli. Ajustables.
+const int kThinSectionMaxItems = 1; // ≤1 article après dédup = « maigre »
+const int kRichSectionMinItems = 2; // ≥2 articles = « riche »
+const int kThinDemotionRichThreshold = 5; // dépriorise si ≥5 sections riches
+
 /// Clé d'un thème favori dans l'ordre Tournée (= `sectionKey` d'une section thème).
 String tourneeThemeKey(String slug) => 'theme:$slug';
 
