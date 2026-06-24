@@ -23,24 +23,22 @@ void main() {
   }
 
   group('DeepRecommendationCard', () {
-    testWidgets('affiche kicker, titre, raison et source', (tester) async {
+    testWidgets('affiche kicker, titre et source', (tester) async {
       await tester.pumpWidget(host(DeepRecommendationCard(reco: reco())));
       await tester.pumpAndSettle();
 
-      expect(find.text('PAS DE RECUL'), findsOneWidget);
+      expect(find.text('LE PAS DE RECUL'), findsOneWidget);
       expect(find.text('Le fond du dossier'), findsOneWidget);
-      expect(find.text('Une analyse de fond.'), findsOneWidget);
       expect(find.text('Le Monde'), findsOneWidget);
     });
 
-    testWidgets('match_reason vide → pas de ligne explicative', (tester) async {
-      await tester.pumpWidget(
-        host(DeepRecommendationCard(reco: reco(matchReason: '   '))),
-      );
+    testWidgets('la raison de match n\'est plus affichée', (tester) async {
+      await tester.pumpWidget(host(DeepRecommendationCard(reco: reco())));
       await tester.pumpAndSettle();
 
+      // La description (matchReason) a été retirée de la carte.
+      expect(find.text('Une analyse de fond.'), findsNothing);
       expect(find.text('Le fond du dossier'), findsOneWidget);
-      // La seule String secondaire restante est le nom de source.
       expect(find.text('Le Monde'), findsOneWidget);
     });
 

@@ -67,12 +67,11 @@ PerspectivesSectionStatus resolvePerspectivesStatus(
 
 /// Sink for launch breadcrumbs — injected so tests can capture them without
 /// reaching into Sentry.
-typedef LaunchBreadcrumbSink =
-    void Function(
-      String message, {
-      SentryLevel level,
-      Map<String, Object?> data,
-    });
+typedef LaunchBreadcrumbSink = void Function(
+  String message, {
+  SentryLevel level,
+  Map<String, Object?> data,
+});
 
 /// Opens the external source URL for the article reader CTA, keeping the Web
 /// and mobile branches strictly separate.
@@ -96,8 +95,7 @@ Future<bool> launchReaderUrl(
     Uri, {
     LaunchMode mode,
     String? webOnlyWindowName,
-  })
-  launch,
+  }) launch,
   Future<bool> Function(Uri)? canLaunch,
   LaunchBreadcrumbSink? breadcrumb,
   Map<String, Object?> logData = const {},
@@ -156,12 +154,12 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   final bool isExternal;
 
   const ContentDetailScreen({super.key, required this.contentId, this.content})
-    : externalUrl = null,
-      sourceName = null,
-      sourceDomain = null,
-      externalTitle = null,
-      biasStance = 'unknown',
-      isExternal = false;
+      : externalUrl = null,
+        sourceName = null,
+        sourceDomain = null,
+        externalTitle = null,
+        biasStance = 'unknown',
+        isExternal = false;
 
   /// Ouvre une URL externe (perspective) dans le reader unique, en mode
   /// webview du site (header/footer/scroll/anti-saccades partagés).
@@ -172,11 +170,11 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
     this.sourceDomain,
     String? title,
     this.biasStance = 'unknown',
-  }) : contentId = '',
-       content = null,
-       externalUrl = url,
-       externalTitle = title,
-       isExternal = true;
+  })  : contentId = '',
+        content = null,
+        externalUrl = url,
+        externalTitle = title,
+        isExternal = true;
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -184,12 +182,12 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 }
 
 /// Height of the header content area (below the status bar).
-/// = top padding (12) + icon row (~37) + bottom padding (8) + 2px safety margin.
-const double _kHeaderContentHeight = 57;
+/// = top padding (12) + icon row (~39) + bottom padding (8) + 2px safety margin.
+const double _kHeaderContentHeight = 59;
 
 /// Visual bottom of the header for overlay anchoring (progress bar, sticky headers).
 /// Slightly less than the true bottom to guarantee 1px overlap and eliminate rounding gaps.
-const double _kHeaderVisualBottom = 54;
+const double _kHeaderVisualBottom = 56;
 
 /// Height of the footer content area (above the safe-area bottom inset).
 /// = vertical padding (12+12) + button row height (44).
@@ -374,8 +372,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } else {
       _content = widget.content;
       if (_content != null) {
-        _isConsumed =
-            _content!.status == ContentStatus.consumed ||
+        _isConsumed = _content!.status == ContentStatus.consumed ||
             ref.read(consumedContentIdsProvider).contains(_content!.id);
       }
       // Always fetch fresh content to accept latest metadata/status/theme
@@ -441,8 +438,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
     );
     _footerAutoController.addListener(() {
-      _footerOffset.value =
-          _footerAutoStart +
+      _footerOffset.value = _footerAutoStart +
           (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
     });
 
@@ -693,9 +689,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// For partial content: WebView scroll maps to 25%-100% of total progress.
   /// For full content: WebView scroll maps to the full 0%-100%.
   void _applyWebReadingProgress(double pct) {
-    final double normalized = _isPartialContent
-        ? 0.25 + (pct / 100.0) * 0.75
-        : pct / 100.0;
+    final double normalized =
+        _isPartialContent ? 0.25 + (pct / 100.0) * 0.75 : pct / 100.0;
     final clamped = normalized.clamp(0.0, 1.0);
     _readingProgress.value = clamped;
     if (clamped > _maxReadingProgress) {
@@ -821,8 +816,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (endBox == null || svBox == null) return;
     if (!_scrollController.hasClients) return;
     // content-coord of marker = screen Y of marker − screen Y of sv top + scroll offset
-    final extent =
-        endBox.localToGlobal(Offset.zero).dy -
+    final extent = endBox.localToGlobal(Offset.zero).dy -
         svBox.localToGlobal(Offset.zero).dy +
         _scrollController.offset;
     if (extent > 0) _articleContentExtent = extent;
@@ -1031,8 +1025,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           setState(() {
             _content = merged;
             _contentResolved = true;
-            _isConsumed =
-                _content!.status == ContentStatus.consumed ||
+            _isConsumed = _content!.status == ContentStatus.consumed ||
                 ref.read(consumedContentIdsProvider).contains(_content!.id);
           });
           // « Ouvrir = Lu » : redémarre le timer dès que le contenu est résolu
@@ -1107,9 +1100,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (content == null) return;
     _isMarkingConsumed = true;
     try {
-      final queued = await ref
-          .read(readSyncServiceProvider)
-          .markConsumed(content.id);
+      final queued =
+          await ref.read(readSyncServiceProvider).markConsumed(content.id);
       if (queued) {
         if (mounted) setState(() => _isConsumed = true);
       } else if (mounted) {
@@ -1344,16 +1336,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-    _perspectivesPulseScale ??=
-        TweenSequence<double>([
-          TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
-          TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
-        ]).animate(
-          CurvedAnimation(
-            parent: _perspectivesPulseController!,
-            curve: Curves.easeOutCubic,
-          ),
-        );
+    _perspectivesPulseScale ??= TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.08), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.08, end: 1.0), weight: 50),
+    ]).animate(
+      CurvedAnimation(
+        parent: _perspectivesPulseController!,
+        curve: Curves.easeOutCubic,
+      ),
+    );
     _perspectivesPulseController!.forward(from: 0).whenComplete(() async {
       if (!mounted) return;
       final coordinator = ref.read(nudgeCoordinatorProvider);
@@ -1521,13 +1512,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final logData = _launchLogData(trigger);
 
     Future<bool> launch({required bool isWeb}) => launchReaderUrl(
-      uri,
-      isWeb: isWeb,
-      launch: launchUrl,
-      canLaunch: canLaunchUrl,
-      breadcrumb: _addLaunchBreadcrumb,
-      logData: logData,
-    );
+          uri,
+          isWeb: isWeb,
+          launch: launchUrl,
+          canLaunch: canLaunchUrl,
+          breadcrumb: _addLaunchBreadcrumb,
+          logData: logData,
+        );
 
     // Web: open immediately from within the user gesture — no canLaunchUrl, no
     // exit animation, no white overlay. Deferring the open (behind the overlay
@@ -1796,15 +1787,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite =
-        !isConnectedPremiumSource &&
+    final useScrollToSite = !isConnectedPremiumSource &&
         content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
-    final useInAppReading =
-        !isConnectedPremiumSource &&
+    final useInAppReading = !isConnectedPremiumSource &&
         content.hasInAppContent &&
         !_showWebView &&
         !useScrollToSite;
@@ -1880,13 +1869,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isVideoContent
                     ? _buildVideoContent(context, content)
                     : useScrollToSite
-                    ? _buildScrollToSiteContent(context, content)
-                    : useInAppReading
-                    ? _buildInAppContent(context, content)
-                    : _buildWebViewFallback(
-                        content,
-                        isConnectedPremiumSource: isConnectedPremiumSource,
-                      ),
+                        ? _buildScrollToSiteContent(context, content)
+                        : useInAppReading
+                            ? _buildInAppContent(context, content)
+                            : _buildWebViewFallback(
+                                content,
+                                isConnectedPremiumSource:
+                                    isConnectedPremiumSource,
+                              ),
               ),
             ),
             // Header — pinned at the top of the screen; no scroll-driven
@@ -1960,8 +1950,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final isScrollToSite =
-        content.hasInAppContent &&
+    final isScrollToSite = content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView;
@@ -2283,8 +2272,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           bottom: 50,
                           right: 0,
                           child: FabNudgeBubble(
-                            text:
-                                'Sauvegarde cet article pour valider '
+                            text: 'Sauvegarde cet article pour valider '
                                 'ton étape.',
                           ),
                         ),
@@ -2392,8 +2380,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Fallback to the article payload before the provider has loaded — avoids
     // a flash of the "Suivre +" chip on cold open when the source is already
     // followed server-side.
-    final InterestState effectiveState =
-        liveState ??
+    final InterestState effectiveState = liveState ??
         (content.isFollowedSource
             ? InterestState.followed
             : InterestState.unfollowed);
@@ -2445,132 +2432,93 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   child: _SourceBadgeNudge(
                     child: Row(
                       children: [
-                        Flexible(
-                          child: Material(
-                            color: Colors.transparent,
-                            borderRadius: BorderRadius.circular(16),
-                            child: InkWell(
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Material(
+                              color: Colors.transparent,
                               borderRadius: BorderRadius.circular(16),
-                              onTap: () => TopicChip.showArticleSheet(
-                                context,
-                                content,
-                                initialSection: ArticleSheetSection.source,
-                              ),
-                              child: Ink(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 5,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () => TopicChip.showArticleSheet(
+                                  context,
+                                  content,
+                                  initialSection: ArticleSheetSection.source,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: colors.backgroundSecondary,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: colors.border.withValues(alpha: 0.6),
-                                    width: 0.8,
+                                child: Ink(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 5,
                                   ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SourceLogoAvatar(
-                                      source: content.source,
-                                      size: 26,
-                                      radius: 9,
+                                  decoration: BoxDecoration(
+                                    color: colors.backgroundSecondary,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color:
+                                          colors.border.withValues(alpha: 0.6),
+                                      width: 0.8,
                                     ),
-                                    const SizedBox(width: 8),
-                                    Flexible(
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            content.source.name,
-                                            style: textTheme.labelMedium
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                  color: colors.textPrimary,
-                                                ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SourceLogoAvatar(
+                                        source: content.source,
+                                        size: 26,
+                                        radius: 9,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          content.source.name,
+                                          style:
+                                              textTheme.labelMedium?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: colors.textPrimary,
                                           ),
-                                          const SizedBox(height: 1),
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(
-                                                PhosphorIcons.clock(
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (effectiveState ==
+                                              InterestState.favorite ||
+                                          effectiveState ==
+                                              InterestState.followed) ...[
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          effectiveState ==
+                                                  InterestState.favorite
+                                              ? PhosphorIcons.star(
+                                                  PhosphorIconsStyle.fill,
+                                                )
+                                              : PhosphorIcons.star(
                                                   PhosphorIconsStyle.regular,
                                                 ),
-                                                size: 11,
-                                                color: colors.textTertiary,
-                                              ),
-                                              const SizedBox(width: 3),
-                                              Flexible(
-                                                child: Text(
-                                                  timeago
-                                                      .format(
-                                                        content.publishedAt,
-                                                        locale: 'fr_short',
-                                                      )
-                                                      .replaceAll(
-                                                        'il y a ',
-                                                        '',
-                                                      ),
-                                                  style: textTheme.bodySmall
-                                                      ?.copyWith(
-                                                        color:
-                                                            colors.textTertiary,
-                                                        fontSize: 11,
-                                                      ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (effectiveState ==
-                                            InterestState.favorite ||
-                                        effectiveState ==
-                                            InterestState.followed) ...[
-                                      const SizedBox(width: 6),
+                                          size: 14,
+                                          color: effectiveState ==
+                                                  InterestState.favorite
+                                              ? colors.primary
+                                              : colors.textTertiary,
+                                        ),
+                                      ],
+                                      if (content.editorialBadge != null) ...[
+                                        const SizedBox(width: 6),
+                                        EditorialBadge.chip(
+                                              content.editorialBadge,
+                                              context: context,
+                                            ) ??
+                                            const SizedBox.shrink(),
+                                      ],
+                                      const SizedBox(width: 5),
                                       Icon(
-                                        effectiveState == InterestState.favorite
-                                            ? PhosphorIcons.star(
-                                                PhosphorIconsStyle.fill,
-                                              )
-                                            : PhosphorIcons.star(
-                                                PhosphorIconsStyle.regular,
-                                              ),
-                                        size: 14,
-                                        color:
-                                            effectiveState ==
-                                                InterestState.favorite
-                                            ? colors.primary
-                                            : colors.textTertiary,
+                                        PhosphorIcons.caretRight(
+                                          PhosphorIconsStyle.regular,
+                                        ),
+                                        size: 13,
+                                        color: colors.textTertiary,
                                       ),
                                     ],
-                                    if (content.editorialBadge != null) ...[
-                                      const SizedBox(width: 6),
-                                      EditorialBadge.chip(
-                                            content.editorialBadge,
-                                            context: context,
-                                          ) ??
-                                          const SizedBox.shrink(),
-                                    ],
-                                    const SizedBox(width: 5),
-                                    Icon(
-                                      PhosphorIcons.caretRight(
-                                        PhosphorIconsStyle.regular,
-                                      ),
-                                      size: 13,
-                                      color: colors.textTertiary,
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -2646,7 +2594,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           Colors.grey.shade400,
           colors.primary,
           clamped,
-        )!.withValues(alpha: alpha);
+        )!
+            .withValues(alpha: alpha);
         return TweenAnimationBuilder<double>(
           tween: Tween<double>(end: clamped),
           duration: const Duration(milliseconds: 300),
@@ -2890,9 +2839,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             bodyPlaceholder: !_contentResolved
                                 ? _buildArticleBodySkeleton(colors)
                                 : null,
-                            footerSpacing: isPartial
-                                ? 0
-                                : FacteurSpacing.space8,
+                            footerSpacing:
+                                isPartial ? 0 : FacteurSpacing.space8,
                             footer: SizedBox(
                               height: _kFooterContentHeight + bottomInset,
                             ),
@@ -2916,17 +2864,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                               perspectives: _inlinePerspectives,
                               biasDistribution:
                                   _perspectivesResponse?.biasDistribution ??
-                                  const {},
+                                      const {},
                               keywords:
                                   _perspectivesResponse?.keywords ?? const [],
                               sourceBiasStance:
                                   _perspectivesResponse?.sourceBiasStance ??
-                                  'unknown',
+                                      'unknown',
                               sourceName: _content?.source.name ?? '',
                               contentId: widget.contentId,
                               comparisonQuality:
                                   _perspectivesResponse?.comparisonQuality ??
-                                  'low',
+                                      'low',
                               divergenceLevel:
                                   _perspectivesResponse?.divergenceLevel,
                               partial: _perspectivesResponse?.partial ?? false,
@@ -2934,8 +2882,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                           ),
                           SizedBox(
-                            height:
-                                _kFooterContentHeight +
+                            height: _kFooterContentHeight +
                                 bottomInset +
                                 FacteurSpacing.space4,
                           ),
@@ -2989,9 +2936,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Description text: prefer htmlContent (stripped), fallback to description
     final rawDescription = content.htmlContent ?? content.description;
-    final descriptionText = rawDescription != null
-        ? stripHtml(rawDescription).trim()
-        : null;
+    final descriptionText =
+        rawDescription != null ? stripHtml(rawDescription).trim() : null;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -3156,8 +3102,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                       // Bottom spacing — clears the persistent footer.
                       SizedBox(
-                        height:
-                            _kFooterContentHeight +
+                        height: _kFooterContentHeight +
                             MediaQuery.of(context).viewPadding.bottom,
                       ),
                     ],
@@ -3311,8 +3256,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
                     // Bottom spacing — clears the persistent footer.
                     SizedBox(
-                      height:
-                          _kFooterContentHeight +
+                      height: _kFooterContentHeight +
                           MediaQuery.of(context).viewPadding.bottom,
                     ),
                   ],
@@ -3357,9 +3301,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           title: content.title,
           shrinkWrap: true,
           onLinkTap: _animateAndLaunch,
-          bodyPlaceholder: !_contentResolved
-              ? _buildArticleBodySkeleton(colors)
-              : null,
+          bodyPlaceholder:
+              !_contentResolved ? _buildArticleBodySkeleton(colors) : null,
         );
 
         return ScrollConfiguration(
@@ -3466,20 +3409,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
-                // ── « Pas de recul » (deep reco) ────────────────────────────
-                // Carte d'analyse de fond surfacée tout en bas du reader.
-                // Silencieux tant que deep_pending && reco null (calcul en cours).
-                if (_perspectivesResponse?.deepRecommendation != null &&
-                    !_isExternal) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  DeepRecommendationCard(
-                    reco: _perspectivesResponse!.deepRecommendation!,
-                    onTap: () => _openDeepReco(
-                      _perspectivesResponse!.deepRecommendation!,
-                    ),
-                  ),
-                ],
-
                 // ── Perspectives section (fin du reader) ───────────────────
                 // Bande frostée encastrée (hairline fine + teinte quasi-
                 // invisible) ; large respiration au-dessus pour la détacher.
@@ -3502,14 +3431,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     partial: _perspectivesResponse?.partial ?? false,
                     onOpenAnalysis: _openPerspectivesAnalysis,
                   ),
+                ],
+
+                // ── « Le pas de recul » (deep reco) ─────────────────────────
+                // Carte d'analyse de fond, surfacée SOUS la couverture
+                // médiatique (perspectives). Silencieuse tant que deep_pending
+                // && reco null (calcul en cours).
+                if (_perspectivesResponse?.deepRecommendation != null &&
+                    !_isExternal) ...[
                   const SizedBox(height: FacteurSpacing.space4),
+                  DeepRecommendationCard(
+                    reco: _perspectivesResponse!.deepRecommendation!,
+                    onTap: () => _openDeepReco(
+                      _perspectivesResponse!.deepRecommendation!,
+                    ),
+                  ),
                 ],
 
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
                 SizedBox(
-                  height:
-                      _kFooterContentHeight +
+                  height: _kFooterContentHeight +
                       MediaQuery.of(context).viewPadding.bottom,
                 ),
               ],

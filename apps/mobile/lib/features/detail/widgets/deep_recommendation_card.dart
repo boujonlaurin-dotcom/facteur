@@ -39,17 +39,15 @@ class DeepRecommendationCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(13, 14, 13, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            // Fondu primary → surface, plus doux et léger qu'avant : teinte
-            // discrète qui s'efface vers la surface (3 stops lissés).
+            // Dégradé linéaire simple sur une seule teinte (primary) : deux
+            // stops, progression douce, sans virer au blanc/surface.
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                primary.withValues(alpha: 0.08),
-                primary.withValues(alpha: 0.03),
-                colors.surface,
+                primary.withValues(alpha: 0.12),
+                primary.withValues(alpha: 0.04),
               ],
-              stops: const [0.0, 0.4, 1.0],
             ),
             border: Border.all(color: primary.withValues(alpha: 0.07)),
             boxShadow: [
@@ -70,7 +68,7 @@ class DeepRecommendationCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Pas de recul'.toUpperCase(),
+                      'Le pas de recul'.toUpperCase(),
                       style: GoogleFonts.courierPrime(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -94,20 +92,6 @@ class DeepRecommendationCard extends StatelessWidget {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (reco.matchReason.trim().isNotEmpty) ...[
-                      const SizedBox(height: 5),
-                      Text(
-                        reco.matchReason.trim(),
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontStyle: FontStyle.italic,
-                          height: 1.3,
-                          color: colors.textSecondary,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                     const SizedBox(height: 5),
                     _SourceMeta(
                       logoUrl: reco.sourceLogoUrl,
