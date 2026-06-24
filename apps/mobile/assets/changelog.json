@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "Carrousels plus nets : le bas des cartes ne se coupe plus quand leurs tailles diffèrent, et les points de défilement respirent mieux."
+    },
+    {
       "tag": "Notifications",
       "summary": "Fini les demandes d'autorisation à répétition : Facteur ne te sollicite plus qu'une fois, et plus jamais pendant ta lecture."
     },

@@ -191,16 +191,22 @@ class PushNotificationService {
       case NotifVariant.variantA:
         return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
       case NotifVariant.variantB:
-        final cleaned = (teasers ?? const <String>[])
+        final all = (teasers ?? const <String>[])
             .map((t) => t.trim())
             .where((t) => t.isNotEmpty)
-            .take(2)
             .toList();
+        final cleaned = all.take(2).toList();
         if (cleaned.isEmpty) {
           return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
         }
         final header = serene ? digestHeaderSerene : digestHeader;
-        final cta = serene ? digestCtaSerene : digestCta;
+        // Nombre d'articles « à la une » non rendus en bullets : la ligne CTA
+        // les annonce (« + N autres ! »). Pile 1-2 teasers → aucun reste →
+        // on garde le CTA générique (apaisé ou non).
+        final remaining = all.length - cleaned.length;
+        final cta = remaining > 0
+            ? '+ $remaining ${remaining > 1 ? 'autres' : 'autre'} !'
+            : (serene ? digestCtaSerene : digestCta);
         final bullets = cleaned.map((t) => '• $t').join('\n');
         return (
           title: defaultTitle,
