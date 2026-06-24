@@ -13,6 +13,13 @@ class ArticleTitleLayout {
 
   static int titleMaxLines({required bool hasImage}) => hasImage ? 3 : 5;
 
+  /// Marge de sécurité verticale (px) ajoutée à l'estimation de hauteur d'une
+  /// carte de carrousel pour que le comptage de lignes par largeur-moyenne ne
+  /// sous-estime jamais et ne rogne pas le footer. Couvre ~une ligne de titre
+  /// supplémentaire à l'échelle de police donnée.
+  static double carouselHeightSlack({double fontScale = 1.0}) =>
+      titleLineHeight * fontScale + 4.0;
+
   static int estimateTitleLines({
     required String title,
     required double availableWidth,
