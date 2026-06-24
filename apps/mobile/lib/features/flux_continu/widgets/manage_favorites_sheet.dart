@@ -36,8 +36,15 @@ import 'choice_tile.dart';
 /// scrolle vers la section Flâner à l'ouverture — le contenu est identique.
 enum ManageFavoritesEntry { essentiel, flaner }
 
-/// Accent des Actus du jour (aligné provider Tournée).
+/// Accent des Actus du jour (aligné provider Tournée). Sert aussi d'**identité
+/// « Essentiel »** dans cette sheet (en-tête + puces « → Essentiel »).
 const Color _kEssentielAccent = Color(0xFFB0470A);
+
+/// Identité visuelle **« Flâner »** dans cette sheet : le brun du bandeau de la
+/// page Flâner (déjà reconnaissable). Colore l'en-tête « Onglets de ta page
+/// Flâner » et les puces « → Flâner », pour que la destination d'un déplacement
+/// soit lisible par sa couleur (et plus par celle, arbitraire, de la carte).
+const Color _kFlanerAccent = Color(0xFF5D4037);
 
 /// Accent des Bonnes Nouvelles (aligné provider Tournée).
 const Color _kBonnesAccent = Color(0xFF2E7D32);
@@ -694,6 +701,7 @@ class _ManageFavoritesContentState
                   counter:
                       '${essentielOrdered.length.clamp(0, kTourneeVisibleCap)}'
                       '/$kTourneeVisibleCap',
+                  accent: _kEssentielAccent,
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -708,6 +716,8 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kTourneeVisibleCap,
                     capLabel: 'Hors Tournée du jour ($kTourneeVisibleCap)',
+                    // Destination du déplacement = Flâner ⇒ puces brun Flâner.
+                    moveAccent: _kFlanerAccent,
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...essentielOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -733,6 +743,7 @@ class _ManageFavoritesContentState
                   counter:
                       '${flanerOrdered.length.clamp(0, kMaxFavoriteTabs)}'
                       '/$kMaxFavoriteTabs',
+                  accent: _kFlanerAccent,
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -748,6 +759,8 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kMaxFavoriteTabs,
                     capLabel: 'Hors onglets ($kMaxFavoriteTabs)',
+                    // Destination du déplacement = Essentiel ⇒ puces ocre.
+                    moveAccent: _kEssentielAccent,
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...flanerOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -906,6 +919,10 @@ class _FavList extends StatelessWidget {
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
+
+  /// Couleur de la puce de déplacement = identité du **mode de destination**
+  /// (brun Flâner / ocre Essentiel), pas la couleur de la carte (cf. [_MoveChip]).
+  final Color moveAccent;
   final void Function(_FavItem item) onMove;
   final void Function(_FavItem item)? onSubjectVeille;
 
@@ -919,6 +936,7 @@ class _FavList extends StatelessWidget {
     required this.moveIcon,
     required this.moveTooltip,
     required this.moveLabel,
+    required this.moveAccent,
     required this.onMove,
     this.onSubjectVeille,
   });
@@ -952,6 +970,7 @@ class _FavList extends StatelessWidget {
               moveIcon: moveIcon,
               moveTooltip: moveTooltip,
               moveLabel: moveLabel,
+              moveAccent: moveAccent,
               onRemove: () => onRemove(item),
               onMove: () => onMove(item),
               onSubjectVeille: onSubjectVeille == null
@@ -1014,6 +1033,7 @@ class _FavRow extends StatelessWidget {
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
+  final Color moveAccent;
   final VoidCallback onRemove;
   final VoidCallback onMove;
   final VoidCallback? onSubjectVeille;
@@ -1026,6 +1046,7 @@ class _FavRow extends StatelessWidget {
     required this.moveIcon,
     required this.moveTooltip,
     required this.moveLabel,
+    required this.moveAccent,
     required this.onRemove,
     required this.onMove,
     this.onSubjectVeille,
@@ -1106,7 +1127,10 @@ class _FavRow extends StatelessWidget {
                   icon: moveIcon,
                   label: moveLabel,
                   tooltip: moveTooltip,
-                  accent: item.accent,
+                  // Couleur du mode de destination (Flâner brun / Essentiel
+                  // ocre), pas celle de la carte : « Flâner » devient
+                  // reconnaissable à sa teinte.
+                  accent: moveAccent,
                   onTap: onMove,
                 ),
               _RowIconButton(
@@ -1522,9 +1546,14 @@ class _VeilleTile extends StatelessWidget {
 class _SectionLabel extends StatelessWidget {
   final String label;
 
-  /// Compteur discret affiché en suffixe (ex. « · 5/7 ») rappelant le cap de
+  /// Compteur discret affiché en suffixe (ex. « · 5/10 ») rappelant le cap de
   /// la section. `null` → pas de compteur (ex. en-têtes AJOUTER / GÉRER).
   final String? counter;
+
+  /// Teinte d'identité de la section (ocre Essentiel / brun Flâner). `null` →
+  /// gris tertiaire neutre (en-têtes AJOUTER / GÉRER). Renforce le code couleur
+  /// des puces de déplacement (cf. [_MoveChip]).
+  final Color? accent;
   final FacteurColors colors;
 
   const _SectionLabel({
@@ -1532,12 +1561,13 @@ class _SectionLabel extends StatelessWidget {
     required this.label,
     required this.colors,
     this.counter,
+    this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: colors.textTertiary,
+      color: accent ?? colors.textTertiary,
       fontWeight: FontWeight.w700,
       letterSpacing: 1.2,
     );
@@ -1548,7 +1578,13 @@ class _SectionLabel extends StatelessWidget {
       children: [
         Flexible(child: Text(label, style: labelStyle)),
         const SizedBox(width: 6),
-        Text('· $counter', style: labelStyle?.copyWith(letterSpacing: 0.2)),
+        Text(
+          '· $counter',
+          style: labelStyle?.copyWith(
+            letterSpacing: 0.2,
+            color: accent?.withValues(alpha: 0.7) ?? colors.textTertiary,
+          ),
+        ),
       ],
     );
   }
