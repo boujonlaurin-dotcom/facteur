@@ -322,6 +322,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             sourceDomain: p.sourceDomain,
             biasStance: p.biasStance,
             publishedAt: p.publishedAt,
+            reliabilityScore: p.reliabilityScore,
           ),
         )
         .toList();

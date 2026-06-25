@@ -1189,6 +1189,10 @@ class PerspectiveData {
   final String biasStance;
   final String? publishedAt;
 
+  /// Fiabilité de la source (`high`/`medium`/`mixed`/`low`/`unknown`). Portée
+  /// par le back ; défaut `'unknown'` si absente (cache non rafraîchi).
+  final String reliabilityScore;
+
   /// Spans divergents du titre variant vs. référence (colorisés par bias).
   /// Liste vide si la chaîne back n'a pas pu calculer (cluster manquant, etc.).
   final List<HighlightSpan> highlightSpans;
@@ -1209,6 +1213,7 @@ class PerspectiveData {
     required this.sourceDomain,
     required this.biasStance,
     this.publishedAt,
+    this.reliabilityScore = 'unknown',
     this.highlightSpans = const [],
     this.sharedTokens = const [],
     this.language,
@@ -1224,6 +1229,8 @@ class PerspectiveData {
       sourceDomain: (json['source_domain'] as String?) ?? '',
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
+      reliabilityScore:
+          (json['reliability_score'] as String?)?.toLowerCase() ?? 'unknown',
       highlightSpans: rawHighlights == null
           ? const []
           : rawHighlights
