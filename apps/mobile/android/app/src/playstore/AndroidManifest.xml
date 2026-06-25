@@ -1,7 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
-    <!-- Flavor Play Store : retire REQUEST_INSTALL_PACKAGES, injectee par open_filex (auto-update APK side-load). Bannie du Play Store, inutile ici car les MAJ passent par le Store. -->
-    <uses-permission
-        android:name="android.permission.REQUEST_INSTALL_PACKAGES"
-        tools:node="remove" />
+        xmlns:tools="http://schemas.android.com/tools">
+        <!-- Flavor Play Store : retire REQUEST_INSTALL_PACKAGES, injectee par open_filex (auto-update APK side-load). Bannie du Play Store, inutile ici car les MAJ passent par le Store. -->
+        <uses-permission
+                    android:name="android.permission.REQUEST_INSTALL_PACKAGES"
+                    tools:node="remove" />
+        <!-- Flavor Play Store : retire READ_MEDIA_IMAGES / READ_MEDIA_VIDEO (Photo & Video Permissions policy). Usage media non-core ; le selecteur systeme Android (Photo Picker) ne necessite aucune permission. -->
+        <uses-permission
+                    android:name="android.permission.READ_MEDIA_IMAGES"
+                    tools:node="remove" />
+        <uses-permission
+                    android:name="android.permission.READ_MEDIA_VIDEO"
+                    tools:node="remove" />
 </manifest>
