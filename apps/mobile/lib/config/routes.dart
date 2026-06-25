@@ -16,6 +16,7 @@ import '../features/feed/widgets/perspectives_bottom_sheet.dart'
     show Perspective;
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
+import '../features/flux_continu/screens/morning_ritual_screen.dart';
 import '../features/flux_continu/screens/source_section_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
@@ -78,6 +79,7 @@ class RouteNames {
   static const String feed = 'feed';
   static const String flaner = 'flaner';
   static const String fluxContinu = 'flux-continu';
+  static const String edition = 'edition';
   static const String contentDetail = 'content-detail';
   static const String contentExternal = 'content-external';
   static const String saved = 'saved';
@@ -121,6 +123,7 @@ class RoutePaths {
   static const String feed = '/feed';
   static const String flaner = '/flaner';
   static const String fluxContinu = '/flux-continu';
+  static const String edition = '/edition';
   static const String contentDetail = '/content/:id';
   static const String contentExternal = '/content-external';
   static const String saved = '/saved';
@@ -177,8 +180,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final authState = ref.read(authStateProvider);
-      String postAuthHomePath() {
+      String postAuthHomePath({bool allowMorningRitual = true}) {
         final tournee = ref.read(tourneeProgressServiceProvider);
+        // Rituel matinal (Story 28.1) : au premier open du jour, on présente
+        // l'écran enveloppe `/edition` AVANT le feed. Lecture **synchrone**
+        // (pas d'await → pas de flicker, comme la closing card) ; la résolution
+        // « édition prête » est faite dans l'écran, qui file au feed sans
+        // marquer « vu » si rien n'est prêt (décision PO #4). Exclu juste après
+        // l'onboarding (`allowMorningRitual: false`) : le nouvel utilisateur
+        // file droit à son feed, le rituel l'accueillera au prochain cold-open.
+        if (allowMorningRitual && !tournee.isMorningRitualShownTodaySync()) {
+          return RoutePaths.edition;
+        }
         return tournee.isClosingDismissedTodaySync()
             ? RoutePaths.flaner
             : RoutePaths.fluxContinu;
@@ -252,8 +265,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // 5. Onboarding : empêcher d'y retourner si fini → atterrissage flux continu
+      // (jamais le rituel matinal juste après l'onboarding).
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return postAuthHomePath();
+        return postAuthHomePath(allowMorningRitual: false);
       }
 
       return null;
@@ -305,6 +319,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.onboardingConclusion,
         name: RouteNames.onboardingConclusion,
         builder: (context, state) => const ConclusionAnimationScreen(),
+      ),
+
+      // Rituel matinal « Ton édition vient d'arriver » (Story 28.1). Route
+      // top-level (hors shell, sibling de splash) en fondu doux pour la
+      // continuité d'ouverture vers l'Essentiel.
+      GoRoute(
+        path: RoutePaths.edition,
+        name: RouteNames.edition,
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          child: const MorningRitualScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              FadeTransition(opacity: animation, child: child),
+        ),
       ),
 
       // Shell principal des deux onglets (Essentiel / Flâner). MainShell ne

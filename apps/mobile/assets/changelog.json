@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ouverture",
+      "summary": "Chaque matin, ton édition t'accueille avant de s'ouvrir : un bonjour, la date du jour, et l'aperçu des sections qui t'attendent."
+    },
+    {
       "tag": "Notifications",
       "summary": "Fini les demandes d'autorisation à répétition : Facteur ne te sollicite plus qu'une fois, et plus jamais pendant ta lecture."
     },
