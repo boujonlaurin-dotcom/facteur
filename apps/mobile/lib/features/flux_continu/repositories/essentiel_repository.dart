@@ -21,9 +21,16 @@ class EssentielRepository {
   /// Renvoie la liste des articles de l'Essentiel, ou `null` si l'endpoint
   /// n'a rien servi (202 ou erreur réseau). Le provider décide alors s'il
   /// veut fallback ou afficher une section vide.
-  Future<List<EssentielArticle>?> fetch() async {
+  ///
+  /// [serein] force le mode côté backend (`?serein=`) au lieu de dépendre de la
+  /// persistance DB de la préférence : évite la race au toggle (refetch avant
+  /// que la préférence soit écrite). Absent ⇒ le backend lit la préférence DB.
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async {
     try {
-      final response = await _apiClient.dio.get<dynamic>('essentiel');
+      final response = await _apiClient.dio.get<dynamic>(
+        'essentiel',
+        queryParameters: {if (serein != null) 'serein': serein},
+      );
       if (response.statusCode == 202) {
         return null;
       }

@@ -40,7 +40,7 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch() async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
 }
 
 class _StubUserInterestsNotifier extends UserInterestsNotifier {
@@ -321,7 +321,7 @@ void main() {
 
   test(
       'plusieurs sources favorites respectent l\'ordre par position et le '
-      'cap (parité thèmes = 10)', () async {
+      'cap (parité thèmes = 13)', () async {
     stubFeed(
       themeIds: const {},
       sourceIds: {
@@ -336,6 +336,9 @@ void main() {
         'i': ['i1', 'i2'],
         'j': ['j1', 'j2'],
         'k': ['k1', 'k2'],
+        'l': ['l1', 'l2'],
+        'm': ['m1', 'm2'],
+        'n': ['n1', 'n2'],
       },
     );
     final container = await buildContainer(
@@ -352,6 +355,9 @@ void main() {
         SourceFavoriteRef(sourceId: 'j', position: 9),
         SourceFavoriteRef(sourceId: 'i', position: 8),
         SourceFavoriteRef(sourceId: 'k', position: 10),
+        SourceFavoriteRef(sourceId: 'l', position: 11),
+        SourceFavoriteRef(sourceId: 'm', position: 12),
+        SourceFavoriteRef(sourceId: 'n', position: 13),
       ]),
       catalog: [
         _source('a'),
@@ -365,6 +371,9 @@ void main() {
         _source('i'),
         _source('j'),
         _source('k'),
+        _source('l'),
+        _source('m'),
+        _source('n'),
       ],
       tourneeOrder: const [
         'source:a',
@@ -378,6 +387,9 @@ void main() {
         'source:i',
         'source:j',
         'source:k',
+        'source:l',
+        'source:m',
+        'source:n',
       ],
     );
     addTearDown(container.dispose);
@@ -388,8 +400,11 @@ void main() {
         .map((s) => s.sourceId)
         .toList();
 
-    // Triées par position (a..k) puis capées à 10 → a,b,c,d,e,f,g,h,i,j.
-    expect(sources, ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']);
+    // Triées par position (a..n) puis capées à 13 → a..m.
+    expect(
+      sources,
+      ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm'],
+    );
   });
 
   // ── Cohérence Tournée : dépriorisation / enrichissement des maigres ────────
@@ -507,7 +522,7 @@ void main() {
     });
 
     test(
-        'cap : >10 favoris dont un maigre → le maigre est coupé des sections '
+        'cap : >13 favoris dont un maigre → le maigre est coupé des sections '
         'mais présent dans thinFavoriteKeys', () async {
       stubFeed(
         themeIds: {
@@ -524,6 +539,9 @@ void main() {
           'c': ['c1', 'c2'],
           'd': ['d1', 'd2'],
           'e': ['e1', 'e2'],
+          'f': ['f1', 'f2'],
+          'g': ['g1', 'g2'],
+          'h': ['h1', 'h2'],
         },
       );
       final container = await buildContainer(
@@ -544,6 +562,9 @@ void main() {
             SourceFavoriteRef(sourceId: 'c', position: 2),
             SourceFavoriteRef(sourceId: 'd', position: 3),
             SourceFavoriteRef(sourceId: 'e', position: 4),
+            SourceFavoriteRef(sourceId: 'f', position: 5),
+            SourceFavoriteRef(sourceId: 'g', position: 6),
+            SourceFavoriteRef(sourceId: 'h', position: 7),
           ],
         ),
         catalog: [
@@ -552,6 +573,9 @@ void main() {
           _source('c'),
           _source('d'),
           _source('e'),
+          _source('f'),
+          _source('g'),
+          _source('h'),
         ],
         tourneeOrder: const [
           'source:a',
@@ -559,6 +583,9 @@ void main() {
           'source:c',
           'source:d',
           'source:e',
+          'source:f',
+          'source:g',
+          'source:h',
         ],
       );
       addTearDown(container.dispose);
@@ -568,7 +595,7 @@ void main() {
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
           .toList();
-      // 11 favoris (5 sources + 6 thèmes), cap 10 ⇒ le maigre 'culture'
+      // 14 favoris (8 sources + 6 thèmes), cap 13 ⇒ le maigre 'culture'
       // (dépriorisé en dernier) est coupé, mais reste signalé pour la modal.
       expect(state.sections.length, kTourneeVisibleCap);
       expect(slugs, isNot(contains('culture')));
