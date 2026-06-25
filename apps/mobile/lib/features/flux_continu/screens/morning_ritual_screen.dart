@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:facteur/config/constants.dart';
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/providers/analytics_provider.dart';
@@ -105,6 +107,15 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen> {
     final forceNotReady = ref.watch(debugForceMorningRitualNotReadyProvider);
     final editionReady = !forceNotReady && isEditionReady(fluxState, digest);
 
+    // Diagnostic QA (staging/dev) : trace le détail du gate à chaque rebuild
+    // pour identifier sur l'appareil le maillon qui bloque la révélation.
+    const qaMode = kDebugMode || AppUpdateConstants.updateChannel == 'beta';
+    final readinessDebug =
+        qaMode ? morningRitualReadinessDebug(fluxState, digest) : null;
+    if (readinessDebug != null) {
+      debugPrint('MorningRitual gate · $readinessDebug · force=$forceNotReady');
+    }
+
     // Dès que l'édition est prête, on annule l'attente bornée (pas de forward).
     if (editionReady && !_revealHandled) {
       _revealHandled = true;
@@ -156,6 +167,23 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen> {
                     onOpen: _open,
                   ),
           ),
+          if (readinessDebug != null)
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 8,
+              child: IgnorePointer(
+                child: Text(
+                  'QA · $readinessDebug${forceNotReady ? " · FORCED-NOT-READY" : ""}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    height: 1.3,
+                    color: Color(0xFF9E9E9E),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

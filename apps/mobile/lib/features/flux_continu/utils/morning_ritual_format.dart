@@ -42,6 +42,30 @@ String editionDayKey(DateTime date) {
   return '${date.year.toString().padLeft(4, '0')}-$mm-$dd';
 }
 
+/// Diagnostic **QA** (staging/dev) : pourquoi `isEditionReady` vaut ce qu'il
+/// vaut. Listé condition par condition pour identifier d'un coup d'œil sur
+/// l'appareil le maillon qui bloque (squelette ? digest absent ? mauvais jour ?).
+String morningRitualReadinessDebug(
+  FluxContinuState? state,
+  DigestResponse? digest, {
+  DateTime? now,
+}) {
+  final today = now ?? DateTime.now();
+  final fluxOk = state != null && !state.isSkeleton && state.sections.isNotEmpty;
+  final digestOk = digest != null && !digest.isStaleFallback;
+  final target = digest == null ? '∅' : editionDayKey(digest.targetDate);
+  final todayKey = TourneeProgressService.dayKey(today);
+  final dayOk = digest != null && target == todayKey;
+  final contentOk =
+      digest != null && (digest.topics.isNotEmpty || digest.items.isNotEmpty);
+  final ready = isEditionReady(state, digest, now: now);
+  return 'ready=$ready · flux=${fluxOk ? "ok" : "ko"}'
+      '(skel=${state?.isSkeleton}/sec=${state?.sections.length})'
+      ' · digest=${digest == null ? "null" : (digestOk ? "ok" : "stale")}'
+      ' · jour=${dayOk ? "ok" : "ko"}(t=$target/n=$todayKey)'
+      ' · contenu=${contentOk ? "ok" : "ko"}';
+}
+
 /// Libellé UI exact de La Grille dans le feed (`flux_continu_screen.dart`,
 /// `StickyTab(label: 'Mot du jour')`). Réutilisé tel quel dans le sommaire pour
 /// « reprendre le nom exact des sections » (décision PO 24/06).
