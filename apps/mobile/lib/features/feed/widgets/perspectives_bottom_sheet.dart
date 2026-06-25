@@ -109,6 +109,11 @@ class Perspective {
   /// long-press de la carte de couverture (cf. [toPreviewContent]).
   final String? description;
 
+  /// Fiabilité de la source (`high`/`medium`/`mixed`/`low`/`unknown`). Portée
+  /// par le back depuis `Source.reliability_score`. Défaut `'unknown'` (cache
+  /// perspectives non rafraîchi ⇒ champ absent ⇒ pas de glyphe).
+  final String reliabilityScore;
+
   /// Tokens divergents du titre vs. référence, colorisés par bias.
   final List<HighlightSpan> highlightSpans;
 
@@ -127,6 +132,7 @@ class Perspective {
     required this.biasStance,
     this.publishedAt,
     this.description,
+    this.reliabilityScore = 'unknown',
     this.highlightSpans = const [],
     this.sharedTokens = const [],
     this.language,
@@ -145,6 +151,8 @@ class Perspective {
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
       description: json['description'] as String?,
+      reliabilityScore:
+          (json['reliability_score'] as String?)?.toLowerCase() ?? 'unknown',
       language: json['language'] as String?,
     );
   }
