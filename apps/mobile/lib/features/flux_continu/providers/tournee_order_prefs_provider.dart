@@ -32,7 +32,12 @@ const _kLegacyVeilleHiddenKey = 'tournee_veille_hidden_v1';
 const _kTourneeCustomizedKey = 'tournee_customized_v1';
 
 /// Cap d'affichage de la Tournée du jour, partagé provider + composer.
-const int kTourneeVisibleCap = 10;
+///
+/// Couvre favoris + suggestions « Choisie pour vous » + cartes éditoriales
+/// (Actus, Bonnes, Grille) — pas la carte hi-fi Essentiel du haut, rendue à
+/// part. Dimensionné pour la cible backend de ~8 sections thématiques :
+/// 8 thématiques + Actus + Bonnes + Grille = 11, + marge.
+const int kTourneeVisibleCap = 13;
 
 /// Seuils de cohérence d'affichage des sections favorites (thème/source) après
 /// la dédup inter-sections. Une section **maigre** (≤ [kThinSectionMaxItems]

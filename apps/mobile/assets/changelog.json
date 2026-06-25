@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
+    },
+    {
       "tag": "Lecture",
       "summary": "Carrousels plus nets : le bas des cartes ne se coupe plus quand leurs tailles diffèrent, et les points de défilement respirent mieux."
     },

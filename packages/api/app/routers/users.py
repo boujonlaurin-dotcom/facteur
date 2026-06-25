@@ -504,24 +504,25 @@ async def _arrange_tournee(
     user_uuid: UUID,
     validated: list[TopThemeResponse],
 ) -> list[TopThemeResponse]:
-    """Affecte les `daily_rank` aux validées et complète les slots restants par
-    des sections « Choisie pour vous » (Story 22.3).
+    """Affecte les `daily_rank` aux validées et **complète** jusqu'à la cible
+    `TOURNEE_TARGET_SECTIONS` par des sections « Choisie pour vous » (Story 22.3).
 
     Les validées gardent leur ordre d'entrée (jamais réordonnées/masquées ici) ;
-    les suggérées remplissent `min(SUBCAP, slots restants)` derrière elles, déjà
-    triées best-first pour aujourd'hui par `TourneeSuggester`. No-op si le toggle
-    est off, s'il ne reste aucun slot, ou si le pool est vide (jour pauvre).
+    les suggérées **s'ajoutent** derrière elles jusqu'à atteindre la cible
+    (additif, pas un reliquat du plafond favoris), déjà triées best-first pour
+    aujourd'hui par `TourneeSuggester`. Un compte à 7 favoris reçoit donc 1
+    suggestion, un compte à 0 favori jusqu'à `TOURNEE_TARGET_SECTIONS`. No-op si
+    le toggle est off, si la cible est déjà atteinte, ou si le pool est vide.
     """
-    from app.constants import FAVORITE_CAP
+    from app.services.recommendation.scoring_config import ScoringWeights
 
     for rank, item in enumerate(validated):
         item.daily_rank = rank
 
-    remaining = FAVORITE_CAP - len(validated)
+    remaining = max(0, ScoringWeights.TOURNEE_TARGET_SECTIONS - len(validated))
     if remaining <= 0 or not await _smart_arrangement_enabled(db, user_uuid):
         return validated
 
-    from app.services.recommendation.scoring_config import ScoringWeights
     from app.services.recommendation.tournee_suggester import TourneeSuggester
 
     sub_cap = min(ScoringWeights.TOURNEE_SUGGEST_SUBCAP, remaining)

@@ -46,7 +46,7 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch() async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
 }
 
 class _NoGrilleRepository implements GrilleRepository {
