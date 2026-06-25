@@ -105,7 +105,17 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen> {
     // Override QA (staging/dev) : permet de valider l'état « pas prête » à la
     // demande. Sans effet en prod (le toggle qui le bascule n'y est pas monté).
     final forceNotReady = ref.watch(debugForceMorningRitualNotReadyProvider);
-    final editionReady = !forceNotReady && isEditionReady(fluxState, digest);
+    final ready = isEditionReady(fluxState, digest);
+
+    // Dès que l'édition est prête, on annule l'attente bornée (pas de forward).
+    if (ready && !_revealHandled) {
+      _revealHandled = true;
+      _waitTimer?.cancel();
+    }
+    // Une fois révélé, on ne re-cache plus (anti-flicker si un digest périmé
+    // arrive *après* la révélation pilotée par le flux). `forceNotReady` (QA)
+    // force le masquage pour valider le repli vers le feed.
+    final editionReady = !forceNotReady && (_revealHandled || ready);
 
     // Diagnostic QA (staging/dev) : trace le détail du gate à chaque rebuild
     // pour identifier sur l'appareil le maillon qui bloque la révélation.
@@ -114,12 +124,6 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen> {
         qaMode ? morningRitualReadinessDebug(fluxState, digest) : null;
     if (readinessDebug != null) {
       debugPrint('MorningRitual gate · $readinessDebug · force=$forceNotReady');
-    }
-
-    // Dès que l'édition est prête, on annule l'attente bornée (pas de forward).
-    if (editionReady && !_revealHandled) {
-      _revealHandled = true;
-      _waitTimer?.cancel();
     }
 
     final editionDate = digest?.targetDate ?? DateTime.now();

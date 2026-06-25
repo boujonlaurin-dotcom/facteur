@@ -5,33 +5,40 @@ import '../services/tournee_progress_service.dart';
 /// Helpers **purs** (pas de provider, pas de réseau) du rituel matinal
 /// (Story 28.1). Testables et déterministes.
 
-/// L'édition du jour est-elle **réellement arrivée** (pas du cache d'hier, pas
-/// un squelette, pas un stale fallback) ? Gate de révélation du sommaire+CTA du
-/// rituel matinal. `now` injectable pour les tests.
+/// L'édition du jour est-elle **réellement arrivée** ? Gate de révélation du
+/// sommaire+CTA du rituel matinal. `now` injectable pour les tests.
 ///
-/// Conditions (décision PO #4 — jamais de fausse promesse « vient d'arriver ») :
-/// - le flux a du contenu réel (`!isSkeleton`, sections non vides) ;
-/// - le digest est présent, non périmé (`!isStaleFallback`) ;
-/// - sa `targetDate` tombe sur le jour-tournée courant (`dayKey`, bascule 7h30) ;
-/// - le digest porte du contenu (`topics` ou `items`).
+/// **Source de vérité = le flux** (`fluxContinuProvider`, préchargé dès le boot
+/// via `fluxContinuPreloadProvider`) : du contenu réel (`!isSkeleton`, sections
+/// non vides) signifie l'édition du jour arrivée — son flag `isSkeleton`
+/// garantit déjà « jamais du contenu d'hier » (décision PO #4).
+///
+/// Le `digest` n'est qu'une **corroboration optionnelle** : il est chargé
+/// **séparément** (`digestProvider`, *non* préchargé) et vaut donc `null` les
+/// premières secondes sur `/edition`. On ne bloque **jamais** dessus quand il
+/// est absent (sinon le rituel ne se révèle jamais — bug E2E 24/06). Quand il
+/// est là, il resserre la garantie de fraîcheur : on refuse un `isStaleFallback`
+/// ou un `targetDate` qui ne tombe pas sur le jour-tournée courant.
 bool isEditionReady(
   FluxContinuState? state,
   DigestResponse? digest, {
   DateTime? now,
 }) {
   if (state == null || state.isSkeleton || state.sections.isEmpty) return false;
-  if (digest == null || digest.isStaleFallback) return false;
-  final today = now ?? DateTime.now();
-  // `targetDate` est une **étiquette éditoriale date-nue** (backend :
-  // `str(today_paris())` → minuit local côté Dart). On compare donc son jour
-  // **calendaire brut** (Y-M-D) au `dayKey` du jour-tournée — surtout PAS en la
-  // repassant dans `dayKey()`, dont la bascule 7h30 retirerait un jour à tout
-  // minuit (< 07h30) et rendrait le gate perpétuellement faux.
-  if (editionDayKey(digest.targetDate) !=
-      TourneeProgressService.dayKey(today)) {
-    return false;
+  if (digest != null) {
+    if (digest.isStaleFallback) return false;
+    final today = now ?? DateTime.now();
+    // `targetDate` est une **étiquette éditoriale date-nue** (backend :
+    // `str(today_paris())` → minuit local côté Dart). On compare son jour
+    // **calendaire brut** (Y-M-D) au `dayKey` du jour-tournée — surtout PAS en
+    // la repassant dans `dayKey()`, dont la bascule 7h30 retirerait un jour à
+    // tout minuit (< 07h30) et rendrait le gate perpétuellement faux.
+    if (editionDayKey(digest.targetDate) !=
+        TourneeProgressService.dayKey(today)) {
+      return false;
+    }
   }
-  return digest.topics.isNotEmpty || digest.items.isNotEmpty;
+  return true;
 }
 
 /// Jour calendaire (`YYYY-MM-DD`) d'une `targetDate` éditoriale, à partir de ses
@@ -51,19 +58,24 @@ String morningRitualReadinessDebug(
   DateTime? now,
 }) {
   final today = now ?? DateTime.now();
+  // Source de vérité = le flux. Le digest est optionnel (« opt » s'il est null).
   final fluxOk = state != null && !state.isSkeleton && state.sections.isNotEmpty;
-  final digestOk = digest != null && !digest.isStaleFallback;
   final target = digest == null ? '∅' : editionDayKey(digest.targetDate);
   final todayKey = TourneeProgressService.dayKey(today);
-  final dayOk = digest != null && target == todayKey;
-  final contentOk =
-      digest != null && (digest.topics.isNotEmpty || digest.items.isNotEmpty);
+  final String digestState;
+  if (digest == null) {
+    digestState = 'null(opt)';
+  } else if (digest.isStaleFallback) {
+    digestState = 'stale→bloque';
+  } else if (target != todayKey) {
+    digestState = 'jour-ko→bloque';
+  } else {
+    digestState = 'ok';
+  }
   final ready = isEditionReady(state, digest, now: now);
   return 'ready=$ready · flux=${fluxOk ? "ok" : "ko"}'
       '(skel=${state?.isSkeleton}/sec=${state?.sections.length})'
-      ' · digest=${digest == null ? "null" : (digestOk ? "ok" : "stale")}'
-      ' · jour=${dayOk ? "ok" : "ko"}(t=$target/n=$todayKey)'
-      ' · contenu=${contentOk ? "ok" : "ko"}';
+      ' · digest=$digestState(t=$target/n=$todayKey)';
 }
 
 /// Libellé UI exact de La Grille dans le feed (`flux_continu_screen.dart`,

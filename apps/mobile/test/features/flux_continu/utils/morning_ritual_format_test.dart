@@ -210,16 +210,24 @@ void main() {
       );
     });
 
-    test('digest sans contenu → pas prête', () {
+    test('digest présent mais sans contenu → prête (le flux fait foi)', () {
+      // Le contenu vient du flux (sections), pas du digest : un digest non
+      // périmé et du bon jour ne bloque pas, même vide.
       expect(
         isEditionReady(state(), digestResp(withContent: false), now: now),
-        isFalse,
+        isTrue,
       );
     });
 
-    test('état/digest null → pas prête', () {
+    test('flux prête + digest null (non préchargé) → prête', () {
+      // Régression bug E2E 24/06 : le digest est chargé séparément et vaut
+      // `null` les premières secondes sur /edition. Il ne doit JAMAIS bloquer la
+      // révélation — sinon le rituel ne s'affiche jamais avec son bouton.
+      expect(isEditionReady(state(), null, now: now), isTrue);
+    });
+
+    test('flux absent → pas prête (même digest frais)', () {
       expect(isEditionReady(null, digestResp(), now: now), isFalse);
-      expect(isEditionReady(state(), null, now: now), isFalse);
     });
   });
 }
