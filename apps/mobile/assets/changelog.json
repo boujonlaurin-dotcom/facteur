@@ -1,8 +1,12 @@
 {
   "unreleased": [
     {
+      "tag": "Édition",
+      "summary": "Ton édition du jour se dévoile en douceur le matin et après l'onboarding."
+    },
+    {
       "tag": "Ouverture",
-      "summary": "Chaque matin, ton édition t'accueille avant de s'ouvrir : un bonjour, la date du jour, et l'aperçu des sections qui t'attendent."
+      "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
     },
     {
       "tag": "Notifications",

@@ -38,11 +38,13 @@ void main() {
     FeedThemeSection theme(
       String label, {
       SectionOrigin origin = SectionOrigin.validated,
+      SectionKind kind = SectionKind.theme,
+      Color accent = const Color(0xFF2C3E50),
     }) =>
         FeedThemeSection(
-          kind: SectionKind.theme,
+          kind: kind,
           label: label,
-          accent: const Color(0xFF2C3E50),
+          accent: accent,
           coreVisibleCount: 3,
           themeSlug: 'slug-$label',
           items: const <Content>[],
@@ -58,6 +60,9 @@ void main() {
           topics: const <DigestTopic>[],
         );
 
+    List<String> labels(List<EditionSummaryEntry> entries) =>
+        entries.map((e) => e.label).toList();
+
     test('exclut le héros, garde l\'ordre du feed, libellés exacts', () {
       final sections = <FluxSection>[
         hero(),
@@ -66,7 +71,7 @@ void main() {
         digest('Bonnes Nouvelles', SectionKind.bonnes),
       ];
       expect(
-        editionSummaryEntries(sections),
+        labels(editionSummaryEntries(sections)),
         ['Technologie', 'Actus du jour', 'Bonnes Nouvelles'],
       );
     });
@@ -80,7 +85,7 @@ void main() {
       ];
       // La Grille ancrée juste avant « Bonnes Nouvelles » (index 3).
       expect(
-        editionSummaryEntries(sections, grilleSlotIndex: 3),
+        labels(editionSummaryEntries(sections, grilleSlotIndex: 3)),
         ['Technologie', 'Actus du jour', 'Mot du jour', 'Bonnes Nouvelles'],
       );
     });
@@ -88,14 +93,16 @@ void main() {
     test('« Mot du jour » ajouté en fin quand grilleSlotIndex == length', () {
       final sections = <FluxSection>[hero(), theme('Technologie')];
       expect(
-        editionSummaryEntries(sections, grilleSlotIndex: sections.length),
+        labels(
+          editionSummaryEntries(sections, grilleSlotIndex: sections.length),
+        ),
         ['Technologie', 'Mot du jour'],
       );
     });
 
     test('aucun « Mot du jour » quand grilleSlotIndex est null', () {
       final sections = <FluxSection>[hero(), theme('Technologie')];
-      expect(editionSummaryEntries(sections), ['Technologie']);
+      expect(labels(editionSummaryEntries(sections)), ['Technologie']);
     });
 
     test('inclut les sections suggérées (Choisie pour vous)', () {
@@ -105,13 +112,44 @@ void main() {
         digest('Actus du jour', SectionKind.essentiel),
       ];
       expect(
-        editionSummaryEntries(sections),
+        labels(editionSummaryEntries(sections)),
         ['Cinéma', 'Actus du jour'],
       );
     });
 
     test('liste vide quand seul le héros est présent', () {
       expect(editionSummaryEntries(<FluxSection>[hero()]), isEmpty);
+    });
+
+    test('porte l\'accent réel de la section + le flag veille', () {
+      final sections = <FluxSection>[
+        hero(),
+        theme(
+          'Technologie',
+          accent: const Color(0xFF2C3E50),
+        ),
+        theme(
+          'Ma veille',
+          kind: SectionKind.veille,
+          accent: const Color(0xFF8E44AD),
+        ),
+      ];
+      final entries = editionSummaryEntries(sections, grilleSlotIndex: 2);
+
+      // Technologie : accent réel, non-veille.
+      expect(entries[0].label, 'Technologie');
+      expect(entries[0].accent, const Color(0xFF2C3E50));
+      expect(entries[0].isVeille, isFalse);
+
+      // « Mot du jour » (La Grille) : accent neutre dédié, non-veille.
+      expect(entries[1].label, 'Mot du jour');
+      expect(entries[1].accent, kMotDuJourAccent);
+      expect(entries[1].isVeille, isFalse);
+
+      // Veille : flag levé + accent réel.
+      expect(entries[2].label, 'Ma veille');
+      expect(entries[2].isVeille, isTrue);
+      expect(entries[2].accent, const Color(0xFF8E44AD));
     });
   });
 

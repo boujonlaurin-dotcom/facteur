@@ -264,8 +264,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.onboarding;
       }
 
-      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage flux continu
-      // (jamais le rituel matinal juste après l'onboarding).
+      // 5. Onboarding fini mais on retombe sur /onboarding (ex: back) → renvoi au
+      // feed sans rejouer le rituel (allowMorningRitual: false). La sortie
+      // d'onboarding « normale » passe, elle, délibérément par /edition
+      // (cf. conclusion_animation_screen → /edition?from=onboarding).
       if (!authState.needsOnboarding && isOnOnboarding) {
         return postAuthHomePath(allowMorningRitual: false);
       }
@@ -329,7 +331,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: RouteNames.edition,
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
-          child: const MorningRitualScreen(),
+          // `from=onboarding` élargit le plafond du loader (édition calculée à
+          // froid juste après le choix des sujets → plus lente qu'un matin).
+          child: MorningRitualScreen(
+            fromOnboarding:
+                state.uri.queryParameters['from'] == 'onboarding',
+          ),
           transitionsBuilder: (context, animation, secondaryAnimation, child) =>
               FadeTransition(opacity: animation, child: child),
         ),

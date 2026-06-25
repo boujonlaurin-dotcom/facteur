@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart' show Color;
+
 import '../../digest/models/digest_models.dart';
 import '../models/flux_continu_models.dart';
 import '../services/tournee_progress_service.dart';
@@ -83,6 +85,27 @@ String morningRitualReadinessDebug(
 /// « reprendre le nom exact des sections » (décision PO 24/06).
 const String kMotDuJourLabel = 'Mot du jour';
 
+/// Accent neutre « loisir » de La Grille (= `_kLeisureTabAccent` du feed), porté
+/// par la chip « Mot du jour » du sommaire (qui n'est pas une [FluxSection] et
+/// n'a donc pas d'`accent` propre).
+const Color kMotDuJourAccent = Color(0xFFB8A898);
+
+/// Une entrée du sommaire « table des matières » de l'édition, rendue comme une
+/// chip colorée dans le rituel matinal : libellé exact de la section + son
+/// `accent` réel (cohérence avec le reste de l'app), et un flag [isVeille] pour
+/// la chip spéciale « Ma veille » (étoile + accent `primary`).
+class EditionSummaryEntry {
+  final String label;
+  final Color accent;
+  final bool isVeille;
+
+  const EditionSummaryEntry({
+    required this.label,
+    required this.accent,
+    this.isVeille = false,
+  });
+}
+
 const List<String> _frenchWeekdays = <String>[
   'lundi',
   'mardi',
@@ -127,19 +150,34 @@ String formatFrenchLongDate(DateTime date) {
 ///   typiquement juste après « Actus du jour » ;
 /// - les sections suggérées (« Choisie pour vous ») sont **incluses** (elles
 ///   s'affichent vraiment), avec leur libellé thème/source.
-List<String> editionSummaryEntries(
+List<EditionSummaryEntry> editionSummaryEntries(
   List<FluxSection> sections, {
   int? grilleSlotIndex,
   String motDuJourLabel = kMotDuJourLabel,
+  Color motDuJourAccent = kMotDuJourAccent,
 }) {
-  final entries = <String>[];
+  final entries = <EditionSummaryEntry>[];
   for (var i = 0; i < sections.length; i++) {
-    if (grilleSlotIndex == i) entries.add(motDuJourLabel);
+    if (grilleSlotIndex == i) {
+      entries.add(EditionSummaryEntry(
+        label: motDuJourLabel,
+        accent: motDuJourAccent,
+      ));
+    }
     final section = sections[i];
     if (section is EssentielSection) continue; // héros = titre de bloc
-    entries.add(section.label);
+    entries.add(EditionSummaryEntry(
+      label: section.label,
+      accent: section.accent,
+      isVeille: section.kind == SectionKind.veille,
+    ));
   }
   // La Grille peut être ancrée tout en bas (après la dernière section).
-  if (grilleSlotIndex == sections.length) entries.add(motDuJourLabel);
+  if (grilleSlotIndex == sections.length) {
+    entries.add(EditionSummaryEntry(
+      label: motDuJourLabel,
+      accent: motDuJourAccent,
+    ));
+  }
   return entries;
 }
