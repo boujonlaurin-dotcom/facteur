@@ -10,6 +10,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FAVORITE_CAP
@@ -156,11 +157,18 @@ class UserInterestsService:
             if row is None:
                 # Création implicite : permet à l'utilisateur d'épingler un Thème
                 # qu'il n'avait pas encore (weight neutre, state demandé).
-                row = UserInterest(
-                    user_id=user_id, interest_slug=interest_slug, state=state
+                # Upsert atomique : un double-tap concurrent ne lève plus
+                # d'IntegrityError sur user_interests_user_slug_uniq.
+                # prev_state reste None (sémantique "créé à la volée").
+                stmt = (
+                    insert(UserInterest)
+                    .values(user_id=user_id, interest_slug=interest_slug, state=state)
+                    .on_conflict_do_update(
+                        constraint="user_interests_user_slug_uniq",
+                        set_={"state": state},
+                    )
                 )
-                self.db.add(row)
-                await self.db.flush()
+                await self.db.execute(stmt)
             else:
                 prev_state = row.state
                 row.state = state

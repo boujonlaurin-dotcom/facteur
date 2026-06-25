@@ -1,33 +1,45 @@
-## Tour guidé Facteur (coach-mark post-onboarding)
+## fix(api): upsert atomique sur user_interests (race condition Sentry PYTHON-4P)
 
-Tour guidé en 5 étapes joué **une seule fois juste après l'onboarding**, qui pilote la vraie app pour présenter ses pages principales. Il s'insère **avant** les modales post-onboarding existantes (thème puis notifications).
+### Problème
+`update_content_status` (SEEN au scroll + CONSUMED au retour WebView) déclenchait une
+re-pondération des intérêts via un **check-then-insert non atomique** (SELECT `UserInterest` ;
+si absent → `add()`). Deux requêtes concurrentes pour le même `(user_id, interest_slug)`
+voyaient toutes deux « absent » et inséraient → `IntegrityError / UniqueViolation` sur
+`user_interests_user_slug_uniq` → **500**, lecture non retenue (progression + perso intérêts).
+Sentry **PYTHON-4P** : 260 occurrences / 24h, 11 personnes.
 
-### Parcours (6 états joués, 5 puces)
-1. **1/5** — hero « L'Essentiel du jour » + onglet Essentiel (scroll top).
-2. **2/5 (a)** — scroll vers la 1ʳᵉ section de la Tournée (`ensureVisible`).
-3. **2/5 (b)** — ouverture de la vraie feuille « Mes favoris », spotlight par-dessus.
-4. **3/5** — bascule onglet Flâner, voile plein, carte centrée.
-5. **4/5** — retour accueil, spotlight de l'avatar profil (Réglages).
-6. **5/5** — même avatar (Mon courrier), bouton « Terminer ».
-7. **done** — carte « C'est parti », puis main rendue aux modales.
+### Fix
+Remplacement de tous les points d'insertion `UserInterest` par un **upsert Postgres atomique**
+(`INSERT ... ON CONFLICT (user_id, interest_slug) DO UPDATE`), pattern déjà utilisé dans le repo
+(`UserContentStatus`, `grille_seed`). La sémantique métier est préservée :
 
-### Architecture
-- **Machine à états Riverpod** (`GuidedTourController`, `keepAlive`) — survit aux changements d'onglet/feuilles, **ne touche jamais `BuildContext`**. `start(onComplete)` gate le flag « vu » (scopé user) ; `next()`/`skip()`/`finish()` → `done` + `onComplete` tiré une seule fois.
-- **Bridge racine** (`GuidedTourBridge`, monté une fois dans `MainShell`) — exécute les effets de bord (navigation, ouverture feuille, scroll) et insère l'`OverlayEntry` dans l'overlay **racine** (au-dessus de la feuille favoris qui vit en branche).
-- **Overlay** — scrim `#2C2A29` α0.72 + découpe spotlight (`Path`/`BlendMode.clear`, contour `#E8943F`), rect relu live depuis le `RenderBox` des `GlobalKey` à chaque frame (suit slide/scroll). Coach card : avatar Facteur, pastille « N/5 », titre Fraunces, corps DM Sans, 5 puces, Passer/Suivant/Terminer.
+- **`content_service._adjust_interest_weight`** (culprit) : poids `= least(weight + boost, 3.0)` ;
+  `state` non touché sur conflit (préserve FAVORITE).
+- **`content_service._adjust_subtopic_weights`** (branche intérêt) : `delta > 0` → upsert borné
+  `[0.1, 3.0]` ; `delta < 0` → UPDATE ciblé (pas d'INSERT, jamais de création au dislike).
+- **`user_interests_service.set_state`** : création implicite de thème → upsert (set `state`).
+- **`user_service`** (onboarding) : état FAVORITE précalculé avant insertion, upsert par thème.
 
-### Garde « une seule fois »
-Double verrou : démarrage seulement depuis le chemin post-onboarding (`postOnboardingFlowPendingProvider`) **et** flag persistant `nudge.guided_tour.seen.<userId>` (namespace `nudge.`, scopé user comme `NudgeStorage`).
-
-### Fichiers
-- **Nouveaux** : `lib/features/tour/` (models/tour_step, providers/guided_tour_controller, tour_anchors, tour_strings, tour_ids, widgets/guided_tour_bridge|overlay|coach_card).
-- **Édités** : `flux_continu_screen.dart` (split `_runPostOnboardingFlow` → tour puis `_runPostOnboardingModals`, listen `tourScrollTargetProvider`, ancre 1ʳᵉ section), `essentiel_hi_fi_card.dart` (ancre hero), `main_shell.dart` (montage bridge + ancre avatar), `main_bottom_nav.dart` (ancre onglet), `manage_favorites_sheet.dart` (ancre feuille + note z-order), `navigation_providers.dart` (`tourScrollTargetProvider`), `changelog.json`.
+Aucun DDL / migration (la contrainte unique existe déjà). Hors périmètre : le jumeau
+`UserSubtopic` (table `user_subtopics`). Attention, ce n'est **pas** le même bug shape :
+la contrainte unique `(user_id, topic_slug)` y a été **supprimée** (migration `4d497ce7bcc2`),
+donc son check-then-insert ne lève pas d'`UniqueViolation` — sous concurrence il insère
+des lignes dupliquées en silence (poids faussé). Le corriger proprement exigerait d'abord
+de re-créer la contrainte unique via migration → hors scope de ce hotfix de crash.
 
 ### Tests
-- `test/features/tour/guided_tour_controller_test.dart` — séquence complète, displayIndex (2/5 mutualisé), skip/finish → done + flag persisté + onComplete une fois, no-op si déjà vu.
-- `test/features/tour/guided_tour_overlay_test.dart` — coach card (titre/pastille/puces/boutons), « Terminer » en dernière étape, carte de conclusion, voile plein sans ancre.
-- `flutter analyze` : 0 nouvelle erreur. Tests des fichiers touchés (essentiel_hi_fi_card, main_bottom_nav, flux_continu) : verts.
+`tests/test_interest_weight_concurrency.py` : création → incrément (1 seule ligne), cap 3.0,
+préservation FAVORITE. Le chemin `ON CONFLICT DO UPDATE` est exactement celui qu'emprunte la
+requête perdante d'une course ; exercé ici par double-appel séquentiel (la fixture `db_session`
+mono-connexion ne permet pas une vraie concurrence 2-connexions).
 
-### Notes
-- Frontend pur, aucune migration / endpoint.
-- Reste à faire avant deploy : `/validate-feature` Playwright (handoff dans `.context/qa-handoff.md`).
+Tests exécutés en local contre `facteur_test` (Postgres 5432) : les 3 tests de régression
+passent, ainsi que la suite complète (1895 passed ; les 2 seuls échecs —
+`test_notification_preferences` et `test_sources_recent_items` — sont pré-existants sur
+`main`, sans rapport avec ce diff, vérifié en revertant les services). Tests adaptés au
+nouveau chemin upsert : `test_onboarding_sources` (l'intérêt passe par `execute` et non plus
+`db.add` ; offset des appers `execute` recalculé), `test_like_feature` (1 seul `add` + 1
+upsert intérêt). `ruff check` + `ruff format` OK sur les fichiers touchés.
+
+### Post-merge (PO)
+Vérifier que le compteur Sentry **PYTHON-4P** retombe à ~0 après déploiement.
