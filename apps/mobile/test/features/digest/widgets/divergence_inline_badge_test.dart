@@ -44,6 +44,56 @@ void main() {
       expect(label.style?.fontWeight, FontWeight.w500);
     });
 
+    testWidgets('medium + prominentMedium → boost léger (w600, secondary)', (
+      tester,
+    ) async {
+      final colors = FacteurTheme.lightTheme.extension<FacteurColors>()!;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: const Scaffold(
+            body: Center(
+              child: DivergenceInlineBadge(
+                divergenceLevel: 'medium',
+                prominentMedium: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final label = tester.widget<Text>(find.text('AVIS VARIÉS'));
+      // Boost léger : w600 (ni w500 discret, ni w700 réservé à high) en
+      // text_secondary (ni tertiary discret, ni text_primary réservé à high).
+      expect(label.style?.fontWeight, FontWeight.w600);
+      expect(label.style?.color, colors.textSecondary);
+    });
+
+    testWidgets('prominentMedium sans effet sur high (reste w700/primary)', (
+      tester,
+    ) async {
+      final colors = FacteurTheme.lightTheme.extension<FacteurColors>()!;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: const Scaffold(
+            body: Center(
+              child: DivergenceInlineBadge(
+                divergenceLevel: 'high',
+                prominentMedium: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final label = tester.widget<Text>(find.text('POLARISÉ'));
+      expect(label.style?.fontWeight, FontWeight.w700);
+      expect(label.style?.color, colors.textPrimary);
+    });
+
     testWidgets('high → Polarisé en text_primary bold', (tester) async {
       await tester.pumpWidget(host('high'));
       await tester.pumpAndSettle();

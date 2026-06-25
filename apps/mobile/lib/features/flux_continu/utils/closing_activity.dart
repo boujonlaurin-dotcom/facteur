@@ -24,25 +24,29 @@ class ClosingActivity {
 /// Activités d'intérieur — toujours éligibles (par défaut quand la météo n'est
 /// pas clémente ou inconnue).
 const List<ClosingActivity> kIndoorActivities = [
-  ClosingActivity(emoji: '📖', prompt: 'Ouvrir un bon livre ?', isOutdoor: false),
+  ClosingActivity(
+    emoji: '📖',
+    prompt: 'Ouvrir ce livre qui prend la poussière sur ton étagère ?',
+    isOutdoor: false,
+  ),
   ClosingActivity(
     emoji: '🍳',
-    prompt: 'Tester une nouvelle recette ?',
+    prompt: 'Te lancer dans une recette végé ?',
     isOutdoor: false,
   ),
   ClosingActivity(
     emoji: '☕',
-    prompt: 'Prendre un vrai temps calme ?',
+    prompt: 'T’offrir un vrai moment rien qu’à toi ?',
     isOutdoor: false,
   ),
   ClosingActivity(
     emoji: '📓',
-    prompt: 'Écrire trois lignes dans un carnet ?',
+    prompt: 'Noter ce qui t’a traversé l’esprit aujourd’hui ?',
     isOutdoor: false,
   ),
   ClosingActivity(
     emoji: '🎧',
-    prompt: 'Écouter l’album du moment en entier ?',
+    prompt: 'Écouter cet album que tu attendais depuis un moment ?',
     isOutdoor: false,
   ),
 ];
@@ -51,11 +55,19 @@ const List<ClosingActivity> kIndoorActivities = [
 const List<ClosingActivity> kOutdoorActivities = [
   ClosingActivity(
     emoji: '🌳',
-    prompt: 'Aller marcher dans un parc ?',
+    prompt: 'Aller marcher là où tu ne vas jamais ?',
     isOutdoor: true,
   ),
-  ClosingActivity(emoji: '☀️', prompt: 'Sortir prendre l’air ?', isOutdoor: true),
-  ClosingActivity(emoji: '🚲', prompt: 'Faire un tour à vélo ?', isOutdoor: true),
+  ClosingActivity(
+    emoji: '☀️',
+    prompt: 'Sortir respirer un peu d’air frais ?',
+    isOutdoor: true,
+  ),
+  ClosingActivity(
+    emoji: '🚲',
+    prompt: 'Enfourcher ton vélo sans destination précise ?',
+    isOutdoor: true,
+  ),
 ];
 
 /// Nombre de propositions affichées chaque jour sur la carte de fin.

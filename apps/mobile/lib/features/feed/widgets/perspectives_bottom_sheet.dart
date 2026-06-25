@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -20,6 +21,7 @@ import '../../digest/widgets/section_divider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
+import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
 import 'coverage_comparison_card.dart';
@@ -56,6 +58,44 @@ void openPerspectiveReader(BuildContext context, Perspective p) {
   context.pushNamed(RouteNames.contentExternal, extra: p);
 }
 
+/// Résout la [Source] suivie par l'utilisateur correspondant à [domain] (match
+/// par host, insensible au préfixe `www.`). Renvoie `null` si le domaine est
+/// vide ou non trouvé. Partagé par la liste du bottom sheet ET le carrousel
+/// inline (carte de couverture cliquable).
+Source? findSourceByDomain(List<Source> sources, String domain) {
+  final d = domain.toLowerCase();
+  if (d.isEmpty) return null;
+  return sources.cast<Source?>().firstWhere((s) {
+    if (s?.url == null) return false;
+    final uri = Uri.tryParse(s!.url!);
+    if (uri == null) return false;
+    final host = uri.host.toLowerCase().replaceFirst('www.', '');
+    return host == d || host == 'www.$d';
+  }, orElse: () => null);
+}
+
+/// Ouvre la [SourceDetailModal] pour [source] (suivi/trust). Partagé par la
+/// liste du bottom sheet ET le carrousel inline.
+void showSourceDetailModal(
+  BuildContext context,
+  WidgetRef ref,
+  Source source,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => SourceDetailModal(
+      source: source,
+      onToggleTrust: () {
+        ref
+            .read(userSourcesProvider.notifier)
+            .toggleTrust(source.id, source.isTrusted);
+      },
+    ),
+  );
+}
+
 /// Model for a perspective from an external source
 class Perspective {
   final String title;
@@ -64,6 +104,10 @@ class Perspective {
   final String sourceDomain;
   final String biasStance;
   final String? publishedAt;
+
+  /// Chapô / extrait servi par le back (`null` si absent). Alimente l'aperçu au
+  /// long-press de la carte de couverture (cf. [toPreviewContent]).
+  final String? description;
 
   /// Tokens divergents du titre vs. référence, colorisés par bias.
   final List<HighlightSpan> highlightSpans;
@@ -82,6 +126,7 @@ class Perspective {
     required this.sourceDomain,
     required this.biasStance,
     this.publishedAt,
+    this.description,
     this.highlightSpans = const [],
     this.sharedTokens = const [],
     this.language,
@@ -99,6 +144,7 @@ class Perspective {
       sourceDomain: (json['source_domain'] as String?) ?? '',
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
+      description: json['description'] as String?,
       language: json['language'] as String?,
     );
   }
@@ -158,6 +204,31 @@ class Perspective {
       default:
         return 'centre';
     }
+  }
+
+  /// Adaptateur vers un [Content] partiel pour l'aperçu au long-press
+  /// ([ArticlePreviewOverlay]). [Source] synthétique : favicon Google comme
+  /// logo, type article par défaut. `description` (chapô back) alimente le corps
+  /// de l'aperçu ; `thumbnailUrl` reste `null` (pas de vignette côté variant).
+  Content toPreviewContent() {
+    final parsedDate =
+        publishedAt != null ? DateTime.tryParse(publishedAt!) : null;
+    return Content(
+      id: url,
+      title: title,
+      url: url,
+      description: description,
+      contentType: ContentType.article,
+      publishedAt: parsedDate ?? DateTime.now(),
+      source: Source(
+        id: '',
+        name: sourceName,
+        type: SourceType.article,
+        logoUrl: sourceDomain.isNotEmpty
+            ? 'https://www.google.com/s2/favicons?domain=$sourceDomain&sz=64'
+            : null,
+      ),
+    );
   }
 }
 
@@ -650,42 +721,14 @@ class _PerspectiveCard extends ConsumerWidget {
 
   const _PerspectiveCard({required this.perspective, this.onView});
 
-  /// Find matching Source from user sources by domain
-  Source? _findSource(List<Source> sources) {
-    final domain = perspective.sourceDomain.toLowerCase();
-    if (domain.isEmpty) return null;
-    return sources.cast<Source?>().firstWhere((s) {
-      if (s?.url == null) return false;
-      final uri = Uri.tryParse(s!.url!);
-      if (uri == null) return false;
-      final host = uri.host.toLowerCase().replaceFirst('www.', '');
-      return host == domain || host == 'www.$domain';
-    }, orElse: () => null);
-  }
-
-  void _showSourceDetail(BuildContext context, WidgetRef ref, Source source) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => SourceDetailModal(
-        source: source,
-        onToggleTrust: () {
-          ref
-              .read(userSourcesProvider.notifier)
-              .toggleTrust(source.id, source.isTrusted);
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final sourcesAsync = ref.watch(userSourcesProvider);
     final matchedSource = sourcesAsync.valueOrNull != null
-        ? _findSource(sourcesAsync.valueOrNull!)
+        ? findSourceByDomain(
+            sourcesAsync.valueOrNull!, perspective.sourceDomain)
         : null;
 
     return Padding(
@@ -763,7 +806,7 @@ class _PerspectiveCard extends ConsumerWidget {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: matchedSource != null
-                  ? () => _showSourceDetail(context, ref, matchedSource)
+                  ? () => showSourceDetailModal(context, ref, matchedSource)
                   : null,
               child: Container(
                 decoration: BoxDecoration(
@@ -1490,6 +1533,16 @@ class _PerspectivesInlineSectionState
   static const double _kCarouselViewportHeight =
       _kCarouselCardHeight + 15 + 16;
 
+  // Géométrie horizontale du carrousel : largeur de carte, gap inter-cartes,
+  // padding latéral du viewport. Source unique pour le rendu ET le calcul de
+  // l'offset cible du tap-to-scroll (barre de biais interactive).
+  static const double _kCoverageCardWidth = 248;
+  static const double _kCoverageCardGap = 13;
+  static const double _kCarouselPaddingH = 18;
+
+  // Pilote le scroll du carrousel pour le tap-to-scroll de la barre de biais.
+  final ScrollController _carouselScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -1538,7 +1591,44 @@ class _PerspectivesInlineSectionState
   void dispose() {
     _emptyDismissTimer?.cancel();
     _emptyCollapseTimer?.cancel();
+    _carouselScrollController.dispose();
     super.dispose();
+  }
+
+  /// Tap sur un segment de la barre de biais → scrolle le carrousel vers la 1ʳᵉ
+  /// carte de cette stance. Si la stance n'est pas présente dans les 8 cartes
+  /// affichées (segment hors plage), fallback sur la carte la plus proche dans
+  /// l'ordre canonique 5-stances.
+  void _onSpectrumSegmentTap(String stanceKey) {
+    if (!_carouselScrollController.hasClients) return;
+    final variants = _sortedPerspectives.take(8).toList();
+    if (variants.isEmpty) return;
+
+    var index = variants.indexWhere((p) => p.biasStance == stanceKey);
+    if (index < 0) {
+      // Fallback : carte la plus proche par distance dans l'ordre 5-stances.
+      final targetRank = _stanceRank(stanceKey);
+      var bestDist = 1 << 30;
+      var best = 0;
+      for (var i = 0; i < variants.length; i++) {
+        final d = (_stanceRank(variants[i].biasStance) - targetRank).abs();
+        if (d < bestDist) {
+          bestDist = d;
+          best = i;
+        }
+      }
+      index = best;
+    }
+
+    final maxExtent = _carouselScrollController.position.maxScrollExtent;
+    final target = ((_kCoverageCardWidth + _kCoverageCardGap) * index)
+        .clamp(0.0, maxExtent);
+    HapticFeedback.selectionClick();
+    _carouselScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   void _syncEmptyDismissal() {
@@ -1569,14 +1659,28 @@ class _PerspectivesInlineSectionState
     });
   }
 
-  static const _groupOrder = ['gauche', 'centre', 'droite'];
+  // Ordre canonique 5-stances (identique à `CoverageSpectrumBar._keys`) : clé de
+  // tri des cartes ET référence de distance pour le fallback tap-to-scroll.
+  static const _stanceOrder = [
+    'left',
+    'center-left',
+    'center',
+    'center-right',
+    'right',
+  ];
+
+  static int _stanceRank(String stance) {
+    final i = _stanceOrder.indexOf(stance);
+    // Stances inconnues : reléguées en fin (et au centre pour la distance).
+    return i < 0 ? _stanceOrder.length : i;
+  }
 
   List<Perspective> get _sortedPerspectives {
     final sorted = [..._displayedPerspectives];
+    // Tri strict L → CL → C → CR → R : condition nécessaire pour que le
+    // tap-to-scroll de la barre de biais tombe sur la bonne carte.
     sorted.sort(
-      (a, b) => _groupOrder
-          .indexOf(a.biasGroup)
-          .compareTo(_groupOrder.indexOf(b.biasGroup)),
+      (a, b) => _stanceRank(a.biasStance).compareTo(_stanceRank(b.biasStance)),
     );
     return sorted;
   }
@@ -1630,9 +1734,9 @@ class _PerspectivesInlineSectionState
                         child: Column(
                           children: [
                             _buildCarousel(variants),
-                            // Libellé de polarisation déplacé SOUS le carrousel
-                            // (le header ne porte plus que le titre + la barre).
-                            _buildBandFooter(colors, textTheme),
+                            // Barre de biais pleine largeur + interactive, sous
+                            // le carrousel (le header porte titre + polarisation).
+                            _buildBandFooter(),
                           ],
                         ),
                       ),
@@ -1701,7 +1805,9 @@ class _PerspectivesInlineSectionState
     );
   }
 
-  /// Header 2 lignes : (titre + barre spectre) / (badge divergence + info).
+  /// Header : titre à gauche + badge de polarisation et bouton info à droite.
+  /// La barre de biais (interactive) est descendue en pied de bande, pleine
+  /// largeur (cf. [_buildBandFooter]).
   Widget _buildHeader(
     FacteurColors colors,
     TextTheme textTheme,
@@ -1715,8 +1821,8 @@ class _PerspectivesInlineSectionState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Ligne 1 : libellé à gauche (FittedBox scaleDown absorbe les titres
-          // longs sans wrap), barre spectre (96 px) épinglée à droite et
-          // centrée verticalement sur le titre.
+          // longs sans wrap), badge de polarisation + bouton info épinglés à
+          // droite et centrés verticalement sur le titre.
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -1737,14 +1843,23 @@ class _PerspectivesInlineSectionState
               ),
               if (!isEmpty) ...[
                 const SizedBox(width: 11),
-                SizedBox(
-                  width: 96,
-                  child: isLoading
-                      ? const CoverageSpectrumBarShimmer()
-                      : CoverageSpectrumBar(
-                          distribution: widget.biasDistribution,
-                        ),
-                ),
+                // Loading : on garde le shimmer (badge + info masqués). Prêt :
+                // badge de polarisation (échelle 1.0, contre 1.45 en footer
+                // avant la refonte) + bouton info.
+                if (isLoading)
+                  const SizedBox(width: 96, child: CoverageSpectrumBarShimmer())
+                else ...[
+                  DivergenceInlineBadge(
+                    divergenceLevel: widget.divergenceLevel,
+                    scale: 1.0,
+                    prominentMedium: true,
+                  ),
+                  const SizedBox(width: 6),
+                  _HighlightInfoButton(
+                    colors: colors,
+                    onTap: () => _showHighlightInfo(context, colors, textTheme),
+                  ),
+                ],
               ],
             ],
           ),
@@ -1768,50 +1883,73 @@ class _PerspectivesInlineSectionState
     );
   }
 
-  /// Pied de bande, sous le carrousel : libellé de polarisation à gauche +
-  /// bouton info (surlignage) à droite. Rendu uniquement quand la couverture
-  /// est prête (le `if (isReady)` du parent garantit déjà la condition).
-  Widget _buildBandFooter(FacteurColors colors, TextTheme textTheme) {
+  /// Pied de bande, sous le carrousel : la barre de biais **pleine largeur** et
+  /// **interactive** (tap sur un segment → scrolle le carrousel vers le bord
+  /// politique correspondant). Rendu uniquement quand la couverture est prête
+  /// (le `if (isReady)` du parent garantit déjà la condition).
+  Widget _buildBandFooter() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 0, 10, 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: DivergenceInlineBadge(
-              divergenceLevel: widget.divergenceLevel,
-              scale: 1.45,
-            ),
-          ),
-          const SizedBox(width: 8),
-          _HighlightInfoButton(
-            colors: colors,
-            onTap: () => _showHighlightInfo(context, colors, textTheme),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(
+        _kCarouselPaddingH,
+        0,
+        _kCarouselPaddingH,
+        6,
+      ),
+      child: CoverageSpectrumBar(
+        distribution: widget.biasDistribution,
+        onSegmentTap: _onSpectrumSegmentTap,
+        showAnchorLabels: true,
       ),
     );
+  }
+
+  /// Renvoie le callback de tap source pour [domain] : ouvre la
+  /// [SourceDetailModal] si la source est suivie, sinon `null` (la zone retombe
+  /// sur l'ouverture article — pas de zone morte).
+  VoidCallback? _sourceTapFor(
+    BuildContext context,
+    List<Source>? sources,
+    String domain,
+  ) {
+    if (sources == null) return null;
+    final matched = findSourceByDomain(sources, domain);
+    if (matched == null) return null;
+    return () => showSourceDetailModal(context, ref, matched);
   }
 
   /// Carrousel horizontal : cartes de couverture (gap 13) + carte CTA Analyse
   /// en fin de course. Viewport à hauteur fixe → cartes équi-hauteur.
   Widget _buildCarousel(List<Perspective> variants) {
+    // Sources suivies → résolution par domaine pour rendre la pastille cliquable.
+    final sources = ref.watch(userSourcesProvider).valueOrNull;
     return SizedBox(
       height: _kCarouselViewportHeight,
       child: SingleChildScrollView(
+        controller: _carouselScrollController,
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(18, 15, 18, 16),
+        padding: const EdgeInsets.fromLTRB(
+          _kCarouselPaddingH,
+          15,
+          _kCarouselPaddingH,
+          16,
+        ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (var i = 0; i < variants.length; i++) ...[
-              if (i > 0) const SizedBox(width: 13),
+              if (i > 0) const SizedBox(width: _kCoverageCardGap),
               CoverageComparisonCard(
                 key: ValueKey('coverage_${_animationGeneration}_$i'),
                 perspective: variants[i],
                 firstCardKey: i == 0 ? widget.firstCardKey : null,
+                onSourceTap: _sourceTapFor(
+                  context,
+                  sources,
+                  variants[i].sourceDomain,
+                ),
               ),
             ],
-            if (variants.isNotEmpty) const SizedBox(width: 13),
+            if (variants.isNotEmpty) const SizedBox(width: _kCoverageCardGap),
             _AnalysisCtaCard(
               onTap: widget.onOpenAnalysis,
               count: _displayedPerspectives.length,

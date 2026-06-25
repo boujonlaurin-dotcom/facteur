@@ -357,7 +357,9 @@ void main() {
       await tester.pump();
 
       expect(find.byType(SvgPicture), findsOneWidget);
-      expect(find.text('Météo'), findsOneWidget);
+      // Mid-flip les deux faces (pastille date + badge météo) sont montées et
+      // portent chacune un libellé « Météo » → assertion précise reportée après
+      // la fin du flip (cf. plus bas).
       expect(
         find.byWidgetPredicate(
           (widget) =>
@@ -382,6 +384,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       expect(temperatures.scale.value, closeTo(1, 0.001));
       expect(find.byIcon(Icons.keyboard_return_rounded), findsNothing);
+      // Flip terminé → seul le badge météo subsiste, avec son libellé discret
+      // souligné « Météo » (remplace l'ancien chevron).
+      expect(find.text('Météo'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
 
       // Tap the weather badge → opens the detail sheet (5-day forecast).
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);

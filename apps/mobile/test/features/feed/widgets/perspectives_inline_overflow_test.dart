@@ -76,8 +76,10 @@ void main() {
       );
       expect(titleRender.didExceedMaxLines, isFalse);
 
+      // La barre de biais est descendue en pied de bande, pleine largeur
+      // (padding latéral 18 de part et d'autre).
       final spectrumSize = tester.getSize(find.byType(CoverageSpectrumBar));
-      expect(spectrumSize.width, lessThanOrEqualTo(96));
+      expect(spectrumSize.width, closeTo(width - 36, 1.0));
     });
   }
 }

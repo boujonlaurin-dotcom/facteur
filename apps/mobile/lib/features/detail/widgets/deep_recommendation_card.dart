@@ -68,7 +68,7 @@ class DeepRecommendationCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Le pas de recul'.toUpperCase(),
+                      'Le pas de recul · Facteur'.toUpperCase(),
                       style: GoogleFonts.courierPrime(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
