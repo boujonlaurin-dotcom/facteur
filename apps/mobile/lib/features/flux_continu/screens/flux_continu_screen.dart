@@ -239,6 +239,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
 
+  /// Premier paint : on force le squelette (cartes vides à en-têtes réels) pour
+  /// la toute première frame, **même si les données sont déjà prêtes**. À
+  /// l'arrivée depuis le rituel matinal, l'édition est préchargée → l'écran
+  /// ferait sinon directement le premier paint *lourd* de `_buildContent`, qui
+  /// bloque ~1 s sur le web : on verrait une page blanche (la frame précédente).
+  /// En peignant d'abord le squelette (cheap), la frame lourde se construit
+  /// *derrière* tandis que le squelette reste à l'écran — zéro blanc. La branche
+  /// Essentiel vit dans un `StatefulShellBranch` gardé en vie : cet écran n'est
+  /// monté qu'une fois par session, donc aucun flash de squelette sur les
+  /// bascules d'onglet ultérieures.
+  bool _firstPaintDone = false;
+
   @override
   void initState() {
     super.initState();
@@ -247,6 +259,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // de demande de géoloc (déclenchée après 5 ouvertures, cf.
     // geoloc_prompt_provider). Best-effort, n'impacte pas le rendu.
     unawaited(NudgeCounters.increment(NudgeCounters.feedOpenCount));
+    // Bascule vers le vrai contenu après la 1ʳᵉ frame (squelette peint → la
+    // frame lourde se construit ensuite, squelette toujours visible).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _firstPaintDone = true);
+    });
   }
 
   @override
@@ -1001,7 +1018,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // squelette explicite émis par le provider (cache d'hier invalidé / cold
     // start). On rend alors un scaffold placeholder, jamais le spinner plein
     // écran ni le vrai `_buildContent`.
-    final isSkeleton = state is AsyncLoading || (data?.isSkeleton ?? false);
+    final isSkeleton = !_firstPaintDone ||
+        state is AsyncLoading ||
+        (data?.isSkeleton ?? false);
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
