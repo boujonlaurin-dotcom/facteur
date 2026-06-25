@@ -199,6 +199,10 @@ class Perspective:
     bias_stance: str  # left, center-left, center, center-right, right, unknown
     published_at: str | None = None
     description: str | None = None
+    # Fiabilité de la source (low/medium/mixed/high/unknown). Lecture seule de
+    # `Source.reliability_score` (Story 7.1) — aucune migration : la colonne
+    # existe déjà. "unknown" par défaut (beaucoup de sources non évaluées).
+    reliability_score: str | None = None
     # Langue détectée du titre ("fr", "en", autre — None = inconnu). Rempli
     # côté cluster depuis `Content.language` ; les perspectives Google News
     # restent None faute de row Content (le client traite null comme FR par
@@ -239,6 +243,8 @@ class PerspectiveService:
         self.max_results = max_results
         # Cache for DB bias lookups within a single request
         self._bias_cache: dict[str, str] = {}
+        # Cache for DB reliability lookups within a single request
+        self._reliability_cache: dict[str, str] = {}
 
     @asynccontextmanager
     async def _short_session(self):
@@ -266,6 +272,16 @@ class PerspectiveService:
             if stance != "unknown":
                 return stance
         return DOMAIN_BIAS_MAP.get(domain, "unknown")
+
+    def _extract_reliability_from_source(self, source) -> str:
+        """Reliability from an eager-loaded Source, default 'unknown'.
+
+        Lecture seule de `Source.reliability_score` (déjà chargé par la requête,
+        comme `bias_stance`). Pas de map en dur : la fiabilité ne vit qu'en base.
+        """
+        if source is not None and source.reliability_score:
+            return str(source.reliability_score.value)
+        return "unknown"
 
     async def resolve_bias(self, domain: str, source_name: str | None = None) -> str:
         """Resolve bias for a domain: DOMAIN_BIAS_MAP first, then DB fallback by URL, then by name."""
@@ -323,6 +339,68 @@ class PerspectiveService:
                 )
 
         self._bias_cache[cache_key] = "unknown"
+        return "unknown"
+
+    async def resolve_reliability(
+        self, domain: str, source_name: str | None = None
+    ) -> str:
+        """Resolve reliability for a domain (read-only Source.reliability_score).
+
+        Calqué sur [resolve_bias] mais sans map en dur (la fiabilité ne vit qu'en
+        base) : DB lookup par URL puis par nom, défaut "unknown". Beaucoup de
+        sources ne sont pas évaluées ⇒ "unknown" est le cas dominant attendu.
+        """
+        # 1. In-memory cache from prior DB lookups
+        cache_key = domain or source_name or ""
+        if cache_key in self._reliability_cache:
+            return self._reliability_cache[cache_key]
+
+        # 2. DB lookup if session available
+        if self._has_db():
+            try:
+                from app.models.source import Source
+
+                async with self._short_session() as session:
+                    if session is None:
+                        self._reliability_cache[cache_key] = "unknown"
+                        return "unknown"
+
+                    # 2a. Try domain match on source URL
+                    if domain:
+                        stmt = select(Source.reliability_score).where(
+                            Source.url.ilike(f"%{domain}%"),
+                            Source.is_active.is_(True),
+                        )
+                        result = await session.execute(stmt)
+                        score = result.scalar_one_or_none()
+
+                        if score and score != "unknown":
+                            val = str(getattr(score, "value", score))
+                            self._reliability_cache[cache_key] = val
+                            return val
+
+                    # 2b. Fallback: fuzzy match by source name (Google News name)
+                    if source_name and source_name != "Unknown":
+                        stmt = select(Source.reliability_score).where(
+                            Source.name.ilike(f"%{source_name}%"),
+                            Source.is_active.is_(True),
+                        )
+                        result = await session.execute(stmt)
+                        score = result.scalar_one_or_none()
+
+                        if score and score != "unknown":
+                            val = str(getattr(score, "value", score))
+                            self._reliability_cache[cache_key] = val
+                            return val
+            except Exception as e:
+                logger.warning(
+                    "resolve_reliability_db_error",
+                    domain=domain,
+                    source_name=source_name,
+                    error=str(e),
+                )
+
+        self._reliability_cache[cache_key] = "unknown"
         return "unknown"
 
     async def analyze_divergences(
@@ -697,6 +775,7 @@ class PerspectiveService:
             source_obj = row.source
             source_name = (source_obj.name or domain) if source_obj else domain
             bias = self._extract_bias_from_source(source_obj, domain)
+            reliability = self._extract_reliability_from_source(source_obj)
 
             perspectives.append(
                 Perspective(
@@ -705,6 +784,7 @@ class PerspectiveService:
                     source_name=source_name,
                     source_domain=domain,
                     bias_stance=bias,
+                    reliability_score=reliability,
                     published_at=row.published_at.isoformat()
                     if row.published_at
                     else None,
@@ -802,6 +882,7 @@ class PerspectiveService:
                 continue
 
             bias = self._extract_bias_from_source(source, domain)
+            reliability = self._extract_reliability_from_source(source)
 
             result.append(
                 Perspective(
@@ -810,6 +891,7 @@ class PerspectiveService:
                     source_name=source_name or domain,
                     source_domain=domain,
                     bias_stance=bias,
+                    reliability_score=reliability,
                     published_at=(
                         content.published_at.isoformat()
                         if getattr(content, "published_at", None)
@@ -1010,6 +1092,10 @@ class PerspectiveService:
 
                 # Get bias (DB-first fallback, then name match)
                 bias = await self.resolve_bias(domain, source_name=source_name)
+                # Get reliability (read-only DB lookup, same fallback chain)
+                reliability = await self.resolve_reliability(
+                    domain, source_name=source_name
+                )
 
                 # Clean HTML from RSS description snippet (cap at 300 chars)
                 description = None
@@ -1026,6 +1112,7 @@ class PerspectiveService:
                         source_name=source_name,
                         source_domain=domain,
                         bias_stance=bias,
+                        reliability_score=reliability,
                         published_at=pub_date_el.text
                         if pub_date_el is not None
                         else None,

@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Fiabilité",
+      "summary": "Indice de fiabilité de la source affiché sur les perspectives évaluées."
+    },
+    {
       "tag": "Lecture",
       "summary": "Carrousels plus nets : le bas des cartes ne se coupe plus quand leurs tailles diffèrent, et les points de défilement respirent mieux."
     },
