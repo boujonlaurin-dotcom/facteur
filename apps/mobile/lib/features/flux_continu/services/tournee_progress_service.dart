@@ -119,6 +119,21 @@ class TourneeProgressService {
     }
   }
 
+  /// QA : oublie **toutes** les clés « rituel matinal vu » (jour courant inclus)
+  /// pour rejouer le rituel au prochain cold-open. Cf. bloc QA `profile_screen`.
+  Future<void> resetMorningRitualShown() async {
+    try {
+      final prefs = await _prefs();
+      final keys = prefs
+          .getKeys()
+          .where((k) => k.startsWith(kMorningRitualPrefsKeyPrefix))
+          .toList();
+      await Future.wait(keys.map(prefs.remove));
+    } catch (e) {
+      debugPrint('TourneeProgress: resetMorningRitualShown failed: $e');
+    }
+  }
+
   Future<void> purgeOldPrefsKeys({DateTime? now}) async {
     try {
       final prefs = await _prefs();

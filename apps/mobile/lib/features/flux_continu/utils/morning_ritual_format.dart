@@ -12,7 +12,7 @@ import '../services/tournee_progress_service.dart';
 /// Conditions (décision PO #4 — jamais de fausse promesse « vient d'arriver ») :
 /// - le flux a du contenu réel (`!isSkeleton`, sections non vides) ;
 /// - le digest est présent, non périmé (`!isStaleFallback`) ;
-/// - sa `targetDate` tombe sur le `dayKey` du jour (bascule 7h30) ;
+/// - sa `targetDate` tombe sur le jour-tournée courant (`dayKey`, bascule 7h30) ;
 /// - le digest porte du contenu (`topics` ou `items`).
 bool isEditionReady(
   FluxContinuState? state,
@@ -22,11 +22,24 @@ bool isEditionReady(
   if (state == null || state.isSkeleton || state.sections.isEmpty) return false;
   if (digest == null || digest.isStaleFallback) return false;
   final today = now ?? DateTime.now();
-  if (TourneeProgressService.dayKey(digest.targetDate) !=
+  // `targetDate` est une **étiquette éditoriale date-nue** (backend :
+  // `str(today_paris())` → minuit local côté Dart). On compare donc son jour
+  // **calendaire brut** (Y-M-D) au `dayKey` du jour-tournée — surtout PAS en la
+  // repassant dans `dayKey()`, dont la bascule 7h30 retirerait un jour à tout
+  // minuit (< 07h30) et rendrait le gate perpétuellement faux.
+  if (editionDayKey(digest.targetDate) !=
       TourneeProgressService.dayKey(today)) {
     return false;
   }
   return digest.topics.isNotEmpty || digest.items.isNotEmpty;
+}
+
+/// Jour calendaire (`YYYY-MM-DD`) d'une `targetDate` éditoriale, à partir de ses
+/// composantes brutes (aucune conversion tz : c'est un libellé, pas un instant).
+String editionDayKey(DateTime date) {
+  final mm = date.month.toString().padLeft(2, '0');
+  final dd = date.day.toString().padLeft(2, '0');
+  return '${date.year.toString().padLeft(4, '0')}-$mm-$dd';
 }
 
 /// Libellé UI exact de La Grille dans le feed (`flux_continu_screen.dart`,

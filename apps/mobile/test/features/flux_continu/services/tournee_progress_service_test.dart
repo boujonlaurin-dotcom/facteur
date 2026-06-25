@@ -54,5 +54,19 @@ void main() {
       const svc = TourneeProgressService();
       expect(svc.isMorningRitualShownTodaySync(now: today), isFalse);
     });
+
+    test('resetMorningRitualShown (QA) oublie toutes les clés, jour courant inclus',
+        () async {
+      final todayKey = TourneeProgressService.morningRitualPrefsKey(today);
+      final oldKey = TourneeProgressService.morningRitualPrefsKey(yesterday);
+      final svc = await service({todayKey: true, oldKey: true});
+
+      await svc.resetMorningRitualShown();
+
+      expect(svc.isMorningRitualShownTodaySync(now: today), isFalse);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(todayKey), isNull);
+      expect(prefs.getBool(oldKey), isNull);
+    });
   });
 }

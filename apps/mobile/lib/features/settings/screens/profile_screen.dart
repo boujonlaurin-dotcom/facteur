@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,8 +9,15 @@ import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../flux_continu/providers/morning_ritual_qa_provider.dart';
+import '../../flux_continu/services/tournee_progress_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../widgets/profile_progression_card.dart';
+
+/// Le bloc QA (rituel matinal) n'est monté qu'en staging/dev : build debug
+/// **ou** canal beta (flavor staging). Jamais en prod (canal stable).
+bool get _showQaTools =>
+    kDebugMode || AppUpdateConstants.updateChannel == 'beta';
 
 /// Page « Profil » regroupant les réglages applicatifs accessibles depuis
 /// la sheet Réglages : compte, notifications, questionnaire, présentation
@@ -101,6 +108,42 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ],
             ),
+            if (_showQaTools) ...[
+              const SizedBox(height: FacteurSpacing.space6),
+              _Section(
+                title: 'RITUEL MATINAL (QA)',
+                children: [
+                  _Tile(
+                    icon: Icons.replay,
+                    title: 'Rejouer le rituel matinal',
+                    subtitle: 'Réaffiche « Ton édition vient d\'arriver » au '
+                        'prochain redémarrage',
+                    onTap: () async {
+                      await ref
+                          .read(tourneeProgressServiceProvider)
+                          .resetMorningRitualShown();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Rituel réarmé — relance l\'app pour le revoir.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _SwitchTile(
+                    icon: Icons.hourglass_empty,
+                    title: 'Forcer « édition pas prête »',
+                    subtitle: 'Valide le repli vers le feed (état B)',
+                    value: ref.watch(debugForceMorningRitualNotReadyProvider),
+                    onChanged: (v) => ref
+                        .read(debugForceMorningRitualNotReadyProvider.notifier)
+                        .state = v,
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: FacteurSpacing.space8),
           ],
         ),
@@ -151,6 +194,63 @@ class _Section extends StatelessWidget {
           child: Column(children: children),
         ),
       ],
+    );
+  }
+}
+
+/// Variante de [_Tile] avec un interrupteur (réglages QA on/off).
+class _SwitchTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _SwitchTile({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return InkWell(
+      onTap: () => onChanged(!value),
+      child: Padding(
+        padding: const EdgeInsets.all(FacteurSpacing.space4),
+        child: Row(
+          children: [
+            Icon(icon, color: colors.primary, size: 24),
+            const SizedBox(width: FacteurSpacing.space4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Switch(value: value, onChanged: onChanged),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -10,6 +10,7 @@ import 'package:facteur/core/providers/analytics_provider.dart';
 import 'package:facteur/features/digest/providers/digest_provider.dart';
 import 'package:facteur/features/feed/widgets/profile_avatar_button.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/flux_continu/providers/morning_ritual_qa_provider.dart';
 import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
 import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
 import 'package:facteur/features/gamification/widgets/streak_indicator.dart';
@@ -99,7 +100,10 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen> {
 
     final fluxState = ref.watch(fluxContinuProvider).valueOrNull;
     final digest = ref.watch(digestProvider).valueOrNull;
-    final editionReady = isEditionReady(fluxState, digest);
+    // Override QA (staging/dev) : permet de valider l'état « pas prête » à la
+    // demande. Sans effet en prod (le toggle qui le bascule n'y est pas monté).
+    final forceNotReady = ref.watch(debugForceMorningRitualNotReadyProvider);
+    final editionReady = !forceNotReady && isEditionReady(fluxState, digest);
 
     // Dès que l'édition est prête, on annule l'attente bornée (pas de forward).
     if (editionReady && !_revealHandled) {
@@ -119,16 +123,16 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen> {
       backgroundColor: colors.backgroundPrimary,
       body: Stack(
         children: [
-          // Fond vélo estompé (asset existant), discret en bas à droite.
+          // Visuel facteur (asset existant), présent mais doux, en bas à droite.
           Positioned(
-            right: -24,
-            bottom: -12,
+            right: -16,
+            bottom: -8,
             child: IgnorePointer(
               child: Opacity(
-                opacity: 0.06,
+                opacity: 0.16,
                 child: Image.asset(
                   'assets/notifications/facteur_bike.png',
-                  width: 240,
+                  width: 260,
                   fit: BoxFit.contain,
                 ),
               ),

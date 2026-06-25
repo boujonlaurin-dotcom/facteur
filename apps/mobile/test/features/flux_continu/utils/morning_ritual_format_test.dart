@@ -168,6 +168,20 @@ void main() {
       expect(isEditionReady(state(), digestResp(), now: now), isTrue);
     });
 
+    // Régression : le backend renvoie `target_date` date-nue → minuit local.
+    // L'ancien gate la repassait dans `dayKey()` (bascule 7h30) qui rabattait
+    // tout minuit sur la veille → édition jamais prête (bug E2E 24/06).
+    test('target_date à minuit du jour (date-nue backend) → prête', () {
+      expect(
+        isEditionReady(
+          state(),
+          digestResp(targetDate: DateTime(2026, 6, 23)),
+          now: now,
+        ),
+        isTrue,
+      );
+    });
+
     test('squelette → pas prête', () {
       expect(
         isEditionReady(state(skeleton: true), digestResp(), now: now),
