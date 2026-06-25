@@ -9,6 +9,16 @@
          requis par l'auto-update APK side-loaded, banni du Play Store. -->
     <!-- Story 10.1 — météo géolocalisée : coarse suffit pour la météo -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- open_filex (ouverture de l'APK téléchargé) injecte la famille
+         READ_MEDIA_* dans son propre manifest. L'app n'en a besoin sur AUCUN
+         flavor : open_filex passe par un FileProvider (URI content://, sans
+         permission) et le Photo Picker Android ne requiert aucune permission.
+         Retrait app-wide — sinon Google Play rejette au titre de la Photo &
+         Video Permissions policy (READ_MEDIA_IMAGES / READ_MEDIA_VIDEO). -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" tools:node="remove" />
     <application
         android:label="Facteur"
         android:name="${applicationName}"
