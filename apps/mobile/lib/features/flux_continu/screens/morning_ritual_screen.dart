@@ -134,6 +134,13 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
       unawaited(ref.read(analyticsServiceProvider).trackMorningRitualShown(
             dayKey: TourneeProgressService.dayKey(DateTime.now()),
           ));
+      // « Vu » dès la **révélation** (et non au tap CTA) : si l'utilisateur
+      // quitte sans ouvrir puis se reconnecte le même jour, l'enveloppe ne
+      // réapparaît pas. (Décision PO #4 préservée : le repli « pas prête »
+      // — `_forwardIfNotReady` — ne marque toujours pas « vu ».)
+      unawaited(
+        ref.read(tourneeProgressServiceProvider).setMorningRitualShownToday(),
+      );
     }
     setState(() => _phase = _Phase.ritual);
   }
@@ -167,11 +174,11 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     _exitController.forward();
   }
 
-  Future<void> _finishOpen() async {
+  void _finishOpen() {
     if (_navigated || !mounted) return;
     _navigated = true;
-    await ref.read(tourneeProgressServiceProvider).setMorningRitualShownToday();
-    if (!mounted) return;
+    // Le flag « vu » est déjà posé à la révélation (cf. _revealRitual) → pas
+    // d'await ici, on file au feed sans délai.
     context.go(RoutePaths.fluxContinu);
   }
 
@@ -528,8 +535,9 @@ class _PopulatingChipsState extends State<_PopulatingChips> {
   /// Clé interne de l'engrenage (révélé en dernier, après les chips).
   static const String _gearKey = ' gear';
 
-  /// Pas de base entre deux révélations dans une même salve.
-  static const Duration _staggerStep = Duration(milliseconds: 90);
+  /// Pas de base entre deux révélations dans une même salve (cadence « lettre
+  /// qui s'écrit » — volontairement posée).
+  static const Duration _staggerStep = Duration(milliseconds: 200);
 
   final Set<String> _revealed = <String>{};
   final Map<String, Timer> _timers = <String, Timer>{};
@@ -554,10 +562,10 @@ class _PopulatingChipsState extends State<_PopulatingChips> {
     super.dispose();
   }
 
-  /// Jitter déterministe (0..69 ms) dérivé du label : irrégularité stable d'un
+  /// Jitter déterministe (0..139 ms) dérivé du label : irrégularité stable d'un
   /// rebuild à l'autre, sans `Random` partagé ni `setState` global synchrone.
   Duration _jitterFor(String label) =>
-      Duration(milliseconds: (label.hashCode & 0x7fffffff) % 70);
+      Duration(milliseconds: (label.hashCode & 0x7fffffff) % 140);
 
   void _scheduleReveals() {
     if (widget.reduceMotion) {
@@ -583,7 +591,7 @@ class _PopulatingChipsState extends State<_PopulatingChips> {
     // n'est pas encore révélé (de nouvelles chips peuvent encore arriver).
     if (!_revealed.contains(_gearKey)) {
       _timers[_gearKey]?.cancel();
-      final delay = _staggerStep * newCount + const Duration(milliseconds: 120);
+      final delay = _staggerStep * newCount + const Duration(milliseconds: 220);
       _timers[_gearKey] = Timer(delay, () {
         _timers.remove(_gearKey);
         if (!mounted) return;
@@ -632,7 +640,7 @@ class _ChipReveal extends StatelessWidget {
     if (!animate) return child;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: FacteurDurations.medium,
+      duration: const Duration(milliseconds: 360),
       curve: Curves.easeOutBack,
       builder: (context, t, child) {
         return Opacity(
