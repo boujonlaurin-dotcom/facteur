@@ -35,7 +35,7 @@ void main() {
       .toList();
 
   group('CoverageSpectrumBar', () {
-    testWidgets('hauteur fixe 8, largeur déléguée, 5 segments montés',
+    testWidgets('hauteur fixe 11, largeur déléguée, 5 segments montés',
         (tester) async {
       await tester.pumpWidget(host(const {
         'left': 1,
@@ -54,7 +54,7 @@ void main() {
             )
             .first,
       );
-      expect(sized.height, 8);
+      expect(sized.height, 11);
       // Largeur non fixée par la barre (déléguée au parent).
       expect(sized.width, isNull);
 
@@ -98,6 +98,89 @@ void main() {
       // 5 segments montés mais tous à largeur nulle (rien de visible).
       expect(widths.length, 5);
       expect(widths.every((w) => w == 0), isTrue);
+    });
+
+    testWidgets('showAnchorLabels : repères Gauche / Droite sous la barre',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: const Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 150,
+              child: CoverageSpectrumBar(
+                distribution: {
+                  'left': 1,
+                  'center': 1,
+                  'right': 1,
+                },
+                showAnchorLabels: true,
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Gauche'), findsOneWidget);
+      expect(find.text('Droite'), findsOneWidget);
+      // Permanents : présents même sans interaction.
+      // La barre conserve sa largeur pleine déléguée (150) malgré la Column.
+      expect(
+        tester.getSize(find.byType(CoverageSpectrumBar)).width,
+        closeTo(150, 0.5),
+      );
+    });
+
+    testWidgets('sans showAnchorLabels : aucun repère (défaut)',
+        (tester) async {
+      await tester.pumpWidget(host(const {
+        'left': 1,
+        'center': 1,
+        'right': 1,
+      }));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Gauche'), findsNothing);
+      expect(find.text('Droite'), findsNothing);
+    });
+
+    testWidgets('interactive : tap mappe la position x → clé de stance',
+        (tester) async {
+      final tapped = <String>[];
+      await tester.pumpWidget(MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 150,
+              child: CoverageSpectrumBar(
+                distribution: const {
+                  'left': 1,
+                  'center-left': 1,
+                  'center': 1,
+                  'center-right': 1,
+                  'right': 1,
+                },
+                onSegmentTap: tapped.add,
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // Cible tactile élargie à 24 px de haut quand interactive.
+      expect(tester.getSize(find.byType(CoverageSpectrumBar)).height, 24);
+
+      final rect = tester.getRect(find.byType(CoverageSpectrumBar));
+      // Tap à gauche → 'left' ; tap à droite → 'right'.
+      await tester.tapAt(Offset(rect.left + 5, rect.center.dy));
+      await tester.tapAt(Offset(rect.right - 5, rect.center.dy));
+      await tester.pumpAndSettle();
+
+      expect(tapped.first, 'left');
+      expect(tapped.last, 'right');
     });
   });
 }

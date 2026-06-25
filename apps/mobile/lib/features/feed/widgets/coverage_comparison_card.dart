@@ -4,6 +4,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../../widgets/design/facteur_image.dart';
 import 'diff_title.dart';
@@ -24,10 +25,16 @@ class CoverageComparisonCard extends StatelessWidget {
   /// le scroll au-delà (nudge CTA). `null` sur les cartes suivantes.
   final Key? firstCardKey;
 
+  /// Tap sur la zone source (pastille + nom) → ouvre la [SourceDetailModal].
+  /// `null` quand la source n'est pas suivie par l'utilisateur ⇒ la zone retombe
+  /// sur l'ouverture de l'article (pas de zone morte).
+  final VoidCallback? onSourceTap;
+
   const CoverageComparisonCard({
     super.key,
     required this.perspective,
     this.firstCardKey,
+    this.onSourceTap,
   });
 
   /// Temps relatif depuis `publishedAt` (`timeago` `fr_short`). `null` si la
@@ -51,6 +58,14 @@ class CoverageComparisonCard extends StatelessWidget {
       width: 248,
       child: FacteurCard(
         onTap: () => openPerspectiveReader(context, perspective),
+        // Long-press → aperçu flottant (titre + chapô + source) ; relâché = ferme.
+        onLongPressStart: (_) => ArticlePreviewOverlay.show(
+          context,
+          perspective.toPreviewContent(),
+        ),
+        onLongPressMoveUpdate: (d) =>
+            ArticlePreviewOverlay.updateScroll(d.localOffsetFromOrigin.dy),
+        onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
         backgroundColor: colors.surface,
         borderRadius: 16,
         padding: const EdgeInsets.all(15),
@@ -88,7 +103,11 @@ class CoverageComparisonCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-            _Footer(perspective: perspective, biasColor: biasColor),
+            _Footer(
+              perspective: perspective,
+              biasColor: biasColor,
+              onSourceTap: onSourceTap,
+            ),
           ],
         ),
       ),
@@ -100,13 +119,49 @@ class _Footer extends StatelessWidget {
   final Perspective perspective;
   final Color biasColor;
 
-  const _Footer({required this.perspective, required this.biasColor});
+  /// Tap sur la zone source → [SourceDetailModal] (cf.
+  /// [CoverageComparisonCard.onSourceTap]). `null` ⇒ zone non interactive.
+  final VoidCallback? onSourceTap;
+
+  const _Footer({
+    required this.perspective,
+    required this.biasColor,
+    this.onSourceTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final timeLabel = CoverageComparisonCard.relativeTime(
       perspective.publishedAt,
+    );
+
+    // Zone source (pastille + nom) — rendue tappable quand [onSourceTap] est
+    // fourni. Le GestureDetector enfant l'emporte sur le tap de la carte pour
+    // cette zone ; absent, la zone retombe sur l'ouverture article (pas de zone
+    // morte → on ne pose pas de detector opaque sans callback).
+    final sourceGroup = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SourcePastille(
+          domain: perspective.sourceDomain,
+          name: perspective.sourceName,
+          colors: colors,
+        ),
+        const SizedBox(width: 7),
+        Flexible(
+          child: Text(
+            perspective.sourceName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.dmSans(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: colors.textPrimary,
+            ),
+          ),
+        ),
+      ],
     );
 
     // Groupe source + biais à gauche (shrink via le nom), temps à droite.
@@ -119,23 +174,14 @@ class _Footer extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _SourcePastille(
-                domain: perspective.sourceDomain,
-                name: perspective.sourceName,
-                colors: colors,
-              ),
-              const SizedBox(width: 7),
               Flexible(
-                child: Text(
-                  perspective.sourceName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: colors.textPrimary,
-                  ),
-                ),
+                child: onSourceTap != null
+                    ? GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onSourceTap,
+                        child: sourceGroup,
+                      )
+                    : sourceGroup,
               ),
               const SizedBox(width: 9),
               // Chip biais (dot + libellé MAJ coloré).

@@ -3,6 +3,16 @@
     {
       "tag": "Tournée",
       "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
+      "tag": "Perspectives",
+      "summary": "Couverture médiatique plus lisible : repères Gauche/Droite sous la barre, source cliquable et aperçu de l'article au toucher prolongé."
+    },
+    {
+      "tag": "Reader",
+      "summary": "La barre de biais de la Couverture médiatique passe en pleine largeur et devient interactive : touche un bord politique pour filer vers ces articles. Et à l'ouverture d'un article sur son site, le bandeau cookies n'est plus masqué."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Ta carte du jour est plus compacte (titres resserrés) et tient mieux à l'écran, et la fin de tournée est épurée avec des idées d'activités plus inspirantes."
     },
     {
       "tag": "Lecture",

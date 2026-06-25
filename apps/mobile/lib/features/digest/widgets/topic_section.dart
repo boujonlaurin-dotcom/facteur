@@ -894,6 +894,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   sourceDomain: p.sourceDomain,
                   biasStance: p.biasStance,
                   publishedAt: p.publishedAt,
+                  description: p.description,
                 ))
             .toList(),
         biasDistribution: response.biasDistribution,

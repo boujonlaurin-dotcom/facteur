@@ -4,7 +4,7 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/widgets/coverage_spectrum_bar.dart';
 
 void main() {
-  testWidgets('chaque segment a une taille non nulle (h8, largeur bornée)',
+  testWidgets('chaque segment a une taille non nulle (h11, largeur bornée)',
       (tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: FacteurTheme.lightTheme,
@@ -22,7 +22,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final szBox = tester.getSize(find.byType(CoverageSpectrumBar));
-    expect(szBox.height, 8);
+    expect(szBox.height, 11);
 
     final boxes = find.byType(DecoratedBox);
     final count = boxes.evaluate().length;

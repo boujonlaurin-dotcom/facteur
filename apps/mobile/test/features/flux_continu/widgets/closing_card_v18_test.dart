@@ -62,38 +62,23 @@ void main() {
   });
 
   group('ClosingCardV18', () {
-    testWidgets('renders the personalized recap line when provided',
+    testWidgets('renders the heading without a recap description',
         (tester) async {
       await tester.pumpWidget(_wrap(
-        const ClosingCardV18(
-          articleCount: 6,
-          recapLine: 'Tu as lu sur la Tech (4) et la Politique (2).',
-        ),
+        const ClosingCardV18(),
       ));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('Tu as lu sur la Tech (4) et la Politique (2).'),
-        findsOneWidget,
-      );
-      // Le fallback « X étapes parcourues » ne doit pas s'afficher.
+      expect(find.text('Tu es à jour'), findsOneWidget);
+      // La ligne de récap « Tu as lu… » a été retirée.
+      expect(find.textContaining('Tu as lu'), findsNothing);
       expect(find.textContaining('étape'), findsNothing);
-    });
-
-    testWidgets('falls back to step label when recapLine is null',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        const ClosingCardV18(articleCount: 3),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('3 étapes parcourues'), findsOneWidget);
     });
 
     testWidgets('always shows three activity prompts under the amorce',
         (tester) async {
       await tester.pumpWidget(_wrap(
-        const ClosingCardV18(articleCount: 0),
+        const ClosingCardV18(),
         condition: WeatherCondition.sunny,
       ));
       await tester.pumpAndSettle();
@@ -110,7 +95,7 @@ void main() {
     testWidgets('keeps prompts indoor-only when the weather is poor',
         (tester) async {
       await tester.pumpWidget(_wrap(
-        const ClosingCardV18(articleCount: 0),
+        const ClosingCardV18(),
         condition: WeatherCondition.rainy,
       ));
       await tester.pumpAndSettle();
