@@ -26,7 +26,6 @@ import '../../custom_topics/widgets/topic_chip.dart';
 import '../../detail/content_preview_mapper.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
-import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
@@ -43,7 +42,6 @@ import '../providers/flux_continu_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
-import '../utils/closing_recap.dart';
 import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
@@ -1173,16 +1171,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final notifier = ref.read(fluxContinuProvider.notifier);
     final colors = context.facteurColors;
     final impressionSlot = ref.watch(firstImpressionSlotProvider);
-    final totalArticles = state.sections.fold<int>(
-      0,
-      (sum, s) => sum + s.totalCount,
-    );
-    // Récap personnalisé de fin de tournée (articles lus par section). Null
-    // quand rien n'a été lu → la carte retombe sur « X étapes parcourues ».
-    final consumedIds = ref.watch(consumedContentIdsProvider);
-    final recapLine = formatClosingRecap(
-      buildClosingRecap(sections: state.sections, consumedIds: consumedIds),
-    );
     // Android peut fermer l'app programmatiquement ; iOS l'interdit (App
     // Store) → on y montre une phrase de clôture au lieu du bouton.
     final isAndroid = defaultTargetPlatform == TargetPlatform.android;
@@ -1262,8 +1250,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
               child: KeyedSubtree(
                 key: _closingKey,
                 child: ClosingCardV18(
-                  articleCount: totalArticles,
-                  recapLine: recapLine,
                   onContinue: () => context.go(RoutePaths.flaner),
                   onClose: isAndroid ? () => SystemNavigator.pop() : null,
                   closeHint: isAndroid

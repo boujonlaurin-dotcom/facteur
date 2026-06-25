@@ -14,13 +14,10 @@ import 'tournee_cta_buttons.dart';
 /// Layout per maquette V6 :
 /// - "FIN DE TOURNÉE" stamp Courier Prime 10 w700, color/border #2E7D32,
 ///   rotation -2°.
-/// - Heading "Vous êtes à jour" Fraunces 700 24px.
-/// - Description (DM Sans 13, line-height 1.5, max-w 280, centered) — "X
-///   étape(s) parcourue(s)" or "Tournée terminée" when empty.
+/// - Heading "Tu es à jour" Fraunces 700 24px.
 /// - Primary CTA "Continuer à Flâner" (background #D35400) + ghost CTA
 ///   "Refermer pour aujourd'hui" (border 1.5px rgba(0,0,0,0.1)).
 class ClosingCardV18 extends ConsumerWidget {
-  final int articleCount;
   final VoidCallback? onContinue;
   final VoidCallback? onClose;
 
@@ -29,17 +26,11 @@ class ClosingCardV18 extends ConsumerWidget {
   /// par l'App Store). Ignorée si [onClose] est fourni (cas Android).
   final String? closeHint;
 
-  /// Récap personnalisé de ce qui a été lu (« Tu as lu sur la Tech (4)… »).
-  /// Null quand rien n'a été lu → retombe sur [_stepLabel].
-  final String? recapLine;
-
   const ClosingCardV18({
     super.key,
-    required this.articleCount,
     this.onContinue,
     this.onClose,
     this.closeHint,
-    this.recapLine,
   });
 
   @override
@@ -100,7 +91,7 @@ class ClosingCardV18 extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Vous êtes à jour',
+              'Tu es à jour',
               textAlign: TextAlign.center,
               style: GoogleFonts.fraunces(
                 fontSize: 24,
@@ -108,19 +99,6 @@ class ClosingCardV18 extends ConsumerWidget {
                 height: 1.1,
                 letterSpacing: -0.4,
                 color: colors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 280),
-              child: Text(
-                recapLine ?? _stepLabel(articleCount),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: colors.textSecondary,
-                ),
               ),
             ),
             const SizedBox(height: 18),
@@ -159,12 +137,6 @@ class ClosingCardV18 extends ConsumerWidget {
       ),
     );
   }
-
-  String _stepLabel(int count) {
-    if (count <= 0) return 'Tournée terminée';
-    final plural = count > 1 ? 's' : '';
-    return '$count étape$plural parcourue$plural';
-  }
 }
 
 /// Bloc discret « Et si tu en profitais pour… » : trois propositions tangibles
@@ -192,38 +164,32 @@ class _ActivitySuggestions extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: colors.primary.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(FacteurRadius.medium),
-          ),
-          child: Column(
-            children: [
-              for (final activity in activities)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  child: Row(
-                    children: [
-                      Text(activity.emoji, style: const TextStyle(fontSize: 17)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          activity.prompt,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            height: 1.3,
-                            color: colors.textPrimary,
-                          ),
+        // Fond blanc (plus de container orange) : les propositions reposent
+        // directement sur la surface de la carte pour alléger la fin de tournée.
+        Column(
+          children: [
+            for (final activity in activities)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(
+                  children: [
+                    Text(activity.emoji, style: const TextStyle(fontSize: 17)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        activity.prompt,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
+                          color: colors.textPrimary,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ],
     );

@@ -27,7 +27,7 @@ void main() {
       await tester.pumpWidget(host(DeepRecommendationCard(reco: reco())));
       await tester.pumpAndSettle();
 
-      expect(find.text('LE PAS DE RECUL'), findsOneWidget);
+      expect(find.text('LE PAS DE RECUL · FACTEUR'), findsOneWidget);
       expect(find.text('Le fond du dossier'), findsOneWidget);
       expect(find.text('Le Monde'), findsOneWidget);
     });
