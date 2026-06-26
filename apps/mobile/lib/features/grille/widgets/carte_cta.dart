@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../grille_constants.dart';
@@ -155,20 +154,18 @@ class CarteCta extends StatelessWidget {
             essais: _deja ? today.essais : const [],
             teaser: !_deja,
           ),
-          if (!_deja) ...[
-            const SizedBox(height: 14),
-            Text(
-              'Trouve le mot du jour',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.fraunces(
-                fontSize: 25,
-                fontWeight: FontWeight.w700,
-                height: 1.1,
-                letterSpacing: -0.5,
-                color: c.textPrimary,
-              ),
+          const SizedBox(height: 14),
+          Text(
+            _deja ? 'Bien joué !' : 'Trouve le mot du jour',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.fraunces(
+              fontSize: 25,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+              letterSpacing: -0.5,
+              color: c.textPrimary,
             ),
-          ],
+          ),
           const SizedBox(height: 10),
           Text(
             _intro(),
