@@ -20,7 +20,6 @@ import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
 import 'package:facteur/features/flux_continu/widgets/tournee_composer_sheet.dart';
 import 'package:facteur/features/gamification/widgets/streak_indicator.dart';
 import 'package:facteur/shared/widgets/loaders/loading_view.dart';
-import 'package:facteur/widgets/design/facteur_button.dart';
 import 'package:facteur/widgets/design/facteur_logo.dart';
 
 /// Rituel matinal « Ton édition vient d'arriver » (Story 28.1, finition 28.2).
@@ -30,8 +29,8 @@ import 'package:facteur/widgets/design/facteur_logo.dart';
 ///
 /// ```
 /// LOADER (enveloppe + citation, le temps que l'édition se calcule)
-///   → RITUEL (greeting + sommaire qui se peuple, smooth et irrégulier)
-///   → tap CTA → SLIDE GAUCHE → FEED (déjà préchargé, zéro loader)
+///   → RITUEL (greeting + sommaire qui se peuple à cadence régulière)
+///   → glisse vers le haut → SLIDE HAUT → FEED (déjà préchargé, zéro loader)
 /// ```
 ///
 /// Le loader **précède** le rituel : il achète le temps de calcul des thèmes,
@@ -99,7 +98,7 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
       });
     _slideOut = Tween<Offset>(
       begin: Offset.zero,
-      end: const Offset(-1, 0),
+      end: const Offset(0, -1),
     ).animate(
       CurvedAnimation(parent: _exitController, curve: Curves.easeInOutCubic),
     );
@@ -157,8 +156,9 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     _go(RoutePaths.fluxContinu);
   }
 
-  /// Tap CTA : slide doux vers la gauche, puis feed (déjà préchargé → arrivée
-  /// instantanée, zéro loader intermédiaire). reduceMotion → go direct.
+  /// Glisse vers le haut (ou tap sur l'indice) : slide doux vers le haut, puis
+  /// feed (déjà préchargé → arrivée instantanée, zéro loader intermédiaire).
+  /// reduceMotion → go direct.
   void _open() {
     if (_phase == _Phase.exiting) return;
     unawaited(ref.read(analyticsServiceProvider).trackMorningRitualOpened(
@@ -198,7 +198,17 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     // Override QA (staging/dev) : permet de valider l'état « pas prête » à la
     // demande. Sans effet en prod (le toggle qui le bascule n'y est pas monté).
     final forceNotReady = ref.watch(debugForceMorningRitualNotReadyProvider);
-    final ready = !forceNotReady && isEditionReady(fluxState, digest);
+    final gateReady = isEditionReady(fluxState, digest);
+    final ready = !forceNotReady && gateReady;
+
+    // « Connu pas-prêt » : on SAIT que le rituel ne se révélera pas — soit le
+    // toggle QA force le repli, soit le flux a chargé du contenu réel
+    // (non-skeleton, sections non vides) mais le gate le refuse (digest périmé /
+    // mauvais jour). Tant que le flux est encore skeleton/null, l'état reste
+    // « inconnu » (vrai chargement) → on n'éteint rien (flux matin nominal).
+    final fluxLoaded =
+        fluxState != null && !fluxState.isSkeleton && fluxState.sections.isNotEmpty;
+    final knownNotReady = forceNotReady || (fluxLoaded && !gateReady);
 
     // Suit l'état du gate ; déclenche la révélation hors-build (post-frame)
     // pour ne jamais appeler setState pendant le build.
@@ -209,6 +219,16 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
           _maybeReveal(reduceMotion: reduceMotion);
         });
       }
+    } else if (_phase == _Phase.ritual && forceNotReady) {
+      // Le rituel est déjà révélé mais le toggle QA « pas prête » est basculé sur
+      // une instance d'écran conservée en mémoire → on file au feed pour que la
+      // QA puisse rejouer le repli sans reload. Restreint à `forceNotReady` (pas
+      // au `knownNotReady` général) : un digest périmé arrivant *après* la
+      // révélation ne doit pas éjecter l'utilisateur d'un rituel déjà ouvert.
+      // Inerte en prod (le toggle n'y est jamais monté).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _phase == _Phase.ritual) _go(RoutePaths.fluxContinu);
+      });
     }
 
     // Diagnostic QA (staging/dev) : trace le détail du gate à chaque rebuild
@@ -222,9 +242,12 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
 
     Widget body;
     if (_phase == _Phase.loading) {
-      body = const _IntroLoader(
-        key: ValueKey('morning-loader'),
+      body = _IntroLoader(
+        key: const ValueKey('morning-loader'),
         revealEditorialAfter: _editorialReveal,
+        // Dans le flux « connu pas-prêt » (repli vers le feed), on n'affiche pas
+        // l'enveloppe : ce n'est pas un rituel, juste un court loader transitoire.
+        showEnvelope: !knownNotReady,
       );
     } else {
       // Sommaire calculé seulement en phase rituel : inutile sous le loader (qui
@@ -243,6 +266,15 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
         reduceMotion: reduceMotion,
         onOpen: _open,
         onPersonalize: () => showTourneeComposerSheet(context),
+      );
+      // Glisse vers le haut (n'importe où sur le rituel) → ouverture. Le tap sur
+      // l'indice « Glisse vers le haut » reste un repli accessible (cf. onOpen).
+      ritual = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragEnd: (details) {
+          if ((details.primaryVelocity ?? 0) < -120) _open();
+        },
+        child: ritual,
       );
       if (_phase == _Phase.exiting) {
         ritual = SlideTransition(
@@ -290,7 +322,16 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
 class _IntroLoader extends StatelessWidget {
   final Duration revealEditorialAfter;
 
-  const _IntroLoader({super.key, required this.revealEditorialAfter});
+  /// Affiche l'enveloppe au-dessus du loader (centrepiece cohérent loader ↔
+  /// rituel). Désactivé dans le flux « connu pas-prêt » : pas de rituel à venir,
+  /// donc pas d'enveloppe — juste un court loader avant le repli vers le feed.
+  final bool showEnvelope;
+
+  const _IntroLoader({
+    super.key,
+    required this.revealEditorialAfter,
+    this.showEnvelope = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -299,8 +340,10 @@ class _IntroLoader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _RitualHeader(),
-          const SizedBox(height: FacteurSpacing.space4),
-          const _EnvelopeHero(),
+          if (showEnvelope) ...[
+            const SizedBox(height: FacteurSpacing.space4),
+            const _EnvelopeHero(),
+          ],
           Expanded(
             child: LoadingView(revealEditorialAfter: revealEditorialAfter),
           ),
@@ -396,13 +439,7 @@ class MorningRitualContent extends StatelessWidget {
           const SizedBox(height: FacteurSpacing.space6),
           const _EnvelopeHero(),
           const SizedBox(height: FacteurSpacing.space6),
-          Center(
-            child: FacteurButton(
-              label: 'Ouvrir l\'édition',
-              icon: Icons.arrow_forward,
-              onPressed: onOpen,
-            ),
-          ),
+          _SwipeUpHint(onTap: onOpen, reduceMotion: reduceMotion),
           const SizedBox(height: FacteurSpacing.space8),
           _EditionSummary(
             entries: entries,
@@ -410,6 +447,80 @@ class MorningRitualContent extends StatelessWidget {
             onPersonalize: onPersonalize,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Indice d'ouverture : chevron vers le haut + libellé, animé d'un va-et-vient
+/// vertical doux (nudge) qui invite à **glisser vers le haut**. Tape = repli
+/// accessible (ouvre aussi). `reduceMotion` → statique, sans boucle.
+class _SwipeUpHint extends StatefulWidget {
+  final VoidCallback onTap;
+  final bool reduceMotion;
+
+  const _SwipeUpHint({required this.onTap, required this.reduceMotion});
+
+  @override
+  State<_SwipeUpHint> createState() => _SwipeUpHintState();
+}
+
+class _SwipeUpHintState extends State<_SwipeUpHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _bob;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _bob = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
+    if (!widget.reduceMotion) _controller.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Semantics(
+      button: true,
+      label: 'Ouvrir mon essentiel',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          widget.onTap();
+        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedBuilder(
+              animation: _bob,
+              builder: (context, child) => Transform.translate(
+                offset: Offset(0, -6 * _bob.value),
+                child: Opacity(opacity: 0.5 + 0.5 * _bob.value, child: child),
+              ),
+              child: Icon(
+                Icons.keyboard_arrow_up_rounded,
+                size: 34,
+                color: colors.primary,
+              ),
+            ),
+            const SizedBox(height: FacteurSpacing.space1),
+            Text(
+              'Glisse vers le haut',
+              style: FacteurTypography.labelLarge(colors.textSecondary),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -510,12 +621,12 @@ class _EditionSummary extends StatelessWidget {
   }
 }
 
-/// Wrap de chips qui se révèlent **une à une**, de façon smooth et irrégulière,
-/// comme si la lettre du jour s'écrivait. Les sections arrivant progressivement
-/// (via `fluxContinuProvider`), à chaque rebuild on diffe les nouvelles entrées
-/// et on les anime avec un délai = pas de base + jitter déterministe par label.
-/// L'engrenage de personnalisation est révélé **après** la dernière chip.
-/// `reduceMotion` → tout apparaît immédiatement, sans stagger.
+/// Wrap de chips qui se révèlent **une à une, à cadence régulière** (~500 ms),
+/// comme si la lettre du jour s'écrivait. Le rythme est **découplé des salves
+/// du flux** : peu importe que les sections arrivent groupées (squelette → base
+/// → complet), une pompe interne en révèle exactement une par intervalle, dans
+/// l'ordre du feed. L'engrenage de personnalisation est révélé **après** la
+/// dernière chip. `reduceMotion` → tout apparaît immédiatement, sans cadence.
 class _PopulatingChips extends StatefulWidget {
   final List<EditionSummaryEntry> entries;
   final bool reduceMotion;
@@ -535,69 +646,76 @@ class _PopulatingChipsState extends State<_PopulatingChips> {
   /// Clé interne de l'engrenage (révélé en dernier, après les chips).
   static const String _gearKey = ' gear';
 
-  /// Pas de base entre deux révélations dans une même salve (cadence « lettre
-  /// qui s'écrit » — volontairement posée).
-  static const Duration _staggerStep = Duration(milliseconds: 200);
+  /// Cadence régulière entre deux révélations : un thème toutes les ~500 ms,
+  /// quel que soit l'ordre/la salve d'arrivée des sections. Volontairement posée
+  /// et sereine — « la lettre du jour qui s'écrit ».
+  static const Duration _revealInterval = Duration(milliseconds: 500);
 
   final Set<String> _revealed = <String>{};
-  final Map<String, Timer> _timers = <String, Timer>{};
+  Timer? _pump;
 
   @override
   void initState() {
     super.initState();
-    _scheduleReveals();
+    if (widget.reduceMotion) {
+      _revealAll();
+      return;
+    }
+    // 1re chip tout de suite (pré-build, donc sans `setState`), puis la pompe
+    // prend le relais à cadence régulière.
+    final first = _firstPending();
+    if (first != null) _revealed.add(first);
+    _scheduleNext();
   }
 
   @override
   void didUpdateWidget(_PopulatingChips oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _scheduleReveals();
+    if (widget.reduceMotion) {
+      setState(_revealAll);
+      return;
+    }
+    // De nouvelles sections sont peut-être arrivées : relance la pompe si elle
+    // était au repos (le garde anti-doublon évite d'empiler deux timers).
+    _scheduleNext();
   }
 
   @override
   void dispose() {
-    for (final t in _timers.values) {
-      t.cancel();
-    }
+    _pump?.cancel();
     super.dispose();
   }
 
-  /// Jitter déterministe (0..139 ms) dérivé du label : irrégularité stable d'un
-  /// rebuild à l'autre, sans `Random` partagé ni `setState` global synchrone.
-  Duration _jitterFor(String label) =>
-      Duration(milliseconds: (label.hashCode & 0x7fffffff) % 140);
+  void _revealAll() {
+    for (final e in widget.entries) {
+      _revealed.add(e.label);
+    }
+    _revealed.add(_gearKey);
+  }
 
-  void _scheduleReveals() {
-    if (widget.reduceMotion) {
-      for (final e in widget.entries) {
-        _revealed.add(e.label);
-      }
-      _revealed.add(_gearKey);
+  /// Prochaine clé à révéler, dans l'ordre du feed (sections d'abord, engrenage
+  /// en dernier). `null` quand tout est déjà révélé.
+  String? _firstPending() {
+    for (final e in widget.entries) {
+      if (!_revealed.contains(e.label)) return e.label;
+    }
+    if (!_revealed.contains(_gearKey)) return _gearKey;
+    return null;
+  }
+
+  void _scheduleNext() {
+    if (_pump?.isActive ?? false) return;
+    if (_firstPending() == null) {
+      _pump = null;
       return;
     }
-    var newCount = 0;
-    for (final entry in widget.entries) {
-      final label = entry.label;
-      if (_revealed.contains(label) || _timers.containsKey(label)) continue;
-      final delay = _staggerStep * newCount + _jitterFor(label);
-      newCount++;
-      _timers[label] = Timer(delay, () {
-        _timers.remove(label);
-        if (!mounted) return;
-        setState(() => _revealed.add(label));
-      });
-    }
-    // L'engrenage reste en dernier : reprogrammé après chaque salve tant qu'il
-    // n'est pas encore révélé (de nouvelles chips peuvent encore arriver).
-    if (!_revealed.contains(_gearKey)) {
-      _timers[_gearKey]?.cancel();
-      final delay = _staggerStep * newCount + const Duration(milliseconds: 220);
-      _timers[_gearKey] = Timer(delay, () {
-        _timers.remove(_gearKey);
-        if (!mounted) return;
-        setState(() => _revealed.add(_gearKey));
-      });
-    }
+    _pump = Timer(_revealInterval, () {
+      _pump = null;
+      if (!mounted) return;
+      final next = _firstPending();
+      if (next != null) setState(() => _revealed.add(next));
+      _scheduleNext();
+    });
   }
 
   @override
@@ -640,7 +758,7 @@ class _ChipReveal extends StatelessWidget {
     if (!animate) return child;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 360),
+      duration: const Duration(milliseconds: 480),
       curve: Curves.easeOutBack,
       builder: (context, t, child) {
         return Opacity(

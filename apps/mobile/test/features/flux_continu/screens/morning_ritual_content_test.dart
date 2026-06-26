@@ -70,7 +70,8 @@ void main() {
       expect(find.text('Technologie'), findsOneWidget);
       expect(find.text('Actus du jour'), findsOneWidget);
       expect(find.text('Mot du jour'), findsOneWidget);
-      expect(find.text('Ouvrir l\'édition'), findsOneWidget);
+      // CTA remplacé par l'indice « glisse vers le haut ».
+      expect(find.text('Glisse vers le haut'), findsOneWidget);
     });
 
     testWidgets('peuplement : chips arrivant en 2 temps finissent visibles', (
@@ -94,24 +95,29 @@ void main() {
         ),
       ));
 
-      // 1er temps : la première chip se révèle au fil du stagger.
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
+      // 1re chip révélée tout de suite (cadence régulière côté pompe). Pas de
+      // `pumpAndSettle` ici : l'indice « glisse vers le haut » boucle son nudge.
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('Technologie'), findsOneWidget);
 
-      // 2e temps : de nouvelles sections arrivent → elles se peuplent à leur tour.
+      // 2e temps : de nouvelles sections arrivent → elles se peuplent une à une
+      // au rythme de la pompe (~500 ms/chip), pas en salve.
       notifier.value = [
         entry('Technologie'),
         entry('Actus du jour'),
         entry('Bonnes Nouvelles'),
       ];
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pumpAndSettle();
+      await tester.pump(); // applique le didUpdateWidget
+      await tester.pump(const Duration(milliseconds: 600)); // Actus
+      await tester.pump(const Duration(milliseconds: 600)); // Bonnes Nouvelles
 
       expect(find.text('Technologie'), findsOneWidget);
       expect(find.text('Actus du jour'), findsOneWidget);
       expect(find.text('Bonnes Nouvelles'), findsOneWidget);
+
+      // Laisse la pompe révéler l'engrenage et se mettre au repos (aucun timer
+      // en attente à la fin du test).
+      await tester.pump(const Duration(seconds: 1));
     });
   });
 }
