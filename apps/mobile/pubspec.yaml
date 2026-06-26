@@ -88,12 +88,16 @@ dependencies:
   # Spotlight coachmark (Story 16.1 Welcome Tour v2)
   tutorial_coach_mark: ^1.2.12
 
-  # Auto Update (Android APK)
+  # Auto Update (Android APK — flavor beta side-load uniquement)
   package_info_plus: ^8.0.0
   path_provider: ^2.1.2
   open_filex: ^4.5.0
   flutter_downloader: ^1.11.8
   flutter_inappwebview: ^6.1.5
+
+  # Google Play In-App Updates (flavor playstore uniquement — invite native).
+  # Android-only ; lève PlatformException ailleurs → gate par Platform.isAndroid.
+  in_app_update: ^4.2.3
 
   # PWA install prompt detection (Story web.1 — iOS Safari add-to-home)
   web: ^1.1.0

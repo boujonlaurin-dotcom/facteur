@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Mise à jour",
+      "summary": "Sur Android, les mises à jour passent désormais par une invite native du Play Store, plus fiable, avec téléchargement en arrière-plan."
+    },
+    {
+      "tag": "Mise à jour",
       "summary": "Facteur te prévient quand une nouvelle version est disponible sur l'App Store, et t'invite à mettre à jour."
     },
     {
