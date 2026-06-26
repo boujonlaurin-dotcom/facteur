@@ -118,9 +118,9 @@ FeedThemeSection _sourceSection({
   );
 }
 
-/// Finder du chevron « > » de navigation rendu dans le titre du banner.
-Finder _chevron() =>
-    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.bold));
+/// Finder du chevron « › » de navigation, désormais rendu comme glyphe texte
+/// intégré au titre du banner (Text.rich) plutôt qu'une icône Phosphor.
+Finder _chevron() => find.textContaining('›', findRichText: true);
 
 void main() {
   setUpAll(() {
@@ -242,7 +242,7 @@ void main() {
       expect(find.byType(FluxContinuArticleCard), findsOneWidget);
       // Le footer « riche » reste replié : un simple bouton renommé qui mène
       // droit au catalogue filtré (plus de dépli in-place).
-      expect(find.text('Ajouter plus de sources (Tech)'), findsOneWidget);
+      expect(find.text('Plus de sources (Tech)'), findsOneWidget);
       expect(find.text('Chercher une source Tech'), findsNothing);
     });
   });

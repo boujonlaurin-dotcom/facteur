@@ -358,7 +358,7 @@ class SectionBlock extends StatelessWidget {
               themeSlug: themeSlug,
               label: label,
               initiallyExpanded: true,
-              fallbackCtaLabel: 'Ajouter plus de sources',
+              fallbackCtaLabel: 'Plus de sources',
             ),
           // Thème **riche** (assez d'articles) → footer « Étoffer » **replié** :
           // un bouton discret qui ne charge les sources qu'au tap, pour garder

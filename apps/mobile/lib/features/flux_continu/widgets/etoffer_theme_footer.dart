@@ -104,16 +104,12 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
   Widget _collapsedButton() {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      alignment: Alignment.centerLeft,
+      alignment: Alignment.center,
       child: TextButton.icon(
         onPressed: widget.onSearch,
-        icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
-        label: Text('Ajouter plus de sources (${widget.label})'),
-        style: TextButton.styleFrom(
-          foregroundColor: _ctaColor,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          minimumSize: const Size(0, 36),
-        ),
+        icon: const Icon(Icons.add_circle_outline_rounded, size: 15),
+        label: Text('Plus de sources (${widget.label})'),
+        style: _discreetCtaStyle,
       ),
     );
   }
@@ -299,19 +295,24 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
 
   Widget _searchEntry() {
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: Alignment.center,
       child: TextButton.icon(
         onPressed: widget.onSearch,
-        icon: const Icon(Icons.search_rounded, size: 16),
+        icon: const Icon(Icons.search_rounded, size: 15),
         label: Text('Chercher une source ${widget.label}'),
-        style: TextButton.styleFrom(
-          foregroundColor: _ctaColor,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          minimumSize: const Size(0, 36),
-        ),
+        style: _discreetCtaStyle,
       ),
     );
   }
+
+  /// Style commun aux CTA texte de pied de section : discret (gris, petit,
+  /// poids moyen) et centré, pour ne pas concurrencer les suggestions.
+  static final _discreetCtaStyle = TextButton.styleFrom(
+    foregroundColor: _textColor,
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    minimumSize: const Size(0, 32),
+    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+  );
 
   // --- Action ----------------------------------------------------------------
 

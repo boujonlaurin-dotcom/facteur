@@ -112,9 +112,13 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         if (mounted) _searchFocusNode.requestFocus();
       });
     }
-    // Raccourci catalogue : scrolle jusqu'au `CatalogSourcesStrip` (déjà
-    // déplié + filtré) une fois le premier frame posé. Le catalogue n'est
-    // rendu qu'en empty-state (`_currentQuery.isEmpty`), vrai à l'ouverture.
+    // Raccourci catalogue : le `CatalogSourcesStrip` (déjà déplié + filtré) est
+    // rendu **en tête** de l'empty-state (cf. `_buildEmptyState`), donc surmonté
+    // d'un contenu synchrone et stable (intro + champ de recherche). On scrolle
+    // jusqu'à lui pour aligner son en-tête près du haut. Comme tout ce qui le
+    // précède est synchrone, sa position de tête ne bouge plus → ensureVisible
+    // au 1er frame est fiable (contrairement au cas où le catalogue était sous
+    // les pépites communautaires chargées en async, qui le repoussaient).
     if (widget.initialCatalogTheme != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -122,9 +126,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         if (ctx == null) return;
         Scrollable.ensureVisible(
           ctx,
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 450),
           curve: Curves.easeOut,
-          alignment: 0.1,
+          alignment: 0.05,
         );
       });
     }
@@ -483,13 +487,31 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
   }
 
+  /// Catalogue Facteur (porte la `_catalogKey` pour le scroll-vers + le pré-
+  /// filtre/dépli quand on arrive d'un raccourci thème).
+  Widget _catalogStrip() => CatalogSourcesStrip(
+        key: _catalogKey,
+        onSourceTap: _showSourceModal,
+        initialTheme: widget.initialCatalogTheme,
+        initiallyExpanded: widget.initialCatalogTheme != null,
+      );
+
   Widget _buildEmptyState() {
+    // Raccourci thème : on arrive ici via « Plus de sources (X) » / « Chercher
+    // une source X » → le catalogue filtré est l'intention première, donc rendu
+    // **en tête** (et toujours, même si les pépites sont masquées). Sinon il
+    // reste en pied, sous les pépites communautaires (parcours découverte).
+    final themed = widget.initialCatalogTheme != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.showAddedNudge && _sourceAdded) ...[
           _buildAddedNudge(),
           const SizedBox(height: FacteurSpacing.space6),
+        ],
+        if (themed) ...[
+          _catalogStrip(),
+          const SizedBox(height: FacteurSpacing.space8),
         ],
         ExampleChips(onTap: _onExampleTap),
         const SizedBox(height: FacteurSpacing.space8),
@@ -500,13 +522,10 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
               ref.read(analyticsServiceProvider).trackAddSourceGemTap(sourceId);
             },
           ),
-          const SizedBox(height: FacteurSpacing.space4),
-          CatalogSourcesStrip(
-            key: _catalogKey,
-            onSourceTap: _showSourceModal,
-            initialTheme: widget.initialCatalogTheme,
-            initiallyExpanded: widget.initialCatalogTheme != null,
-          ),
+          if (!themed) ...[
+            const SizedBox(height: FacteurSpacing.space4),
+            _catalogStrip(),
+          ],
         ],
       ],
     );
