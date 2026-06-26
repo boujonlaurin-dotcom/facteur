@@ -235,27 +235,19 @@ class SectionBanner extends StatelessWidget {
                             TextSpan(
                               text: title,
                               children: <InlineSpan>[
-                                if (tappable) ...[
-                                  const TextSpan(text: ' '),
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: Transform.translate(
-                                      offset: const Offset(0, 1),
-                                      // Caret calibré sur la nouvelle police de
-                                      // titre (17, post-compaction) et noir
-                                      // (textPrimary) plutôt que gris. La
-                                      // « middle » du glyphe Phosphor tombe ~1px
-                                      // haut sur la cap-height Fraunces → léger
-                                      // nudge bas pour le recentrer optiquement.
-                                      child: Icon(
-                                        PhosphorIcons.caretRight(
-                                            PhosphorIconsStyle.bold),
-                                        size: 16,
-                                        color: colors.textPrimary,
-                                      ),
+                                if (tappable)
+                                  // Chevron « > » intégré au titre comme glyphe
+                                  // texte : hérite de Fraunces w700 du TextSpan
+                                  // parent et s'aligne sur la baseline du titre.
+                                  // Rendu plus gros que le titre pour épaissir
+                                  // le trait et signaler la tappabilité.
+                                  TextSpan(
+                                    text: ' >',
+                                    style: TextStyle(
+                                      fontSize: large ? 30 : 22,
+                                      color: colors.textPrimary,
                                     ),
                                   ),
-                                ],
                                 if (onTapFavorite != null) ...[
                                   const TextSpan(text: '  '),
                                   WidgetSpan(

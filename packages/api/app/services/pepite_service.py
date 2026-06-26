@@ -207,6 +207,27 @@ class PepiteService:
             for s, follower_count in selected
         ]
 
+    async def get_theme_pepite_sources(
+        self, theme_slug: str, *, exclude_ids: set[UUID] | None = None
+    ) -> list[Source]:
+        """Pépites curées couvrant `theme_slug` (`pepite_for_themes` ⊇ slug).
+
+        Requête **pure** : contrairement à [get_pepites_for_user], aucun effet
+        de bord (ni rate-limit, ni écriture de `pepite_carousel_last_shown_at`).
+        Utilisée par le footer « Étoffer [thème] » (Tier 1), où l'on veut juste
+        l'inventaire des pépites du thème, hors sources déjà suivies.
+        """
+        query = (
+            select(Source)
+            .where(Source.is_pepite_recommendation)
+            .where(Source.is_active)
+            .where(Source.pepite_for_themes.any(theme_slug))
+        )
+        if exclude_ids:
+            query = query.where(Source.id.notin_(exclude_ids))
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
     async def dismiss_pepite_carousel(self, user_id: str) -> None:
         user_uuid = UUID(user_id)
         personalization = await self._load_personalization(user_uuid)

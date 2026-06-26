@@ -11,6 +11,7 @@ import '../models/source_coverage.dart';
 import '../models/source_model.dart';
 import '../models/source_profile.dart';
 import '../models/theme_source_model.dart';
+import '../models/theme_suggestions_model.dart';
 import '../repositories/sources_repository.dart';
 import '../services/premium_session_store.dart';
 
@@ -119,6 +120,15 @@ final sourcesByThemeProvider =
     FutureProvider.family<ThemeSourcesResponse, String>((ref, slug) async {
       final repository = ref.watch(sourcesRepositoryProvider);
       return repository.getSourcesByTheme(slug);
+    });
+
+/// Footer « Étoffer [thème] » — sources poussées (Tiers 1 & 2) couvrant le
+/// thème. Family cachée par slug : un seul appel par thème, réutilisé entre
+/// rebuilds de la Tournée (et entre l'état replié/déplié du footer).
+final etofferThemeProvider =
+    FutureProvider.family<ThemeSuggestions, String>((ref, slug) async {
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.suggestSourcesForTheme(slug);
     });
 
 final userSourcesProvider =

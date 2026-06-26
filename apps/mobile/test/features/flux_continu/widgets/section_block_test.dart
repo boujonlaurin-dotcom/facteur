@@ -15,15 +15,28 @@ import 'package:facteur/features/flux_continu/widgets/section_block.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/features/sources/models/theme_suggestions_model.dart';
+import 'package:facteur/features/sources/providers/sources_providers.dart';
 import 'package:facteur/features/sources/widgets/source_logo_avatar.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
 
-Widget _wrap(Widget child, {DisplayModeSpec spec = DisplayModeSpec.normal}) {
+Widget _wrap(
+  Widget child, {
+  DisplayModeSpec spec = DisplayModeSpec.normal,
+  List<Override> overrides = const [],
+}) {
   return ProviderScope(
     // Le spec du mode d'affichage est lu via Hive en prod — court-circuité ici
-    // pour ne pas exiger le bootstrap Hive dans les widget tests.
+    // pour ne pas exiger le bootstrap Hive dans les widget tests. Les sections
+    // thème rendent le footer « Étoffer » (cf. etofferThemeProvider) : on neutralise
+    // l'appel réseau par défaut pour ne pas exiger Supabase.
     overrides: [
       displayModeSpecProvider.overrideWith((ref) => spec),
+      etofferThemeProvider.overrideWith(
+        (ref, slug) async =>
+            ThemeSuggestions(theme: slug, label: 'Tech', suggestions: const []),
+      ),
+      ...overrides,
     ],
     child: MaterialApp(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -105,9 +118,9 @@ FeedThemeSection _sourceSection({
   );
 }
 
-/// Finder du chevron « > » de navigation rendu dans le titre du banner.
-Finder _chevron() =>
-    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.bold));
+/// Finder du chevron « > » de navigation, rendu comme glyphe texte intégré au
+/// titre du banner (Text.rich) plutôt qu'une icône Phosphor.
+Finder _chevron() => find.textContaining('>', findRichText: true);
 
 void main() {
   setUpAll(() {
@@ -186,10 +199,10 @@ void main() {
     });
   });
 
-  group('SectionBlock — section thème vide (Tournée bugs E2E)', () {
+  group('SectionBlock — section thème vide (footer « Étoffer »)', () {
     testWidgets(
-        'thème favori sans article : empty-state TOUJOURS visible + CTA '
-        '« Ajouter des sources »', (tester) async {
+        'thème favori sans article : footer « Étoffer » déplié + accroche '
+        '+ entrée de recherche câblée sur onAddSources', (tester) async {
       var tapped = false;
       await tester.pumpWidget(_wrap(
         SectionBlock(
@@ -199,16 +212,18 @@ void main() {
           onAddSources: () => tapped = true,
         ),
       ));
+      await tester.pumpAndSettle();
 
-      // Aucune carte, mais la section reste rendue avec son empty-state + CTA.
+      // Aucune carte, mais la section reste rendue avec son footer « Étoffer ».
       expect(find.byType(FluxContinuArticleCard), findsNothing);
       expect(
         find.textContaining('Rien de neuf récemment sur Tech'),
         findsOneWidget,
       );
-      expect(find.text('Ajouter des sources'), findsOneWidget);
+      // L'entrée de recherche (Tier 3) ouvre l'ajout de source (onAddSources).
+      expect(find.text('Chercher une source Tech'), findsOneWidget);
 
-      await tester.tap(find.text('Ajouter des sources'));
+      await tester.tap(find.text('Chercher une source Tech'));
       await tester.pumpAndSettle();
       expect(tapped, isTrue);
     });
@@ -225,7 +240,10 @@ void main() {
       ));
 
       expect(find.byType(FluxContinuArticleCard), findsOneWidget);
-      expect(find.text('Ajouter des sources'), findsNothing);
+      // Le footer « riche » reste replié : un simple bouton renommé qui mène
+      // droit au catalogue filtré (plus de dépli in-place).
+      expect(find.text('Plus de sources (Tech)'), findsOneWidget);
+      expect(find.text('Chercher une source Tech'), findsNothing);
     });
   });
 
