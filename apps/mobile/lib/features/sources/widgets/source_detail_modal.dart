@@ -15,7 +15,6 @@ import '../../flux_continu/utils/theme_color_mapping.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/widgets/interest_state_pill.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -37,7 +36,7 @@ typedef SourceArticleOpener =
 /// 3. `_FsCoverage` (couverture par thèmes, data-dépendante → skeleton)
 /// 4. `_FsArticles` (derniers articles, data-dépendante → skeleton)
 /// 5. `_FsSettings` (priorité, ssi suivie)
-/// 6. `_FsManage` (premium si proposé + masquer)
+/// 6. `_FsManage` (premium si proposé)
 /// 7. Actions (Suivre + favori) en fin de scroll.
 class SourceDetailModal extends ConsumerWidget {
   final Source source;
@@ -208,7 +207,6 @@ class _FsBody extends ConsumerWidget {
                   for (final t in profile.themeDistribution)
                     (theme: t.theme, pct: (t.share * 100).round()),
                 ],
-                caption: _coverageCaption(profile.articles30d),
               ),
             ),
           _FsArticlesSection(
@@ -369,14 +367,7 @@ class _FsHeader extends StatelessWidget {
           if (source.description != null &&
               source.description!.trim().isNotEmpty) ...[
             const SizedBox(height: 14),
-            Text(
-              source.description!.trim(),
-              style: textTheme.bodyMedium?.copyWith(
-                fontSize: 14,
-                height: 1.55,
-                color: colors.textSecondary,
-              ),
-            ),
+            _ExpandableDescription(text: source.description!.trim()),
           ],
         ],
       ),
@@ -399,6 +390,93 @@ class _FsHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Description de source repliable : tronquée à [_maxLines] lignes avec un fondu
+/// bas (ShaderMask) tant que repliée, et un bouton discret « Lire plus » /
+/// « Réduire ». Le bouton n'apparaît que si le texte dépasse réellement la
+/// limite (détecté via un `TextPainter` mesuré à la largeur disponible).
+class _ExpandableDescription extends StatefulWidget {
+  final String text;
+  const _ExpandableDescription({required this.text});
+
+  @override
+  State<_ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  static const int _maxLines = 4;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final style = textTheme.bodyMedium?.copyWith(
+      fontSize: 14,
+      height: 1.55,
+      color: colors.textSecondary,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Le texte dépasse-t-il _maxLines à la largeur disponible ?
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: _maxLines,
+          textDirection: Directionality.of(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final overflows = painter.didExceedMaxLines;
+        painter.dispose();
+
+        final text = Text(
+          widget.text,
+          style: style,
+          maxLines: _expanded ? null : _maxLines,
+          overflow: _expanded ? TextOverflow.visible : TextOverflow.clip,
+        );
+
+        // Fondu bas tant que replié et que ça dépasse, pour suggérer la suite.
+        final body = (!_expanded && overflows)
+            ? ShaderMask(
+                shaderCallback: (rect) => LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0.0, 0.72, 1.0],
+                  colors: [colors.textSecondary, colors.textSecondary, colors.textSecondary.withValues(alpha: 0.0)],
+                ).createShader(rect),
+                blendMode: BlendMode.dstIn,
+                child: text,
+              )
+            : text;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            body,
+            if (overflows) ...[
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: () => setState(() => _expanded = !_expanded),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    _expanded ? 'Réduire' : 'Lire plus',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -1505,35 +1583,31 @@ class _FsSettings extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: _fsCardDecoration(colors),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Priorité dans ton flux',
-                    style: textTheme.labelMedium?.copyWith(
-                      color: colors.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Choisis la place de cette source dans ton flux.',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.textTertiary,
-                      fontSize: 11.5,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
+            Text(
+              'Priorité dans ton flux',
+              style: textTheme.labelMedium?.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: 0,
               ),
             ),
-            const SizedBox(width: 12),
-            SourceStatePill(sourceId: source.id, title: source.name),
+            const SizedBox(height: 4),
+            Text(
+              'Règle la place de cette source dans ton flux : plus elle est '
+              'prioritaire, plus ses articles y remontent.',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontSize: 11.5,
+                height: 1.4,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SourcePrioritySlider(sourceId: source.id),
           ],
         ),
       ),
@@ -1541,61 +1615,159 @@ class _FsSettings extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 6. Gestion de la source : premium (si proposé) + masquer
-// ============================================================
-class _FsManage extends ConsumerStatefulWidget {
-  final Source source;
-  const _FsManage({required this.source});
+/// Curseur 4 points (Masqué → Neutre → Suivi → Favori) remplaçant la pastille
+/// + modal de priorité. Chaque point porte son icône `InterestState`, et le
+/// statut courant + sa description s'actualisent sous la piste à chaque
+/// déplacement. Le slide persiste l'état via `userSourcesStateProvider`
+/// (optimiste : la position suit le doigt, puis se resynchronise sur le
+/// provider).
+class _SourcePrioritySlider extends ConsumerStatefulWidget {
+  final String sourceId;
+  const _SourcePrioritySlider({required this.sourceId});
 
   @override
-  ConsumerState<_FsManage> createState() => _FsManageState();
+  ConsumerState<_SourcePrioritySlider> createState() =>
+      _SourcePrioritySliderState();
 }
 
-class _FsManageState extends ConsumerState<_FsManage> {
-  @override
-  Widget build(BuildContext context) {
-    final source = widget.source;
-    final hasPremium = source.premiumConnection != null;
+class _SourcePrioritySliderState
+    extends ConsumerState<_SourcePrioritySlider> {
+  // Ordre gauche → droite du curseur.
+  static const List<InterestState> _order = [
+    InterestState.hidden,
+    InterestState.unfollowed,
+    InterestState.followed,
+    InterestState.favorite,
+  ];
 
-    return _FsSection(
-      title: 'Gestion de la source',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (hasPremium) ...[
-            _FsPremium(source: source),
-            const SizedBox(height: 12),
-          ],
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _ManageButton(
-              isOn: source.isMuted,
-              labelOn: 'Source masquée',
-              labelOff: 'Masquer cette source',
-              onTap: () => _toggleMute(context),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Position optimiste pendant le drag (null = on suit le provider).
+  int? _pendingIndex;
 
-  Future<void> _toggleMute(BuildContext context) async {
-    final source = widget.source;
+  Future<void> _apply(InterestState picked) async {
     try {
       await ref
-          .read(userSourcesProvider.notifier)
-          .toggleMute(source.id, source.isMuted);
+          .read(userSourcesStateProvider.notifier)
+          .setSourceState(widget.sourceId, picked);
     } catch (_) {
-      if (!context.mounted) return;
+      if (!mounted) return;
+      setState(() => _pendingIndex = null);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Impossible de masquer cette source.'),
+          content: Text('Impossible de mettre à jour cette source.'),
           duration: Duration(seconds: 3),
         ),
       );
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    final providerState = ref.watch(userSourcesStateProvider).valueOrNull;
+    final currentState =
+        providerState?.stateOf(widget.sourceId) ?? InterestState.followed;
+    final providerIndex = _order.indexOf(currentState);
+    final index = _pendingIndex ?? providerIndex;
+    final state = _order[index];
+    final accent = state.accent(colors);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SliderTheme(
+          data: SliderThemeData(
+            trackHeight: 4,
+            activeTrackColor: accent,
+            inactiveTrackColor: colors.textPrimary.withValues(alpha: 0.12),
+            thumbColor: accent,
+            overlayColor: accent.withValues(alpha: 0.16),
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
+            tickMarkShape: SliderTickMarkShape.noTickMark,
+          ),
+          child: Slider(
+            value: index.toDouble(),
+            min: 0,
+            max: (_order.length - 1).toDouble(),
+            divisions: _order.length - 1,
+            onChanged: (v) => setState(() => _pendingIndex = v.round()),
+            onChangeEnd: (v) {
+              final picked = _order[v.round()];
+              setState(() => _pendingIndex = null);
+              if (picked != currentState) _apply(picked);
+            },
+          ),
+        ),
+        // Icône + libellé court sous chaque point.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            children: [
+              for (var i = 0; i < _order.length; i++)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Icon(
+                        _order[i].iconData,
+                        size: 15,
+                        color: i == index
+                            ? _order[i].accent(colors)
+                            : colors.textTertiary,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        _order[i].label,
+                        textAlign: TextAlign.center,
+                        style: textTheme.labelSmall?.copyWith(
+                          fontSize: 10.5,
+                          letterSpacing: 0,
+                          color: i == index
+                              ? _order[i].accent(colors)
+                              : colors.textTertiary,
+                          fontWeight:
+                              i == index ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Description du statut courant, mise à jour au slide.
+        Text(
+          state.description,
+          style: textTheme.labelSmall?.copyWith(
+            color: colors.textSecondary,
+            fontSize: 12,
+            height: 1.4,
+            letterSpacing: 0,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================
+// 6. Gestion de la source : premium (si proposé)
+// ============================================================
+class _FsManage extends StatelessWidget {
+  final Source source;
+  const _FsManage({required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    // Le masquage est désormais porté par le curseur de priorité (palier
+    // « Masqué »). Cette section ne subsiste que pour la connexion premium.
+    if (source.premiumConnection == null) return const SizedBox.shrink();
+
+    return _FsSection(
+      title: 'Gestion de la source',
+      child: _FsPremium(source: source),
+    );
   }
 }
 
@@ -1708,63 +1880,6 @@ class _FsPremium extends ConsumerWidget {
           onConnected: () => ref
               .read(userSourcesProvider.notifier)
               .connectSubscription(source.id),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bouton tertiaire de gestion (toggle local, ex. masquer).
-class _ManageButton extends StatelessWidget {
-  final bool isOn;
-  final String labelOn;
-  final String labelOff;
-  final VoidCallback onTap;
-
-  const _ManageButton({
-    required this.isOn,
-    required this.labelOn,
-    required this.labelOff,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(FacteurRadius.medium),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: isOn
-              ? colors.textPrimary.withValues(alpha: 0.05)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(FacteurRadius.medium),
-          border: Border.all(color: isOn ? Colors.transparent : colors.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isOn
-                  ? PhosphorIcons.eye(PhosphorIconsStyle.regular)
-                  : PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-              size: 16,
-              color: isOn ? colors.textSecondary : colors.textTertiary,
-            ),
-            const SizedBox(width: 7),
-            Text(
-              isOn ? labelOn : labelOff,
-              style: textTheme.labelMedium?.copyWith(
-                color: isOn ? colors.textPrimary : colors.textSecondary,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -2124,13 +2239,6 @@ String? _relativeTime(String publishedAt) {
   final date = DateTime.tryParse(publishedAt);
   if (date == null) return null;
   return timeago.format(date, locale: 'fr');
-}
-
-/// Caption couverture en mode normal, dérivée du volume 30 j du profil.
-/// Aligne la copie sur celle calculée côté backend pour `/coverage`.
-String _coverageCaption(int total) {
-  final noun = total == 1 ? 'article publié' : 'articles publiés';
-  return '${_formatThousands(total)} $noun sur la période';
 }
 
 /// Sépare les milliers par une espace fine insécable (« 3 012 »).

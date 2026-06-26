@@ -248,12 +248,16 @@ THEME_LABELS = {
 
 
 def _source_to_response(
-    s: Source, *, trusted_ids: set[UUID] | None = None
+    s: Source,
+    *,
+    trusted_ids: set[UUID] | None = None,
+    follower_count: int = 0,
 ) -> SourceResponse:
     """Convert Source model to SourceResponse.
 
     `trusted_ids` lets callers flag sources already followed by the current
     user (used by the theme suggestions screen to show "déjà suivie").
+    `follower_count` = nombre d'utilisateurs en état suivi/favori (header fiche).
     """
     return SourceResponse(
         id=s.id,
@@ -266,6 +270,7 @@ def _source_to_response(
         is_curated=s.is_curated,
         is_custom=not s.is_curated,
         is_trusted=trusted_ids is not None and s.id in trusted_ids,
+        follower_count=follower_count,
         content_count=0,
         bias_stance=getattr(s.bias_stance, "value", "unknown"),
         reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -845,8 +850,21 @@ async def get_source_profile(
         )
     ).first() is not None
 
+    # Nombre d'abonnés de la source dans Facteur (suivi + favori), affiché dans
+    # l'en-tête de la fiche (« Suivi par X lecteurs »).
+    follower_count = (
+        await db.execute(
+            select(func.count(UserSource.user_id)).where(
+                UserSource.source_id == source_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
+        )
+    ).scalar_one()
+
     source_response = _source_to_response(
-        source, trusted_ids={source_id} if followed else set()
+        source,
+        trusted_ids={source_id} if followed else set(),
+        follower_count=follower_count,
     )
 
     rows, total = await _aggregate_source_themes(db, source_id, days=30)
