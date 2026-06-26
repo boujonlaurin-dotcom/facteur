@@ -185,5 +185,15 @@ async def test_like_creates_new_subtopic():
 
     await service._adjust_subtopic_weights(user_id, content_id, 0.15)
 
-    # Verify session.add was called (for new subtopic + new interest)
-    assert session.add.call_count == 2
+    # Le sous-thème est créé via add() ; l'intérêt de thème passe désormais par
+    # un upsert atomique (execute) — un seul add() (le sous-thème).
+    assert session.add.call_count == 1
+    # L'intérêt est upserté sur user_interests via execute().
+    interest_inserts = [
+        call.args[0]
+        for call in session.execute.call_args_list
+        if getattr(call.args[0], "is_insert", False)
+        and getattr(call.args[0], "table", None) is not None
+        and call.args[0].table.name == "user_interests"
+    ]
+    assert len(interest_inserts) == 1

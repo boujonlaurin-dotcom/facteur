@@ -34,7 +34,9 @@ def _make_session_maker(execute_result=None, execute_side_effect=None):
 
 @pytest.mark.asyncio
 async def test_sweeper_kills_zombies_and_logs_warning():
-    """Si pg_stat_activity remonte des zombies, log warning + count."""
+    """Si pg_stat_activity remonte des zombies, log warning + count + alerte
+    Sentry (Axe D : tout kill = un safe_async_session manqué quelque part).
+    """
     fake_rows = [
         (True, 12345, 360),
         (True, 12346, 420),
@@ -42,9 +44,11 @@ async def test_sweeper_kills_zombies_and_logs_warning():
     fake_result = MagicMock()
     fake_result.fetchall = MagicMock(return_value=fake_rows)
     fake_sm, mock_session = _make_session_maker(execute_result=fake_result)
+    fake_sentry = MagicMock()
 
     with (
         patch("app.database.safe_async_session", side_effect=lambda: fake_sm()),
+        patch.dict("sys.modules", {"sentry_sdk": fake_sentry}),
         patch("app.workers.scheduler.logger") as mock_logger,
     ):
         await _zombie_session_sweeper()
@@ -64,6 +68,10 @@ async def test_sweeper_kills_zombies_and_logs_warning():
     assert kwargs["pids"] == [12345, 12346]
     assert kwargs["max_idle_s"] == 420
 
+    # Alerte Sentry level=error
+    fake_sentry.capture_message.assert_called_once()
+    assert fake_sentry.capture_message.call_args.kwargs["level"] == "error"
+
 
 @pytest.mark.asyncio
 async def test_sweeper_logs_clean_when_no_zombies():
@@ -71,15 +79,18 @@ async def test_sweeper_logs_clean_when_no_zombies():
     fake_result = MagicMock()
     fake_result.fetchall = MagicMock(return_value=[])
     fake_sm, _ = _make_session_maker(execute_result=fake_result)
+    fake_sentry = MagicMock()
 
     with (
         patch("app.database.safe_async_session", side_effect=lambda: fake_sm()),
+        patch.dict("sys.modules", {"sentry_sdk": fake_sentry}),
         patch("app.workers.scheduler.logger") as mock_logger,
     ):
         await _zombie_session_sweeper()
 
     mock_logger.warning.assert_not_called()
     mock_logger.debug.assert_called_once_with("zombie_session_sweeper_clean")
+    fake_sentry.capture_message.assert_not_called()
 
 
 @pytest.mark.asyncio

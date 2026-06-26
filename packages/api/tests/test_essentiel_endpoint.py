@@ -932,6 +932,44 @@ async def test_get_essentiel_serein_user_fetches_serein_digest(
     assert mock_read.await_args.kwargs["is_serene"] is True
 
 
+@pytest.mark.asyncio
+async def test_get_essentiel_serein_query_param_overrides_db(auth_override: UUID):
+    """`?serein=` prime sur la préférence DB et court-circuite sa lecture.
+
+    Corrige la race au toggle : le client envoie le mode voulu sans dépendre de
+    la persistance DB de la préférence au moment du refetch. La préférence DB
+    n'est même pas consultée quand la query est fournie.
+    """
+    # 3 sujets distincts → 3 articles, au-dessus du plancher ESSENTIEL_MIN_ARTICLES.
+    topics = [
+        _make_topic(rank=i + 1, label=f"T{i + 1}", n_articles=2) for i in range(3)
+    ]
+    digest = _make_digest(topics)
+
+    for query_value, expected in (("true", True), ("false", False)):
+        with (
+            patch(
+                "app.routers.essentiel.read_digest_or_fallback",
+                new=AsyncMock(return_value=digest),
+            ) as mock_read,
+            patch(
+                "app.routers.essentiel.fetch_user_essentiel_context",
+                new=AsyncMock(return_value=EssentielUserContext()),
+            ),
+            # La DB renvoie l'INVERSE de la query → prouve que la query prime.
+            patch(
+                "app.routers.essentiel.DigestService.get_user_serein_enabled",
+                new=AsyncMock(return_value=not expected),
+            ) as mock_db,
+        ):
+            async with _client() as client:
+                resp = await client.get(f"/api/essentiel?serein={query_value}")
+
+        assert resp.status_code == 200
+        assert mock_read.await_args.kwargs["is_serene"] is expected
+        mock_db.assert_not_awaited()
+
+
 # ─── Story 9.4 — Durcissement des filtres ────────────────────────────────
 
 

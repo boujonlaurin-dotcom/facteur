@@ -3,6 +3,20 @@
     {
       "tag": "Widget",
       "summary": "Le widget se rafraîchit à nouveau, avec un bouton pour forcer la mise à jour."
+      "tag": "Mise à jour",
+      "summary": "Sur Android, les mises à jour passent désormais par une invite native du Play Store, plus fiable, avec téléchargement en arrière-plan."
+    },
+    {
+      "tag": "Mise à jour",
+      "summary": "Facteur te prévient quand une nouvelle version est disponible sur l'App Store, et t'invite à mettre à jour."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Fiche source plus claire : description repliable, nombre d'abonnés affiché, et réglage de la priorité dans ton flux au curseur."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
     },
     {
       "tag": "Perspectives",

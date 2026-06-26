@@ -1,0 +1,271 @@
+{
+  "generated_at": "2026-06-25",
+  "model": "claude-opus-4-8 (7 sous-agents WebSearch), description-only",
+  "_note": "Descriptions completes (3-4 phrases) pour 66 sources curated a description courte/nulle. DESCRIPTION SEULE : bias_origin=curated et le biais PO sont PRESERVES (apply via apply_source_descriptions.py, jamais apply_source_evaluations.py). Gate PO.",
+  "descriptions": [
+    {
+      "source_id": "f04aa2ab-99c5-43d1-94d6-1e9379f79496",
+      "description": "Acrimed (Action critique médias) est un observatoire critique des médias français, fondé en 1996 dans le sillage des mouvements sociaux de 1995. L'association indépendante analyse le traitement de l'information par la presse, la radio et la télévision, en dénonçant ce qu'elle considère comme l'emprise économique et publicitaire sur le journalisme. Elle publie articles, émissions et la revue Médiacritique(s), et vit essentiellement de l'adhésion de ses membres pour préserver son indépendance financière."
+    },
+    {
+      "source_id": "dab433f1-3058-41cb-a3e2-d744dfe6d0f7",
+      "description": "Amnesty International est une organisation non gouvernementale mondiale de défense des droits humains, fondée en 1961 par l'avocat britannique Peter Benenson. Présente dans plus de 150 pays, elle mène enquêtes, campagnes et plaidoyer contre la torture, la peine de mort, les disparitions forcées et les atteintes à la liberté d'expression. Son flux reprend ses communiqués et rapports d'investigation. Lauréate du prix Nobel de la paix en 1977, elle revendique son indépendance des gouvernements et des intérêts économiques en s'appuyant sur les dons de ses membres."
+    },
+    {
+      "source_id": "bbad58f4-c9cb-4de5-b8cd-6df0bc0ca86e",
+      "description": "AOC, pour Analyse Opinion Critique, est un quotidien d'idées en ligne lancé en 2018 par Sylvain Bourmeau, journaliste et enseignant. La publication propose chaque jour un article d'analyse, une opinion et une critique, signés en grande partie par des universitaires, des chercheurs et des écrivains. Sa ligne se distingue par des textes longs et exigeants sur les sciences humaines, la politique et la culture. Le modèle repose sur l'abonnement, sans publicité, pour financer une production intellectuelle au format revue."
+    },
+    {
+      "source_id": "eff41953-29c8-42dd-bbd5-4d0c1249889d",
+      "description": "AprèsLaBière est une chaîne YouTube et un média animé par Jean-Lou Fourquet, qui propose une réflexion accessible sur la philosophie politique, le numérique et les rapports de pouvoir. Le format mêle vidéos, conférences filmées, podcast et newsletter, avec une attention particulière portée à l'influence des géants technologiques et de l'intelligence artificielle sur la société. Le projet, prolongé par le blog apreslabiere.fr, cherche à vulgariser des questions complexes pour un large public, hors des cadres médiatiques traditionnels."
+    },
+    {
+      "source_id": "fa5e156c-39d1-4cf3-adb9-4d106a80288d",
+      "description": "Arrêt sur images est un site français de critique des médias fondé par Daniel Schneidermann, héritier de l'émission éponyme diffusée sur France 5 jusqu'en 2007. Devenu pure player en ligne, il décrypte le traitement de l'actualité par la télévision, la presse et les réseaux sociaux, ainsi que les coulisses du journalisme. Le média fonctionne intégralement sur abonnement, sans publicité ni actionnaire extérieur, ce qui lui permet de revendiquer une totale indépendance éditoriale et financière."
+    },
+    {
+      "source_id": "56e3fc84-1781-4187-93f2-76b5a01b122a",
+      "description": "Basta! est un média indépendant français en ligne, spécialisé dans les enquêtes sociales, environnementales et démocratiques. Édité par une structure à but non lucratif, il privilégie le journalisme de terrain sur les conditions de travail, les luttes citoyennes, l'écologie et les pratiques des grandes entreprises. La rédaction met en avant son absence d'actionnaires privés et de publicité, son financement reposant sur les dons et le soutien des lecteurs. Le média est connu pour des outils comme l'observatoire des multinationales."
+    },
+    {
+      "source_id": "d0a970de-878b-4332-84ad-ae4e680f952a",
+      "description": "Blast est un média audiovisuel indépendant français cofondé en 2021 par le journaliste Denis Robert, organisé en société coopérative d'intérêt collectif (SCIC). Cette structure et son financement par le public, via dons et abonnements, visent à garantir son indépendance capitalistique vis-à-vis des grands groupes. Sa ligne éditoriale assumée et militante donne une large place aux enquêtes, aux questions sociales, écologiques et politiques. Le média se présente comme une web TV de contre-pouvoir, parfois au cœur de controverses."
+    },
+    {
+      "source_id": "5790ea77-18f8-4c92-ab8b-35a10fcc3f63",
+      "description": "Bon Pote est un média français consacré à l'urgence climatique et écologique, créé par Thomas Wagner. Le site s'appuie sur un sourcing scientifique rigoureux, citant études et rapports comme ceux du GIEC, pour vulgariser les enjeux climatiques et combattre le greenwashing. Le ton se veut à la fois incarné et pédagogique, à destination d'un public souhaitant comprendre et agir. Le projet, longtemps porté de façon bénévole, fonctionne sans publicité et revendique son indépendance vis-à-vis des annonceurs."
+    },
+    {
+      "source_id": "24eb8e05-51c2-4c49-83ae-d20be98a300f",
+      "description": "Chez Anatole est une chaîne YouTube de vulgarisation créée par Anatole Chouard, ingénieur diplômé de l'École polytechnique. Elle propose des analyses de fond sur l'écologie, la science et les enjeux de société, en s'appuyant notamment sur des documents de référence comme les rapports du GIEC ou le rapport Meadows sur les limites à la croissance. Le créateur a collaboré avec le Cnam autour de formats associant micros-trottoirs et interventions d'experts, afin de relier les questions scientifiques aux débats citoyens."
+    },
+    {
+      "source_id": "f07f88dc-ddc5-4dbe-b951-1bf90e89eb86",
+      "description": "CNEWS est une chaîne d'information en continu française, propriété du groupe Canal+, lui-même contrôlé par la holding Vivendi de l'homme d'affaires Vincent Bolloré. Née en 2017 de la transformation de l'ancienne chaîne i-Télé, elle accorde une place centrale aux talk-shows, aux débats d'opinion et aux faits divers. La chaîne est devenue l'une des plus regardées de la TNT info, tout en faisant l'objet de mises en demeure de l'Arcom au sujet du pluralisme et du temps de parole."
+    },
+    {
+      "source_id": "2ebeea2f-7fe2-448f-92a0-c445b6bb5690",
+      "description": "Contrepoints est un média en ligne francophone fondé en 2009, animé par l'association loi 1901 Liberaux.org et entièrement financé par ses lecteurs et donateurs, sans publicité intrusive ni actionnaire industriel. Il publie des analyses économiques, politiques et de société ancrées dans la tradition du libéralisme classique et de l'école autrichienne. Le site repose largement sur des contributeurs bénévoles, économistes, entrepreneurs et universitaires, et revendique son indépendance vis-à-vis des partis. Fait moins connu : il se présente comme le premier quotidien libéral de langue française sur Internet."
+    },
+    {
+      "source_id": "5ac7541a-5d6f-4127-8bba-5f53842944d5",
+      "description": "Courrier International est un hebdomadaire français lancé en 1990, propriété du groupe Le Monde, dont la particularité est de traduire et republier des articles issus de centaines de journaux du monde entier. Sa ligne consiste à offrir un regard pluraliste sur l'actualité internationale en confrontant les points de vue de la presse étrangère. La rédaction sélectionne, traduit et contextualise des contenus venus de tous les continents plutôt que de produire ses propres reportages. Fait notable : le titre a été cofondé par Jacques Rosselin et son modèle de revue de presse mondiale reste assez singulier dans le paysage médiatique."
+    },
+    {
+      "source_id": "311ccd27-3b26-489d-8530-079b3c1ef882",
+      "description": "Éthique et tac est une chaîne YouTube francophone consacrée à l'écologie, à la sobriété et aux enjeux de société liés à l'environnement, à l'énergie et à la consommation. Elle propose un format quotidien mêlant vulgarisation scientifique, actualité et réflexion citoyenne, avec un ton engagé en faveur de la transition écologique. La chaîne fonctionne de façon indépendante et s'appuie sur le soutien direct de sa communauté, notamment via des plateformes de financement participatif. Elle dispose aussi de son propre site, ethiqueettac.com, et décline ses contenus sur plusieurs réseaux."
+    },
+    {
+      "source_id": "5d269a77-263a-4b6e-9390-7fd559174d3a",
+      "description": "Europe 1 est une radio généraliste privée française historique, créée en 1955, longtemps pionnière de la radio périphérique et des grandes émissions d'information. Elle appartient au groupe Lagardère, passé sous le contrôle de Vivendi, holding dirigée par Vincent Bolloré, ce qui a accompagné un net repositionnement éditorial vers l'opinion et un rapprochement avec la chaîne CNews. La station couvre l'actualité politique, sociale et culturelle avec un format mêlant journaux, débats et talk-shows. Fait notable : Europe 1 émet depuis ses débuts en partie depuis le territoire allemand de la Sarre, d'où son indicatif d'origine."
+    },
+    {
+      "source_id": "1b8dde5f-7641-4ebc-bf3a-07bebdaf8ffb",
+      "description": "Fouloscopie est une chaîne YouTube de vulgarisation scientifique créée par Mehdi Moussaïd, chercheur en sciences du comportement à l'Institut Max Planck pour le développement humain de Berlin. Elle est consacrée à l'étude des foules et des dynamiques collectives, des mouvements de panique aux biais cognitifs en passant par les comportements grégaires. Le format associe rigueur académique, expériences menées avec l'audience et démonstrations visuelles accessibles au grand public. Fait notable : le nom et la démarche ont aussi donné lieu à un ouvrage de l'auteur, prolongeant la recherche par la médiation scientifique."
+    },
+    {
+      "source_id": "b9becd34-46a9-44a7-8896-b6bbf07ae2dc",
+      "description": "France Culture est la chaîne culturelle et intellectuelle du service public radiophonique français, éditée par Radio France et financée par le budget public. Sa programmation couvre la philosophie, l'histoire, les sciences, la littérature, les arts et les sciences sociales, à travers émissions, documentaires et entretiens approfondis. Sur le web, elle prolonge ses contenus par des articles et analyses de fond visant un public exigeant. Fait notable : héritière de la Chaîne nationale, elle est l'une des plus anciennes antennes thématiques de la radio publique française."
+    },
+    {
+      "source_id": "4be55729-cd84-46d2-9119-644349118373",
+      "description": "France Info est le média d'information en continu du service public français, fruit d'une coopération entre France Télévisions, Radio France, l'INA et France Médias Monde. Son site francetvinfo.fr propose une actualité gratuite, sans mur payant, axée sur l'immédiateté, le factuel et la vérification. Sa mission de neutralité et son indépendance statutaire en font une référence pour le suivi des événements nationaux et internationaux. Fait notable : la marque France Info existe d'abord comme radio d'information continue lancée en 1987, avant son extension à la télévision et au numérique."
+    },
+    {
+      "source_id": "b71e6b5f-4995-43e3-990a-5674c719c737",
+      "description": "Vrai ou Fake est la rubrique de vérification des faits du service public français, hébergée par France Info et adossée à l'ensemble des rédactions de l'audiovisuel public. Elle décrypte rumeurs, intox, images sorties de leur contexte et déclarations politiques pour distinguer le vrai du faux. Le travail s'appuie sur des sources documentées, des experts et la confrontation des données disponibles. Fait notable : la marque fédère les initiatives de fact-checking de France Télévisions, Radio France et France Médias Monde sous une bannière commune."
+    },
+    {
+      "source_id": "ad73eb54-8368-4d1f-a58a-e6b2b211c981",
+      "description": "France Inter est la principale radio généraliste du service public français, éditée par Radio France et l'une des plus écoutées du pays. Sa programmation associe matinale d'information, magazines, fictions, humour et culture, avec une forte production de podcasts disponibles en réécoute. Financée par des fonds publics, elle revendique une indépendance éditoriale encadrée par son statut. Fait notable : sa matinale figure régulièrement parmi les rendez-vous d'information les plus suivis de la radio française."
+    },
+    {
+      "source_id": "8baabd4d-dd6c-48ea-bb09-c3d5373aefa5",
+      "description": "Frandroid est un média en ligne français spécialisé dans la technologie, à l'origine centré sur l'écosystème Android puis élargi aux smartphones, à l'informatique, à la mobilité électrique et aux objets connectés. Il publie actualités, tests, guides d'achat et analyses à destination d'un large public de consommateurs et de passionnés. Le site appartient au groupe Humanoid, qui édite aussi d'autres titres tech et culture numérique. Fait notable : son nom est une contraction de France et Android, héritage de sa spécialisation initiale autour du système d'exploitation de Google."
+    },
+    {
+      "source_id": "17be5094-a7e9-485d-85c0-11c90bfd56a1",
+      "description": "Heu?reka est une chaîne YouTube française de vulgarisation économique et financière créée en 2015 par Gilles Mitteau, ancien vendeur et assistant trader passé par la Société Générale, BNP Paribas et le New York Stock Exchange avant de quitter la finance. Le format, souvent un dialogue mis en scène entre deux personnages, décortique les mécanismes monétaires, le capitalisme et le rôle des médias avec un regard critique sur les modèles dominants. La chaîne rassemble plus de 400 000 abonnés et Mitteau a prolongé son travail par un livre, Tout sur l'économie ou presque, paru en 2020 et réédité en 2024."
+    },
+    {
+      "source_id": "a3a5762a-de2e-4f7f-97e8-8e470a651a78",
+      "description": "Hygiène Mentale est une chaîne YouTube francophone dédiée à l'esprit critique et à la zététique, qui enseigne la méthode scientifique, le repérage des biais cognitifs et l'analyse de la désinformation. Animée par Christophe Michel, elle propose des épisodes pédagogiques construits comme une initiation progressive à la pensée rationnelle et à l'évaluation des preuves. Ses contenus abordent des sujets pointus comme l'incertitude, les tournois de prévision ou les remises en question de notions popularisées telles que l'effet Dunning-Kruger, en privilégiant la nuance et la rigueur méthodologique."
+    },
+    {
+      "source_id": "062b6ba6-1d07-4280-8ff8-c78917e7ee8d",
+      "description": "The Kyiv Independent est un média ukrainien anglophone fondé en novembre 2021, quelques mois avant l'invasion russe de 2022, par d'anciens journalistes du Kyiv Post écartés après une tentative de reprise en main éditoriale de leur ancien titre. Centré sur l'actualité ukrainienne et d'Europe de l'Est, il couvre la guerre, la politique intérieure et les questions d'État de droit en visant un lectorat international. Son audience est passée de quelques milliers de lecteurs début 2022 à près de trois millions par mois, et il s'appuie désormais majoritairement sur les contributions de ses lecteurs après avoir reçu un financement de l'USAID en 2022 et 2023. Il a été distingué par de nombreux prix internationaux pour sa couverture de la guerre."
+    },
+    {
+      "source_id": "45d23d70-7dc5-472a-8cd0-776d4328693b",
+      "description": "L'Incorrect est un magazine mensuel français conservateur fondé en septembre 2017, vendu en kiosque et financé par abonnements, qui revendique une ligne de droite traditionnelle mêlant analyses politiques, culturelles et sociétales. Le titre a été lancé par Laurent Meeschaert, directeur de la publication, avec des journalistes comme Jacques de Guillebon, longtemps directeur de la rédaction, et Charlotte d'Ornellas. De Guillebon a quitté ses fonctions en juin 2022 sur fond de divergences autour de la stratégie d'Éric Zemmour, illustrant les tensions internes à la droite radicale française."
+    },
+    {
+      "source_id": "5dfba3fb-0c69-48be-8467-fad30e897806",
+      "description": "L'Opinion est un quotidien français en ligne fondé en 2013 par Nicolas Beytout, ancien directeur des rédactions du Figaro et des Échos, qui revendique une ligne libérale, pro-business et pro-européenne. Son actionnariat associe notamment Bernard Arnault, et le titre assume un parti pris en faveur du marché et des entreprises, avec un fort traitement de l'économie, de la dette publique et des questions internationales. Dans Facteur, la source a été retirée du flux curé en raison d'un volume de publication jugé trop important pour l'équilibre éditorial."
+    },
+    {
+      "source_id": "da7114f9-2ff9-4a3e-9c93-c707596769a9",
+      "description": "La Croix Analyses regroupe les éditoriaux, tribunes et décryptages du quotidien généraliste français La Croix, fondé en 1883 et édité par le groupe Bayard, de tradition catholique. Le titre se distingue par une réflexion éthique et sociale approfondie, abordant aussi bien les politiques publiques que les grands débats de société avec un souci de pondération et de mise en perspective. Sa couverture mêle actualité économique, sociale et culturelle, dans une approche qui privilégie le sens et le recul plutôt que l'immédiateté."
+    },
+    {
+      "source_id": "19b0b477-fb78-4c78-bdd1-7ed965f7c517",
+      "description": "La Fabrique Sociale est une chaîne YouTube francophone de vulgarisation en sciences sociales et en sociologie, qui analyse les structures sociales, les discriminations et les mobilisations collectives. Elle propose souvent des entretiens avec chercheurs, intellectuels et auteurs autour d'enjeux contemporains comme l'emprise des réseaux sociaux, l'impact des écrans ou les effets sociaux de l'intelligence artificielle. Son approche cherche à articuler théorie sociologique et débats d'actualité pour donner des clés de lecture critiques sur les transformations de la société."
+    },
+    {
+      "source_id": "d6e6be66-7aae-49aa-966c-20a71d4844a9",
+      "description": "La Science CQFD est une émission quotidienne de France Culture, radio du service public au sein de Radio France, consacrée à l'actualité et aux savoirs scientifiques. Présentée par Natacha Triou, elle invite chercheurs et experts pour décrypter avec rigueur des sujets allant de la biologie aux mathématiques en passant par la physique et l'histoire des sciences. Diffusée en podcast bien indexé et accessible, l'émission privilégie une approche pédagogique et exigeante, en confrontant les connaissances établies aux questions ouvertes de la recherche."
+    },
+    {
+      "source_id": "97eab57f-983d-4b47-a560-29debf13d2df",
+      "description": "Le Canard Enchaîné est un hebdomadaire satirique et d'investigation français fondé en 1915, dont le capital est détenu par ses salariés, gage d'une indépendance revendiquée. Le titre refuse toute publicité et tout financement extérieur, ce qui en fait une institution de la presse libre en France, célèbre pour ses révélations politiques et financières. Son site web volontairement minimaliste reflète une culture du papier, le journal misant sur l'enquête, le ton mordant et le jeu de mots plutôt que sur la présence numérique."
+    },
+    {
+      "source_id": "aa8770fd-bfb9-434b-bbe3-a24b0321f444",
+      "description": "Le Collimateur est un podcast français consacré aux questions militaires et stratégiques, lancé en janvier 2019 et produit puis animé par l'historien Alexandre Jubelin. Initialement hébergé par l'IRSEM, l'institut de recherche stratégique du ministère des Armées, il est passé chez Binge Audio en septembre 2023, en partenariat avec la plateforme Le Rubicon et l'IFRI, avec le soutien de la DGRIS. Il combine entretiens d'analyse sur la défense, récits d'opérations et chroniques d'histoire militaire, et revendiquait environ 350 000 écoutes mensuelles début 2026, témoignant d'une expertise académique forte malgré ses liens institutionnels."
+    },
+    {
+      "source_id": "d5ce3f80-a02b-4b83-9c51-fe2a3c7a1f6d",
+      "description": "Le Dessous des cartes est une émission de géopolitique produite par la chaîne franco-allemande Arte, diffusée depuis 1990 et longtemps incarnée par Jean-Christophe Victor avant d'être reprise par Émilie Aubry. Sa marque de fabrique est l'analyse des grands enjeux internationaux par la cartographie animée, rendant visibles flux, frontières et rapports de force. Le format court L'Essentiel du Dessous des cartes, diffusé sur YouTube, décline ce travail en capsules thématiques. Service audiovisuel public sans publicité, la chaîne s'appuie sur la double tutelle franco-allemande d'Arte."
+    },
+    {
+      "source_id": "ea6ed4c4-1e15-4199-85d7-976d52eea6f4",
+      "description": "Le Figaro est le plus ancien quotidien national français encore publié, fondé en 1826, propriété du groupe Dassault via la Société du Figaro. Sa ligne éditoriale est ancrée à droite, avec une couverture étendue de la politique, de l'économie, de l'international et des débats de société. Le journal édite aussi des suppléments réputés comme Le Figaro Magazine et Madame Figaro. Son site figure parmi les plus consultés de la presse française, combinant accès gratuit et offre payante par abonnement."
+    },
+    {
+      "source_id": "0318e5a5-5ef2-4d3d-8e0e-202ad0433a8a",
+      "description": "Le Grand Continent est une revue d'analyse stratégique et géopolitique à l'échelle européenne, fondée en 2019 et éditée par le Groupe d'études géopolitiques, association créée en 2017 à l'École normale supérieure de la rue d'Ulm. Elle publie de longues analyses signées par des chercheurs, diplomates et responsables politiques, traduites dans plusieurs langues du débat continental. Depuis 2022, une édition papier annuelle paraît chez Gallimard. La revue cultive une approche intellectuelle exigeante et un fort ancrage dans la recherche universitaire."
+    },
+    {
+      "source_id": "5243a419-aca5-49d2-a132-94ebd4d67ccc",
+      "description": "Le Monde est un quotidien français de référence fondé en 1944 à la demande du général de Gaulle, paraissant traditionnellement en fin d'après-midi. Son capital est détenu par un pôle d'actionnaires dont Xavier Niel, Matthieu Pigasse et Daniel Kretinsky, mais une clause protège l'indépendance de la rédaction via un droit d'agrément du directeur. Le titre est reconnu pour sa rigueur dans l'enquête et la vérification des faits. Il développe une offre numérique payante très diffusée et plusieurs déclinaisons thématiques."
+    },
+    {
+      "source_id": "e621430d-5791-4655-8b85-9f3b9422478b",
+      "description": "Les Décodeurs constituent la cellule de fact-checking et de décryptage du quotidien Le Monde, lancée en 2009 puis structurée comme rubrique permanente. L'équipe vérifie les déclarations publiques, décrypte les données chiffrées et produit des cartes et infographies pédagogiques sur l'actualité. Elle a notamment développé l'outil Decodex destiné à évaluer la fiabilité des sources en ligne. Adossée à la rédaction du Monde, la rubrique partage sa ligne et ses standards de vérification."
+    },
+    {
+      "source_id": "dc454a63-9384-417d-a216-707c2bfbbb18",
+      "description": "Le Monde diplomatique est un mensuel français fondé en 1954, consacré à l'analyse de fond en géopolitique, relations internationales et questions sociales. Bien que né dans l'orbite du quotidien Le Monde, il est éditorialement et financièrement autonome, son capital étant majoritairement contrôlé par l'association de ses salariés et celle de ses lecteurs. Sa ligne est marquée à gauche et critique des logiques de domination économique. Le titre est diffusé en de nombreuses éditions internationales à travers le monde."
+    },
+    {
+      "source_id": "cc78ee33-f922-4d98-b176-2b0bb192a23e",
+      "description": "Les Pieds sur terre est une émission documentaire de France Culture, créée en 2002 par Sonia Kronlund, diffusée et déclinée en podcast par Radio France. Sa signature est le récit à la première personne, monté sans commentaire ni voix off de journaliste, laissant les témoins raconter eux-mêmes leur expérience. Le format privilégie l'immersion dans des situations sociales concrètes et souvent méconnues. Service public, il échappe aux pressions commerciales et s'appuie sur un long travail de reportage et de montage."
+    },
+    {
+      "source_id": "be37a0fd-b8eb-4113-9432-ad894d291b3b",
+      "description": "Mediapart est un site d'information français en ligne fondé en 2008 par Edwy Plenel et d'anciens journalistes du Monde, entièrement financé par les abonnements de ses lecteurs sans publicité. Le média s'est imposé comme une référence du journalisme d'investigation, à l'origine de plusieurs grandes affaires politico-financières françaises. Sa propriété a été sanctuarisée par le Fonds pour une presse libre afin de garantir son indépendance dans la durée. Sa ligne éditoriale est engagée et orientée à gauche."
+    },
+    {
+      "source_id": "9295e831-55f4-4e66-9447-436a84be06c7",
+      "description": "Monsieur Bidouille est une chaîne YouTube française de vulgarisation technique et industrielle animée par Dimitri Ferrière. Elle explore en profondeur des sujets d'énergie, d'infrastructures, de procédés industriels et d'innovation, souvent via des visites de sites et des rencontres avec des ingénieurs. Le nucléaire, l'hydroélectricité et les technologies de production occupent une place importante dans ses vidéos. Le ton se veut pédagogique et factuel, à destination d'un public curieux des coulisses de la technique."
+    },
+    {
+      "source_id": "8900ed73-4038-49fb-847c-2078b3d42cc7",
+      "description": "Monsieur Phi est une chaîne YouTube de vulgarisation philosophique créée en 2016 par Thibaut Giraud, docteur en logique philosophique et ancien professeur de philosophie. Elle aborde aussi bien les penseurs classiques que les questions contemporaines, avec une approche d'analyse rigoureuse des arguments, des biais cognitifs et de l'éthique. La chaîne s'est récemment penchée sur l'intelligence artificielle et les modèles de langage. En 2018, le ministère de la Culture l'a citée parmi les chaînes culturelles et scientifiques utilisables en contexte éducatif."
+    },
+    {
+      "source_id": "da76f746-aed5-489f-821e-75b16d747df6",
+      "description": "Mr Mondialisation est un média citoyen indépendant français lancé en 2012, d'abord sous forme de page communautaire sur les réseaux sociaux avant de se doter d'un site éditorial. Animé par une équipe largement anonyme et financé par ses lecteurs via le don, il se consacre à l'écologie, aux alternatives sociales et à la critique du capitalisme mondialisé. Il publie enquêtes, tribunes et analyses, et a fondé l'antenne associative Extracteur pour des reportages de terrain."
+    },
+    {
+      "source_id": "99463f50-814c-40c4-bd74-d475e2652273",
+      "description": "The New Yorker est un magazine hebdomadaire américain fondé en 1925 par Harold Ross, édité aujourd'hui par le groupe Condé Nast. Réputé pour son journalisme narratif long format, ses reportages d'investigation, sa critique culturelle et ses nouvelles littéraires, il publie aussi des poèmes, des dessins de presse et ses célèbres caricatures. Son fact-checking exigeant et ses essais signés par des plumes reconnues en font une référence de la presse magazine anglophone."
+    },
+    {
+      "source_id": "c9157b18-6458-47e7-a1e7-f94cd1d9841d",
+      "description": "Next.ink, anciennement Next INpact et auparavant PC INpact, est un média français spécialisé dans l'actualité du numérique, des technologies et de leurs enjeux juridiques, fondé en 2003 par Christophe Neau. Il est reconnu pour ses analyses approfondies sur le droit du numérique, la vie privée et les politiques publiques liées au web. Depuis septembre 2023, il est adossé à la holding oui.do, liée à l'opérateur télécom moji, après des années d'édition strictement indépendante soutenue par ses abonnés."
+    },
+    {
+      "source_id": "445b1618-3e87-4d67-a646-16c6b62d703e",
+      "description": "Novethic est un média français expert de l'économie responsable, de la finance durable et de la transition écologique et sociale, créé en 2001. Il est une filiale de la Caisse des Dépôts et Consignations, ce qui lui confère un ancrage institutionnel rare dans le paysage médiatique. Outre son travail journalistique, Novethic mène des activités de recherche, de labellisation des fonds responsables et de formation des professionnels à la RSE et aux critères ESG."
+    },
+    {
+      "source_id": "6014940a-8b05-4e67-beff-43f091a5f227",
+      "description": "Numerama est un média français en ligne consacré aux technologies, à la science, à la culture numérique et à leur impact sur la société, fondé en 2001 sous le nom Ratiatum avant de prendre son nom actuel en 2008. Il appartient au groupe Humanoid, qui édite aussi Frandroid. La rédaction couvre largement l'espace, le jeu vidéo, l'intelligence artificielle, la cybersécurité et les questions de droits numériques, dans un registre accessible au grand public."
+    },
+    {
+      "source_id": "32e3231b-e0a0-4109-b235-a5e9734fee77",
+      "description": "Numerama Décryptages est la rubrique d'analyse et de fond du média tech français Numerama, édité par le groupe Humanoid. Elle approfondit les sujets de l'actualité numérique, scientifique et culturelle au-delà de la brève, avec dossiers, explications et mises en perspective. On y retrouve des décryptages sur l'espace, l'intelligence artificielle, les jeux vidéo, le cinéma et les séries, ainsi que les grandes tendances de la tech grand public."
+    },
+    {
+      "source_id": "d1f6070d-e73d-4083-97a8-d0dbb4a52342",
+      "description": "Osons Causer est une chaîne YouTube française de vulgarisation politique et économique lancée en 2015 par Ludo Torbey et son équipe. Le format mise sur des vidéos pédagogiques décryptant institutions, mouvements sociaux, fiscalité et débats démocratiques, avec un travail de sourçage assumé. Le collectif a élargi son activité avec Osons Comprendre, une plateforme de cours en ligne par abonnement, et fonctionne grâce au financement participatif de sa communauté."
+    },
+    {
+      "source_id": "39960eaf-0355-46bd-ad7a-6c096c6d119e",
+      "description": "Ouest-France est le premier quotidien de la presse écrite française en diffusion, fondé en 1944 dans la continuité de L'Ouest-Éclair. Édité par la société Ouest-France, détenue par l'association à but non lucratif Fonds pour le maintien de l'indépendance d'Ouest-France, il couvre le Grand Ouest avec un réseau dense d'éditions locales. Son traitement mêle actualité régionale de proximité, informations nationales et internationales et sport, pour un lectorat très large."
+    },
+    {
+      "source_id": "8958928e-de4d-4528-9eea-0fe67401b847",
+      "description": "Philosophie Magazine est un mensuel français lancé en avril 2006 par Fabrice Gerschel, diplômé d'HEC passé par la banque, et édité par Philo Éditions. La revue propose un pas de côté philosophique sur l'actualité, avec dossiers de fond, entretiens de penseurs contemporains et relectures des grands auteurs classiques. En 2023, Philo Éditions s'est rapprochée du magazine Sciences Humaines, formant un ensemble éditorial dédié aux idées dont Gerschel reste l'actionnaire majoritaire."
+    },
+    {
+      "source_id": "036098a3-2725-48a4-a921-7545bdec82c4",
+      "description": "Philoxime est une chaîne YouTube française de vulgarisation en philosophie morale et politique, animée par Maxime Lambrecht, docteur en philosophie et enseignant. Elle propose des vidéos de fond sur l'éthique appliquée, la justice sociale, le véganisme, l'altruisme et les fondements de la morale, en s'appuyant sur la littérature académique. Le ton est argumentatif et nuancé, cherchant à confronter les intuitions du spectateur aux travaux des philosophes contemporains."
+    },
+    {
+      "source_id": "50809fce-7f26-4ad3-90ad-92de165746bd",
+      "description": "Politico Europe est l'édition européenne du média politique américain Politico, lancée à Bruxelles en 2015 dans le cadre d'une coentreprise avec le groupe allemand Axel Springer, qui en a pris le contrôle total avant la cession de Politico à Springer en 2021. Basé au coeur du quartier européen, il couvre en continu les institutions de l'Union, le lobbying, la diplomatie et les coulisses du pouvoir à Bruxelles, Strasbourg et dans les capitales. Sa newsletter matinale Brussels Playbook est devenue une lecture quasi obligatoire pour les fonctionnaires et élus de l'UE."
+    },
+    {
+      "source_id": "b168ad4a-ef11-479e-b10d-a9da341f1519",
+      "description": "Reporterre est un quotidien en ligne français entièrement consacré à l'écologie, dirigé pendant des années par le journaliste Hervé Kempf, ancien du Monde. Le média se définit comme le quotidien de l'écologie et fonctionne sans publicité ni actionnaire, son financement reposant exclusivement sur les dons de ses lecteurs, ce qui revendique une indépendance totale. Il traite l'environnement comme un enjeu social et politique, couvrant climat, biodiversité, agriculture, luttes locales et conflits industriels comme les contentieux visant TotalEnergies."
+    },
+    {
+      "source_id": "7493233d-ffe7-4fc8-bbd6-102ccf680df1",
+      "description": "Commentaire est une revue trimestrielle de débat intellectuel fondée en 1978 par le philosophe et sociologue Raymond Aron, qui en présida le comité de rédaction. De sensibilité libérale au sens classique, elle publie de longs essais sur la politique, l'économie, la philosophie, l'histoire et les relations internationales, dans une tradition d'argumentation exigeante. Diffusée notamment via la plateforme Cairn, elle reste pilotée par un comité réunissant universitaires, hauts fonctionnaires et écrivains, gage d'indépendance vis-à-vis des modes médiatiques."
+    },
+    {
+      "source_id": "29c221eb-a832-4315-82ad-79e772ca1ab2",
+      "description": "RTL est une radio généraliste privée française, l'une des plus écoutées du pays, dont les programmes mêlent information, talk et divertissement. Longtemps propriété du groupe luxembourgeois RTL Group, la station a été rachetée et intégrée au Groupe M6 (Groupe RTL France), ce qui en fait un acteur majeur du paysage audiovisuel commercial. Son modèle dépend largement des recettes publicitaires et sa ligne éditoriale vise un large public, avec des rendez-vous d'information comme le journal de la mi-journée et les éditions horaires."
+    },
+    {
+      "source_id": "e2f0b4e9-76ad-43fe-8e0f-9594c70076c5",
+      "description": "Science & Vie est un magazine français de vulgarisation scientifique grand public, fondé en 1913 sous le nom La Science et la Vie, l'un des plus anciens titres du genre. Après être passé par Excelsior, Emap puis Mondadori France, il a été racheté en 2019 par le groupe Reworld Media. Ce changement de propriétaire a provoqué en 2021 la démission de la quasi-totalité de la rédaction, en désaccord avec les méthodes du groupe, plusieurs anciens journalistes ayant ensuite lancé le magazine concurrent Epsiloon."
+    },
+    {
+      "source_id": "52b6ac31-3fb0-44b6-9bf7-bcd22157066d",
+      "description": "ScienceEtonnante est une chaîne YouTube de vulgarisation scientifique animée par David Louapre, docteur en physique et auteur, qui a aussi exercé comme directeur scientifique dans l'industrie. Le format privilégie la science dite dure, physique, mathématiques, informatique et chimie, avec un effort pédagogique poussé qui évite la simplification excessive. La chaîne, prolongée par un blog et des ouvrages, revendique son indépendance grâce au financement participatif de sa communauté via des plateformes de dons."
+    },
+    {
+      "source_id": "0cd4319c-2322-47e9-a256-1509d6e47ed1",
+      "description": "Sismique est un podcast français créé et animé par Julien Devaureix, consacré aux grands enjeux du futur et aux transformations de nos sociétés. Sous forme d'entretiens au long cours, il donne la parole à des chercheurs, penseurs et praticiens de profils variés autour du climat, de l'énergie, de l'économie, de la technologie et des mutations sociétales. Le projet revendique son indépendance par le soutien direct de ses auditeurs, dans une démarche qui privilégie la réflexion de fond sur la transition plutôt que l'actualité immédiate."
+    },
+    {
+      "source_id": "f2a83bed-e8c9-490e-ad6d-64866cef71d3",
+      "description": "Slate FR est le pendant français du magazine en ligne américain Slate, lancé en 2009 avec notamment l'appui de Jean-Marie Colombani, ancien directeur du Monde. Le site se distingue par un journalisme d'explication et d'analyse au ton décalé, qui prend du recul sur l'actualité culturelle, scientifique, sociétale et internationale plutôt que de couvrir le breaking news. Sa rubrique Explainers prolonge cette vocation pédagogique en décortiquant des sujets complexes, des découvertes médicales aux phénomènes de société."
+    },
+    {
+      "source_id": "ffc3211a-ac85-4943-8a2a-106162d39446",
+      "description": "Socialter est un magazine bimestriel français fondé en 2013 par Olivier Cohen de Timary, d'abord né comme blog avant de devenir un titre imprimé grâce à un financement participatif. Centré sur l'écologie, la démocratie et les alternatives économiques, il a fait évoluer sa ligne vers une critique radicale du modèle dominant et l'exploration d'imaginaires alternatifs. Le média revendique une indépendance complète : plus de 90 pour cent de ses recettes proviennent des ventes, abonnements et soutiens directs de ses lecteurs."
+    },
+    {
+      "source_id": "faff0363-e0d5-47b6-a7b4-c6bd7109eeaa",
+      "description": "Stupid Economics est une chaîne de vulgarisation économique francophone qui décrypte sur un ton accessible les mécanismes financiers, les politiques monétaires et les inégalités. Le projet s'est structuré autour d'une équipe de journalistes regroupés sous une charte commune, donnant naissance à Stup Media, et aborde aussi les coulisses et le financement de l'information elle-même. Son contenu vise à rendre lisibles des notions économiques arides pour un large public, avec des séries pédagogiques sur la création monétaire et le rôle de la publicité dans les médias."
+    },
+    {
+      "source_id": "b8e4dfb0-87e5-434e-b54c-a59c49ce2fdc",
+      "description": "The Conversation est un média en ligne à but non lucratif fondé en Australie en 2011, dont l'édition française a été lancée en 2015. Sa particularité tient à son modèle éditorial: les articles sont rédigés par des chercheurs et universitaires, puis édités par des journalistes professionnels pour les rendre accessibles au grand public. Le contenu est publié sous licence Creative Commons, ce qui autorise sa republication gratuite par d'autres médias. La rédaction française s'appuie sur un réseau d'établissements partenaires comme le CNRS et de nombreuses universités."
+    },
+    {
+      "source_id": "9d93e3af-e6a5-437a-a411-d6be7b9d0412",
+      "description": "The Guardian est un quotidien britannique fondé en 1821 à Manchester sous le nom de Manchester Guardian. Il appartient au Scott Trust, une structure créée en 1936 pour garantir son indépendance éditoriale et financière sur le long terme, à l'abri d'un actionnaire privé. Le titre s'est imposé comme une référence du journalisme d'investigation, notamment avec les révélations Snowden en 2013 qui lui ont valu un prix Pulitzer. Il a fait le choix de la gratuité en ligne, financée par les dons volontaires de ses lecteurs plutôt que par un paywall strict."
+    },
+    {
+      "source_id": "ab4238b4-7279-4334-9489-fd8de5c6ca53",
+      "description": "The New York Times est un quotidien américain fondé en 1851, basé à New York et publié par l'entreprise The New York Times Company, contrôlée depuis plus d'un siècle par la famille Ochs-Sulzberger. Considéré comme l'un des journaux de référence dans le monde, il détient le record absolu de prix Pulitzer remportés par un média. Sa transformation numérique réussie en a fait un cas d'école, avec plus de dix millions d'abonnements payants cumulant presse, jeux et cuisine. Le titre est aussi connu pour ses grandes enquêtes, comme celle sur l'affaire Weinstein qui a contribué au mouvement MeToo."
+    },
+    {
+      "source_id": "343a1127-4341-43a7-88c1-d20ce1d9190f",
+      "description": "Trust My Science est un média français de vulgarisation scientifique en ligne, créé au début des années 2010. Il couvre l'actualité de la recherche dans des domaines variés tels que la physique, l'astronomie, la biologie, la médecine et les nouvelles technologies. Sa ligne éditoriale vise à rendre accessibles des découvertes scientifiques souvent issues de publications de revues spécialisées. Le site fonctionne sur un modèle web associant articles gratuits et offre premium pour soutenir la production de contenus."
+    },
+    {
+      "source_id": "03f703fb-3e6b-44d7-ad46-0b4fee77b425",
+      "description": "Usbek & Rica est un média français créé en 2010 qui se définit comme explorant le futur et les mutations de la société. Son nom est un clin d'oeil aux deux personnages persans des Lettres persanes de Montesquieu, dont le regard étranger sert de fil conducteur prospectiviste. La rédaction traite de sujets liés aux sciences, aux technologies, à l'environnement et aux transformations culturelles, avec une approche tournée vers les scénarios à venir. Au-delà de son magazine et de son site, la marque organise aussi des conférences et des événements autour de l'anticipation."
+    },
+    {
+      "source_id": "24c856bf-a1c0-45ca-9646-7e16d37166e1",
+      "description": "Valeurs Actuelles est un hebdomadaire français fondé en 1966, positionné sur une ligne éditoriale conservatrice et de droite. Le titre traite d'actualité politique, de société, d'économie et de culture, avec une attention marquée aux questions d'identité, d'immigration et de sécurité. Il appartient depuis 2015 au groupe Valmonde, contrôlé par l'homme d'affaires Iskandar Safa via Privinvest. Le magazine a connu plusieurs polémiques médiatiques retentissantes ayant donné lieu à des procédures judiciaires liées à ses unes et à certains de ses contenus."
+    }
+  ]
+}

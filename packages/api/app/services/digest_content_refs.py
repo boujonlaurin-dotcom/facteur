@@ -5,7 +5,8 @@ The digest is stored in 3 possible layouts, depending on `format_version`:
 - **flat_v1**: ``items`` is a JSON *array* of ``{"content_id": ..., ...}``.
 - **topics_v1**: ``items`` is a JSON *object*
   ``{"format": "topics_v1", "topics": [{"articles": [{"content_id": ...}, ...]}, ...]}``.
-- **editorial_v1**: ``items`` is a JSON *object* with structured keys:
+- **editorial_v1 / editorial_v2 / editorial_v3 / …** (any ``editorial_v*``):
+  ``items`` is a JSON *object* with structured keys:
   ``subjects[i].actu_article.content_id``,
   ``subjects[i].extra_actu_articles[j].content_id``,
   ``subjects[i].deep_article.content_id``,
@@ -46,10 +47,16 @@ def extract_content_ids(items: Any, format_version: str | None) -> set[UUID]:
 
     fmt = format_version or "flat_v1"
 
-    # editorial_v1 et editorial_v2 partagent EXACTEMENT la même forme JSON
-    # (`items` = dict avec `subjects[]`) — seule la sémantique de sélection
-    # diffère. L'extraction des content_ids est donc identique.
-    if fmt in ("editorial_v1", "editorial_v2") and isinstance(items, dict):
+    # Toutes les variantes editorial_v* partagent EXACTEMENT la même forme
+    # JSON (`items` = dict avec `subjects[]`) — seule la sémantique de
+    # sélection diffère. L'extraction des content_ids est donc identique.
+    # On matche par préfixe (et non une liste figée) : un nouveau
+    # `editorial_vN` non listé tomberait sinon dans la branche `flat_v1`
+    # (`isinstance(items, list)` → False sur un dict) et renverrait un set
+    # VIDE, laissant ses contenus non protégés par le storage cleanup
+    # (suppression → editorial_article_not_found → 503). Régression vue avec
+    # editorial_v3 (cf. incident PYTHON-4X / audit cleanup).
+    if fmt.startswith("editorial_") and isinstance(items, dict):
         for subject in items.get("subjects") or []:
             if not isinstance(subject, dict):
                 continue

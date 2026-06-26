@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.models.enums import InterestState
 from app.models.source import UserSource
-from app.models.user import UserInterest
 from app.models.user_favorites import UserFavoriteInterest
 from app.schemas.user import OnboardingAnswers
 from app.services.user_service import UserService
@@ -153,17 +153,15 @@ async def test_save_onboarding_creates_user_sources():
         nonlocal execute_call_count
         execute_call_count += 1
         # Calls order in save_onboarding:
-        # 1. delete UserPreference
-        # 2. delete UserInterest
-        # 3. delete UserSubtopic
-        # 4. pg_insert UserPersonalization (muted themes)
-        # 5. select Source.id (existing sources check)
-        # 6. select UserSource.source_id (already trusted check)
-        # 7. select UserSource (cleanup query)
+        # 1-3. delete UserPreference / UserInterest / UserSubtopic
+        # 4..4+N-1. pg_insert UserInterest (one upsert per theme, N=len(themes))
+        # 4+N. pg_insert UserPersonalization (muted themes)
+        # then: select Source.id / select UserSource.source_id / select UserSource
+        src_base = 3 + len(answers.themes) + 1
         responses_by_call = {
-            5: mock_sources_result,
-            6: mock_already_result,
-            7: mock_all_user_sources_result,
+            src_base + 1: mock_sources_result,
+            src_base + 2: mock_already_result,
+            src_base + 3: mock_all_user_sources_result,
         }
         return responses_by_call.get(execute_call_count, MagicMock())
 
@@ -228,10 +226,13 @@ async def test_save_onboarding_marks_existing_source_followed():
     async def mock_execute(stmt):
         nonlocal execute_call_count
         execute_call_count += 1
+        # Interests are upserted via execute() (one per theme) before the
+        # source selects — offset by len(themes). Cf. test above.
+        src_base = 3 + len(answers.themes) + 1
         responses_by_call = {
-            5: mock_sources_result,
-            6: mock_already_result,
-            7: mock_all_user_sources_result,
+            src_base + 1: mock_sources_result,
+            src_base + 2: mock_already_result,
+            src_base + 3: mock_all_user_sources_result,
         }
         return responses_by_call.get(execute_call_count, MagicMock())
 
@@ -274,19 +275,34 @@ async def test_save_onboarding_seeds_theme_favorites_when_empty():
 
     added_objects = [call.args[0] for call in mock_db.add.call_args_list]
     favorites = [obj for obj in added_objects if isinstance(obj, UserFavoriteInterest)]
-    interests = [obj for obj in added_objects if isinstance(obj, UserInterest)]
 
     assert [(f.interest_slug, f.position) for f in favorites] == [
         ("tech", 0),
         ("science", 1),
         ("culture", 2),
     ]
+
+    # Interests are now persisted via atomic upserts (execute), not db.add().
+    # Read the declared state back from each insert into user_interests.
+    executed = [call.args[0] for call in mock_db.execute.call_args_list]
+    interest_states = {}
+    for stmt in executed:
+        table = getattr(stmt, "table", None)
+        if not getattr(stmt, "is_insert", False) or table is None:
+            continue
+        if table.name != "user_interests":
+            continue
+        params = stmt.compile(dialect=postgresql.dialect()).params
+        interest_states[params["interest_slug"]] = params["state"]
+
     favorite_interest_states = {
-        i.interest_slug: i.state
-        for i in interests
-        if i.interest_slug in {"tech", "science", "culture"}
+        slug: state
+        for slug, state in interest_states.items()
+        if slug in {"tech", "science", "culture"}
     }
     assert set(favorite_interest_states.values()) == {InterestState.FAVORITE}
+    # Le 4e thème reste un simple suivi.
+    assert interest_states["economy"] == InterestState.FOLLOWED
 
 
 @pytest.mark.asyncio

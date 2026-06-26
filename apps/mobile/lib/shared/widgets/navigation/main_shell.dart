@@ -6,6 +6,8 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../features/app_update/providers/app_update_provider.dart';
+import '../../../features/app_update/widgets/ios_update_banner.dart';
+import '../../../features/app_update/widgets/ios_update_gate.dart';
 import '../../../features/feed/widgets/profile_avatar_button.dart';
 import '../../../features/gamification/widgets/streak_indicator.dart';
 import '../../../features/tour/tour_anchors.dart';
@@ -35,6 +37,9 @@ class MainShell extends StatelessWidget {
         children: [
           navigationShell,
           const GuidedTourBridge(),
+          // Gate bloquant « Mise à jour requise » (iOS) : transparent au cas
+          // nominal, recouvre tout quand la version est sous le seuil minimal.
+          const IosUpdateGate(),
         ],
       ),
     );
@@ -106,6 +111,9 @@ class MainTabPageScaffold extends ConsumerWidget {
           // (étapes 4/5 y naviguent) — clé unique malgré les deux branches
           // montées simultanément.
           _SharedTopHeader(attachTourAvatarKey: currentIndex == 0),
+          // Bannière incitative « nouvelle version dispo » (iOS) : non bloquante,
+          // app-wide sur les deux onglets. SizedBox.shrink au cas nominal.
+          const IosUpdateBanner(),
           Expanded(child: child),
         ],
       ),

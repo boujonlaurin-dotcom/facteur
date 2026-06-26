@@ -15,6 +15,7 @@ import 'features/feed/services/read_sync_service.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
+import 'features/app_update/services/playstore_update_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
@@ -53,7 +54,8 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
       unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
-      _ensureWidgetFresh();
+      // playstore : invite native Play « MàJ disponible » (no-op sur beta/dev).
+      unawaited(ref.read(playStoreUpdateServiceProvider).checkAndStart());
     });
     // Story 23.2 PR-4 : si un endpoint retiré répond 410, afficher un
     // snackbar global "Mise à jour requise". Le ApiClient intercepte tous
@@ -96,6 +98,9 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
       unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
+      // playstore : re-check au retour foreground (no-op sur beta/dev ; garde
+      // anti-ré-entrance interne au service).
+      unawaited(ref.read(playStoreUpdateServiceProvider).checkAndStart());
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         final elapsed = _backgroundedAt != null

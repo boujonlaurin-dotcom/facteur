@@ -47,6 +47,14 @@ async def get_essentiel(
     target_date: date | None = Query(
         None, description="Date for essentiel (default: today)"
     ),
+    serein: bool | None = Query(
+        None,
+        description=(
+            "Force le mode serein (true/false). Absent ⇒ lecture de la "
+            "préférence DB. Permet au client de demander le bon mode sans "
+            "dépendre de la persistance de la préférence au moment du refetch."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
@@ -62,7 +70,13 @@ async def get_essentiel(
     start = time.monotonic()
 
     service = DigestService(db)
-    serein_enabled = await service.get_user_serein_enabled(user_uuid)
+    # Override explicite par le client (symétrie avec `?serein=` du feed) ;
+    # fallback DB conservé pour rétrocompat des clients qui ne l'envoient pas.
+    serein_enabled = (
+        serein
+        if serein is not None
+        else await service.get_user_serein_enabled(user_uuid)
+    )
     digest = await read_digest_or_fallback(
         db, user_uuid, effective_date, is_serene=serein_enabled
     )
