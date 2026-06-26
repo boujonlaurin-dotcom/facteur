@@ -1,33 +1,36 @@
-## Tour guidé Facteur (coach-mark post-onboarding)
+## fix(scaling): saturation pool DB nocturne (PYTHON-5M/5G/4X) + alerte 2 seuils
 
-Tour guidé en 5 étapes joué **une seule fois juste après l'onboarding**, qui pilote la vraie app pour présenter ses pages principales. Il s'insère **avant** les modales post-onboarding existantes (thème puis notifications).
+Corrige la racine de la pression pool matinale (~07h20-07h35 Paris) et ses
+retombées, **sans augmenter le pool** (`max_connections=60` partagé entre staging
+et prod). Doc : `docs/maintenance/maintenance-saturation-pool-db-nocturne.md`.
 
-### Parcours (6 états joués, 5 puces)
-1. **1/5** — hero « L'Essentiel du jour » + onglet Essentiel (scroll top).
-2. **2/5 (a)** — scroll vers la 1ʳᵉ section de la Tournée (`ensureVisible`).
-3. **2/5 (b)** — ouverture de la vraie feuille « Mes favoris », spotlight par-dessus.
-4. **3/5** — bascule onglet Flâner, voile plein, carte centrée.
-5. **4/5** — retour accueil, spotlight de l'avatar profil (Réglages).
-6. **5/5** — même avatar (Mon courrier), bouton « Terminer ».
-7. **done** — carte « C'est parti », puis main rendue aux modales.
+### Axe A — discipline rollback dans le digest (PYTHON-5G)
+- `rollback()` + `apply_session_timeouts()` dans les `except` *trending* et
+  *editorial precompute* de `run_digest_generation`.
+- Grille isolée dans sa propre `safe_async_session()` courte (calque `cov_session`),
+  idempotence `ON CONFLICT DO NOTHING` préservée → plus de `PendingRollbackError`,
+  le mot du jour se fige.
 
-### Architecture
-- **Machine à états Riverpod** (`GuidedTourController`, `keepAlive`) — survit aux changements d'onglet/feuilles, **ne touche jamais `BuildContext`**. `start(onComplete)` gate le flag « vu » (scopé user) ; `next()`/`skip()`/`finish()` → `done` + `onComplete` tiré une seule fois.
-- **Bridge racine** (`GuidedTourBridge`, monté une fois dans `MainShell`) — exécute les effets de bord (navigation, ouverture feuille, scroll) et insère l'`OverlayEntry` dans l'overlay **racine** (au-dessus de la feuille favoris qui vit en branche).
-- **Overlay** — scrim `#2C2A29` α0.72 + découpe spotlight (`Path`/`BlendMode.clear`, contour `#E8943F`), rect relu live depuis le `RenderBox` des `GlobalKey` à chaque frame (suit slide/scroll). Coach card : avatar Facteur, pastille « N/5 », titre Fraunces, corps DM Sans, 5 puces, Passer/Suivant/Terminer.
+### Axe B — borner la concurrence (PYTHON-5M)
+- `concurrency_limit` digest 10 → 5 (signature + scheduler).
+- `subtopic_weight_decay` 07h20 → 06h50 (hors pic). Pool inchangé.
 
-### Garde « une seule fois »
-Double verrou : démarrage seulement depuis le chemin post-onboarding (`postOnboardingFlowPendingProvider`) **et** flag persistant `nudge.guided_tour.seen.<userId>` (namespace `nudge.`, scopé user comme `NudgeStorage`).
+### Axe C — alléger le cleanup off-peak 03h (PYTHON-4X)
+- `statement_timeout_ms=120_000` ; extraction des `content_id` côté Postgres (JSONB,
+  3 layouts) au lieu de tirer 172 MB d'`items` ; counts best-effort ; DELETE batché.
+  Sémantique de préservation (90 j) inchangée.
 
-### Fichiers
-- **Nouveaux** : `lib/features/tour/` (models/tour_step, providers/guided_tour_controller, tour_anchors, tour_strings, tour_ids, widgets/guided_tour_bridge|overlay|coach_card).
-- **Édités** : `flux_continu_screen.dart` (split `_runPostOnboardingFlow` → tour puis `_runPostOnboardingModals`, listen `tourScrollTargetProvider`, ancre 1ʳᵉ section), `essentiel_hi_fi_card.dart` (ancre hero), `main_shell.dart` (montage bridge + ancre avatar), `main_bottom_nav.dart` (ancre onglet), `manage_favorites_sheet.dart` (ancre feuille + note z-order), `navigation_providers.dart` (`tourScrollTargetProvider`), `changelog.json`.
+### Axe D — métrique / alerte de suivi (cette étape)
+- **Sonde pool à 2 seuils** (`_pool_health_probe`) : *warn* ≥70 % **soutenu** sur 2
+  sondes consécutives → Sentry `level=warning` (ignore les pics transitoires) ;
+  *page* ≥90 % → Sentry `level=fatal` immédiat. Seuils configurables
+  (`pool_warn_threshold_pct` / `pool_page_threshold_pct` /
+  `pool_warn_sustained_probes`).
+- **Alerte sur `zombie_session_sweeper_killed`** : Sentry `level=error` (tout kill =
+  un `safe_async_session` manqué) en plus du warning structlog.
 
-### Tests
-- `test/features/tour/guided_tour_controller_test.dart` — séquence complète, displayIndex (2/5 mutualisé), skip/finish → done + flag persisté + onComplete une fois, no-op si déjà vu.
-- `test/features/tour/guided_tour_overlay_test.dart` — coach card (titre/pastille/puces/boutons), « Terminer » en dernière étape, carte de conclusion, voile plein sans ancre.
-- `flutter analyze` : 0 nouvelle erreur. Tests des fichiers touchés (essentiel_hi_fi_card, main_bottom_nav, flux_continu) : verts.
-
-### Notes
-- Frontend pur, aucune migration / endpoint.
-- Reste à faire avant deploy : `/validate-feature` Playwright (handoff dans `.context/qa-handoff.md`).
+### Tests & migration
+- `pytest` vert sur `test_pool_observability.py`, `workers/test_zombie_session_sweeper.py`,
+  + les tests Axes A/B/C.
+- **Aucune migration Alembic** (aucun DDL ; l'index `ix_user_content_status_content_id`
+  existe déjà). Lecture seule prod tenue, aucun déploiement déclenché.
