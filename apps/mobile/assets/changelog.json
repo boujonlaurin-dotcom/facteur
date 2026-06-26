@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Widget",
+      "summary": "Le widget se rafraîchit à nouveau, avec un bouton pour forcer la mise à jour."
+    },
+    {
       "tag": "Perspectives",
       "summary": "Couverture médiatique plus lisible : repères Gauche/Droite sous la barre, source cliquable et aperçu de l'article au toucher prolongé."
     },

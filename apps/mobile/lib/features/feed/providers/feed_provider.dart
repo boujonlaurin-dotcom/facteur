@@ -395,6 +395,27 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     });
   }
 
+  /// Re-amorce le widget home-screen à chaque ouverture/reprise de l'app :
+  ///
+  ///  - (a) re-pushe **immédiatement** le flux Flâner courant vers le widget
+  ///    via [_scheduleWidgetPush] — répare un widget fraîchement épinglé ou un
+  ///    payload vidé même si le contenu n'a pas changé ;
+  ///  - (b) déclenche un [refresh] réseau quand [stale] (typiquement quand
+  ///    l'app revient au premier plan après [flanerForegroundRefreshThreshold])
+  ///    pour que le widget reçoive du contenu réellement frais.
+  ///
+  /// Le garde de signature de [_scheduleWidgetPush] évite tout churn de
+  /// SharedPreferences si le contenu est identique.
+  Future<void> ensureWidgetFresh({bool stale = false}) async {
+    final items = state.value?.items ?? const <Content>[];
+    if (items.isNotEmpty) {
+      _scheduleWidgetPush(items);
+    }
+    if (stale) {
+      await refresh();
+    }
+  }
+
   /// Push the current default feed to the home-screen widget. No-op when a
   /// filter/theme/source/etc. is active — only the canonical, unfiltered Flux
   /// is mirrored to the widget. Debounced + signature-guarded so optimistic
