@@ -63,6 +63,11 @@ class DeepLinkService {
   /// Replayed once both conditions are met via [flushPendingIfReady].
   Uri? _pending;
 
+  /// `true` once a cold-start link has been seeded via [seedPending] (from
+  /// `main.dart`). Lets [start] skip its own `getInitialLink` so the link isn't
+  /// handled twice (which would double-navigate after the redirect consumed it).
+  bool _initialLinkSeeded = false;
+
   /// Reference to the current [GoRouter]. Set via [bind] from `app.dart`.
   GoRouter? _router;
 
@@ -70,11 +75,23 @@ class DeepLinkService {
   /// from `app.dart` via a Riverpod listener on `authStateProvider`.
   bool _authenticated = false;
 
+  /// Callback invoked when a widget tap explicitly requests a feed refresh
+  /// (`io.supabase.facteur://feed?refresh=1`, fired by the widget's refresh
+  /// button). Wired from `app.dart` to `feedProvider.refresh()`.
+  VoidCallback? _onRefreshRequested;
+
   /// Bind the service to the running router and analytics. Idempotent.
-  void bind({required GoRouter router, AnalyticsService? analytics}) {
+  void bind({
+    required GoRouter router,
+    AnalyticsService? analytics,
+    VoidCallback? onRefreshRequested,
+  }) {
     _router = router;
     if (analytics != null) {
       _analytics = analytics;
+    }
+    if (onRefreshRequested != null) {
+      _onRefreshRequested = onRefreshRequested;
     }
   }
 
@@ -92,14 +109,17 @@ class DeepLinkService {
   Future<void> start() async {
     if (_sub != null) return;
 
-    // 1. Cold start: check the URI that launched the app.
-    try {
-      final initial = await _appLinks.getInitialLink();
-      if (initial != null) {
-        _handle(initial);
+    // 1. Cold start: check the URI that launched the app — unless main.dart
+    // already seeded it via [seedPending] (then the redirect owns it).
+    if (!_initialLinkSeeded) {
+      try {
+        final initial = await _appLinks.getInitialLink();
+        if (initial != null) {
+          _handle(initial);
+        }
+      } catch (e) {
+        debugPrint('DeepLinkService: getInitialLink failed: $e');
       }
-    } catch (e) {
-      debugPrint('DeepLinkService: getInitialLink failed: $e');
     }
 
     // 2. Hot stream: subsequent URIs while the app is alive.
@@ -147,6 +167,45 @@ class DeepLinkService {
     _route(pending);
   }
 
+  /// Seed a pending URI without going through the auth gate. Used at boot from
+  /// `main.dart` (`AppLinks().getInitialLink()`) so the cold-start deep link is
+  /// known *before* the first GoRouter redirect resolves — making the deep link
+  /// the single source of truth for the post-auth landing route instead of
+  /// racing [flushPendingIfReady] against `postAuthHomePath()`.
+  void seedPending(Uri uri) {
+    if (uri.scheme != 'io.supabase.facteur') return;
+    _pending = uri;
+    _initialLinkSeeded = true;
+  }
+
+  /// Resolve the in-app route for the currently pending URI **without
+  /// consuming it**, or `null` when nothing navigable is pending. Called by the
+  /// router `redirect` to land cold-opens on their deep-linked destination.
+  String? pendingRoute() {
+    final pending = _pending;
+    if (pending == null) return null;
+    final action = parse(pending);
+    switch (action.target) {
+      case WidgetDeepLinkTarget.article:
+      case WidgetDeepLinkTarget.digest:
+      case WidgetDeepLinkTarget.feed:
+      case WidgetDeepLinkTarget.veille:
+      case WidgetDeepLinkTarget.grille:
+        return action.route;
+      case WidgetDeepLinkTarget.authCallback:
+      case WidgetDeepLinkTarget.ignored:
+      case WidgetDeepLinkTarget.unhandled:
+        return null;
+    }
+  }
+
+  /// Clear the pending URI. Called by the redirect once it has consumed the
+  /// pending route via [pendingRoute] so [flushPendingIfReady] becomes a no-op
+  /// (no double navigation on cold-open).
+  void clearPending() {
+    _pending = null;
+  }
+
   void _route(Uri uri) {
     final router = _router;
     if (router == null) {
@@ -177,6 +236,11 @@ class DeepLinkService {
       case WidgetDeepLinkTarget.feed:
         _analytics?.trackWidgetAppOpened(target: 'feed');
         router.go(action.route!);
+        // Widget refresh button: after landing on Flâner, force a feed refresh
+        // (which re-pushes the widget through the existing path).
+        if (action.refresh) {
+          _onRefreshRequested?.call();
+        }
         return;
       case WidgetDeepLinkTarget.veille:
         _analytics?.trackWidgetAppOpened(target: 'veille');
@@ -285,10 +349,12 @@ class DeepLinkService {
         }
       }
       // FeedScreen historique — on route vers Flâner, désormais page feed
-      // autonome.
-      return const WidgetDeepLinkAction(
+      // autonome. `refresh=1` (bouton refresh du widget) garde la route Flâner
+      // mais signale qu'un rafraîchissement du flux doit suivre.
+      return WidgetDeepLinkAction(
         target: WidgetDeepLinkTarget.feed,
         route: RoutePaths.flaner,
+        refresh: uri.queryParameters['refresh'] == '1',
       );
     }
 
@@ -318,6 +384,8 @@ class DeepLinkService {
     _sub = null;
     _router = null;
     _pending = null;
+    _onRefreshRequested = null;
+    _initialLinkSeeded = false;
   }
 }
 
@@ -340,6 +408,10 @@ class WidgetDeepLinkAction {
   final String? topicId;
   final String? authType;
 
+  /// `true` when the link carries `refresh=1` (widget refresh button) — the
+  /// router lands on Flâner and the service then triggers a feed refresh.
+  final bool refresh;
+
   const WidgetDeepLinkAction({
     required this.target,
     this.route,
@@ -347,5 +419,6 @@ class WidgetDeepLinkAction {
     this.position,
     this.topicId,
     this.authType,
+    this.refresh = false,
   });
 }

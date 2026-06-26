@@ -108,7 +108,13 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
             : null;
         final router = ref.read(routerProvider);
         final currentPath = router.routeInformationProvider.value.uri.path;
-        if (ref.read(authStateProvider).isAuthenticated &&
+        final isAuthenticated = ref.read(authStateProvider).isAuthenticated;
+        // Re-amorce le widget à chaque reprise, quel que soit l'onglet courant
+        // (re-push immédiat + refresh réseau si le flux est périmé) — sans ça,
+        // le widget gèle tant que l'utilisateur n'ouvre pas explicitement
+        // Flâner.
+        _ensureWidgetFresh(stale: shouldRefreshFlanerOnForeground(elapsed));
+        if (isAuthenticated &&
             currentPath == RoutePaths.fluxContinu &&
             ref
                 .read(tourneeProgressServiceProvider)
@@ -116,13 +122,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
           router.go(RoutePaths.flaner);
           return;
         }
-        if (ref.read(authStateProvider).isAuthenticated &&
-            currentPath == RoutePaths.flaner &&
-            shouldRefreshFlanerOnForeground(elapsed)) {
-          ref.read(feedProvider.notifier).refresh();
-        }
       }
     }
+  }
+
+  /// Re-pushe le flux courant vers le widget (best-effort, silencieux si pas
+  /// authentifié ou flux pas encore chargé). [stale] force en plus un refresh
+  /// réseau (retour de premier plan après un long passage en arrière-plan).
+  void _ensureWidgetFresh({bool stale = false}) {
+    if (!ref.read(authStateProvider).isAuthenticated) return;
+    unawaited(ref.read(feedProvider.notifier).ensureWidgetFresh(stale: stale));
   }
 
   Future<void> _flushFluxScrollMetricIfAny() async {
@@ -168,7 +177,13 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
 
     // Bind the DeepLinkService once the router is built. Idempotent.
     final analytics = ref.read(analyticsServiceProvider);
-    DeepLinkService.instance.bind(router: router, analytics: analytics);
+    DeepLinkService.instance.bind(
+      router: router,
+      analytics: analytics,
+      // Widget refresh button → réveille l'app, force un refresh Flâner (qui
+      // re-pushe le widget via le chemin existant).
+      onRefreshRequested: () => ref.read(feedProvider.notifier).refresh(),
+    );
 
     if (!_deepLinksStarted) {
       _deepLinksStarted = true;
