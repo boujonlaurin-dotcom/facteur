@@ -253,28 +253,31 @@ async def run(csv_path: Path, apply: bool, allow_prod: bool, allow_shrink: bool)
         try:
             current = await load_current(session, ids)
             res = compute_changes(proposals, current, allow_shrink=allow_shrink)
-
-            bpath = _backup_path()
-            bpath.parent.mkdir(parents=True, exist_ok=True)
-            bpath.write_text(
-                json.dumps(
-                    {
-                        "generated_at": datetime.now(UTC).isoformat(),
-                        "before": [
-                            {"source_id": c.source_id, "name": c.name, "old": c.old}
-                            for c in res.writes
-                        ],
-                    },
-                    indent=2,
-                    ensure_ascii=False,
-                )
-            )
-            print(f"Backup écrit : {bpath}")
             print(render_report(res))
 
             if not apply:
                 print("\n(dry-run — aucune mutation. Relance avec --apply.)")
                 return 0
+
+            # Backup du « before » uniquement quand on mute réellement (pas en
+            # dry-run, pas si zéro écriture) — écrit avant la mutation.
+            if res.writes:
+                bpath = _backup_path()
+                bpath.parent.mkdir(parents=True, exist_ok=True)
+                bpath.write_text(
+                    json.dumps(
+                        {
+                            "generated_at": datetime.now(UTC).isoformat(),
+                            "before": [
+                                {"source_id": c.source_id, "name": c.name, "old": c.old}
+                                for c in res.writes
+                            ],
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                )
+                print(f"Backup écrit : {bpath}")
 
             await write_changes(session, res.writes)
             await session.commit()
