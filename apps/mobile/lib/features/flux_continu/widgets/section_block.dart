@@ -235,7 +235,11 @@ class SectionBlock extends StatelessWidget {
                 onLongPressConversion: onLongPressConversion,
               ),
         ];
-      case FeedThemeSection(:final items, :final coreVisibleCount):
+      case FeedThemeSection(
+          :final items,
+          :final coreVisibleCount,
+          :final underfilled,
+        ):
         // Story 23.4 — la section veille reste visible même vide : on rend un
         // placeholder + CTA réglages au lieu de cartes.
         if (items.isEmpty && section.kind == SectionKind.veille) {
@@ -337,6 +341,15 @@ class SectionBlock extends StatelessWidget {
                 onSwipeConversion: onSwipeConversion,
                 onLongPressConversion: onLongPressConversion,
               ),
+          // Cohérence Tournée — un thème **maigre affiché** (≤1 survivant après
+          // dédup, enrichi par réinjection) porte en pied un CTA pour étoffer la
+          // section. Distinct de l'empty-state (items vides) au-dessus.
+          if (section.kind == SectionKind.theme && underfilled)
+            _FavoriteEmptyState(
+              ctaIcon: Icons.add_rounded,
+              ctaLabel: 'Ajouter plus de sources',
+              onCta: onAddSources,
+            ),
         ];
     }
   }
@@ -397,12 +410,15 @@ class _VeilleEmptyState extends StatelessWidget {
 /// sections source (« Voir toute la curation ») et thème (« Ajouter des
 /// sources » → « Composer ma Tournée »).
 class _FavoriteEmptyState extends StatelessWidget {
-  final String message;
+  /// Message d'accroche. `null` ⇒ variante **CTA seul** (pied d'une section
+  /// maigre déjà remplie : pas de message, juste le bouton « Ajouter plus de
+  /// sources »).
+  final String? message;
   final IconData ctaIcon;
   final String ctaLabel;
   final VoidCallback? onCta;
   const _FavoriteEmptyState({
-    required this.message,
+    this.message,
     required this.ctaIcon,
     required this.ctaLabel,
     this.onCta,
@@ -412,7 +428,7 @@ class _FavoriteEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+      padding: EdgeInsets.fromLTRB(16, message == null ? 10 : 18, 16, 10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(12),
@@ -421,16 +437,17 @@ class _FavoriteEmptyState extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            message,
-            style: const TextStyle(
-              fontSize: 14,
-              height: 1.4,
-              color: Color(0xFF5D5B5A),
+          if (message != null)
+            Text(
+              message!,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.4,
+                color: Color(0xFF5D5B5A),
+              ),
             ),
-          ),
           if (onCta != null) ...[
-            const SizedBox(height: 8),
+            if (message != null) const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(

@@ -9,7 +9,8 @@ des routers (couche transport).
 from uuid import UUID
 
 import structlog
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, text, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants import FAVORITE_CAP
@@ -17,6 +18,7 @@ from app.models.enums import InterestState
 from app.models.source import UserSource
 from app.models.user import UserInterest
 from app.models.user_favorites import UserFavoriteInterest, UserFavoriteSource
+from app.models.user_personalization import UserPersonalization
 from app.models.user_topic_profile import UserTopicProfile
 from app.models.veille import VeilleConfig, VeilleStatus
 from app.schemas.user_interests import (
@@ -156,11 +158,18 @@ class UserInterestsService:
             if row is None:
                 # Création implicite : permet à l'utilisateur d'épingler un Thème
                 # qu'il n'avait pas encore (weight neutre, state demandé).
-                row = UserInterest(
-                    user_id=user_id, interest_slug=interest_slug, state=state
+                # Upsert atomique : un double-tap concurrent ne lève plus
+                # d'IntegrityError sur user_interests_user_slug_uniq.
+                # prev_state reste None (sémantique "créé à la volée").
+                stmt = (
+                    insert(UserInterest)
+                    .values(user_id=user_id, interest_slug=interest_slug, state=state)
+                    .on_conflict_do_update(
+                        constraint="user_interests_user_slug_uniq",
+                        set_={"state": state},
+                    )
                 )
-                self.db.add(row)
-                await self.db.flush()
+                await self.db.execute(stmt)
             else:
                 prev_state = row.state
                 row.state = state
@@ -449,8 +458,67 @@ class UserSourcesStateService:
         await self._sync_favorite_source(
             user_id=user_id, source_id=source_id, state=state, position=position
         )
+        await self._sync_muted_source(
+            user_id=user_id, source_id=source_id, state=state
+        )
         await self.db.commit()
         return prev_state
+
+    async def _sync_muted_source(
+        self, user_id: UUID, source_id: UUID, state: InterestState
+    ) -> None:
+        """Garde `personalization.muted_sources` cohérent avec l'état de la source.
+
+        Le feed exclut une source via `personalization.muted_sources` (cf.
+        `recommendation_service` + `pillars/penalties`), JAMAIS via
+        `UserSource.state` (contrairement aux Thèmes/Sujets, cf. `pertinence`).
+        Le curseur de priorité de la fiche source expose un palier « Masqué »
+        qui passe la source en `HIDDEN` : sans ce miroir, « Masqué » ne
+        retirerait pas la source du flux. On ajoute donc la source à
+        `muted_sources` sur `HIDDEN`, et on l'en retire sur tout autre état
+        (suivi/favori/neutre) pour rester réversible.
+        """
+        if state == InterestState.HIDDEN:
+            # FK user_personalization → user_profiles : garantir le profil
+            # avant l'upsert (un user peut masquer depuis le reader sans row
+            # de personnalisation préexistante).
+            from app.services.user_service import UserService
+
+            await UserService(self.db).get_or_create_profile(str(user_id))
+            await self.db.execute(
+                insert(UserPersonalization)
+                .values(user_id=user_id, muted_sources=[source_id])
+                .on_conflict_do_update(
+                    index_elements=["user_id"],
+                    set_={
+                        # array_remove avant array_append → idempotent (pas de
+                        # doublon si déjà mutée).
+                        "muted_sources": func.array_append(
+                            func.array_remove(
+                                func.coalesce(
+                                    UserPersonalization.muted_sources,
+                                    text("ARRAY[]::uuid[]"),
+                                ),
+                                source_id,
+                            ),
+                            source_id,
+                        ),
+                        "updated_at": func.now(),
+                    },
+                )
+            )
+        else:
+            # Démutage idempotent : no-op si pas de row perso / source absente.
+            await self.db.execute(
+                update(UserPersonalization)
+                .where(UserPersonalization.user_id == user_id)
+                .values(
+                    muted_sources=func.array_remove(
+                        UserPersonalization.muted_sources, source_id
+                    ),
+                    updated_at=func.now(),
+                )
+            )
 
     async def _sync_favorite_source(
         self,

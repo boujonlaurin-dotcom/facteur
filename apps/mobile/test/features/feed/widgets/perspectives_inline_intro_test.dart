@@ -49,23 +49,25 @@ Future<void> _pumpInline(
 }
 
 void main() {
-  const introSnippet = "marquent l'angle éditorial";
+  // Le bouton info de l'en-tête ouvre une modal expliquant la divergence
+  // (le surlignage est désactivé → kHighlightIntroText n'est plus rendu).
+  const infoSnippet = 'Facteur mesure la divergence';
   final infoIcon = PhosphorIcons.info(PhosphorIconsStyle.regular);
 
-  testWidgets('ready : intro derrière le bouton info de l\'en-tête',
+  testWidgets('ready : explication divergence derrière le bouton info de l\'en-tête',
       (tester) async {
     await _pumpInline(tester, perspectives: [_p('A'), _p('B', bias: 'left')]);
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.textContaining(introSnippet), findsNothing);
+    expect(find.textContaining(infoSnippet), findsNothing);
 
     await tester.tap(find.byIcon(infoIcon).first);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(introSnippet), findsOneWidget);
+    expect(find.textContaining(infoSnippet), findsOneWidget);
   });
 
-  testWidgets('loading : ni bouton info ni intro', (tester) async {
+  testWidgets('loading : ni bouton info ni explication', (tester) async {
     await _pumpInline(
       tester,
       perspectives: const [],
@@ -73,7 +75,7 @@ void main() {
     );
 
     expect(find.byIcon(infoIcon), findsNothing);
-    expect(find.textContaining(introSnippet), findsNothing);
+    expect(find.textContaining(infoSnippet), findsNothing);
   });
 
   testWidgets('ready high divergence → badge POLARISÉ', (tester) async {
@@ -99,7 +101,7 @@ void main() {
     expect(find.text('TRAITEMENTS SIMILAIRES'), findsOneWidget);
   });
 
-  testWidgets('badge de la couverture utilise l’échelle agrandie 1.45',
+  testWidgets('badge de polarisation en en-tête à l’échelle 1.0',
       (tester) async {
     await _pumpInline(
       tester,
@@ -111,6 +113,6 @@ void main() {
     final badge = tester.widget<DivergenceInlineBadge>(
       find.byType(DivergenceInlineBadge),
     );
-    expect(badge.scale, 1.45);
+    expect(badge.scale, 1.0);
   });
 }

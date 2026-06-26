@@ -39,21 +39,22 @@ class DeepRecommendationCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(13, 14, 13, 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
+            // Dégradé linéaire simple sur une seule teinte (primary) : deux
+            // stops, progression douce, sans virer au blanc/surface.
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                primary.withValues(alpha: 0.14),
-                primary.withValues(alpha: 0.05),
-                colors.surface,
+                primary.withValues(alpha: 0.12),
+                primary.withValues(alpha: 0.04),
               ],
             ),
-            border: Border.all(color: primary.withValues(alpha: 0.10)),
+            border: Border.all(color: primary.withValues(alpha: 0.07)),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.10),
-                offset: const Offset(0, 2),
-                blurRadius: 4,
+                color: Colors.black.withValues(alpha: 0.05),
+                offset: const Offset(0, 1),
+                blurRadius: 6,
               ),
             ],
           ),
@@ -67,7 +68,7 @@ class DeepRecommendationCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Pas de recul'.toUpperCase(),
+                      'Le pas de recul · Facteur'.toUpperCase(),
                       style: GoogleFonts.courierPrime(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -91,20 +92,6 @@ class DeepRecommendationCard extends StatelessWidget {
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (reco.matchReason.trim().isNotEmpty) ...[
-                      const SizedBox(height: 5),
-                      Text(
-                        reco.matchReason.trim(),
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontStyle: FontStyle.italic,
-                          height: 1.3,
-                          color: colors.textSecondary,
-                        ),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                     const SizedBox(height: 5),
                     _SourceMeta(
                       logoUrl: reco.sourceLogoUrl,
@@ -141,6 +128,11 @@ class _Medallion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Désature légèrement les deux extrémités vers la surface : couleur « moins
+    // marquée » sans perdre la chaleur ni le point focal lumineux du radial.
+    final surface = context.facteurColors.surface;
+    final softPrimary = Color.lerp(primary, surface, 0.12)!;
+    final softDeep = Color.lerp(deep, surface, 0.12)!;
     return Container(
       width: 44,
       height: 44,
@@ -149,7 +141,7 @@ class _Medallion extends StatelessWidget {
         gradient: RadialGradient(
           center: const Alignment(-0.4, -0.5), // focal ~30% / 25%
           radius: 0.9,
-          colors: [primary, deep],
+          colors: [softPrimary, softDeep],
           stops: const [0.0, 0.8],
         ),
       ),

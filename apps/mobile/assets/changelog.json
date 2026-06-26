@@ -9,6 +9,50 @@
       "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
     },
     {
+      "tag": "Widget",
+      "summary": "Le widget se rafraîchit à nouveau, avec un bouton pour forcer la mise à jour."
+    },
+    {
+      "tag": "Mise à jour",
+      "summary": "Sur Android, les mises à jour passent désormais par une invite native du Play Store, plus fiable, avec téléchargement en arrière-plan."
+    },
+    {
+      "tag": "Mise à jour",
+      "summary": "Facteur te prévient quand une nouvelle version est disponible sur l'App Store, et t'invite à mettre à jour."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Fiche source plus claire : description repliable, nombre d'abonnés affiché, et réglage de la priorité dans ton flux au curseur."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
+    },
+    {
+      "tag": "Perspectives",
+      "summary": "Couverture médiatique plus lisible : repères Gauche/Droite sous la barre, source cliquable et aperçu de l'article au toucher prolongé."
+    },
+    {
+      "tag": "Reader",
+      "summary": "La barre de biais de la Couverture médiatique passe en pleine largeur et devient interactive : touche un bord politique pour filer vers ces articles. Et à l'ouverture d'un article sur son site, le bandeau cookies n'est plus masqué."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Ta carte du jour est plus compacte (titres resserrés) et tient mieux à l'écran, et la fin de tournée est épurée avec des idées d'activités plus inspirantes."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Carrousels plus nets : le bas des cartes ne se coupe plus quand leurs tailles diffèrent, et les points de défilement respirent mieux."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Tes sections favorites les mieux fournies remontent en haut, et celles à un seul article sont complétées automatiquement."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Tournée du jour plus fiable : tes thèmes et sources favoris s'affichent du premier coup."
+    },
+    {
       "tag": "Notifications",
       "summary": "Fini les demandes d'autorisation à répétition : Facteur ne te sollicite plus qu'une fois, et plus jamais pendant ta lecture."
     },

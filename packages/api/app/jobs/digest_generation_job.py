@@ -25,7 +25,7 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import safe_async_session
+from app.database import apply_session_timeouts, safe_async_session
 from app.models.daily_digest import DailyDigest
 from app.models.user import UserProfile
 from app.services.digest_generation_state_service import (
@@ -132,13 +132,19 @@ class DigestGenerationJob:
 
     Attributes:
         batch_size: Nombre d'utilisateurs traités par batch (défaut: 100)
-        concurrency_limit: Nombre de digests générés en parallèle (défaut: 10)
+        concurrency_limit: Nombre de digests générés en parallèle (défaut: 5).
+            Borne le footprint pool du job : `_process_batch` ouvre une session
+            fraîche par user concurrent, donc ce nombre = nb max de slots du
+            pool (20) consommés par le digest. Abaissé 10→5 pour laisser de la
+            marge au trafic feed du rituel matinal (incident PYTHON-5M : pool à
+            100 %). Ne pas remonter sans réduire la concurrence ailleurs : la DB
+            Supabase (max_connections=60) est partagée entre staging et prod.
     """
 
     def __init__(
         self,
         batch_size: int = 100,
-        concurrency_limit: int = 10,
+        concurrency_limit: int = 5,
         hours_lookback: int = 48,
     ):
         self.batch_size = batch_size
@@ -224,7 +230,16 @@ class DigestGenerationJob:
                 )
             except Exception as e:
                 logger.error("digest_generation_global_context_failed", error=str(e))
-                # Graceful degradation: continue without trending
+                # Graceful degradation: continue without trending.
+                # CRITIQUE — une erreur DB ici (ex. statement timeout sous
+                # pression pool le matin) laisse la session partagée en
+                # PENDING_ROLLBACK. Les étapes suivantes (mot du jour, etc.)
+                # réutilisent cette session → PendingRollbackError (PYTHON-5G).
+                # On nettoie la tx et on re-pousse les timeouts SET LOCAL sur
+                # la nouvelle tx que la prochaine query ouvrira.
+                with contextlib.suppress(Exception):
+                    await session.rollback()
+                    await apply_session_timeouts(session)
 
             # 1.6 Pre-compute editorial global context ONCE for the batch,
             # for BOTH variants (pour_vous + serein). Previously only
@@ -325,11 +340,17 @@ class DigestGenerationJob:
                 logger.error(
                     "digest_generation_editorial_precompute_failed", error=str(e)
                 )
+                # Même protection que l'étape trending : une erreur DB ici
+                # empoisonne la session batch partagée (PENDING_ROLLBACK) et
+                # ferait échouer le mot du jour juste après (PYTHON-5G).
+                with contextlib.suppress(Exception):
+                    await session.rollback()
+                    await apply_session_timeouts(session)
 
             # 1.7 Auto-matching « mot du jour » → article réel de la tournée.
             # Best-effort, non bloquant : un échec ici ne touche jamais le digest.
             await self._match_grille_featured_article(
-                session, target_date, editorial_ctx_pour_vous
+                target_date, editorial_ctx_pour_vous
             )
 
             # 2. Traiter par batches pour limiter la charge mémoire
@@ -600,7 +621,6 @@ class DigestGenerationJob:
 
     async def _match_grille_featured_article(
         self,
-        session: AsyncSession,
         target_date: datetime.date,
         editorial_ctx_pour_vous,
     ) -> None:
@@ -612,16 +632,23 @@ class DigestGenerationJob:
         sélection retombe sur le corpus brut). Entièrement isolé : toute erreur
         est loggée + remontée à Sentry mais n'altère JAMAIS la génération du
         digest (le mot du jour est secondaire). Idempotent.
+
+        Ouvre sa PROPRE session courte (et non la session batch partagée) : si
+        une pré-étape amont a laissé la session batch en PENDING_ROLLBACK, on
+        l'aurait propagé jusqu'à `ensure_daily_puzzle` → PendingRollbackError
+        (PYTHON-5G). Même principe que `_process_batch` (session fraîche par
+        unité de travail) et que la lecture de couverture (`cov_session`).
         """
         try:
             from app.services.grille_matcher import apply_hybrid_word
             from app.services.grille_seed import ensure_daily_puzzle
 
-            await ensure_daily_puzzle(session, target_date)
-            matched = await apply_hybrid_word(
-                session, target_date, editorial_ctx_pour_vous
-            )
-            await session.commit()
+            async with safe_async_session() as grille_session:
+                await ensure_daily_puzzle(grille_session, target_date)
+                matched = await apply_hybrid_word(
+                    grille_session, target_date, editorial_ctx_pour_vous
+                )
+                await grille_session.commit()
             logger.info(
                 "digest_generation_grille_featured_done",
                 target_date=str(target_date),
@@ -633,8 +660,6 @@ class DigestGenerationJob:
                 target_date=str(target_date),
             )
             sentry_sdk.capture_exception(e)
-            with contextlib.suppress(Exception):
-                await session.rollback()
 
     async def _get_active_users(self, session: AsyncSession) -> list[UUID]:
         """Récupère la liste des utilisateurs actifs (avec profil).
@@ -1065,7 +1090,7 @@ class DigestGenerationJob:
 async def run_digest_generation(
     target_date: datetime.date | None = None,
     batch_size: int = 100,
-    concurrency_limit: int = 10,
+    concurrency_limit: int = 5,
 ) -> dict[str, Any]:
     """Fonction principale pour exécuter la génération des digests.
 
@@ -1078,7 +1103,8 @@ async def run_digest_generation(
     Args:
         target_date: Date du digest (défaut: aujourd'hui)
         batch_size: Nombre d'utilisateurs par batch (défaut: 100)
-        concurrency_limit: Limite de concurrence (défaut: 10)
+        concurrency_limit: Limite de concurrence (défaut: 5 — borne le
+            footprint pool, cf. PYTHON-5M)
 
     Returns:
         Statistiques d'exécution

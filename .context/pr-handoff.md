@@ -1,33 +1,46 @@
-## Tour guidé Facteur (coach-mark post-onboarding)
+## feat(android): In-App Updates Play Store (flavor playstore) + gate par flavor
 
-Tour guidé en 5 étapes joué **une seule fois juste après l'onboarding**, qui pilote la vraie app pour présenter ses pages principales. Il s'insère **avant** les modales post-onboarding existantes (thème puis notifications).
+### Pourquoi
+Sur le flavor `playstore` (`facteur.app`), Google interdit l'auto-update par APK : la
+permission `REQUEST_INSTALL_PACKAGES` a été retirée (#892) et l'updater maison est inopérant.
+Un user Play Store n'avait donc **aucun** signal natif « mise à jour disponible ». Cette PR
+ajoute les **Google Play In-App Updates** sur le chemin playstore, en laissant le chemin
+`beta` (side-load APK) strictement inchangé.
 
-### Parcours (6 états joués, 5 puces)
-1. **1/5** — hero « L'Essentiel du jour » + onglet Essentiel (scroll top).
-2. **2/5 (a)** — scroll vers la 1ʳᵉ section de la Tournée (`ensureVisible`).
-3. **2/5 (b)** — ouverture de la vraie feuille « Mes favoris », spotlight par-dessus.
-4. **3/5** — bascule onglet Flâner, voile plein, carte centrée.
-5. **4/5** — retour accueil, spotlight de l'avatar profil (Réglages).
-6. **5/5** — même avatar (Mon courrier), bouton « Terminer ».
-7. **done** — carte « C'est parti », puis main rendue aux modales.
+### Ce que fait la PR
+- **Dépendance** : ajoute `in_app_update: ^4.2.3` (résolu 4.2.5 ; Android-only).
+- **Point de décision unique** : `PlayStoreUpdateService.checkAndStart()`
+  (`lib/features/app_update/services/playstore_update_service.dart`). Routage piloté par le
+  flavor via `AppUpdateConstants.isPlayStoreBuild` (no-op total sur beta/dev). Garde
+  `kIsWeb`/`Platform.isAndroid`, anti-ré-entrance `_inFlight`, fail-silently.
+  - `updatePriority >= 4` + `immediateUpdateAllowed` → `performImmediateUpdate()` (bloquant).
+  - sinon `flexibleUpdateAllowed` → `startFlexibleUpdate()` + `completeFlexibleUpdate()`.
+- **Lifecycle** (`lib/app.dart`) : appel au **cold-start** (post-frame de `initState`) et au
+  **retour foreground** (`didChangeAppLifecycleState` → `resumed`). Réutilise l'observer
+  existant, aucun nouvel observer.
+- **Doc** : `docs/maintenance/maintenance-playstore-in-app-updates.md` (routage par flavor +
+  procédure Play Console `updatePriority` + constat Mission B).
+- **Changelog** : entrée `unreleased` « Mise à jour ».
 
-### Architecture
-- **Machine à états Riverpod** (`GuidedTourController`, `keepAlive`) — survit aux changements d'onglet/feuilles, **ne touche jamais `BuildContext`**. `start(onComplete)` gate le flag « vu » (scopé user) ; `next()`/`skip()`/`finish()` → `done` + `onComplete` tiré une seule fois.
-- **Bridge racine** (`GuidedTourBridge`, monté une fois dans `MainShell`) — exécute les effets de bord (navigation, ouverture feuille, scroll) et insère l'`OverlayEntry` dans l'overlay **racine** (au-dessus de la feuille favoris qui vit en branche).
-- **Overlay** — scrim `#2C2A29` α0.72 + découpe spotlight (`Path`/`BlendMode.clear`, contour `#E8943F`), rect relu live depuis le `RenderBox` des `GlobalKey` à chaque frame (suit slide/scroll). Coach card : avatar Facteur, pastille « N/5 », titre Fraunces, corps DM Sans, 5 puces, Passer/Suivant/Terminer.
+### Décisions
+- immediate vs flexible piloté par **Play Console `updatePriority`** (reco Google, 0 backend).
+  `app_config` (Supabase) ne porte pas de min-version Android → aucun champ ajouté.
+- `flutter_downloader`/`open_filex` **conservés** (partagés avec beta). Sur playstore leur
+  chemin n'est plus atteint ; `READ_MEDIA_*` déjà strippé app-wide dans `src/main` (Mission B).
 
-### Garde « une seule fois »
-Double verrou : démarrage seulement depuis le chemin post-onboarding (`postOnboardingFlowPendingProvider`) **et** flag persistant `nudge.guided_tour.seen.<userId>` (namespace `nudge.`, scopé user comme `NudgeStorage`).
+### Vérifs locales
+- `flutter pub get` OK ; `flutter analyze` (fichiers touchés) : 0 issue.
+- `flutter test test/features/app_update` : 8/8 ✅.
+- Plugin natif enregistré (GeneratedPluginRegistrant régénéré).
+- Manifests playstore (retrait `REQUEST_INSTALL_PACKAGES`) / beta (ajout) inchangés.
 
-### Fichiers
-- **Nouveaux** : `lib/features/tour/` (models/tour_step, providers/guided_tour_controller, tour_anchors, tour_strings, tour_ids, widgets/guided_tour_bridge|overlay|coach_card).
-- **Édités** : `flux_continu_screen.dart` (split `_runPostOnboardingFlow` → tour puis `_runPostOnboardingModals`, listen `tourScrollTargetProvider`, ancre 1ʳᵉ section), `essentiel_hi_fi_card.dart` (ancre hero), `main_shell.dart` (montage bridge + ancre avatar), `main_bottom_nav.dart` (ancre onglet), `manage_favorites_sheet.dart` (ancre feuille + note z-order), `navigation_providers.dart` (`tourScrollTargetProvider`), `changelog.json`.
+### À faire côté PO (device réel)
+- Track de test Play : publier une version supérieure → vérifier l'invite native (immediate
+  si `updatePriority >= 4`, sinon flexible). Décompiler le build playstore → aucun chemin
+  d'install APK atteignable.
+- Build `beta` side-load → flux APK identique à avant.
 
-### Tests
-- `test/features/tour/guided_tour_controller_test.dart` — séquence complète, displayIndex (2/5 mutualisé), skip/finish → done + flag persisté + onComplete une fois, no-op si déjà vu.
-- `test/features/tour/guided_tour_overlay_test.dart` — coach card (titre/pastille/puces/boutons), « Terminer » en dernière étape, carte de conclusion, voile plein sans ancre.
-- `flutter analyze` : 0 nouvelle erreur. Tests des fichiers touchés (essentiel_hi_fi_card, main_bottom_nav, flux_continu) : verts.
+### Hors scope
+iOS (gate iOS séparé existant), champ min-version backend, retrait de dépendances.
 
-### Notes
-- Frontend pur, aucune migration / endpoint.
-- Reste à faire avant deploy : `/validate-feature` Playwright (handoff dans `.context/qa-handoff.md`).
+🤖 Generated with [Claude Code](https://claude.com/claude-code)

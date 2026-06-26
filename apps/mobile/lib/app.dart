@@ -15,6 +15,7 @@ import 'features/feed/services/read_sync_service.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
+import 'features/app_update/services/playstore_update_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
@@ -53,6 +54,8 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
       unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
+      // playstore : invite native Play « MàJ disponible » (no-op sur beta/dev).
+      unawaited(ref.read(playStoreUpdateServiceProvider).checkAndStart());
     });
     // Story 23.2 PR-4 : si un endpoint retiré répond 410, afficher un
     // snackbar global "Mise à jour requise". Le ApiClient intercepte tous
@@ -95,6 +98,9 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       _flushFluxScrollMetricIfAny();
       _startAnalyticsSessionIfNeeded();
       unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
+      // playstore : re-check au retour foreground (no-op sur beta/dev ; garde
+      // anti-ré-entrance interne au service).
+      unawaited(ref.read(playStoreUpdateServiceProvider).checkAndStart());
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         final elapsed = _backgroundedAt != null
@@ -102,7 +108,13 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
             : null;
         final router = ref.read(routerProvider);
         final currentPath = router.routeInformationProvider.value.uri.path;
-        if (ref.read(authStateProvider).isAuthenticated &&
+        final isAuthenticated = ref.read(authStateProvider).isAuthenticated;
+        // Re-amorce le widget à chaque reprise, quel que soit l'onglet courant
+        // (re-push immédiat + refresh réseau si le flux est périmé) — sans ça,
+        // le widget gèle tant que l'utilisateur n'ouvre pas explicitement
+        // Flâner.
+        _ensureWidgetFresh(stale: shouldRefreshFlanerOnForeground(elapsed));
+        if (isAuthenticated &&
             currentPath == RoutePaths.fluxContinu &&
             ref
                 .read(tourneeProgressServiceProvider)
@@ -110,13 +122,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
           router.go(RoutePaths.flaner);
           return;
         }
-        if (ref.read(authStateProvider).isAuthenticated &&
-            currentPath == RoutePaths.flaner &&
-            shouldRefreshFlanerOnForeground(elapsed)) {
-          ref.read(feedProvider.notifier).refresh();
-        }
       }
     }
+  }
+
+  /// Re-pushe le flux courant vers le widget (best-effort, silencieux si pas
+  /// authentifié ou flux pas encore chargé). [stale] force en plus un refresh
+  /// réseau (retour de premier plan après un long passage en arrière-plan).
+  void _ensureWidgetFresh({bool stale = false}) {
+    if (!ref.read(authStateProvider).isAuthenticated) return;
+    unawaited(ref.read(feedProvider.notifier).ensureWidgetFresh(stale: stale));
   }
 
   Future<void> _flushFluxScrollMetricIfAny() async {
@@ -162,7 +177,13 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
 
     // Bind the DeepLinkService once the router is built. Idempotent.
     final analytics = ref.read(analyticsServiceProvider);
-    DeepLinkService.instance.bind(router: router, analytics: analytics);
+    DeepLinkService.instance.bind(
+      router: router,
+      analytics: analytics,
+      // Widget refresh button → réveille l'app, force un refresh Flâner (qui
+      // re-pushe le widget via le chemin existant).
+      onRefreshRequested: () => ref.read(feedProvider.notifier).refresh(),
+    );
 
     if (!_deepLinksStarted) {
       _deepLinksStarted = true;

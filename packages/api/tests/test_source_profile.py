@@ -24,8 +24,8 @@ from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.main import app
 from app.models.content import Content
-from app.models.enums import ContentType, SourceType
-from app.models.source import Source
+from app.models.enums import ContentType, InterestState, SourceType
+from app.models.source import Source, UserSource
 
 
 def _content(source_id, *, theme, days_ago=0, title="Article"):
@@ -167,3 +167,33 @@ async def test_profile_empty_source(profile_client):
     assert body["theme_distribution"] == []
     assert body["articles_30d"] == 0
     assert body["oldest_content_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_profile_follower_count_counts_followed_and_favorite(profile_client):
+    """`follower_count` = utilisateurs en état suivi/favori, hors masqué/neutre."""
+    ac, source, db = profile_client
+    # 2 suivis + 1 favori = 3 abonnés ; 1 masqué + 1 neutre exclus.
+    states = [
+        InterestState.FOLLOWED,
+        InterestState.FOLLOWED,
+        InterestState.FAVORITE,
+        InterestState.HIDDEN,
+        InterestState.UNFOLLOWED,
+    ]
+    for st in states:
+        db.add(UserSource(user_id=uuid4(), source_id=source.id, state=st))
+    await db.commit()
+
+    resp = await ac.get(f"/api/sources/{source.id}/profile")
+    assert resp.status_code == 200
+    assert resp.json()["source"]["follower_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_profile_follower_count_zero_without_followers(profile_client):
+    """Aucun abonné → follower_count = 0 (et non absent)."""
+    ac, source, _db = profile_client
+    resp = await ac.get(f"/api/sources/{source.id}/profile")
+    assert resp.status_code == 200
+    assert resp.json()["source"]["follower_count"] == 0

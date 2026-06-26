@@ -126,7 +126,10 @@ def fake_session_maker(db_session):
     """
 
     @asynccontextmanager
-    async def _maker():
+    async def _maker(**_kwargs):
+        # Accepte (et ignore) les kwargs de cap (statement_timeout_ms,
+        # idle_in_tx_timeout_ms) pour matcher la signature de
+        # `safe_async_session` — cf. SessionMaker = Callable[..., ...].
         yield db_session
 
     return _maker

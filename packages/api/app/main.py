@@ -634,8 +634,9 @@ async def pool_metrics() -> dict[str, Any]:
 
     # Signal warning à Sentry dès que la saturation est proche (>= 75 %). Permet
     # de corréler pics de latence et pool pressure sans avoir à déployer de
-    # l'instrumentation supplémentaire. (La sonde périodique du scheduler
-    # alerte au seuil configurable `pool_alert_threshold_pct`, défaut 80 %.)
+    # l'instrumentation supplémentaire. (La sonde périodique du scheduler alerte
+    # à 2 seuils : warn soutenu >= `pool_warn_threshold_pct` (70 %) et page
+    # immédiat >= `pool_page_threshold_pct` (90 %).)
     usage_pct = metrics.get("usage_pct")
     if usage_pct is not None and usage_pct >= 75:
         logger.warning(

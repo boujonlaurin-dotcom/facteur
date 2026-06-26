@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,7 @@ import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
 import 'core/api/notification_preferences_api_service.dart';
+import 'core/services/deep_link_service.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/server_push_service.dart';
@@ -217,6 +219,25 @@ Future<void> _bootstrap() async {
         break;
     }
   });
+
+  // Résout le deep link de cold-start AVANT la 1ère redirection du router pour
+  // qu'il soit la source de vérité de l'atterrissage post-auth (sinon course
+  // entre `flushPendingIfReady` → article et le redirect → Flâner, cf.
+  // bug widget cold-open). Best-effort, borné à ~300ms — un échec/timeout
+  // laisse simplement DeepLinkService.start() retomber sur getInitialLink.
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      final initialUri = await AppLinks().getInitialLink().timeout(
+            const Duration(milliseconds: 300),
+            onTimeout: () => null,
+          );
+      if (initialUri != null) {
+        DeepLinkService.instance.seedPending(initialUri);
+      }
+    } catch (e) {
+      debugPrint('Main: getInitialLink seed failed (non-critical): $e');
+    }
+  }
 
   debugPrint('[PERF] boot.pre_runapp_ms=${bootSw.elapsedMilliseconds}');
 

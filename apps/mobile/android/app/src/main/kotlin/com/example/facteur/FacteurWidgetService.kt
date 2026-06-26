@@ -79,25 +79,28 @@ private class FacteurRemoteViewsFactory(
         }
         val rv = RemoteViews(context.packageName, rowLayoutId)
 
-        // Topic line: Essentiel keeps the rank prefix ("1 — Climat") as a
-        // positional cue inside the daily 5; Flux drops it to feel like a
-        // continuous scroll.
-        val topicSegment = article.topicLabel.ifBlank { "Actu" }
-        val topicLine = if (article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL) {
-            "${article.rank} — $topicSegment"
+        val isEssentiel = article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL
+
+        // En-tête (rang + thème + badge « À la Une ») : visible uniquement en
+        // Essentiel, comme repère positionnel dans les 5 du jour. En Flux il est
+        // masqué — le thème migre en pied (« source • thème ») pour donner une
+        // sensation de flux continu.
+        if (isEssentiel) {
+            val topicSegment = article.topicLabel.ifBlank { "Actu" }
+            rv.setViewVisibility(R.id.row_header, View.VISIBLE)
+            rv.setTextViewText(R.id.row_topic, "${article.rank} — $topicSegment")
+            rv.setViewVisibility(
+                R.id.row_a_la_une,
+                if (article.isMain) View.VISIBLE else View.GONE,
+            )
         } else {
-            topicSegment
+            rv.setViewVisibility(R.id.row_header, View.GONE)
         }
-        rv.setTextViewText(R.id.row_topic, topicLine)
-        rv.setViewVisibility(
-            R.id.row_a_la_une,
-            if (article.isMain) View.VISIBLE else View.GONE,
-        )
         rv.setTextViewText(R.id.row_title, article.title)
 
         // Thumbnails: only Essentiel articles carry one (Flux is image-less
         // to keep the merged payload under the Binder ceiling at MAX_ROWS=80).
-        if (article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL) {
+        if (isEssentiel) {
             val thumb = WidgetRendering.loadBitmap(context, article.thumbnailPath, 72)?.let {
                 WidgetRendering.roundCorners(context, it, 8f)
             }
@@ -118,7 +121,14 @@ private class FacteurRemoteViewsFactory(
         } else {
             rv.setViewVisibility(R.id.row_source_logo, View.GONE)
         }
-        rv.setTextViewText(R.id.row_source_name, article.sourceName)
+        // Pied de row : Essentiel = source seule (le thème est déjà dans
+        // l'en-tête) ; Flux = « source • thème » (séparateur U+2022, pas d'em-dash).
+        val sourceLine = if (!isEssentiel && article.topicLabel.isNotBlank()) {
+            "${article.sourceName} • ${article.topicLabel}"
+        } else {
+            article.sourceName
+        }
+        rv.setTextViewText(R.id.row_source_name, sourceLine)
 
         if (article.perspectiveCount > 0) {
             rv.setTextViewText(R.id.row_perspective, "+${article.perspectiveCount}")

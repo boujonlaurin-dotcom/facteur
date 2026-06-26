@@ -23,6 +23,7 @@ import '../../sources/widgets/source_logo_avatar.dart';
 import '../../tour/tour_anchors.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
+import '../providers/flux_continu_provider.dart' show fluxContinuProvider;
 import '../providers/tournee_order_prefs_provider.dart' hide applyOrder;
 import '../providers/tournee_smart_arrangement_provider.dart';
 import '../utils/theme_color_mapping.dart';
@@ -36,8 +37,15 @@ import 'choice_tile.dart';
 /// scrolle vers la section Flâner à l'ouverture — le contenu est identique.
 enum ManageFavoritesEntry { essentiel, flaner }
 
-/// Accent des Actus du jour (aligné provider Tournée).
+/// Accent des Actus du jour (aligné provider Tournée). Sert aussi d'**identité
+/// « Essentiel »** dans cette sheet (en-tête + puces « → Essentiel »).
 const Color _kEssentielAccent = Color(0xFFB0470A);
+
+/// Identité visuelle **« Flâner »** dans cette sheet : le brun du bandeau de la
+/// page Flâner (déjà reconnaissable). Colore l'en-tête « Onglets de ta page
+/// Flâner » et les puces « → Flâner », pour que la destination d'un déplacement
+/// soit lisible par sa couleur (et plus par celle, arbitraire, de la carte).
+const Color _kFlanerAccent = Color(0xFF5D4037);
 
 /// Accent des Bonnes Nouvelles (aligné provider Tournée).
 const Color _kBonnesAccent = Color(0xFF2E7D32);
@@ -455,6 +463,11 @@ class _ManageFavoritesContentState
     final tournee = ref.watch(tourneeOrderPrefsProvider);
     final tabOrder = ref.watch(tabOrderPrefsProvider);
     final isSerene = ref.watch(sereinToggleProvider).enabled;
+    // Cohérence Tournée — clés favorites maigres (peu d'articles aujourd'hui).
+    // Set vide si la Tournée n'est pas (encore) chargée → aucun indicateur
+    // (dégradation propre).
+    final thinKeys = ref.watch(fluxContinuProvider).valueOrNull?.thinFavoriteKeys ??
+        const <String>{};
 
     // ── Membership ────────────────────────────────────────────────────────
     final favoriteThemeSlugs = <String>[
@@ -694,6 +707,7 @@ class _ManageFavoritesContentState
                   counter:
                       '${essentielOrdered.length.clamp(0, kTourneeVisibleCap)}'
                       '/$kTourneeVisibleCap',
+                  accent: _kEssentielAccent,
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -708,6 +722,9 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kTourneeVisibleCap,
                     capLabel: 'Hors Tournée du jour ($kTourneeVisibleCap)',
+                    thinKeys: thinKeys,
+                    // Destination du déplacement = Flâner ⇒ puces brun Flâner.
+                    moveAccent: _kFlanerAccent,
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...essentielOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -733,6 +750,7 @@ class _ManageFavoritesContentState
                   counter:
                       '${flanerOrdered.length.clamp(0, kMaxFavoriteTabs)}'
                       '/$kMaxFavoriteTabs',
+                  accent: _kFlanerAccent,
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -748,6 +766,11 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kMaxFavoriteTabs,
                     capLabel: 'Hors onglets ($kMaxFavoriteTabs)',
+                    // Les favoris Flâner ne sont pas dans la Tournée → aucune clé
+                    // ne matche, mais on garde le câblage uniforme.
+                    thinKeys: thinKeys,
+                    // Destination du déplacement = Essentiel ⇒ puces ocre.
+                    moveAccent: _kEssentielAccent,
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...flanerOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -906,8 +929,15 @@ class _FavList extends StatelessWidget {
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
+
+  /// Couleur de la puce de déplacement = identité du **mode de destination**
+  /// (brun Flâner / ocre Essentiel), pas la couleur de la carte (cf. [_MoveChip]).
+  final Color moveAccent;
   final void Function(_FavItem item) onMove;
   final void Function(_FavItem item)? onSubjectVeille;
+
+  /// Clés favorites maigres (Tournée) → micro-indicateur « Peu d'articles ».
+  final Set<String> thinKeys;
 
   const _FavList({
     required this.items,
@@ -919,7 +949,9 @@ class _FavList extends StatelessWidget {
     required this.moveIcon,
     required this.moveTooltip,
     required this.moveLabel,
+    required this.moveAccent,
     required this.onMove,
+    this.thinKeys = const {},
     this.onSubjectVeille,
   });
 
@@ -949,9 +981,11 @@ class _FavList extends StatelessWidget {
               index: index,
               dimmed: dimmed,
               colors: colors,
+              thin: thinKeys.contains(item.key),
               moveIcon: moveIcon,
               moveTooltip: moveTooltip,
               moveLabel: moveLabel,
+              moveAccent: moveAccent,
               onRemove: () => onRemove(item),
               onMove: () => onMove(item),
               onSubjectVeille: onSubjectVeille == null
@@ -1011,9 +1045,14 @@ class _FavRow extends StatelessWidget {
   final int index;
   final bool dimmed;
   final FacteurColors colors;
+
+  /// Cohérence Tournée — ce favori a peu d'articles aujourd'hui (≤1 survivant
+  /// post-dédup) → micro-indicateur ambre près du libellé.
+  final bool thin;
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
+  final Color moveAccent;
   final VoidCallback onRemove;
   final VoidCallback onMove;
   final VoidCallback? onSubjectVeille;
@@ -1026,8 +1065,10 @@ class _FavRow extends StatelessWidget {
     required this.moveIcon,
     required this.moveTooltip,
     required this.moveLabel,
+    required this.moveAccent,
     required this.onRemove,
     required this.onMove,
+    this.thin = false,
     this.onSubjectVeille,
   });
 
@@ -1072,7 +1113,7 @@ class _FavRow extends StatelessWidget {
                             style: const TextStyle(fontSize: 16),
                           ),
                         const SizedBox(width: 10),
-                        Expanded(
+                        Flexible(
                           child: Text(
                             item.label,
                             style: TextStyle(
@@ -1084,6 +1125,11 @@ class _FavRow extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (thin) ...[
+                          const SizedBox(width: 6),
+                          const _ThinBadge(),
+                        ],
+                        const Spacer(),
                       ],
                     ),
                   ),
@@ -1106,7 +1152,10 @@ class _FavRow extends StatelessWidget {
                   icon: moveIcon,
                   label: moveLabel,
                   tooltip: moveTooltip,
-                  accent: item.accent,
+                  // Couleur du mode de destination (Flâner brun / Essentiel
+                  // ocre), pas celle de la carte : « Flâner » devient
+                  // reconnaissable à sa teinte.
+                  accent: moveAccent,
                   onTap: onMove,
                 ),
               _RowIconButton(
@@ -1135,6 +1184,52 @@ class _FavRow extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Micro-indicateur « Peu d'articles » d'un favori maigre (≤1 survivant
+/// post-dédup ce jour). Pilule ambre discrète réutilisant le style des badges
+/// existants (cf. `_SuggestedBadge`/`_MoveChip`). Signale dans la modal les
+/// favoris peu fournis — surtout visibles dans la zone « Hors Tournée du jour ».
+class _ThinBadge extends StatelessWidget {
+  const _ThinBadge();
+
+  // Ambre : aligné sur les tons d'avertissement doux de l'app.
+  static const Color _amber = Color(0xFFB45309);
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Peu d\'articles aujourd\'hui',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(7, 3, 8, 3),
+        decoration: BoxDecoration(
+          color: _amber.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _amber.withValues(alpha: 0.30), width: 0.8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.warningCircle(PhosphorIconsStyle.fill),
+              size: 11,
+              color: _amber,
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              'Peu d\'articles',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+                color: _amber,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1522,9 +1617,14 @@ class _VeilleTile extends StatelessWidget {
 class _SectionLabel extends StatelessWidget {
   final String label;
 
-  /// Compteur discret affiché en suffixe (ex. « · 5/7 ») rappelant le cap de
+  /// Compteur discret affiché en suffixe (ex. « · 5/10 ») rappelant le cap de
   /// la section. `null` → pas de compteur (ex. en-têtes AJOUTER / GÉRER).
   final String? counter;
+
+  /// Teinte d'identité de la section (ocre Essentiel / brun Flâner). `null` →
+  /// gris tertiaire neutre (en-têtes AJOUTER / GÉRER). Renforce le code couleur
+  /// des puces de déplacement (cf. [_MoveChip]).
+  final Color? accent;
   final FacteurColors colors;
 
   const _SectionLabel({
@@ -1532,12 +1632,13 @@ class _SectionLabel extends StatelessWidget {
     required this.label,
     required this.colors,
     this.counter,
+    this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: colors.textTertiary,
+      color: accent ?? colors.textTertiary,
       fontWeight: FontWeight.w700,
       letterSpacing: 1.2,
     );
@@ -1548,7 +1649,13 @@ class _SectionLabel extends StatelessWidget {
       children: [
         Flexible(child: Text(label, style: labelStyle)),
         const SizedBox(width: 6),
-        Text('· $counter', style: labelStyle?.copyWith(letterSpacing: 0.2)),
+        Text(
+          '· $counter',
+          style: labelStyle?.copyWith(
+            letterSpacing: 0.2,
+            color: accent?.withValues(alpha: 0.7) ?? colors.textTertiary,
+          ),
+        ),
       ],
     );
   }

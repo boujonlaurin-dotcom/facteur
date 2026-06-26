@@ -176,6 +176,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       // both ultimately call router.go on the same in-app path.
       if (state.uri.scheme == 'io.supabase.facteur') {
         final action = DeepLinkService.parse(state.uri);
+        // GoRouter received the deep link directly (some launchers deliver it
+        // as the initial route). Consume any seeded pending URI so the
+        // post-auth `flushPendingIfReady` doesn't replay it and double-navigate.
+        DeepLinkService.instance.clearPending();
         return action.route ?? RoutePaths.fluxContinu;
       }
 
@@ -254,9 +258,18 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // 3. Les utilisateurs confirmés ne doivent pas être sur login, confirmation ou splash
       if (isOnLoginPage || isOnEmailConfirmation || isOnSplash) {
-        return authState.needsOnboarding
-            ? RoutePaths.onboarding
-            : postAuthHomePath();
+        if (authState.needsOnboarding) {
+          return RoutePaths.onboarding;
+        }
+        // Deep link de cold-start (widget) : il est la source de vérité de
+        // l'atterrissage. On le consomme ici pour éviter la course avec
+        // `flushPendingIfReady` (qui redeviendrait no-op après clearPending).
+        final pending = DeepLinkService.instance.pendingRoute();
+        if (pending != null) {
+          DeepLinkService.instance.clearPending();
+          return pending;
+        }
+        return postAuthHomePath();
       }
 
       // 4. Onboarding : forcer si nécessaire

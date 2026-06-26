@@ -39,7 +39,7 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch() async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -500,7 +500,7 @@ void main() {
       );
     });
 
-    test('7 favorites cap (8th ignored)', () async {
+    test('10 favorites cap (11th ignored)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(
         () => feedRepo.getFeed(
@@ -512,17 +512,12 @@ void main() {
         ),
       ).thenAnswer((_) async => _feedResponseWith(3));
 
+      // 11 favoris thème (slugs arbitraires — `visualFor` a un fallback) : le cap
+      // [_kMaxFavoriteSections] = 10 garde les 10 premiers, le 11e est ignoré.
       final container = makeContainer(
         interests: _interestsState(
-          favorites: const [
-            ThemeFavoriteRef(slug: 'tech'),
-            ThemeFavoriteRef(slug: 'science'),
-            ThemeFavoriteRef(slug: 'culture'),
-            ThemeFavoriteRef(slug: 'economy'),
-            ThemeFavoriteRef(slug: 'politics'),
-            ThemeFavoriteRef(slug: 'sport'),
-            ThemeFavoriteRef(slug: 'environment'),
-            ThemeFavoriteRef(slug: 'society'), // 8th — must be dropped
+          favorites: [
+            for (var i = 0; i < 11; i++) ThemeFavoriteRef(slug: 'theme$i'),
           ],
         ),
       );
@@ -533,15 +528,7 @@ void main() {
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, [
-        'tech',
-        'science',
-        'culture',
-        'economy',
-        'politics',
-        'sport',
-        'environment',
-      ]);
+      expect(slugs, [for (var i = 0; i < 10; i++) 'theme$i']);
     });
   });
 
@@ -1418,21 +1405,28 @@ void main() {
         final skeletonIdx = captured.indexWhere((s) => s.isSkeleton);
         expect(skeletonIdx, greaterThanOrEqualTo(0));
 
-        // base-only : contenu réel (Actus du jour) mais ENCORE aucune section
-        // thème (le fan-out de phase 2 n'a pas répondu).
+        // base-only : la section thème 'tech' existe déjà (en-tête seedé) mais
+        // reste une COQUILLE vide — le fan-out de phase 2 n'a pas encore
+        // répondu. Avec le seed de coquilles, le signal « progressif » porte sur
+        // le remplissage du contenu, pas sur la présence de la section.
         final baseIdx = captured.indexWhere(
           (s) =>
               !s.isSkeleton &&
-              s.sections.isNotEmpty &&
-              s.sections.whereType<FeedThemeSection>().isEmpty,
+              s.sections.whereType<FeedThemeSection>().isNotEmpty &&
+              s.sections
+                  .whereType<FeedThemeSection>()
+                  .every((t) => t.items.isEmpty),
         );
         expect(baseIdx, greaterThan(skeletonIdx),
-            reason:
-                'le haut de page réel remplace le squelette avant le fan-out');
+            reason: 'les en-têtes (haut de page + coquilles favoris) remplacent '
+                'le squelette avant le remplissage du fan-out');
 
-        // complet : la section thème 'tech' est présente, après le base-only.
+        // complet : la section thème 'tech' est REMPLIE (items non vides),
+        // après le base-only.
         final fullIdx = captured.lastIndexWhere(
-          (s) => s.sections.whereType<FeedThemeSection>().isNotEmpty,
+          (s) => s.sections
+              .whereType<FeedThemeSection>()
+              .any((t) => t.items.isNotEmpty),
         );
         expect(fullIdx, greaterThan(baseIdx));
         expect(finalState.isSkeleton, isFalse);
@@ -1479,7 +1473,7 @@ class _OneArticleEssentielRepository implements EssentielRepository {
   final EssentielArticle _article;
 
   @override
-  Future<List<EssentielArticle>?> fetch() async => [
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => [
         _article,
         EssentielArticle(
           contentId: '${_article.contentId}-filler-1',
@@ -1510,5 +1504,5 @@ class _FixedEssentielRepository implements EssentielRepository {
   final List<EssentielArticle> _articles;
 
   @override
-  Future<List<EssentielArticle>?> fetch() async => _articles;
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => _articles;
 }

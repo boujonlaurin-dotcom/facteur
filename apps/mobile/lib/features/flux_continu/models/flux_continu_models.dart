@@ -338,6 +338,13 @@ class FeedThemeSection extends FluxSection {
   /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
   final bool noRecentSource;
 
+  /// Cohérence Tournée : true quand cette section favorite **maigre** (≤1
+  /// survivant post-dédup) a été **enrichie** (réinjection des articles déjà
+  /// renvoyés par le backend mais strippés par la dédup) et/ou doit porter le
+  /// CTA « Ajouter plus de sources » (thèmes). Dérivé à chaque `_compose` (jamais
+  /// persisté dans `_themes`/`_sources`) — ne survit donc pas hors d'un recompose.
+  final bool underfilled;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -354,6 +361,7 @@ class FeedThemeSection extends FluxSection {
     this.origin = SectionOrigin.validated,
     this.reason,
     this.noRecentSource = false,
+    this.underfilled = false,
     super.blurb,
     super.illustrationAsset,
   });
@@ -375,6 +383,7 @@ class FeedThemeSection extends FluxSection {
     // au défaut à chaque recompose — le piège le plus facile à introduire.
     int? coreVisibleCount,
     bool? noRecentSource,
+    bool? underfilled,
   }) {
     return FeedThemeSection(
       kind: kind,
@@ -395,6 +404,7 @@ class FeedThemeSection extends FluxSection {
       origin: origin,
       reason: reason,
       noRecentSource: noRecentSource ?? this.noRecentSource,
+      underfilled: underfilled ?? this.underfilled,
       blurb: blurb,
       illustrationAsset: illustrationAsset,
     );
@@ -499,6 +509,13 @@ class FluxContinuState {
   /// `false` ; le screen rend un scaffold placeholder tant qu'il est `true`.
   final bool isSkeleton;
 
+  /// Cohérence Tournée — `sectionKey` des sections favorites (thème/source)
+  /// **maigres** (≤1 survivant post-dédup) du cycle courant, qu'elles soient
+  /// affichées ou poussées hors cap. Source unique consommée par la modal
+  /// « Mes favoris » pour signaler les favoris peu fournis. Vide tant que rien
+  /// n'est classé (squelette / aucun favori résolu).
+  final Set<String> thinFavoriteKeys;
+
   const FluxContinuState({
     this.sections = const [],
     this.grilleSlotIndex,
@@ -509,6 +526,7 @@ class FluxContinuState {
     this.isLoading = true,
     this.error,
     this.isSkeleton = false,
+    this.thinFavoriteKeys = const {},
   });
 
   FluxContinuState copyWith({
@@ -522,6 +540,7 @@ class FluxContinuState {
     Object? error,
     bool clearError = false,
     bool? isSkeleton,
+    Set<String>? thinFavoriteKeys,
   }) {
     return FluxContinuState(
       sections: sections ?? this.sections,
@@ -533,6 +552,7 @@ class FluxContinuState {
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
       isSkeleton: isSkeleton ?? this.isSkeleton,
+      thinFavoriteKeys: thinFavoriteKeys ?? this.thinFavoriteKeys,
     );
   }
 

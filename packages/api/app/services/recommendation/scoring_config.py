@@ -430,7 +430,9 @@ class ScoringWeights:
 
     # Plancher de contenu : un candidat avec moins de N articles récents (14 j)
     # est écarté (jour pauvre → moins de suggestions, jamais d'empty-state suggéré).
-    TOURNEE_SUGGEST_CONTENT_FLOOR = 3
+    # Abaissé 3 → 2 : élargit le pool pour que la cible `TOURNEE_TARGET_SECTIONS`
+    # reste atteignable les jours pauvres (tunable).
+    TOURNEE_SUGGEST_CONTENT_FLOOR = 2
 
     # Saturation log de la composante `quantity` : au-delà, le nb d'articles
     # n'augmente plus le score (évite qu'un thème bavard domine).
@@ -440,8 +442,20 @@ class ScoringWeights:
     # jour, varié le lendemain, sans réordonner brutalement).
     TOURNEE_SUGGEST_TEMPERATURE = 0.10
 
-    # Plafond de sections « Choisie pour vous » (thèmes + sources confondus).
-    TOURNEE_SUGGEST_SUBCAP = 4
+    # Cible de sections thématiques de la Tournée (favoris validés + suggestions
+    # « Choisie pour vous » confondus). Seul knob du nombre moyen : les
+    # suggestions **complètent** les favoris jusqu'à cette cible (additif), au
+    # lieu de remplir le reliquat du plafond favoris. Les cartes éditoriales
+    # (Actus, Bonnes, Grille) s'ajoutent par-dessus.
+    TOURNEE_TARGET_SECTIONS = 8
+
+    # Plafond dur de sections « Choisie pour vous » (thèmes + sources confondus)
+    # par arrangement. Levier *distinct* de la cible : aligné sur
+    # `TOURNEE_TARGET_SECTIONS` (donc non contraignant tant qu'ils sont égaux —
+    # un compte neuf est complété jusqu'à la cible), mais permet de plafonner les
+    # suggestions *sous* la cible sans toucher au nombre de sections visé
+    # (ex. cible 10 mais au plus 8 suggérées).
+    TOURNEE_SUGGEST_SUBCAP = 8
 
     # Fenêtre de récence (jours) du comptage d'articles par candidat (aligné
     # sur le filtre 14 j du fallback `get_top_themes`).
