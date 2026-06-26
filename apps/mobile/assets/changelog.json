@@ -9,6 +9,10 @@
       "summary": "Facteur te prévient quand une nouvelle version est disponible sur l'App Store, et t'invite à mettre à jour."
     },
     {
+      "tag": "Sources",
+      "summary": "Fiche source plus claire : description repliable, nombre d'abonnés affiché, et réglage de la priorité dans ton flux au curseur."
+    },
+    {
       "tag": "Tournée",
       "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
     },

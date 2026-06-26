@@ -242,6 +242,76 @@ class TestVariantIsolation:
         assert job.stats["failed"] == 1
 
 
+class TestGrilleSessionIsolation:
+    """Le mot du jour s'isole dans sa propre session (régression PYTHON-5G).
+
+    Avant le fix, `_match_grille_featured_article` réutilisait la session batch
+    partagée. Si une pré-étape (trending / editorial precompute) échouait sans
+    rollback, la session restait en PENDING_ROLLBACK et `ensure_daily_puzzle`
+    levait un PendingRollbackError. Désormais l'étape ouvre sa propre session
+    courte → totalement isolée de l'état de la session batch.
+    """
+
+    @pytest.mark.asyncio
+    async def test_match_grille_uses_own_session_and_commits(self, job):
+        target_date = datetime.date.today()
+
+        grille_session = AsyncMock()
+        grille_session.commit = AsyncMock()
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=grille_session)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        mock_safe_session = MagicMock(return_value=cm)
+
+        with (
+            patch(
+                "app.jobs.digest_generation_job.safe_async_session",
+                mock_safe_session,
+            ),
+            patch(
+                "app.services.grille_seed.ensure_daily_puzzle",
+                new=AsyncMock(),
+            ) as mock_ensure,
+            patch(
+                "app.services.grille_matcher.apply_hybrid_word",
+                new=AsyncMock(return_value=True),
+            ) as mock_apply,
+        ):
+            await job._match_grille_featured_article(target_date, None)
+
+        # Une session dédiée a été ouverte puis committée (jamais la batch).
+        mock_safe_session.assert_called_once()
+        grille_session.commit.assert_awaited_once()
+        # ensure_daily_puzzle / apply_hybrid_word opèrent sur CETTE session.
+        assert mock_ensure.await_args.args[0] is grille_session
+        assert mock_apply.await_args.args[0] is grille_session
+
+    @pytest.mark.asyncio
+    async def test_match_grille_swallows_errors_best_effort(self, job):
+        """Une erreur du matcher ne remonte jamais : le digest prime."""
+        target_date = datetime.date.today()
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=AsyncMock())
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        with (
+            patch(
+                "app.jobs.digest_generation_job.safe_async_session",
+                MagicMock(return_value=cm),
+            ),
+            patch(
+                "app.services.grille_seed.ensure_daily_puzzle",
+                new=AsyncMock(side_effect=RuntimeError("boom")),
+            ),
+            patch("app.services.grille_matcher.apply_hybrid_word", new=AsyncMock()),
+            patch("app.jobs.digest_generation_job.sentry_sdk") as mock_sentry,
+        ):
+            # Ne doit PAS lever.
+            await job._match_grille_featured_article(target_date, None)
+
+        mock_sentry.capture_exception.assert_called_once()
+
+
 class TestDeepPrecomputeIdExtraction:
     """Extract real reader lookup ids from persisted editorial digest JSON."""
 
