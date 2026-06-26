@@ -9,10 +9,11 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import case, desc, func, select
+from sqlalchemy import case, desc, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.database import SessionMaker, safe_async_session
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, FeedFilterMode, InterestState
 from app.models.source import Source, UserSource
@@ -184,8 +185,17 @@ from app.services.recommendation.scoring_engine import (
 
 
 class RecommendationService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        session_maker: "SessionMaker | None" = None,
+    ):
         self.session = session
+        # Factory de sessions courtes ad-hoc (capées par phase). Injectable
+        # pour les tests (cf. fixture `fake_session_maker`) car le pattern
+        # savepoint du `db_session` de test n'est pas visible depuis une vraie
+        # connexion pool ouverte par `safe_async_session`. Défaut = prod.
+        self._session_maker: SessionMaker = session_maker or safe_async_session
         self.user_custom_topics: list = []  # Populated by get_feed() for reuse by caller
         self.source_overflow: dict[
             UUID, int
@@ -290,12 +300,25 @@ class RecommendationService:
             DailyDigest.target_date == date_module.today(),
         )
 
-        async def _user_context_on_self():
-            # Réutilise la session injectée — pas de nouvelle connexion pool.
-            profile = await self.session.scalar(profile_stmt)
-            sources = (await self.session.execute(sources_stmt)).all()
-            subtopics = (await self.session.scalars(subtopics_stmt)).all()
-            return profile, sources, subtopics
+        async def _user_context_short():
+            # PYTHON-37 fix : ces lectures tournaient sur `self.session`
+            # (Round 4) → ouvraient sa transaction dès la phase 1, qui restait
+            # ensuite idle pendant les longs `await` (batches parallèles,
+            # scoring) jusqu'à ce que Postgres la tue
+            # (idle_in_transaction_session_timeout=10s) → IdleInTransaction
+            # → /api/feed 500. On exécute désormais ces 3 lectures dans une
+            # short session capée 8s/5s, comme _batch_personalization : la
+            # connexion n'est tenue que le temps du gather puis rendue au pool,
+            # et `self.session` n'ouvre plus sa tx ici.
+            # joinedload(interests/preferences) précharge les collections →
+            # `profile` reste exploitable après le expunge_all() du helper.
+            async with safe_async_session(
+                statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+            ) as s:
+                profile = await s.scalar(profile_stmt)
+                sources = (await s.execute(sources_stmt)).all()
+                subtopics = (await s.scalars(subtopics_stmt)).all()
+                return profile, sources, subtopics
 
         async def _batch_personalization():
             async with safe_async_session(
@@ -307,14 +330,18 @@ class RecommendationService:
                 muted_entities = await _load_muted_entities_safe(s, user_id)
                 return pz, digest, muted_entities
 
-        # gather() préserve le parallélisme : self.session et la short
-        # session de _batch_personalization sont des sessions distinctes,
-        # aucun risque de "concurrent operations on same session".
+        # gather() préserve le parallélisme : _user_context_short et
+        # _batch_personalization ouvrent chacune leur propre short session
+        # (sessions distinctes), aucun risque de "concurrent operations on
+        # same session". Tradeoff PYTHON-37 : 2 connexions courtes
+        # concurrentes pendant la fenêtre du gather, toutes deux rendues au
+        # pool ensuite (vs. self.session qui gardait sa tx ouverte tout le
+        # pipeline). La pression pool résiduelle est traitée séparément.
         (
             (user_profile, followed_sources_rows, subtopics_rows),
             (personalization, digest_row, muted_entities),
         ) = await asyncio.gather(
-            _user_context_on_self(),
+            _user_context_short(),
             _batch_personalization(),
         )
 
@@ -777,6 +804,16 @@ class RecommendationService:
                     for row in rows
                 }
 
+        # Hardening résiduel PYTHON-37 (non activé pour l'instant) : `self.session`
+        # a ouvert sa tx au phase 2 (`_get_candidates`) et la garde idle pendant
+        # ce gather où seules les short sessions font des I/O. Si Postgres tue à
+        # nouveau cette tx (idle_in_transaction_session_timeout=10s) sur une
+        # nouvelle ligne après le fix _user_context_short, insérer ici :
+        #     await self.session.rollback()
+        #     await apply_session_timeouts(self.session)
+        # (libère la tx idle puis re-pose les SET LOCAL sur la prochaine tx).
+        # Laissé en commentaire tant que PYTHON-37 ne réapparaît pas — un
+        # rollback() systématique a un coût et n'est pas justifié sans signal.
         (
             (source_affinity_scores, user_custom_topics),
             impression_data,
@@ -1633,50 +1670,75 @@ class RecommendationService:
                 thirty_days_ago = now - datetime.timedelta(days=30)
                 sixty_days_ago = now - datetime.timedelta(days=60)
 
-                quiet_source_ids = (
-                    (
-                        await self.session.execute(
-                            select(UserSource.source_id)
-                            .join(Source, Source.id == UserSource.source_id)
-                            .outerjoin(
-                                Content,
-                                (Content.source_id == UserSource.source_id)
-                                & (Content.published_at >= thirty_days_ago),
-                            )
-                            .where(
-                                UserSource.user_id == user_id,
-                                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
-                                Source.is_active == True,  # noqa: E712
-                            )
-                            .group_by(UserSource.source_id)
-                            .having(func.count(Content.id) < QUIET_SOURCE_MAX_RECENT)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-
+                # PYTHON-5N fix : l'ancien agrégat `outerjoin(Content) + GROUP BY
+                # + HAVING count() < 3` matérialisait TOUTES les lignes 30j par
+                # source juste pour les compter (1721ms / 5775 lignes sur un user
+                # à 62 sources) → dérapait vers le statement_timeout 30s → 500.
+                # On sonde désormais via LATERAL ... LIMIT 3 (court-circuit dès la
+                # 3ᵉ ligne par source, Index-Only Scan → 198ms / ~186 lignes), sur
+                # une short session capée 8s/5s plutôt que `self.session` (cap 30s).
+                # Tout le bloc est gardé par un try/except : le carrousel est
+                # optionnel, donc un QueryCanceled / erreur DB le SKIP au lieu de
+                # remonter en 500.
                 quiet_articles: list[Content] = []
-                if quiet_source_ids:
-                    latest_per_source = (
-                        select(Content)
-                        .options(selectinload(Content.source))
+                quiet_source_ids: list[UUID] = []
+                try:
+                    probe = (
+                        select(Content.id)
                         .where(
-                            Content.source_id.in_(quiet_source_ids),
-                            Content.published_at >= sixty_days_ago,
-                            Content.id.notin_(promoted_ids | consumed_ids),
+                            Content.source_id == UserSource.source_id,
+                            Content.published_at >= thirty_days_ago,
                         )
-                        .distinct(Content.source_id)
-                        .order_by(
-                            Content.source_id,
-                            Content.published_at.desc(),
+                        .limit(QUIET_SOURCE_MAX_RECENT)
+                        .lateral()
+                    )
+                    quiet_ids_stmt = (
+                        select(UserSource.source_id)
+                        .select_from(UserSource)
+                        .join(Source, Source.id == UserSource.source_id)
+                        .join(probe, literal(True))
+                        .where(
+                            UserSource.user_id == user_id,
+                            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                            Source.is_active.is_(True),
                         )
+                        .group_by(UserSource.source_id)
+                        .having(func.count() < QUIET_SOURCE_MAX_RECENT)
                     )
-                    quiet_articles = list(
-                        (await self.session.scalars(latest_per_source)).all()
-                    )
+                    async with self._session_maker(
+                        statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+                    ) as quiet_s:
+                        quiet_source_ids = list(
+                            (await quiet_s.scalars(quiet_ids_stmt)).all()
+                        )
+                        if quiet_source_ids:
+                            latest_per_source = (
+                                select(Content)
+                                .options(selectinload(Content.source))
+                                .where(
+                                    Content.source_id.in_(quiet_source_ids),
+                                    Content.published_at >= sixty_days_ago,
+                                    Content.id.notin_(promoted_ids | consumed_ids),
+                                )
+                                .distinct(Content.source_id)
+                                .order_by(
+                                    Content.source_id,
+                                    Content.published_at.desc(),
+                                )
+                            )
+                            quiet_articles = list(
+                                (await quiet_s.scalars(latest_per_source)).all()
+                            )
                     quiet_articles.sort(key=lambda c: c.published_at, reverse=True)
                     quiet_articles = quiet_articles[:MAX_CAROUSEL_ITEMS]
+                except Exception as exc:
+                    logger.warning(
+                        "carousel_quiet_sources_skipped",
+                        error=str(exc),
+                        exc_type=type(exc).__name__,
+                    )
+                    quiet_articles = []
+                    quiet_source_ids = []
 
                 logger.info(
                     "carousel_quiet_sources_query",
