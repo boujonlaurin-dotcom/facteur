@@ -156,22 +156,62 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     _go(RoutePaths.fluxContinu);
   }
 
-  /// Glisse vers le haut (ou tap sur l'indice) : slide doux vers le haut, puis
-  /// feed (déjà préchargé → arrivée instantanée, zéro loader intermédiaire).
-  /// reduceMotion → go direct.
-  void _open() {
-    if (_phase == _Phase.exiting) return;
+  void _trackOpened() {
     unawaited(ref.read(analyticsServiceProvider).trackMorningRitualOpened(
           dayKey: TourneeProgressService.dayKey(DateTime.now()),
           waitedMs: DateTime.now().difference(_mountedAt).inMilliseconds,
         ));
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
-    if (reduceMotion) {
+  }
+
+  /// Tap (enveloppe ou indice) : slide doux vers le haut, puis feed (déjà
+  /// préchargé → arrivée instantanée). reduceMotion → go direct.
+  void _open() {
+    if (_phase == _Phase.exiting) return;
+    if (MediaQuery.of(context).disableAnimations) {
+      _trackOpened();
       _finishOpen();
       return;
     }
+    _commitOpen();
+  }
+
+  /// Lance la sortie (slide haut) depuis la position courante du contrôleur —
+  /// utilisé par le tap **et** par la fin d'un balayage qui franchit le seuil.
+  void _commitOpen() {
+    if (_phase == _Phase.exiting) return;
+    _trackOpened();
     setState(() => _phase = _Phase.exiting);
     _exitController.forward();
+  }
+
+  /// Balayage **progressif** : la page suit le doigt en temps réel (le
+  /// contrôleur de sortie est piloté à la main, 0 = repos, 1 = sortie complète).
+  void _onDragUpdate(DragUpdateDetails details) {
+    if (_phase == _Phase.exiting) return;
+    if (MediaQuery.of(context).disableAnimations) return;
+    // Distance de référence pour une sortie complète : ~40 % de la hauteur.
+    final target = MediaQuery.of(context).size.height * 0.4;
+    if (target <= 0) return;
+    final delta = -(details.primaryDelta ?? 0) / target; // vers le haut → +
+    _exitController.value = (_exitController.value + delta).clamp(0.0, 1.0);
+  }
+
+  /// Relâché : franchit-on le seuil (progression > 30 % ou fling vers le haut) ?
+  /// Oui → on termine la sortie ; non → retour élastique à la position de repos.
+  void _onDragEnd(DragEndDetails details) {
+    if (_phase == _Phase.exiting) return;
+    final velocity = details.primaryVelocity ?? 0; // négatif = vers le haut
+    final commit = velocity < -300 || _exitController.value > 0.3;
+    if (!commit) {
+      _exitController.reverse();
+      return;
+    }
+    if (MediaQuery.of(context).disableAnimations) {
+      _trackOpened();
+      _finishOpen();
+      return;
+    }
+    _commitOpen();
   }
 
   void _finishOpen() {
@@ -267,21 +307,21 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
         onOpen: _open,
         onPersonalize: () => showTourneeComposerSheet(context),
       );
-      // Glisse vers le haut (n'importe où sur le rituel) → ouverture. Le tap sur
-      // l'indice « Glisse vers le haut » reste un repli accessible (cf. onOpen).
+      // Balayage vers le haut (n'importe où sur le rituel) qui **suit le doigt**.
+      // Le tap sur l'enveloppe ou l'indice reste un repli accessible (cf. onOpen).
       ritual = GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onVerticalDragEnd: (details) {
-          if ((details.primaryVelocity ?? 0) < -120) _open();
-        },
+        onVerticalDragUpdate: _onDragUpdate,
+        onVerticalDragEnd: _onDragEnd,
         child: ritual,
       );
-      if (_phase == _Phase.exiting) {
-        ritual = SlideTransition(
-          position: _slideOut,
-          child: FadeTransition(opacity: _fadeOut, child: ritual),
-        );
-      }
+      // Transition pilotée par `_exitController` en continu : à la valeur 0 elle
+      // est neutre (offset zéro, opacité pleine), ce qui permet au balayage de la
+      // faire progresser en temps réel avant tout `forward()`.
+      ritual = SlideTransition(
+        position: _slideOut,
+        child: FadeTransition(opacity: _fadeOut, child: ritual),
+      );
       body = ritual;
     }
 
@@ -317,12 +357,15 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
 }
 
 /// Loader d'intro du rituel : enveloppe (centrepiece cohérent loader ↔ rituel)
-/// au-dessus du [LoadingView] (FacteurLoader + citation éditoriale). Couvre le
-/// temps de calcul des thèmes de l'édition.
+/// **en tête de la colonne centrée** du [LoadingView] (FacteurLoader + citation
+/// éditoriale), au lieu d'être épinglée en haut — l'enveloppe et le loader
+/// forment ainsi un seul bloc vertical-centré, à une hauteur proche de celle du
+/// rituel révélé (plus de double-centre ni de saut de position entre les deux
+/// phases). Couvre le temps de calcul des thèmes de l'édition.
 class _IntroLoader extends StatelessWidget {
   final Duration revealEditorialAfter;
 
-  /// Affiche l'enveloppe au-dessus du loader (centrepiece cohérent loader ↔
+  /// Affiche l'enveloppe en tête du loader (centrepiece cohérent loader ↔
   /// rituel). Désactivé dans le flux « connu pas-prêt » : pas de rituel à venir,
   /// donc pas d'enveloppe — juste un court loader avant le repli vers le feed.
   final bool showEnvelope;
@@ -340,12 +383,13 @@ class _IntroLoader extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _RitualHeader(),
-          if (showEnvelope) ...[
-            const SizedBox(height: FacteurSpacing.space4),
-            const _EnvelopeHero(),
-          ],
           Expanded(
-            child: LoadingView(revealEditorialAfter: revealEditorialAfter),
+            // Enveloppe décorative (onTap null) en tête de la colonne centrée du
+            // loader : même bloc que le FacteurLoader + citation.
+            child: LoadingView(
+              revealEditorialAfter: revealEditorialAfter,
+              leading: showEnvelope ? const _EnvelopeHero() : null,
+            ),
           ),
         ],
       ),
@@ -437,7 +481,7 @@ class MorningRitualContent extends StatelessWidget {
             style: FacteurTypography.bodyLarge(colors.textSecondary),
           ),
           const SizedBox(height: FacteurSpacing.space6),
-          const _EnvelopeHero(),
+          _EnvelopeHero(onTap: onOpen),
           const SizedBox(height: FacteurSpacing.space6),
           _SwipeUpHint(onTap: onOpen, reduceMotion: reduceMotion),
           const SizedBox(height: FacteurSpacing.space8),
@@ -738,8 +782,8 @@ class _PopulatingChipsState extends State<_PopulatingChips> {
     ];
     return Wrap(
       alignment: WrapAlignment.center,
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 6,
+      runSpacing: 6,
       children: chips,
     );
   }
@@ -786,32 +830,34 @@ class _SectionChip extends StatelessWidget {
     final colors = context.facteurColors;
     final isVeille = entry.isVeille;
     return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 13),
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: isVeille
-            ? colors.primary.withValues(alpha: 0.10)
-            : entry.accent.withValues(alpha: 0.12),
+            ? colors.primary.withValues(alpha: 0.09)
+            : entry.accent.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (isVeille)
-            Icon(Icons.star, size: 13, color: colors.primary)
+            Icon(Icons.star, size: 11, color: colors.primary)
           else
             Container(
-              width: 9,
-              height: 9,
+              width: 7,
+              height: 7,
               decoration: BoxDecoration(
                 color: entry.accent,
                 shape: BoxShape.circle,
               ),
             ),
-          const SizedBox(width: 7),
+          const SizedBox(width: 5),
           Text(
             entry.label,
             style: FacteurTypography.labelLarge(colors.textPrimary).copyWith(
+              fontSize: 12.5,
+              height: 1.0,
               fontWeight: isVeille ? FontWeight.w600 : null,
             ),
           ),
@@ -862,18 +908,64 @@ class _GearChip extends StatelessWidget {
 /// Enveloppe du jour — centrepiece du rituel. SVG d'enveloppe cachetée (papier
 /// crème, rabat, timbre pointillé, cachet de cire `primary`) avec un « F »
 /// Fraunces superposé pour un rendu net, et une ombre portée discrète.
-class _EnvelopeHero extends StatelessWidget {
-  const _EnvelopeHero();
+///
+/// Quand [onTap] est fourni (phase rituel), l'enveloppe est **cliquable** : un
+/// appui l'enfonce légèrement (haptique « cachet »), et au relâché elle rebondit
+/// — un petit « pop » satisfaisant — avant de filer au feed via [onTap]. Sans
+/// [onTap] (loader), elle est purement décorative.
+class _EnvelopeHero extends StatefulWidget {
+  final VoidCallback? onTap;
+
+  const _EnvelopeHero({this.onTap});
 
   static const double _width = 236;
   static const double _height = _width * 188 / 260; // ≈ 170.6
 
   @override
+  State<_EnvelopeHero> createState() => _EnvelopeHeroState();
+}
+
+class _EnvelopeHeroState extends State<_EnvelopeHero>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _press;
+  late final Animation<double> _pressCurve;
+
+  @override
+  void initState() {
+    super.initState();
+    _press = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 110),
+      reverseDuration: const Duration(milliseconds: 320),
+    );
+    // Enfoncement net à l'appui, rebond (léger dépassement) au relâché.
+    _pressCurve = CurvedAnimation(
+      parent: _press,
+      curve: Curves.easeOut,
+      reverseCurve: Curves.easeOutBack,
+    );
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
+  }
+
+  void _onTapDown(TapDownDetails _) => _press.forward();
+  void _onTapCancel() => _press.reverse();
+  void _onTapUp(TapUpDetails _) {
+    HapticFeedback.heavyImpact();
+    _press.reverse();
+    widget.onTap?.call();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    return SizedBox(
-      width: _width,
-      height: _height,
+    final envelope = SizedBox(
+      width: _EnvelopeHero._width,
+      height: _EnvelopeHero._height,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -893,8 +985,8 @@ class _EnvelopeHero extends StatelessWidget {
           ),
           SvgPicture.string(
             _envelopeSvg(_hex(colors.primary)),
-            width: _width,
-            height: _height,
+            width: _EnvelopeHero._width,
+            height: _EnvelopeHero._height,
           ),
           // Cachet « F » net (la lettre est retirée du SVG et superposée ici).
           Align(
@@ -906,6 +998,26 @@ class _EnvelopeHero extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+
+    if (widget.onTap == null) return envelope;
+
+    return Semantics(
+      button: true,
+      label: 'Ouvrir mon essentiel',
+      child: GestureDetector(
+        onTapDown: _onTapDown,
+        onTapUp: _onTapUp,
+        onTapCancel: _onTapCancel,
+        child: AnimatedBuilder(
+          animation: _pressCurve,
+          builder: (context, child) => Transform.scale(
+            scale: 1 - 0.06 * _pressCurve.value,
+            child: child,
+          ),
+          child: envelope,
+        ),
       ),
     );
   }

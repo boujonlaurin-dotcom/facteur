@@ -2,6 +2,7 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/screens/morning_ritual_screen.dart';
 import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -72,6 +73,25 @@ void main() {
       expect(find.text('Mot du jour'), findsOneWidget);
       // CTA remplacé par l'indice « glisse vers le haut ».
       expect(find.text('Glisse vers le haut'), findsOneWidget);
+    });
+
+    testWidgets('tap sur l\'enveloppe déclenche l\'ouverture', (tester) async {
+      var opened = 0;
+      await tester.pumpWidget(_wrap(
+        MorningRitualContent(
+          dateLabel: 'mercredi 27 mai',
+          entries: const [],
+          reduceMotion: true,
+          onOpen: () => opened++,
+          onPersonalize: () {},
+        ),
+      ));
+
+      // L'enveloppe (unique SvgPicture du corps) est désormais cliquable. Le
+      // GestureDetector est un ancêtre du SvgPicture → warnIfMissed superflu.
+      await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 400)); // laisse le « pop »
+      expect(opened, 1);
     });
 
     testWidgets('peuplement : chips arrivant en 2 temps finissent visibles', (
