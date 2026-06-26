@@ -46,6 +46,8 @@ from app.schemas.source import (
     ThemeShare,
     ThemeSourceGroup,
     ThemeSourcesResponse,
+    ThemeSuggestionItem,
+    ThemeSuggestionsResponse,
     UpdateSourceSubscriptionRequest,
 )
 from app.services.feed_cache import FEED_CACHE
@@ -57,6 +59,10 @@ from app.services.premium_curated_sources import (
 from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
+)
+from app.services.source_recommendation_gate import (
+    is_quality_catalog,
+    passes_safety_gate,
 )
 from app.services.source_service import PremiumConnectionNotEnabled, SourceService
 from app.services.sources_cache import SOURCES_CACHE
@@ -553,6 +559,100 @@ async def get_sources_by_theme(
                 total += len(community_responses)
 
     return ThemeSourcesResponse(theme=slug, groups=groups, total_count=total)
+
+
+# Nombre max de sources poussées dans le footer « Étoffer [thème] ». Knob PO :
+# volontairement bas pour rester un footer discret, pas une liste.
+SUGGEST_FOR_THEME_CAP = 3
+# Borne SQL du balayage du catalogue Tier 2 (on filtre ensuite par le gate en
+# Python) — large devant le nombre de sources curées par thème.
+_QUALITY_CATALOG_SCAN_LIMIT = 60
+
+
+@router.get("/suggest-for-theme/{slug}", response_model=ThemeSuggestionsResponse)
+async def suggest_sources_for_theme(
+    slug: str,
+    limit: int = SUGGEST_FOR_THEME_CAP,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> ThemeSuggestionsResponse:
+    """Footer « Étoffer [thème] » — sources **poussées** couvrant le thème.
+
+    Gradation de contrôle éditorial (cf. `source_recommendation_gate`) :
+    - **Tier 1 `facteur_pick`** : pépites curées par l'équipe
+      (`pepite_for_themes` ⊇ slug), branding fort.
+    - **Tier 2 `quality_catalog`** : catalogue évalué passant le gate qualité
+      (fiabilité haute/moyenne, biais connu non alternatif).
+
+    Les deux tiers passent le gate de sécurité : aucune source à fiabilité
+    basse/inconnue ni au positionnement alternatif n'est jamais renvoyée. Le
+    Tier 3 (sources non évaluées / externes) n'est **pas** servi par cet
+    endpoint : il n'est accessible qu'via la recherche explicite de
+    l'utilisateur.
+    """
+    user_uuid = UUID(user_id)
+    cap = max(0, min(limit, SUGGEST_FOR_THEME_CAP))
+
+    # Sources déjà suivies/favori → exclues des suggestions ET flaggées is_trusted.
+    trusted_stmt = select(UserSource.source_id).where(
+        UserSource.user_id == user_uuid,
+        UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+    )
+    trusted_result = await db.execute(trusted_stmt)
+    trusted_ids: set[UUID] = {row[0] for row in trusted_result.all()}
+
+    suggestions: list[ThemeSuggestionItem] = []
+    seen_ids: set[UUID] = set()
+    label = THEME_LABELS.get(slug, slug.capitalize())
+
+    if cap == 0:
+        return ThemeSuggestionsResponse(theme=slug, label=label, suggestions=[])
+
+    # --- Tier 1 : Pépites Facteur (pepite_for_themes ⊇ slug) ---
+    pepite_service = PepiteService(db)
+    pepite_sources = await pepite_service.get_theme_pepite_sources(
+        slug, exclude_ids=trusted_ids
+    )
+    for s in pepite_sources:
+        if len(suggestions) >= cap:
+            break
+        if not passes_safety_gate(s):
+            continue
+        suggestions.append(
+            ThemeSuggestionItem(
+                recommendation_tier="facteur_pick",
+                source=_source_to_response(s, trusted_ids=trusted_ids),
+            )
+        )
+        seen_ids.add(s.id)
+
+    # --- Tier 2 : Catalogue évalué (gate qualité) ---
+    if len(suggestions) < cap:
+        stmt_catalog = (
+            select(Source)
+            .where(Source.is_active.is_(True))
+            .where(Source.is_curated.is_(True))
+            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+            .order_by(Source.name)
+            .limit(_QUALITY_CATALOG_SCAN_LIMIT)
+        )
+        result = await db.execute(stmt_catalog)
+        for s in result.scalars().all():
+            if len(suggestions) >= cap:
+                break
+            if s.id in trusted_ids or s.id in seen_ids:
+                continue
+            if not is_quality_catalog(s):
+                continue
+            suggestions.append(
+                ThemeSuggestionItem(
+                    recommendation_tier="quality_catalog",
+                    source=_source_to_response(s, trusted_ids=trusted_ids),
+                )
+            )
+            seen_ids.add(s.id)
+
+    return ThemeSuggestionsResponse(theme=slug, label=label, suggestions=suggestions)
 
 
 @router.get("/themes-followed", response_model=ThemesFollowedResponse)

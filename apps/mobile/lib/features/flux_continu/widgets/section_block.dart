@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'essentiel_hi_fi_card.dart';
+import 'etoffer_theme_footer.dart';
 import 'flux_continu_article_card.dart';
 import 'section_banner.dart';
 import 'tournee_composer_sheet.dart';
@@ -239,6 +240,8 @@ class SectionBlock extends StatelessWidget {
           :final items,
           :final coreVisibleCount,
           :final underfilled,
+          :final themeSlug,
+          :final label,
         ):
         // Story 23.4 — la section veille reste visible même vide : on rend un
         // placeholder + CTA réglages au lieu de cartes.
@@ -264,12 +267,16 @@ class SectionBlock extends StatelessWidget {
         // CTA « Ajouter des sources » qui ouvre « Composer ma Tournée ». Un
         // thème à 1 article rend sa carte normalement.
         if (items.isEmpty && section.kind == SectionKind.theme) {
+          // Thème favori vide → footer « Étoffer » **déplié** : « rien de neuf »
+          // + sources de qualité à suivre + recherche. Pour un sujet custom
+          // (pas de slug macro-thème), on garde le CTA générique historique.
           return [
-            _FavoriteEmptyState(
-              message: 'Rien de neuf récemment sur ${section.label}.',
-              ctaIcon: Icons.add_rounded,
-              ctaLabel: 'Ajouter des sources',
-              onCta: onAddSources,
+            _themeFooter(
+              themeSlug: themeSlug,
+              label: label,
+              initiallyExpanded: true,
+              headline: 'Rien de neuf récemment sur $label.',
+              fallbackCtaLabel: 'Ajouter des sources',
             ),
           ];
         }
@@ -342,16 +349,57 @@ class SectionBlock extends StatelessWidget {
                 onLongPressConversion: onLongPressConversion,
               ),
           // Cohérence Tournée — un thème **maigre affiché** (≤1 survivant après
-          // dédup, enrichi par réinjection) porte en pied un CTA pour étoffer la
-          // section. Distinct de l'empty-state (items vides) au-dessus.
+          // dédup, enrichi par réinjection) porte en pied le footer « Étoffer »
+          // **déplié** (sources de qualité + recherche), vrai vecteur d'ajout.
+          // Distinct de l'empty-state (items vides) au-dessus. Sujet custom →
+          // CTA générique historique.
           if (section.kind == SectionKind.theme && underfilled)
-            _FavoriteEmptyState(
-              ctaIcon: Icons.add_rounded,
-              ctaLabel: 'Ajouter plus de sources',
-              onCta: onAddSources,
+            _themeFooter(
+              themeSlug: themeSlug,
+              label: label,
+              initiallyExpanded: true,
+              fallbackCtaLabel: 'Ajouter plus de sources',
+            ),
+          // Thème **riche** (assez d'articles) → footer « Étoffer » **replié** :
+          // un bouton discret qui ne charge les sources qu'au tap, pour garder
+          // le vecteur de croissance visible sans alourdir la section.
+          if (section.kind == SectionKind.theme && !underfilled &&
+              themeSlug != null)
+            EtofferThemeFooter(
+              slug: themeSlug,
+              label: label,
+              onSearch: onAddSources,
             ),
         ];
     }
+  }
+
+  /// Pied d'une section thématique : footer « Étoffer [thème] » (vrai vecteur
+  /// d'ajout de sources de qualité) quand on a un slug macro-thème, sinon le
+  /// CTA générique historique pour un sujet custom. Décision unique partagée
+  /// par les cas thème vide / maigre.
+  Widget _themeFooter({
+    required String? themeSlug,
+    required String label,
+    required bool initiallyExpanded,
+    required String fallbackCtaLabel,
+    String? headline,
+  }) {
+    if (themeSlug != null) {
+      return EtofferThemeFooter(
+        slug: themeSlug,
+        label: label,
+        headline: headline,
+        initiallyExpanded: initiallyExpanded,
+        onSearch: onAddSources,
+      );
+    }
+    return _FavoriteEmptyState(
+      message: headline,
+      ctaIcon: Icons.add_rounded,
+      ctaLabel: fallbackCtaLabel,
+      onCta: onAddSources,
+    );
   }
 }
 
