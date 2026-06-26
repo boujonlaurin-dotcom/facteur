@@ -1,8 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Sources",
+      "summary": "Fiche source plus claire : description repliable, nombre d'abonnés affiché, et réglage de la priorité dans ton flux au curseur."
+    },
+    {
       "tag": "Tournée",
       "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
+    },
+    {
       "tag": "Perspectives",
       "summary": "Couverture médiatique plus lisible : repères Gauche/Droite sous la barre, source cliquable et aperçu de l'article au toucher prolongé."
     },
