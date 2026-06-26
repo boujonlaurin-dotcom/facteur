@@ -146,6 +146,16 @@ class Settings(BaseSettings):
     # lus depuis api_usage_events (persistant). TTL du cache du COUNT mensuel.
     cost_budget_cache_ttl_s: int = 120
 
+    # Mistral rate limiting (LR-1 PR 1) — borne le burst éditorial qui causait
+    # ~28 % de 429 (curation + deep_matcher + perspective fan-out non bornés sur
+    # le modèle large). Token-bucket /minute + cap de concurrence, partagés au
+    # niveau process, appliqués aux seuls appels `large`. Les défauts sont
+    # conservateurs (à affiner via LR-3 selon le plan Mistral) et configurables
+    # sans redéploiement de code.
+    mistral_rate_limit_enabled: bool = True  # kill-switch throttle large
+    mistral_large_rpm: int = 60  # requêtes large/minute (token-bucket)
+    mistral_large_concurrency: int = 4  # appels large simultanés (semaphore)
+
     # GitHub (app update feature)
     github_token: str = ""
     github_repo: str = "boujonlaurin-dotcom/facteur"

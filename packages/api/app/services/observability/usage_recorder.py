@@ -51,8 +51,14 @@ async def record_api_call(
     user_id: UUID | str | None = None,
     status: str = "ok",
     latency_ms: int | None = None,
+    prompt_tokens: int | None = None,
+    completion_tokens: int | None = None,
 ) -> None:
     """Persiste un appel API externe dans `api_usage_events`.
+
+    `prompt_tokens` / `completion_tokens` proviennent de `usage` Mistral quand
+    disponible (None pour Brave ou un appel échoué avant réponse) — ils donnent
+    le € réel par modèle via un `GROUP BY model` (LR-1 PR 1).
 
     Best-effort : ne lève jamais, ne bloque jamais la transaction métier
     (session courte dédiée). Désactivable d'un coup via le kill-switch
@@ -83,6 +89,8 @@ async def record_api_call(
                     user_id=uid,
                     status=status if status in _VALID_STATUSES else "ok",
                     latency_ms=latency_ms,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
                 )
             )
             await session.commit()
@@ -96,16 +104,20 @@ async def record_api_call(
 
 
 class _ApiCallTracker:
-    """Statut mutable d'un appel suivi par `track_api_call`.
+    """État mutable d'un appel suivi par `track_api_call`.
 
     Défaut `error` : si le bloc sort sans avoir posé de statut (exception,
-    timeout, `return` précoce), l'appel est compté comme échoué.
+    timeout, `return` précoce), l'appel est compté comme échoué. Le bloc pose
+    aussi `prompt_tokens` / `completion_tokens` depuis `usage` Mistral quand la
+    réponse arrive ; ils restent None sinon (Brave, échec, provider sans usage).
     """
 
-    __slots__ = ("status",)
+    __slots__ = ("status", "prompt_tokens", "completion_tokens")
 
     def __init__(self) -> None:
         self.status = "error"
+        self.prompt_tokens: int | None = None
+        self.completion_tokens: int | None = None
 
 
 @asynccontextmanager
@@ -137,4 +149,6 @@ async def track_api_call(
             user_id=user_id,
             status=tracker.status,
             latency_ms=int((time.monotonic() - t0) * 1000),
+            prompt_tokens=tracker.prompt_tokens,
+            completion_tokens=tracker.completion_tokens,
         )

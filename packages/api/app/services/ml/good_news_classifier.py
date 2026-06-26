@@ -160,8 +160,12 @@ class GoodNewsClassifier:
                 try:
                     response = await client.post(MISTRAL_API_URL, json=payload)
                     response.raise_for_status()
+                    data = response.json()
+                    usage = data.get("usage") or {}
+                    _call.prompt_tokens = usage.get("prompt_tokens")
+                    _call.completion_tokens = usage.get("completion_tokens")
                     _call.status = "ok"
-                    return response.json()
+                    return data
                 except httpx.HTTPStatusError as e:
                     status = e.response.status_code
                     if status == 429 and attempt < max_retries - 1:

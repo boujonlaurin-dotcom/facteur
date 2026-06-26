@@ -397,6 +397,8 @@ class ClassificationService:
                     usage = data.get("usage", {})
                     max_tokens = payload.get("max_tokens")
                     completion_tokens = usage.get("completion_tokens")
+                    _call.prompt_tokens = usage.get("prompt_tokens")
+                    _call.completion_tokens = completion_tokens
                     log.info(
                         "classification.api_usage",
                         model=payload.get("model"),

@@ -365,6 +365,31 @@ class TestCallMistral:
         assert result["choices"][0]["message"]["content"] == '{"topics": ["sport"]}'
 
     @pytest.mark.asyncio
+    async def test_records_token_usage(self):
+        """Les tokens de `usage` Mistral sont propagés à api_usage_events (LR-1)."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 1900, "completion_tokens": 42},
+        }
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        self.service._client = mock_client
+
+        with patch(
+            "app.services.observability.usage_recorder.record_api_call",
+            new_callable=AsyncMock,
+        ) as rec:
+            await self.service._call_mistral({"model": "test", "max_tokens": 100})
+
+        rec.assert_awaited_once()
+        kwargs = rec.await_args.kwargs
+        assert kwargs["prompt_tokens"] == 1900
+        assert kwargs["completion_tokens"] == 42
+        assert kwargs["status"] == "ok"
+
+    @pytest.mark.asyncio
     async def test_retries_on_429(self):
         """429 responses trigger exponential backoff retries."""
         error_response = MagicMock()
@@ -444,7 +469,11 @@ class TestResponseFormatInPayloads:
             resp.raise_for_status = MagicMock()
             resp.json.return_value = {
                 "choices": [
-                    {"message": {"content": '{"topics": ["sport"], "serene": true, "is_ad": false}'}}
+                    {
+                        "message": {
+                            "content": '{"topics": ["sport"], "serene": true, "is_ad": false}'
+                        }
+                    }
                 ],
                 "usage": {},
             }
@@ -469,7 +498,11 @@ class TestResponseFormatInPayloads:
             resp.raise_for_status = MagicMock()
             resp.json.return_value = {
                 "choices": [
-                    {"message": {"content": '[{"topics": ["sport"], "serene": true, "is_ad": false}]'}}
+                    {
+                        "message": {
+                            "content": '[{"topics": ["sport"], "serene": true, "is_ad": false}]'
+                        }
+                    }
                 ],
                 "usage": {},
             }

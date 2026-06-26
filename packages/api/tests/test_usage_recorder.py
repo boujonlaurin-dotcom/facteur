@@ -15,7 +15,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.observability import usage_recorder
-from app.services.observability.usage_recorder import record_api_call
+from app.services.observability.usage_recorder import record_api_call, track_api_call
 
 
 def _make_session_maker(commit_side_effect=None):
@@ -50,7 +50,7 @@ async def test_record_disabled_does_nothing():
         patch.object(
             usage_recorder,
             "safe_async_session",
-            side_effect=lambda *a, **k: fake_sm(),
+            side_effect=lambda *_a, **_k: fake_sm(),
         ),
     ):
         await record_api_call(
@@ -70,7 +70,7 @@ async def test_record_inserts_event_when_enabled():
         patch.object(
             usage_recorder,
             "safe_async_session",
-            side_effect=lambda *a, **k: fake_sm(),
+            side_effect=lambda *_a, **_k: fake_sm(),
         ),
     ):
         await record_api_call(
@@ -100,7 +100,7 @@ async def test_record_never_raises_on_db_error():
         patch.object(
             usage_recorder,
             "safe_async_session",
-            side_effect=lambda *a, **k: fake_sm(),
+            side_effect=lambda *_a, **_k: fake_sm(),
         ),
         patch.object(usage_recorder, "logger") as mock_logger,
     ):
@@ -119,7 +119,7 @@ async def test_record_warns_on_unknown_call_site_but_still_inserts():
         patch.object(
             usage_recorder,
             "safe_async_session",
-            side_effect=lambda *a, **k: fake_sm(),
+            side_effect=lambda *_a, **_k: fake_sm(),
         ),
         patch.object(usage_recorder, "logger") as mock_logger,
     ):
@@ -141,7 +141,7 @@ async def test_record_coerces_string_user_id():
         patch.object(
             usage_recorder,
             "safe_async_session",
-            side_effect=lambda *a, **k: fake_sm(),
+            side_effect=lambda *_a, **_k: fake_sm(),
         ),
     ):
         await record_api_call("mistral", "editorial", user_id=str(uid))
@@ -159,10 +159,73 @@ async def test_record_bad_string_user_id_falls_back_to_none():
         patch.object(
             usage_recorder,
             "safe_async_session",
-            side_effect=lambda *a, **k: fake_sm(),
+            side_effect=lambda *_a, **_k: fake_sm(),
         ),
     ):
         await record_api_call("mistral", "editorial", user_id="not-a-uuid")
 
     event = mock_session.add.call_args.args[0]
     assert event.user_id is None
+
+
+@pytest.mark.asyncio
+async def test_record_persists_token_counts():
+    """prompt_tokens / completion_tokens sont portés sur l'ApiUsageEvent (LR-1)."""
+    fake_sm, mock_session = _make_session_maker()
+    with (
+        patch.object(usage_recorder, "get_settings", return_value=_settings()),
+        patch.object(
+            usage_recorder,
+            "safe_async_session",
+            side_effect=lambda *_a, **_k: fake_sm(),
+        ),
+    ):
+        await record_api_call(
+            "mistral",
+            "good_news_pass2",
+            model="mistral-large-latest",
+            prompt_tokens=1900,
+            completion_tokens=42,
+        )
+
+    event = mock_session.add.call_args.args[0]
+    assert event.prompt_tokens == 1900
+    assert event.completion_tokens == 42
+
+
+@pytest.mark.asyncio
+async def test_track_api_call_propagates_tracker_tokens():
+    """Le context manager remonte les tokens posés sur le tracker au recorder."""
+    with patch.object(
+        usage_recorder, "record_api_call", new_callable=AsyncMock
+    ) as mock_record:
+        async with track_api_call(
+            "mistral", "classification_pass1", model="mistral-small-latest"
+        ) as call:
+            call.prompt_tokens = 1234
+            call.completion_tokens = 56
+            call.status = "ok"
+
+    mock_record.assert_awaited_once()
+    kwargs = mock_record.await_args.kwargs
+    assert kwargs["prompt_tokens"] == 1234
+    assert kwargs["completion_tokens"] == 56
+    assert kwargs["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_track_api_call_tokens_default_none_on_failure():
+    """Sans pose de tokens (échec avant réponse), ils restent None et le statut error."""
+    with (
+        patch.object(
+            usage_recorder, "record_api_call", new_callable=AsyncMock
+        ) as mock_record,
+        pytest.raises(RuntimeError),
+    ):
+        async with track_api_call("mistral", "editorial"):
+            raise RuntimeError("boom before response")
+
+    kwargs = mock_record.await_args.kwargs
+    assert kwargs["prompt_tokens"] is None
+    assert kwargs["completion_tokens"] is None
+    assert kwargs["status"] == "error"
