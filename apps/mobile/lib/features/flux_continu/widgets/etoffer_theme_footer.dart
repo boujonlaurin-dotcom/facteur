@@ -66,8 +66,6 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
   static const _ctaColor = Color(0xFF2C3E50);
   static const _facteurAccent = Color(0xFFB0470A);
 
-  late bool _expanded = widget.initiallyExpanded;
-
   /// Ids suivis pendant cette session → masqués localement (la prochaine
   /// requête les exclura nativement, sans flicker de refetch).
   final Set<String> _followed = {};
@@ -77,7 +75,9 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_expanded) return _collapsedButton();
+    // Cas A (thème riche, replié) : un simple bouton qui mène droit au
+    // catalogue filtré — plus de dépli in-place des suggestions.
+    if (!widget.initiallyExpanded) return _collapsedButton();
 
     final async = ref.watch(etofferThemeProvider(widget.slug));
     return _card(
@@ -106,9 +106,9 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       alignment: Alignment.centerLeft,
       child: TextButton.icon(
-        onPressed: () => setState(() => _expanded = true),
+        onPressed: widget.onSearch,
         icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
-        label: Text('Étoffer ${widget.label}'),
+        label: Text('Ajouter plus de sources (${widget.label})'),
         style: TextButton.styleFrom(
           foregroundColor: _ctaColor,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -157,15 +157,10 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
         .take(_maxPushed)
         .toList();
     if (visible.isEmpty) {
-      // Aucune source curée/évaluée : on cadre vers la recherche (Tier 3).
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(
-          'Pas encore de source recommandée sur ${widget.label}. '
-          'Cherche-en une ci-dessous.',
-          style: _hintStyle,
-        ),
-      );
+      // Cas C — aucune source curée/évaluée : pas de phrase descriptive, il ne
+      // reste que le lien discret « Chercher une source X » (le `_searchEntry`
+      // rendu juste après, qui mène désormais au catalogue filtré).
+      return const SizedBox.shrink();
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,11 +343,6 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
 
   static const _headlineStyle = TextStyle(
     fontSize: 14,
-    height: 1.4,
-    color: _textColor,
-  );
-  static const _hintStyle = TextStyle(
-    fontSize: 13,
     height: 1.4,
     color: _textColor,
   );

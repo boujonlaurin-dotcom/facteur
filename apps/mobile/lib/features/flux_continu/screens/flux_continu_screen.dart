@@ -33,6 +33,7 @@ import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../../settings/widgets/display_mode_bottom_sheet.dart';
+import '../../sources/models/source_theme_filters.dart';
 import '../../tour/providers/guided_tour_controller.dart';
 import '../../tour/tour_anchors.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
@@ -1383,14 +1384,20 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                               '${RoutePaths.veilleConfig}?mode=edit',
                             )
                         : null,
-                    // CTA « Ajouter des sources » de l'empty-state d'une section
-                    // thème favorite vide → renvoie directement vers la page
-                    // d'ajout de sources (et non plus la modal « Composer ma
-                    // Tournée »). Nom de route globalement unique → pushNamed
-                    // suffit (pas besoin des params parents).
+                    // CTA « Ajouter des sources » / footer « Étoffer X » d'une
+                    // section thème → page d'ajout, scrollée au catalogue déjà
+                    // filtré sur le thème (query param `theme`). Slug custom
+                    // (hors macro-thème) → catalogue non filtré plutôt que vide.
+                    // Nom de route globalement unique → pushNamed suffit.
                     onAddSources: section is FeedThemeSection &&
                             section.kind == SectionKind.theme
-                        ? () => context.pushNamed(RouteNames.addSource)
+                        ? () => context.pushNamed(
+                              RouteNames.addSource,
+                              queryParameters: {
+                                if (isCatalogTheme(section.themeSlug))
+                                  'theme': section.themeSlug!,
+                              },
+                            )
                         : null,
                     onSeeAll: section is FeedThemeSection
                         ? (section.kind == SectionKind.source

@@ -240,8 +240,9 @@ void main() {
       ));
 
       expect(find.byType(FluxContinuArticleCard), findsOneWidget);
-      // Le footer « riche » reste replié : un simple bouton « Étoffer Tech ».
-      expect(find.text('Étoffer Tech'), findsOneWidget);
+      // Le footer « riche » reste replié : un simple bouton renommé qui mène
+      // droit au catalogue filtré (plus de dépli in-place).
+      expect(find.text('Ajouter plus de sources (Tech)'), findsOneWidget);
       expect(find.text('Chercher une source Tech'), findsNothing);
     });
   });

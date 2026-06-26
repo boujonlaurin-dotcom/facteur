@@ -48,6 +48,11 @@ class SourceAddPanel extends ConsumerStatefulWidget {
   /// Le hôte décide de fermer le sheet, naviguer ailleurs, etc.
   final ValueChanged<SmartSearchResult>? onSourceAdded;
 
+  /// Si non `null`, ouvre l'empty-state scrollé jusqu'au `CatalogSourcesStrip`,
+  /// déjà déplié et filtré sur ce thème (raccourci « Ajouter des sources (X) »
+  /// du footer thème de la Tournée).
+  final String? initialCatalogTheme;
+
   const SourceAddPanel({
     super.key,
     this.padding = const EdgeInsets.fromLTRB(
@@ -64,6 +69,7 @@ class SourceAddPanel extends ConsumerStatefulWidget {
     this.inlineProof = false,
     this.embedded = false,
     this.onSourceAdded,
+    this.initialCatalogTheme,
   });
 
   @override
@@ -80,6 +86,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   String? _lastAddedName;
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
+  // Le catalogue est repéré par sa GlobalKey : `Scrollable.ensureVisible`
+  // remonte au SingleChildScrollView ancêtre sans ScrollController explicite.
+  final GlobalKey _catalogKey = GlobalKey();
   bool _searchActive = false;
   // Caché en champ : dispose() ne doit jamais lire `ref` (StateError pendant
   // un démontage de shell — même classe de bug que NudgeHost / FLUTTER-2).
@@ -101,6 +110,22 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     if (widget.autoFocusSearch) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocusNode.requestFocus();
+      });
+    }
+    // Raccourci catalogue : scrolle jusqu'au `CatalogSourcesStrip` (déjà
+    // déplié + filtré) une fois le premier frame posé. Le catalogue n'est
+    // rendu qu'en empty-state (`_currentQuery.isEmpty`), vrai à l'ouverture.
+    if (widget.initialCatalogTheme != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final ctx = _catalogKey.currentContext;
+        if (ctx == null) return;
+        Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOut,
+          alignment: 0.1,
+        );
       });
     }
   }
@@ -476,7 +501,12 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             },
           ),
           const SizedBox(height: FacteurSpacing.space4),
-          CatalogSourcesStrip(onSourceTap: _showSourceModal),
+          CatalogSourcesStrip(
+            key: _catalogKey,
+            onSourceTap: _showSourceModal,
+            initialTheme: widget.initialCatalogTheme,
+            initiallyExpanded: widget.initialCatalogTheme != null,
+          ),
         ],
       ],
     );

@@ -7,7 +7,11 @@ import '../../../config/theme.dart';
 import '../widgets/source_add_panel.dart';
 
 class AddSourceScreen extends ConsumerWidget {
-  const AddSourceScreen({super.key});
+  /// Thème (slug) à pré-filtrer dans le catalogue : ouvre directement
+  /// l'empty-state scrollé au `CatalogSourcesStrip` déplié + filtré.
+  final String? initialCatalogTheme;
+
+  const AddSourceScreen({super.key, this.initialCatalogTheme});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,7 +25,7 @@ class AddSourceScreen extends ConsumerWidget {
         ),
         title: const Text('Ajouter une source'),
       ),
-      body: const SourceAddPanel(),
+      body: SourceAddPanel(initialCatalogTheme: initialCatalogTheme),
     );
   }
 }

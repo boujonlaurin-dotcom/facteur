@@ -122,8 +122,8 @@ void main() {
     expect(find.text('Suivre'), findsOneWidget);
   });
 
-  testWidgets('aucune source poussée : on cadre vers la recherche (Tier 3)',
-      (tester) async {
+  testWidgets('Cas C — aucune source poussée : pas de phrase descriptive, '
+      'seul le lien discret « Chercher une source » subsiste', (tester) async {
     await tester.pumpWidget(_wrap(
       const EtofferThemeFooter(
         slug: 'tech',
@@ -135,15 +135,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Pas encore de source recommandée'),
-        findsOneWidget);
+        findsNothing);
     expect(find.text('Suivre'), findsNothing);
     expect(find.text('Chercher une source Tech'), findsOneWidget);
   });
 
-  testWidgets('replié : bouton « Étoffer Tech » seul, déplie au tap '
-      '(charge à la demande)', (tester) async {
+  testWidgets('Cas A — replié : bouton « Ajouter plus de sources (Tech) » '
+      'seul, tap → onSearch (catalogue filtré), pas de dépli in-place',
+      (tester) async {
+    var searched = false;
     await tester.pumpWidget(_wrap(
-      const EtofferThemeFooter(slug: 'tech', label: 'Tech'),
+      EtofferThemeFooter(
+        slug: 'tech',
+        label: 'Tech',
+        onSearch: () => searched = true,
+      ),
       data: _data([
         ThemeSuggestion(
           tier: ThemeSuggestionTier.facteurPick,
@@ -153,16 +159,18 @@ void main() {
     ));
     await tester.pump();
 
-    // Replié : ni recherche, ni source tant qu'on n'a pas tapé.
-    expect(find.text('Étoffer Tech'), findsOneWidget);
+    // Replié : ni recherche, ni source — juste le bouton renommé.
+    expect(find.text('Ajouter plus de sources (Tech)'), findsOneWidget);
+    expect(find.text('Étoffer Tech'), findsNothing);
     expect(find.text('Chercher une source Tech'), findsNothing);
     expect(find.text('Heidi.news'), findsNothing);
 
-    await tester.tap(find.text('Étoffer Tech'));
+    await tester.tap(find.text('Ajouter plus de sources (Tech)'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Heidi.news'), findsOneWidget);
-    expect(find.text('Chercher une source Tech'), findsOneWidget);
+    // Plus de dépli in-place : l'action mène au catalogue via onSearch.
+    expect(searched, isTrue);
+    expect(find.text('Heidi.news'), findsNothing);
   });
 
   testWidgets('one-tap Suivre appelle setSourceState(id, followed) et retire '

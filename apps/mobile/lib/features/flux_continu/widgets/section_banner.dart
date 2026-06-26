@@ -250,7 +250,10 @@ class SectionBanner extends StatelessWidget {
                                       child: Icon(
                                         PhosphorIcons.caretRight(
                                             PhosphorIconsStyle.bold),
-                                        size: 16,
+                                        // 18 (au lieu de 16) pour épaissir le
+                                        // trait et l'aligner sur le poids du
+                                        // titre (Fraunces w700).
+                                        size: 18,
                                         color: colors.textPrimary,
                                       ),
                                     ),
