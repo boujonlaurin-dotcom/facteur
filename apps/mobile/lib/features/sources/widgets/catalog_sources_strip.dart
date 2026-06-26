@@ -13,19 +13,7 @@ import 'theme_filter_chips.dart';
 class CatalogSourcesStrip extends ConsumerStatefulWidget {
   final void Function(Source source) onSourceTap;
 
-  /// Thème (slug) pré-sélectionné dans les chips de filtre à l'ouverture.
-  /// `null` ⇒ filtre « Toutes ».
-  final String? initialTheme;
-
-  /// `true` ⇒ catalogue déplié d'emblée (raccourci depuis le footer thème).
-  final bool initiallyExpanded;
-
-  const CatalogSourcesStrip({
-    super.key,
-    required this.onSourceTap,
-    this.initialTheme,
-    this.initiallyExpanded = false,
-  });
+  const CatalogSourcesStrip({super.key, required this.onSourceTap});
 
   @override
   ConsumerState<CatalogSourcesStrip> createState() =>
@@ -33,8 +21,8 @@ class CatalogSourcesStrip extends ConsumerStatefulWidget {
 }
 
 class _CatalogSourcesStripState extends ConsumerState<CatalogSourcesStrip> {
-  late bool _expanded = widget.initiallyExpanded;
-  late String? _selectedTheme = widget.initialTheme;
+  bool _expanded = false;
+  String? _selectedTheme;
 
   @override
   Widget build(BuildContext context) {

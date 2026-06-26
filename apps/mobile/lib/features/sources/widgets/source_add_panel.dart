@@ -48,11 +48,6 @@ class SourceAddPanel extends ConsumerStatefulWidget {
   /// Le hôte décide de fermer le sheet, naviguer ailleurs, etc.
   final ValueChanged<SmartSearchResult>? onSourceAdded;
 
-  /// Si non `null`, ouvre l'empty-state scrollé jusqu'au `CatalogSourcesStrip`,
-  /// déjà déplié et filtré sur ce thème (raccourci « Ajouter des sources (X) »
-  /// du footer thème de la Tournée).
-  final String? initialCatalogTheme;
-
   const SourceAddPanel({
     super.key,
     this.padding = const EdgeInsets.fromLTRB(
@@ -69,7 +64,6 @@ class SourceAddPanel extends ConsumerStatefulWidget {
     this.inlineProof = false,
     this.embedded = false,
     this.onSourceAdded,
-    this.initialCatalogTheme,
   });
 
   @override
@@ -86,9 +80,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   String? _lastAddedName;
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
-  // Le catalogue est repéré par sa GlobalKey : `Scrollable.ensureVisible`
-  // remonte au SingleChildScrollView ancêtre sans ScrollController explicite.
-  final GlobalKey _catalogKey = GlobalKey();
   bool _searchActive = false;
   // Caché en champ : dispose() ne doit jamais lire `ref` (StateError pendant
   // un démontage de shell — même classe de bug que NudgeHost / FLUTTER-2).
@@ -110,26 +101,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     if (widget.autoFocusSearch) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _searchFocusNode.requestFocus();
-      });
-    }
-    // Raccourci catalogue : le `CatalogSourcesStrip` (déjà déplié + filtré) est
-    // rendu **en tête** de l'empty-state (cf. `_buildEmptyState`), donc surmonté
-    // d'un contenu synchrone et stable (intro + champ de recherche). On scrolle
-    // jusqu'à lui pour aligner son en-tête près du haut. Comme tout ce qui le
-    // précède est synchrone, sa position de tête ne bouge plus → ensureVisible
-    // au 1er frame est fiable (contrairement au cas où le catalogue était sous
-    // les pépites communautaires chargées en async, qui le repoussaient).
-    if (widget.initialCatalogTheme != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        final ctx = _catalogKey.currentContext;
-        if (ctx == null) return;
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 450),
-          curve: Curves.easeOut,
-          alignment: 0.05,
-        );
       });
     }
   }
@@ -487,31 +458,13 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     ref.read(analyticsServiceProvider).trackAddSourceExampleTap(text);
   }
 
-  /// Catalogue Facteur (porte la `_catalogKey` pour le scroll-vers + le pré-
-  /// filtre/dépli quand on arrive d'un raccourci thème).
-  Widget _catalogStrip() => CatalogSourcesStrip(
-        key: _catalogKey,
-        onSourceTap: _showSourceModal,
-        initialTheme: widget.initialCatalogTheme,
-        initiallyExpanded: widget.initialCatalogTheme != null,
-      );
-
   Widget _buildEmptyState() {
-    // Raccourci thème : on arrive ici via « Plus de sources (X) » / « Chercher
-    // une source X » → le catalogue filtré est l'intention première, donc rendu
-    // **en tête** (et toujours, même si les pépites sont masquées). Sinon il
-    // reste en pied, sous les pépites communautaires (parcours découverte).
-    final themed = widget.initialCatalogTheme != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.showAddedNudge && _sourceAdded) ...[
           _buildAddedNudge(),
           const SizedBox(height: FacteurSpacing.space6),
-        ],
-        if (themed) ...[
-          _catalogStrip(),
-          const SizedBox(height: FacteurSpacing.space8),
         ],
         ExampleChips(onTap: _onExampleTap),
         const SizedBox(height: FacteurSpacing.space8),
@@ -522,10 +475,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
               ref.read(analyticsServiceProvider).trackAddSourceGemTap(sourceId);
             },
           ),
-          if (!themed) ...[
-            const SizedBox(height: FacteurSpacing.space4),
-            _catalogStrip(),
-          ],
+          const SizedBox(height: FacteurSpacing.space4),
+          CatalogSourcesStrip(onSourceTap: _showSourceModal),
         ],
       ],
     );

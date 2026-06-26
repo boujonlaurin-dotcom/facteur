@@ -563,11 +563,8 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'add', // /settings/sources/add
                 name: RouteNames.addSource,
-                pageBuilder: (context, state) => FullSwipeCupertinoPage(
-                  child: AddSourceScreen(
-                    initialCatalogTheme: state.uri.queryParameters['theme'],
-                  ),
-                ),
+                pageBuilder: (context, state) =>
+                    const FullSwipeCupertinoPage(child: AddSourceScreen()),
               ),
               GoRoute(
                 path: 'preferences', // /settings/sources/preferences

@@ -1384,20 +1384,26 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                               '${RoutePaths.veilleConfig}?mode=edit',
                             )
                         : null,
-                    // CTA « Ajouter des sources » / footer « Étoffer X » d'une
-                    // section thème → page d'ajout, scrollée au catalogue déjà
-                    // filtré sur le thème (query param `theme`). Slug custom
-                    // (hors macro-thème) → catalogue non filtré plutôt que vide.
-                    // Nom de route globalement unique → pushNamed suffit.
+                    // CTA « Plus de sources (X) » / footer « Étoffer X » d'une
+                    // section thème → page **dédiée** du thème
+                    // (`ThemeSourcesScreen` : catalogue backend complet du
+                    // thème, ajout par source). Sujet custom (hors macro-thème,
+                    // sans page dédiée) → page d'ajout générique.
                     onAddSources: section is FeedThemeSection &&
                             section.kind == SectionKind.theme
-                        ? () => context.pushNamed(
-                              RouteNames.addSource,
-                              queryParameters: {
-                                if (isCatalogTheme(section.themeSlug))
-                                  'theme': section.themeSlug!,
-                              },
-                            )
+                        ? () {
+                            if (isCatalogTheme(section.themeSlug)) {
+                              // Même route que le ThemeExplorer (catalogue
+                              // dédié du thème) : push par chemin + `extra` =
+                              // libellé pour le titre.
+                              context.push(
+                                '/settings/sources/theme/${section.themeSlug}',
+                                extra: section.label,
+                              );
+                            } else {
+                              context.pushNamed(RouteNames.addSource);
+                            }
+                          }
                         : null,
                     onSeeAll: section is FeedThemeSection
                         ? (section.kind == SectionKind.source

@@ -236,13 +236,13 @@ class SectionBanner extends StatelessWidget {
                               text: title,
                               children: <InlineSpan>[
                                 if (tappable)
-                                  // Chevron intégré au titre comme glyphe texte
-                                  // (guillemet ›) : hérite de Fraunces w700 du
-                                  // TextSpan parent et s'aligne sur la baseline
-                                  // du titre. Rendu plus gros que le titre pour
-                                  // épaissir le trait et signaler la tappabilité.
+                                  // Chevron « > » intégré au titre comme glyphe
+                                  // texte : hérite de Fraunces w700 du TextSpan
+                                  // parent et s'aligne sur la baseline du titre.
+                                  // Rendu plus gros que le titre pour épaissir
+                                  // le trait et signaler la tappabilité.
                                   TextSpan(
-                                    text: ' ›',
+                                    text: ' >',
                                     style: TextStyle(
                                       fontSize: large ? 30 : 22,
                                       color: colors.textPrimary,

@@ -118,9 +118,9 @@ FeedThemeSection _sourceSection({
   );
 }
 
-/// Finder du chevron « › » de navigation, désormais rendu comme glyphe texte
-/// intégré au titre du banner (Text.rich) plutôt qu'une icône Phosphor.
-Finder _chevron() => find.textContaining('›', findRichText: true);
+/// Finder du chevron « > » de navigation, rendu comme glyphe texte intégré au
+/// titre du banner (Text.rich) plutôt qu'une icône Phosphor.
+Finder _chevron() => find.textContaining('>', findRichText: true);
 
 void main() {
   setUpAll(() {

@@ -8,25 +8,7 @@ import 'package:facteur/features/sources/models/smart_search_result.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/features/sources/providers/sources_providers.dart';
 import 'package:facteur/features/sources/repositories/sources_repository.dart';
-import 'package:facteur/features/sources/widgets/example_chips.dart';
 import 'package:facteur/features/sources/widgets/source_add_panel.dart';
-
-/// Catalogue figé (sources curées) sans réseau — pour l'empty-state thémé.
-class _FakeUserSources extends UserSourcesNotifier {
-  _FakeUserSources(this._sources);
-  final List<Source> _sources;
-
-  @override
-  Future<List<Source>> build() async => _sources;
-}
-
-Source _curated(String id, String name, String theme) => Source(
-      id: id,
-      name: name,
-      type: SourceType.article,
-      theme: theme,
-      isCurated: true,
-    );
 
 class _FakeSourcesRepository implements SourcesRepository {
   final SmartSearchResult result;
@@ -175,56 +157,5 @@ void main() {
 
     // La recherche n'est pas réinitialisée (le champ garde la requête).
     expect(find.widgetWithText(TextField, 'le monde'), findsOneWidget);
-  });
-
-  testWidgets(
-      'initialCatalogTheme : catalogue filtré rendu EN TÊTE de l\'empty-state '
-      '(déplié + avant les exemples) — raccourci thème (#3)', (tester) async {
-    const dummy = SmartSearchResult(
-      name: 'x',
-      type: 'article',
-      url: 'https://x.test',
-      feedUrl: 'https://x.test/rss',
-    );
-    final repo = _FakeSourcesRepository(dummy);
-
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          sourcesRepositoryProvider.overrideWithValue(repo),
-          userSourcesProvider.overrideWith(
-            () => _FakeUserSources([
-              _curated('s1', 'Numerama', 'tech'),
-              _curated('s2', 'Le Monde', 'politics'),
-            ]),
-          ),
-        ],
-        child: MaterialApp(
-          theme: FacteurTheme.lightTheme,
-          home: const Scaffold(
-            body: SourceAddPanel(
-              showIntro: false,
-              // Indépendant des pépites : le catalogue thémé s'affiche quand même.
-              showCommunityGems: false,
-              showAddedNudge: false,
-              initialCatalogTheme: 'tech',
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // Catalogue déplié d'emblée et filtré sur 'tech' (Numerama, pas Le Monde).
-    // (Numerama apparaît ≥1× : tuile + repli du logo-avatar sur le nom.)
-    expect(find.text('Toutes les sources déjà ajoutées'), findsOneWidget);
-    expect(find.text('Numerama'), findsWidgets);
-    expect(find.text('Le Monde'), findsNothing);
-
-    // Rendu AVANT les exemples : le catalogue est le contenu de tête.
-    final catalogY =
-        tester.getTopLeft(find.text('Toutes les sources déjà ajoutées')).dy;
-    final examplesY = tester.getTopLeft(find.byType(ExampleChips)).dy;
-    expect(catalogY, lessThan(examplesY));
   });
 }
