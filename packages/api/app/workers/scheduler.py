@@ -41,8 +41,11 @@ _PARIS_TZ = pytz.timezone("Europe/Paris")
 # sont déjà dans le pool candidat.
 DIGEST_CRON_HOUR_PARIS = 7
 DIGEST_CRON_MINUTE_PARIS = 30
-SUBTOPIC_DECAY_HOUR_PARIS = 7
-SUBTOPIC_DECAY_MINUTE_PARIS = 20
+# 06h50 (et non 07h20) : le decay doit rester AVANT le digest (07h30) mais
+# sans chevaucher la fenêtre de pression pool du rituel matinal (~07h20-07h35,
+# digest concurrent + pic de trafic feed). Cf. incident PYTHON-5M.
+SUBTOPIC_DECAY_HOUR_PARIS = 6
+SUBTOPIC_DECAY_MINUTE_PARIS = 50
 
 scheduler: AsyncIOScheduler | None = None
 
@@ -189,11 +192,24 @@ async def _zombie_session_sweeper() -> None:
             # 0, sans dépendre du log warning conditionnel ci-dessous.
             logger.info("db_idle_in_transaction_swept", count=len(killed))
             if killed:
+                count = len(killed)
+                max_idle_s = max(r[2] for r in killed)
                 logger.warning(
                     "zombie_session_sweeper_killed",
-                    count=len(killed),
+                    count=count,
                     pids=[r[1] for r in killed],
-                    max_idle_s=max(r[2] for r in killed),
+                    max_idle_s=max_idle_s,
+                )
+                # Alerte (Axe D) : un zombie tué = une connexion a échappé aux
+                # 3 couches (rollback en finally + timeout Postgres + ce
+                # sweeper) → un `safe_async_session` est manqué quelque part,
+                # investigate. Rare → niveau error (pas juste un warning noyé).
+                import sentry_sdk
+
+                sentry_sdk.capture_message(
+                    f"Zombie session(s) swept: {count} idle-in-tx killed "
+                    f"(max idle {max_idle_s}s) — a safe_async_session is missing",
+                    level="error",
                 )
             else:
                 logger.debug("zombie_session_sweeper_clean")
@@ -201,14 +217,31 @@ async def _zombie_session_sweeper() -> None:
         logger.exception("zombie_session_sweeper_failed")
 
 
+# Sondes consécutives où `usage_pct >= pool_warn_threshold_pct`. Permet à la
+# sonde de distinguer un pic transitoire (1 sonde — rituel matinal) d'une
+# pression SOUTENUE (>= pool_warn_sustained_probes) avant de lever le warning.
+# État module-level : volontairement non persisté (un redémarrage ré-arme la
+# fenêtre, ce qui est le comportement voulu).
+_pool_warn_streak = 0
+
+
 async def _pool_health_probe() -> None:
-    """Sonde active du pool DB toutes les 5 min (enabler observabilité scaling).
+    """Sonde active du pool DB toutes les 5 min — alerte à 2 seuils (Axe D).
 
     `/api/health/pool` ne loggue `db_pool_pressure_high` que lorsqu'il est
     *appelé* (passif). Cette sonde lit le pool périodiquement pour rendre la
     pression visible dans structlog/Sentry sans dépendre d'un appel externe,
     en réutilisant la même introspection (`read_pool_stats`).
+
+    Deux seuils (incident PYTHON-5M) :
+    - **warn** (`pool_warn_threshold_pct`, défaut 70 %) : alerte Sentry
+      `level=warning` seulement si la pression est SOUTENUE, c.-à-d.
+      `pool_warn_sustained_probes` sondes consécutives au-dessus du seuil
+      (early warning sans bruit sur les pics transitoires du rituel matinal).
+    - **page** (`pool_page_threshold_pct`, défaut 90 %) : alerte Sentry
+      `level=fatal` immédiate, dès la première sonde (saturation imminente).
     """
+    global _pool_warn_streak
     import sentry_sdk
 
     from app.database import engine
@@ -217,15 +250,55 @@ async def _pool_health_probe() -> None:
     try:
         stats = read_pool_stats(engine)
         usage_pct = stats.get("usage_pct")
-        threshold = settings.pool_alert_threshold_pct
-        if usage_pct is not None and usage_pct >= threshold:
-            logger.warning("db_pool_pressure_high", source="probe", **stats)
+
+        # NullPool (dev) n'expose pas usage_pct → rien à évaluer.
+        if usage_pct is None:
+            logger.info("db_pool_probe", **stats)
+            return
+
+        page_threshold = settings.pool_page_threshold_pct
+        warn_threshold = settings.pool_warn_threshold_pct
+
+        if usage_pct < warn_threshold:
+            # Sous le seuil warn : un retour sous le seuil casse le "soutenu".
+            _pool_warn_streak = 0
+            logger.info("db_pool_probe", **stats)
+            return
+
+        # À partir d'ici on est >= warn : toute mesure compte pour le streak
+        # (page >= warn par construction), puis on choisit la sévérité.
+        _pool_warn_streak += 1
+
+        if usage_pct >= page_threshold:
+            logger.error(
+                "db_pool_pressure_critical",
+                source="probe",
+                severity="page",
+                threshold=page_threshold,
+                **stats,
+            )
             sentry_sdk.capture_message(
-                f"DB pool pressure high: {usage_pct}% (>= {threshold}%)",
+                f"DB pool pressure CRITICAL: {usage_pct}% (>= {page_threshold}%)",
+                level="fatal",
+            )
+        elif _pool_warn_streak >= settings.pool_warn_sustained_probes:
+            logger.warning(
+                "db_pool_pressure_high",
+                source="probe",
+                severity="warn",
+                threshold=warn_threshold,
+                sustained_probes=_pool_warn_streak,
+                **stats,
+            )
+            sentry_sdk.capture_message(
+                f"DB pool pressure sustained: {usage_pct}% (>= "
+                f"{warn_threshold}% for {_pool_warn_streak} consecutive probes)",
                 level="warning",
             )
         else:
-            logger.info("db_pool_probe", **stats)
+            # Seuil franchi mais pas encore soutenu : on garde la trace en
+            # info (visible/requêtable) sans réveiller personne.
+            logger.info("db_pool_probe", warn_pending=True, **stats)
     except Exception:
         logger.exception("pool_health_probe_failed")
 
