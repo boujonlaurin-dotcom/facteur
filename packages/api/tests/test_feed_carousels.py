@@ -554,10 +554,12 @@ class TestBuildCarouselsCommunity:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            # 1: consumed_ids, 2: new_source, 3: quiet_sources → empty
-            if call_count <= 3:
+            # 1: consumed_ids, 2: new_source → empty. quiet_sources tourne
+            # désormais sur une short session dédiée (PYTHON-5N), plus sur
+            # self.session.execute → la requête community est l'appel #3.
+            if call_count <= 2:
                 return _mock_execute_result([])
-            # 4: community query
+            # 3: community query
             return _mock_execute_result(community_rows)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
@@ -594,10 +596,12 @@ class TestBuildCarouselsCommunity:
         async def mock_execute(stmt):
             nonlocal call_count
             call_count += 1
-            # 1: consumed_ids, 2: new_source, 3: quiet_sources → empty
-            if call_count <= 3:
+            # 1: consumed_ids, 2: new_source → empty. quiet_sources tourne
+            # désormais sur une short session dédiée (PYTHON-5N), plus sur
+            # self.session.execute → la requête community est l'appel #3.
+            if call_count <= 2:
                 return _mock_execute_result([])
-            # 4: community
+            # 3: community
             return _mock_execute_result(community_rows)
 
         service.session.execute = AsyncMock(side_effect=mock_execute)
