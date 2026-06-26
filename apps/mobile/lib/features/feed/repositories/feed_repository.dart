@@ -1189,6 +1189,10 @@ class PerspectiveData {
   final String biasStance;
   final String? publishedAt;
 
+  /// Chapô / extrait de l'article variant (servi par le back, `null` si absent).
+  /// Alimente l'aperçu au long-press de la carte de couverture.
+  final String? description;
+
   /// Spans divergents du titre variant vs. référence (colorisés par bias).
   /// Liste vide si la chaîne back n'a pas pu calculer (cluster manquant, etc.).
   final List<HighlightSpan> highlightSpans;
@@ -1209,6 +1213,7 @@ class PerspectiveData {
     required this.sourceDomain,
     required this.biasStance,
     this.publishedAt,
+    this.description,
     this.highlightSpans = const [],
     this.sharedTokens = const [],
     this.language,
@@ -1224,6 +1229,7 @@ class PerspectiveData {
       sourceDomain: (json['source_domain'] as String?) ?? '',
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
+      description: json['description'] as String?,
       highlightSpans: rawHighlights == null
           ? const []
           : rawHighlights

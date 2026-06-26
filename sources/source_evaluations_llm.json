@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-14",
-  "model": "claude-opus-4-8 (5 sous-agents WebSearch + MCP read-only), nouveau schéma",
-  "_note": "Run complet 150 cibles, NOUVEAU schéma (reliability dérivée + 4 justifs + sources_consulted). Relu/validé avant apply (bias_origin=llm). reliability_score ABSENT (dérivé). Apply gated (creds write PO). | Re-run 2026-06-14 : 9 sources captées re-générées sous rubrique « capture actionnariale » (ligne propriétaire vs pénalité indép seule).",
+  "model": "claude-opus-4-8 (5 sous-agents WebSearch + MCP read-only), nouveau schema ; +10 delta 2026-06-25 (2 agents WebSearch, pont MCP)",
+  "_note": "Run complet 150 cibles, NOUVEAU schéma (reliability dérivée + 4 justifs + sources_consulted). Relu/validé avant apply (bias_origin=llm). reliability_score ABSENT (dérivé). Apply gated (creds write PO). | Re-run 2026-06-14 : 9 sources captées re-générées sous rubrique « capture actionnariale » (ligne propriétaire vs pénalité indép seule). | Run delta 2026-06-25 : +10 sources (CyberScoop, GamesIndustry.biz, GDC Vault, GoodTech, JeuxOnLine, Les Surligneurs, Polygon, Radio Free Europe/RL, Statista, UploadVR) via build_source_eval_prompt + workflow 2 agents WebSearch ; cibles materialisees via MCP (export_source_eval_targets.py casse). 150->160. Benchmark SKIP (D2). reliability_score derive a l-apply.",
   "evaluations": [
     {
       "source_id": "82880279-c9d2-4fb8-bde2-de0595228660",
@@ -216,18 +216,21 @@
     {
       "source_id": "6e27afbc-92ec-4450-82cf-58d106e2ebe5",
       "name": "Basket USA",
-      "description": "Média français de référence sur la NBA et le basket américain, qui publie news, lives, résultats, stats et interviews. Il s'adresse aux passionnés de basket francophones. Fait moins connu : malgré son thème stocké « tech », il s'agit d'un pur média sportif, avec un fort volet interviews de joueurs français en NBA.",
+      "description": "Basket USA est un site français spécialisé dans l'actualité NBA et le basket américain, créé autour de 1998 ce qui en fait l'un des plus anciens médias NBA francophones. Il a longtemps été édité par Eureka Presse (Nantes) avant de passer sous l'éditeur North Star Network SAS, groupe basé à Levallois-Perret spécialisé dans les médias sportifs digitaux. La rédaction couvre news, transferts, résultats, statistiques, rumeurs et suit de près les joueurs français en NBA, dont une page dédiée aux stats des Frenchies. Fait moins connu : le site est régulièrement cité comme média de référence NBA en France et son fonds éditorial remonte à la fin des années 1990, bien avant la médiatisation actuelle de la ligue.",
       "bias_stance": "specialized",
-      "score_independence": 0.6,
-      "score_rigor": 0.65,
-      "score_ux": 0.6,
+      "score_independence": 0.55,
+      "score_rigor": 0.6,
+      "score_ux": 0.55,
       "confidence": 0.65,
-      "bias_rationale": "Média sport spécialisé basket, sans orientation politique.",
-      "independence_rationale": "Site sportif indépendant financé par publicité et affiliation du secteur.",
-      "rigor_rationale": "Couverture suivie et fiable de la NBA, avec interviews originales, mais editorialisée.",
-      "ux_rationale": "Site de média sport lisible, avec publicité courante.",
+      "bias_rationale": "Média thématique sport (NBA/basket US), sans ligne politique ; positionnement specialized.",
+      "independence_rationale": "Détenu par North Star Network (groupe média digital), pas un éditeur indépendant ; financement publicitaire orienté trafic, ce qui pèse modérément sur l'indépendance.",
+      "rigor_rationale": "Couverture dense et suivie (stats, transferts, live) mais ton fan/actu rapide, peu de sourcing primaire vérifiable ; rigueur moyenne.",
+      "ux_rationale": "Site fonctionnel orienté volume d'articles et publicité ; lisibilité correcte sans être premium.",
       "sources_consulted": [
-        "https://www.basketusa.com/feed/"
+        "https://www.basketusa.com/",
+        "https://www.basketusa.com/mentions-legales/",
+        "https://fr.wikipedia.org/wiki/Basket_News_America",
+        "https://www.basketusa.com/stats-francais-nba/"
       ]
     },
     {
@@ -1004,20 +1007,22 @@
     {
       "source_id": "83440dbe-f0e8-4f47-9f9d-c71ae4dd8277",
       "name": "Gamekult",
-      "description": "Média français spécialisé dans le jeu vidéo, lancé en 2000 et reconnu pour son journalisme d'enquête sur l'industrie et son modèle par abonnement (environ 12 000 abonnés). Fait moins connu : racheté par Reworld Media en 2022 après son passage chez TF1/Unify, sa rédaction historique a démissionné en bloc en dénonçant un contexte hostile à l'indépendance de la presse.",
+      "description": "Gamekult est un site français de référence sur le jeu vidéo, fondé en décembre 2000 par Kévin Kuipers et Clément Apap, longtemps réputé pour son journalisme exigeant et ses enquêtes sur l'industrie. Il est passé entre les mains de CNET puis du groupe TF1 (2015) avant d'être racheté par Reworld Media en 2022 via la cession de la division Unify. Fait moins connu mais documenté : fin 2023, la quasi-totalité de la rédaction a quitté le site, dénonçant un contexte hostile à l'indépendance de la presse, malgré un modèle d'abonnement viable d'environ 12 000 abonnés. Depuis ce départ, la qualité éditoriale historique du média est jugée fortement dégradée sous Reworld.",
       "bias_stance": "specialized",
-      "score_independence": 0.4,
-      "score_rigor": 0.6,
-      "score_ux": 0.45,
+      "score_independence": 0.3,
+      "score_rigor": 0.45,
+      "score_ux": 0.55,
       "confidence": 0.7,
-      "bias_rationale": "Média thématique jeu vidéo, sans orientation politique.",
-      "independence_rationale": "Racheté par Reworld Media en 2022, départ de la rédaction historique dénonçant l'atteinte à l'indépendance.",
-      "rigor_rationale": "Historiquement reconnu pour son journalisme d'enquête, mais qualité incertaine depuis le départ de la rédaction et la reprise Reworld.",
-      "ux_rationale": "Risque de multiplication de la publicité sous Reworld, modèle d'abonnement historique fragilisé.",
+      "bias_rationale": "Média thématique jeu vidéo, sans orientation politique ; positionnement specialized.",
+      "independence_rationale": "Propriété de Reworld Media, groupe associé à des pratiques de réduction de coûts et au contenu de marque ; départ de la rédaction historique fin 2023 affaiblit fortement l'indépendance éditoriale.",
+      "rigor_rationale": "Rigueur historiquement élevée (tests, enquêtes), mais nettement dégradée depuis le départ de la rédaction et le passage sous Reworld ; note moyenne reflétant l'incertitude post-2023.",
+      "ux_rationale": "Plateforme structurée avec offre d'abonnement et tests, mais évolution vers un contenu plus léger sous Reworld ; UX correcte.",
       "sources_consulted": [
         "https://en.wikipedia.org/wiki/Gamekult",
-        "https://www.cbnews.fr/medias/image-apres-son-rachat-reworld-media-gamekult-voit-sa-redaction-annoncer-son-depart-72796",
-        "https://snj.fr/le-snj-soutient-la-redaction-de-gamekult-face-reworld/1869"
+        "https://siecledigital.fr/2022/06/30/gamekult-les-numeriques-doctissimo-et-dautres-passent-de-tf1-a-reworld-media/",
+        "https://www.arretsurimages.net/articles/gamekult-reworld-acheve-le-site-18-mois-apres-son-rachat",
+        "https://www.actugaming.net/la-redaction-de-gamekult-annonce-quitter-le-site-533732/",
+        "https://www.rtbf.be/article/gamekult-la-fin-cinglante-du-journalisme-gaming-rigoureux-11109904"
       ]
     },
     {
@@ -2690,6 +2695,200 @@
         "https://elucid.media/elucid-c-est-quoi",
         "https://fr.wikipedia.org/wiki/Olivier_Berruyer",
         "https://force-citoyenne.fr/elucid-decryptage-dun-media-independant-et-de-son-orientation-politique/"
+      ]
+    },
+    {
+      "source_id": "289b7c6e-e096-4c2e-94cd-88912e99022d",
+      "name": "CyberScoop",
+      "description": "CyberScoop est un média en ligne américain spécialisé dans la cybersécurité, le secteur public et les menaces numériques, basé à Washington. Il est édité par Scoop News Group, groupe de presse tech B2B fondé et dirigé par Goldy Kamali, qui édite aussi FedScoop, StateScoop et EdScoop. Fait moins connu : son modèle repose largement sur l'événementiel et le sponsoring institutionnel plutôt que sur l'abonnement, ce qui le rapproche d'un média de niche orienté décideurs gouvernementaux et industriels.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.85,
+      "score_ux": 0.8,
+      "confidence": 0.8,
+      "bias_rationale": "Couverture technique cybersécurité sans angle politique partisan, l'angle est le sujet.",
+      "independence_rationale": "Détenu par un groupe privé (Scoop News Group) au modèle événementiel/sponsoring institutionnel, indépendance moyenne.",
+      "rigor_rationale": "Media Bias/Fact Check le note factualité 'High' et il est utilisé comme référence par les fact-checkers, aucun fact-check négatif recensé.",
+      "ux_rationale": "Site clair, sans paywall agressif, lecture professionnelle propre.",
+      "sources_consulted": [
+        "https://mediabiasfactcheck.com/cyberscoop-bias/",
+        "https://cyberscoop.com/about-us/",
+        "https://scoopnewsgroup.com/ourbrands/"
+      ]
+    },
+    {
+      "source_id": "ac8a064b-0fa0-491e-bf21-4dcbbc6ddbcb",
+      "name": "GamesIndustry.biz",
+      "description": "GamesIndustry.biz est le média de référence anglophone sur le business du jeu vidéo (chiffres marché, stratégies de studios, entretiens d'exécutifs), avec plus de 130 000 utilisateurs inscrits professionnels. Le site appartient depuis mai 2024 à IGN Entertainment, division du groupe Ziff Davis, après son rachat à Gamer Network/ReedPop. Fait moins connu : ce rachat a entraîné le départ de quasiment toute l'équipe éditoriale historique en 2024, dont le managing editor Brendan Sinclair, avant une reconstitution progressive.",
+      "bias_stance": "specialized",
+      "score_independence": 0.45,
+      "score_rigor": 0.8,
+      "score_ux": 0.75,
+      "confidence": 0.75,
+      "bias_rationale": "Média trade sur l'industrie du jeu vidéo, angle économique sectoriel sans orientation politique.",
+      "independence_rationale": "Détenu par Ziff Davis (conglomérat média sans ligne partisane) via IGN, ce qui pèse sur l'indépendance sans déplacer le biais.",
+      "rigor_rationale": "Journalisme trade reconnu (analyses, données marché, interviews), réputation solide malgré l'absence de notation formelle MBFC.",
+      "ux_rationale": "Lecture professionnelle correcte, présence publicitaire et certains contenus réservés mais sans paywall lourd.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Ziff_Davis",
+        "https://esportsinsider.com/2024/05/ign-entertainment-acquires-gamer-network-websites",
+        "https://www.videogameschronicle.com/news/games-media-set-for-more-layoffs-as-ign-owned-eurogamer-cuts-editorial-staff/",
+        "https://ground.news/interest/gamesindustrybiz"
+      ]
+    },
+    {
+      "source_id": "41563601-fcd3-485a-a7b7-a2a7c53e55bc",
+      "name": "GDC Vault (Game Developers Conference)",
+      "description": "GDC Vault est l'archive vidéo officielle des conférences de la Game Developers Conference (GDC), regroupant plus de 13 000 talks, audios et présentations sur le développement de jeux (programmation, design, business, art). Il est édité par l'organisateur de la GDC, dépendant du groupe événementiel Informa. Fait moins connu : ce n'est pas un média journalistique mais un catalogue de conférences, en partie gratuit et en partie sur abonnement (environ 599 dollars par an), ce qui explique des titres de flux RSS souvent vides ou répétés (« GDC Vault »).",
+      "bias_stance": "specialized",
+      "score_independence": null,
+      "score_rigor": null,
+      "score_ux": 0.45,
+      "confidence": 0.4,
+      "bias_rationale": "Archive de conférences techniques de développement de jeux, sans ligne politique, mais ce n'est pas un média d'actualité au sens propre.",
+      "independence_rationale": "Bras éditorial de l'organisateur de la GDC (Informa) et non un média indépendant, dimension non pertinente donc non notée.",
+      "rigor_rationale": "Contenu de conférences non journalistique et non vérifiable comme de l'info, rigueur factuelle indéterminable.",
+      "ux_rationale": "Flux RSS pauvre (titres répétés et vides) et accès largement payant nuisent à l'expérience de lecture.",
+      "sources_consulted": [
+        "https://gdconf.com/gdc-vault/",
+        "https://en.wikipedia.org/wiki/GDC_Vault",
+        "https://www.gamedeveloper.com/marketing/gdc-2022-sessions-are-now-on-gdc-vault"
+      ]
+    },
+    {
+      "source_id": "9b13fb68-89fc-4ec6-a180-2a593244842a",
+      "name": "GoodTech.info",
+      "description": "GoodTech.info est un média français d'actualité tech qui a succédé en 2023 à Toolinux (lancé en 2000), centré sur le logiciel libre, l'open source, l'IA éthique et la souveraineté numérique. Il est présidé par Alexandre Zapolsky, cofondateur de l'éditeur open source Linagora, dont l'écosystème (Twake, LinShare) figure ouvertement parmi les partenaires du site. Fait moins connu : cette proximité organique avec un acteur commercial du libre donne au site une ligne militante pro open source et souveraineté, et un financement partiellement par liens d'affiliation.",
+      "bias_stance": "alternative",
+      "score_independence": 0.3,
+      "score_rigor": 0.5,
+      "score_ux": 0.55,
+      "confidence": 0.65,
+      "bias_rationale": "Ligne militante non partisane en faveur de l'open source, de l'éthique numérique et de la souveraineté, hors axe gauche-droite.",
+      "independence_rationale": "Présidé par le cofondateur de Linagora et adossé à son écosystème commercial, ce qui crée un conflit d'intérêt éditorial marqué.",
+      "rigor_rationale": "Contenu d'actualité tech parfois orienté plaidoyer et titres sensationnalistes, rigueur factuelle moyenne.",
+      "ux_rationale": "Site lisible mais financé en partie par affiliation, expérience correcte sans paywall.",
+      "sources_consulted": [
+        "https://goodtech.info/a-propos/",
+        "https://linagora.com/en/goodtechinfo-100-open-source-free-ethical-and-sovereign-information",
+        "https://goodtech.info/toolinux-devient-goodtech-info/"
+      ]
+    },
+    {
+      "source_id": "460f4601-47a8-4e66-be60-e03c6dbb150d",
+      "name": "JeuxOnLine",
+      "description": "JeuxOnLine (JOL) est un site français spécialisé dans l'actualité des jeux vidéo, des MMO(RPG) et de la culture geek, mêlant tests, dossiers, éditoriaux et une forte composante communautaire (forums, encyclopédie collaborative). Il fonctionne sur un modèle commercial hybride professionnel-communautaire, financé par la publicité et des liens d'affiliation vers des revendeurs comme Gamesplanet. Fait moins connu : il est l'un des plus anciens sites francophones dédiés aux MMORPG, avec des dossiers historiques de référence sur le genre.",
+      "bias_stance": "specialized",
+      "score_independence": 0.55,
+      "score_rigor": 0.6,
+      "score_ux": 0.5,
+      "confidence": 0.6,
+      "bias_rationale": "Site thématique jeux vidéo et MMO, l'angle est le sujet, sans orientation politique.",
+      "independence_rationale": "Site indépendant non adossé à un grand groupe média mais financé par pub et affiliation marchande.",
+      "rigor_rationale": "Tests et dossiers éditoriaux sérieux mêlés à des contenus communautaires de fiabilité variable.",
+      "ux_rationale": "Présence publicitaire et liens d'affiliation visibles qui alourdissent la lecture, sans paywall agressif.",
+      "sources_consulted": [
+        "https://www.jeuxonline.info/",
+        "https://www.jeuxonline.info/article/mmog_hist"
+      ]
+    },
+    {
+      "source_id": "d8b0ff5e-863d-4410-bd85-53a15a01b8ee",
+      "name": "Les Surligneurs",
+      "description": "Les Surligneurs sont un média associatif français de legal-checking fondé en 2017, animé par des universitaires et étudiants en droit qui vérifient la conformité juridique des propos de responsables publics de tous bords. Signataires de la charte de l'IFCN depuis 2021 et partenaires de fact-checking de Meta, ils se revendiquent non partisans. Fait moins connu, leur financement est très éclaté (Fondation Francis-Lefebvre, Commission européenne, AFP, IFCN, université Paris-Saclay), avec moins de 5 pour cent issus des dons individuels.",
+      "bias_stance": "specialized",
+      "score_independence": 0.8,
+      "score_rigor": 0.9,
+      "score_ux": 0.75,
+      "confidence": 0.85,
+      "bias_rationale": "Collectif de juristes non partisan vérifiant des propos de tous les bords politiques, l'angle est la méthode juridique et non une ligne partisane.",
+      "independence_rationale": "Association indépendante de tout parti, financée par un panel large de fondations et institutions sans actionnaire de presse dominant, mais dépendante de subventions publiques et institutionnelles.",
+      "rigor_rationale": "Signataire de la charte IFCN depuis 2021 et partenaire de vérification de Meta, méthode de legal-checking documentée et politique de correction transparente.",
+      "ux_rationale": "Site éditorial sobre, sans paywall ni publicité intrusive, lecture confortable d'articles structurés.",
+      "sources_consulted": [
+        "https://fr.wikipedia.org/wiki/Les_Surligneurs",
+        "https://lessurligneurs.eu/notre-methode/",
+        "https://lessurligneurs.eu/les-surligneurs-et-meta-sunissent-pour-verifier-les-faits-sur-facebook-et-instagram/",
+        "https://odil.org/initiative/les-surligneurs/"
+      ]
+    },
+    {
+      "source_id": "ca0a88b7-ddeb-4663-ba3f-b36afde39868",
+      "name": "Polygon",
+      "description": "Polygon est un site américain d'actualité jeu vidéo et culture pop lancé par Vox Media en 2012, longtemps réputé pour ses reportages et explications fouillés. En mai 2025 il a été vendu à Valnet, qui a licencié l'essentiel de la rédaction, dont le rédacteur en chef. Fait moins connu, Valnet est largement décrit dans la presse spécialisée comme une fabrique de contenu SEO (clickbait, rémunération au clic, mise sur liste noire de journalistes), ce qui a fait craindre une chute de la qualité éditoriale du site.",
+      "bias_stance": "specialized",
+      "score_independence": 0.35,
+      "score_rigor": 0.45,
+      "score_ux": 0.45,
+      "confidence": 0.7,
+      "bias_rationale": "Média thématique jeu vidéo et divertissement sans orientation politique, l'angle est le sujet.",
+      "independence_rationale": "Racheté en 2025 par Valnet, groupe de content-farms accusé d'imposer un modèle SEO au clic et de purger les rédactions, ce qui pèse fortement sur l'indépendance rédactionnelle.",
+      "rigor_rationale": "Rigueur historiquement bonne sous Vox Media mais dégradée après le rachat Valnet et les licenciements massifs, l'éditeur étant associé à du contenu clickbait peu vérifié.",
+      "ux_rationale": "Lisibilité jeu vidéo correcte mais site Valnet réputé pour une densité publicitaire et un SEO agressifs depuis 2025.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Polygon_(website)",
+        "https://www.axios.com/2025/05/01/vox-media-polygon-sells",
+        "https://deadline.com/2025/05/polygon-sale-valnet-vox-wga-union-response-1236384199/",
+        "https://www.andrewliptak.com/polygon-vox-media-valnet-journalism-writing/"
+      ]
+    },
+    {
+      "source_id": "5ff7a6c1-d473-49f3-b3ff-0922d14c9663",
+      "name": "Radio Free Europe / Radio Liberty (RFE/RL)",
+      "description": "Radio Free Europe Radio Liberty est un diffuseur international financé par le Congrès américain via l'US Agency for Global Media, qui couvre l'actualité dans une vingtaine de langues en Europe de l'Est, Caucase, Asie centrale et Moyen-Orient. Son indépendance éditoriale est protégée par un firewall statutaire interdisant l'ingérence des responsables gouvernementaux, et les agrégateurs de biais le classent centre et factuel. Fait moins connu, l'organisation fut financée secrètement par la CIA jusqu'en 1972 avant que le Congrès ne prenne le relais.",
+      "bias_stance": "center",
+      "score_independence": 0.45,
+      "score_rigor": 0.75,
+      "score_ux": 0.7,
+      "confidence": 0.75,
+      "bias_rationale": "Media Bias/Fact Check le classe peu biaisé et Ground News au centre, langage neutre et couverture équilibrée malgré une origine de contre-propagande.",
+      "independence_rationale": "Financement public américain via l'USAGM limite l'indépendance, atténué par un firewall légal protégeant les décisions éditoriales des journalistes.",
+      "rigor_rationale": "Reporting jugé factuel et généralement sourcé par les agrégateurs, avec critiques ponctuelles de contenus pro-gouvernementaux.",
+      "ux_rationale": "Site d'information classique sans paywall, lecture correcte mais publicité et navigation multilingue parfois denses.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Radio_Free_Europe/Radio_Liberty",
+        "https://mediabiasfactcheck.com/radio-free-europe-radio-liberty/",
+        "https://about.rferl.org/faq/how-is-rfe-rl-funded-and-managed/",
+        "https://ground.news/interest/radio-free-europe-radioliberty"
+      ]
+    },
+    {
+      "source_id": "aceb960f-3517-4ac9-af9b-52f5b9b91c15",
+      "name": "Statista",
+      "description": "Statista est un portail allemand de données et statistiques créé en 2007, qui agrège plus d'un million de statistiques issues de plus de 22 500 sources tierces et de quelques enquêtes propres. Media Bias/Fact Check le classe peu biaisé et factuellement élevé, sans orientation politique. Fait moins connu, Statista est avant tout un agrégateur de données secondaires, dont la méthodologie complète et les tailles d'échantillon sont souvent enfermées derrière un abonnement payant, ce qui complique la vérification de la source d'origine.",
+      "bias_stance": "specialized",
+      "score_independence": 0.5,
+      "score_rigor": 0.7,
+      "score_ux": 0.4,
+      "confidence": 0.75,
+      "bias_rationale": "Portail de données thématiques sans orientation politique, classé peu biaisé par Media Bias/Fact Check.",
+      "independence_rationale": "Entreprise commerciale détenue par des investisseurs (groupe média et capital privé) dont le modèle d'abonnement crée une dépendance aux clients payants, sans ligne partisane imposée.",
+      "rigor_rationale": "Données contrôlées en double regard et factuellement élevées, mais rigueur limitée par son rôle d'agrégateur de sources secondaires dont la méthodologie n'est pas toujours visible.",
+      "ux_rationale": "Paywall agressif enfermant rapports complets, exports et méthodologie derrière un abonnement, ce qui dégrade nettement l'expérience de lecture gratuite.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/Statista",
+        "https://mediabiasfactcheck.com/statista/",
+        "https://www.statista.com/aboutus/trust",
+        "https://bernoff.com/blog/my-big-problem-with-statista"
+      ]
+    },
+    {
+      "source_id": "2155fdec-d9cf-44d2-8dfd-7bb3e6402e06",
+      "name": "UploadVR",
+      "description": "UploadVR est un site américain d'information spécialisé dans la réalité virtuelle, augmentée et mixte, fondé en 2014 et exploité par l'entité UVR Media. Sa rédaction se revendique indépendante pour offrir une couverture impartiale du secteur XR. Fait moins connu, l'activité de coworking d'origine d'Upload a fermé en 2018 faute de financement, mais le bras média a survécu de façon autonome et reste une référence du suivi de l'écosystème casques et jeux VR.",
+      "bias_stance": "specialized",
+      "score_independence": 0.6,
+      "score_rigor": 0.65,
+      "score_ux": 0.6,
+      "confidence": 0.6,
+      "bias_rationale": "Média thématique consacré à la VR et XR sans orientation politique, l'angle est le sujet technologique.",
+      "independence_rationale": "Site exploité par UVR Media de façon autonome, non capté par un grand groupe média, mais dépendant des annonceurs et acteurs de l'industrie qu'il couvre.",
+      "rigor_rationale": "Couverture spécialisée correcte et suivie de l'industrie XR, sans signal de sanctions ni de défaillance factuelle majeure documentée.",
+      "ux_rationale": "Site de news tech lisible avec publicité standard, expérience de lecture moyenne sans paywall agressif.",
+      "sources_consulted": [
+        "https://en.wikipedia.org/wiki/UploadVR",
+        "https://www.uploadvr.com/about-us/",
+        "https://techcrunch.com/2017/01/30/upload-brings-on-ign-co-founder-as-the-vr-tastemaker-continues-to-grow/"
       ]
     }
   ]

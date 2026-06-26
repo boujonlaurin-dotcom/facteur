@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
@@ -216,29 +216,30 @@ class ContentService:
             elif ratio < 0.1:
                 engagement_factor = 0.2
 
-        # 3. Update UserInterest
-        # Check if interest exists
-        stmt = select(UserInterest).where(
-            UserInterest.user_id == user_id, UserInterest.interest_slug == theme_slug
-        )
-        interest = await self.session.scalar(stmt)
-
+        # 3. Update UserInterest — upsert atomique (Postgres ON CONFLICT)
+        # SEEN (scroll) et CONSUMED (retour WebView) arrivent quasi-simultanément
+        # pour le même (user_id, theme_slug) ; un check-then-insert classique
+        # provoquait une UniqueViolation (user_interests_user_slug_uniq).
+        # NewWeight = OldWeight + (Engagement * Rate), capé à 3.0 pour éviter
+        # l'explosion. À la création : poids 1.0 + boost (découverte de thèmes
+        # via sources généralistes). On ne touche pas `state` sur conflit pour
+        # préserver un éventuel FAVORITE.
         learning_rate = 0.05
+        boost = engagement_factor * learning_rate
 
-        if interest:
-            # NewWeight = OldWeight + (Engagement * Rate)
-            # On cap le poids max à 3.0 pour éviter l'explosion
-            new_weight = interest.weight + (engagement_factor * learning_rate)
-            interest.weight = min(new_weight, 3.0)
-        else:
-            # Create new interest with base weight 1.0 + boost
-            # Cela permet de découvrir de nouveaux thèmes via sources généralistes
-            new_interest = UserInterest(
+        stmt = (
+            insert(UserInterest)
+            .values(
                 user_id=user_id,
                 interest_slug=theme_slug,
-                weight=1.0 + (engagement_factor * learning_rate),
+                weight=1.0 + boost,
             )
-            self.session.add(new_interest)
+            .on_conflict_do_update(
+                constraint="user_interests_user_slug_uniq",
+                set_={"weight": func.least(UserInterest.weight + boost, 3.0)},
+            )
+        )
+        await self.session.execute(stmt)
 
     async def _adjust_subtopic_weights(
         self, user_id: UUID, content_id: UUID, delta: float
@@ -285,25 +286,46 @@ class ContentService:
             from app.services.recommendation.scoring_config import ScoringWeights
 
             theme_slug = content.source.theme
-            stmt = select(UserInterest).where(
-                UserInterest.user_id == user_id,
-                UserInterest.interest_slug == theme_slug,
-            )
-            interest = await self.session.scalar(stmt)
             learning_rate = ScoringWeights.LIKE_INTEREST_RATE
 
-            if interest:
-                new_weight = interest.weight + (
-                    learning_rate * (1.0 if delta > 0 else -1.0)
+            if delta > 0:
+                # Like/bookmark : upsert atomique, poids borné [0.1, 3.0].
+                stmt = (
+                    insert(UserInterest)
+                    .values(
+                        user_id=user_id,
+                        interest_slug=theme_slug,
+                        weight=1.0 + learning_rate,
+                    )
+                    .on_conflict_do_update(
+                        constraint="user_interests_user_slug_uniq",
+                        set_={
+                            "weight": func.greatest(
+                                func.least(UserInterest.weight + learning_rate, 3.0),
+                                0.1,
+                            )
+                        },
+                    )
                 )
-                interest.weight = max(0.1, min(new_weight, 3.0))
-            elif delta > 0:
-                new_interest = UserInterest(
-                    user_id=user_id,
-                    interest_slug=theme_slug,
-                    weight=1.0 + learning_rate,
+                await self.session.execute(stmt)
+            else:
+                # Unlike : décrément ciblé, jamais de création de ligne (pas
+                # d'INSERT → pas de risque de conflit). No-op si l'intérêt
+                # n'existe pas.
+                stmt = (
+                    update(UserInterest)
+                    .where(
+                        UserInterest.user_id == user_id,
+                        UserInterest.interest_slug == theme_slug,
+                    )
+                    .values(
+                        weight=func.greatest(
+                            func.least(UserInterest.weight - learning_rate, 3.0),
+                            0.1,
+                        )
+                    )
                 )
-                self.session.add(new_interest)
+                await self.session.execute(stmt)
 
     async def set_like_status(
         self, user_id: UUID, content_id: UUID, is_liked: bool

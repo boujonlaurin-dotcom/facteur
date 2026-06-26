@@ -388,7 +388,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         fallback: const <TopTheme>[],
       ),
       _safe<List<EssentielArticle>>(
-        () async => (await _essentielRepo.fetch()) ?? const [],
+        // Passe le mode explicitement : `isSerene` est posé en synchrone avant
+        // l'`invalidateSelf` du listener serein, donc à jour ici — pas de
+        // dépendance à la persistance DB de la préférence au moment du refetch.
+        () async => (await _essentielRepo.fetch(serein: isSerene)) ?? const [],
         'fetchEssentiel',
         fallback: const <EssentielArticle>[],
       ),

@@ -279,6 +279,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
+  // « Arrival gate » WebView : à l'entrée dans une WebView, le footer est caché
+  // et toute *révélation* est bloquée tant qu'on n'a pas scrollé d'au moins
+  // [_kWebViewFooterRevealThreshold] px — sinon la garde overscroll (scroll à 0)
+  // re-révèle le footer au moindre contact et masque le bandeau cookies que les
+  // sites verrouillent en bas d'écran. La garde ne concerne QUE le mode WebView.
+  bool _footerRevealLocked = false;
+  static const double _kWebViewFooterRevealThreshold = 48.0; // px
   double _footerAutoStart = 0.0;
   double _footerAutoTarget = 0.0;
   late AnimationController _footerAutoController;
@@ -322,6 +329,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             sourceDomain: p.sourceDomain,
             biasStance: p.biasStance,
             publishedAt: p.publishedAt,
+            description: p.description,
           ),
         )
         .toList();
@@ -369,6 +377,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _contentResolved = true;
       _isConsumed = false;
       _showWebView = true;
+      // Arrival gate : footer caché + révélation verrouillée jusqu'au 1er scroll
+      // (laisse le bandeau cookies du site visible en bas).
+      _footerOffset.value = 1.0;
+      _footerRevealLocked = true;
     } else {
       _content = widget.content;
       if (_content != null) {
@@ -673,7 +685,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     if (msg.startsWith('scroll_y:')) {
       final y = double.tryParse(msg.substring(9));
-      if (y != null) _webScrollY = y;
+      if (y != null) _updateWebScrollY(y);
       return;
     }
     if (msg.startsWith('progress:')) {
@@ -896,6 +908,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _scrollStopTimer?.cancel();
       _inactivityTimer?.cancel();
       _animateFooterTo(1.0);
+      // Arrival gate : verrouille la révélation jusqu'au 1er scroll dans le site
+      // (la garde overscroll `_webScrollY <= 0` re-révélerait sinon le footer).
+      _footerRevealLocked = true;
     }
   }
 
@@ -913,10 +928,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerAutoController.forward(from: 0);
   }
 
+  /// Met à jour [_webScrollY] depuis la WebView (ScrollBridge ou callback
+  /// premium) et **lève l'arrival gate** dès que le scroll dépasse le seuil :
+  /// le footer peut alors réapparaître normalement au scroll vers le haut.
+  void _updateWebScrollY(double y) {
+    _webScrollY = y;
+    if (_footerRevealLocked && y >= _kWebViewFooterRevealThreshold) {
+      _footerRevealLocked = false;
+    }
+  }
+
   /// Apply a page-scroll-equivalent [delta] (positive = page going down)
   /// to the footer offset. The header is pinned and never reacts to scroll.
   void _applyChromeOffsetDelta(double delta) {
     if (_footerPermanent.value) return;
+    // Arrival gate : tant que verrouillée, on ignore les deltas de *révélation*
+    // (delta négatif = scroll vers le haut) pour ne pas découvrir le footer sur
+    // le bandeau cookies ; seuls les masquages (delta positif) passent.
+    if (_footerRevealLocked && delta < 0) return;
     final footerHeight =
         _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
     // Hide a touch faster than it reveals: bias downward (hide) deltas so the
@@ -970,7 +999,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onGestureEnd(double velocityPxPerSec) {
     if (_content?.isVideo ?? false) return;
     if (_webScrollY <= 0) {
-      if (!_footerPermanent.value && _footerOffset.value != 0) {
+      // Arrival gate : ne pas re-révéler le footer en haut de page tant que la
+      // garde est armée (sinon masque le bandeau cookies dès le 1er contact).
+      if (!_footerRevealLocked &&
+          !_footerPermanent.value &&
+          _footerOffset.value != 0) {
         _animateFooterTo(0);
       }
       return;
@@ -982,6 +1015,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } else if (velocityPxPerSec < -kVelocitySnapThreshold) {
       target = 0.0;
     }
+    // Arrival gate : ignore un flick de révélation (target 0.0) avant le seuil.
+    if (_footerRevealLocked && target == 0.0) return;
     if (target != null &&
         !_footerPermanent.value &&
         _footerOffset.value != target) {
@@ -1829,7 +1864,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 if (notification is ScrollUpdateNotification) {
                   final delta = notification.scrollDelta ?? 0.0;
                   final metrics = notification.metrics;
-                  if (metrics.pixels <= 0 && !_isWebViewActive) {
+                  if (metrics.pixels <= 0 &&
+                      !_isWebViewActive &&
+                      !_footerRevealLocked) {
                     _footerOffset.value = 0.0;
                   }
 
@@ -2000,6 +2037,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _showWebView = true;
       _ctaTapped = true;
     });
+    // Arrival gate : cache le footer + verrouille la révélation jusqu'au 1er
+    // scroll (préserve le bandeau cookies du site en bas d'écran).
+    _footerRevealLocked = true;
+    _animateFooterTo(1.0);
   }
 
   /// External-source CTA used in the footer for video/audio readers.
@@ -3531,7 +3572,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         onGestureStart: _onGestureStart,
         onGestureDelta: _onGestureDelta,
         onGestureEnd: _onGestureEnd,
-        onScrollY: (y) => _webScrollY = y,
+        onScrollY: _updateWebScrollY,
         onProgress: _applyWebReadingProgress,
         onPaywallDetected: _onPremiumPaywallDetected,
         gestureRecognizers: swipeBackCompatiblePlatformViewGestureRecognizers(),

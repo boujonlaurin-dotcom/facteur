@@ -1,7 +1,7 @@
 // Story 10.2 — sheet unifiée « Mes favoris » : deux sections (Essentiel /
 // Flâner), appartenance exclusive des sources (la clé `source:` dans
 // `tournee_order_v1` ⇒ Essentiel, sinon Flâner), déplacement de mode, funnel
-// veille sur les sujets, et caps 10/10 par section.
+// veille sur les sujets, et caps 13/10 (Essentiel/Flâner) par section.
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
@@ -352,9 +352,14 @@ void main() {
   });
 
   testWidgets(
-      '« Hors Tournée du jour (10) » apparaît au-delà de 10 sections Essentiel',
+      '« Hors Tournée du jour (13) » apparaît au-delà de 13 sections Essentiel',
       (tester) async {
-    // 9 thèmes favoris + Actus + Bonnes = 11 blocs Essentiel → au-delà du cap 10.
+    // 9 thèmes + 3 sources + Actus + Bonnes = 14 blocs Essentiel → au-delà du
+    // cap 13. Les sources sont en mode Essentiel via leur clé `source:` dans
+    // `tournee_order_v1`.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['source:s1', 'source:s2', 'source:s3'],
+    });
     await _openSheet(
       tester,
       interests: _interests(favorites: const [
@@ -368,13 +373,22 @@ void main() {
         ThemeFavoriteRef(slug: 'culture'),
         ThemeFavoriteRef(slug: 'sport'),
       ]),
-      sources: _sources(),
+      sources: _sources(favorites: const [
+        SourceFavoriteRef(sourceId: 's1', position: 0),
+        SourceFavoriteRef(sourceId: 's2', position: 1),
+        SourceFavoriteRef(sourceId: 's3', position: 2),
+      ]),
+      catalog: [
+        _source('s1', 'Le Monde'),
+        _source('s2', 'Mediapart'),
+        _source('s3', 'Le Figaro'),
+      ],
     );
 
-    // Le cap (élargi → 10) est explicité entre parenthèses.
-    expect(find.text('Hors Tournée du jour (10)'), findsOneWidget);
+    // Le cap (élargi → 13) est explicité entre parenthèses.
+    expect(find.text('Hors Tournée du jour (13)'), findsOneWidget);
     // Le compteur de l'en-tête reflète aussi le cap.
-    expect(find.text('· 10/10'), findsOneWidget);
+    expect(find.text('· 13/13'), findsOneWidget);
   });
 
   testWidgets(

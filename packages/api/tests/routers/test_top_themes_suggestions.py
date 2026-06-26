@@ -140,8 +140,13 @@ async def test_disabled_via_preference(configured_user, db_session):
 
 
 @pytest.mark.asyncio
-async def test_seven_favorites_leaves_no_room(db_session):
-    """7 favoris validés → aucun slot restant → aucune suggérée."""
+async def test_seven_favorites_leaves_one_suggestion_slot(db_session):
+    """7 favoris validés → la cible additive (8) laisse 1 slot → 1 suggérée.
+
+    Sous le mécanisme additif (`TOURNEE_TARGET_SECTIONS=8`), un compte à 7
+    favoris (plafond `FAVORITE_CAP`) reçoit exactement 1 suggestion, au lieu de
+    plafonner à 7 comme avec l'ancien reliquat de plafond favoris.
+    """
     user_id = uuid4()
     db_session.add(UserProfile(user_id=user_id, onboarding_completed=True))
     slugs = ["tech", "science", "society", "culture", "economy", "politics", "sport"]
@@ -157,7 +162,7 @@ async def test_seven_favorites_leaves_no_room(db_session):
                 state=InterestState.FOLLOWED,
             )
         )
-    # Une source suivie qui pourrait être suggérée s'il restait de la place.
+    # Une source suivie qui comble l'unique slot restant.
     src = _source("Extra", "international")
     db_session.add(src)
     await db_session.flush()
@@ -186,8 +191,15 @@ async def test_seven_favorites_leaves_no_room(db_session):
         async with AsyncClient(transport=transport, base_url="http://test") as ac:
             resp = await ac.get("/api/users/top-themes")
         body = resp.json()
-        assert len(body) == 7
-        assert all(t["origin"] == "validated" for t in body)
+        validated = [t for t in body if t["origin"] == "validated"]
+        suggested = [t for t in body if t["origin"] == "suggested"]
+        # 7 validés (plafond favoris) + 1 suggéré (cible additive 8).
+        assert len(validated) == 7
+        assert len(suggested) == 1
+        assert len(body) == 8
+        # Le slot restant est comblé par la source internationale suivie.
+        assert suggested[0]["kind"] == "source"
+        assert suggested[0]["source_id"] == str(src.id)
     finally:
         app.dependency_overrides.pop(get_current_user_id, None)
         app.dependency_overrides.pop(get_db, None)

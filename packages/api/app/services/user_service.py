@@ -200,21 +200,12 @@ class UserService:
 
         user_uuid = UUID(user_id)
 
-        # Sauvegarder les intérêts
+        # Sauvegarder les intérêts.
+        # Les 3 premiers thèmes deviennent FAVORITE (sauf si l'utilisateur a déjà
+        # des favoris). On calcule l'état AVANT insertion pour pouvoir faire un
+        # upsert atomique : une double-soumission de l'onboarding ne lève plus
+        # d'IntegrityError sur user_interests_user_slug_uniq.
         interest_count = 0
-        created_interests: dict[str, UserInterest] = {}
-        if answers.themes:
-            for interest_slug in answers.themes:
-                interest = UserInterest(
-                    id=uuid4(),
-                    user_id=user_uuid,
-                    interest_slug=interest_slug,
-                    weight=1.0,
-                )
-                self.db.add(interest)
-                created_interests[interest_slug] = interest
-                interest_count += 1
-
         favorites_seeded = 0
         if answers.themes:
             existing_favorite = await self.db.scalar(
@@ -222,11 +213,35 @@ class UserService:
                     UserFavoriteInterest.user_id == user_uuid
                 )
             )
+            favorite_slugs = (
+                set(answers.themes[:3]) if existing_favorite is None else set()
+            )
+
+            for interest_slug in answers.themes:
+                state = (
+                    InterestState.FAVORITE
+                    if interest_slug in favorite_slugs
+                    else InterestState.FOLLOWED
+                )
+                stmt = (
+                    pg_insert(UserInterest)
+                    .values(
+                        id=uuid4(),
+                        user_id=user_uuid,
+                        interest_slug=interest_slug,
+                        weight=1.0,
+                        state=state,
+                    )
+                    .on_conflict_do_update(
+                        constraint="user_interests_user_slug_uniq",
+                        set_={"weight": 1.0, "state": state},
+                    )
+                )
+                await self.db.execute(stmt)
+                interest_count += 1
+
             if existing_favorite is None:
                 for position, interest_slug in enumerate(answers.themes[:3]):
-                    interest = created_interests.get(interest_slug)
-                    if interest is not None:
-                        interest.state = InterestState.FAVORITE
                     self.db.add(
                         UserFavoriteInterest(
                             user_id=user_uuid,

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/models/user_sources_state.dart';
 import 'package:facteur/features/my_interests/providers/user_sources_state_provider.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
@@ -362,7 +363,7 @@ void main() {
   });
 
   group('SourceDetailModal — couverture (mode normal, profil unifié)', () {
-    testWidgets('renders coverage bars + caption derived from articles_30d', (
+    testWidgets('renders coverage bars without redundant article-count caption', (
       tester,
     ) async {
       final source = Source(
@@ -387,10 +388,11 @@ void main() {
       expect(find.text('Politique'), findsOneWidget);
       expect(find.text('Économie'), findsOneWidget);
       expect(find.text('Autres'), findsOneWidget);
-      // Caption derived client-side, aligned with backend copy (U+202F milliers).
+      // Le décompte d'articles est désormais retiré (redondant avec la
+      // fréquence du header).
       expect(
         find.text('3\u202F012 articles publiés sur la période'),
-        findsOneWidget,
+        findsNothing,
       );
     });
 
@@ -622,6 +624,46 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Réglages de suivi'), findsOneWidget);
       expect(find.text('Priorité dans ton flux'), findsOneWidget);
+      // Phrase explicative de la priorisation dans le flux.
+      expect(
+        find.textContaining('plus ses articles y remontent'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('priority slider exposes 4 states + current description', (
+      tester,
+    ) async {
+      final followed = Source(
+        id: 'c',
+        name: 'C',
+        type: SourceType.article,
+        isTrusted: true,
+      );
+      // État courant = Suivi.
+      const state = UserSourcesState(
+        sources: [
+          SourceInterest(
+            sourceId: 'c',
+            state: InterestState.followed,
+            priorityMultiplier: 1.0,
+          ),
+        ],
+        favorites: [],
+        favoriteCount: 0,
+        favoriteCap: 5,
+      );
+      await tester.pumpWidget(_wrap(source: followed, state: state));
+      await tester.pumpAndSettle();
+
+      // Les 4 paliers du curseur sont étiquetés.
+      expect(find.text('Masqué'), findsOneWidget);
+      expect(find.text('Neutre'), findsOneWidget);
+      expect(find.text('Suivi'), findsOneWidget);
+      expect(find.text('Favori'), findsOneWidget);
+      // Le slider est présent et la description de l'état courant (Suivi) aussi.
+      expect(find.byType(Slider), findsOneWidget);
+      expect(find.text(InterestState.followed.description), findsOneWidget);
     });
   });
 
@@ -659,9 +701,8 @@ void main() {
       expect(find.text('Sélectionner cette source'), findsOneWidget);
     });
 
-    testWidgets('mute button shows "Masquer cette source" when not muted', (
-      tester,
-    ) async {
+    testWidgets('no longer exposes a standalone "Masquer" button '
+        '(porté par le curseur de priorité)', (tester) async {
       final notMuted = Source(
         id: 'd',
         name: 'D',
@@ -670,21 +711,8 @@ void main() {
       );
       await tester.pumpWidget(_wrap(source: notMuted));
       await tester.pumpAndSettle();
-      expect(find.text('Masquer cette source'), findsOneWidget);
-    });
-
-    testWidgets('mute button shows "Source masquée" when muted', (
-      tester,
-    ) async {
-      final muted = Source(
-        id: 'e',
-        name: 'E',
-        type: SourceType.article,
-        isMuted: true,
-      );
-      await tester.pumpWidget(_wrap(source: muted));
-      await tester.pumpAndSettle();
-      expect(find.text('Source masquée'), findsOneWidget);
+      expect(find.text('Masquer cette source'), findsNothing);
+      expect(find.text('Source masquée'), findsNothing);
     });
   });
 }
