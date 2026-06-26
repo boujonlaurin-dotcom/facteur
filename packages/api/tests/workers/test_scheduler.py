@@ -16,6 +16,8 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.workers.scheduler import (
+    DIGEST_CRON_HOUR_PARIS,
+    DIGEST_CRON_MINUTE_PARIS,
     SUBTOPIC_DECAY_HOUR_PARIS,
     SUBTOPIC_DECAY_MINUTE_PARIS,
     _digest_watchdog,
@@ -289,6 +291,15 @@ class TestDigestJobConfiguration:
             assert isinstance(trigger, CronTrigger)
             assert str(trigger.fields[5]) == str(SUBTOPIC_DECAY_HOUR_PARIS)
             assert str(trigger.fields[6]) == str(SUBTOPIC_DECAY_MINUTE_PARIS)
+            # Invariant métier : le decay doit tourner AVANT le digest (il nudge
+            # les poids que le scoring du digest consomme). Garde-fou contre une
+            # régression du décalage horaire (06h50 < 07h30, cf. PYTHON-5M : le
+            # decall évite le chevauchement avec la fenêtre de pression pool).
+            decay_minutes = (
+                SUBTOPIC_DECAY_HOUR_PARIS * 60 + SUBTOPIC_DECAY_MINUTE_PARIS
+            )
+            digest_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
+            assert decay_minutes < digest_minutes
 
     def test_scheduled_restart_job_is_not_registered(self):
         """Regression guard: `scheduled_restart` was a temporary SIGTERM-based

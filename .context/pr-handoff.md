@@ -1,45 +1,36 @@
-## fix(api): upsert atomique sur user_interests (race condition Sentry PYTHON-4P)
+## fix(scaling): saturation pool DB nocturne (PYTHON-5M/5G/4X) + alerte 2 seuils
 
-### Problème
-`update_content_status` (SEEN au scroll + CONSUMED au retour WebView) déclenchait une
-re-pondération des intérêts via un **check-then-insert non atomique** (SELECT `UserInterest` ;
-si absent → `add()`). Deux requêtes concurrentes pour le même `(user_id, interest_slug)`
-voyaient toutes deux « absent » et inséraient → `IntegrityError / UniqueViolation` sur
-`user_interests_user_slug_uniq` → **500**, lecture non retenue (progression + perso intérêts).
-Sentry **PYTHON-4P** : 260 occurrences / 24h, 11 personnes.
+Corrige la racine de la pression pool matinale (~07h20-07h35 Paris) et ses
+retombées, **sans augmenter le pool** (`max_connections=60` partagé entre staging
+et prod). Doc : `docs/maintenance/maintenance-saturation-pool-db-nocturne.md`.
 
-### Fix
-Remplacement de tous les points d'insertion `UserInterest` par un **upsert Postgres atomique**
-(`INSERT ... ON CONFLICT (user_id, interest_slug) DO UPDATE`), pattern déjà utilisé dans le repo
-(`UserContentStatus`, `grille_seed`). La sémantique métier est préservée :
+### Axe A — discipline rollback dans le digest (PYTHON-5G)
+- `rollback()` + `apply_session_timeouts()` dans les `except` *trending* et
+  *editorial precompute* de `run_digest_generation`.
+- Grille isolée dans sa propre `safe_async_session()` courte (calque `cov_session`),
+  idempotence `ON CONFLICT DO NOTHING` préservée → plus de `PendingRollbackError`,
+  le mot du jour se fige.
 
-- **`content_service._adjust_interest_weight`** (culprit) : poids `= least(weight + boost, 3.0)` ;
-  `state` non touché sur conflit (préserve FAVORITE).
-- **`content_service._adjust_subtopic_weights`** (branche intérêt) : `delta > 0` → upsert borné
-  `[0.1, 3.0]` ; `delta < 0` → UPDATE ciblé (pas d'INSERT, jamais de création au dislike).
-- **`user_interests_service.set_state`** : création implicite de thème → upsert (set `state`).
-- **`user_service`** (onboarding) : état FAVORITE précalculé avant insertion, upsert par thème.
+### Axe B — borner la concurrence (PYTHON-5M)
+- `concurrency_limit` digest 10 → 5 (signature + scheduler).
+- `subtopic_weight_decay` 07h20 → 06h50 (hors pic). Pool inchangé.
 
-Aucun DDL / migration (la contrainte unique existe déjà). Hors périmètre : le jumeau
-`UserSubtopic` (table `user_subtopics`). Attention, ce n'est **pas** le même bug shape :
-la contrainte unique `(user_id, topic_slug)` y a été **supprimée** (migration `4d497ce7bcc2`),
-donc son check-then-insert ne lève pas d'`UniqueViolation` — sous concurrence il insère
-des lignes dupliquées en silence (poids faussé). Le corriger proprement exigerait d'abord
-de re-créer la contrainte unique via migration → hors scope de ce hotfix de crash.
+### Axe C — alléger le cleanup off-peak 03h (PYTHON-4X)
+- `statement_timeout_ms=120_000` ; extraction des `content_id` côté Postgres (JSONB,
+  3 layouts) au lieu de tirer 172 MB d'`items` ; counts best-effort ; DELETE batché.
+  Sémantique de préservation (90 j) inchangée.
 
-### Tests
-`tests/test_interest_weight_concurrency.py` : création → incrément (1 seule ligne), cap 3.0,
-préservation FAVORITE. Le chemin `ON CONFLICT DO UPDATE` est exactement celui qu'emprunte la
-requête perdante d'une course ; exercé ici par double-appel séquentiel (la fixture `db_session`
-mono-connexion ne permet pas une vraie concurrence 2-connexions).
+### Axe D — métrique / alerte de suivi (cette étape)
+- **Sonde pool à 2 seuils** (`_pool_health_probe`) : *warn* ≥70 % **soutenu** sur 2
+  sondes consécutives → Sentry `level=warning` (ignore les pics transitoires) ;
+  *page* ≥90 % → Sentry `level=fatal` immédiat. Seuils configurables
+  (`pool_warn_threshold_pct` / `pool_page_threshold_pct` /
+  `pool_warn_sustained_probes`).
+- **Alerte sur `zombie_session_sweeper_killed`** : Sentry `level=error` (tout kill =
+  un `safe_async_session` manqué) en plus du warning structlog.
 
-Tests exécutés en local contre `facteur_test` (Postgres 5432) : les 3 tests de régression
-passent, ainsi que la suite complète (1895 passed ; les 2 seuls échecs —
-`test_notification_preferences` et `test_sources_recent_items` — sont pré-existants sur
-`main`, sans rapport avec ce diff, vérifié en revertant les services). Tests adaptés au
-nouveau chemin upsert : `test_onboarding_sources` (l'intérêt passe par `execute` et non plus
-`db.add` ; offset des appers `execute` recalculé), `test_like_feature` (1 seul `add` + 1
-upsert intérêt). `ruff check` + `ruff format` OK sur les fichiers touchés.
-
-### Post-merge (PO)
-Vérifier que le compteur Sentry **PYTHON-4P** retombe à ~0 après déploiement.
+### Tests & migration
+- `pytest` vert sur `test_pool_observability.py`, `workers/test_zombie_session_sweeper.py`,
+  + les tests Axes A/B/C.
+- **Aucune migration Alembic** (aucun DDL ; l'index `ix_user_content_status_content_id`
+  existe déjà). Lecture seule prod tenue, aucun déploiement déclenché.

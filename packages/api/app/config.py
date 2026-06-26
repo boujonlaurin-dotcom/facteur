@@ -131,7 +131,16 @@ class Settings(BaseSettings):
     # Observabilité scaling (enabler WP-E) — instrumentation API externes +
     # sonde pool. Purement additif : ne change aucun comportement métier.
     usage_tracking_enabled: bool = True  # kill-switch insert api_usage_events
-    pool_alert_threshold_pct: int = 80  # seuil alerte sonde pool périodique (%)
+    # Alerte pool à 2 seuils (Axe D, incident PYTHON-5M). La sonde
+    # `_pool_health_probe` (5 min) compare `usage_pct` à ces seuils :
+    # - warn : pression SOUTENUE (>= pool_warn_sustained_probes sondes
+    #   consécutives) >= pool_warn_threshold_pct → Sentry level=warning
+    #   (early warning, ignore les pics transitoires du rituel matinal).
+    # - page : >= pool_page_threshold_pct → Sentry level=fatal immédiat,
+    #   sans fenêtre "soutenu" (saturation imminente, on réveille quelqu'un).
+    pool_warn_threshold_pct: int = 70  # seuil early-warning pression pool (%)
+    pool_page_threshold_pct: int = 90  # seuil page/critique pression pool (%)
+    pool_warn_sustained_probes: int = 2  # sondes consécutives >= warn avant alerte
 
     # Gouvernance coût (PR-S3). Les caps Brave/Mistral search sont désormais
     # lus depuis api_usage_events (persistant). TTL du cache du COUNT mensuel.
