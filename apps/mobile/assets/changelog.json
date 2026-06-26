@@ -1,8 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Mise à jour",
+      "summary": "Facteur te prévient quand une nouvelle version est disponible sur l'App Store, et t'invite à mettre à jour."
+    },
+    {
       "tag": "Tournée",
       "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
+    },
+    {
       "tag": "Perspectives",
       "summary": "Couverture médiatique plus lisible : repères Gauche/Droite sous la barre, source cliquable et aperçu de l'article au toucher prolongé."
     },
