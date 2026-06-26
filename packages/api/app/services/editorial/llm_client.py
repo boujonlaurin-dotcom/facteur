@@ -14,11 +14,15 @@ import structlog
 
 from app.config import get_settings
 from app.services.editorial.rate_limiter import _MistralRateLimiter
-from app.services.observability.usage_recorder import track_api_call
+from app.services.observability.usage_recorder import _ApiCallTracker, track_api_call
 
 logger = structlog.get_logger()
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
+
+# Politique de retry partagée par chat_json / chat_text (LR-1 PR 1).
+_MISTRAL_RETRYABLE_STATUSES = (429, 500, 502, 503)
+_MISTRAL_MAX_RETRIES = 2
 
 
 # Limiteur partagé au niveau process (LR-1 PR 1). `EditorialLLMClient` étant
@@ -46,7 +50,15 @@ def _reset_large_limiter() -> None:
 
 
 def _is_large_model(model: str | None) -> bool:
-    """True pour les modèles `large` (les seuls bursty / rate-limited)."""
+    """True pour les modèles Mistral `large` (`mistral-large-*`).
+
+    Le throttle ne cible que les appels `large` passant par `EditorialLLMClient`
+    (curation + deep + perspective) : c'est la source dominante et *mesurée* des
+    429 (cf. docstring du module rate_limiter). `good_news_classifier` appelle
+    aussi un modèle `large`, mais via son propre client et en un seul appel
+    batché par lot (burst négligeable) — hors scope de ce throttle pour LR-1
+    PR 1 ; il pourra rejoindre un limiteur partagé en LR-3/PR 4.
+    """
     return bool(model and "large" in model.lower())
 
 
@@ -96,6 +108,77 @@ class EditorialLLMClient:
                 return await client.post(MISTRAL_API_URL, json=payload)
         return await client.post(MISTRAL_API_URL, json=payload)
 
+    async def _post_with_retry(
+        self,
+        payload: dict,
+        model: str,
+        tracker: _ApiCallTracker,
+        *,
+        event_prefix: str,
+        unexpected_event: str,
+    ) -> tuple[httpx.Response, int] | None:
+        """POST + retry/backoff partagé par chat_json et chat_text (LR-1 PR 1).
+
+        Renvoie `(réponse, n° de tentative)` au premier HTTP 2xx, ou `None` quand
+        les retries sont épuisés / erreur non-retryable / timeout / exception
+        inattendue. Pose `tracker.status = "rate_limited"` sur 429. Le parsing de
+        la réponse, la capture des tokens, le log de succès et `status = "ok"`
+        restent côté appelant : les deux méthodes ont des formes de réponse
+        différentes, et un 200 au corps illisible doit rester un échec (le statut
+        ne passe `ok` qu'après un parse réussi).
+
+        Retryable : 429/500/502/503 + timeout, backoff 3s puis 6s. Les noms
+        d'évènements de log diffèrent entre les deux méthodes (clés
+        d'observabilité existantes) et sont donc paramétrés.
+        """
+        for attempt in range(_MISTRAL_MAX_RETRIES + 1):
+            try:
+                response = await self._do_post(payload, model)
+                response.raise_for_status()
+                return response, attempt
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    tracker.status = "rate_limited"
+                if (
+                    e.response.status_code in _MISTRAL_RETRYABLE_STATUSES
+                    and attempt < _MISTRAL_MAX_RETRIES
+                ):
+                    wait = 3 * (attempt + 1)  # 3s, 6s
+                    logger.warning(
+                        f"editorial_llm.{event_prefix}retrying",
+                        attempt=attempt + 1,
+                        wait_s=wait,
+                        status_code=e.response.status_code,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(
+                    "editorial_llm.http_error",
+                    status_code=e.response.status_code,
+                    body=e.response.text[:500],
+                    attempts_exhausted=attempt + 1,
+                )
+                return None
+            except httpx.TimeoutException:
+                if attempt < _MISTRAL_MAX_RETRIES:
+                    wait = 3 * (attempt + 1)
+                    logger.warning(
+                        f"editorial_llm.{event_prefix}timeout_retrying",
+                        attempt=attempt + 1,
+                        wait_s=wait,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(
+                    f"editorial_llm.{event_prefix}timeout_exhausted",
+                    attempts_exhausted=attempt + 1,
+                )
+                return None
+            except Exception as e:
+                logger.error(unexpected_event, error=str(e))
+                return None
+        return None
+
     async def chat_json(
         self,
         system: str,
@@ -130,93 +213,57 @@ class EditorialLLMClient:
             ],
         }
 
-        _RETRYABLE_STATUSES = (429, 500, 502, 503)
-        max_retries = 2
-
         async with track_api_call("mistral", call_site, model=model) as _call:
-            for attempt in range(max_retries + 1):
-                try:
-                    response = await self._do_post(payload, model)
-                    response.raise_for_status()
+            result = await self._post_with_retry(
+                payload,
+                model,
+                _call,
+                event_prefix="",
+                unexpected_event="editorial_llm.unexpected_error",
+            )
+            if result is None:
+                return None
+            response, attempt = result
 
-                    data = response.json()
-                    usage = data.get("usage") or {}
-                    _call.prompt_tokens = usage.get("prompt_tokens")
-                    _call.completion_tokens = usage.get("completion_tokens")
-                    text = data["choices"][0]["message"]["content"]
+            try:
+                data = response.json()
+                usage = data.get("usage") or {}
+                _call.prompt_tokens = usage.get("prompt_tokens")
+                _call.completion_tokens = usage.get("completion_tokens")
+                text = data["choices"][0]["message"]["content"]
 
-                    # Strip markdown code fences if present
+                # Strip markdown code fences if present
+                text = text.strip()
+                if text.startswith("```"):
+                    lines = text.split("\n")
+                    text = "\n".join(
+                        lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+                    )
                     text = text.strip()
-                    if text.startswith("```"):
-                        lines = text.split("\n")
-                        text = "\n".join(
-                            lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-                        )
-                        text = text.strip()
 
-                    parsed = json.loads(text)
+                parsed = json.loads(text)
 
-                    logger.info(
-                        "editorial_llm.success",
-                        model=model,
-                        attempt=attempt + 1,
-                        prompt_tokens=usage.get("prompt_tokens"),
-                        completion_tokens=usage.get("completion_tokens"),
-                    )
-                    _call.status = "ok"
-                    return parsed
+                logger.info(
+                    "editorial_llm.success",
+                    model=model,
+                    attempt=attempt + 1,
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=usage.get("completion_tokens"),
+                )
+                _call.status = "ok"
+                return parsed
 
-                except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 429:
-                        _call.status = "rate_limited"
-                    if (
-                        e.response.status_code in _RETRYABLE_STATUSES
-                        and attempt < max_retries
-                    ):
-                        wait = 3 * (attempt + 1)  # 3s, 6s
-                        logger.warning(
-                            "editorial_llm.retrying",
-                            attempt=attempt + 1,
-                            wait_s=wait,
-                            status_code=e.response.status_code,
-                        )
-                        await asyncio.sleep(wait)
-                        continue
-                    logger.error(
-                        "editorial_llm.http_error",
-                        status_code=e.response.status_code,
-                        body=e.response.text[:500],
-                        attempts_exhausted=attempt + 1,
-                    )
-                    return None
-                except httpx.TimeoutException:
-                    if attempt < max_retries:
-                        wait = 3 * (attempt + 1)
-                        logger.warning(
-                            "editorial_llm.timeout_retrying",
-                            attempt=attempt + 1,
-                            wait_s=wait,
-                        )
-                        await asyncio.sleep(wait)
-                        continue
-                    logger.error(
-                        "editorial_llm.timeout_exhausted",
-                        attempts_exhausted=attempt + 1,
-                    )
-                    return None
-                except json.JSONDecodeError as e:
-                    # No retry for parse errors — LLM returned bad JSON
-                    logger.error(
-                        "editorial_llm.json_parse_error",
-                        error=str(e),
-                        raw_text=text[:500] if "text" in dir() else "no_text",
-                    )
-                    return None
-                except Exception as e:
-                    logger.error("editorial_llm.unexpected_error", error=str(e))
-                    return None
-
-            return None
+            except json.JSONDecodeError as e:
+                # No retry for parse errors — LLM returned bad JSON
+                logger.error(
+                    "editorial_llm.json_parse_error",
+                    error=str(e),
+                    raw_text=text[:500] if "text" in dir() else "no_text",
+                )
+                return None
+            except Exception as e:
+                logger.error("editorial_llm.unexpected_error", error=str(e))
+                return None
 
     async def chat_text(
         self,
@@ -247,74 +294,38 @@ class EditorialLLMClient:
             ],
         }
 
-        _RETRYABLE_STATUSES = (429, 500, 502, 503)
-        max_retries = 2
-
         async with track_api_call("mistral", call_site, model=model) as _call:
-            for attempt in range(max_retries + 1):
-                try:
-                    response = await self._do_post(payload, model)
-                    response.raise_for_status()
+            result = await self._post_with_retry(
+                payload,
+                model,
+                _call,
+                event_prefix="chat_text_",
+                unexpected_event="editorial_llm.chat_text_error",
+            )
+            if result is None:
+                return None
+            response, attempt = result
 
-                    data = response.json()
-                    usage = data.get("usage") or {}
-                    _call.prompt_tokens = usage.get("prompt_tokens")
-                    _call.completion_tokens = usage.get("completion_tokens")
-                    text = data["choices"][0]["message"]["content"].strip()
+            try:
+                data = response.json()
+                usage = data.get("usage") or {}
+                _call.prompt_tokens = usage.get("prompt_tokens")
+                _call.completion_tokens = usage.get("completion_tokens")
+                text = data["choices"][0]["message"]["content"].strip()
 
-                    logger.info(
-                        "editorial_llm.chat_text_success",
-                        model=model,
-                        attempt=attempt + 1,
-                        prompt_tokens=usage.get("prompt_tokens"),
-                        completion_tokens=usage.get("completion_tokens"),
-                    )
-                    _call.status = "ok"
-                    return text
+                logger.info(
+                    "editorial_llm.chat_text_success",
+                    model=model,
+                    attempt=attempt + 1,
+                    prompt_tokens=usage.get("prompt_tokens"),
+                    completion_tokens=usage.get("completion_tokens"),
+                )
+                _call.status = "ok"
+                return text
 
-                except httpx.HTTPStatusError as e:
-                    if e.response.status_code == 429:
-                        _call.status = "rate_limited"
-                    if (
-                        e.response.status_code in _RETRYABLE_STATUSES
-                        and attempt < max_retries
-                    ):
-                        wait = 3 * (attempt + 1)  # 3s, 6s
-                        logger.warning(
-                            "editorial_llm.chat_text_retrying",
-                            attempt=attempt + 1,
-                            wait_s=wait,
-                            status_code=e.response.status_code,
-                        )
-                        await asyncio.sleep(wait)
-                        continue
-                    logger.error(
-                        "editorial_llm.http_error",
-                        status_code=e.response.status_code,
-                        body=e.response.text[:500],
-                        attempts_exhausted=attempt + 1,
-                    )
-                    return None
-                except httpx.TimeoutException:
-                    if attempt < max_retries:
-                        wait = 3 * (attempt + 1)
-                        logger.warning(
-                            "editorial_llm.chat_text_timeout_retrying",
-                            attempt=attempt + 1,
-                            wait_s=wait,
-                        )
-                        await asyncio.sleep(wait)
-                        continue
-                    logger.error(
-                        "editorial_llm.chat_text_timeout_exhausted",
-                        attempts_exhausted=attempt + 1,
-                    )
-                    return None
-                except Exception as e:
-                    logger.error("editorial_llm.chat_text_error", error=str(e))
-                    return None
-
-            return None
+            except Exception as e:
+                logger.error("editorial_llm.chat_text_error", error=str(e))
+                return None
 
     async def close(self) -> None:
         """Close the underlying httpx client."""
