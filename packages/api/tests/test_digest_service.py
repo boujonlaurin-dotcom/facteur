@@ -699,10 +699,16 @@ class TestBackgroundRegenCronGuard:
 
         assert mock_create_task.call_count == 1
 
-    def test_guard_only_applies_to_today(self):
-        """La garde protège uniquement target_date == today. Une régen pour
-        hier (ou un autre jour passé) doit toujours passer, à n'importe
-        quelle heure."""
+    def test_past_target_date_always_skipped(self):
+        """EPIC « Lettre du jour » — la garde « édition passée » saute la régen
+        pour tout target_date révolu (hier ou avant), à **n'importe quelle
+        heure** (y compris après le cron).
+
+        Remplace l'ancienne propriété « la garde horaire ne vise que today,
+        donc un jour passé passe toujours » : depuis que le mobile peut demander
+        une lettre passée, régénérer un jour révolu fabriquerait un digest faux
+        depuis le pool d'articles du jour (+ coût LLM). Cf.
+        test_digest_regen_past_date_guard.py."""
         from datetime import datetime
 
         from app.services import digest_service
@@ -711,19 +717,20 @@ class TestBackgroundRegenCronGuard:
 
         user_id = uuid4()
         yesterday = date.today() - timedelta(days=1)
-        before_cron = datetime.combine(date.today(), datetime.min.time()).replace(
-            hour=2, minute=0
+        # Même APRÈS l'heure du cron, la garde « passé » prime.
+        after_cron = datetime.combine(date.today(), datetime.min.time()).replace(
+            hour=12, minute=0
         )
 
         with (
-            patch("app.utils.time.now_paris", return_value=before_cron),
+            patch("app.utils.time.now_paris", return_value=after_cron),
             patch("asyncio.create_task") as mock_create_task,
         ):
             digest_service._schedule_background_regen(
                 user_id=user_id, target_date=yesterday, is_serene=False
             )
 
-        assert mock_create_task.call_count == 1
+        assert mock_create_task.call_count == 0
 
 
 # ─── Tests: Phase 5.2 — deferred stale-format deletion ────────────────────────
