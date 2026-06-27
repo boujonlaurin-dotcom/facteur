@@ -26,6 +26,9 @@ class ApiUsageEvent(Base):
     `user_id` null = appel système (classification / éditorial / digest).
     `model` null = provider sans notion de modèle (Brave).
     `status` ∈ {ok, error, rate_limited}.
+    `prompt_tokens` / `completion_tokens` null = provider sans usage tokens
+    (Brave) ou appel échoué avant réponse — sinon issus de `usage` Mistral
+    (LR-1 PR 1 : permet un `GROUP BY model` qui donne le € réel par modèle).
     """
 
     __tablename__ = "api_usage_events"
@@ -39,6 +42,8 @@ class ApiUsageEvent(Base):
     user_id: Mapped[UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ok")
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )
