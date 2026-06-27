@@ -139,6 +139,14 @@ String formatFrenchLongDate(DateTime date) {
   return '$weekday ${date.day} $month';
 }
 
+/// Libellé court FR « mar. 24 » (jour de semaine abrégé + numéro), dérivé des
+/// [_frenchWeekdays] existants (3 lettres + point). Pour les pills du sélecteur
+/// de date de l'Essentiel (EPIC « Lettre du jour »).
+String formatFrenchShortWeekdayDay(DateTime date) {
+  final short = _frenchWeekdays[(date.weekday - 1) % 7].substring(0, 3);
+  return '$short. ${date.day}';
+}
+
 /// Sommaire « table des matières » de l'édition du jour : libellés **exacts** des
 /// sections réellement affichées, dans l'ordre du feed (décision PO 24/06).
 ///

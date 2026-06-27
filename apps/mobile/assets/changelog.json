@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Édition",
+      "summary": "Remonte le temps : fais défiler les jours en haut de ton Essentiel pour relire l'actu d'hier ou des 7 derniers jours, et la rétro « Cette semaine »."
+    },
+    {
+      "tag": "Édition",
       "summary": "Ton édition du jour se dévoile en douceur le matin et après l'onboarding."
     },
     {

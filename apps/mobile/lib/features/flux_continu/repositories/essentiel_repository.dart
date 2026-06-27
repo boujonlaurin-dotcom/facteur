@@ -25,11 +25,19 @@ class EssentielRepository {
   /// [serein] force le mode côté backend (`?serein=`) au lieu de dépendre de la
   /// persistance DB de la préférence : évite la race au toggle (refetch avant
   /// que la préférence soit écrite). Absent ⇒ le backend lit la préférence DB.
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async {
+  ///
+  /// [date] cible une **édition passée** (`?target_date=YYYY-MM-DD`) pour le
+  /// sélecteur de date de l'Essentiel (EPIC « Lettre du jour »). Absent ⇒
+  /// aujourd'hui (l'appel historique du flux reste valide). Même format que
+  /// `DigestRepository.getDigest`/`fetchBothDigests`.
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async {
     try {
       final response = await _apiClient.dio.get<dynamic>(
         'essentiel',
-        queryParameters: {if (serein != null) 'serein': serein},
+        queryParameters: {
+          if (serein != null) 'serein': serein,
+          if (date != null) 'target_date': date.toIso8601String().split('T')[0],
+        },
       );
       if (response.statusCode == 202) {
         return null;
