@@ -1,8 +1,22 @@
 {
   "unreleased": [
     {
+      "tag": "Édition",
+      "summary": "Remonte le temps : fais défiler les jours en haut de ton Essentiel pour relire l'actu d'hier ou des 7 derniers jours, et la rétro « Cette semaine »."
+    },
+    {
+      "tag": "Édition",
+      "summary": "Ton édition du jour se dévoile en douceur le matin et après l'onboarding."
+    },
+    {
+      "tag": "Ouverture",
+      "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
+    },
+    {
       "tag": "Widget",
       "summary": "Le widget se rafraîchit à nouveau, avec un bouton pour forcer la mise à jour."
+    },
+    {
       "tag": "Mise à jour",
       "summary": "Sur Android, les mises à jour passent désormais par une invite native du Play Store, plus fiable, avec téléchargement en arrière-plan."
     },

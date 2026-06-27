@@ -38,14 +38,18 @@ import '../../tour/tour_anchors.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
+import '../providers/edition_essentiel_provider.dart';
 import '../providers/flux_continu_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
+import '../providers/selected_edition_date_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
+import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
 import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
+import '../widgets/edition_date_strip.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
@@ -132,6 +136,12 @@ class FluxContinuScreen extends ConsumerStatefulWidget {
 
 class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ScrollController _scroll = ScrollController();
+
+  /// Contrôleur dédié au mode « édition passée » (sélecteur de date). Séparé du
+  /// `_scroll` live (snap + sticky) : leurs CustomScrollView s'excluent, et un
+  /// contrôleur dédié évite tout conflit d'attachement et préserve la position
+  /// du feed live quand on revient à « Aujourd'hui ».
+  final ScrollController _editionScroll = ScrollController();
   final ScrollController _tabsScroll = ScrollController();
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
@@ -237,6 +247,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
 
+  /// Premier paint : on force le squelette (cartes vides à en-têtes réels) pour
+  /// la toute première frame, **même si les données sont déjà prêtes**. À
+  /// l'arrivée depuis le rituel matinal, l'édition est préchargée → l'écran
+  /// ferait sinon directement le premier paint *lourd* de `_buildContent`, qui
+  /// bloque ~1 s sur le web : on verrait une page blanche (la frame précédente).
+  /// En peignant d'abord le squelette (cheap), la frame lourde se construit
+  /// *derrière* tandis que le squelette reste à l'écran — zéro blanc. La branche
+  /// Essentiel vit dans un `StatefulShellBranch` gardé en vie : cet écran n'est
+  /// monté qu'une fois par session, donc aucun flash de squelette sur les
+  /// bascules d'onglet ultérieures.
+  bool _firstPaintDone = false;
+
   @override
   void initState() {
     super.initState();
@@ -245,12 +267,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // de demande de géoloc (déclenchée après 5 ouvertures, cf.
     // geoloc_prompt_provider). Best-effort, n'impacte pas le rendu.
     unawaited(NudgeCounters.increment(NudgeCounters.feedOpenCount));
+    // Bascule vers le vrai contenu après la 1ʳᵉ frame (squelette peint → la
+    // frame lourde se construit ensuite, squelette toujours visible).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _firstPaintDone = true);
+    });
   }
 
   @override
   void dispose() {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
+    _editionScroll.dispose();
     _tabsScroll.dispose();
     _stickyVisible.dispose();
     _activeIndex.dispose();
@@ -995,11 +1023,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(fluxContinuProvider);
     final data = state.valueOrNull;
+    // EPIC « Lettre du jour » — sélection de date du bloc Essentiel. Hors
+    // « Aujourd'hui », on rend une lettre passée autonome (lecture seule) et on
+    // masque la tournée live + son sticky/snap (incohérent avec une édition
+    // passée).
+    final selection = ref.watch(selectedEditionDateProvider);
+    final isPastEdition = selection is! EditionToday;
     // Squelette : fenêtre de loading initiale (avant 1ère peinture) OU état
     // squelette explicite émis par le provider (cache d'hier invalidé / cold
     // start). On rend alors un scaffold placeholder, jamais le spinner plein
     // écran ni le vrai `_buildContent`.
-    final isSkeleton = state is AsyncLoading || (data?.isSkeleton ?? false);
+    final isSkeleton = !_firstPaintDone ||
+        state is AsyncLoading ||
+        (data?.isSkeleton ?? false);
+    // Changer d'édition remet la lettre passée en haut (le feed live garde sa
+    // position via son contrôleur dédié).
+    ref.listen(selectedEditionDateProvider, (_, next) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (next is! EditionToday && _editionScroll.hasClients) {
+          _editionScroll.jumpTo(0);
+        }
+      });
+    });
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
@@ -1047,9 +1093,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
     // Hors squelette uniquement : le scaffold placeholder n'attache pas les
     // GlobalKeys de section ni la physics de snap.
-    final stickyTabs =
-        isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
-    if (!isSkeleton) {
+    // En mode édition passée, le sticky/snap de la tournée live est masqué : on
+    // ne synchronise ni les onglets ni les ancres (le contenu rendu n'est pas
+    // celui du provider live).
+    final stickyTabs = (isSkeleton || isPastEdition)
+        ? const <StickyTab>[]
+        : _syncStickyEntries(data);
+    if (!isSkeleton && !isPastEdition) {
       // Sections don't resize mid-session, so we refresh the snap anchors only
       // on these content/layout-driven rebuilds — never per scroll frame.
       _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
@@ -1065,7 +1115,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         bottom: false,
         child: Stack(
           children: [
-            if (isSkeleton)
+            if (isPastEdition)
+              _buildPastEdition(context, selection)
+            else if (isSkeleton)
               _FluxContinuSkeleton(sections: data?.sections ?? const [])
             else
               state.when(
@@ -1077,7 +1129,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 ),
                 data: (data) => _buildContent(context, data),
               ),
-            if (!isSkeleton)
+            if (!isSkeleton && !isPastEdition)
               _StickyHostOverlay(
                 stickyVisible: _stickyVisible,
                 activeIndex: _activeIndex,
@@ -1212,6 +1264,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   : const SizedBox.shrink(),
             ),
             const SliverToBoxAdapter(child: LettresNotificationBanner()),
+            // EPIC « Lettre du jour » — sélecteur de date au-dessus du bloc
+            // Essentiel (remonter le temps jusqu'à J-7 ou « Cette semaine »).
+            const SliverToBoxAdapter(child: EditionDateStrip()),
             // One SliverToBoxAdapter per section. Sections never resize during
             // a session, so the simpler non-lazy adapter is sufficient and
             // keeps the GlobalKey measurement reliable.
@@ -1423,6 +1478,185 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       slivers.add(_grilleSliver);
     }
     return slivers;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // EPIC « Lettre du jour » — rendu d'une édition passée (lecture seule)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  void _backToToday() {
+    ref.read(selectedEditionDateProvider.notifier).state = const EditionToday();
+  }
+
+  /// Rendu autonome d'une lettre passée / rétro « Cette semaine » : le strip
+  /// reste en tête, le bloc Essentiel est rendu en lecture seule, et la tournée
+  /// live est masquée (remplacée par une note + « Revenir à aujourd'hui »).
+  /// Contrôleur + physique dédiés (pas de snap).
+  Widget _buildPastEdition(BuildContext context, EditionSelection selection) {
+    final colors = context.facteurColors;
+    final asyncEdition = ref.watch(editionEssentielProvider);
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(editionEssentielProvider),
+      color: colors.primary,
+      child: CustomScrollView(
+        controller: _editionScroll,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          const SliverToBoxAdapter(child: EditionDateStrip()),
+          ...asyncEdition.when(
+            loading: () => const <Widget>[
+              SliverToBoxAdapter(child: _HeroSkeleton()),
+            ],
+            error: (_, __) => <Widget>[_pastEmptySliver(context, selection)],
+            data: (edition) => _pastDataSlivers(context, edition),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 92)),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _pastDataSlivers(
+    BuildContext context,
+    EditionEssentielState edition,
+  ) {
+    if (edition.isStaleOrEmpty) {
+      return <Widget>[_pastEmptySliver(context, edition.selection)];
+    }
+    final colors = context.facteurColors;
+    final slivers = <Widget>[];
+
+    // Héros lecture seule : même chemin de rendu que le feed live
+    // (SectionBlock → EssentielHiFiCard), avec `interactive: false` (pas de
+    // bouton perso). Tap = ouvrir le reader ; aucune mutation (jamais de
+    // `digestProvider.applyAction` sur une lettre datée).
+    if (edition.heroArticles.isNotEmpty) {
+      slivers.add(
+        SliverToBoxAdapter(
+          child: SectionBlock(
+            section: EssentielSection(articles: edition.heroArticles),
+            onTapArticle: (a) => _openArticle(context, a),
+            interactive: false,
+          ),
+        ),
+      );
+    }
+
+    // « Actus du jour » (jour) / « Les temps forts » (semaine), lecture seule :
+    // pas de `onDismissArticle`/feedback ⇒ pas de swipe. Réutilise SectionBlock.
+    if (edition.topics.isNotEmpty) {
+      final section = DigestTopicSection(
+        kind: SectionKind.essentiel,
+        label: edition.isWeek ? 'Les temps forts' : 'Actus du jour',
+        accent: colors.sectionEssentiel,
+        coreVisibleCount: edition.topics.length,
+        topics: edition.topics,
+      );
+      slivers.add(
+        SliverToBoxAdapter(
+          child: SectionBlock(
+            section: section,
+            onTapArticle: (a) => _openArticle(context, a),
+          ),
+        ),
+      );
+    }
+
+    // Citation : clôture éditoriale d'un jour unique (pas de citation unique
+    // pour la rétro hebdo).
+    if (!edition.isWeek && edition.quote != null) {
+      slivers.add(
+        SliverToBoxAdapter(child: CitationDuJourCard(quote: edition.quote!)),
+      );
+    }
+
+    slivers.add(
+      SliverToBoxAdapter(
+        child: _BackToTodayBlock(
+          message: _pastEditionNote(edition.selection),
+          onBackToToday: _backToToday,
+        ),
+      ),
+    );
+    return slivers;
+  }
+
+  Widget _pastEmptySliver(BuildContext context, EditionSelection selection) {
+    final message = switch (selection) {
+      EditionWeek() => 'La semaine se prépare...',
+      EditionPastDay(:final date) =>
+        'Pas d\'édition pour ${formatFrenchLongDate(date)}.',
+      EditionToday() => 'Pas d\'édition disponible.',
+    };
+    return SliverToBoxAdapter(
+      child: _BackToTodayBlock(message: message, onBackToToday: _backToToday),
+    );
+  }
+
+  String _pastEditionNote(EditionSelection selection) => switch (selection) {
+        EditionWeek() =>
+          'Tu consultes la rétro de la semaine. Tes recommandations du jour '
+              'reviennent en sélectionnant « Aujourd’hui ».',
+        EditionPastDay(:final date) =>
+          'Tu lis la lettre du ${formatFrenchLongDate(date)}. Tes '
+              'recommandations du jour reviennent en sélectionnant '
+              '« Aujourd’hui ».',
+        EditionToday() => 'Tes recommandations du jour reviennent en '
+            'sélectionnant « Aujourd’hui ».',
+      };
+}
+
+/// EPIC « Lettre du jour » — note discrète + bouton « Revenir à aujourd'hui »
+/// affiché sous une lettre passée (footer) ou à la place du contenu quand aucune
+/// édition n'est disponible (état vide).
+class _BackToTodayBlock extends StatelessWidget {
+  final String message;
+  final VoidCallback onBackToToday;
+
+  const _BackToTodayBlock({
+    required this.message,
+    required this.onBackToToday,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+        FacteurSpacing.space4,
+        FacteurSpacing.space4,
+      ),
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.border, width: 0.6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space3),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.tonalIcon(
+              onPressed: onBackToToday,
+              icon: const Icon(Icons.today_rounded, size: 18),
+              label: const Text('Revenir à aujourd’hui'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

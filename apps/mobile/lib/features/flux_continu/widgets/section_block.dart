@@ -63,6 +63,12 @@ class SectionBlock extends StatelessWidget {
   /// pour les sections `origin == suggested` (cf. flux_continu_screen).
   final VoidCallback? onTapSuggestionInfo;
 
+  /// EPIC « Lettre du jour » — `false` ⇒ rendu **lecture seule** (lettre d'un
+  /// jour passé) : masque le bouton « personnaliser » du héros Essentiel. Le
+  /// reste de la lecture seule (pas de swipe/feedback) découle déjà des
+  /// callbacks de mutation laissés nuls par l'appelant.
+  final bool interactive;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -82,6 +88,7 @@ class SectionBlock extends StatelessWidget {
     this.onAddSources,
     this.onSeeAll,
     this.onTapSuggestionInfo,
+    this.interactive = true,
   });
 
   @override
@@ -97,7 +104,10 @@ class SectionBlock extends StatelessWidget {
             EssentielHiFiCard(
               articles: section.articles,
               onTapArticle: (a) => onTapArticle(a),
-              onTapPersonalize: () => showTourneeComposerSheet(context),
+              // Lecture seule (lettre passée) : bouton « personnaliser » masqué.
+              onTapPersonalize: interactive
+                  ? () => showTourneeComposerSheet(context)
+                  : null,
             ),
             const SizedBox(height: 16),
           ],
