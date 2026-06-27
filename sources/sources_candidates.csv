@@ -236,3 +236,9 @@ ITU (UIT),https://www.itu.int/,Site,Tech & Futur,Factuel,"Télécoms.",À valide
 WIPO (OMPI),https://www.wipo.int/,Site,Économie,Factuel,"Propriété intellectuelle.",À valider,center,high,false
 ILO (OIT),https://www.ilo.org/,Site,Société & Climat,Factuel,"Travail.",À valider,center,high,false
 FAO,https://www.fao.org/,Site,Société & Climat,Factuel,"Alimentation.",À valider,center,high,false
+So Foot,https://www.sofoot.com/,Site,Sport,Spécialiste,"Référence du journalisme football à angle culturel et sociétal (longs formats, enquêtes). Comble la section sport (0 source qualité FR).",À valider,specialized,high,false
+Les Cahiers du Football,https://www.cahiersdufootball.net/,Site,Sport,Spécialiste,"Magazine d'enquête et d'analyse football, traitement alternatif et fouillé (franc-tireur reconnu, Acrimed).",À valider,specialized,high,false
+L'Équipe,https://www.lequipe.fr/,Site,Sport,Référence,"Quotidien sportif de référence multisport (articles de fond, podcasts, infographies). Pilier potentiel de la section sport.",À valider,specialized,high,false
+RMC Sport,https://rmcsport.bfmtv.com/,Site,Sport,Couverture,"Couverture multisport (foot, rugby, tennis, cyclisme) avec analyses de la rédaction ; large amplitude pour étoffer sport.",À valider,specialized,medium,false
+Eurosport France,https://www.eurosport.fr/,Site,Sport,Couverture,"Média multisport généraliste (cyclisme, tennis, athlétisme, sports d'hiver) à forte fréquence.",À valider,specialized,medium,false
+Le Rugbynistère,https://www.lerugbynistere.fr/,Site,Sport,Spécialiste,"Spécialiste rugby francophone (actu, analyses, communauté) pour diversifier la section sport au-delà du football.",À valider,specialized,medium,false
