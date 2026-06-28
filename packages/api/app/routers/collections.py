@@ -15,6 +15,7 @@ from app.schemas.collection import (
     SavedSummaryResponse,
 )
 from app.services.collection_service import CollectionService
+from app.utils.db_retry import retry_db_op
 
 router = APIRouter()
 
@@ -27,7 +28,14 @@ async def list_collections(
     """Liste les collections de l'utilisateur avec métadonnées."""
     service = CollectionService(db)
     user_uuid = UUID(current_user_id)
-    return await service.list_collections(user_uuid)
+    # Read pur (zéro commit), appelé au chargement (cold-open) → replay sûr.
+    # Absorbe les erreurs transitoires de pool (PYTHON-4/14/26/27) au lieu de
+    # 500 l'utilisateur sur un hoquet de connexion. Cf. db_retry.retry_db_op.
+    return await retry_db_op(
+        lambda: service.list_collections(user_uuid),
+        session=db,
+        op_name="collections.list",
+    )
 
 
 @router.post(

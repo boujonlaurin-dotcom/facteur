@@ -130,6 +130,22 @@ async def _digest_watchdog() -> None:
                 )
 
                 if coverage < 0.90:
+                    # Garde call-site (Axe B) : si un digest tourne déjà
+                    # (cron 07h30 encore en cours, ou startup catchup), ne pas
+                    # lancer un 2e run complet → éviterait le pic pool x2
+                    # (2 × Semaphore(5)). La garde in-function de
+                    # `run_digest_generation` bloque aussi, mais on skip ici
+                    # pour ne pas même payer l'ouverture de session.
+                    from app.services.generation_state import is_generation_running
+
+                    if is_generation_running():
+                        logger.info(
+                            "digest_watchdog_skipped_generation_in_progress",
+                            coverage_pct=round(coverage * 100, 1),
+                            missing=expected_pairs - pair_count,
+                        )
+                        return
+
                     logger.warning(
                         "digest_watchdog_low_coverage_triggering_generation",
                         coverage_pct=round(coverage * 100, 1),
@@ -304,18 +320,32 @@ async def _pool_health_probe() -> None:
 
 
 def start_scheduler() -> None:
-    """Démarre le scheduler."""
+    """Démarre le scheduler.
+
+    Discipline de sérialisation (incident PYTHON-5M, fenêtre pool partagée) :
+    **chaque** `add_job` porte `max_instances=1` (+ `coalesce=True`) pour qu'un
+    run qui déborde sur le tick suivant ne lance jamais un 2e run concurrent
+    consommant le pool en double. APScheduler met déjà `max_instances=1` par
+    défaut → c'est défensif/documentaire ; le vrai correctif anti-double-digest
+    (3 appelants non coordonnés : cron, watchdog, startup catchup) est la garde
+    in-function `is_generation_running()` dans `run_digest_generation`, que
+    `max_instances` ne peut pas couvrir (il ne voit que le cron).
+    """
     global scheduler
 
     scheduler = AsyncIOScheduler()
 
-    # Job de synchronisation RSS (Intervalle)
+    # Job de synchronisation RSS (Intervalle).
+    # max_instances=1 + coalesce=True : voir la discipline de sérialisation
+    # documentée dans la docstring de start_scheduler (appliquée à tous les jobs).
     scheduler.add_job(
         sync_all_sources,
         trigger=IntervalTrigger(minutes=settings.rss_sync_interval_minutes),
         id="rss_sync",
         name="RSS Feed Synchronization",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Job Digest Quotidien (07h30 Paris — voir DIGEST_CRON_HOUR_PARIS pour le
@@ -334,6 +364,7 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,
+        max_instances=1,
     )
 
     # Daily learned-subtopic decay (07h20 Paris) so digest scoring at 07h30
@@ -350,6 +381,7 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,
+        max_instances=1,
     )
 
     # Watchdog 08h15 — vérifie la couverture et relance si < 90%.
@@ -363,6 +395,7 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,
+        max_instances=1,
     )
 
     # Job Storage Cleanup Quotidien (3h00 Paris - heure creuse)
@@ -372,6 +405,8 @@ def start_scheduler() -> None:
         id="storage_cleanup",
         name="Storage Cleanup",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Hard-delete soft-deleted user accounts older than 30 days (4h00 Paris,
@@ -382,6 +417,8 @@ def start_scheduler() -> None:
         id="purge_deleted_users",
         name="Purge soft-deleted users (>30d)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Recalcul `sources.language` à partir des Content des 30 derniers jours
@@ -392,6 +429,8 @@ def start_scheduler() -> None:
         id="recompute_source_language",
         name="Recompute Source.language (majoritaire 30j)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Projection budget coût API externes (évidence G3 scaling) : conso du mois
@@ -403,6 +442,8 @@ def start_scheduler() -> None:
         id="cost_budget_projection",
         name="Cost budget projection (api_usage_events)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Zombie session sweeper — kill Supavisor sessions stuck in
@@ -414,6 +455,8 @@ def start_scheduler() -> None:
         id="zombie_session_sweeper",
         name="Zombie session sweeper (idle in tx > 5min)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Sonde pool DB active (5 min) — rend la pression pool visible dans
@@ -424,6 +467,8 @@ def start_scheduler() -> None:
         id="pool_health_probe",
         name="DB pool health probe (5min)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     scheduler.add_job(
