@@ -241,6 +241,19 @@ class DigestGenerationJob:
                     await session.rollback()
                     await apply_session_timeouts(session)
 
+            # Axe C — libérer la tx batch AVANT le pré-calcul éditorial (3-5 min
+            # de LLM). Sur le chemin succès, la lecture trending ci-dessus laisse
+            # la tx de la session batch ouverte ; sans ce rollback elle reste
+            # `idle in transaction` pendant tout le LLM → monopolise un slot pool
+            # (PYTHON-5M) et risque le timeout `idle_in_tx=60s`. Sûr : le contexte
+            # trending vit dans un local Python (`global_trending_context`,
+            # dataclass d'UUIDs), `state_mark_pending` est déjà commité, et le
+            # pré-calcul re-requête tout sur une tx fraîche. On re-pousse les
+            # `SET LOCAL` timeouts sur la prochaine tx.
+            with contextlib.suppress(Exception):
+                await session.rollback()
+                await apply_session_timeouts(session)
+
             # 1.6 Pre-compute editorial global context ONCE for the batch,
             # for BOTH variants (pour_vous + serein). Previously only
             # pour_vous was pre-computed, forcing each serene user to do
@@ -1118,6 +1131,7 @@ async def run_digest_generation(
         >>> result = await run_digest_generation(target_date=date(2024, 1, 15))
     """
     from app.services.generation_state import (
+        is_generation_running,
         mark_generation_finished,
         mark_generation_started,
     )
@@ -1125,6 +1139,20 @@ async def run_digest_generation(
     job = DigestGenerationJob(
         batch_size=batch_size, concurrency_limit=concurrency_limit
     )
+
+    # Garde anti-double-digest (Axe B, load-bearing). `run_digest_generation`
+    # a TROIS appelants non coordonnés : le cron 07h30 (scheduler), le watchdog
+    # 08h15 (appel direct), et le startup catchup Railway (appel direct, gardé
+    # par son propre _STARTUP_CATCHUP_LOCK seulement). `max_instances=1` ne voit
+    # que le cron. Si un digest tourne déjà, un 2e run complet = 2 × Semaphore(5)
+    # = 10 slots pool d'un coup → saturation (PYTHON-5M). On skip AVANT
+    # `mark_generation_started()` (qui met _is_running=True et reset _started_at
+    # inconditionnellement, écrasant le timestamp du run en cours). Le
+    # safety-timeout (600s) de generation_state reste l'échappatoire si un run
+    # se bloque > 10 min.
+    if is_generation_running():
+        logger.info("digest_generation_already_running_skipped")
+        return {"skipped": True, "reason": "already_running", "stats": job.stats}
 
     mark_generation_started()
 
