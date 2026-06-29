@@ -59,6 +59,11 @@ def randomized_sort[T](
     return [(item, score) for item, score, _ in noisy_items]
 
 
+def seeded_shuffle[T](items: list[T], seed: int) -> list[T]:
+    """Shuffle déterministe d'une liste sans score (pure randomisation)."""
+    return [x for x, _ in randomized_sort([(x, 0.0) for x in items], temperature=1.0, seed=seed)]
+
+
 def compute_seed(user_id: str, granularity: str = "hourly") -> int:
     """Compute a deterministic seed for stable ordering within a time window.
 

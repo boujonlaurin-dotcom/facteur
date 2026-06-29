@@ -1638,26 +1638,17 @@ class RecommendationService:
                     if source_age_seconds < 6 * 3600:
                         continue
 
-                    candidates.append((src_row, items))
+                    candidates.append((src_row, items, source_age_seconds))
 
                 if candidates:
                     from app.services.recommendation.randomization import (
                         compute_seed,
-                        randomized_sort,
+                        seeded_shuffle,
                     )
 
-                    # Shuffle déterministe seedé par le jour (scores uniformes 0.0
-                    # ⇒ pur shuffle) : la source en tête change jour à jour mais
-                    # reste stable dans la journée (cohérent avec le jitter de
-                    # position).
                     seed = compute_seed(str(user_id), "daily")
-                    src_row, items = randomized_sort(
-                        [(c, 0.0) for c in candidates],
-                        temperature=1.0,
-                        seed=seed,
-                    )[0][0]
+                    src_row, items, source_age_seconds = seeded_shuffle(candidates, seed)[0]
 
-                    source_age_seconds = (now - src_row.added_at).total_seconds()
                     position = self._jitter_carousel_position(
                         "new_source", user_id, today
                     )
@@ -1762,18 +1753,11 @@ class RecommendationService:
                     # de cache feed 30 s.
                     from app.services.recommendation.randomization import (
                         compute_seed,
-                        randomized_sort,
+                        seeded_shuffle,
                     )
 
                     seed = compute_seed(str(user_id), "hourly")
-                    quiet_articles = [
-                        a
-                        for a, _ in randomized_sort(
-                            [(a, 0.0) for a in quiet_articles],
-                            temperature=1.0,
-                            seed=seed,
-                        )
-                    ][:MAX_CAROUSEL_ITEMS]
+                    quiet_articles = seeded_shuffle(quiet_articles, seed)[:MAX_CAROUSEL_ITEMS]
                 except Exception as exc:
                     logger.warning(
                         "carousel_quiet_sources_skipped",
