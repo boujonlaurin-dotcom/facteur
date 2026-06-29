@@ -284,7 +284,8 @@ class _DayRow extends StatelessWidget {
 }
 
 /// Pastille lu / non-lu (anti-FOMO). Non-lu = disque plein ocre + halo +
-/// « Non lu » (ocre) ; à jour = cercle vide bordé gris + « À jour » (gris).
+/// « Non lu » (ocre) ; à jour = coche verte (motif « read » app-wide) + « À
+/// jour » (vert success).
 class _ReadStatusPill extends StatelessWidget {
   final bool read;
 
@@ -293,29 +294,34 @@ class _ReadStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final color = read ? colors.textTertiary : colors.primary;
+    final color = read ? colors.success : colors.primary;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 11,
-          height: 11,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: read ? Colors.transparent : colors.primary,
-            border: read
-                ? Border.all(color: colors.textTertiary, width: 1.5)
-                : null,
-            boxShadow: read
-                ? null
-                : [
-                    BoxShadow(
-                      color: colors.primary.withValues(alpha: 0.35),
-                      blurRadius: 4,
-                    ),
-                  ],
+        // État lu : coche verte (même motif que le badge « read » app-wide).
+        // (`_ReadCheckBadge` est privé/dupliqué ailleurs → on inline l'icône
+        // plutôt que d'introduire un import croisé.)
+        if (read)
+          Icon(
+            PhosphorIcons.check(PhosphorIconsStyle.bold),
+            size: 13,
+            color: colors.success,
+          )
+        else
+          Container(
+            width: 11,
+            height: 11,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: colors.primary,
+              boxShadow: [
+                BoxShadow(
+                  color: colors.primary.withValues(alpha: 0.35),
+                  blurRadius: 4,
+                ),
+              ],
+            ),
           ),
-        ),
         const SizedBox(width: 5),
         Text(
           read ? 'À jour' : 'Non lu',
@@ -355,22 +361,22 @@ class EditionRewindTrigger extends StatelessWidget {
         },
         borderRadius: BorderRadius.circular(FacteurRadius.full),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 PhosphorIcons.rewind(PhosphorIconsStyle.fill),
-                size: 19,
+                size: 15,
                 color: colors.primary,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.dmSans(
-                  fontSize: 14.5,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   color: colors.primary,
                 ),

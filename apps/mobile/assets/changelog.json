@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Lettre du jour",
+      "summary": "En mode « Cette semaine », retrouve tes essentiels jour par jour, plus les bonnes nouvelles de la semaine."
+    },
+    {
+      "tag": "Lettre du jour",
       "summary": "Sur ta lettre du matin, glisse vers la droite pour relire hier, et bascule en lecture apaisée d'un geste."
     },
     {

@@ -76,6 +76,10 @@ DigestResponse _digest({
 DualDigestResponse _dual(DigestResponse normal) =>
     DualDigestResponse(normal: normal, serein: null, sereinEnabled: false);
 
+/// Dual avec normal **et** serein (Bonnes Nouvelles) renseignés.
+DualDigestResponse _dualBoth(DigestResponse normal, DigestResponse serein) =>
+    DualDigestResponse(normal: normal, serein: serein, sereinEnabled: true);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -180,7 +184,7 @@ void main() {
   });
 
   group('Cette semaine', () {
-    test('agrège, dédup contentId, re-tri rank, jours manquants ignorés',
+    test('liste par jour (newest-first), Actus agrégées, jours manquants ignorés',
         () async {
       final today = editionTodayDate();
       DateTime past(int i) => DateTime(today.year, today.month, today.day - i);
@@ -189,14 +193,14 @@ void main() {
       // past(3) absent → jour manquant ignoré.
       final container = makeContainer(
         heroByDay: {
-          k1: [_hero('a', rank: 3), _hero('b', rank: 1)],
-          k2: [_hero('b', rank: 1), _hero('c', rank: 2)], // 'b' dupliqué
+          k1: [_hero('a', rank: 1), _hero('b', rank: 2)],
+          k2: [_hero('c', rank: 1)],
         },
         dualByDay: {
           k1: _dual(_digest(topics: [_topic('t1', score: 1)])),
           k2: _dual(_digest(
             topics: [_topic('t2', score: 5), _topic('t1', score: 1)],
-          )), // t1 dupliqué
+          )), // t1 dupliqué entre jours
         },
       );
       addTearDown(container.dispose);
@@ -206,21 +210,31 @@ void main() {
       final state = await container.read(editionEssentielProvider.future);
       expect(state.isWeek, isTrue);
       expect(state.isStaleOrEmpty, isFalse);
-      // dédup 'b' + re-tri rank (1 lead) : b(1), c(2), a(3).
-      expect(state.heroArticles.map((a) => a.contentId), ['b', 'c', 'a']);
-      // dédup t1 + tri topicScore desc : t2(5), t1(1).
+      // En semaine, le héros agrégé est remplacé par la liste par jour.
+      expect(state.heroArticles, isEmpty);
+      // Un groupe par jour ayant des héros, newest-first (J-1 puis J-2 ;
+      // J-0 vide via le stub flux et J-3 manquant sont ignorés).
+      expect(state.weekDays.map((g) => editionDayKey(g.date)), [k1, k2]);
+      expect(state.weekDays[0].articles.map((a) => a.contentId), ['a', 'b']);
+      expect(state.weekDays[1].articles.map((a) => a.contentId), ['c']);
+      // Actus = Σ normalTopics, dédup t1 + tri topicScore desc : t2(5), t1(1).
       expect(state.topics.map((t) => t.topicId), ['t2', 't1']);
     });
 
-    test('héros plafonnés à kEditionWeekMaxHero', () async {
+    test('Bonnes Nouvelles agrégées depuis serein ; Actus/Bonnes découplées',
+        () async {
       final today = editionTodayDate();
       final k1 = editionDayKey(DateTime(today.year, today.month, today.day - 1));
       final container = makeContainer(
         heroByDay: {
-          k1: [for (var i = 1; i <= 7; i++) _hero('h$i', rank: i)],
+          k1: [_hero('h1')],
         },
         dualByDay: {
-          k1: _dual(_digest(topics: const [])),
+          // normal → Actus ; serein → Bonnes Nouvelles. Aucun chevauchement.
+          k1: _dualBoth(
+            _digest(topics: [_topic('actu1', score: 2)]),
+            _digest(topics: [_topic('bonne1', score: 3)]),
+          ),
         },
       );
       addTearDown(container.dispose);
@@ -228,8 +242,9 @@ void main() {
           const EditionWeek();
 
       final state = await container.read(editionEssentielProvider.future);
-      expect(state.heroArticles.length, kEditionWeekMaxHero);
-      expect(state.heroArticles.first.contentId, 'h1'); // rank 1 en tête
+      expect(state.isWeek, isTrue);
+      expect(state.topics.map((t) => t.topicId), ['actu1']);
+      expect(state.bonnesTopics.map((t) => t.topicId), ['bonne1']);
     });
 
     test('tout vide → isStaleOrEmpty', () async {
@@ -240,8 +255,9 @@ void main() {
 
       final state = await container.read(editionEssentielProvider.future);
       expect(state.isStaleOrEmpty, isTrue);
-      expect(state.heroArticles, isEmpty);
+      expect(state.weekDays, isEmpty);
       expect(state.topics, isEmpty);
+      expect(state.bonnesTopics, isEmpty);
     });
   });
 }

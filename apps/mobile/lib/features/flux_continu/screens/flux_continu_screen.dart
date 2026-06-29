@@ -60,6 +60,7 @@ import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../widgets/suggestion_reason_sheet.dart';
+import '../widgets/week_recap_block.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -1542,11 +1543,24 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final colors = context.facteurColors;
     final slivers = <Widget>[];
 
-    // Héros lecture seule : même chemin de rendu que le feed live
-    // (SectionBlock → EssentielHiFiCard). Le bouton « personnaliser » a été
-    // retiré partout (décision PO) ; tap = ouvrir le reader, aucune mutation
-    // (jamais de `digestProvider.applyAction` sur une lettre datée).
-    if (edition.heroArticles.isNotEmpty) {
+    if (edition.isWeek) {
+      // Rétro « Cette semaine » : liste plate par jour (maquette), à la place
+      // de la carte héros unique. Lecture seule, tap = reader.
+      if (edition.weekDays.isNotEmpty) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: WeekRecapBlock(
+              weekDays: edition.weekDays,
+              onTapArticle: (a) => _openArticle(context, a),
+            ),
+          ),
+        );
+      }
+    } else if (edition.heroArticles.isNotEmpty) {
+      // Héros lecture seule (jour unique) : même chemin de rendu que le feed
+      // live (SectionBlock → EssentielHiFiCard). Le bouton « personnaliser » a
+      // été retiré partout (décision PO) ; tap = ouvrir le reader, aucune
+      // mutation (jamais de `digestProvider.applyAction` sur une lettre datée).
       slivers.add(
         SliverToBoxAdapter(
           child: SectionBlock(
@@ -1557,23 +1571,48 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
     }
 
-    // « Actus du jour » (jour) / « Les temps forts » (semaine), lecture seule :
-    // pas de `onDismissArticle`/feedback ⇒ pas de swipe. Réutilise SectionBlock.
-    if (edition.topics.isNotEmpty) {
-      final section = DigestTopicSection(
-        kind: SectionKind.essentiel,
-        label: edition.isWeek ? 'Les temps forts' : 'Actus du jour',
-        accent: colors.sectionEssentiel,
-        coreVisibleCount: edition.topics.length,
-        topics: edition.topics,
-      );
+    // Section de topics en lecture seule (pas d'`onDismissArticle`/feedback ⇒
+    // pas de swipe). Réutilise SectionBlock. No-op si la liste est vide.
+    void addTopicSection({
+      required SectionKind kind,
+      required String label,
+      required Color accent,
+      required List<DigestTopic> topics,
+    }) {
+      if (topics.isEmpty) return;
       slivers.add(
         SliverToBoxAdapter(
           child: SectionBlock(
-            section: section,
+            section: DigestTopicSection(
+              kind: kind,
+              label: label,
+              accent: accent,
+              coreVisibleCount: topics.length,
+              topics: topics,
+            ),
             onTapArticle: (a) => _openArticle(context, a),
           ),
         ),
+      );
+    }
+
+    // « Actus du jour » (jour) / « Les temps forts » (semaine).
+    addTopicSection(
+      kind: SectionKind.essentiel,
+      label: edition.isWeek ? 'Les temps forts' : 'Actus du jour',
+      accent: colors.sectionEssentiel,
+      topics: edition.topics,
+    );
+
+    // « Bonnes Nouvelles » agrégées sur la semaine (décision PO #4) — alimentées
+    // par le digest serein de chaque jour, indépendamment du toggle. Réservé à
+    // la vue hebdo.
+    if (edition.isWeek) {
+      addTopicSection(
+        kind: SectionKind.bonnes,
+        label: 'Bonnes Nouvelles',
+        accent: colors.sectionBonnes,
+        topics: edition.bonnesTopics,
       );
     }
 

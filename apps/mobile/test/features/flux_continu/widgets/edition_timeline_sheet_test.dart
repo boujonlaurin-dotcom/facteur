@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Court-circuite le vrai `FluxContinuNotifier` (build réseau lourd) : fournit
@@ -163,6 +164,14 @@ void main() {
     );
     expect(
       find.descendant(of: rowOf('Hier'), matching: find.text('À jour')),
+      findsOneWidget,
+    );
+    // État lu = coche verte (Point 2) au lieu du cercle vide.
+    expect(
+      find.descendant(
+        of: rowOf('Aujourd’hui'),
+        matching: find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
+      ),
       findsOneWidget,
     );
     // « Cette semaine » agrège J-0…J-6 ; J-2…J-6 jamais ouverts → « Non lu ».

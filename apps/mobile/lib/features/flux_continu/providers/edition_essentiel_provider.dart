@@ -21,11 +21,25 @@ import 'selected_edition_date_provider.dart';
 /// gate `isEditionReady`) et de `fluxContinuProvider` (qui recomposerait toute
 /// la tournée) : repurposer l'un ou l'autre pour des dates arbitraires
 /// polluerait leurs invariants. Ce provider ne sert QUE le bloc Essentiel
-/// (héros + Actus du jour + citation), jamais les sections tournée live.
+/// (héros + Actus du jour + citation ; en vue « Cette semaine » : liste par
+/// jour + Actus + Bonnes Nouvelles agrégées), jamais les sections tournée live.
 class EditionEssentielState {
   final EditionSelection selection;
   final List<EssentielArticle> heroArticles;
+
+  /// « Actus du jour » (jour) / « Les temps forts » (semaine) — toujours dérivé
+  /// du digest **normal**, indépendamment du mode serein.
   final List<DigestTopic> topics;
+
+  /// « Bonnes Nouvelles » — dérivé du digest **serein**. Vide en single-day
+  /// (rendu identique à avant) ; alimenté seulement en vue « Cette semaine ».
+  final List<DigestTopic> bonnesTopics;
+
+  /// Vue « Cette semaine » : un groupe d'Essentiels **par jour** (newest-first,
+  /// J-0 inclus), pour la liste plate par jour de la maquette. Vide en
+  /// single-day (le héros vit alors dans [heroArticles]).
+  final List<EditionDayGroup> weekDays;
+
   final QuoteResponse? quote;
 
   /// Aucune lettre propre à servir pour ce jour : soit le backend n'a servi
@@ -41,10 +55,22 @@ class EditionEssentielState {
     required this.selection,
     this.heroArticles = const [],
     this.topics = const [],
+    this.bonnesTopics = const [],
+    this.weekDays = const [],
     this.quote,
     this.isStaleOrEmpty = false,
     this.isWeek = false,
   });
+}
+
+/// EPIC « Lettre du jour » — un jour d'Essentiels dans la rétro « Cette
+/// semaine » (liste plate par jour, maquette `CarteOverlay`). [date] est une
+/// date-nue ; [articles] sont les héros de ce jour (déjà classés par rank).
+class EditionDayGroup {
+  final DateTime date;
+  final List<EssentielArticle> articles;
+
+  const EditionDayGroup({required this.date, required this.articles});
 }
 
 /// Fenêtre de la rétro « Cette semaine » = 7 jours (J-0 inclus). J-0 vient du
@@ -54,8 +80,9 @@ const int kEditionWeekPastDays = 6;
 /// Concurrence du fan-out « Cette semaine » (≤ N jours en vol à la fois).
 const int kEditionWeekConcurrency = 3;
 
-/// Plafonds de l'agrégation hebdo.
-const int kEditionWeekMaxHero = 5;
+/// Plafond de l'agrégation hebdo des topics (Actus / Bonnes Nouvelles). Les
+/// héros ne sont plus agrégés/plafonnés : ils sont rendus jour par jour
+/// ([EditionDayGroup]).
 const int kEditionWeekMaxTopics = 6;
 
 final editionEssentielProvider =
@@ -109,7 +136,7 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
   EditionEssentielState _buildToday() {
     final flux = ref.read(fluxContinuProvider).valueOrNull;
     final hero = _heroFromFlux(flux);
-    final topics = _topicsFromFlux(flux);
+    final topics = _topicsFromFluxByKind(flux, SectionKind.essentiel);
     return EditionEssentielState(
       selection: const EditionToday(),
       heroArticles: hero,
@@ -128,13 +155,17 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
     return const [];
   }
 
-  List<DigestTopic> _topicsFromFlux(FluxContinuState? flux) {
+  /// Topics du flux déjà construit (0 réseau) pour une section `DigestTopic`
+  /// donnée — « Actus du jour » (`essentiel`) ou « Bonnes Nouvelles »
+  /// (`bonnes`). Le flux construit toujours les deux (cf.
+  /// `flux_continu_provider._bonnes`).
+  List<DigestTopic> _topicsFromFluxByKind(
+    FluxContinuState? flux,
+    SectionKind kind,
+  ) {
     if (flux == null) return const [];
     for (final s in flux.sections) {
-      // "Actus du jour" = DigestTopicSection legacy (kind=essentiel).
-      if (s is DigestTopicSection && s.kind == SectionKind.essentiel) {
-        return s.topics;
-      }
+      if (s is DigestTopicSection && s.kind == kind) return s.topics;
     }
     return const [];
   }
@@ -183,6 +214,8 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
       const data = _DayData(
         heroArticles: [],
         topics: [],
+        normalTopics: [],
+        bonnesTopics: [],
         quote: null,
         isStaleOrEmpty: true,
       );
@@ -191,17 +224,26 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
     }
 
     // `digest` et `hero` sont promus non-null par le garde ci-dessus.
-    final topics = digest.topics
-        .where((t) => t.articles.isNotEmpty)
-        .toList(growable: false);
+    final topics = _nonEmptyTopics(digest.topics);
+    // Actus = digest normal, Bonnes = digest serein — captés indépendamment du
+    // toggle (le feed live construit toujours les deux) pour la vue hebdo, qui
+    // affiche les deux blocs sans chevauchement même quand serein est ON.
     final data = _DayData(
       heroArticles: hero,
       topics: topics,
+      normalTopics: _nonEmptyTopics(dual?.normal?.topics),
+      bonnesTopics: _nonEmptyTopics(dual?.serein?.topics),
       quote: digest.quote,
       isStaleOrEmpty: false,
     );
     _dayCache[cacheKey] = data;
     return data;
+  }
+
+  /// Topics avec au moins un article (les vides ne se rendent pas).
+  List<DigestTopic> _nonEmptyTopics(List<DigestTopic>? topics) {
+    if (topics == null) return const [];
+    return topics.where((t) => t.articles.isNotEmpty).toList(growable: false);
   }
 
   Future<List<EssentielArticle>?> _fetchHeroSafe(
@@ -232,24 +274,44 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
 
     // J-0 depuis le flux déjà construit (0 réseau).
     final flux = ref.read(fluxContinuProvider).valueOrNull;
-    final allHero = <EssentielArticle>[..._heroFromFlux(flux)];
-    final allTopics = <DigestTopic>[..._topicsFromFlux(flux)];
+    final j0Hero = _heroFromFlux(flux);
+    final allTopics = <DigestTopic>[
+      ..._topicsFromFluxByKind(flux, SectionKind.essentiel),
+    ];
+    final allBonnes = <DigestTopic>[
+      ..._topicsFromFluxByKind(flux, SectionKind.bonnes),
+    ];
 
-    for (final d in dayResults) {
-      if (d.isStaleOrEmpty) continue; // jours manquants ignorés
-      allHero.addAll(d.heroArticles);
-      allTopics.addAll(d.topics);
+    // Liste plate par jour (maquette) : un groupe par jour ayant des héros,
+    // newest-first, J-0 en tête. `editionPastDays(...)` est newest-first et
+    // `_boundedLoadDays` **préserve l'ordre positionnel** ⇒ on peut zipper
+    // `pastDates[i]` ↔ `dayResults[i]` (invariant porteur de l'agrégation).
+    final weekDays = <EditionDayGroup>[];
+    if (j0Hero.isNotEmpty) {
+      weekDays.add(EditionDayGroup(date: editionTodayDate(), articles: j0Hero));
+    }
+    for (var i = 0; i < pastDates.length; i++) {
+      final d = dayResults[i];
+      if (d.isStaleOrEmpty || d.heroArticles.isEmpty) continue;
+      weekDays.add(
+        EditionDayGroup(date: pastDates[i], articles: d.heroArticles),
+      );
+      allTopics.addAll(d.normalTopics);
+      allBonnes.addAll(d.bonnesTopics);
     }
 
-    final hero = _dedupAndRankHero(allHero);
     final topics = _dedupAndRankTopics(allTopics);
+    final bonnesTopics = _dedupAndRankTopics(allBonnes);
 
     return EditionEssentielState(
       selection: const EditionWeek(),
-      heroArticles: hero,
+      heroArticles: const [], // remplacé par `weekDays` en semaine
       topics: topics,
+      bonnesTopics: bonnesTopics,
+      weekDays: weekDays,
       quote: null, // pas de citation unique pour une rétro hebdo
-      isStaleOrEmpty: hero.isEmpty && topics.isEmpty,
+      isStaleOrEmpty:
+          weekDays.isEmpty && topics.isEmpty && bonnesTopics.isEmpty,
       isWeek: true,
     );
   }
@@ -271,23 +333,6 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
       out.addAll(loaded);
     }
     return out;
-  }
-
-  /// Dédup par `contentId` puis re-tri par `rank` (1 = lead), top N.
-  List<EssentielArticle> _dedupAndRankHero(List<EssentielArticle> all) {
-    final seen = <String>{};
-    final deduped = <EssentielArticle>[];
-    for (final a in all) {
-      if (a.contentId.isEmpty) continue;
-      if (seen.add(a.contentId)) deduped.add(a);
-    }
-    deduped.sort((a, b) {
-      // rank absent/0 relégué en fin.
-      final ra = a.rank <= 0 ? 1 << 30 : a.rank;
-      final rb = b.rank <= 0 ? 1 << 30 : b.rank;
-      return ra.compareTo(rb);
-    });
-    return deduped.take(kEditionWeekMaxHero).toList(growable: false);
   }
 
   /// Dédup par `topicId` (fallback `label`) puis re-tri par `topicScore` desc,
@@ -312,13 +357,25 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
 /// Données brutes d'un jour (avant projection en [EditionEssentielState]).
 class _DayData {
   final List<EssentielArticle> heroArticles;
+
+  /// Topics de la variante **pickée** (serein ou normal selon le toggle) —
+  /// utilisée par le rendu single-day (`_buildPastDay`).
   final List<DigestTopic> topics;
+
+  /// Topics du digest **normal** (« Actus ») et **serein** (« Bonnes
+  /// Nouvelles »), captés indépendamment du toggle pour l'agrégation hebdo qui
+  /// affiche les deux blocs côte à côte (décision PO #4).
+  final List<DigestTopic> normalTopics;
+  final List<DigestTopic> bonnesTopics;
+
   final QuoteResponse? quote;
   final bool isStaleOrEmpty;
 
   const _DayData({
     required this.heroArticles,
     required this.topics,
+    required this.normalTopics,
+    required this.bonnesTopics,
     required this.quote,
     required this.isStaleOrEmpty,
   });
