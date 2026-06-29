@@ -1647,7 +1647,9 @@ class RecommendationService:
                     )
 
                     seed = compute_seed(str(user_id), "daily")
-                    src_row, items, source_age_seconds = seeded_shuffle(candidates, seed)[0]
+                    src_row, items, source_age_seconds = seeded_shuffle(
+                        candidates, seed
+                    )[0]
 
                     position = self._jitter_carousel_position(
                         "new_source", user_id, today
@@ -1757,7 +1759,9 @@ class RecommendationService:
                     )
 
                     seed = compute_seed(str(user_id), "hourly")
-                    quiet_articles = seeded_shuffle(quiet_articles, seed)[:MAX_CAROUSEL_ITEMS]
+                    quiet_articles = seeded_shuffle(quiet_articles, seed)[
+                        :MAX_CAROUSEL_ITEMS
+                    ]
                 except Exception as exc:
                     logger.warning(
                         "carousel_quiet_sources_skipped",
