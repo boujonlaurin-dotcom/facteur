@@ -239,7 +239,17 @@ class SectionBlock extends StatelessWidget {
           :final items,
           :final coreVisibleCount,
           :final underfilled,
+          :final isPlaceholder,
         ):
+        // Issue #1 — « squelette stable » : une coquille seed-ée AVANT le
+        // fan-out réserve sa hauteur finale (N cartes squelette) pour que
+        // l'upsert remplace le contenu **sur place**, sans décaler les sections
+        // suivantes (Actus/Bonnes) vers le bas. Court-circuite les empty-states
+        // ci-dessous, réservés aux sections **résolues** vides
+        // (`isPlaceholder == false && items.isEmpty`).
+        if (isPlaceholder) {
+          return sectionSkeletonCards(coreVisibleCount);
+        }
         // Story 23.4 — la section veille reste visible même vide : on rend un
         // placeholder + CTA réglages au lieu de cartes.
         if (items.isEmpty && section.kind == SectionKind.veille) {
@@ -467,4 +477,36 @@ class _FavoriteEmptyState extends StatelessWidget {
     );
   }
 }
+
+/// Issue #1 — carte squelette d'une coquille de section (placeholder seed-é
+/// avant le fan-out). Sa géométrie réserve `kRegularCardHeight` (146px : ~134px
+/// de carte + 12px de marge basse) pour que l'arrivée du contenu réel
+/// (`FluxContinuArticleCard`, même réserve) remplace **sur place** sans décaler
+/// les sections suivantes. Calquée visuellement sur `ExploreDiscoverySkeleton`.
+/// Publique pour être réutilisée par le squelette cold-start
+/// (`_FluxContinuSkeleton`) → hauteur stable de bout en bout.
+class SectionSkeletonCard extends StatelessWidget {
+  const SectionSkeletonCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Container(
+        height: 134,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        ),
+      ),
+    );
+  }
+}
+
+/// Issue #1 — [count] cartes squelette réservant la hauteur finale d'une
+/// section. Partagé par le placeholder de [SectionBlock] et le cold-skeleton
+/// (`_FluxContinuSkeleton`) pour garantir la même géométrie de bout en bout.
+List<Widget> sectionSkeletonCards(int count) =>
+    [for (var i = 0; i < count; i++) const SectionSkeletonCard()];
 
