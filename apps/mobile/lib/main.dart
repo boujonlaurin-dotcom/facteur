@@ -60,11 +60,20 @@ Future<void> _bootstrap() async {
   timeago.setLocaleMessages('fr', fr_messages.FrMessages());
   timeago.setLocaleMessages('fr_short', FrCompactMessages());
 
+  // Edge-to-edge : le contenu de l'app dessine derrière les barres système
+  // (status bar + barre de navigation), permettant des barres transparentes
+  // façon LinkedIn plutôt que le fond noir système par défaut.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
       statusBarBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
+      // Désactive le scrim/contraste auto qui réintroduit un fond opaque
+      systemNavigationBarContrastEnforced: false,
+      systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
 
