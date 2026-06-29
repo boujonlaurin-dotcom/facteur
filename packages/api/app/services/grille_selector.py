@@ -158,14 +158,26 @@ async def _corpus(session: AsyncSession) -> list[Content]:
     return list(result.scalars().all())
 
 
-async def _yesterday_word(session: AsyncSession, target_date: date) -> str | None:
-    """Mot du puzzle de la veille (normalisé) — anti-répétition."""
-    puzzle = await session.scalar(
-        select(GrillePuzzle).where(
-            GrillePuzzle.puzzle_date == target_date - timedelta(days=1)
+# Fenêtre d'anti-répétition : un mot du jour ne doit pas réapparaître avant
+# ~2 mois (la table `grille_puzzles` est l'historique, pas de table dédiée).
+RECENT_WINDOW_DAYS = 60
+
+
+async def recent_words(
+    session: AsyncSession, target_date: date, days: int = RECENT_WINDOW_DAYS
+) -> set[str]:
+    """Mots des puzzles des `days` derniers jours (normalisés) — anti-répétition.
+
+    Couvre `[target_date - days, target_date - 1]` : on n'inclut pas le jour
+    courant (le puzzle du jour est en cours de sélection).
+    """
+    rows = await session.scalars(
+        select(GrillePuzzle.word).where(
+            GrillePuzzle.puzzle_date >= target_date - timedelta(days=days),
+            GrillePuzzle.puzzle_date < target_date,
         )
     )
-    return normalize_word(puzzle.word) if puzzle else None
+    return {normalize_word(word) for word in rows if word}
 
 
 @dataclass
@@ -192,9 +204,15 @@ def _select_from_corpus(
     corpus: list[Content],
     cluster_index: dict[str, int],
     label_words: set[str],
-    exclude: str | None,
+    exclude: set[str] | str | None,
 ) -> GrilleSelection | None:
     """Cœur pur : extrait le meilleur mot du pool présent dans le corpus."""
+    if exclude is None:
+        excluded: set[str] = set()
+    elif isinstance(exclude, str):
+        excluded = {exclude}
+    else:
+        excluded = exclude
     pool_index = _pool_index()
     candidates: dict[str, _Candidate] = {}
 
@@ -204,7 +222,7 @@ def _select_from_corpus(
         desc_hits = _scan_field(content.description, pool_index)
 
         for word in title_hits.keys() | desc_hits.keys():
-            if word == exclude or not is_valid_word(word):
+            if word in excluded or not is_valid_word(word):
                 continue
 
             title_hit = title_hits.get(word)
@@ -278,9 +296,9 @@ async def select_daily_word(
 
     Lecture seule : ne touche pas le puzzle (c'est `apply_hybrid_word` qui fige).
     """
-    corpus, yesterday = await asyncio.gather(
+    corpus, recent = await asyncio.gather(
         _corpus(session),
-        _yesterday_word(session, target_date),
+        recent_words(session, target_date),
     )
     if not corpus:
         logger.info("grille_selector_empty_corpus", target_date=str(target_date))
@@ -290,7 +308,7 @@ async def select_daily_word(
         corpus,
         _build_cluster_index(editorial_ctx),
         _subject_label_words(editorial_ctx),
-        yesterday,
+        recent,
     )
     if selection is None:
         logger.info("grille_selector_no_candidate", target_date=str(target_date))
