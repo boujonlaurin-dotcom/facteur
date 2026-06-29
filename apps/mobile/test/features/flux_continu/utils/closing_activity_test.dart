@@ -6,7 +6,7 @@ void main() {
   group('pickClosingActivities', () {
     final fixedDay = DateTime(2026, 6, 19); // jour de l'année déterministe
 
-    test('renvoie 3 propositions distinctes par défaut', () {
+    test('renvoie kClosingActivityCount proposition(s) distincte(s)', () {
       final picks = pickClosingActivities(
         condition: WeatherCondition.rainy,
         now: fixedDay,

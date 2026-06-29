@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Ouverture plus fluide : les sections se remplissent sur place, sans saut ni réorganisation pendant que tu lis."
+    },
+    {
       "tag": "Lecture",
       "summary": "Les articles lus restent marqués « Lu » de façon fiable, même après un rafraîchissement du flux."
     },

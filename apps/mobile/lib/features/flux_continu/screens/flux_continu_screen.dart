@@ -1475,7 +1475,10 @@ class _FluxContinuSkeleton extends StatelessWidget {
             logoUrl: isSource ? section.sourceLogoUrl : null,
           ),
         );
-        children.add(const ExploreDiscoverySkeleton());
+        // Issue #1 — réserve la **hauteur finale** (coreVisibleCount cartes) avec
+        // la même carte squelette que les coquilles de section, pour que la
+        // séquence cold-skeleton → Phase 1 → Phase 2 garde une géométrie stable.
+        children.addAll(sectionSkeletonCards(section.coreVisibleCount));
         children.add(const SizedBox(height: 16));
       }
     }
