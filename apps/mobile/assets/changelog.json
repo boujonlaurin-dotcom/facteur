@@ -1,8 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "Les articles lus restent marqués « Lu » de façon fiable, même après un rafraîchissement du flux."
+    },
+    {
       "tag": "Widget",
       "summary": "Le widget se rafraîchit à nouveau, avec un bouton pour forcer la mise à jour."
+    },
+    {
       "tag": "Mise à jour",
       "summary": "Sur Android, les mises à jour passent désormais par une invite native du Play Store, plus fiable, avec téléchargement en arrière-plan."
     },
