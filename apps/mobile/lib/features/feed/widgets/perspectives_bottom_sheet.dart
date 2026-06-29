@@ -1842,7 +1842,7 @@ class _PerspectivesInlineSectionState
                     label,
                     maxLines: 1,
                     style: GoogleFonts.dmSans(
-                      fontSize: 17,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: colors.textPrimary,
                     ),
@@ -1904,13 +1904,15 @@ class _PerspectivesInlineSectionState
             showAnchorLabels: true,
           ),
           // Label « niveau de polarisation » posé sous la barre de biais
-          // (déplacé du header) : centré, échelle 1.0.
+          // (déplacé du header) : centré, échelle 1.6 pour la lisibilité (le
+          // label Courier 8 px de base est trop fin sous la barre pleine
+          // largeur).
           if (widget.divergenceLevel != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Center(
               child: DivergenceInlineBadge(
                 divergenceLevel: widget.divergenceLevel,
-                scale: 1.0,
+                scale: 1.6,
                 prominentMedium: true,
               ),
             ),
