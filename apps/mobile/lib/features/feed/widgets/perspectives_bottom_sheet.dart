@@ -1834,32 +1834,24 @@ class _PerspectivesInlineSectionState
                     label,
                     maxLines: 1,
                     style: GoogleFonts.dmSans(
-                      fontSize: 14,
+                      fontSize: 17,
                       fontWeight: FontWeight.w700,
                       color: colors.textPrimary,
                     ),
                   ),
                 ),
               ),
+              // Le badge de polarisation est descendu sous la barre de biais
+              // (cf. [_buildBandFooter]) ; le header ne garde que le bouton info.
               if (!isEmpty) ...[
                 const SizedBox(width: 11),
-                // Loading : on garde le shimmer (badge + info masqués). Prêt :
-                // badge de polarisation (échelle 1.0, contre 1.45 en footer
-                // avant la refonte) + bouton info.
                 if (isLoading)
                   const SizedBox(width: 96, child: CoverageSpectrumBarShimmer())
-                else ...[
-                  DivergenceInlineBadge(
-                    divergenceLevel: widget.divergenceLevel,
-                    scale: 1.0,
-                    prominentMedium: true,
-                  ),
-                  const SizedBox(width: 6),
+                else
                   _HighlightInfoButton(
                     colors: colors,
                     onTap: () => _showHighlightInfo(context, colors, textTheme),
                   ),
-                ],
               ],
             ],
           ),
@@ -1895,10 +1887,27 @@ class _PerspectivesInlineSectionState
         _kCarouselPaddingH,
         6,
       ),
-      child: CoverageSpectrumBar(
-        distribution: widget.biasDistribution,
-        onSegmentTap: _onSpectrumSegmentTap,
-        showAnchorLabels: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CoverageSpectrumBar(
+            distribution: widget.biasDistribution,
+            onSegmentTap: _onSpectrumSegmentTap,
+            showAnchorLabels: true,
+          ),
+          // Label « niveau de polarisation » posé sous la barre de biais
+          // (déplacé du header) : centré, échelle 1.0.
+          if (widget.divergenceLevel != null) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: DivergenceInlineBadge(
+                divergenceLevel: widget.divergenceLevel,
+                scale: 1.0,
+                prominentMedium: true,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
