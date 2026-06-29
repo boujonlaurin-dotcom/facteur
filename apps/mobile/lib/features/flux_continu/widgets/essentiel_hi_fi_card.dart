@@ -138,7 +138,7 @@ class _Header extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _HeaderBadge(accent: accent),
-        const SizedBox(width: FacteurSpacing.space3),
+        const SizedBox(width: FacteurSpacing.space2),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,12 +152,12 @@ class _Header extends StatelessWidget {
                     child: Text(
                       'Ton Essentiel',
                       style: GoogleFonts.fraunces(
-                        fontSize: 15,
+                        fontSize: 18,
                         fontWeight: FontWeight.w700,
                         height: 1.15,
                         color: colors.textPrimary,
                       ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -278,8 +278,10 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
     }
 
     // Fixed slot: the header never reflows when flipping between date/weather.
+    // Slot resserré (110 → 96) : l'icône météo (88) et la pastille date (cercle
+    // 68) restent centrées, mais sans le vide latéral d'avant (décision PO).
     return SizedBox(
-      width: 110,
+      width: 96,
       height: 140,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),

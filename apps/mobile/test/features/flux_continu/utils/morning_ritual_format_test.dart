@@ -2,6 +2,7 @@ import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
+import 'package:facteur/features/flux_continu/utils/theme_color_mapping.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -266,6 +267,44 @@ void main() {
 
     test('flux absent → pas prête (même digest frais)', () {
       expect(isEditionReady(null, digestResp(), now: now), isFalse);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // editionSummaryEntriesFromTopics (cartes voisines du carrousel)
+  // ---------------------------------------------------------------------------
+  group('editionSummaryEntriesFromTopics', () {
+    DigestTopic topic(String label, {String? theme}) => DigestTopic(
+          topicId: label,
+          label: label,
+          theme: theme,
+          articles: const <DigestItem>[],
+        );
+
+    test('libellé verbatim + accent mappé depuis le thème', () {
+      final entries = editionSummaryEntriesFromTopics([
+        topic('Politique', theme: 'politics'),
+        topic('Sport', theme: 'sport'),
+      ]);
+      expect(entries.map((e) => e.label).toList(), ['Politique', 'Sport']);
+      expect(entries[0].accent, visualFor('politics').accent);
+      expect(entries[1].accent, visualFor('sport').accent);
+      // Pas de chip veille hors du feed live.
+      expect(entries.every((e) => !e.isVeille), isTrue);
+    });
+
+    test('thème null ou inconnu → accent fallback neutre', () {
+      final fallback = visualFor('').accent;
+      final entries = editionSummaryEntriesFromTopics([
+        topic('Sans thème'),
+        topic('Thème exotique', theme: 'inexistant'),
+      ]);
+      expect(entries[0].accent, fallback);
+      expect(entries[1].accent, fallback);
+    });
+
+    test('liste vide → aucune entrée', () {
+      expect(editionSummaryEntriesFromTopics(const []), isEmpty);
     });
   });
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show Color;
 import '../../digest/models/digest_models.dart';
 import '../models/flux_continu_models.dart';
 import '../services/tournee_progress_service.dart';
+import 'theme_color_mapping.dart';
 
 /// Helpers **purs** (pas de provider, pas de réseau) du rituel matinal
 /// (Story 28.1). Testables et déterministes.
@@ -188,4 +189,25 @@ List<EditionSummaryEntry> editionSummaryEntries(
     ));
   }
   return entries;
+}
+
+/// Sommaire d'une édition **passée / hebdo** dérivé directement des `topics` de
+/// `editionEssentielProvider` (EPIC « Lettre du jour » — carrousel de lettres).
+///
+/// Variante de [editionSummaryEntries] pour les cartes voisines du carrousel,
+/// qui n'ont pas de [FluxSection] live : chaque [DigestTopic] devient une chip,
+/// `label` verbatim, `accent` mappé depuis son `theme` via [themeMap] (fallback
+/// neutre via [themeVisualFor] pour un thème inconnu/absent). Pas de chip veille
+/// ni de « Mot du jour » (propres au feed live d'aujourd'hui).
+List<EditionSummaryEntry> editionSummaryEntriesFromTopics(
+  List<DigestTopic> topics,
+) {
+  return [
+    for (final topic in topics)
+      EditionSummaryEntry(
+        label: topic.label,
+        // `theme` peut être null → fallback neutre « Veille » de [visualFor].
+        accent: visualFor(topic.theme ?? '').accent,
+      ),
+  ];
 }

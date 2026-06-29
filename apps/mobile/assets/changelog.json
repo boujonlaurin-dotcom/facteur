@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Accueil",
+      "summary": "Sur ta page du matin, glisse entre tes lettres du jour et des jours précédents, et active le mode serein d'un geste."
+    },
+    {
       "tag": "Lettre du jour",
       "summary": "En mode « Cette semaine », retrouve tes essentiels jour par jour, plus les bonnes nouvelles de la semaine."
     },

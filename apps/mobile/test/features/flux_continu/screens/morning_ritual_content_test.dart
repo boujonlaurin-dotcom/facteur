@@ -180,7 +180,7 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
     });
 
-    testWidgets('expose l\'accès « Remonter le temps » (timeline complète)',
+    testWidgets('expose un nudge de swipe horizontal (repli timeline)',
         (tester) async {
       _useTallSurface(tester);
       await tester.pumpWidget(_wrap(
@@ -193,11 +193,15 @@ void main() {
         ),
       ));
 
-      // Repli accessible (clavier/lecteur d'écran) au swipe horizontal du rituel.
-      expect(find.text('Remonter le temps'), findsOneWidget);
+      // Le nudge discret remplace le bouton « Remonter le temps » et invite au
+      // swipe horizontal du carrousel ; son `onTap` est le repli accessible.
+      expect(
+        find.text('Glisse pour revoir hier ou cette semaine'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('_SereinCta : copie exacte + tap → toggle + snackbar',
+    testWidgets('_SereinCta : switch + libellés + tap → toggle',
         (tester) async {
       _useTallSurface(tester);
       _FakeSereinNotifier? captured;
@@ -212,27 +216,27 @@ void main() {
         serein: (ref) => captured = _FakeSereinNotifier(ref),
       ));
 
-      // Copie exacte (sans em-dash, cf. règle PO).
+      // Titre + sous-titre du switch (copie sans em-dash, cf. règle PO).
+      expect(find.text('Mode Serein'), findsOneWidget);
       expect(
         find.text('Pas d\'humeur pour les news difficiles ?'),
         findsOneWidget,
       );
-      expect(find.text('Active ton mode serein'), findsOneWidget);
 
-      await tester.tap(find.text('Active ton mode serein'));
-      await tester.pump(); // exécute le toggle (await) + planifie le snackbar
-      await tester.pump(); // insère le snackbar
+      final switchFinder = find.byType(Switch);
+      expect(switchFinder, findsOneWidget);
+      expect(tester.widget<Switch>(switchFinder).value, isFalse);
+
+      await tester.tap(switchFinder);
+      await tester.pump(); // exécute le toggle
 
       expect(captured, isNotNull);
       expect(captured!.toggleCalls, 1);
       expect(captured!.state.enabled, isTrue);
-      expect(find.text('Mode serein activé'), findsOneWidget);
-
-      // Purge le timer d'auto-dismiss du snackbar (sinon « pending timer »).
-      await tester.pumpAndSettle(const Duration(seconds: 5));
+      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
     });
 
-    testWidgets('_SereinCta : bouton désactivé tant que la pref charge',
+    testWidgets('_SereinCta : switch désactivé tant que la pref charge',
         (tester) async {
       _useTallSurface(tester);
       await tester.pumpWidget(_wrap(
@@ -246,10 +250,9 @@ void main() {
         serein: (ref) => _FakeSereinNotifier(ref, loading: true),
       ));
 
-      final button = tester.widget<TextButton>(
-        find.widgetWithText(TextButton, 'Active ton mode serein'),
-      );
-      expect(button.onPressed, isNull);
+      // Loading → le switch est inerte (onChanged null) pour ne pas écraser la
+      // première synchro serveur.
+      expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
     });
   });
 }
