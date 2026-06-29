@@ -23,17 +23,19 @@ void main() {
     final now = DateTime.utc(2026, 6, 23, 12); // mardi, 14h Paris
     final pills = editionPillModel(now: now);
 
-    test('9 pills : semaine + aujourd\'hui + 7 jours passés', () {
+    test('3 pills : semaine + aujourd\'hui + 1 jour passé (rewind à 3 options)',
+        () {
       expect(pills.length, 2 + kEditionMaxPastDays);
-      expect(pills.length, 9);
+      expect(pills.length, 3);
     });
 
-    test('ordre : Cette semaine, Aujourd\'hui, J-1 … J-7', () {
+    test('ordre : Cette semaine, Aujourd\'hui, Hier (J-1)', () {
       expect(pills[0], isA<EditionWeek>());
       expect(pills[1], isA<EditionToday>());
       expect(pills[2], isA<EditionPastDay>());
       expect((pills[2] as EditionPastDay).date, DateTime(2026, 6, 22)); // J-1
-      expect((pills.last as EditionPastDay).date, DateTime(2026, 6, 16)); // J-7
+      // Une seule lettre passée : la dernière = J-1.
+      expect((pills.last as EditionPastDay).date, DateTime(2026, 6, 22));
     });
   });
 
@@ -71,6 +73,29 @@ void main() {
     test('lundi → "lun.", dimanche → "dim."', () {
       expect(formatFrenchShortWeekdayDay(DateTime(2026, 6, 22)), 'lun. 22');
       expect(formatFrenchShortWeekdayDay(DateTime(2026, 6, 28)), 'dim. 28');
+    });
+  });
+
+  group('editionPillLabel (déplacé depuis edition_date_strip.dart)', () {
+    final now = DateTime.utc(2026, 6, 23, 12); // mardi, 14h Paris
+
+    test('Cette semaine / Aujourd\'hui', () {
+      expect(editionPillLabel(const EditionWeek(), now: now), 'Cette semaine');
+      expect(editionPillLabel(const EditionToday(), now: now), 'Aujourd’hui');
+    });
+
+    test('J-1 → « Hier »', () {
+      expect(
+        editionPillLabel(EditionPastDay(DateTime(2026, 6, 22)), now: now),
+        'Hier',
+      );
+    });
+
+    test('J-2 et au-delà → libellé court « ven. 19 »', () {
+      expect(
+        editionPillLabel(EditionPastDay(DateTime(2026, 6, 19)), now: now),
+        'ven. 19',
+      );
     });
   });
 }

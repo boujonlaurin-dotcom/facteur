@@ -11,6 +11,7 @@ import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
 import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
+import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
@@ -102,7 +103,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -126,7 +126,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (a) => tapped = a,
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -135,24 +134,18 @@ void main() {
       expect(tapped?.contentId, 'c-1');
     });
 
-    testWidgets(
-        'tap on the personalize button fires the callback and not the '
-        'lead', (tester) async {
-      var personalizeTaps = 0;
-      var articleTaps = 0;
+    testWidgets('le bouton « personnaliser » a été retiré (décision PO)',
+        (tester) async {
+      // Point d'entrée unique des préférences = l'inline « GÉRER » de
+      // MyInterestsIntro ; la carte Essentiel n'expose plus de bouton perso.
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
-          onTapArticle: (_) => articleTaps++,
-          onTapPersonalize: () => personalizeTaps++,
+          onTapArticle: (_) {},
         ),
       ));
 
-      await tester.tap(find.byIcon(Icons.tune_rounded));
-      await tester.pumpAndSettle();
-      expect(personalizeTaps, 1);
-      expect(articleTaps, 0,
-          reason: 'Personalize tap must not bubble to the lead InkWell.');
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
     });
 
     testWidgets(
@@ -162,7 +155,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -189,7 +181,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -210,7 +201,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -226,7 +216,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -239,11 +228,44 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
       expect(find.text('Ton Essentiel'), findsOneWidget);
+    });
+
+    testWidgets(
+        'affiche le déclencheur rewind avec le libellé du scope courant '
+        '(défaut = Aujourd\'hui)', (tester) async {
+      // EPIC « Lettre du jour » — refonte timeline overlay : le déclencheur
+      // « rewind » vit dans l'en-tête de la carte (sélection par défaut = today).
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.byType(EditionRewindTrigger), findsOneWidget);
+      final trigger = tester.widget<EditionRewindTrigger>(
+        find.byType(EditionRewindTrigger),
+      );
+      expect(trigger.label, 'Aujourd’hui');
+    });
+
+    testWidgets('le déclencheur rewind est présent, sans bouton perso',
+        (tester) async {
+      // Le bouton « personnaliser » a été retiré partout ; le rewind, lui, reste
+      // toujours présent (today ET lettre passée).
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.byType(EditionRewindTrigger), findsOneWidget);
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
     });
 
     testWidgets(
@@ -253,7 +275,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -266,7 +287,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
       expect(find.text('Actu du jour'), findsNothing);
@@ -278,7 +298,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -295,7 +314,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -339,7 +357,6 @@ void main() {
               body: EssentielHiFiCard(
                 articles: [_article(rank: 1)],
                 onTapArticle: (_) {},
-                onTapPersonalize: () {},
               ),
             ),
           ),
@@ -404,7 +421,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isRead: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -426,7 +442,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -446,7 +461,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 

@@ -39,6 +39,7 @@ import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/edition_essentiel_provider.dart';
+import '../providers/edition_read_status_provider.dart';
 import '../providers/flux_continu_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
@@ -49,7 +50,7 @@ import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
-import '../widgets/edition_date_strip.dart';
+import '../widgets/edition_timeline_sheet.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
@@ -1046,6 +1047,22 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         }
       });
     });
+    // EPIC « Lettre du jour » — quand une **édition passée** se charge avec
+    // succès (data non stale/vide), on marque son jour « rattrapé » dans le set
+    // local (frontend-only) pour que la timeline reflète l'action tout de suite,
+    // sans attendre la prochaine synchro streaks.
+    ref.listen<AsyncValue<EditionEssentielState>>(editionEssentielProvider,
+        (_, next) {
+      final edition = next.valueOrNull;
+      if (edition == null ||
+          edition.isStaleOrEmpty ||
+          edition.selection is EditionToday) {
+        return;
+      }
+      ref
+          .read(editionCaughtUpProvider.notifier)
+          .markCaughtUp(edition.selection.key);
+    });
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
@@ -1264,9 +1281,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                   : const SizedBox.shrink(),
             ),
             const SliverToBoxAdapter(child: LettresNotificationBanner()),
-            // EPIC « Lettre du jour » — sélecteur de date au-dessus du bloc
-            // Essentiel (remonter le temps jusqu'à J-7 ou « Cette semaine »).
-            const SliverToBoxAdapter(child: EditionDateStrip()),
+            // EPIC « Lettre du jour » — plus de strip permanent : la navigation
+            // temporelle vit désormais dans le déclencheur « rewind » de l'en-tête
+            // de la carte Essentiel (EditionRewindTrigger → EditionTimelineSheet).
             // One SliverToBoxAdapter per section. Sections never resize during
             // a session, so the simpler non-lazy adapter is sufficient and
             // keeps the GlobalKey measurement reliable.
@@ -1488,10 +1505,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     ref.read(selectedEditionDateProvider.notifier).state = const EditionToday();
   }
 
-  /// Rendu autonome d'une lettre passée / rétro « Cette semaine » : le strip
-  /// reste en tête, le bloc Essentiel est rendu en lecture seule, et la tournée
-  /// live est masquée (remplacée par une note + « Revenir à aujourd'hui »).
-  /// Contrôleur + physique dédiés (pas de snap).
+  /// Rendu autonome d'une lettre passée / rétro « Cette semaine » : le bloc
+  /// Essentiel est rendu en lecture seule (le déclencheur « rewind » vit dans son
+  /// en-tête), et la tournée live est masquée (remplacée par une note +
+  /// « Revenir à aujourd'hui »). Contrôleur + physique dédiés (pas de snap).
   Widget _buildPastEdition(BuildContext context, EditionSelection selection) {
     final colors = context.facteurColors;
     final asyncEdition = ref.watch(editionEssentielProvider);
@@ -1502,7 +1519,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         controller: _editionScroll,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          const SliverToBoxAdapter(child: EditionDateStrip()),
           ...asyncEdition.when(
             loading: () => const <Widget>[
               SliverToBoxAdapter(child: _HeroSkeleton()),
@@ -1527,16 +1543,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final slivers = <Widget>[];
 
     // Héros lecture seule : même chemin de rendu que le feed live
-    // (SectionBlock → EssentielHiFiCard), avec `interactive: false` (pas de
-    // bouton perso). Tap = ouvrir le reader ; aucune mutation (jamais de
-    // `digestProvider.applyAction` sur une lettre datée).
+    // (SectionBlock → EssentielHiFiCard). Le bouton « personnaliser » a été
+    // retiré partout (décision PO) ; tap = ouvrir le reader, aucune mutation
+    // (jamais de `digestProvider.applyAction` sur une lettre datée).
     if (edition.heroArticles.isNotEmpty) {
       slivers.add(
         SliverToBoxAdapter(
           child: SectionBlock(
             section: EssentielSection(articles: edition.heroArticles),
             onTapArticle: (a) => _openArticle(context, a),
-            interactive: false,
           ),
         ),
       );
@@ -1589,7 +1604,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       EditionToday() => 'Pas d\'édition disponible.',
     };
     return SliverToBoxAdapter(
-      child: _BackToTodayBlock(message: message, onBackToToday: _backToToday),
+      child: _BackToTodayBlock(
+        message: message,
+        onBackToToday: _backToToday,
+        onChooseAnotherDay: () => EditionTimelineSheet.show(context),
+      ),
     );
   }
 
@@ -1613,9 +1632,15 @@ class _BackToTodayBlock extends StatelessWidget {
   final String message;
   final VoidCallback onBackToToday;
 
+  /// Action secondaire « Choisir un autre jour » (ouvre la timeline). Fournie
+  /// dans l'état vide d'une lettre passée pour éviter le cul-de-sac « jour vide »
+  /// sans forcer un passage par « Aujourd'hui ».
+  final VoidCallback? onChooseAnotherDay;
+
   const _BackToTodayBlock({
     required this.message,
     required this.onBackToToday,
+    this.onChooseAnotherDay,
   });
 
   @override
@@ -1646,13 +1671,26 @@ class _BackToTodayBlock extends StatelessWidget {
             ),
           ),
           const SizedBox(height: FacteurSpacing.space3),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.tonalIcon(
-              onPressed: onBackToToday,
-              icon: const Icon(Icons.today_rounded, size: 18),
-              label: const Text('Revenir à aujourd’hui'),
-            ),
+          Wrap(
+            spacing: FacteurSpacing.space3,
+            runSpacing: FacteurSpacing.space2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: onBackToToday,
+                icon: const Icon(Icons.today_rounded, size: 18),
+                label: const Text('Revenir à aujourd’hui'),
+              ),
+              if (onChooseAnotherDay != null)
+                TextButton.icon(
+                  onPressed: onChooseAnotherDay,
+                  icon: Icon(
+                    PhosphorIcons.rewind(PhosphorIconsStyle.fill),
+                    size: 16,
+                  ),
+                  label: const Text('Choisir un autre jour'),
+                ),
+            ],
           ),
         ],
       ),

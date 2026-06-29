@@ -14,8 +14,10 @@ import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
+import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
 import '../utils/theme_color_mapping.dart';
+import 'edition_timeline_sheet.dart';
 import 'weather_condition_icon.dart';
 import 'weather_detail_sheet.dart';
 
@@ -29,15 +31,10 @@ class EssentielHiFiCard extends ConsumerWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
 
-  /// Callback du bouton « personnaliser » de l'en-tête. `null` ⇒ bouton masqué
-  /// (mode **lecture seule**, ex. lettre d'un jour passé : aucune mutation).
-  final VoidCallback? onTapPersonalize;
-
   const EssentielHiFiCard({
     super.key,
     required this.articles,
     required this.onTapArticle,
-    this.onTapPersonalize,
   });
 
   @override
@@ -50,6 +47,12 @@ class EssentielHiFiCard extends ConsumerWidget {
     final remaining = articles.length > 1
         ? articles.sublist(1, articles.length > 5 ? 5 : articles.length)
         : const <EssentielArticle>[];
+
+    // EPIC « Lettre du jour » — déclencheur « rewind » dans l'en-tête (libellé =
+    // scope courant). Toujours affiché (today ET passé) ; ouvre la timeline en
+    // overlay. La carte étant l'unique héros Essentiel rendu dans les deux vues
+    // (live + passée), le brancher ici le fait apparaître partout.
+    final scopeLabel = editionPillLabel(ref.watch(selectedEditionDateProvider));
 
     return KeyedSubtree(
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
@@ -85,7 +88,13 @@ class EssentielHiFiCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Header(accent: accent, onTapPersonalize: onTapPersonalize),
+            _Header(
+              accent: accent,
+              rewind: EditionRewindTrigger(
+                label: scopeLabel,
+                onTap: () => EditionTimelineSheet.show(context),
+              ),
+            ),
             // Compaction « cartes ≤ écran » (passe 2, validée UX) : gap
             // header→lead 8→6 (le fond teinté du lead rétablit la séparation).
             const SizedBox(height: 6),
@@ -114,9 +123,12 @@ class EssentielHiFiCard extends ConsumerWidget {
 
 class _Header extends StatelessWidget {
   final Color accent;
-  final VoidCallback? onTapPersonalize;
 
-  const _Header({required this.accent, this.onTapPersonalize});
+  /// Déclencheur « rewind » (timeline overlay), posé à droite du titre. Toujours
+  /// fourni par la carte (today ET lettre passée).
+  final Widget? rewind;
+
+  const _Header({required this.accent, this.rewind});
 
   @override
   Widget build(BuildContext context) {
@@ -149,10 +161,12 @@ class _Header extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  // Masqué en lecture seule (lettre passée) : pas de mutation.
-                  if (onTapPersonalize != null) ...[
+                  // Ordre : titre … rewind. Le bouton « personnaliser » a été
+                  // retiré (décision PO) : point d'entrée unique des préférences
+                  // = l'inline « GÉRER » de MyInterestsIntro.
+                  if (rewind != null) ...[
                     const SizedBox(width: FacteurSpacing.space2),
-                    _PersonalizeButton(onTap: onTapPersonalize!),
+                    rewind!,
                   ],
                 ],
               ),
@@ -487,39 +501,6 @@ class _DateStamp extends StatelessWidget {
           ],
         ),
       ],
-    );
-  }
-}
-
-class _PersonalizeButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _PersonalizeButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<FacteurColors>()!;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FacteurRadius.full),
-        child: Container(
-          width: 26,
-          height: 26,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: colors.border, width: 0.8),
-          ),
-          child: Icon(
-            Icons.tune_rounded,
-            size: 13,
-            color: colors.textSecondary,
-            semanticLabel: 'Personnaliser ton Essentiel',
-          ),
-        ),
-      ),
     );
   }
 }

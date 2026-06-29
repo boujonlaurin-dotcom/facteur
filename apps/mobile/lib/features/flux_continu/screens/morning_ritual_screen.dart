@@ -12,11 +12,14 @@ import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/providers/analytics_provider.dart';
 import 'package:facteur/features/digest/providers/digest_provider.dart';
+import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/feed/widgets/profile_avatar_button.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/morning_ritual_qa_provider.dart';
+import 'package:facteur/features/flux_continu/providers/selected_edition_date_provider.dart';
 import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
 import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
+import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dart';
 import 'package:facteur/features/flux_continu/widgets/tournee_composer_sheet.dart';
 import 'package:facteur/features/gamification/widgets/streak_indicator.dart';
 import 'package:facteur/shared/widgets/loaders/loading_view.dart';
@@ -54,7 +57,7 @@ class MorningRitualScreen extends ConsumerStatefulWidget {
 enum _Phase { loading, ritual, exiting }
 
 class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   /// Plancher d'ambiance du loader d'intro (le temps que les thèmes se
   /// calculent et que les chips soient prêtes à cascader vite).
   static const Duration _introFloor = Duration(milliseconds: 2200);
@@ -75,11 +78,19 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
   late final Animation<Offset> _slideOut;
   late final Animation<double> _fadeOut;
 
+  /// Balayage horizontal « rewind » (0 = repos, 1 = lettre d'hier dévoilée).
+  /// Piloté à la main par le drag ; reverse() pour le snap-back élastique.
+  late final AnimationController _rewindController;
+
   _Phase _phase = _Phase.loading;
   bool _floorElapsed = false;
   bool _editionReady = false;
   bool _shownTracked = false;
   bool _navigated = false;
+
+  /// Verrou « rewind engagé » : exclut un double-commit et un reverse tardif
+  /// une fois la navigation vers la lettre d'hier lancée.
+  bool _rewinding = false;
 
   @override
   void initState() {
@@ -96,14 +107,18 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) _finishOpen();
       });
+    final exitCurve = CurvedAnimation(
+      parent: _exitController,
+      curve: Curves.easeInOutCubic,
+    );
     _slideOut = Tween<Offset>(
       begin: Offset.zero,
       end: const Offset(0, -1),
-    ).animate(
-      CurvedAnimation(parent: _exitController, curve: Curves.easeInOutCubic),
-    );
-    _fadeOut = Tween<double>(begin: 1, end: 0).animate(
-      CurvedAnimation(parent: _exitController, curve: Curves.easeInOutCubic),
+    ).animate(exitCurve);
+    _fadeOut = Tween<double>(begin: 1, end: 0).animate(exitCurve);
+    _rewindController = AnimationController(
+      vsync: this,
+      duration: FacteurDurations.medium,
     );
   }
 
@@ -112,6 +127,7 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     _floorTimer?.cancel();
     _maxWaitTimer?.cancel();
     _exitController.dispose();
+    _rewindController.dispose();
     super.dispose();
   }
 
@@ -214,6 +230,47 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     _commitOpen();
   }
 
+  /// Balayage **horizontal vers la droite** : remonte le temps vers la lettre
+  /// d'« Hier » (le passé est « à gauche »). Le contrôleur suit le doigt en
+  /// continu (0 = repos, 1 = lettre d'hier dévoilée). reduceMotion → pas de
+  /// suivi visuel (le commit reste possible au fling, cf. [_onRewindEnd]).
+  void _onRewindUpdate(DragUpdateDetails details) {
+    if (_phase == _Phase.exiting || _rewinding) return;
+    final mq = MediaQuery.of(context);
+    if (mq.disableAnimations) return;
+    // Distance de référence pour un rewind complet : ~35 % de la largeur.
+    final target = mq.size.width * 0.35;
+    if (target <= 0) return;
+    final delta = (details.primaryDelta ?? 0) / target; // vers la droite → +
+    _rewindController.value =
+        (_rewindController.value + delta).clamp(0.0, 1.0);
+  }
+
+  /// Relâché : franchit-on le seuil (progression > 30 % ou fling vers la
+  /// droite) ? Oui → route vers le feed en édition « Hier » ; non → snap-back.
+  void _onRewindEnd(DragEndDetails details) {
+    if (_phase == _Phase.exiting || _rewinding) return;
+    final velocity = details.primaryVelocity ?? 0; // positif = vers la droite
+    final commit = velocity > 300 || _rewindController.value > 0.3;
+    if (!commit) {
+      _rewindController.reverse();
+      return;
+    }
+    _commitRewind();
+  }
+
+  /// Sélectionne la lettre d'hier puis route vers le feed (qui rend déjà
+  /// l'édition passée en lecture seule). Mutuellement exclusif avec l'ouverture
+  /// vers le haut via le garde partagé [_navigated].
+  void _commitRewind() {
+    if (_rewinding || _navigated || !mounted) return;
+    _rewinding = true;
+    HapticFeedback.mediumImpact();
+    ref.read(selectedEditionDateProvider.notifier).state =
+        EditionPastDay(editionPastDays(1).first);
+    _go(RoutePaths.fluxContinu);
+  }
+
   void _finishOpen() {
     if (_navigated || !mounted) return;
     _navigated = true;
@@ -307,12 +364,17 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
         onOpen: _open,
         onPersonalize: () => showTourneeComposerSheet(context),
       );
-      // Balayage vers le haut (n'importe où sur le rituel) qui **suit le doigt**.
-      // Le tap sur l'enveloppe ou l'indice reste un repli accessible (cf. onOpen).
+      // Balayages : vers le **haut** (n'importe où sur le rituel) → ouvre
+      // l'édition (suit le doigt) ; vers la **droite** → remonte à la lettre
+      // d'hier. L'arène de gestes Flutter départage horizontal vs vertical par
+      // la direction initiale du drag → les deux ne se déclenchent jamais
+      // ensemble. Le tap sur l'enveloppe/l'indice reste un repli accessible.
       ritual = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onVerticalDragUpdate: _onDragUpdate,
         onVerticalDragEnd: _onDragEnd,
+        onHorizontalDragUpdate: _onRewindUpdate,
+        onHorizontalDragEnd: _onRewindEnd,
         child: ritual,
       );
       // Transition pilotée par `_exitController` en continu : à la valeur 0 elle
@@ -322,7 +384,48 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
         position: _slideOut,
         child: FadeTransition(opacity: _fadeOut, child: ritual),
       );
-      body = ritual;
+      // Carte « Hier » décorative parquée hors-écran gauche (liseré ~24px
+      // toujours visible au repos = nudge), tirée en parallax pendant le rewind
+      // pendant que la lettre du jour glisse vers la droite pour la dévoiler.
+      // reduceMotion → tout reste statique (le contrôleur n'avance pas).
+      // Largeur lue une seule fois (et non à chaque tick de l'AnimatedBuilder) ;
+      // recalculée au prochain build, donc fraîche après une rotation.
+      final screenWidth = MediaQuery.of(context).size.width;
+      body = Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _rewindController,
+                builder: (context, child) {
+                  const cardWidth = 220.0;
+                  const peek = 24.0;
+                  const parkedX = -(cardWidth - peek);
+                  const restX = 12.0;
+                  final x =
+                      parkedX + (restX - parkedX) * _rewindController.value;
+                  return Align(
+                    alignment: Alignment.centerLeft,
+                    child: Transform.translate(
+                      offset: Offset(x, 0),
+                      child: child,
+                    ),
+                  );
+                },
+                child: const _PeekingHierCard(),
+              ),
+            ),
+          ),
+          AnimatedBuilder(
+            animation: _rewindController,
+            builder: (context, child) => Transform.translate(
+              offset: Offset(screenWidth * 0.35 * _rewindController.value, 0),
+              child: child,
+            ),
+            child: ritual,
+          ),
+        ],
+      );
     }
 
     return Scaffold(
@@ -490,7 +593,109 @@ class MorningRitualContent extends StatelessWidget {
             reduceMotion: reduceMotion,
             onPersonalize: onPersonalize,
           ),
+          // EPIC « Lettre du jour » — repli accessible (clavier/lecteur d'écran)
+          // au swipe horizontal du rituel : ouvre la timeline complète.
+          const SizedBox(height: FacteurSpacing.space4),
+          EditionRewindTrigger(
+            label: 'Remonter le temps',
+            onTap: () => EditionTimelineSheet.show(context),
+          ),
+          // CTA secondaire « mode serein » (toggle persistant partagé au feed).
+          const SizedBox(height: FacteurSpacing.space2),
+          const _SereinCta(),
         ],
+      ),
+    );
+  }
+}
+
+/// CTA secondaire « mode serein » du rituel : pour les matins sans envie de news
+/// difficiles, un accès direct à la lecture apaisée (toggle persistant partagé
+/// avec le feed, cf. [sereinToggleProvider]). `ConsumerWidget` privé pour garder
+/// [MorningRitualContent] provider-free (et donc testable sans monter les
+/// providers du header).
+class _SereinCta extends ConsumerWidget {
+  const _SereinCta();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final serein = ref.watch(sereinToggleProvider);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Pas d\'humeur pour les news difficiles ?',
+          textAlign: TextAlign.center,
+          style: FacteurTypography.bodySmall(colors.textSecondary),
+        ),
+        const SizedBox(height: FacteurSpacing.space1),
+        TextButton(
+          // Désactivé tant que la préférence serveur n'est pas chargée (évite un
+          // toggle qui serait écrasé par la première synchro `initFromApi`).
+          onPressed: serein.isLoading
+              ? null
+              : () async {
+                  await ref.read(sereinToggleProvider.notifier).toggle();
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Mode serein activé')),
+                  );
+                },
+          style: TextButton.styleFrom(foregroundColor: colors.primary),
+          child: const Text('Active ton mode serein'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Carte décorative « Hier » qui dépasse du bord gauche du rituel (nudge de
+/// rewind). Ce n'est **pas** le contenu réel d'hier — juste une enveloppe crème
+/// (cohérente avec [_EnvelopeHero]) qui invite à glisser vers la droite pour
+/// remonter le temps ; le vrai contenu est chargé par le feed après le commit.
+class _PeekingHierCard extends StatelessWidget {
+  const _PeekingHierCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Semantics(
+      label: 'Lettre d\'hier',
+      child: Container(
+        width: 220,
+        height: 156,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFCF8F0), // crème, cf. _EnvelopeHero
+          borderRadius: const BorderRadius.horizontal(
+            right: Radius.circular(16),
+          ),
+          border: const Border.fromBorderSide(
+            BorderSide(color: Color(0x47241C12), width: 1),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.10),
+              blurRadius: 18,
+              offset: const Offset(4, 8),
+            ),
+          ],
+        ),
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Icon(Icons.history_rounded, size: 22, color: colors.primary),
+            const SizedBox(height: 6),
+            Text(
+              'Hier',
+              style: FacteurTypography.serifTitle(colors.textPrimary)
+                  .copyWith(fontSize: 20, height: 1.0),
+            ),
+          ],
+        ),
       ),
     );
   }

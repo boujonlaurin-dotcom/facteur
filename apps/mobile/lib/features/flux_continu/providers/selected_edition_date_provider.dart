@@ -56,9 +56,14 @@ class EditionPastDay extends EditionSelection {
   String get key => editionDayKey(date);
 }
 
-/// Profondeur du sélecteur = fenêtre de fallback backend
-/// (`_HOTPATH_FALLBACK_DAYS` = 7). Au-delà, le backend ne sert plus rien.
-const int kEditionMaxPastDays = 7;
+/// Profondeur du **sélecteur de jours passés** = nombre de lettres passées
+/// proposées (timeline + pill). Réduit à 1 (décision PO « rewind à 3 options ») :
+/// seules « Cette semaine », « Aujourd'hui » et « Hier » sont offertes.
+///
+/// Indépendant de l'agrégat hebdo : « Cette semaine » couvre toujours J-0…J-6 via
+/// sa propre constante `kEditionWeekPastDays` (`edition_essentiel_provider.dart`),
+/// et le fallback backend (`_HOTPATH_FALLBACK_DAYS` = 7) sert encore cette rétro.
+const int kEditionMaxPastDays = 1;
 
 /// Sélection courante de l'édition. Défaut = aujourd'hui (feed live complet).
 final selectedEditionDateProvider =
@@ -87,8 +92,8 @@ List<DateTime> editionPastDays(int count, {DateTime? now}) {
 }
 
 /// Modèle ordonné des pills du sélecteur, dans l'ordre exact d'affichage :
-/// `[Cette semaine, Aujourd'hui, Hier, J-2 … J-7]`. Helper **pur** ; `now`
-/// injectable pour les tests.
+/// `[Cette semaine, Aujourd'hui, Hier]` (rewind à 3 options, cf.
+/// [kEditionMaxPastDays]). Helper **pur** ; `now` injectable pour les tests.
 List<EditionSelection> editionPillModel({DateTime? now}) {
   return <EditionSelection>[
     const EditionWeek(),
@@ -96,4 +101,26 @@ List<EditionSelection> editionPillModel({DateTime? now}) {
     for (final date in editionPastDays(kEditionMaxPastDays, now: now))
       EditionPastDay(date),
   ];
+}
+
+/// Libellé d'une sélection : « Cette semaine » / « Aujourd'hui » / « Hier » /
+/// « mar. 24 ». Pur et testable ; `now` injectable.
+///
+/// Co-localisé ici avec [EditionSelection] et [editionPillModel] (déplacé depuis
+/// l'ancien `edition_date_strip.dart`, supprimé avec la refonte « timeline en
+/// overlay ») : placer ce helper dans `morning_ritual_format.dart` — pourtant
+/// « helpers purs » — y tirerait l'import du provider (cycle), alors qu'il porte
+/// justement sur les types de sélection définis ici.
+String editionPillLabel(EditionSelection selection, {DateTime? now}) {
+  switch (selection) {
+    case EditionWeek():
+      return 'Cette semaine';
+    case EditionToday():
+      return 'Aujourd’hui';
+    case EditionPastDay(:final date):
+      final today = editionTodayDate(now: now);
+      final yesterday = DateTime(today.year, today.month, today.day - 1);
+      if (editionDayKey(date) == editionDayKey(yesterday)) return 'Hier';
+      return formatFrenchShortWeekdayDay(date);
+  }
 }

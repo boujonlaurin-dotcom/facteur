@@ -5,7 +5,6 @@ import '../models/flux_continu_models.dart';
 import 'essentiel_hi_fi_card.dart';
 import 'flux_continu_article_card.dart';
 import 'section_banner.dart';
-import 'tournee_composer_sheet.dart';
 import 'veille_group_header.dart';
 
 /// Identifies which chip the user picked on a [FeedbackInline] banner.
@@ -63,12 +62,6 @@ class SectionBlock extends StatelessWidget {
   /// pour les sections `origin == suggested` (cf. flux_continu_screen).
   final VoidCallback? onTapSuggestionInfo;
 
-  /// EPIC « Lettre du jour » — `false` ⇒ rendu **lecture seule** (lettre d'un
-  /// jour passé) : masque le bouton « personnaliser » du héros Essentiel. Le
-  /// reste de la lecture seule (pas de swipe/feedback) découle déjà des
-  /// callbacks de mutation laissés nuls par l'appelant.
-  final bool interactive;
-
   const SectionBlock({
     super.key,
     required this.section,
@@ -88,7 +81,6 @@ class SectionBlock extends StatelessWidget {
     this.onAddSources,
     this.onSeeAll,
     this.onTapSuggestionInfo,
-    this.interactive = true,
   });
 
   @override
@@ -101,13 +93,12 @@ class SectionBlock extends StatelessWidget {
         builder: (context) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Bouton « personnaliser » retiré (décision PO) : point d'entrée
+            // unique = l'inline « GÉRER » de MyInterestsIntro. Le déclencheur
+            // « rewind » de l'en-tête de la carte subsiste, lui.
             EssentielHiFiCard(
               articles: section.articles,
               onTapArticle: (a) => onTapArticle(a),
-              // Lecture seule (lettre passée) : bouton « personnaliser » masqué.
-              onTapPersonalize: interactive
-                  ? () => showTourneeComposerSheet(context)
-                  : null,
             ),
             const SizedBox(height: 16),
           ],

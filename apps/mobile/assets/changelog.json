@@ -1,8 +1,12 @@
 {
   "unreleased": [
     {
-      "tag": "Édition",
-      "summary": "Remonte le temps : fais défiler les jours en haut de ton Essentiel pour relire l'actu d'hier ou des 7 derniers jours, et la rétro « Cette semaine »."
+      "tag": "Lettre du jour",
+      "summary": "Sur ta lettre du matin, glisse vers la droite pour relire hier, et bascule en lecture apaisée d'un geste."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Remonte le temps depuis ta carte Essentiel : choisis un jour, vois ce qu'il te reste à rattraper."
     },
     {
       "tag": "Édition",
