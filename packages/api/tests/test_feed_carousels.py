@@ -5,7 +5,7 @@ import pytest
 from collections import namedtuple
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4, UUID
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from app.services.recommendation_service import RecommendationService
 
@@ -514,6 +514,70 @@ class TestBuildCarouselsNewSource:
         )
 
         assert not any(c["carousel_type"] == "new_source" for c in carousels)
+
+    @pytest.mark.asyncio
+    async def test_new_source_rotates_by_seed(self):
+        """≥3 sources récentes valides : la source mise en avant change selon le
+        seed (déterminisme jour à jour), et un seul carrousel new_source sort."""
+        user_id = uuid4()
+        src_ids = [uuid4() for _ in range(3)]
+        names = ["Alpha", "Bravo", "Charlie"]
+        two_days_ago = datetime.now(UTC) - timedelta(days=2)
+        src_rows = [
+            _SourceRow(source_id=sid, name=name, added_at=two_days_ago)
+            for sid, name in zip(src_ids, names, strict=True)
+        ]
+
+        def _build_service():
+            service = _setup_service_with_no_overflow()
+            articles = [
+                MockContent(
+                    title=f"Article {i}",
+                    source=MockSource(name="Alpha", source_id=src_ids[0]),
+                )
+                for i in range(3)
+            ]
+
+            execute_calls = 0
+
+            async def mock_execute(stmt):
+                nonlocal execute_calls
+                execute_calls += 1
+                if execute_calls == 1:
+                    return _mock_execute_result([])  # consumed_ids
+                if execute_calls == 2:
+                    return _mock_execute_result(src_rows)  # new_source
+                return _mock_execute_result([])  # quiet_sources + community
+
+            service.session.execute = AsyncMock(side_effect=mock_execute)
+            # Chaque sonde par source renvoie les mêmes 3 articles → 3 candidats.
+            service.session.scalars = AsyncMock(
+                return_value=_mock_scalars_result(articles),
+            )
+            return service
+
+        async def _selected_title(seed_value):
+            service = _build_service()
+            with patch(
+                "app.services.recommendation.randomization.compute_seed",
+                return_value=seed_value,
+            ):
+                _, carousels = await service._build_carousels(
+                    [], {}, user_id=user_id,
+                )
+            new_src = [c for c in carousels if c["carousel_type"] == "new_source"]
+            assert len(new_src) == 1  # toujours un seul carrousel new_source
+            return new_src[0]["title"]
+
+        # seed 0 → Alpha, seed 4 → Charlie (cf. shuffle Gumbel déterministe)
+        title_seed0 = await _selected_title(0)
+        title_seed4 = await _selected_title(4)
+        assert "Alpha" in title_seed0
+        assert "Charlie" in title_seed4
+        assert title_seed0 != title_seed4  # rotation selon le seed
+
+        # Déterminisme : même seed ⇒ même source
+        assert await _selected_title(0) == title_seed0
 
     @pytest.mark.asyncio
     async def test_new_source_skipped_when_no_new_sources(self):

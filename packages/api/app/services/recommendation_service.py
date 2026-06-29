@@ -1595,11 +1595,16 @@ class RecommendationService:
                     new_sources_found=len(new_src_rows),
                     source_names=[r.name for r in new_src_rows[:5]],
                 )
-                # T3A: iterate per source, pick first with enough articles
-                for src_row in new_src_rows:
-                    if len(carousels) >= max_carousels:
-                        break
-
+                # Rotation jour à jour : au lieu de s'arrêter à la première
+                # source valide (toujours la plus récente → carrousel figé), on
+                # collecte TOUTES les sources récentes valides puis on en tire UNE
+                # seedée par le jour. Variété jour à jour, stable dans la journée.
+                # Borne de coût : on ne sonde que les 8 sources les plus récentes
+                # (1 requête article par source).
+                MAX_NEW_SOURCE_PROBES = 8
+                now = datetime.datetime.now(datetime.UTC)
+                candidates: list[tuple[object, list[Content]]] = []
+                for src_row in new_src_rows[:MAX_NEW_SOURCE_PROBES]:
                     # T2: exclude promoted + consumed articles
                     exclusions = []
                     if promoted_ids:
@@ -1629,10 +1634,30 @@ class RecommendationService:
                     # Cooldown post-add 6 h — laisse les articles de la source
                     # remonter naturellement dans le main feed avant de pousser
                     # un carrousel "Récemment ajouté".
-                    now = datetime.datetime.now(datetime.UTC)
                     source_age_seconds = (now - src_row.added_at).total_seconds()
                     if source_age_seconds < 6 * 3600:
                         continue
+
+                    candidates.append((src_row, items))
+
+                if candidates:
+                    from app.services.recommendation.randomization import (
+                        compute_seed,
+                        randomized_sort,
+                    )
+
+                    # Shuffle déterministe seedé par le jour (scores uniformes 0.0
+                    # ⇒ pur shuffle) : la source en tête change jour à jour mais
+                    # reste stable dans la journée (cohérent avec le jitter de
+                    # position).
+                    seed = compute_seed(str(user_id), "daily")
+                    src_row, items = randomized_sort(
+                        [(c, 0.0) for c in candidates],
+                        temperature=1.0,
+                        seed=seed,
+                    )[0][0]
+
+                    source_age_seconds = (now - src_row.added_at).total_seconds()
                     position = self._jitter_carousel_position(
                         "new_source", user_id, today
                     )
@@ -1643,6 +1668,7 @@ class RecommendationService:
                         article_count=len(items),
                         position=position,
                         source_age_hours=round(source_age_seconds / 3600, 1),
+                        candidate_count=len(candidates),
                     )
                     badge = {
                         "code": "new_source",
@@ -1661,7 +1687,6 @@ class RecommendationService:
                     )
                     for item in items:
                         promoted_ids.add(item.id)
-                    break  # T3A: only 1 source carousel
 
             # --- quiet_sources: latest article from followed low-volume sources ---
             if len(carousels) < max_carousels:
@@ -1729,8 +1754,26 @@ class RecommendationService:
                             quiet_articles = list(
                                 (await quiet_s.scalars(latest_per_source)).all()
                             )
-                    quiet_articles.sort(key=lambda c: c.published_at, reverse=True)
-                    quiet_articles = quiet_articles[:MAX_CAROUSEL_ITEMS]
+                    # Round-robin au fil des refresh : au lieu de toujours
+                    # garder les 5 articles les plus récents (mêmes sources
+                    # discrètes en boucle), on shuffle déterministe seedé à
+                    # l'heure sur TOUT le pool avant de couper à 5. Granularité
+                    # "hourly" = varie au fil des refresh, stable dans la fenêtre
+                    # de cache feed 30 s.
+                    from app.services.recommendation.randomization import (
+                        compute_seed,
+                        randomized_sort,
+                    )
+
+                    seed = compute_seed(str(user_id), "hourly")
+                    quiet_articles = [
+                        a
+                        for a, _ in randomized_sort(
+                            [(a, 0.0) for a in quiet_articles],
+                            temperature=1.0,
+                            seed=seed,
+                        )
+                    ][:MAX_CAROUSEL_ITEMS]
                 except Exception as exc:
                     logger.warning(
                         "carousel_quiet_sources_skipped",
