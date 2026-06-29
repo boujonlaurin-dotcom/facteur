@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Ouverture plus fluide : les sections se remplissent sur place, sans saut ni réorganisation pendant que tu lis."
+    },
+    {
       "tag": "La Grille",
       "summary": "Le mot du jour ne se répète plus avant longtemps, et le vocabulaire s'enrichit (pays et régions inclus)."
       "tag": "Lecture",
