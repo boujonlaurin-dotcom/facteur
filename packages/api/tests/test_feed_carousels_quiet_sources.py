@@ -6,6 +6,7 @@ source rare. Carrousel émis seulement si ≥ 2 items.
 """
 
 import datetime
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -98,14 +99,54 @@ async def test_quiet_sources_carousel_basic(db_session, fake_session_maker):
     assert len(quiet) == 1
     c = quiet[0]
     assert c["title"] == "Tes sources discrètes"
+    # ≤ 5 sources : le shuffle déterministe ne change pas l'ENSEMBLE, juste
+    # l'ordre (l'ancien "most recent first" n'est plus garanti).
     assert {i.id for i in c["items"]} == {content_a.id, content_b.id}
-    # Most recent first
-    assert c["items"][0].id == content_a.id
     assert len(c["badges"]) == 2
-    assert c["badges"][0]["code"] == "quiet_source"
-    # Badge label = source name of the matching item
-    assert c["badges"][0]["label"] == "Rare A"
+    assert all(b["code"] == "quiet_source" for b in c["badges"])
+    # Badge label = source name de l'item correspondant (ordre seedé → on
+    # vérifie la correspondance item↔badge plutôt qu'une position fixe).
+    name_by_id = {content_a.id: "Rare A", content_b.id: "Rare B"}
+    for item, badge in zip(c["items"], c["badges"], strict=True):
+        assert badge["label"] == name_by_id[item.id]
     assert c["position"] >= 5
+
+
+@pytest.mark.asyncio
+async def test_quiet_sources_rotate_subset_by_seed(db_session, fake_session_maker):
+    """> 5 sources discrètes : deux seeds différents sélectionnent des
+    sous-ensembles différents (rotation au fil des refresh), même seed ⇒ même
+    sous-ensemble (stabilité dans la fenêtre de cache)."""
+    user_id = uuid4()
+    # 7 sources discrètes valides → pool > MAX_CAROUSEL_ITEMS (5).
+    all_ids = set()
+    for i in range(7):
+        _, content = await _seed_quiet_source(
+            db_session, f"Rare {i}", user_id, article_days_ago=5 + i
+        )
+        all_ids.add(content.id)
+
+    async def _subset(seed_value):
+        with patch(
+            "app.services.recommendation.randomization.compute_seed",
+            return_value=seed_value,
+        ):
+            carousels = await _build(db_session, fake_session_maker, user_id)
+        quiet = _quiet(carousels)
+        assert len(quiet) == 1
+        items = quiet[0]["items"]
+        assert len(items) == 5  # coupe à MAX_CAROUSEL_ITEMS
+        ids = {i.id for i in items}
+        assert ids <= all_ids  # sous-ensemble du pool
+        return frozenset(ids)
+
+    # seed 0 et seed 4 donnent des top-5 différents (shuffle Gumbel déterministe)
+    subset0 = await _subset(0)
+    subset4 = await _subset(4)
+    assert subset0 != subset4  # rotation selon le seed
+
+    # Déterminisme : même seed ⇒ même sous-ensemble
+    assert await _subset(0) == subset0
 
 
 @pytest.mark.asyncio
