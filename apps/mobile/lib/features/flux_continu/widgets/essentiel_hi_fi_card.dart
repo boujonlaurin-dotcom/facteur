@@ -28,13 +28,16 @@ import 'weather_detail_sheet.dart';
 class EssentielHiFiCard extends ConsumerWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
-  final VoidCallback onTapPersonalize;
+
+  /// Callback du bouton « personnaliser » de l'en-tête. `null` ⇒ bouton masqué
+  /// (mode **lecture seule**, ex. lettre d'un jour passé : aucune mutation).
+  final VoidCallback? onTapPersonalize;
 
   const EssentielHiFiCard({
     super.key,
     required this.articles,
     required this.onTapArticle,
-    required this.onTapPersonalize,
+    this.onTapPersonalize,
   });
 
   @override
@@ -111,9 +114,9 @@ class EssentielHiFiCard extends ConsumerWidget {
 
 class _Header extends StatelessWidget {
   final Color accent;
-  final VoidCallback onTapPersonalize;
+  final VoidCallback? onTapPersonalize;
 
-  const _Header({required this.accent, required this.onTapPersonalize});
+  const _Header({required this.accent, this.onTapPersonalize});
 
   @override
   Widget build(BuildContext context) {
@@ -146,8 +149,11 @@ class _Header extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(width: FacteurSpacing.space2),
-                  _PersonalizeButton(onTap: onTapPersonalize),
+                  // Masqué en lecture seule (lettre passée) : pas de mutation.
+                  if (onTapPersonalize != null) ...[
+                    const SizedBox(width: FacteurSpacing.space2),
+                    _PersonalizeButton(onTap: onTapPersonalize!),
+                  ],
                 ],
               ),
               const SizedBox(height: 4),

@@ -39,7 +39,7 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => const [];
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -1473,7 +1473,7 @@ class _OneArticleEssentielRepository implements EssentielRepository {
   final EssentielArticle _article;
 
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => [
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => [
         _article,
         EssentielArticle(
           contentId: '${_article.contentId}-filler-1',
@@ -1504,5 +1504,5 @@ class _FixedEssentielRepository implements EssentielRepository {
   final List<EssentielArticle> _articles;
 
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => _articles;
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => _articles;
 }

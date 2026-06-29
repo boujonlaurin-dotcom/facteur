@@ -49,7 +49,7 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => const [];
 }
 
 class _StubUserInterestsNotifier extends UserInterestsNotifier {

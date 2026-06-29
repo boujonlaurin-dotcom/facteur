@@ -14,14 +14,19 @@ import 'facteur_loader.dart';
 ///
 /// - `compact: true` réduit la version aux dimensions adaptées à un Sliver
 ///   (pas de carte éditoriale, juste le FacteurLoader avec un peu d'espace).
+/// - `leading` : widget optionnel placé **en tête de la colonne centrée**, au-
+///   dessus du loader (ex. l'enveloppe du rituel matinal) — il fait alors partie
+///   du même bloc vertical-centré que le loader, au lieu d'être épinglé ailleurs.
 class LoadingView extends StatefulWidget {
   final bool compact;
   final Duration revealEditorialAfter;
+  final Widget? leading;
 
   const LoadingView({
     super.key,
     this.compact = false,
     this.revealEditorialAfter = const Duration(seconds: 3),
+    this.leading,
   });
 
   @override
@@ -73,6 +78,10 @@ class _LoadingViewState extends State<LoadingView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (widget.leading != null) ...[
+              widget.leading!,
+              const SizedBox(height: FacteurSpacing.space6),
+            ],
             const FacteurLoader(),
             const SizedBox(height: FacteurSpacing.space4),
             AnimatedOpacity(
