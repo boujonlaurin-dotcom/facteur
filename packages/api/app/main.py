@@ -84,6 +84,7 @@ from app.routers import (
     essentiel,
     event_rsvp,
     feed,
+    feedback,
     grille,
     images,
     internal,
@@ -527,6 +528,7 @@ app.include_router(
     prefix="/api/user/sources",
     tags=["UserSourcesState"],
 )
+app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
 
 
 @app.exception_handler(Exception)
