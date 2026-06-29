@@ -1,6 +1,8 @@
 {
   "unreleased": [
     {
+      "tag": "La Grille",
+      "summary": "Le mot du jour ne se répète plus avant longtemps, et le vocabulaire s'enrichit (pays et régions inclus)."
       "tag": "Lecture",
       "summary": "Les articles lus restent marqués « Lu » de façon fiable, même après un rafraîchissement du flux."
     },

@@ -6,13 +6,15 @@ Ces tests garantissent aussi qu'un jour absent du calendrier embarqué est cré�
 de façon déterministe sans réécrire les puzzles déjà publiés.
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import func, select
 
 from app.models.grille_puzzle import GrillePuzzle
+from app.services.grille_quality_pool import get_quality_pool
 from app.services.grille_seed import (
+    _fallback_word,
     ensure_daily_puzzle,
     format_cancel,
     format_date_affichee,
@@ -20,6 +22,28 @@ from app.services.grille_seed import (
     load_seed,
     seed_puzzles,
 )
+from app.services.grille_text import normalize_word
+
+
+def test_fallback_word_deterministic_by_date():
+    d = date(2026, 7, 1)
+    assert _fallback_word(d) == _fallback_word(d)
+
+
+def test_fallback_word_avoids_recent_history():
+    d = date(2026, 7, 1)
+    chosen = _fallback_word(d)
+    # Le mot par défaut pour cette date ne doit plus sortir s'il est récent.
+    other = _fallback_word(d, recent={normalize_word(chosen)})
+    assert other != chosen
+    assert other in get_quality_pool()
+
+
+def test_fallback_word_falls_back_when_pool_exhausted():
+    d = date(2026, 7, 1)
+    all_recent = {normalize_word(w) for w in get_quality_pool()}
+    # Tout le pool est « récent » → repli déterministe sur le 1er tirage.
+    assert _fallback_word(d, recent=all_recent) == _fallback_word(d)
 
 
 async def _count(db) -> int:
@@ -76,6 +100,33 @@ async def test_ensure_daily_puzzle_creates_stable_post_seed_fallback(db_session)
         )
         == 1
     )
+
+
+@pytest.mark.asyncio
+async def test_ensure_daily_puzzle_avoids_recent_word(db_session):
+    target_date = date(2026, 7, 1)
+    naive = _fallback_word(target_date)  # mot par défaut sans historique
+
+    # On « sort » ce mot la veille → le fallback doit en choisir un autre.
+    db_session.add(
+        GrillePuzzle(
+            puzzle_date=target_date - timedelta(days=1),
+            word=naive,
+            length=6,
+            max_attempts=6,
+            indice="x",
+            theme="x",
+            pourquoi="x",
+            numero="N°1",
+            date_affichee="x",
+            date_court="x",
+            cancel="x",
+        )
+    )
+    await db_session.flush()
+
+    puzzle = await ensure_daily_puzzle(db_session, target_date)
+    assert puzzle.word != naive
 
 
 @pytest.mark.asyncio
