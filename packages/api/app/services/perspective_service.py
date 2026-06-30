@@ -283,63 +283,75 @@ class PerspectiveService:
             return str(source.reliability_score.value)
         return "unknown"
 
-    async def resolve_bias(self, domain: str, source_name: str | None = None) -> str:
-        """Resolve bias for a domain: DOMAIN_BIAS_MAP first, then DB fallback by URL, then by name."""
-        # 1. Check hardcoded map (fast)
-        bias = DOMAIN_BIAS_MAP.get(domain)
-        if bias:
-            return bias
+    async def _resolve_source_column(
+        self,
+        column_of,
+        cache: dict[str, str],
+        normalize,
+        log_event: str,
+        domain: str,
+        source_name: str | None,
+    ) -> str:
+        """DB fallback shared by [resolve_bias]/[resolve_reliability].
 
-        # 2. Check in-memory cache from prior DB lookups
+        Cache mémoire → lookup par URL (domaine) → fallback fuzzy par nom →
+        défaut "unknown". `column_of(Source)` désigne la colonne lue, `normalize`
+        transforme le scalaire retourné en `str`, `log_event` nomme le warning.
+        """
         cache_key = domain or source_name or ""
-        if cache_key in self._bias_cache:
-            return self._bias_cache[cache_key]
+        if cache_key in cache:
+            return cache[cache_key]
 
-        # 3. DB lookup if session available
         if self._has_db():
             try:
                 from app.models.source import Source
 
                 async with self._short_session() as session:
                     if session is None:
-                        self._bias_cache[cache_key] = "unknown"
+                        cache[cache_key] = "unknown"
                         return "unknown"
 
-                    # 3a. Try domain match on source URL
+                    column = column_of(Source)
+                    predicates = []
                     if domain:
-                        stmt = select(Source.bias_stance).where(
-                            Source.url.ilike(f"%{domain}%"),
-                            Source.is_active.is_(True),
-                        )
-                        result = await session.execute(stmt)
-                        source_bias = result.scalar_one_or_none()
-
-                        if source_bias and source_bias != "unknown":
-                            self._bias_cache[cache_key] = source_bias
-                            return source_bias
-
-                    # 3b. Fallback: fuzzy match by source name (Google News source name)
+                        predicates.append(Source.url.ilike(f"%{domain}%"))
                     if source_name and source_name != "Unknown":
-                        stmt = select(Source.bias_stance).where(
-                            Source.name.ilike(f"%{source_name}%"),
-                            Source.is_active.is_(True),
-                        )
-                        result = await session.execute(stmt)
-                        source_bias = result.scalar_one_or_none()
+                        predicates.append(Source.name.ilike(f"%{source_name}%"))
 
-                        if source_bias and source_bias != "unknown":
-                            self._bias_cache[cache_key] = source_bias
-                            return source_bias
+                    for predicate in predicates:
+                        stmt = select(column).where(
+                            predicate, Source.is_active.is_(True)
+                        )
+                        raw = (await session.execute(stmt)).scalar_one_or_none()
+                        if raw and raw != "unknown":
+                            val = normalize(raw)
+                            cache[cache_key] = val
+                            return val
             except Exception as e:
                 logger.warning(
-                    "resolve_bias_db_error",
+                    log_event,
                     domain=domain,
                     source_name=source_name,
                     error=str(e),
                 )
 
-        self._bias_cache[cache_key] = "unknown"
+        cache[cache_key] = "unknown"
         return "unknown"
+
+    async def resolve_bias(self, domain: str, source_name: str | None = None) -> str:
+        """Resolve bias for a domain: DOMAIN_BIAS_MAP first, then DB fallback by URL, then by name."""
+        # Hardcoded map first (fast) — propre au biais, pas à la fiabilité.
+        bias = DOMAIN_BIAS_MAP.get(domain)
+        if bias:
+            return bias
+        return await self._resolve_source_column(
+            lambda S: S.bias_stance,
+            self._bias_cache,
+            lambda raw: raw,
+            "resolve_bias_db_error",
+            domain,
+            source_name,
+        )
 
     async def resolve_reliability(
         self, domain: str, source_name: str | None = None
@@ -350,58 +362,14 @@ class PerspectiveService:
         base) : DB lookup par URL puis par nom, défaut "unknown". Beaucoup de
         sources ne sont pas évaluées ⇒ "unknown" est le cas dominant attendu.
         """
-        # 1. In-memory cache from prior DB lookups
-        cache_key = domain or source_name or ""
-        if cache_key in self._reliability_cache:
-            return self._reliability_cache[cache_key]
-
-        # 2. DB lookup if session available
-        if self._has_db():
-            try:
-                from app.models.source import Source
-
-                async with self._short_session() as session:
-                    if session is None:
-                        self._reliability_cache[cache_key] = "unknown"
-                        return "unknown"
-
-                    # 2a. Try domain match on source URL
-                    if domain:
-                        stmt = select(Source.reliability_score).where(
-                            Source.url.ilike(f"%{domain}%"),
-                            Source.is_active.is_(True),
-                        )
-                        result = await session.execute(stmt)
-                        score = result.scalar_one_or_none()
-
-                        if score and score != "unknown":
-                            val = str(getattr(score, "value", score))
-                            self._reliability_cache[cache_key] = val
-                            return val
-
-                    # 2b. Fallback: fuzzy match by source name (Google News name)
-                    if source_name and source_name != "Unknown":
-                        stmt = select(Source.reliability_score).where(
-                            Source.name.ilike(f"%{source_name}%"),
-                            Source.is_active.is_(True),
-                        )
-                        result = await session.execute(stmt)
-                        score = result.scalar_one_or_none()
-
-                        if score and score != "unknown":
-                            val = str(getattr(score, "value", score))
-                            self._reliability_cache[cache_key] = val
-                            return val
-            except Exception as e:
-                logger.warning(
-                    "resolve_reliability_db_error",
-                    domain=domain,
-                    source_name=source_name,
-                    error=str(e),
-                )
-
-        self._reliability_cache[cache_key] = "unknown"
-        return "unknown"
+        return await self._resolve_source_column(
+            lambda S: S.reliability_score,
+            self._reliability_cache,
+            lambda raw: str(getattr(raw, "value", raw)),
+            "resolve_reliability_db_error",
+            domain,
+            source_name,
+        )
 
     async def analyze_divergences(
         self,
