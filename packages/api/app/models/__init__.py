@@ -18,7 +18,7 @@ from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.grille_game_state import GrilleGameState
 from app.models.grille_puzzle import GrillePuzzle
 from app.models.host_feed_resolution import HostFeedResolution
-from app.models.learning import UserEntityPreference
+from app.models.learning import UserEntityAffinity, UserEntityPreference
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.push_notification import PushDelivery, PushDevice
@@ -28,6 +28,7 @@ from app.models.source_search_log import SourceSearchLog
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
 from app.models.user_favorites import UserFavoriteInterest, UserFavoriteSource
+from app.models.user_feedback import DigestSentiment, FeedbackInvite
 from app.models.user_letter_progress import UserLetterProgress
 from app.models.user_notification_preferences import UserNotificationPreferences
 from app.models.user_personalization import UserPersonalization
@@ -113,6 +114,7 @@ __all__ = [
     # Serene Feedback
     "SereneReport",
     # Entity Preferences (follow/mute on named entities)
+    "UserEntityAffinity",
     "UserEntityPreference",
     # Self-reported "well-informed" score (Story 14.3)
     "UserWellInformedRating",
@@ -127,4 +129,7 @@ __all__ = [
     # La Grille du jour (Story 24.1)
     "GrillePuzzle",
     "GrilleGameState",
+    # User Feedback System (Epic 13)
+    "DigestSentiment",
+    "FeedbackInvite",
 ]

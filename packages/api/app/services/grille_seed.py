@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.grille_puzzle import GrillePuzzle
 from app.services.grille_dictionary import is_valid_word
 from app.services.grille_quality_pool import get_quality_pool
+from app.services.grille_selector import recent_words
+from app.services.grille_text import normalize_word
 
 logger = structlog.get_logger()
 
@@ -104,17 +106,35 @@ def _edition_number(target_date: date) -> str:
     return f"N°{number}"
 
 
-def _fallback_word(target_date: date) -> str:
-    """Choisit un mot stable pour une date donnée dans le pool éditorial."""
+def _fallback_word(target_date: date, recent: set[str] | None = None) -> str:
+    """Choisit un mot stable pour une date donnée dans le pool éditorial.
+
+    Déterministe par date (hash SHA256), mais saute les mots déjà sortis
+    récemment (`recent`, mots normalisés des ~2 derniers mois) pour éviter les
+    répétitions. On itère une séquence salée `sha256("<date>:<i>")` et on retient
+    le premier mot hors historique ; si tout le pool est récent (improbable), on
+    retombe sur le 1er tirage (comportement historique).
+    """
     words = sorted(get_quality_pool())
     if not words:
         raise SeedInvalidWord("Le pool éditorial de la Grille est vide")
-    digest = sha256(target_date.isoformat().encode("ascii")).digest()
-    return words[int.from_bytes(digest[:8], "big") % len(words)]
+    recent = recent or set()
+    first: str | None = None
+    for i in range(len(words)):
+        seed = f"{target_date.isoformat()}:{i}".encode("ascii")
+        digest = sha256(seed).digest()
+        word = words[int.from_bytes(digest[:8], "big") % len(words)]
+        if first is None:
+            first = word
+        if normalize_word(word) not in recent:
+            return word
+    return first  # tout le pool est récent → repli déterministe
 
 
-def _fallback_fields(target_date: date) -> dict[str, object]:
-    word = _fallback_word(target_date)
+def _fallback_fields(
+    target_date: date, recent: set[str] | None = None
+) -> dict[str, object]:
+    word = _fallback_word(target_date, recent)
     if not is_valid_word(word):
         raise SeedInvalidWord(
             f"Mot fallback absent du dictionnaire (grille_words_fr.txt) : {word}"
@@ -135,9 +155,10 @@ def _fallback_fields(target_date: date) -> dict[str, object]:
 
 async def ensure_daily_puzzle(session: AsyncSession, target_date: date) -> GrillePuzzle:
     """Garantit atomiquement l'existence du puzzle de `target_date`."""
+    recent = await recent_words(session, target_date)
     stmt = (
         insert(GrillePuzzle)
-        .values(puzzle_date=target_date, **_fallback_fields(target_date))
+        .values(puzzle_date=target_date, **_fallback_fields(target_date, recent))
         .on_conflict_do_nothing(index_elements=["puzzle_date"])
         .returning(GrillePuzzle.id)
     )

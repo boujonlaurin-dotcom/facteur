@@ -21,6 +21,7 @@ from app.workers.scheduler import (
     SUBTOPIC_DECAY_HOUR_PARIS,
     SUBTOPIC_DECAY_MINUTE_PARIS,
     _digest_watchdog,
+    decay_user_entity_affinity,
     decay_user_subtopic_weights,
     decayed_subtopic_weight,
     start_scheduler,
@@ -295,9 +296,40 @@ class TestDigestJobConfiguration:
             # les poids que le scoring du digest consomme). Garde-fou contre une
             # régression du décalage horaire (06h50 < 07h30, cf. PYTHON-5M : le
             # decall évite le chevauchement avec la fenêtre de pression pool).
-            decay_minutes = (
-                SUBTOPIC_DECAY_HOUR_PARIS * 60 + SUBTOPIC_DECAY_MINUTE_PARIS
-            )
+            decay_minutes = SUBTOPIC_DECAY_HOUR_PARIS * 60 + SUBTOPIC_DECAY_MINUTE_PARIS
+            digest_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
+            assert decay_minutes < digest_minutes
+
+    def test_scheduler_includes_entity_affinity_decay_job(self):
+        """PR2 — l'affinité entités décroît au même créneau, avant le digest."""
+        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            captured_jobs = {}
+
+            def capture_add_job(*args, **kwargs):
+                job_id = kwargs.get("id")
+                if job_id:
+                    captured_jobs[job_id] = {
+                        "func": args[0] if args else kwargs.get("func"),
+                        "trigger": kwargs.get("trigger"),
+                        "name": kwargs.get("name"),
+                    }
+
+            mock_scheduler.add_job = capture_add_job
+
+            start_scheduler()
+
+            assert "entity_affinity_decay" in captured_jobs
+            job = captured_jobs["entity_affinity_decay"]
+            assert job["func"] is decay_user_entity_affinity
+            assert job["name"] == "Entity Affinity Decay"
+            trigger = job["trigger"]
+            assert isinstance(trigger, CronTrigger)
+            assert str(trigger.fields[5]) == str(SUBTOPIC_DECAY_HOUR_PARIS)
+            assert str(trigger.fields[6]) == str(SUBTOPIC_DECAY_MINUTE_PARIS)
+            decay_minutes = SUBTOPIC_DECAY_HOUR_PARIS * 60 + SUBTOPIC_DECAY_MINUTE_PARIS
             digest_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
             assert decay_minutes < digest_minutes
 
@@ -477,4 +509,130 @@ class TestDigestWatchdogCoverage:
         ):
             await _digest_watchdog()
 
+        # No users → early return, no generation attempted.
         mock_run.assert_not_awaited()
+
+
+def _capture_all_jobs() -> dict:
+    """Run start_scheduler() with a mocked APScheduler and capture every
+    add_job(**kwargs) keyed by job id."""
+    captured: dict = {}
+
+    def capture_add_job(*args, **kwargs):
+        job_id = kwargs.get("id")
+        if job_id:
+            captured[job_id] = kwargs
+
+    with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+        mock_scheduler = Mock()
+        mock_scheduler_class.return_value = mock_scheduler
+        mock_scheduler.add_job = capture_add_job
+        start_scheduler()
+
+    return captured
+
+
+class TestJobSerialization:
+    """S1-A: every recurring job must be serialized (max_instances=1 +
+    coalesce=True) so a run that overruns its interval never spawns a
+    concurrent second run competing for the shared DB pool (PYTHON-5M)."""
+
+    def test_every_job_has_max_instances_one(self):
+        captured = _capture_all_jobs()
+        assert captured, "no jobs captured — start_scheduler registered nothing"
+        for job_id, kwargs in captured.items():
+            assert kwargs.get("max_instances") == 1, (
+                f"job {job_id} must set max_instances=1, "
+                f"got {kwargs.get('max_instances')!r}"
+            )
+
+    def test_every_job_has_coalesce_true(self):
+        captured = _capture_all_jobs()
+        for job_id, kwargs in captured.items():
+            assert kwargs.get("coalesce") is True, (
+                f"job {job_id} must set coalesce=True, got {kwargs.get('coalesce')!r}"
+            )
+
+    def test_expected_jobs_present(self):
+        """Guard: the serialization tests are vacuous if no jobs registered.
+        Pin the known recurring jobs so a future rename surfaces here."""
+        captured = _capture_all_jobs()
+        for job_id in (
+            "rss_sync",
+            "daily_digest",
+            "subtopic_weight_decay",
+            "digest_watchdog",
+            "storage_cleanup",
+            "purge_deleted_users",
+            "recompute_source_language",
+            "cost_budget_projection",
+            "zombie_session_sweeper",
+            "pool_health_probe",
+            "daily_essentiel_push_dispatch",
+        ):
+            assert job_id in captured, f"{job_id} not registered"
+
+
+class TestDigestWatchdogConcurrencyGuard:
+    """S1-B call-site guard: the watchdog must NOT launch a 2nd digest when a
+    generation is already running, even if coverage < 90 %."""
+
+    @pytest.mark.asyncio
+    async def test_watchdog_skips_when_generation_running(self):
+        from contextlib import asynccontextmanager
+
+        mock_session = AsyncMock()
+        # 10 users, 15 pairs = 75 % < 90 % → would normally trigger a rerun.
+        mock_session.scalar = AsyncMock(side_effect=[10, 15])
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        with (
+            patch(
+                "app.database.safe_async_session",
+                side_effect=lambda: fake_sm(),
+            ),
+            patch(
+                "app.services.generation_state.is_generation_running",
+                return_value=True,
+            ),
+            patch(
+                "app.workers.scheduler.run_digest_generation",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            await _digest_watchdog()
+
+        # Already running → skip despite low coverage.
+        mock_run.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_watchdog_triggers_when_not_running_and_low_coverage(self):
+        from contextlib import asynccontextmanager
+
+        mock_session = AsyncMock()
+        mock_session.scalar = AsyncMock(side_effect=[10, 15])  # 75 %
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        with (
+            patch(
+                "app.database.safe_async_session",
+                side_effect=lambda: fake_sm(),
+            ),
+            patch(
+                "app.services.generation_state.is_generation_running",
+                return_value=False,
+            ),
+            patch(
+                "app.workers.scheduler.run_digest_generation",
+                new_callable=AsyncMock,
+            ) as mock_run,
+        ):
+            await _digest_watchdog()
+
+        mock_run.assert_awaited_once()

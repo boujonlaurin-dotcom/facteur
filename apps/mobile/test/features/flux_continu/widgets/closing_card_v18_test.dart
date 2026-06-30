@@ -75,7 +75,7 @@ void main() {
       expect(find.textContaining('étape'), findsNothing);
     });
 
-    testWidgets('always shows three activity prompts under the amorce',
+    testWidgets('shows kClosingActivityCount activity prompt(s) under the amorce',
         (tester) async {
       await tester.pumpWidget(_wrap(
         const ClosingCardV18(),
@@ -85,7 +85,7 @@ void main() {
 
       // Le micro-libellé d'amorce est toujours présent.
       expect(find.text('Et si tu en profitais pour…'), findsOneWidget);
-      // Trois propositions tournées en question (se terminent par « ? »).
+      // Les propositions tournées en question (se terminent par « ? »).
       final prompts = find.byWidgetPredicate(
         (w) => w is Text && (w.data?.endsWith('?') ?? false),
       );

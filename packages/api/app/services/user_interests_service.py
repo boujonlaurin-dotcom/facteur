@@ -458,9 +458,7 @@ class UserSourcesStateService:
         await self._sync_favorite_source(
             user_id=user_id, source_id=source_id, state=state, position=position
         )
-        await self._sync_muted_source(
-            user_id=user_id, source_id=source_id, state=state
-        )
+        await self._sync_muted_source(user_id=user_id, source_id=source_id, state=state)
         await self.db.commit()
         return prev_state
 

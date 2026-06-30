@@ -151,12 +151,13 @@ class CoverageSpectrumBar extends StatelessWidget {
 
     if (!showAnchorLabels) return barArea;
 
-    // Ancrage permanent « Gauche » / « Droite » sous le trait.
+    // Ancrage permanent « Gauche » / « Droite » sous le trait. Taille remontée
+    // (8.5 → 11) et teinte plus dense (tertiary → secondary) pour la lisibilité.
     final anchorStyle = GoogleFonts.courierPrime(
-      fontSize: 8.5,
+      fontSize: 11,
       fontWeight: FontWeight.w600,
       letterSpacing: 0.4,
-      color: colors.textTertiary,
+      color: colors.textSecondary,
     );
     return Column(
       mainAxisSize: MainAxisSize.min,

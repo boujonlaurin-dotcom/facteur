@@ -28,6 +28,7 @@ import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
+import '../../feedback/widgets/feedback_closing_card.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
@@ -1259,6 +1260,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 ),
               ),
             ),
+            // Carte feedback de fin de tournée (Epic 13) — micro-feedback emoji
+            // + invitation au call qualitatif (gating segmenté côté backend).
+            const SliverToBoxAdapter(child: FeedbackClosingCard()),
             const SliverToBoxAdapter(child: SizedBox(height: 92)),
           ],
         ),
@@ -1488,7 +1492,10 @@ class _FluxContinuSkeleton extends StatelessWidget {
             logoUrl: isSource ? section.sourceLogoUrl : null,
           ),
         );
-        children.add(const ExploreDiscoverySkeleton());
+        // Issue #1 — réserve la **hauteur finale** (coreVisibleCount cartes) avec
+        // la même carte squelette que les coquilles de section, pour que la
+        // séquence cold-skeleton → Phase 1 → Phase 2 garde une géométrie stable.
+        children.addAll(sectionSkeletonCards(section.coreVisibleCount));
         children.add(const SizedBox(height: 16));
       }
     }

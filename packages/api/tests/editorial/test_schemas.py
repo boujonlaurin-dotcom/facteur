@@ -63,7 +63,6 @@ class TestClusterSummary:
         cs = ClusterSummary(
             topic_id="c1",
             label="Réforme retraites",
-            article_titles=["Article 1", "Article 2"],
             source_count=5,
             is_trending=True,
             theme="politique",
@@ -76,11 +75,20 @@ class TestClusterSummary:
         cs = ClusterSummary(
             topic_id="c1",
             label="Test",
-            article_titles=[],
             source_count=1,
             is_trending=False,
         )
         assert cs.theme is None
+
+    def test_no_article_titles_field(self):
+        """LR-1 PR 2 : `article_titles` retiré du résumé LLM (économie tokens)."""
+        cs = ClusterSummary(
+            topic_id="c1",
+            label="Test",
+            source_count=1,
+            is_trending=False,
+        )
+        assert "article_titles" not in cs.model_dump()
 
 
 class TestSelectedTopic:

@@ -166,3 +166,40 @@ TENNIS
 BALLON
 COURSE
 NAGEUR
+
+# --- Géographie : pays (6 lettres, présents dans grille_proper_nouns_fr.txt) ---
+ITALIE
+SUISSE
+CANADA
+BRESIL
+ANGOLA
+GUINEE
+ZAMBIE
+SERBIE
+CHYPRE
+TAIWAN
+KOWEIT
+PANAMA
+ECOSSE
+ISRAEL
+
+# --- Géographie : régions & territoires ---
+ALSACE
+SAVOIE
+VENDEE
+ALASKA
+QUEBEC
+SAHARA
+KOSOVO
+CRIMEE
+DONBAS
+
+# --- Géographie : capitales & grandes villes ---
+BERLIN
+MADRID
+VIENNE
+MOSCOU
+GENEVE
+ANKARA
+NAPLES
+VENISE

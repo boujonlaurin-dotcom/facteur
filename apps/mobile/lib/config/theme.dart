@@ -455,9 +455,19 @@ class FacteurTheme {
         foregroundColor: colors.textPrimary,
         elevation: 0,
         centerTitle: false,
-        systemOverlayStyle: brightness == Brightness.dark
-            ? SystemUiOverlayStyle.light
-            : SystemUiOverlayStyle.dark,
+        // Barres système transparentes (edge-to-edge). On n'utilise pas
+        // SystemUiOverlayStyle.light/.dark car elles forcent une
+        // systemNavigationBarColor noire, repeignant la barre à chaque écran.
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness:
+              brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+          statusBarBrightness: brightness,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarContrastEnforced: false,
+          systemNavigationBarIconBrightness:
+              brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+        ),
         titleTextStyle: FacteurTypography.displaySmall(colors.textPrimary),
       ),
 

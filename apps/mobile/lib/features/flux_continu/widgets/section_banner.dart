@@ -232,6 +232,14 @@ class SectionBanner extends StatelessWidget {
                             bottom: hasBlurb ? (large ? 10 : 8) : 0,
                           ),
                           child: Text.rich(
+                            // Borne le titre : la page Flâner (`large`) tolère
+                            // 2 lignes, mais les bannières inline (dont la
+                            // veille, au label long `Ma veille — {config}`)
+                            // restent sur 1 ligne pour ne jamais dépasser le
+                            // budget de hauteur `kBannerHeightWithBlurb` que le
+                            // snap/fit suppose.
+                            maxLines: large ? 2 : 1,
+                            overflow: TextOverflow.ellipsis,
                             TextSpan(
                               text: title,
                               children: <InlineSpan>[
@@ -267,6 +275,10 @@ class SectionBanner extends StatelessWidget {
                         if (hasBlurb)
                           Text(
                             effectiveBlurb,
+                            // Défensif : même budget 82px — borne le blurb pour
+                            // garder une hauteur déterministe.
+                            maxLines: large ? 3 : 2,
+                            overflow: TextOverflow.ellipsis,
                             style: (large ? _blurbStyleLarge : _blurbStyleInline)
                                 .copyWith(color: colors.textSecondary),
                           ),

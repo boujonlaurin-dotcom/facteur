@@ -345,6 +345,15 @@ class FeedThemeSection extends FluxSection {
   /// persisté dans `_themes`/`_sources`) — ne survit donc pas hors d'un recompose.
   final bool underfilled;
 
+  /// Issue #1 — « squelette stable » : true quand la section est une **coquille**
+  /// seed-ée AVANT le fan-out (réserve l'ordre + la hauteur finale via des cartes
+  /// squelette). Le builder réel (`_buildFavoriteThemeSection`/`_buildSourceSection`/
+  /// `_buildSuggestedSection`) reconstruit la section avec le défaut `false` →
+  /// l'upsert par `sectionKey` remplace la coquille → plus placeholder. Le fit
+  /// (`_capSectionToFit`) early-return sur les placeholders pour ne pas rabattre
+  /// la réserve à 1 carte.
+  final bool isPlaceholder;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -362,6 +371,7 @@ class FeedThemeSection extends FluxSection {
     this.reason,
     this.noRecentSource = false,
     this.underfilled = false,
+    this.isPlaceholder = false,
     super.blurb,
     super.illustrationAsset,
   });
@@ -384,6 +394,7 @@ class FeedThemeSection extends FluxSection {
     int? coreVisibleCount,
     bool? noRecentSource,
     bool? underfilled,
+    bool? isPlaceholder,
   }) {
     return FeedThemeSection(
       kind: kind,
@@ -405,6 +416,7 @@ class FeedThemeSection extends FluxSection {
       reason: reason,
       noRecentSource: noRecentSource ?? this.noRecentSource,
       underfilled: underfilled ?? this.underfilled,
+      isPlaceholder: isPlaceholder ?? this.isPlaceholder,
       blurb: blurb,
       illustrationAsset: illustrationAsset,
     );

@@ -502,3 +502,170 @@ class TestBatchFollowedSourceIds:
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
         assert "state in" in compiled
         assert "'followed'" in compiled and "'favorite'" in compiled
+
+
+class TestAntiDoubleDigestGuard:
+    """S1-B in-function guard: run_digest_generation must short-circuit when a
+    generation is already running, closing all 3 uncoordinated callers (cron,
+    watchdog, startup catchup)."""
+
+    @pytest.mark.asyncio
+    async def test_skips_when_generation_already_running(self):
+        import app.jobs.digest_generation_job as job_mod
+        from app.jobs.digest_generation_job import run_digest_generation
+
+        with (
+            patch(
+                "app.services.generation_state.is_generation_running",
+                return_value=True,
+            ),
+            patch(
+                "app.services.generation_state.mark_generation_started",
+            ) as mock_start,
+            patch.object(job_mod, "safe_async_session") as mock_safe_session,
+        ):
+            result = await run_digest_generation(target_date=datetime.date.today())
+
+        assert result["skipped"] is True
+        assert result["reason"] == "already_running"
+        assert "stats" in result
+        # Guard runs BEFORE mark_generation_started (which would clobber the
+        # in-flight run's _started_at) and before opening any session.
+        mock_start.assert_not_called()
+        mock_safe_session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_proceeds_when_not_running(self):
+        from contextlib import asynccontextmanager
+
+        import app.jobs.digest_generation_job as job_mod
+        from app.jobs.digest_generation_job import run_digest_generation
+
+        mock_session = AsyncMock()
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        sentinel = {"success": True, "stats": {}}
+        mock_job = MagicMock()
+        mock_job.run = AsyncMock(return_value=sentinel)
+
+        with (
+            patch(
+                "app.services.generation_state.is_generation_running",
+                return_value=False,
+            ),
+            patch(
+                "app.services.generation_state.mark_generation_started",
+            ) as mock_start,
+            patch(
+                "app.services.generation_state.mark_generation_finished",
+            ) as mock_finish,
+            patch.object(job_mod, "DigestGenerationJob", return_value=mock_job),
+            patch.object(job_mod, "safe_async_session", side_effect=lambda: fake_sm()),
+        ):
+            result = await run_digest_generation(target_date=datetime.date.today())
+
+        assert result is sentinel
+        mock_start.assert_called_once()
+        mock_finish.assert_called_once()
+        mock_job.run.assert_awaited_once()
+        mock_session.commit.assert_awaited_once()
+
+
+class TestGenerationStateSafetyTimeout:
+    """generation_state auto-resets the running flag after _SAFETY_TIMEOUT so a
+    crashed-but-not-finished run can't block on-demand generation forever."""
+
+    def test_is_generation_running_auto_resets_after_timeout(self, monkeypatch):
+        import app.services.generation_state as gs
+
+        try:
+            monkeypatch.setattr(gs.time, "monotonic", lambda: 1000.0)
+            gs.mark_generation_started()
+            assert gs.is_generation_running() is True
+
+            # Still inside the safety window.
+            monkeypatch.setattr(
+                gs.time, "monotonic", lambda: 1000.0 + gs._SAFETY_TIMEOUT - 1
+            )
+            assert gs.is_generation_running() is True
+
+            # Past the safety window → auto-reset to False.
+            monkeypatch.setattr(
+                gs.time, "monotonic", lambda: 1000.0 + gs._SAFETY_TIMEOUT + 1
+            )
+            assert gs.is_generation_running() is False
+        finally:
+            gs.mark_generation_finished()
+
+
+class TestAxeCBatchTxRelease:
+    """S1-C: on the SUCCESS path, run() rolls back + re-applies session timeouts
+    after the trending read and before the editorial LLM precompute, so the
+    batch session is not left idle-in-transaction during the 3-5 min of LLM."""
+
+    @pytest.mark.asyncio
+    async def test_rollback_and_timeouts_before_editorial_precompute(
+        self, mock_session
+    ):
+        from contextlib import asynccontextmanager
+
+        import app.jobs.digest_generation_job as job_mod
+        from app.jobs.digest_generation_job import (
+            DigestGenerationJob,
+            GlobalTrendingContext,
+        )
+
+        job = DigestGenerationJob(batch_size=10)
+        # Empty user list keeps the editorial precompute body + per-user batch
+        # loop out of the way, isolating the trending → precompute boundary.
+        job._get_active_users = AsyncMock(return_value=[])
+        job._prune_old_highlights = AsyncMock()
+        job._match_grille_featured_article = AsyncMock()
+
+        fake_ctx = GlobalTrendingContext(
+            trending_content_ids=set(),
+            une_content_ids=set(),
+            computed_at=datetime.datetime.now(datetime.UTC),
+        )
+
+        # Coverage read in finalize() opens its own short session.
+        cov_session = AsyncMock()
+        cov_session.scalar = AsyncMock(return_value=0)
+
+        @asynccontextmanager
+        async def fake_cov_sm():
+            yield cov_session
+
+        mock_session.rollback = AsyncMock()
+
+        with (
+            patch.object(job_mod, "DigestSelector") as mock_sel_cls,
+            patch.object(
+                job_mod, "apply_session_timeouts", new_callable=AsyncMock
+            ) as mock_apply,
+            patch(
+                "app.services.editorial.pipeline.EditorialPipelineService"
+            ) as mock_pipe_cls,
+            patch.object(
+                job_mod, "safe_async_session", side_effect=lambda: fake_cov_sm()
+            ),
+        ):
+            mock_sel = MagicMock()
+            mock_sel._build_global_trending_context = AsyncMock(return_value=fake_ctx)
+            mock_sel_cls.return_value = mock_sel
+            # llm not ready → editorial precompute body skipped (no except path).
+            mock_pipe = MagicMock()
+            mock_pipe.llm.is_ready = False
+            mock_pipe_cls.return_value = mock_pipe
+
+            await job.run(mock_session, datetime.date.today())
+
+        # On the success path the trending/editorial except blocks never fire,
+        # so the single rollback + apply_session_timeouts pair IS the Axe C
+        # release between trending and the LLM precompute.
+        mock_session.rollback.assert_awaited_once()
+        mock_apply.assert_awaited_once()
+        assert mock_apply.await_args.args[0] is mock_session

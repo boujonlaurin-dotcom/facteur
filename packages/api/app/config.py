@@ -119,6 +119,17 @@ class Settings(BaseSettings):
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key (classification + editorial pipeline)
 
+    # Batching de la classification (LR-1 PR 2) — coupe le coût Mistral en
+    # refacturant le gros prompt système (taxonomie 51 topics) moins souvent.
+    # Le worker accumule la file et ne traite que quand `pending >= min_batch`
+    # OU que le plus vieux pending atteint `max_wait_s` (anti-famine du reste
+    # de file). Rollback env-only vers l'ancien comportement : batch_size=5,
+    # min_batch_size=1, max_wait_s=0, interval_s=10.
+    classification_worker_batch_size: int = 12  # cible d'articles / appel batch
+    classification_worker_min_batch_size: int = 8  # seuil mini avant de traiter
+    classification_worker_max_wait_s: int = 300  # plafond d'attente du + vieux pending
+    classification_worker_interval_s: int = 30  # intervalle entre 2 vérifications
+
     # Brave Search API (smart source search)
     brave_api_key: str = ""
     brave_monthly_cap: int = 1800
@@ -127,6 +138,12 @@ class Settings(BaseSettings):
     # Veille LLM suggesters — Story 23.3 (curation synchrone à l'instant du flow).
     # Medium = bon compromis qualité/coût ; override pour switch large si besoin.
     veille_llm_model: str = "mistral-medium-latest"
+
+    # Divergence éditoriale (LR-1 PR 2) — l'analyse LLM de divergence n'apporte
+    # de valeur que sur des sujets bien couverts. En deçà de ce seuil de
+    # perspectives, on saute l'appel mistral-large et on garde le fallback
+    # déterministe `compute_divergence_level` (divergence_level toujours rempli).
+    divergence_llm_min_perspectives: int = 4
 
     # Observabilité scaling (enabler WP-E) — instrumentation API externes +
     # sonde pool. Purement additif : ne change aucun comportement métier.
@@ -145,6 +162,16 @@ class Settings(BaseSettings):
     # Gouvernance coût (PR-S3). Les caps Brave/Mistral search sont désormais
     # lus depuis api_usage_events (persistant). TTL du cache du COUNT mensuel.
     cost_budget_cache_ttl_s: int = 120
+
+    # Mistral rate limiting (LR-1 PR 1) — borne le burst éditorial qui causait
+    # ~28 % de 429 (curation + deep_matcher + perspective fan-out non bornés sur
+    # le modèle large). Token-bucket /minute + cap de concurrence, partagés au
+    # niveau process, appliqués aux seuls appels `large`. Les défauts sont
+    # conservateurs (à affiner via LR-3 selon le plan Mistral) et configurables
+    # sans redéploiement de code.
+    mistral_rate_limit_enabled: bool = True  # kill-switch throttle large
+    mistral_large_rpm: int = 60  # requêtes large/minute (token-bucket)
+    mistral_large_concurrency: int = 4  # appels large simultanés (semaphore)
 
     # GitHub (app update feature)
     github_token: str = ""

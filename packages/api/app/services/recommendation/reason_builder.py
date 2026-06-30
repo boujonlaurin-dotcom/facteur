@@ -117,6 +117,11 @@ def _compute_top_label(
         pertinence_reasons = [r for r in breakdown if r.pillar == "pertinence"]
         if pertinence_reasons:
             top = pertinence_reasons[0]
+            # PR2: l'affinité entité porte déjà une phrase complète ; comme le
+            # breakdown est trié par |points|, elle ne devient le label que si
+            # elle domine la pertinence.
+            if top.label.startswith(ScoringWeights.ENTITY_AFFINITY_REASON_PREFIX):
+                return top.label
             if "Sujet suivi :" in top.label:
                 return top.label.replace("Sujet suivi : ", "Vos centres d'intérêt : ")
             if "Sujet :" in top.label:

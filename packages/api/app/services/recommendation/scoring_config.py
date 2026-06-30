@@ -292,6 +292,30 @@ class ScoringWeights:
     # Calibré pour être significatif mais pas dominant vs theme match (50 pts).
     SOURCE_AFFINITY_MAX_BONUS = 25.0
 
+    # --- ENTITY AFFINITY (PR2 — « le levier ») ---
+    # Affinité positive apprise sur les entités nommées (miroir des subtopics).
+    # Le pilier Pertinence récompense `affinity > 1.0` : bonus = BASE * (aff - 1).
+
+    # Bonus par entité aimée, par point d'affinité au-dessus du neutre 1.0.
+    ENTITY_AFFINITY_BASE = 8.0
+
+    # Cap total du bonus entité par article (garde-fou diversité : un article à
+    # 5 entités favorites ne doit pas écraser un article moins ciblé mais plus
+    # pertinent).
+    ENTITY_AFFINITY_MAX_BONUS = 30.0
+
+    # Nombre maximum d'entités apprises par interaction (article). Borne le coût
+    # et empêche un article entity-soup de diluer le signal.
+    ENTITY_AFFINITY_MAX_ENTITIES = 5
+
+    # Decay quotidien vers le neutre 1.0 (= SUBTOPIC_DECAY).
+    ENTITY_AFFINITY_DECAY = 0.98
+
+    # Préfixe de la raison entité, partagé entre le pilier (qui construit le
+    # label `{prefix} {entité}`) et le reason_builder (qui le détecte). Source
+    # unique pour éviter la dérive de la chaîne magique entre les deux.
+    ENTITY_AFFINITY_REASON_PREFIX = "Parce que tu lis souvent"
+
     # --- PILLAR SCORING (v2 Architecture) ---
 
     # Poids relatifs des piliers (doivent sommer à 1.0).
@@ -304,7 +328,11 @@ class ScoringWeights:
 
     # Expected max raw scores per pillar (for 0-100 normalization).
     # Tuned from observed score distributions.
-    MAX_PERTINENCE_RAW = 130.0  # theme(50) + 2 subtopics(90) + precision(18) - overlap
+    # theme(50) + 2 subtopics(90) + precision(18) + entity_affinity(cap 30) - overlap.
+    # Relevé 130→160 (PR2) : sans ce headroom le bonus entité (cap 30) est noyé
+    # par la normalisation `min(raw/expected_max, 1.0)*100`. Effet de bord assumé :
+    # compresse légèrement les scores pertinence existants — à valider sur la jauge.
+    MAX_PERTINENCE_RAW = 160.0
     MAX_SOURCE_RAW = (
         95.0  # trusted(35) + custom(12) + subscription(20) + affinity(25) + curated(10)
     )

@@ -281,6 +281,25 @@ class ClassificationQueueService:
         )
         return result.scalar()
 
+    async def get_pending_stats(self) -> tuple[int, float | None]:
+        """Retourne (nombre de pending, âge en secondes du plus vieux pending).
+
+        Une seule requête (COUNT + MIN created_at) pour la gate d'accumulation
+        du worker (LR-1 PR 2) : on ne traite un lot que si le compte atteint le
+        seuil minimal OU si le plus vieux pending dépasse le plafond d'attente.
+        `oldest_age` est None quand la file est vide.
+        """
+        result = await self.session.execute(
+            select(
+                func.count(ClassificationQueue.id),
+                func.min(ClassificationQueue.created_at),
+            ).where(ClassificationQueue.status == "pending")
+        )
+        count, oldest = result.one()
+        if not count or oldest is None:
+            return 0, None
+        return int(count), (datetime.utcnow() - oldest).total_seconds()
+
     async def requeue_failed(self, max_retries: int = 3) -> int:
         """Remet en file d'attente les articles échoués avec retry_count < max_retries.
 

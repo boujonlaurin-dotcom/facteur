@@ -27,6 +27,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.models.content import Content
 from app.models.enums import SourceType
 from app.models.source import Source
@@ -782,7 +783,13 @@ class EditorialPipelineService:
             # The LLM divergence analysis must describe the SAME media set
             # as the counters above — feed it the merged list (cluster +
             # Google News), not just Google News.
-            if len(merged_perspectives) >= 3:
+            # LR-1 PR 2 : on ne paie l'appel mistral-large que sur des sujets
+            # assez couverts (>= divergence_llm_min_perspectives). En deçà, le
+            # fallback déterministe `compute_divergence_level` ci-dessous suffit.
+            if (
+                len(merged_perspectives)
+                >= get_settings().divergence_llm_min_perspectives
+            ):
                 try:
                     source_bias = await perspective_service.resolve_bias(
                         domain=exclude_domain or "",

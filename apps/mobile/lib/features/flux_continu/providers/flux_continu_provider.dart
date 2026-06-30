@@ -502,7 +502,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // comportement (thèmes pauvres droppés, pas d'empty-state non choisi).
     _themes = picked.isFallback ? const [] : _shellThemeSections(favorites);
     _sources = _shellSourceSections(favoriteSources);
-    _suggested = const [];
+    // Issue #1 — seed des coquilles « Choisie pour vous » AVANT le fan-out
+    // (mêmes clés que le rendu réel) : elles sont ordonnées dès la Phase 1 et se
+    // remplissent sur place au lieu d'apparaître en net-new (le « pop » ressenti).
+    final suggestions = [for (final t in topThemes) if (t.isSuggested) t];
+    _suggested = _shellSuggestedSections(_usableSuggestions(suggestions));
     // Reseed complet ⇒ les coquilles ne sont pas encore résolues : on repart
     // d'une classification vierge (aucune section maigre tant que le fan-out /
     // le chemin cache n'a pas confirmé un contenu réel).
@@ -537,7 +541,6 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // et la charge serveur est bornée (1 worker uvicorn → recos perso
     // sérialisées). Réutilise les fetch/build unitaires existants
     // (_fetchOneTheme/_fetchOneSource + builders).
-    final suggestions = [for (final t in topThemes) if (t.isSuggested) t];
     await _fanOutSectionsProgressive(
       favorites: favorites,
       isExplicitFavorite: !picked.isFallback,
@@ -646,6 +649,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             themeSlug: slug,
             items: const [],
             hasMore: false,
+            isPlaceholder: true,
           ),
         CustomTopicFavoriteRef(:final id) => FeedThemeSection(
             kind: SectionKind.theme,
@@ -656,6 +660,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             customTopicId: id,
             items: const [],
             hasMore: false,
+            isPlaceholder: true,
           ),
         VeilleFavoriteRef() => _skeletonVeilleSection(),
       };
@@ -676,6 +681,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       coreVisibleCount: 3,
       items: const [],
       hasMore: false,
+      isPlaceholder: true,
     );
   }
 
@@ -706,7 +712,59 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         sourceLogoUrl: src.logoUrl,
         items: const [],
         hasMore: false,
+        isPlaceholder: true,
       ));
+    }
+    return sections;
+  }
+
+  /// Issue #1 — coquilles (placeholders) des sections « Choisie pour vous »
+  /// seedées AVANT le fan-out, pour qu'elles ne « poppent » plus en net-new mais
+  /// se remplissent **sur place**. Mêmes label/accent/reason/clé que
+  /// [_buildSuggestedSection] (source → catalogue `userSourcesProvider` ; thème →
+  /// vocabulaire `visualFor`) ⇒ l'upsert par `sectionKey` substitue la coquille.
+  /// Une suggestion source absente du catalogue est ignorée (le builder la
+  /// dropperait aussi). `origin: suggested`, `items` vides, `isPlaceholder: true`.
+  List<FeedThemeSection> _shellSuggestedSections(
+    List<TopTheme> usableSuggestions,
+  ) {
+    final catalog =
+        ref.read(userSourcesProvider).valueOrNull ?? const <Source>[];
+    final sourceById = {for (final s in catalog) s.id: s};
+    final sections = <FeedThemeSection>[];
+    for (final s in usableSuggestions) {
+      if (s.kind == 'source' && s.sourceId != null) {
+        final src = sourceById[s.sourceId!];
+        if (src == null) continue;
+        sections.add(FeedThemeSection(
+          kind: SectionKind.source,
+          label: src.name,
+          accent: sourceAccentFor(src.id),
+          coreVisibleCount: 3,
+          sourceId: src.id,
+          sourceLogoUrl: src.logoUrl,
+          items: const [],
+          hasMore: false,
+          origin: SectionOrigin.suggested,
+          reason: s.reason,
+          isPlaceholder: true,
+        ));
+      } else {
+        final visual = visualFor(s.interestSlug);
+        sections.add(FeedThemeSection(
+          kind: SectionKind.theme,
+          label: visual.label,
+          accent: visual.accent,
+          illustrationAsset: _kVeilleIllustration,
+          coreVisibleCount: 3,
+          themeSlug: s.interestSlug,
+          items: const [],
+          hasMore: false,
+          origin: SectionOrigin.suggested,
+          reason: s.reason,
+          isPlaceholder: true,
+        ));
+      }
     }
     return sections;
   }
@@ -920,6 +978,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   FluxSection _capSectionToFit(FluxSection s, double usableHeight) {
     if (s is EssentielSection) return s;
+    // Issue #1 — une coquille (placeholder, `totalCount == 0`) doit **réserver**
+    // sa hauteur nominale (`coreVisibleCount`). Sans ce court-circuit, le fit
+    // rabattrait son compte à 1 (pool vide) et la réserve squelette ne ferait
+    // qu'1 carte → l'upsert décalerait quand même le bas de page. On la laisse
+    // intacte ; le fit réel s'applique dès que le contenu est résolu.
+    if (s is FeedThemeSection && s.isPlaceholder) return s;
     final hasBlurb = s.blurb?.trim().isNotEmpty ?? false;
     final spec = ref.read(displayModeSpecProvider);
     // Le cap intervient après dédup, donc les articles révélés au-dessus du
@@ -1833,9 +1897,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       FeedThemeSection? Function(FeedResponse? feed) build,
       void Function(FeedThemeSection section) append, {
       required String resolvedKey,
+      void Function()? onEmpty,
     }) async {
       final section = build(await fetch());
-      if (section != null) append(section);
+      if (section != null) {
+        append(section);
+      } else {
+        // Issue #1 — une suggestion résolue **vide** retire sa coquille seedée
+        // (sinon un squelette « Choisie pour vous » resterait sans contenu). Un
+        // léger shrink vers le bas seulement, jamais de pop vers le haut.
+        onEmpty?.call();
+      }
       // Fetch résolu (vide ou non) : la classification maigre/riche peut
       // désormais inspecter cette clé (cf. [_resolvedSectionKeys]).
       _resolvedSectionKeys.add(resolvedKey);
@@ -1878,8 +1950,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                       isSerene,
                     ),
               (feed) => _buildSuggestedSection(s, feed, sourceById),
-              (section) => _suggested = [..._suggested, section],
+              // Upsert par clé : remplace la coquille suggérée seedée à sa
+              // position (Issue #1) au lieu d'append (sinon doublon coquille +
+              // contenu, et la coquille « poperait »).
+              (section) => _suggested = _upsertByKey(_suggested, section),
               resolvedKey: _suggestionKey(s),
+              onEmpty: () =>
+                  _suggested = _removeByKey(_suggested, _suggestionKey(s)),
             ),
     ];
 
@@ -1905,6 +1982,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     next[idx] = section;
     return next;
   }
+
+  /// Retire de [list] la section de `sectionKey` == [key]. Issue #1 — une
+  /// suggestion seedée mais résolue sans contenu disparaît après le fan-out.
+  List<FeedThemeSection> _removeByKey(List<FeedThemeSection> list, String key) =>
+      [for (final s in list) if (sectionKey(s) != key) s];
 
   /// `true` ssi [list] contient déjà une section de même `sectionKey` que
   /// [section]. Sert aux chemins de refetch à n'upserter qu'une coquille encore
