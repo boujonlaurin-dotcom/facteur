@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Les sources que tu ranges dans ta Tournée y restent : elles ne se perdent plus ni ne réapparaissent ailleurs après un réagencement."
+    },
+    {
       "tag": "Notifications",
       "summary": "La notif du matin affiche de nouveau les titres à la une, sans doublon visuel."
     },

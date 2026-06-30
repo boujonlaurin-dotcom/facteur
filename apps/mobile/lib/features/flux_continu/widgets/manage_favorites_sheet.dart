@@ -334,10 +334,25 @@ class _ManageFavoritesContentState
 
   // ── Réordres ──────────────────────────────────────────────────────────────
 
+  /// Garde-fou des réordres : ne pas réécrire l'ordre tant que les données
+  /// d'appartenance (intérêts + sources) ne sont pas chargées — sinon un favori
+  /// non matérialisé serait élagué de l'ordre (cf. `mergeVisibleReorder`).
+  bool get _membershipDataReady =>
+      ref.read(userInterestsProvider).valueOrNull != null &&
+      ref.read(userSourcesStateProvider).valueOrNull != null;
+
   Future<void> _persistEssentielReorder(List<_FavItem> ordered) async {
+    if (!_membershipDataReady) return;
+
+    // Réordre non destructif : on ne permute que les clés rendues ; toute clé
+    // d'ordre non rendue cette frame (catalogue en cours, source absente du
+    // catalogue, clé masquée) est préservée à sa position. Seul `_onRemove`
+    // retire une clé.
+    final prevOrder = ref.read(tourneeOrderPrefsProvider).order;
+    final renderedKeys = ordered.map((e) => e.key).toList();
     await ref
         .read(tourneeOrderPrefsProvider.notifier)
-        .setOrder(ordered.map((e) => e.key).toList());
+        .setOrder(mergeVisibleReorder(prevOrder, renderedKeys));
     final themeRefs = <FavoriteRef>[
       for (final e in ordered)
         if (e.kind == _FavKind.theme) ThemeFavoriteRef(slug: e.id),
@@ -353,9 +368,16 @@ class _ManageFavoritesContentState
   }
 
   Future<void> _persistFlanerReorder(List<_FavItem> ordered) async {
+    // Même garde-fou + réordre non destructif que côté Essentiel (cf.
+    // `_persistEssentielReorder`) : une clé `source:`/`topic:` non résolue dans
+    // `pinned_tabs_order_v1` est préservée à sa place, jamais élaguée.
+    if (!_membershipDataReady) return;
+
+    final prevOrder = ref.read(tabOrderPrefsProvider);
+    final renderedKeys = ordered.map((e) => e.key).toList();
     await ref
         .read(tabOrderPrefsProvider.notifier)
-        .setOrder(ordered.map((e) => e.key).toList());
+        .setOrder(mergeVisibleReorder(prevOrder, renderedKeys));
     final topicIds = [
       for (final e in ordered)
         if (e.kind == _FavKind.subject) e.id,
