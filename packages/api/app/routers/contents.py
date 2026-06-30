@@ -499,6 +499,7 @@ def _perspective_to_dict(p: object) -> dict:
         "bias_stance": p.bias_stance,
         "published_at": p.published_at,
         "description": p.description,
+        "reliability_score": getattr(p, "reliability_score", None),
         "language": getattr(p, "language", None),
     }
 

@@ -129,10 +129,7 @@ class _PasDeReculBlockState extends State<PasDeReculBlock> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (badgeChip != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: badgeChip,
-                  ),
+                  _buildBadgeRow(context, badgeChip, colors),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
@@ -212,10 +209,7 @@ class _PasDeReculBlockState extends State<PasDeReculBlock> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (badgeChip != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: badgeChip,
-                ),
+                _buildBadgeRow(context, badgeChip, colors),
 
               articleRow,
 
@@ -296,6 +290,114 @@ class _PasDeReculBlockState extends State<PasDeReculBlock> {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Badge éditorial « Prendre du recul » + petit bouton info (i) à droite qui
+  /// ouvre une explication de la rubrique. Le [GestureDetector] de l'icône
+  /// gagne l'arène de gestes : sur la carte intro, taper le (i) n'enclenche pas
+  /// le toggle parent.
+  Widget _buildBadgeRow(BuildContext context, Widget chip, FacteurColors colors) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          chip,
+          const SizedBox(width: 6),
+          Semantics(
+            button: true,
+            label: 'À propos de « Pas de recul »',
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _showPasDeReculInfo(context, colors),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(
+                  Icons.info_outline,
+                  size: 15,
+                  color: colors.info.withOpacity(0.7),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Feuille du bas expliquant la rubrique « Pas de recul » : ce qu'elle est et
+  /// comment Facteur sélectionne ces articles.
+  void _showPasDeReculInfo(BuildContext context, FacteurColors colors) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        decoration: BoxDecoration(
+          color: colors.backgroundPrimary,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          24 + MediaQuery.of(sheetContext).padding.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.textSecondary.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                const Text('\u{1F52D}', style: TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                Text(
+                  'Pas de recul',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "Quand un sujet domine l'actualité, Facteur met en avant un "
+              'article qui prend de la hauteur : analyse de fond, mise en '
+              "perspective ou angle inattendu, plutôt qu'une énième dépêche.",
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.5,
+                color: colors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Ces articles sont repérés automatiquement parmi des sources de '
+              'qualité, en privilégiant les formats longs et explicatifs '
+              '(décryptages, enquêtes, analyses argumentées) qui aident à '
+              "comprendre plutôt qu'à suivre le flux.",
+              style: TextStyle(
+                fontSize: 14,
+                height: 1.5,
+                color: colors.textSecondary,
+              ),
+            ),
+          ],
         ),
       ),
     );

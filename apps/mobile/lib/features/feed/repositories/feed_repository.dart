@@ -1193,6 +1193,10 @@ class PerspectiveData {
   /// Alimente l'aperçu au long-press de la carte de couverture.
   final String? description;
 
+  /// Fiabilité de la source (`high`/`medium`/`mixed`/`low`/`unknown`). Portée
+  /// par le back ; défaut `'unknown'` si absente (cache non rafraîchi).
+  final String reliabilityScore;
+
   /// Spans divergents du titre variant vs. référence (colorisés par bias).
   /// Liste vide si la chaîne back n'a pas pu calculer (cluster manquant, etc.).
   final List<HighlightSpan> highlightSpans;
@@ -1214,6 +1218,7 @@ class PerspectiveData {
     required this.biasStance,
     this.publishedAt,
     this.description,
+    this.reliabilityScore = 'unknown',
     this.highlightSpans = const [],
     this.sharedTokens = const [],
     this.language,
@@ -1230,6 +1235,8 @@ class PerspectiveData {
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
       description: json['description'] as String?,
+      reliabilityScore:
+          (json['reliability_score'] as String?)?.toLowerCase() ?? 'unknown',
       highlightSpans: rawHighlights == null
           ? const []
           : rawHighlights
