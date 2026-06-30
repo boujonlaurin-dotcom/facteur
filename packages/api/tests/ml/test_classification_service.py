@@ -13,7 +13,9 @@ import httpx
 import pytest
 
 from app.services.ml.classification_service import (
+    CLASSIFICATION_CACHE_KEY,
     CLASSIFICATION_MODEL,
+    ENTITY_CACHE_KEY,
     ENTITY_SYSTEM_PROMPT,
     VALID_TOPIC_SLUGS,
     ClassificationService,
@@ -390,6 +392,56 @@ class TestCallMistral:
         assert kwargs["status"] == "ok"
 
     @pytest.mark.asyncio
+    async def test_records_cached_prompt_tokens(self):
+        """`usage.prompt_tokens_details.cached_tokens` est propagé (LR-1 PR 2)."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {
+                "prompt_tokens": 1900,
+                "completion_tokens": 42,
+                "prompt_tokens_details": {"cached_tokens": 1600},
+            },
+        }
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        self.service._client = mock_client
+
+        with patch(
+            "app.services.observability.usage_recorder.record_api_call",
+            new_callable=AsyncMock,
+        ) as rec:
+            await self.service._call_mistral({"model": "test", "max_tokens": 100})
+
+        kwargs = rec.await_args.kwargs
+        assert kwargs["cached_prompt_tokens"] == 1600
+
+    @pytest.mark.asyncio
+    async def test_call_site_is_parametrized(self):
+        """`call_site` choisit le site d'observabilité (entities vs pass1)."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "{}"}}],
+            "usage": {},
+        }
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        self.service._client = mock_client
+
+        with patch(
+            "app.services.observability.usage_recorder.record_api_call",
+            new_callable=AsyncMock,
+        ) as rec:
+            await self.service._call_mistral(
+                {"model": "test", "max_tokens": 50},
+                call_site="classification_entities",
+            )
+
+        assert rec.await_args.kwargs["call_site"] == "classification_entities"
+
+    @pytest.mark.asyncio
     async def test_retries_on_429(self):
         """429 responses trigger exponential backoff retries."""
         error_response = MagicMock()
@@ -486,6 +538,7 @@ class TestResponseFormatInPayloads:
         await self.service.classify_async("Match PSG-OM")
         assert captured_payload.get("response_format") == {"type": "json_object"}
         assert captured_payload.get("model") == CLASSIFICATION_MODEL
+        assert captured_payload.get("prompt_cache_key") == CLASSIFICATION_CACHE_KEY
 
     @pytest.mark.asyncio
     async def test_classify_batch_includes_response_format(self):
@@ -516,6 +569,7 @@ class TestResponseFormatInPayloads:
             [{"title": "Test", "description": "", "source_name": ""}]
         )
         assert captured_payload.get("response_format") == {"type": "json_object"}
+        assert captured_payload.get("prompt_cache_key") == CLASSIFICATION_CACHE_KEY
 
     @pytest.mark.asyncio
     async def test_entity_extraction_includes_response_format_and_system_prompt(self):
@@ -542,8 +596,36 @@ class TestResponseFormatInPayloads:
             [{"title": "Test", "description": "", "source_name": ""}]
         )
         assert captured_payload.get("response_format") == {"type": "json_object"}
+        assert captured_payload.get("prompt_cache_key") == ENTITY_CACHE_KEY
         # Verify system prompt is present
         messages = captured_payload.get("messages", [])
         system_msgs = [m for m in messages if m.get("role") == "system"]
         assert len(system_msgs) == 1
         assert system_msgs[0]["content"] == ENTITY_SYSTEM_PROMPT
+
+    @pytest.mark.asyncio
+    async def test_entity_extraction_uses_distinct_call_site(self):
+        """L'extraction d'entités est observée sous `classification_entities`."""
+
+        async def capture_post(url, json=None):
+            resp = MagicMock()
+            resp.raise_for_status = MagicMock()
+            resp.json.return_value = {
+                "choices": [{"message": {"content": "[[]]"}}],
+                "usage": {},
+            }
+            return resp
+
+        mock_client = AsyncMock()
+        mock_client.post = capture_post
+        self.service._client = mock_client
+
+        with patch(
+            "app.services.observability.usage_recorder.record_api_call",
+            new_callable=AsyncMock,
+        ) as rec:
+            await self.service.extract_entities_batch_async(
+                [{"title": "Test", "description": "", "source_name": ""}]
+            )
+
+        assert rec.await_args.kwargs["call_site"] == "classification_entities"

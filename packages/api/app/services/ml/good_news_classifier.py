@@ -30,6 +30,10 @@ log = structlog.get_logger()
 GOOD_NEWS_MODEL = "mistral-large-latest"
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
+# Clé de cache de prompt Mistral (LR-1 PR 2) — gros préfixe système stable
+# (règles good-news). Bumper le suffixe `-vN` si le prompt système change.
+GOOD_NEWS_CACHE_KEY = "facteur-goodnews-v1"
+
 
 _SYSTEM_PROMPT = """Tu es un éditeur expérimenté chargé de sélectionner les "vraies" bonnes nouvelles pour un digest quotidien apaisant.
 
@@ -164,6 +168,9 @@ class GoodNewsClassifier:
                     usage = data.get("usage") or {}
                     _call.prompt_tokens = usage.get("prompt_tokens")
                     _call.completion_tokens = usage.get("completion_tokens")
+                    _call.cached_prompt_tokens = (
+                        usage.get("prompt_tokens_details") or {}
+                    ).get("cached_tokens")
                     _call.status = "ok"
                     return data
                 except httpx.HTTPStatusError as e:
@@ -221,6 +228,7 @@ class GoodNewsClassifier:
             "temperature": 0.1,
             "response_format": {"type": "json_object"},
             "max_tokens": 32 * len(items) + 64,
+            "prompt_cache_key": GOOD_NEWS_CACHE_KEY,
         }
 
         data = await self._call(payload)
