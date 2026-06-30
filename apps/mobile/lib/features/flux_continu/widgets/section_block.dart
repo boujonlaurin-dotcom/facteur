@@ -240,6 +240,7 @@ class SectionBlock extends StatelessWidget {
           :final items,
           :final coreVisibleCount,
           :final underfilled,
+          :final isPlaceholder,
           :final themeSlug,
           :final label,
         ):
