@@ -229,15 +229,27 @@ class NotificationsSettingsNotifier
     await push.cancelGoodNewsNotification();
     final box = await _box();
     final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
+    final essentielTeasers = ServerPushService.readEssentielTeasers(box);
+    final essentielSerene = box.get(
+      ServerPushService.essentielSereneKey,
+      defaultValue: false,
+    ) as bool;
     final serverRegistered = box.get(
       ServerPushService.serverRegisteredKey,
       defaultValue: false,
     ) as bool;
     if (state.pushEnabled) {
       if (!serverRegistered) {
+        // variantB + teasers (bullets) si on a un dernier digest persisté,
+        // sinon variantA générique
+        // (cf. bug-notif-matin-avatar-double-sans-bullets).
         await push.scheduleDailyDigestNotification(
           timeSlot: state.timeSlot,
-          variant: NotifVariant.variantA,
+          variant: essentielTeasers.isEmpty
+              ? NotifVariant.variantA
+              : NotifVariant.variantB,
+          teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
+          serene: essentielSerene,
         );
       }
       if (state.preset == NotifPreset.curieux) {
@@ -262,15 +274,26 @@ class NotificationsSettingsNotifier
     return raw.whereType<String>().toList(growable: false);
   }
 
-  /// Les teasers Essentiel sont désormais construits côté serveur à partir du
-  /// digest exact du jour. On purge l'ancienne persistance locale.
+  /// Persiste les teasers du dernier fetch Flux Continu pour alimenter la notif
+  /// digest LOCALE en bullets (variantB) quand le push serveur est indisponible
+  /// (cf. bug-notif-matin-avatar-double-sans-bullets, Part 1).
+  ///
+  /// > Tradeoff assumé (phasé) : ces bullets viennent du dernier fetch
+  /// > (potentiellement J-1) ; le digest exact du jour viendra du push serveur
+  /// > (Part 2).
   Future<void> syncDigestTeasers({
     required List<String> essentielTeasers,
     required List<String> goodNewsTeasers,
     required bool sereinEnabled,
   }) async {
     final box = await _box();
-    await box.delete('notif_essentiel_teasers');
+    if (essentielTeasers.isNotEmpty) {
+      await box.put(ServerPushService.essentielTeasersKey, essentielTeasers);
+      await box.put(ServerPushService.essentielSereneKey, sereinEnabled);
+    } else {
+      await box.delete(ServerPushService.essentielTeasersKey);
+      await box.delete(ServerPushService.essentielSereneKey);
+    }
     if (goodNewsTeasers.isNotEmpty) {
       await box.put(kGoodNewsTeasers, goodNewsTeasers);
     }

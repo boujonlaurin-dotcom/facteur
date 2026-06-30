@@ -1,34 +1,54 @@
-# PR2 — Affinité entités (le levier)
+## Fix notif matin : avatar dupliqué + corps sans bullets (Part 1) + réanimation push serveur (Part 2)
 
-Apprend une **affinité positive** sur les entités nommées (`contents.entities`) — jusqu'ici utilisées seulement pour le mute — en **miroir exact** de la boucle sujets de PR1, et la récompense de façon **bornée, calibrée et transparente** dans le pilier Pertinence (feed + digest). Aucune vectorisation.
+Capture prod : la notif quotidienne affichait un **corps générique sans bullets**
++ un **avatar dupliqué** (logo + rond orange « T »). Diagnostic confirmé sur la
+DB partagée : le **push serveur n'a jamais enregistré un seul device** en prod
+(`push_devices`=0, `push_deliveries`=0, alors que 31 users `push_enabled`) → 100 %
+retombent sur la notif **locale**, qui avait deux défauts. PO : Part 1 + Part 2 en
+**une seule PR**.
 
-## Ce que ça change (user-visible)
-- Le flux récompense désormais les personnalités / sujets que tu lis souvent, avec une raison claire : « Parce que tu lis souvent {entité} ».
-- Borné (cap diversité), calibrable sur la jauge PR1.
+### Part 1 — Notif locale (mobile, 100 % des users la reçoivent)
+- **Avatar dupliqué** : `MessagingStyleInformation` → `BigTextStyleInformation`
+  (digest, bonnes nouvelles, `showRemoteNotification`). Le `Person` sans icône
+  générait le monogramme « T ». `senderName` supprimé.
+- **Bullets restaurés** : on ne supprime plus les teasers Essentiel de Hive ;
+  `syncDigestTeasers` les **persiste** (+ flag serène). Les 3 chemins de fallback
+  (`_restoreGenericFallback`, `_reschedule`, cold-start `main.dart`) planifient
+  **variantB + teasers** quand un digest existe, sinon variantA. `buildCopy(variantB)`
+  existait déjà (testé). Tradeoff PO assumé : bullets = dernier fetch (J-1 possible).
 
-## Implémentation
-- **Modèle + migration** : `UserEntityAffinity` (`user_entity_affinity`), enregistré dans `app/models/__init__.py` (sinon non créé par `Base.metadata.create_all` selon l'ordre de collecte des tests) ; migration additive idempotente `ue01_user_entity_affinity` chaînée sur `ufb01` (head courant de main après rebase, #909) → 1 seul head. `CREATE TABLE` pur + index → sûre en expand-contract sur la DB partagée staging/prod.
-- **Boucle d'apprentissage** : `ContentService._adjust_entity_affinity` (miroir de `_adjust_subtopic_weights`), câblée aux 5 mêmes call sites (read/like-unlike/save/hide/note) avec le même delta. Clamp [0.1, 3.0], cap 5 entités/article, skip entités mutées.
-- **Decay quotidien** : `decay_user_entity_affinity` à 06:50 Paris (avant digest), miroir du decay subtopics.
-- **Scoring** : `ScoringContext.user_entity_affinity` + `PertinencePillar._score_entities` (bonus `BASE*(aff-1)` plafonné à `ENTITY_AFFINITY_MAX_BONUS`). `MAX_PERTINENCE_RAW` 130→160 pour laisser le bonus respirer dans la normalisation.
-- **Raison** : `reason_builder` reconnaît la phrase entité comme top label si elle domine la pertinence. Préfixe `ENTITY_AFFINITY_REASON_PREFIX` partagé (pilier construit / reason_builder détecte) — pas de chaîne magique dupliquée.
-- **Chargement contexte** : feed (`_load_entity_affinity_safe`, défensif, dans `_batch_personalization`) + digest (`DigestContext.user_entity_affinity`). Tolérant au schema drift.
-- **Helper partagé** : `helpers/entities.py::iter_entity_names` (parse `Content.entities` une fois, réutilisé par la boucle d'apprentissage et le pilier). Skip des entités mutées via `_load_muted_entities_safe` (loader défensif réutilisé, tolérant au drift).
+### Part 2 — Réanimer le push serveur (cause « 0 device »)
+Racine = **config/ops hors repo**, 2 suspects compounding : `FIREBASE_SERVICE_ACCOUNT_*`
+non set sur Railway (→ `PUT /api/devices` 503 + dispatcher désactivé) et/ou
+`google-services.json` par flavor (→ `getToken()` null). La `DioException` 503 était
+**avalée**, d'où l'impossibilité de trancher. Code livré pour rendre le diag décidable
++ bullets hors-app :
+- **Instrumentation** : event PostHog `push_register`
+  {outcome: token_null | session_null | endpoint_error(+status_code) | registered |
+  exception}. `PushDevicesApiService.upsert` surface désormais le `statusCode`.
+- **FCM data-only Android** : `_send_fcm` retire le bloc `notification` top-level →
+  Android réveille `firebaseMessagingBackgroundHandler` qui rend le BigText à bullets
+  (réutilise `showRemoteNotification`). **iOS garde un alert APNS visible** (corps =
+  1er titre, sans bullets — acceptable).
 
-## Constantes (défauts de spec, tunables sur la jauge)
-`ENTITY_AFFINITY_BASE=8.0`, `ENTITY_AFFINITY_MAX_BONUS=30.0`, `ENTITY_AFFINITY_MAX_ENTITIES=5`, `ENTITY_AFFINITY_DECAY=0.98`, `MAX_PERTINENCE_RAW=160.0`.
+### ⚠️ Actions ops/PO restantes (non codables)
+1. Poser `FIREBASE_SERVICE_ACCOUNT_JSON` (ou `_BASE64`) sur **les 2** services Railway
+   (`api-staging-40d3` + `facteur-production`).
+2. Vérifier Firebase console (applicationIds `facteur.app` / `com.example.facteur.staging`,
+   sender ID = secrets CI) + injection `google-services.json` par flavor au build.
 
-## Changelog
-- Ajout de l'entrée PR2 (tag « Pour toi ») dans `unreleased` ; conflit de rebase avec l'entrée « Tournée » (#912) résolu en gardant les deux. JSON valide.
+Après ça + une release : l'event `push_register` dira l'outcome dominant, `push_devices`
+se peuple, et `dispatch_daily_essentiel_pushes` envoie (status `sent`).
 
-## Vérification
-- Backend : suite complète verte (**1998 passed**, 0 échec). Migration `upgrade head` OK sur DB **vide** (1 head `ue01`, table/index/FK/contrainte conformes).
-- `ruff check app/` + `ruff format --check app/` : clean (gate CI, ruff 0.15.14 épinglé).
-- Mobile : `flutter test test/features/release_notes/` → 18 passed (changelog valide). `flutter analyze` : seulement des `info` pré-existants, aucun sur les fichiers touchés.
-- Tests ajoutés : `_adjust_entity_affinity` (parse/cap5/skip-muté/clamp/count/négatif-no-op), `_score_entities` (bonus/cap/raison/0-si-aff≤1), reason_builder (top label entité), job decay scheduler.
+### Bonus
+`assets/changelog.json` était **déjà corrompu** par un merge (2 paires tag/summary
+fusionnées → JSON invalide, cassait la modal « Quoi de neuf »). Corrigé + entrée
+Notifications ajoutée.
 
-## Calibration (post-merge, gate PO)
-Comparer le CTR par entité et global avant/après sur la jauge PR1 (staging ≥1 sem.) ; ajuster `ENTITY_AFFINITY_BASE` sans écraser la diversité (nb sources/sujets distincts au digest).
+### Tests
+- `flutter test` : copy variantB (25/25) + notifications + flux_continu OK. Analyze : 0 nouvel issue.
+- `pytest` : `test_send_fcm_is_data_only_with_teasers_preserved` (fake firebase_admin). Ruff clean.
+  (Tests dispatcher/route DB-backed = Connection refused en local Conductor → tournent en CI.)
+- Validation on-device Android (`--flavor staging`) restante : 1 seul avatar + bullets dépliés.
 
-## Hors scope (= spec)
-Feed + digest uniquement. `topic_selector` hérite du dict amont ; veille passe `{}`.
+Doc : `docs/bugs/bug-notif-matin-avatar-double-sans-bullets.md`.
