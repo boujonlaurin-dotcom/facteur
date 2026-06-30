@@ -242,6 +242,7 @@ class SectionBlock extends StatelessWidget {
           :final underfilled,
           :final themeSlug,
           :final label,
+          :final isPlaceholder,
         ):
         // Issue #1 — « squelette stable » : une coquille seed-ée AVANT le
         // fan-out réserve sa hauteur finale (N cartes squelette) pour que
