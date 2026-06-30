@@ -1,46 +1,34 @@
-## feat(android): In-App Updates Play Store (flavor playstore) + gate par flavor
+# PR2 — Affinité entités (le levier)
 
-### Pourquoi
-Sur le flavor `playstore` (`facteur.app`), Google interdit l'auto-update par APK : la
-permission `REQUEST_INSTALL_PACKAGES` a été retirée (#892) et l'updater maison est inopérant.
-Un user Play Store n'avait donc **aucun** signal natif « mise à jour disponible ». Cette PR
-ajoute les **Google Play In-App Updates** sur le chemin playstore, en laissant le chemin
-`beta` (side-load APK) strictement inchangé.
+Apprend une **affinité positive** sur les entités nommées (`contents.entities`) — jusqu'ici utilisées seulement pour le mute — en **miroir exact** de la boucle sujets de PR1, et la récompense de façon **bornée, calibrée et transparente** dans le pilier Pertinence (feed + digest). Aucune vectorisation.
 
-### Ce que fait la PR
-- **Dépendance** : ajoute `in_app_update: ^4.2.3` (résolu 4.2.5 ; Android-only).
-- **Point de décision unique** : `PlayStoreUpdateService.checkAndStart()`
-  (`lib/features/app_update/services/playstore_update_service.dart`). Routage piloté par le
-  flavor via `AppUpdateConstants.isPlayStoreBuild` (no-op total sur beta/dev). Garde
-  `kIsWeb`/`Platform.isAndroid`, anti-ré-entrance `_inFlight`, fail-silently.
-  - `updatePriority >= 4` + `immediateUpdateAllowed` → `performImmediateUpdate()` (bloquant).
-  - sinon `flexibleUpdateAllowed` → `startFlexibleUpdate()` + `completeFlexibleUpdate()`.
-- **Lifecycle** (`lib/app.dart`) : appel au **cold-start** (post-frame de `initState`) et au
-  **retour foreground** (`didChangeAppLifecycleState` → `resumed`). Réutilise l'observer
-  existant, aucun nouvel observer.
-- **Doc** : `docs/maintenance/maintenance-playstore-in-app-updates.md` (routage par flavor +
-  procédure Play Console `updatePriority` + constat Mission B).
-- **Changelog** : entrée `unreleased` « Mise à jour ».
+## Ce que ça change (user-visible)
+- Le flux récompense désormais les personnalités / sujets que tu lis souvent, avec une raison claire : « Parce que tu lis souvent {entité} ».
+- Borné (cap diversité), calibrable sur la jauge PR1.
 
-### Décisions
-- immediate vs flexible piloté par **Play Console `updatePriority`** (reco Google, 0 backend).
-  `app_config` (Supabase) ne porte pas de min-version Android → aucun champ ajouté.
-- `flutter_downloader`/`open_filex` **conservés** (partagés avec beta). Sur playstore leur
-  chemin n'est plus atteint ; `READ_MEDIA_*` déjà strippé app-wide dans `src/main` (Mission B).
+## Implémentation
+- **Modèle + migration** : `UserEntityAffinity` (`user_entity_affinity`), enregistré dans `app/models/__init__.py` (sinon non créé par `Base.metadata.create_all` selon l'ordre de collecte des tests) ; migration additive idempotente `ue01_user_entity_affinity` chaînée sur `ufb01` (head courant de main après rebase, #909) → 1 seul head. `CREATE TABLE` pur + index → sûre en expand-contract sur la DB partagée staging/prod.
+- **Boucle d'apprentissage** : `ContentService._adjust_entity_affinity` (miroir de `_adjust_subtopic_weights`), câblée aux 5 mêmes call sites (read/like-unlike/save/hide/note) avec le même delta. Clamp [0.1, 3.0], cap 5 entités/article, skip entités mutées.
+- **Decay quotidien** : `decay_user_entity_affinity` à 06:50 Paris (avant digest), miroir du decay subtopics.
+- **Scoring** : `ScoringContext.user_entity_affinity` + `PertinencePillar._score_entities` (bonus `BASE*(aff-1)` plafonné à `ENTITY_AFFINITY_MAX_BONUS`). `MAX_PERTINENCE_RAW` 130→160 pour laisser le bonus respirer dans la normalisation.
+- **Raison** : `reason_builder` reconnaît la phrase entité comme top label si elle domine la pertinence. Préfixe `ENTITY_AFFINITY_REASON_PREFIX` partagé (pilier construit / reason_builder détecte) — pas de chaîne magique dupliquée.
+- **Chargement contexte** : feed (`_load_entity_affinity_safe`, défensif, dans `_batch_personalization`) + digest (`DigestContext.user_entity_affinity`). Tolérant au schema drift.
+- **Helper partagé** : `helpers/entities.py::iter_entity_names` (parse `Content.entities` une fois, réutilisé par la boucle d'apprentissage et le pilier). Skip des entités mutées via `_load_muted_entities_safe` (loader défensif réutilisé, tolérant au drift).
 
-### Vérifs locales
-- `flutter pub get` OK ; `flutter analyze` (fichiers touchés) : 0 issue.
-- `flutter test test/features/app_update` : 8/8 ✅.
-- Plugin natif enregistré (GeneratedPluginRegistrant régénéré).
-- Manifests playstore (retrait `REQUEST_INSTALL_PACKAGES`) / beta (ajout) inchangés.
+## Constantes (défauts de spec, tunables sur la jauge)
+`ENTITY_AFFINITY_BASE=8.0`, `ENTITY_AFFINITY_MAX_BONUS=30.0`, `ENTITY_AFFINITY_MAX_ENTITIES=5`, `ENTITY_AFFINITY_DECAY=0.98`, `MAX_PERTINENCE_RAW=160.0`.
 
-### À faire côté PO (device réel)
-- Track de test Play : publier une version supérieure → vérifier l'invite native (immediate
-  si `updatePriority >= 4`, sinon flexible). Décompiler le build playstore → aucun chemin
-  d'install APK atteignable.
-- Build `beta` side-load → flux APK identique à avant.
+## Changelog
+- Ajout de l'entrée PR2 (tag « Pour toi ») dans `unreleased` ; conflit de rebase avec l'entrée « Tournée » (#912) résolu en gardant les deux. JSON valide.
 
-### Hors scope
-iOS (gate iOS séparé existant), champ min-version backend, retrait de dépendances.
+## Vérification
+- Backend : suite complète verte (**1998 passed**, 0 échec). Migration `upgrade head` OK sur DB **vide** (1 head `ue01`, table/index/FK/contrainte conformes).
+- `ruff check app/` + `ruff format --check app/` : clean (gate CI, ruff 0.15.14 épinglé).
+- Mobile : `flutter test test/features/release_notes/` → 18 passed (changelog valide). `flutter analyze` : seulement des `info` pré-existants, aucun sur les fichiers touchés.
+- Tests ajoutés : `_adjust_entity_affinity` (parse/cap5/skip-muté/clamp/count/négatif-no-op), `_score_entities` (bonus/cap/raison/0-si-aff≤1), reason_builder (top label entité), job decay scheduler.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+## Calibration (post-merge, gate PO)
+Comparer le CTR par entité et global avant/après sur la jauge PR1 (staging ≥1 sem.) ; ajuster `ENTITY_AFFINITY_BASE` sans écraser la diversité (nb sources/sujets distincts au digest).
+
+## Hors scope (= spec)
+Feed + digest uniquement. `topic_selector` hérite du dict amont ; veille passe `{}`.

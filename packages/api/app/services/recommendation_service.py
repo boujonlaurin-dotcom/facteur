@@ -109,6 +109,38 @@ async def _load_muted_entities_safe(session, user_id: UUID) -> set[str]:
         return set()
 
 
+async def _load_entity_affinity_safe(session, user_id: UUID) -> dict[str, float]:
+    """Charge l'affinité entités apprise de l'user, tolérant au schema drift.
+
+    PR2 « le levier ». Si `user_entity_affinity` est absente (migration ue01
+    pas encore appliquée sur le backend prod de la DB partagée) ou que la query
+    échoue, on dégrade en `{}` plutôt que de faire tomber `/api/feed/` (même
+    posture défensive que `_load_muted_entities_safe`). On ne charge que les
+    affinités > 1.0 (les seules récompensées par le pilier) ; clé déjà
+    lower-strip au stockage.
+    """
+    from app.models.learning import UserEntityAffinity
+
+    try:
+        result = await session.execute(
+            select(
+                UserEntityAffinity.entity_canonical, UserEntityAffinity.affinity
+            ).where(
+                UserEntityAffinity.user_id == user_id,
+                UserEntityAffinity.affinity > 1.0,
+            )
+        )
+        return {row[0]: row[1] for row in result.all()}
+    except Exception as exc:
+        logger.warning(
+            "feed_entity_affinity_unavailable",
+            user_id=str(user_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return {}
+
+
 from app.schemas.content import RecommendationReason, ScoreContribution
 
 
@@ -328,7 +360,9 @@ class RecommendationService:
                 digest = await s.scalar(digest_stmt)
                 # Epic 13: Load muted entities (defensive — tolère schema drift)
                 muted_entities = await _load_muted_entities_safe(s, user_id)
-                return pz, digest, muted_entities
+                # PR2: Load learned entity affinity (defensive — tolère drift)
+                entity_affinity = await _load_entity_affinity_safe(s, user_id)
+                return pz, digest, muted_entities, entity_affinity
 
         # gather() préserve le parallélisme : _user_context_short et
         # _batch_personalization ouvrent chacune leur propre short session
@@ -339,7 +373,7 @@ class RecommendationService:
         # pipeline). La pression pool résiduelle est traitée séparément.
         (
             (user_profile, followed_sources_rows, subtopics_rows),
-            (personalization, digest_row, muted_entities),
+            (personalization, digest_row, muted_entities, entity_affinity),
         ) = await asyncio.gather(
             _user_context_short(),
             _batch_personalization(),
@@ -836,6 +870,7 @@ class RecommendationService:
             now=now,
             user_subtopics=user_subtopics,
             user_subtopic_weights=user_subtopic_weights,
+            user_entity_affinity=entity_affinity,
             # Story 4.7
             muted_sources=muted_sources,
             muted_themes=muted_themes,
