@@ -127,9 +127,7 @@ async def submit_sentiment(
         await db.commit()
         return {"message": "Merci pour ton retour", "sentiment": request.sentiment}
     except Exception as e:
-        logger.error(
-            "submit_sentiment_error", error=str(e), user_id=str(user_uuid)
-        )
+        logger.error("submit_sentiment_error", error=str(e), user_id=str(user_uuid))
         await db.rollback()
         raise HTTPException(
             status_code=500, detail=f"Erreur lors de l'enregistrement: {str(e)}"
@@ -256,9 +254,7 @@ async def submit_invite_action(
         await db.commit()
         return {"message": "ok", "status": invite.status}
     except Exception as e:
-        logger.error(
-            "submit_invite_action_error", error=str(e), user_id=str(user_uuid)
-        )
+        logger.error("submit_invite_action_error", error=str(e), user_id=str(user_uuid))
         await db.rollback()
         raise HTTPException(
             status_code=500, detail=f"Erreur lors de l'enregistrement: {str(e)}"

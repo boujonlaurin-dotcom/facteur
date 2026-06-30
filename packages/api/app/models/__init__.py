@@ -18,7 +18,7 @@ from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.grille_game_state import GrilleGameState
 from app.models.grille_puzzle import GrillePuzzle
 from app.models.host_feed_resolution import HostFeedResolution
-from app.models.learning import UserEntityPreference
+from app.models.learning import UserEntityAffinity, UserEntityPreference
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.push_notification import PushDelivery, PushDevice
@@ -114,6 +114,7 @@ __all__ = [
     # Serene Feedback
     "SereneReport",
     # Entity Preferences (follow/mute on named entities)
+    "UserEntityAffinity",
     "UserEntityPreference",
     # Self-reported "well-informed" score (Story 14.3)
     "UserWellInformedRating",

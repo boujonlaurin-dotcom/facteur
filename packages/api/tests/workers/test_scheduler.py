@@ -21,6 +21,7 @@ from app.workers.scheduler import (
     SUBTOPIC_DECAY_HOUR_PARIS,
     SUBTOPIC_DECAY_MINUTE_PARIS,
     _digest_watchdog,
+    decay_user_entity_affinity,
     decay_user_subtopic_weights,
     decayed_subtopic_weight,
     start_scheduler,
@@ -295,6 +296,39 @@ class TestDigestJobConfiguration:
             # les poids que le scoring du digest consomme). Garde-fou contre une
             # régression du décalage horaire (06h50 < 07h30, cf. PYTHON-5M : le
             # decall évite le chevauchement avec la fenêtre de pression pool).
+            decay_minutes = SUBTOPIC_DECAY_HOUR_PARIS * 60 + SUBTOPIC_DECAY_MINUTE_PARIS
+            digest_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
+            assert decay_minutes < digest_minutes
+
+    def test_scheduler_includes_entity_affinity_decay_job(self):
+        """PR2 — l'affinité entités décroît au même créneau, avant le digest."""
+        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            captured_jobs = {}
+
+            def capture_add_job(*args, **kwargs):
+                job_id = kwargs.get("id")
+                if job_id:
+                    captured_jobs[job_id] = {
+                        "func": args[0] if args else kwargs.get("func"),
+                        "trigger": kwargs.get("trigger"),
+                        "name": kwargs.get("name"),
+                    }
+
+            mock_scheduler.add_job = capture_add_job
+
+            start_scheduler()
+
+            assert "entity_affinity_decay" in captured_jobs
+            job = captured_jobs["entity_affinity_decay"]
+            assert job["func"] is decay_user_entity_affinity
+            assert job["name"] == "Entity Affinity Decay"
+            trigger = job["trigger"]
+            assert isinstance(trigger, CronTrigger)
+            assert str(trigger.fields[5]) == str(SUBTOPIC_DECAY_HOUR_PARIS)
+            assert str(trigger.fields[6]) == str(SUBTOPIC_DECAY_MINUTE_PARIS)
             decay_minutes = SUBTOPIC_DECAY_HOUR_PARIS * 60 + SUBTOPIC_DECAY_MINUTE_PARIS
             digest_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
             assert decay_minutes < digest_minutes

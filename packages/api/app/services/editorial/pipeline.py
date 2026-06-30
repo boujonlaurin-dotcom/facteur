@@ -786,7 +786,10 @@ class EditorialPipelineService:
             # LR-1 PR 2 : on ne paie l'appel mistral-large que sur des sujets
             # assez couverts (>= divergence_llm_min_perspectives). En deçà, le
             # fallback déterministe `compute_divergence_level` ci-dessous suffit.
-            if len(merged_perspectives) >= get_settings().divergence_llm_min_perspectives:
+            if (
+                len(merged_perspectives)
+                >= get_settings().divergence_llm_min_perspectives
+            ):
                 try:
                     source_bias = await perspective_service.resolve_bias(
                         domain=exclude_domain or "",

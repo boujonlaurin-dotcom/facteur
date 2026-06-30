@@ -88,6 +88,42 @@ async def decay_user_subtopic_weights() -> None:
         )
 
 
+async def decay_user_entity_affinity() -> None:
+    """Apply the daily O(1) decay to all learned entity affinities (PR2).
+
+    Miroir de `decay_user_subtopic_weights` côté entités : ramène chaque
+    `affinity` d'un cran vers le neutre 1.0 (idempotent, ne touche pas les
+    lignes déjà à 1.0). Tourne à 06:50 Paris, avant le digest (07:30).
+    """
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    UPDATE user_entity_affinity
+                    SET affinity = 1.0 + (affinity - 1.0) * :decay
+                    WHERE affinity != 1.0
+                    """
+                ),
+                {"decay": ScoringWeights.ENTITY_AFFINITY_DECAY},
+            )
+            await session.commit()
+            logger.info(
+                "entity_affinity_decay_completed",
+                decay=ScoringWeights.ENTITY_AFFINITY_DECAY,
+                rowcount=getattr(result, "rowcount", None),
+            )
+    except Exception as exc:
+        logger.error(
+            "entity_affinity_decay_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+
+
 async def _digest_watchdog() -> None:
     """Watchdog 8h15 : vérifie la couverture digest et relance si nécessaire.
 
@@ -378,6 +414,24 @@ def start_scheduler() -> None:
         ),
         id="subtopic_weight_decay",
         name="Subtopic Weight Decay",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Daily learned-entity-affinity decay (06h50 Paris) — miroir du decay
+    # subtopics : ramène les affinités entités vers le neutre 1.0 avant le
+    # digest (07h30). Même fenêtre 06h50 (hors pression pool matinale).
+    scheduler.add_job(
+        decay_user_entity_affinity,
+        trigger=CronTrigger(
+            hour=SUBTOPIC_DECAY_HOUR_PARIS,
+            minute=SUBTOPIC_DECAY_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
+        id="entity_affinity_decay",
+        name="Entity Affinity Decay",
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,

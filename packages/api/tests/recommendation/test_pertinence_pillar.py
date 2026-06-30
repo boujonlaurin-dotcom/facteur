@@ -19,12 +19,13 @@ class MockSource:
 
 
 class MockContent:
-    def __init__(self, theme=None, source_theme=None, topics=None):
+    def __init__(self, theme=None, source_theme=None, topics=None, entities=None):
         self.id = uuid4()
         self.title = "Test"
         self.description = ""
         self.theme = theme
         self.topics = topics or []
+        self.entities = entities
         self.source = MockSource(theme=source_theme)
         self.source_id = self.source.id
         self.published_at = datetime.now()
@@ -32,7 +33,12 @@ class MockContent:
         self.duration_seconds = None
 
 
-def _context(user_interests=None, user_subtopics=None, user_custom_topics=None):
+def _context(
+    user_interests=None,
+    user_subtopics=None,
+    user_custom_topics=None,
+    user_entity_affinity=None,
+):
     return ScoringContext(
         user_profile=MagicMock(id=uuid4()),
         user_interests=set(user_interests or []),
@@ -43,7 +49,15 @@ def _context(user_interests=None, user_subtopics=None, user_custom_topics=None):
         user_subtopics=set(user_subtopics or []),
         user_subtopic_weights={},
         user_custom_topics=user_custom_topics or [],
+        user_entity_affinity=user_entity_affinity or {},
     )
+
+
+def _entity(name, type_="PERSON"):
+    """Build a content.entities item (JSON string, as stored by the classifier)."""
+    import json
+
+    return json.dumps({"name": name, "type": type_})
 
 
 class TestThemeMismatchMalus:
@@ -154,3 +168,93 @@ class TestSubtopicPositionWeighting:
         )
         assert score == pytest.approx(expected)
         assert contributions[0].label == "Sujet : IA, Tech"
+
+
+class TestEntityAffinity:
+    """PR2 — bonus calibré pour les entités nommées lues souvent."""
+
+    def test_bonus_equals_base_times_affinity_above_neutral(self):
+        """bonus = BASE * (affinity - 1.0) pour une entité aimée."""
+        pillar = PertinencePillar()
+        content = MockContent(entities=[_entity("Emmanuel Macron")])
+        context = _context(user_entity_affinity={"emmanuel macron": 2.0})
+
+        bonus, contribs = pillar._score_entities(content, context)
+
+        assert bonus == pytest.approx(ScoringWeights.ENTITY_AFFINITY_BASE * 1.0)
+        assert len(contribs) == 1
+        assert contribs[0].label == "Parce que tu lis souvent Emmanuel Macron"
+        assert contribs[0].points == pytest.approx(bonus)
+
+    def test_no_bonus_when_affinity_at_or_below_neutral(self):
+        """Affinité <= 1.0 → aucun bonus, aucune raison."""
+        pillar = PertinencePillar()
+        content = MockContent(entities=[_entity("Emmanuel Macron")])
+        context = _context(user_entity_affinity={"emmanuel macron": 1.0})
+
+        bonus, contribs = pillar._score_entities(content, context)
+
+        assert bonus == 0.0
+        assert contribs == []
+
+    def test_no_bonus_when_entity_not_in_affinity(self):
+        """Entité présente dans l'article mais pas apprise → 0."""
+        pillar = PertinencePillar()
+        content = MockContent(entities=[_entity("Inconnu")])
+        context = _context(user_entity_affinity={"emmanuel macron": 2.5})
+
+        bonus, contribs = pillar._score_entities(content, context)
+
+        assert bonus == 0.0
+        assert contribs == []
+
+    def test_bonus_capped_at_max(self):
+        """Plusieurs entités très aimées → bonus plafonné à MAX_BONUS."""
+        pillar = PertinencePillar()
+        content = MockContent(entities=[_entity(f"Entité {i}") for i in range(5)])
+        # 5 entités à affinité 3.0 → 5 * BASE * 2.0 = 80, capé à 30.
+        affinity = {f"entité {i}": 3.0 for i in range(5)}
+        context = _context(user_entity_affinity=affinity)
+
+        bonus, contribs = pillar._score_entities(content, context)
+
+        assert bonus == ScoringWeights.ENTITY_AFFINITY_MAX_BONUS
+        assert contribs[0].label.startswith("Parce que tu lis souvent")
+
+    def test_top_entity_is_highest_contributor(self):
+        """La raison nomme l'entité au plus gros apport (casse live)."""
+        pillar = PertinencePillar()
+        content = MockContent(
+            entities=[_entity("Petit Acteur"), _entity("Grand Sujet")]
+        )
+        context = _context(
+            user_entity_affinity={"petit acteur": 1.2, "grand sujet": 2.8}
+        )
+
+        bonus, contribs = pillar._score_entities(content, context)
+
+        assert contribs[0].label == "Parce que tu lis souvent Grand Sujet"
+
+    def test_no_bonus_without_affinity_context(self):
+        """Pas d'affinité chargée (cold start) → 0, même avec des entités."""
+        pillar = PertinencePillar()
+        content = MockContent(entities=[_entity("Emmanuel Macron")])
+        context = _context()
+
+        bonus, contribs = pillar._score_entities(content, context)
+
+        assert bonus == 0.0
+        assert contribs == []
+
+    def test_compute_raw_includes_entity_bonus(self):
+        """Le bonus entité est bien câblé dans compute_raw."""
+        pillar = PertinencePillar()
+        content = MockContent(entities=[_entity("Emmanuel Macron")])
+        context = _context(user_entity_affinity={"emmanuel macron": 2.0})
+
+        raw, contribs = pillar.compute_raw(content, context)
+
+        assert raw == pytest.approx(ScoringWeights.ENTITY_AFFINITY_BASE * 1.0)
+        assert any(
+            c.label == "Parce que tu lis souvent Emmanuel Macron" for c in contribs
+        )

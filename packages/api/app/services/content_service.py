@@ -169,6 +169,11 @@ class ContentService:
                 user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
             )
 
+            # PR2: same implicit signal on the article's named entities.
+            await self._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
+            )
+
             # Implicit digest completion: if ≥80% of today's digest is now
             # consumed, insert a digest_completions row (idempotent). This
             # backstops the closure_screen explicit path when users never
@@ -327,6 +332,91 @@ class ContentService:
                 )
                 await self.session.execute(stmt)
 
+    async def _adjust_entity_affinity(
+        self, user_id: UUID, content_id: UUID, delta: float
+    ) -> None:
+        """Ajuste l'affinité entités de l'utilisateur (PR2 « le levier »).
+
+        Miroir exact de `_adjust_subtopic_weights` côté entités nommées :
+        récompense / atténue les entités d'un article suite à un signal
+        (read / like / save / note / dismiss). Borné [0.1, 3.0], cap
+        `ENTITY_AFFINITY_MAX_ENTITIES` entités distinctes/article, entités
+        mutées ignorées. Réutilise les mêmes deltas d'engagement.
+        """
+        from app.models.content import Content
+        from app.models.learning import UserEntityAffinity
+        from app.services.recommendation.helpers import iter_entity_names
+        from app.services.recommendation.scoring_config import ScoringWeights
+        from app.services.recommendation_service import _load_muted_entities_safe
+
+        # Hit identity-map : Content déjà chargé par `_adjust_subtopic_weights`
+        # au même call site → pas de round-trip DB.
+        content = await self.session.get(Content, content_id)
+        if not content or not content.entities:
+            return
+
+        # Clés canoniques (lower-strip, storage == matching), cap N distinctes.
+        entity_keys: list[str] = []
+        for _display, key in iter_entity_names(content.entities):
+            entity_keys.append(key)
+            if len(entity_keys) >= ScoringWeights.ENTITY_AFFINITY_MAX_ENTITIES:
+                break
+
+        if not entity_keys:
+            return
+
+        # Skip entités mutées : un mute explicite ne doit jamais nourrir une
+        # affinité positive. Loader défensif partagé (tolère le schema drift de
+        # la DB partagée staging/prod, comme le feed) ; clé déjà lower-strip.
+        muted = await _load_muted_entities_safe(self.session, user_id)
+        muted_lower = {m.strip().lower() for m in muted}
+        entity_keys = [k for k in entity_keys if k not in muted_lower]
+        if not entity_keys:
+            return
+
+        now = datetime.utcnow()
+        # Affinité bornée [0.1, 3.0], partagée par les deux branches.
+        clamped = func.greatest(
+            func.least(UserEntityAffinity.affinity + delta, 3.0), 0.1
+        )
+        for key in entity_keys:
+            if delta > 0:
+                # Upsert atomique, interaction_count++. Création : affinity=1.0+delta
+                # (jamais de ligne créée < 1.0 sur un signal positif).
+                stmt = (
+                    insert(UserEntityAffinity)
+                    .values(
+                        user_id=user_id,
+                        entity_canonical=key,
+                        affinity=1.0 + delta,
+                        interaction_count=1,
+                        updated_at=now,
+                    )
+                    .on_conflict_do_update(
+                        constraint="uq_user_entity_affinity_user_entity",
+                        set_={
+                            "affinity": clamped,
+                            "interaction_count": (
+                                UserEntityAffinity.interaction_count + 1
+                            ),
+                            "updated_at": now,
+                        },
+                    )
+                )
+                await self.session.execute(stmt)
+            else:
+                # Dismiss/unlike : décrément ciblé, jamais de création de ligne
+                # (no-op si l'entité n'a pas d'affinité existante).
+                stmt = (
+                    update(UserEntityAffinity)
+                    .where(
+                        UserEntityAffinity.user_id == user_id,
+                        UserEntityAffinity.entity_canonical == key,
+                    )
+                    .values(affinity=clamped, updated_at=now)
+                )
+                await self.session.execute(stmt)
+
     async def set_like_status(
         self, user_id: UUID, content_id: UUID, is_liked: bool
     ) -> UserContentStatus:
@@ -365,6 +455,7 @@ class ContentService:
             else -ScoringWeights.LIKE_TOPIC_BOOST
         )
         await self._adjust_subtopic_weights(user_id, content_id, delta)
+        await self._adjust_entity_affinity(user_id, content_id, delta)
 
         return status
 
@@ -402,6 +493,9 @@ class ContentService:
         # Reinforce subtopic weights on bookmark
         if is_saved:
             await self._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+            )
+            await self._adjust_entity_affinity(
                 user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
             )
 
@@ -447,6 +541,9 @@ class ContentService:
         # Adjust subtopic weights on hide (negative signal for recommendation)
         if is_hidden:
             await self._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.DISMISS_TOPIC_PENALTY
+            )
+            await self._adjust_entity_affinity(
                 user_id, content_id, ScoringWeights.DISMISS_TOPIC_PENALTY
             )
 
@@ -528,6 +625,9 @@ class ContentService:
 
         # Reinforce subtopic weights (same as bookmark)
         await self._adjust_subtopic_weights(
+            user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+        )
+        await self._adjust_entity_affinity(
             user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
         )
 

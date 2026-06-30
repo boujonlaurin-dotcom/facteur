@@ -73,9 +73,7 @@ class FeedbackInvite(Base):
     """
 
     __tablename__ = "feedback_invites"
-    __table_args__ = (
-        UniqueConstraint("user_id", name="uq_feedback_invites_user"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", name="uq_feedback_invites_user"),)
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4

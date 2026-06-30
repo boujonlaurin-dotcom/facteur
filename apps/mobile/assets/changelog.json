@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Pour toi",
+      "summary": "Le flux récompense désormais les personnalités et sujets que tu lis souvent, avec une raison claire (« Parce que tu lis souvent … »)."
+    },
+    {
       "tag": "Fiabilité",
       "summary": "Indice de fiabilité de la source affiché sur les perspectives évaluées."
     },

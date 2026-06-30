@@ -53,6 +53,7 @@ class ClassificationWorker:
 
         Les arguments None retombent sur la config (rollback env-only).
         """
+
         # `or` est dangereux ici : max_wait_s=0 est un override valide
         # (rollback « traiter dès qu'il y a un item »). On garde donc le
         # fallback sur None explicite.
@@ -62,9 +63,7 @@ class ClassificationWorker:
         self.batch_size = _or_setting(
             batch_size, settings.classification_worker_batch_size
         )
-        self.interval = _or_setting(
-            interval, settings.classification_worker_interval_s
-        )
+        self.interval = _or_setting(interval, settings.classification_worker_interval_s)
         self.min_batch_size = _or_setting(
             min_batch_size, settings.classification_worker_min_batch_size
         )

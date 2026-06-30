@@ -183,6 +183,8 @@ class DigestContext:
     source_affinity_scores: dict[UUID, float] = field(default_factory=dict)
     source_priority_multipliers: dict[UUID, float] = field(default_factory=dict)
     subscribed_source_ids: set[UUID] = field(default_factory=set)
+    # PR2: learned positive affinity per named entity {entity_canonical: affinity}
+    user_entity_affinity: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -696,6 +698,12 @@ class DigestSelector:
         user_subtopics = {row.topic_slug for row in subtopic_rows}
         user_subtopic_weights = {row.topic_slug: row.weight for row in subtopic_rows}
 
+        # PR2: affinité entités apprise (defensive — tolère le schema drift de
+        # la DB partagée staging/prod, comme le feed).
+        from app.services.recommendation_service import _load_entity_affinity_safe
+
+        user_entity_affinity = await _load_entity_affinity_safe(self.session, user_id)
+
         # Construire les sets d'intérêts et poids
         user_interests = set()
         user_interest_weights = {}
@@ -784,6 +792,7 @@ class DigestSelector:
             source_affinity_scores=source_affinity_scores,
             source_priority_multipliers=source_priority_multipliers,
             subscribed_source_ids=subscribed_source_ids,
+            user_entity_affinity=user_entity_affinity,
         )
 
     async def _get_candidates(
@@ -1369,6 +1378,7 @@ class DigestSelector:
             now=datetime.datetime.now(datetime.UTC),
             user_subtopics=context.user_subtopics,
             user_subtopic_weights=context.user_subtopic_weights,
+            user_entity_affinity=context.user_entity_affinity,
             muted_sources=context.muted_sources,
             muted_themes=context.muted_themes,
             muted_topics=context.muted_topics,
