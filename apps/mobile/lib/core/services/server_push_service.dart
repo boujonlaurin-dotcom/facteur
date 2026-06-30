@@ -59,6 +59,26 @@ class ServerPushService {
         .toList(growable: false);
   }
 
+  /// Planifie la notif digest LOCALE de fallback depuis l'état persisté (box
+  /// `settings`) : variantB + teasers (bullets) si un dernier digest existe,
+  /// sinon variantA générique. Source unique de la décision de variante,
+  /// partagée par les 3 chemins de fallback (`_restoreGenericFallback`, le
+  /// provider Réglages, le cold start `main.dart`) pour ne pas dupliquer la
+  /// règle. Renvoie `true` si la planification a réussi (cf. exact-alarm).
+  static Future<bool> scheduleDigestFallback({
+    required Box<dynamic> box,
+    required NotifTimeSlot timeSlot,
+  }) {
+    final teasers = readEssentielTeasers(box);
+    final serene = box.get(essentielSereneKey, defaultValue: false) as bool;
+    return PushNotificationService().scheduleDailyDigestNotification(
+      timeSlot: timeSlot,
+      variant: teasers.isEmpty ? NotifVariant.variantA : NotifVariant.variantB,
+      teasers: teasers.isEmpty ? null : teasers,
+      serene: serene,
+    );
+  }
+
   // Singleton vivant pendant toute la durée du process.
   // ignore: cancel_subscriptions
   StreamSubscription<String>? _tokenSubscription;
@@ -204,19 +224,10 @@ class ServerPushService {
         box.get('push_notifications_enabled', defaultValue: false) as bool;
     if (!enabled) return;
     final slot = NotifTimeSlotX.fromWire(box.get('notif_time_slot') as String?);
-    final localPush = PushNotificationService();
-    final teasers = readEssentielTeasers(box);
-    final serene = box.get(essentielSereneKey, defaultValue: false) as bool;
     // Pas de demande exact-alarm automatique ici (rejouée à chaque FCM raté →
     // pop-up « Alarmes et rappels » intempestif, cf. bug-modals-intrusives).
     // Planification directe : retombe en mode inexact si la permission manque.
-    // variantB + teasers (bullets) si on a un dernier digest, sinon variantA.
-    await localPush.scheduleDailyDigestNotification(
-      timeSlot: slot,
-      variant: teasers.isEmpty ? NotifVariant.variantA : NotifVariant.variantB,
-      teasers: teasers.isEmpty ? null : teasers,
-      serene: serene,
-    );
+    await scheduleDigestFallback(box: box, timeSlot: slot);
   }
 
   Future<bool> _setRegistered(bool value) async {

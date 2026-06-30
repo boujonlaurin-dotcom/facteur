@@ -406,22 +406,8 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
         // seul (bug-modals-intrusives) ; l'opt-in exact-alarm est strictement
         // initié par l'utilisateur (modal d'activation / Réglages).
         //
-        // variantB + teasers persistés (bullets) si un dernier digest existe,
-        // sinon variantA générique
-        // (cf. bug-notif-matin-avatar-double-sans-bullets, Part 1).
-        final essentielTeasers =
-            ServerPushService.readEssentielTeasers(settingsBox);
-        final essentielSerene = settingsBox.get(
-          ServerPushService.essentielSereneKey,
-          defaultValue: false,
-        ) as bool;
-        final scheduled =
-            await pushNotificationService.scheduleDailyDigestNotification(
-          variant: essentielTeasers.isEmpty
-              ? NotifVariant.variantA
-              : NotifVariant.variantB,
-          teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
-          serene: essentielSerene,
+        final scheduled = await ServerPushService.scheduleDigestFallback(
+          box: settingsBox,
           timeSlot: timeSlot,
         );
         if (!scheduled) {

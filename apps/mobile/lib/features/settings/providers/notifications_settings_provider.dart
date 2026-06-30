@@ -229,27 +229,15 @@ class NotificationsSettingsNotifier
     await push.cancelGoodNewsNotification();
     final box = await _box();
     final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
-    final essentielTeasers = ServerPushService.readEssentielTeasers(box);
-    final essentielSerene = box.get(
-      ServerPushService.essentielSereneKey,
-      defaultValue: false,
-    ) as bool;
     final serverRegistered = box.get(
       ServerPushService.serverRegisteredKey,
       defaultValue: false,
     ) as bool;
     if (state.pushEnabled) {
       if (!serverRegistered) {
-        // variantB + teasers (bullets) si on a un dernier digest persisté,
-        // sinon variantA générique
-        // (cf. bug-notif-matin-avatar-double-sans-bullets).
-        await push.scheduleDailyDigestNotification(
+        await ServerPushService.scheduleDigestFallback(
+          box: box,
           timeSlot: state.timeSlot,
-          variant: essentielTeasers.isEmpty
-              ? NotifVariant.variantA
-              : NotifVariant.variantB,
-          teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
-          serene: essentielSerene,
         );
       }
       if (state.preset == NotifPreset.curieux) {
