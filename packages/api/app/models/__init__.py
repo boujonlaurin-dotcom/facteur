@@ -28,6 +28,7 @@ from app.models.source_search_log import SourceSearchLog
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
 from app.models.user_favorites import UserFavoriteInterest, UserFavoriteSource
+from app.models.user_feedback import DigestSentiment, FeedbackInvite
 from app.models.user_letter_progress import UserLetterProgress
 from app.models.user_notification_preferences import UserNotificationPreferences
 from app.models.user_personalization import UserPersonalization
@@ -127,4 +128,7 @@ __all__ = [
     # La Grille du jour (Story 24.1)
     "GrillePuzzle",
     "GrilleGameState",
+    # User Feedback System (Epic 13)
+    "DigestSentiment",
+    "FeedbackInvite",
 ]

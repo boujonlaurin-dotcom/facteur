@@ -28,6 +28,7 @@ import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
+import '../../feedback/widgets/feedback_closing_card.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
@@ -1258,6 +1259,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 ),
               ),
             ),
+            // Carte feedback de fin de tournée (Epic 13) — micro-feedback emoji
+            // + invitation au call qualitatif (gating segmenté côté backend).
+            const SliverToBoxAdapter(child: FeedbackClosingCard()),
             const SliverToBoxAdapter(child: SizedBox(height: 92)),
           ],
         ),

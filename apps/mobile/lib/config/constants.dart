@@ -331,6 +331,11 @@ class ExternalLinks {
   /// Lien d'invitation au groupe WhatsApp "Facteur - Retours & idées"
   static const String whatsappGroupUrl =
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
+
+  /// Lien de réservation d'un call qualitatif avec Laurin (Epic 13).
+  /// Page de prise de rendez-vous Google Calendar (créneau ~15 min visio).
+  static const String feedbackCallUrl =
+      'https://calendar.app.google/DNFkYfkcAtaP1xZN6';
 }
 
 /// Liens légaux et support — pages statiques servies par le landing facteur.app.
