@@ -194,6 +194,31 @@ async def test_record_persists_token_counts():
 
 
 @pytest.mark.asyncio
+async def test_record_persists_cached_prompt_tokens():
+    """cached_prompt_tokens est porté sur l'ApiUsageEvent (LR-1 PR 2)."""
+    fake_sm, mock_session = _make_session_maker()
+    with (
+        patch.object(usage_recorder, "get_settings", return_value=_settings()),
+        patch.object(
+            usage_recorder,
+            "safe_async_session",
+            side_effect=lambda *_a, **_k: fake_sm(),
+        ),
+    ):
+        await record_api_call(
+            "mistral",
+            "classification_pass1",
+            model="mistral-small-latest",
+            prompt_tokens=1900,
+            completion_tokens=42,
+            cached_prompt_tokens=1600,
+        )
+
+    event = mock_session.add.call_args.args[0]
+    assert event.cached_prompt_tokens == 1600
+
+
+@pytest.mark.asyncio
 async def test_track_api_call_propagates_tracker_tokens():
     """Le context manager remonte les tokens posés sur le tracker au recorder."""
     with patch.object(
@@ -204,12 +229,14 @@ async def test_track_api_call_propagates_tracker_tokens():
         ) as call:
             call.prompt_tokens = 1234
             call.completion_tokens = 56
+            call.cached_prompt_tokens = 1000
             call.status = "ok"
 
     mock_record.assert_awaited_once()
     kwargs = mock_record.await_args.kwargs
     assert kwargs["prompt_tokens"] == 1234
     assert kwargs["completion_tokens"] == 56
+    assert kwargs["cached_prompt_tokens"] == 1000
     assert kwargs["status"] == "ok"
 
 
@@ -228,4 +255,5 @@ async def test_track_api_call_tokens_default_none_on_failure():
     kwargs = mock_record.await_args.kwargs
     assert kwargs["prompt_tokens"] is None
     assert kwargs["completion_tokens"] is None
+    assert kwargs["cached_prompt_tokens"] is None
     assert kwargs["status"] == "error"

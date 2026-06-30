@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.ml.good_news_classifier import (
+    GOOD_NEWS_CACHE_KEY,
     GoodNewsClassifier,
     _build_user_prompt,
     _parse_response,
@@ -112,6 +113,7 @@ class TestClassifierBatch:
 
         async def fake_call(payload: dict, *, max_retries: int = 3) -> dict:
             assert payload["model"] == "mistral-large-latest"
+            assert payload["prompt_cache_key"] == GOOD_NEWS_CACHE_KEY
             return {
                 "choices": [
                     {
@@ -159,7 +161,11 @@ class TestCallTokenCapture:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "[]"}}],
-            "usage": {"prompt_tokens": 800, "completion_tokens": 16},
+            "usage": {
+                "prompt_tokens": 800,
+                "completion_tokens": 16,
+                "prompt_tokens_details": {"cached_tokens": 700},
+            },
         }
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -176,4 +182,5 @@ class TestCallTokenCapture:
         kwargs = rec.await_args.kwargs
         assert kwargs["prompt_tokens"] == 800
         assert kwargs["completion_tokens"] == 16
+        assert kwargs["cached_prompt_tokens"] == 700
         assert kwargs["status"] == "ok"
