@@ -34,6 +34,7 @@ import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../../settings/widgets/display_mode_bottom_sheet.dart';
+import '../../sources/models/source_theme_filters.dart';
 import '../../tour/providers/guided_tour_controller.dart';
 import '../../tour/tour_anchors.dart';
 import '../../well_informed/widgets/well_informed_prompt.dart';
@@ -1387,14 +1388,26 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                               '${RoutePaths.veilleConfig}?mode=edit',
                             )
                         : null,
-                    // CTA « Ajouter des sources » de l'empty-state d'une section
-                    // thème favorite vide → renvoie directement vers la page
-                    // d'ajout de sources (et non plus la modal « Composer ma
-                    // Tournée »). Nom de route globalement unique → pushNamed
-                    // suffit (pas besoin des params parents).
+                    // CTA « Plus de sources (X) » / footer « Étoffer X » d'une
+                    // section thème → page **dédiée** du thème
+                    // (`ThemeSourcesScreen` : catalogue backend complet du
+                    // thème, ajout par source). Sujet custom (hors macro-thème,
+                    // sans page dédiée) → page d'ajout générique.
                     onAddSources: section is FeedThemeSection &&
                             section.kind == SectionKind.theme
-                        ? () => context.pushNamed(RouteNames.addSource)
+                        ? () {
+                            if (isCatalogTheme(section.themeSlug)) {
+                              // Même route que le ThemeExplorer (catalogue
+                              // dédié du thème) : push par chemin + `extra` =
+                              // libellé pour le titre.
+                              context.push(
+                                '/settings/sources/theme/${section.themeSlug}',
+                                extra: section.label,
+                              );
+                            } else {
+                              context.pushNamed(RouteNames.addSource);
+                            }
+                          }
                         : null,
                     onSeeAll: section is FeedThemeSection
                         ? (section.kind == SectionKind.source

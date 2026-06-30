@@ -1,6 +1,8 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Au pied de chaque thème de ta Tournée, des sources de qualité à suivre pour enrichir ton actu, et une recherche pour trouver les tiennes."
       "tag": "Pour toi",
       "summary": "Le flux récompense désormais les personnalités et sujets que tu lis souvent, avec une raison claire (« Parce que tu lis souvent … »)."
     },
