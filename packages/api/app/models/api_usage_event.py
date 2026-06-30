@@ -29,6 +29,9 @@ class ApiUsageEvent(Base):
     `prompt_tokens` / `completion_tokens` null = provider sans usage tokens
     (Brave) ou appel échoué avant réponse — sinon issus de `usage` Mistral
     (LR-1 PR 1 : permet un `GROUP BY model` qui donne le € réel par modèle).
+    `cached_prompt_tokens` null = provider/appel sans prompt cache — sinon issu
+    de `usage.prompt_tokens_details.cached_tokens` Mistral (LR-1 PR 2 : mesure
+    le bénéfice du `prompt_cache_key` sur les prompts à gros préfixe stable).
     """
 
     __tablename__ = "api_usage_events"
@@ -44,6 +47,7 @@ class ApiUsageEvent(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False
     )

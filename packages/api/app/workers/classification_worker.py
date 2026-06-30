@@ -27,18 +27,49 @@ settings = get_settings()
 class ClassificationWorker:
     """Worker qui traite la file d'attente de classification via Mistral API.
 
-    Traite les articles par batch de 5 pour maximiser la qualité de classification.
+    Accumulation par lot (LR-1 PR 2) : le gros prompt système (taxonomie 51
+    topics) est refacturé à chaque appel batch. On attend donc d'avoir
+    `min_batch_size` articles en attente (ou que le plus vieux pending atteigne
+    `max_wait_s`) avant de traiter un lot de `batch_size`. Priorité, retry,
+    reset des items bloqués et sessions DB courtes sont préservés.
     """
 
-    def __init__(self, batch_size: int = 5, interval: int = 10):
+    def __init__(
+        self,
+        batch_size: int | None = None,
+        interval: int | None = None,
+        min_batch_size: int | None = None,
+        max_wait_s: int | None = None,
+    ):
         """Initialize the worker.
 
         Args:
-            batch_size: Nombre d'articles à traiter par lot (réduit de 20→5 pour qualité)
-            interval: Intervalle en secondes entre chaque vérification (réduit de 15→10)
+            batch_size: Nombre max d'articles à traiter par lot (def. settings).
+            interval: Intervalle en secondes entre 2 vérifications (def. settings).
+            min_batch_size: Seuil minimal de pending avant de traiter un lot
+                (gate d'accumulation ; def. settings).
+            max_wait_s: Plafond d'attente — si le plus vieux pending dépasse cet
+                âge, on traite même sous le seuil (anti-famine ; def. settings).
+
+        Les arguments None retombent sur la config (rollback env-only).
         """
-        self.batch_size = batch_size
-        self.interval = interval
+
+        # `or` est dangereux ici : max_wait_s=0 est un override valide
+        # (rollback « traiter dès qu'il y a un item »). On garde donc le
+        # fallback sur None explicite.
+        def _or_setting(value: int | None, default: int) -> int:
+            return value if value is not None else default
+
+        self.batch_size = _or_setting(
+            batch_size, settings.classification_worker_batch_size
+        )
+        self.interval = _or_setting(interval, settings.classification_worker_interval_s)
+        self.min_batch_size = _or_setting(
+            min_batch_size, settings.classification_worker_min_batch_size
+        )
+        self.max_wait_s = _or_setting(
+            max_wait_s, settings.classification_worker_max_wait_s
+        )
         self.running = False
         self._task: asyncio.Task | None = None
 
@@ -140,7 +171,10 @@ class ClassificationWorker:
                 if self._loop_count % 30 == 0:
                     await self._reset_stale_processing()
 
-                await self._process_batch()
+                # Gate d'accumulation : ne traiter un lot que si la file est
+                # assez remplie OU si le plus vieux pending a trop attendu.
+                if await self._should_process():
+                    await self._process_batch()
             except Exception as e:
                 import structlog
 
@@ -148,6 +182,25 @@ class ClassificationWorker:
                 logger.error("classification_worker_error", error=str(e))
 
             await asyncio.sleep(self.interval)
+
+    async def _should_process(self) -> bool:
+        """Décide si un lot doit être traité maintenant (gate d'accumulation).
+
+        Vrai si `pending >= min_batch_size` (lot plein) OU si le plus vieux
+        pending dépasse `max_wait_s` (anti-famine du reste de file). Session
+        courte dédiée, ne tient jamais de transaction. Rollback env-only :
+        min_batch_size=1 / max_wait_s=0 redonne le comportement « traiter dès
+        qu'il y a un item ».
+        """
+        async with self.session_maker() as session:
+            service = ClassificationQueueService(session)
+            pending, oldest_age_s = await service.get_pending_stats()
+
+        if pending <= 0:
+            return False
+        if pending >= self.min_batch_size:
+            return True
+        return oldest_age_s is not None and oldest_age_s >= self.max_wait_s
 
     async def _reset_stale_processing(self):
         """Periodically reset items stuck in 'processing' for >10 minutes."""

@@ -7,11 +7,16 @@ from pydantic import BaseModel
 
 
 class ClusterSummary(BaseModel):
-    """Serialized TopicCluster for LLM input."""
+    """Serialized TopicCluster for LLM input.
+
+    `article_titles` retiré (LR-1 PR 2) : jusqu'à 10 titres / cluster gonflaient
+    le prompt de curation sans peser sur la sélection (le LLM choisit sur
+    label / couverture / trending / thème). Économie de tokens prompt, comportement
+    de sélection inchangé.
+    """
 
     topic_id: str
     label: str
-    article_titles: list[str]
     source_count: int
     is_trending: bool
     theme: str | None = None

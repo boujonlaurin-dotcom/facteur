@@ -9,7 +9,7 @@ Additive (CREATE TABLE pur + index) → sûre en expand-contract sur la DB
 partagée staging/prod : le backend prod (ancien code) ignore la table jusqu'au
 passage hebdo. Migration idempotente (no-op si la table existe déjà).
 
-Head précédent : ``ufb01`` (create_feedback_tables, #909). Après : 1 seul
+Head précédent : ``pc02_api_usage_cached_tokens`` (#914). Après : 1 seul
 head (ue01).
 """
 
@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from alembic import op
 
 revision: str = "ue01_user_entity_affinity"
-down_revision: str | None = "ufb01"
+down_revision: str | None = "pc02_api_usage_cached_tokens"
 branch_labels: str | None = None
 depends_on: str | None = None
 

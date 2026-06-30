@@ -109,6 +109,11 @@ class Perspective {
   /// long-press de la carte de couverture (cf. [toPreviewContent]).
   final String? description;
 
+  /// Fiabilité de la source (`high`/`medium`/`mixed`/`low`/`unknown`). Portée
+  /// par le back depuis `Source.reliability_score`. Défaut `'unknown'` (cache
+  /// perspectives non rafraîchi ⇒ champ absent ⇒ pas de glyphe).
+  final String reliabilityScore;
+
   /// Tokens divergents du titre vs. référence, colorisés par bias.
   final List<HighlightSpan> highlightSpans;
 
@@ -127,6 +132,7 @@ class Perspective {
     required this.biasStance,
     this.publishedAt,
     this.description,
+    this.reliabilityScore = 'unknown',
     this.highlightSpans = const [],
     this.sharedTokens = const [],
     this.language,
@@ -145,6 +151,8 @@ class Perspective {
       biasStance: (json['bias_stance'] as String?) ?? 'unknown',
       publishedAt: json['published_at'] as String?,
       description: json['description'] as String?,
+      reliabilityScore:
+          (json['reliability_score'] as String?)?.toLowerCase() ?? 'unknown',
       language: json['language'] as String?,
     );
   }
@@ -1834,32 +1842,24 @@ class _PerspectivesInlineSectionState
                     label,
                     maxLines: 1,
                     style: GoogleFonts.dmSans(
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w700,
                       color: colors.textPrimary,
                     ),
                   ),
                 ),
               ),
+              // Le badge de polarisation est descendu sous la barre de biais
+              // (cf. [_buildBandFooter]) ; le header ne garde que le bouton info.
               if (!isEmpty) ...[
                 const SizedBox(width: 11),
-                // Loading : on garde le shimmer (badge + info masqués). Prêt :
-                // badge de polarisation (échelle 1.0, contre 1.45 en footer
-                // avant la refonte) + bouton info.
                 if (isLoading)
                   const SizedBox(width: 96, child: CoverageSpectrumBarShimmer())
-                else ...[
-                  DivergenceInlineBadge(
-                    divergenceLevel: widget.divergenceLevel,
-                    scale: 1.0,
-                    prominentMedium: true,
-                  ),
-                  const SizedBox(width: 6),
+                else
                   _HighlightInfoButton(
                     colors: colors,
                     onTap: () => _showHighlightInfo(context, colors, textTheme),
                   ),
-                ],
               ],
             ],
           ),
@@ -1895,10 +1895,29 @@ class _PerspectivesInlineSectionState
         _kCarouselPaddingH,
         6,
       ),
-      child: CoverageSpectrumBar(
-        distribution: widget.biasDistribution,
-        onSegmentTap: _onSpectrumSegmentTap,
-        showAnchorLabels: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CoverageSpectrumBar(
+            distribution: widget.biasDistribution,
+            onSegmentTap: _onSpectrumSegmentTap,
+            showAnchorLabels: true,
+          ),
+          // Label « niveau de polarisation » posé sous la barre de biais
+          // (déplacé du header) : centré, échelle 1.6 pour la lisibilité (le
+          // label Courier 8 px de base est trop fin sous la barre pleine
+          // largeur).
+          if (widget.divergenceLevel != null) ...[
+            const SizedBox(height: 10),
+            Center(
+              child: DivergenceInlineBadge(
+                divergenceLevel: widget.divergenceLevel,
+                scale: 1.6,
+                prominentMedium: true,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
