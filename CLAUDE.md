@@ -132,6 +132,7 @@ bash docs/qa/scripts/verify_<task>.sh
 - [Safety Guardrails](docs/agent-brain/safety-guardrails.md) — guardrails + safety protocols
 - [Investigation Playbook](docs/agent-brain/investigation-playbook.md) — outils par scénario prod (bug, usage, migration, logs, sécurité)
 - [Runbook : récupération de drift Alembic](docs/runbooks/recover-from-alembic-drift.md) — étapes à suivre si la chaîne Alembic se met à diverger de prod
+- [Runbook : réconcilier `production` (release hebdo cassé au `--ff-only`)](docs/runbooks/recover-from-production-divergence.md) — si `production` a divergé suite à un commit direct (merge commit arbre-identique sans squash + piège push merge-commit + piège GITHUB_TOKEN)
 - [Claude Access Setup](docs/infra/claude-access-setup.md) — secrets + accès multi-services (Supabase/Railway/Sentry/PostHog)
 - [PRD](docs/prd.md) / [Architecture](docs/architecture.md) / [Front-end Spec](docs/front-end-spec.md)
 - Agents BMAD : `.bmad-core/agents/` (dev, po, architect, qa)
