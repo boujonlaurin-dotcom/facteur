@@ -187,3 +187,58 @@ def test_due_time_uses_each_users_local_timezone():
 
     assert _is_due(montreal_morning, "morning") is True
     assert _is_due(paris_before_evening, "evening") is False
+
+
+def test_send_fcm_is_data_only_with_teasers_preserved():
+    """Android doit recevoir un message data-only (pas de bloc `notification`
+    top-level) pour que le background handler rende les bullets ; les teasers
+    et le title/body doivent rester lisibles dans `data`. iOS garde un alert
+    APNS visible.
+    """
+    import sys
+    from types import SimpleNamespace
+
+    captured: dict[str, object] = {}
+
+    def _message(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(**kwargs)
+
+    fake_messaging = SimpleNamespace(
+        Message=_message,
+        Notification=lambda **k: SimpleNamespace(**k),
+        AndroidConfig=lambda **k: SimpleNamespace(kind="android", **k),
+        AndroidNotification=lambda **k: SimpleNamespace(**k),
+        APNSConfig=lambda **k: SimpleNamespace(kind="apns", **k),
+        APNSPayload=lambda **k: SimpleNamespace(**k),
+        Aps=lambda **k: SimpleNamespace(**k),
+        ApsAlert=lambda **k: SimpleNamespace(kind="aps_alert", **k),
+        send=lambda *_args, **_kwargs: "message-id",
+    )
+    fake_firebase_admin = SimpleNamespace(messaging=fake_messaging)
+
+    from app.services import push_dispatcher
+
+    data = {
+        "route": "/digest",
+        "kind": "daily_digest",
+        "teasers": '["Trump", "Climat"]',
+    }
+    with (
+        patch.object(push_dispatcher, "_firebase_app", return_value=object()),
+        patch.dict(sys.modules, {"firebase_admin": fake_firebase_admin}),
+    ):
+        result = push_dispatcher._send_fcm("tok", "Facteur", "Trump", data)
+
+    assert result == "message-id"
+    # Pas de notification top-level (data-only) → Android invoque le bg handler.
+    assert captured.get("notification") is None
+    # Android config sans rendu notification.
+    assert getattr(captured["android"], "kind", None) == "android"
+    assert getattr(captured["android"], "notification", None) is None
+    # teasers + title/body conservés dans data pour le rendu client.
+    assert captured["data"]["teasers"] == '["Trump", "Climat"]'
+    assert captured["data"]["title"] == "Facteur"
+    assert captured["data"]["body"] == "Trump"
+    # iOS conserve un alert visible.
+    assert getattr(captured["apns"], "kind", None) == "apns"

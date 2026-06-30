@@ -405,9 +405,9 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
         // Le pop-up OS « Alarmes et rappels » ne doit jamais se rouvrir tout
         // seul (bug-modals-intrusives) ; l'opt-in exact-alarm est strictement
         // initié par l'utilisateur (modal d'activation / Réglages).
-        final scheduled =
-            await pushNotificationService.scheduleDailyDigestNotification(
-          variant: NotifVariant.variantA,
+        //
+        final scheduled = await ServerPushService.scheduleDigestFallback(
+          box: settingsBox,
           timeSlot: timeSlot,
         );
         if (!scheduled) {

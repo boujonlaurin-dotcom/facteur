@@ -67,9 +67,7 @@ def passes_safety_gate(source: Source) -> bool:
     """
     if _reliability(source) in PUSHED_EXCLUDED_RELIABILITY:
         return False
-    if _bias(source) in PUSHED_EXCLUDED_BIAS:
-        return False
-    return True
+    return _bias(source) not in PUSHED_EXCLUDED_BIAS
 
 
 def is_quality_catalog(source: Source) -> bool:
@@ -83,6 +81,4 @@ def is_quality_catalog(source: Source) -> bool:
         return False
     if _reliability(source) not in QUALITY_CATALOG_RELIABILITY:
         return False
-    if _bias(source) in QUALITY_CATALOG_EXCLUDED_BIAS:
-        return False
-    return True
+    return _bias(source) not in QUALITY_CATALOG_EXCLUDED_BIAS

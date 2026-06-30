@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -138,9 +140,6 @@ class PushNotificationService {
 
   // --- Copy variants -------------------------------------------------------
 
-  /// Nom affiché comme expéditeur dans la notif Android (MessagingStyle).
-  static const String senderName = 'Ton facteur';
-
   /// Variante A — défaut, sans teaser éditorial.
   static const String defaultTitle = 'Facteur';
   static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
@@ -269,11 +268,6 @@ class PushNotificationService {
         ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
-    const sender = Person(
-      name: senderName,
-      key: 'facteur',
-      important: true,
-    );
     final androidDetails = AndroidNotificationDetails(
       'digest_channel',
       'Digest quotidien',
@@ -282,12 +276,13 @@ class PushNotificationService {
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
-      styleInformation: MessagingStyleInformation(
-        const Person(name: 'Toi'),
-        groupConversation: false,
-        messages: [
-          Message(copy.bigText, DateTime.now(), sender),
-        ],
+      // BigText (et non MessagingStyle) : le multi-ligne est rendu sans avatar
+      // par message — un MessagingStyle sans icône d'expéditeur produit un
+      // monogramme « T » coloré dupliqué à côté de l'icône launcher
+      // (cf. bug-notif-matin-avatar-double-sans-bullets).
+      styleInformation: BigTextStyleInformation(
+        copy.bigText,
+        contentTitle: copy.title,
       ),
     );
     const iosDetails = DarwinNotificationDetails();
@@ -387,11 +382,6 @@ class PushNotificationService {
         ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
-    const sender = Person(
-      name: senderName,
-      key: 'facteur',
-      important: true,
-    );
     final androidDetails = AndroidNotificationDetails(
       'good_news_channel',
       'Bonnes nouvelles du jour',
@@ -401,12 +391,11 @@ class PushNotificationService {
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
-      styleInformation: MessagingStyleInformation(
-        const Person(name: 'Toi'),
-        groupConversation: false,
-        messages: [
-          Message(copy.bigText, DateTime.now(), sender),
-        ],
+      // BigText (et non MessagingStyle) : évite l'avatar monogramme dupliqué
+      // (cf. bug-notif-matin-avatar-double-sans-bullets).
+      styleInformation: BigTextStyleInformation(
+        copy.bigText,
+        contentTitle: copy.title,
       ),
     );
     const iosDetails = DarwinNotificationDetails();
@@ -556,28 +545,78 @@ class PushNotificationService {
 
   Future<void> showRemoteNotification(RemoteMessage message) async {
     final notification = message.notification;
-    if (notification == null) return;
-    final route = message.data['route'] as String? ?? '/digest';
-    const androidDetails = AndroidNotificationDetails(
+    final data = message.data;
+    final route = data['route'] as String? ?? '/digest';
+
+    // Le push digest est data-only sur Android (cf. push_dispatcher._send_fcm) :
+    // `message.notification` est null et c'est NOUS qui rendons la notif. On
+    // ignore donc le push uniquement s'il n'y a ni bloc `notification`, ni
+    // données exploitables (teasers / title|body dans `data`).
+    final teasers = _parseTeasers(data['teasers']);
+    final dataTitle = data['title'] as String?;
+    final dataBody = data['body'] as String?;
+    if (notification == null &&
+        teasers.isEmpty &&
+        dataTitle == null &&
+        dataBody == null) {
+      return;
+    }
+
+    // Si le push porte des teasers (`data['teasers']` = JSON liste de titres),
+    // on rend de vrais bullets (variantB) au lieu du corps une-ligne. Sinon,
+    // fallback sur le bloc `notification` FCM, puis sur `data` title/body.
+    final String title;
+    final String body;
+    final String bigText;
+    if (teasers.isNotEmpty) {
+      final copy = buildCopy(variant: NotifVariant.variantB, teasers: teasers);
+      title = copy.title;
+      body = copy.body;
+      bigText = copy.bigText;
+    } else {
+      title = notification?.title ?? dataTitle ?? defaultTitle;
+      body = notification?.body ?? dataBody ?? defaultBody;
+      bigText = body;
+    }
+
+    final androidDetails = AndroidNotificationDetails(
       'digest_channel',
       'Digest quotidien',
       channelDescription: 'Notification quotidienne quand ton récap est prêt',
       importance: Importance.high,
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
-      color: Color(0xFFD35400),
+      color: const Color(0xFFD35400),
+      styleInformation: BigTextStyleInformation(bigText, contentTitle: title),
     );
     const iosDetails = DarwinNotificationDetails();
     await _plugin.show(
       id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch,
-      title: notification.title ?? defaultTitle,
-      body: notification.body ?? defaultBody,
-      notificationDetails: const NotificationDetails(
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       ),
       payload: 'route:$route',
     );
+  }
+
+  /// Décode `data['teasers']` (JSON liste de titres) de façon défensive :
+  /// renvoie une liste vide si la charge est absente, mal formée, ou non-liste.
+  static List<String> _parseTeasers(Object? raw) {
+    if (raw is! String || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<String>()
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
   }
 
   static void openRoute(String route) {
