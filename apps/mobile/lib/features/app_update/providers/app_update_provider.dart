@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/constants.dart';
@@ -38,11 +38,39 @@ class AppUpdateInfo {
     );
   }
 
-  /// Lexicographic comparison works for date-based tags:
-  /// "beta-20260221-1430" > "beta-20260220-0900"
+  /// Tags émis par la CI au format `<canal>-YYYYMMDD-HHMM`
+  /// (ex. "beta-20260221-1430", "release-20260221-1430").
+  ///
+  /// On parse la structure plutôt que de comparer lexicographiquement : si
+  /// l'un des deux tags n'est pas au format attendu, ou si les canaux diffèrent
+  /// (formats incomparables), on renvoie `false` — jamais de point rouge
+  /// fantôme sur une comparaison ambiguë.
+  static final RegExp _tagPattern =
+      RegExp(r'^(beta|release)-(\d{8})-(\d{4})$');
+
+  /// Clé numérique triable `YYYYMMDD * 10000 + HHMM`, préfixée du canal.
+  /// `null` si le tag n'est pas au format attendu.
+  static ({String channel, int key})? _parseTag(String tag) {
+    final m = _tagPattern.firstMatch(tag);
+    if (m == null) return null;
+    return (
+      channel: m.group(1)!,
+      key: int.parse(m.group(2)!) * 10000 + int.parse(m.group(3)!),
+    );
+  }
+
+  /// Exposé pour les tests (le vrai `local` est un `String.fromEnvironment`
+  /// figé à la compilation, impossible à piloter depuis un test).
+  @visibleForTesting
+  static bool isNewer(String remote, String local) => _isNewer(remote, local);
+
   static bool _isNewer(String remote, String local) {
     if (local.isEmpty) return false; // dev build: hide update
-    return remote.compareTo(local) > 0;
+    final r = _parseTag(remote);
+    final l = _parseTag(local);
+    // Formats incomparables (parse échoué ou canaux différents) : pas de MAJ.
+    if (r == null || l == null || r.channel != l.channel) return false;
+    return r.key > l.key;
   }
 
   /// Format APK size for display (e.g. "62.3 MB")

@@ -15,6 +15,7 @@ import 'features/feed/services/read_sync_service.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
+import 'features/app_update/providers/app_update_provider.dart';
 import 'features/app_update/services/playstore_update_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
@@ -101,6 +102,11 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       // playstore : re-check au retour foreground (no-op sur beta/dev ; garde
       // anti-ré-entrance interne au service).
       unawaited(ref.read(playStoreUpdateServiceProvider).checkAndStart());
+      // Android self-update : ré-évalue le point rouge au retour au premier
+      // plan (typiquement juste après l'install de l'APK). Le provider
+      // autoDispose re-fetch /api/app/update ; version installée == dernière
+      // release -> updateAvailable repasse false et le point rouge disparaît.
+      ref.invalidate(appUpdateProvider);
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         final elapsed = _backgroundedAt != null
