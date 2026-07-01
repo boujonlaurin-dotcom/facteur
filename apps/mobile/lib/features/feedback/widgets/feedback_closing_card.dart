@@ -19,7 +19,17 @@ class FeedbackClosingCard extends ConsumerStatefulWidget {
   /// Date de la tournée notée (par défaut : aujourd'hui côté backend).
   final DateTime? digestDate;
 
-  const FeedbackClosingCard({super.key, this.digestDate});
+  /// Notifie l'hôte quand la hauteur rendue change en asynchrone (résolution
+  /// de l'invitation call → +Divider/teaser, ou vote emoji → ligne « Merci »).
+  /// L'Essentiel y branche son recompute d'ancres de snap : sans ça, l'ancre
+  /// de la section de clôture reste calée sur l'ancienne hauteur.
+  final VoidCallback? onLayoutChanged;
+
+  const FeedbackClosingCard({
+    super.key,
+    this.digestDate,
+    this.onLayoutChanged,
+  });
 
   @override
   ConsumerState<FeedbackClosingCard> createState() =>
@@ -41,6 +51,9 @@ class _FeedbackClosingCardState extends ConsumerState<FeedbackClosingCard> {
       _shownMarked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(feedbackRepositoryProvider).markInviteShown();
+        // La résolution de l'invite ajoute Divider + teaser (~+90px) : la
+        // section de clôture a grandi ⇒ rafraîchir les ancres de snap.
+        widget.onLayoutChanged?.call();
       });
     }
 
@@ -85,7 +98,10 @@ class _FeedbackClosingCardState extends ConsumerState<FeedbackClosingCard> {
             const SizedBox(height: 6),
 
             // Micro-feedback emoji (toujours présent).
-            SentimentPicker(digestDate: widget.digestDate),
+            SentimentPicker(
+              digestDate: widget.digestDate,
+              onLayoutChanged: widget.onLayoutChanged,
+            ),
 
             // Invitation au call (conditionnelle, gated backend).
             if (showCall) ...[
