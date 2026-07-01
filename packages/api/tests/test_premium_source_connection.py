@@ -160,14 +160,46 @@ async def test_subscription_false_clears_timestamps(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_subscription_true_rejects_free_non_paywalled_source(
+async def test_subscription_true_allows_free_source_with_http_url(
     db_session: AsyncSession,
 ):
+    """Décision PO « connecter un login à toute source suivie » : une source
+    libre avec une URL http(s) valide est désormais connectable (login générique
+    sur le site), même sans connexion premium résolue. La réponse n'expose pas de
+    ``premium_connection`` (le mobile synthétise alors un flux générique)."""
     source = Source(
         id=uuid4(),
         name="Regular Source",
         url="https://example.com",
         feed_url=f"https://example.com/feed-{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="society",
+        is_curated=True,
+        is_active=True,
+    )
+    db_session.add(source)
+    await db_session.flush()
+
+    response = await SourceService(db_session).update_source_subscription(
+        str(uuid4()), str(source.id), True
+    )
+
+    assert response is not None
+    assert response.has_subscription is True
+    assert response.has_paywall is False
+    assert response.premium_connection is None
+
+
+@pytest.mark.asyncio
+async def test_subscription_true_rejects_source_without_http_url(
+    db_session: AsyncSession,
+):
+    """Sans connexion premium ni URL http(s) valide, aucun login n'est possible."""
+    source = Source(
+        id=uuid4(),
+        name="Schemeless Source",
+        url="ftp://weird-host",
+        feed_url=f"https://schemeless.example/feed-{uuid4()}.xml",
         type=SourceType.ARTICLE,
         theme="society",
         is_curated=True,

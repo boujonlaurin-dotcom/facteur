@@ -77,6 +77,28 @@ def test_from_source_curated_map_is_not_generic():
     assert resp.test_url == MAP["lemonde.fr"]["test_url"]
 
 
+@pytest.mark.parametrize(
+    "url,domain",
+    [
+        ("https://www.nytimes.com/2026/01/01/world/x.html", "nytimes.com"),
+        ("https://theathletic.com/123/article/", "theathletic.com"),
+        ("https://www.washingtonpost.com/world/x/", "washingtonpost.com"),
+        ("https://www.ft.com/content/abc", "ft.com"),
+        ("https://www.economist.com/leaders/x", "economist.com"),
+        ("https://www.wsj.com/articles/x", "wsj.com"),
+    ],
+)
+def test_from_source_english_titles_are_curated_not_generic(url, domain):
+    """Les grands titres EN ajoutés à la map (PO) exposent une connexion curée."""
+    src = _stub(url=url)
+    assert is_paywalled_source(src) is True
+    resp = PremiumConnectionResponse.from_source(src, curated_map=MAP)
+    assert resp is not None
+    assert resp.is_generic is False
+    assert resp.login_url == MAP[domain]["login_url"]
+    assert resp.test_url == MAP[domain]["test_url"]
+
+
 def test_from_source_paywall_config_only_is_generic_using_source_url():
     src = _stub(
         url="https://unknown-paper.example/news/x",

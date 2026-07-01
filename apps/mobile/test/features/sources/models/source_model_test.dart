@@ -56,6 +56,57 @@ void main() {
     });
   });
 
+  group('forceGenericConnection', () {
+    test('reuses the existing usable connection (curated or explicit)', () {
+      const curated = PremiumConnection(
+        loginUrl: 'https://example.com/login',
+        testUrl: 'https://example.com/article',
+      );
+      final source = Source(
+        id: 'source',
+        name: 'Source',
+        type: SourceType.article,
+        hasPaywall: true,
+        premiumConnection: curated,
+      );
+
+      expect(forceGenericConnection(source), same(curated));
+    });
+
+    test('synthesizes a generic connection for a free source with http url', () {
+      final source = Source(
+        id: 'free',
+        name: 'Free Followed',
+        type: SourceType.article,
+        url: 'https://nytimes.com',
+      );
+
+      final connection = forceGenericConnection(source);
+
+      expect(connection, isNotNull);
+      expect(connection!.isGeneric, isTrue);
+      expect(connection.loginUrl, 'https://nytimes.com');
+      expect(connection.testUrl, 'https://nytimes.com');
+    });
+
+    test('returns null without a valid http(s) url', () {
+      final source = Source(
+        id: 'nourl',
+        name: 'No URL',
+        type: SourceType.article,
+        url: 'example.com',
+      );
+
+      expect(forceGenericConnection(source), isNull);
+      expect(
+        forceGenericConnection(
+          Source(id: 'nil', name: 'Nil', type: SourceType.article),
+        ),
+        isNull,
+      );
+    });
+  });
+
   group('Source.fromJson premiumConnection', () {
     test('parses usable premium_connection', () {
       final source = Source.fromJson({
