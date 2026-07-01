@@ -48,6 +48,30 @@ class SourceService:
     def _has_paywall(s: Source) -> bool:
         return is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP)
 
+    @staticmethod
+    def _can_connect_login(s: Source) -> bool:
+        """Une connexion (login) peut-elle être associée à cette source ?
+
+        Vrai si une connexion premium se résout (config explicite / map curée /
+        fallback paywall) **OU** si la source a une URL http(s) valide : décision
+        PO « connecter un login à toute source suivie » (sites étrangers à login).
+        L'utilisateur se connecte alors génériquement sur le site du média ; aucun
+        identifiant n'est stocké côté serveur.
+
+        L'opt-out explicite ``premium_connection_config.enabled = false`` reste une
+        blocklist : il bloque la connexion même si l'URL est valide (source dont la
+        connexion WebView est connue comme incompatible).
+        """
+        config = getattr(s, "premium_connection_config", None)
+        if PremiumConnectionResponse.is_explicitly_disabled(config):
+            return False
+        if SourceService._premium_connection(s) is not None:
+            return True
+        url = getattr(s, "url", None)
+        return isinstance(url, str) and url.strip().lower().startswith(
+            ("http://", "https://")
+        )
+
     async def _load_user_source_context(
         self, user_id: UUID
     ) -> tuple[set[UUID], dict[UUID, float], dict[UUID, bool]]:
@@ -526,11 +550,13 @@ class SourceService:
     ) -> SourceResponse | None:
         """Met à jour le has_subscription d'une source.
 
-        La connexion positive exige une connexion premium résolue : config
-        explicite, domaine curé, ou fallback générique pour source paywalled.
-        La config curée améliore donc l'expérience sans servir de whitelist
-        bloquante. La dissociation reste autorisée même si la config source a
-        été retirée.
+        La connexion positive exige seulement qu'un login soit possible
+        (``_can_connect_login``) : connexion premium résolue (config explicite /
+        map curée / fallback paywall) **ou** simple URL http(s) valide (login
+        générique sur le site, décision PO « toute source suivie »). La config
+        curée améliore l'expérience sans servir de whitelist bloquante ; seul
+        l'opt-out explicite ``premium_connection_config.enabled = false`` bloque.
+        La dissociation reste toujours autorisée.
         """
         user_uuid = UUID(user_id)
         source_uuid = UUID(source_id)
@@ -539,7 +565,7 @@ class SourceService:
         if not source:
             return None
 
-        if has_subscription and self._premium_connection(source) is None:
+        if has_subscription and not self._can_connect_login(source):
             raise PremiumConnectionNotEnabled
 
         user_source = await self.db.scalar(

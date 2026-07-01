@@ -99,13 +99,14 @@ void main() {
     expect(find.text('Ajouter un abonnement'), findsOneWidget);
   });
 
-  testWidgets('empty state opens fallback when no followed paid source',
+  testWidgets('empty state opens fallback when no connectable source',
       (tester) async {
     await tester.pumpWidget(_wrap([
+      // Source libre NON suivie → ni payante éligible, ni login-connectable.
       _source(
         id: 'freeblog',
         name: 'Free Blog',
-        isTrusted: true,
+        isTrusted: false,
         hasPaywall: false,
         premiumConnection: null,
       ),
@@ -122,12 +123,13 @@ void main() {
     expect(find.text('Choisir mes sources'), findsOneWidget);
   });
 
-  testWidgets('lists only followed connectable paid sources in add sheet',
+  testWidgets('add sheet lists paid sources + login-connectable followed sites',
       (tester) async {
     await tester.pumpWidget(_wrap([
       _source(id: 'lemonde', name: 'Le Monde', isTrusted: true),
       _source(id: 'mediapart', name: 'Mediapart', isTrusted: true),
       _source(id: 'unfollowed', name: 'Non suivi'),
+      // Source libre suivie : connectable via login générique (décision PO).
       _source(
         id: 'freeblog',
         name: 'Gratuit suivi',
@@ -156,8 +158,15 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Non suivi'), findsNothing);
-    expect(find.text('Gratuit suivi'), findsNothing);
-    expect(find.text('Déjà connecté'), findsOneWidget);
+    // La source libre suivie apparaît sous la section « autre site à login ».
+    expect(find.text('Un autre site demande une connexion ?'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ListView),
+        matching: find.text('Gratuit suivi'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.enterText(
       find.byType(TextField),
