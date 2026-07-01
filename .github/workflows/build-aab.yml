@@ -69,6 +69,7 @@ jobs:
             --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
             --dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN_FLUTTER }}" \
             --dart-define="SENTRY_ENVIRONMENT=production" \
+            --dart-define="PLAYSTORE_BUILD=true" \
             --dart-define="UPDATE_CHANNEL=playstore" \
             --dart-define="APP_RELEASE_TAG=android-aab-${{ github.run_number }}"
 
