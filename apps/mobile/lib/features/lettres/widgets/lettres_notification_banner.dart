@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
@@ -17,9 +18,18 @@ import 'ring_avatar.dart';
 /// presque » quand il ne reste qu'une action sur la lettre active.
 const _kLastStepGold = Color(0xFFD4A24E);
 
+/// Clé de throttle du bandeau : dernier affichage (epoch ms). Suffixe `_v1`
+/// cohérent avec les autres prefs (`pinned_tabs_order_v1`).
+const _kLastShownKey = 'lettres_banner_last_shown_v1';
+
+/// Fenêtre de throttle : au plus 1 affichage par 7 jours. Un dismiss manuel
+/// compte comme un affichage (le timestamp est déjà persisté à l'affichage).
+const _kThrottleWindow = Duration(days: 7);
+
 /// Banner inline (feed) — apparait quand une lettre est `active`, masqué sur
-/// `/lettres*` et après dismiss session-only (cohérent avec les autres
-/// nudges, cf. notification_renudge_banner.dart).
+/// `/lettres*`, après dismiss session-only (cohérent avec les autres nudges,
+/// cf. notification_renudge_banner.dart) et throttlé à 1 affichage / 7 jours
+/// (persisté via SharedPreferences).
 ///
 /// Mini-réplique du `ProgressionHeader` : avatar de grade (anneau animé + badge
 /// de niveau) + titre de grade + étapes de la lettre en cours.
@@ -35,8 +45,54 @@ class _LettresNotificationBannerState
     extends ConsumerState<LettresNotificationBanner> {
   bool _dismissedThisSession = false;
 
+  // Throttle : tant que les prefs ne sont pas chargées on masque (évite un
+  // flash avant décision) ; `_suppressedByThrottle` gate les affichages futurs
+  // (< 7j depuis le dernier). `_recordedThisSession` garde-fou anti-écritures
+  // répétées à chaque build.
+  bool _prefsLoaded = false;
+  bool _suppressedByThrottle = false;
+  bool _recordedThisSession = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThrottle();
+  }
+
+  Future<void> _loadThrottle() async {
+    var suppressed = false;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastMs = prefs.getInt(_kLastShownKey);
+      if (lastMs != null) {
+        final last = DateTime.fromMillisecondsSinceEpoch(lastMs);
+        suppressed = DateTime.now().difference(last) < _kThrottleWindow;
+      }
+    } catch (_) {
+      // best-effort : en cas d'échec on n'empêche pas l'affichage.
+    }
+    if (!mounted) return;
+    setState(() {
+      _suppressedByThrottle = suppressed;
+      _prefsLoaded = true;
+    });
+  }
+
+  Future<void> _recordShown() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        _kLastShownKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (_) {
+      // best-effort
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!_prefsLoaded || _suppressedByThrottle) return const SizedBox.shrink();
     if (_dismissedThisSession) return const SizedBox.shrink();
 
     final state = ref.watch(lettersProvider).valueOrNull;
@@ -45,6 +101,13 @@ class _LettresNotificationBannerState
 
     final route = GoRouterState.of(context).matchedLocation;
     if (route.startsWith(RoutePaths.lettres)) return const SizedBox.shrink();
+
+    // 1er build réellement visible de la session → persiste l'affichage.
+    // Couvre « affiché puis ignoré » ET « affiché puis dismiss ».
+    if (!_recordedThisSession) {
+      _recordedThisSession = true;
+      _recordShown();
+    }
 
     final colors = context.facteurColors;
     final grade = state!.grade;
@@ -140,8 +203,10 @@ class _LettresNotificationBannerState
                     PhosphorIcons.x(),
                     color: colors.textTertiary,
                   ),
-                  onPressed: () =>
-                      setState(() => _dismissedThisSession = true),
+                  onPressed: () {
+                    _recordShown();
+                    setState(() => _dismissedThisSession = true);
+                  },
                   tooltip: 'Masquer',
                 ),
               ),

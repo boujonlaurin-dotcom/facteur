@@ -1,54 +1,37 @@
-## Fix notif matin : avatar dupliqué + corps sans bullets (Part 1) + réanimation push serveur (Part 2)
+## Lettres : throttle bandeau + complétion d'action monotone
 
-Capture prod : la notif quotidienne affichait un **corps générique sans bullets**
-+ un **avatar dupliqué** (logo + rond orange « T »). Diagnostic confirmé sur la
-DB partagée : le **push serveur n'a jamais enregistré un seul device** en prod
-(`push_devices`=0, `push_deliveries`=0, alors que 31 users `push_enabled`) → 100 %
-retombent sur la notif **locale**, qui avait deux défauts. PO : Part 1 + Part 2 en
-**une seule PR**.
+Deux régressions distinctes de la feature « Lettres du Facteur ».
 
-### Part 1 — Notif locale (mobile, 100 % des users la reçoivent)
-- **Avatar dupliqué** : `MessagingStyleInformation` → `BigTextStyleInformation`
-  (digest, bonnes nouvelles, `showRemoteNotification`). Le `Person` sans icône
-  générait le monogramme « T ». `senderName` supprimé.
-- **Bullets restaurés** : on ne supprime plus les teasers Essentiel de Hive ;
-  `syncDigestTeasers` les **persiste** (+ flag serène). Les 3 chemins de fallback
-  (`_restoreGenericFallback`, `_reschedule`, cold-start `main.dart`) planifient
-  **variantB + teasers** quand un digest existe, sinon variantA. `buildCopy(variantB)`
-  existait déjà (testé). Tradeoff PO assumé : bullets = dernier fetch (J-1 possible).
+### 1. Bandeau bruyant (mobile) — throttle 7 jours
+`LettresNotificationBanner` réapparaissait à chaque ouverture d'app tant qu'une lettre était
+active (dismiss session-only, jamais persisté). Ajout d'une persistance SharedPreferences
+(`lettres_banner_last_shown_v1`, epoch ms) : **max 1 affichage / 7 jours**, le timestamp étant
+écrit dès le 1er affichage visible de la session (couvre « affiché puis ignoré » ET « affiché
+puis dismiss »). Pattern repris de `nudge_storage.dart`.
 
-### Part 2 — Réanimer le push serveur (cause « 0 device »)
-Racine = **config/ops hors repo**, 2 suspects compounding : `FIREBASE_SERVICE_ACCOUNT_*`
-non set sur Railway (→ `PUT /api/devices` 503 + dispatcher désactivé) et/ou
-`google-services.json` par flavor (→ `getToken()` null). La `DioException` 503 était
-**avalée**, d'où l'impossibilité de trancher. Code livré pour rendre le diag décidable
-+ bullets hors-app :
-- **Instrumentation** : event PostHog `push_register`
-  {outcome: token_null | session_null | endpoint_error(+status_code) | registered |
-  exception}. `PushDevicesApiService.upsert` surface désormais le `statusCode`.
-- **FCM data-only Android** : `_send_fcm` retire le bloc `notification` top-level →
-  Android réveille `firebaseMessagingBackgroundHandler` qui rend le BigText à bullets
-  (réutilise `showRemoteNotification`). **iOS garde un alert APNS visible** (corps =
-  1er titre, sans bullets — acceptable).
+### 2. Complétion d'action non-monotone (backend) — fix générique
+`refresh_letter_status` remplaçait `completed_actions` par le résultat live des détecteurs → une
+action déjà validée régressait si l'état live repassait sous le seuil (ex. `_detect_mute_3_sources`
+compte `cardinality(muted_sources)` : dé-masquer sous 3 décochait l'action). Fix au **niveau
+générique du refresh** : union de l'état persisté (`completed_actions` = « ever reached ») avec le
+recompute live → monotone pour **toutes** les actions (mutes, suivis, etc.). Les détecteurs restent
+purs. **Aucune migration** (le champ JSONB persiste déjà l'état).
 
-### ⚠️ Actions ops/PO restantes (non codables)
-1. Poser `FIREBASE_SERVICE_ACCOUNT_JSON` (ou `_BASE64`) sur **les 2** services Railway
-   (`api-staging-40d3` + `facteur-production`).
-2. Vérifier Firebase console (applicationIds `facteur.app` / `com.example.facteur.staging`,
-   sender ID = secrets CI) + injection `google-services.json` par flavor au build.
+### Diagnostic compte PO (Supabase read-only)
+`boujon.laurin@gmail.com` (user `d47836da-9aa9-4235-ac40-061c5c0ead48`) : `muted_sources = []`
+(count 0), `letter_3` en statut `upcoming`, `completed_actions = []`. La régression `mute_3_sources`
+n'a donc **jamais été déclenchée** sur son compte (letter_3 pas active, 0 mute) : bug latent pour
+lui, réel pour tout user qui dé-masque après avoir atteint 3 sources.
 
-Après ça + une release : l'event `push_register` dira l'outcome dominant, `push_devices`
-se peuple, et `dispatch_daily_essentiel_pushes` envoie (status `sent`).
+### Fichiers
+- `packages/api/app/services/letters/service.py` — union monotone dans `refresh_letter_status`
+- `packages/api/tests/routers/test_letters_routes.py` — `test_completed_action_is_monotone`
+- `apps/mobile/lib/features/lettres/widgets/lettres_notification_banner.dart` — throttle prefs
+- `apps/mobile/test/features/lettres/widgets/lettres_notification_banner_test.dart` — 3 tests throttle
+- `apps/mobile/assets/changelog.json` — entrée `Lettres` + fix corruption JSON de fusion (#924/#925)
 
-### Bonus
-`assets/changelog.json` était **déjà corrompu** par un merge (2 paires tag/summary
-fusionnées → JSON invalide, cassait la modal « Quoi de neuf »). Corrigé + entrée
-Notifications ajoutée.
-
-### Tests
-- `flutter test` : copy variantB (25/25) + notifications + flux_continu OK. Analyze : 0 nouvel issue.
-- `pytest` : `test_send_fcm_is_data_only_with_teasers_preserved` (fake firebase_admin). Ruff clean.
-  (Tests dispatcher/route DB-backed = Connection refused en local Conductor → tournent en CI.)
-- Validation on-device Android (`--flavor staging`) restante : 1 seul avatar + bullets dépliés.
-
-Doc : `docs/bugs/bug-notif-matin-avatar-double-sans-bullets.md`.
+### Vérif
+- Mobile : 7/7 tests du bandeau verts + `flutter analyze` clean.
+- Backend : syntaxe OK ; tests DB (`test_completed_action_is_monotone` + suite letters) à valider
+  en CI — pas de Postgres test local en Conductor (OrbStack down).
+- Alembic : 1 head inchangé, aucune migration.
