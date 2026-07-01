@@ -1248,21 +1248,36 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             // ferme réellement l'app sur Android (SystemNavigator.pop) ; sur iOS,
             // la fermeture programmatique est interdite → on masque le bouton et
             // on affiche une phrase de clôture à la place.
+            // La carte feedback (Epic 13) est fusionnée SOUS `_closingKey` avec
+            // la carte « Fin de tournée » : c'est la boîte portée par cette clé
+            // que [_recomputeSnapAnchors] mesure pour cadrer le bas de la
+            // section de clôture. Rendue en sliver séparé sans clé, elle était
+            // invisible du calcul d'ancres → le snap la « repoussait » hors zone
+            // de repos. La Column les réunit en une seule section mesurable.
             SliverToBoxAdapter(
               child: KeyedSubtree(
                 key: _closingKey,
-                child: ClosingCardV18(
-                  onContinue: () => context.go(RoutePaths.flaner),
-                  onClose: isAndroid ? () => SystemNavigator.pop() : null,
-                  closeHint: isAndroid
-                      ? null
-                      : 'Vous pouvez refermer l’app — à demain',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ClosingCardV18(
+                      onContinue: () => context.go(RoutePaths.flaner),
+                      onClose: isAndroid ? () => SystemNavigator.pop() : null,
+                      closeHint: isAndroid
+                          ? null
+                          : 'Vous pouvez refermer l’app — à demain',
+                    ),
+                    // Micro-feedback emoji + invitation au call qualitatif
+                    // (gating segmenté côté backend). Sa hauteur change en
+                    // asynchrone (résolution invite / vote → « Merci ») ⇒ elle
+                    // signale ces relayouts pour rafraîchir les ancres de snap.
+                    FeedbackClosingCard(
+                      onLayoutChanged: _scheduleAnchorRecompute,
+                    ),
+                  ],
                 ),
               ),
             ),
-            // Carte feedback de fin de tournée (Epic 13) — micro-feedback emoji
-            // + invitation au call qualitatif (gating segmenté côté backend).
-            const SliverToBoxAdapter(child: FeedbackClosingCard()),
             const SliverToBoxAdapter(child: SizedBox(height: 92)),
           ],
         ),

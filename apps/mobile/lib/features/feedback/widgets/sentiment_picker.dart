@@ -12,7 +12,12 @@ class SentimentPicker extends ConsumerStatefulWidget {
   /// Date du digest noté (par défaut : aujourd'hui côté backend).
   final DateTime? digestDate;
 
-  const SentimentPicker({super.key, this.digestDate});
+  /// Notifie l'hôte quand le vote fait basculer la colonne prompt+emojis vers
+  /// la ligne « Merci » (la hauteur rendue change). L'Essentiel y branche son
+  /// recompute d'ancres de snap.
+  final VoidCallback? onLayoutChanged;
+
+  const SentimentPicker({super.key, this.digestDate, this.onLayoutChanged});
 
   @override
   ConsumerState<SentimentPicker> createState() => _SentimentPickerState();
@@ -30,6 +35,11 @@ class _SentimentPickerState extends ConsumerState<SentimentPicker> {
   Future<void> _onTap(String value) async {
     if (_selected != null) return;
     setState(() => _selected = value);
+    // La bascule vers la ligne « Merci » rétrécit la carte : signale le relayout
+    // à l'hôte (post-frame, quand la nouvelle hauteur est mesurable).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onLayoutChanged?.call();
+    });
     await ref
         .read(feedbackRepositoryProvider)
         .submitSentiment(value, date: widget.digestDate);

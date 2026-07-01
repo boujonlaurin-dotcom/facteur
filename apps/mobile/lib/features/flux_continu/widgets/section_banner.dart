@@ -243,19 +243,25 @@ class SectionBanner extends StatelessWidget {
                             TextSpan(
                               text: title,
                               children: <InlineSpan>[
-                                if (tappable)
-                                  // Chevron « > » intégré au titre comme glyphe
-                                  // texte : hérite de Fraunces w700 du TextSpan
-                                  // parent et s'aligne sur la baseline du titre.
-                                  // Rendu plus gros que le titre pour épaissir
-                                  // le trait et signaler la tappabilité.
-                                  TextSpan(
-                                    text: ' >',
-                                    style: TextStyle(
-                                      fontSize: large ? 30 : 22,
+                                if (tappable) ...[
+                                  // Chevron de tappabilité rendu comme icône
+                                  // centrée verticalement sur le titre (même
+                                  // pattern que l'étoile favorite ci-dessous) :
+                                  // trait épais et alignement propre, là où le
+                                  // glyphe texte « > » héritait d'une baseline
+                                  // décalée et d'un trait fin.
+                                  const WidgetSpan(child: SizedBox(width: 3)),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: Icon(
+                                      PhosphorIcons.caretRight(
+                                        PhosphorIconsStyle.bold,
+                                      ),
+                                      size: large ? 24 : 17,
                                       color: colors.textPrimary,
                                     ),
                                   ),
+                                ],
                                 if (onTapFavorite != null) ...[
                                   const TextSpan(text: '  '),
                                   WidgetSpan(
