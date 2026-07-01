@@ -2881,11 +2881,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             bodyPlaceholder: !_contentResolved
                                 ? _buildArticleBodySkeleton(colors)
                                 : null,
-                            footerSpacing:
-                                isPartial ? 0 : FacteurSpacing.space8,
-                            footer: SizedBox(
-                              height: _kFooterContentHeight + bottomInset,
-                            ),
+                            // Clearance de bas de page : quand la bande
+                            // Perspectives suit (elle a son propre spacer final),
+                            // on supprime la clearance du reader pour éviter un
+                            // grand vide entre le corps et Perspectives.
+                            footerSpacing: (isPartial || _showPerspectivesBand)
+                                ? 0
+                                : FacteurSpacing.space8,
+                            footer: _showPerspectivesBand
+                                ? null
+                                : SizedBox(
+                                    height: _kFooterContentHeight + bottomInset,
+                                  ),
                           ),
                         ),
 

@@ -66,11 +66,13 @@ Future<void> _bootstrap() async {
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
+    SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
       statusBarBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.transparent,
+      // Voile noir léger (pas full transparent) : garantit le contraste de la
+      // pilule gestuelle / des boutons système sur les fonds clairs.
+      systemNavigationBarColor: Colors.black.withValues(alpha: 0.15),
       // Désactive le scrim/contraste auto qui réintroduit un fond opaque
       systemNavigationBarContrastEnforced: false,
       systemNavigationBarIconBrightness: Brightness.light,
