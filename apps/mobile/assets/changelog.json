@@ -1,8 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Lettres",
+      "summary": "Le rappel des lettres est plus discret, et ta progression ne recule plus une fois une étape franchie."
+    },
+    {
       "tag": "Tournée",
       "summary": "Les sources que tu ranges dans ta Tournée y restent : elles ne se perdent plus ni ne réapparaissent ailleurs après un réagencement."
+    },
+    {
       "tag": "Abonnements",
       "summary": "Reconnecte tes abonnements en un geste après une mise à jour, et connecte ton compte à plus de médias, y compris la presse étrangère."
     },
