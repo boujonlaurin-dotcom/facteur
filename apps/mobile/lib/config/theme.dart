@@ -463,7 +463,9 @@ class FacteurTheme {
           statusBarIconBrightness:
               brightness == Brightness.dark ? Brightness.light : Brightness.dark,
           statusBarBrightness: brightness,
-          systemNavigationBarColor: Colors.transparent,
+          // Voile noir léger : contraste de la barre de navigation système
+          // sur fonds clairs, sans repeindre en noir opaque.
+          systemNavigationBarColor: Colors.black.withValues(alpha: 0.15),
           systemNavigationBarContrastEnforced: false,
           systemNavigationBarIconBrightness:
               brightness == Brightness.dark ? Brightness.light : Brightness.dark,

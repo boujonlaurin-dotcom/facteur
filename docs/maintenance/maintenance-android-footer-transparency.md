@@ -21,17 +21,19 @@ Deux causes :
 
 - **`main.dart`** :
   - Activation du mode `SystemUiMode.edgeToEdge` (le contenu dessine derrière les barres système).
-  - `systemNavigationBarColor: Colors.transparent`
+  - `systemNavigationBarColor: Colors.black.withValues(alpha: 0.15)` — voile noir léger
+    (et non full transparent) pour garantir le contraste de la pilule gestuelle / des
+    boutons système sur les fonds clairs, tout en restant discret sur fonds sombres.
   - `systemNavigationBarContrastEnforced: false` (désactive le scrim auto d'Android qui
     réintroduit un fond opaque).
   - `systemNavigationBarIconBrightness` ajouté pour la lisibilité des icônes système.
-- **`theme.dart`** : remplacement de `SystemUiOverlayStyle.light/.dark` par un style custom
-  transparent, avec la luminosité d'icônes (status bar + nav bar) adaptée au thème
-  (clair / sombre).
+- **`theme.dart`** : remplacement de `SystemUiOverlayStyle.light/.dark` par un style custom,
+  avec le même voile noir léger (`Colors.black.withValues(alpha: 0.15)`) et la luminosité
+  d'icônes (status bar + nav bar) adaptée au thème (clair / sombre).
 
 Aucun changement Android natif requis : `_BottomNavBar` (shell_scaffold.dart) enveloppe déjà
 sa `SafeArea` dans un `Container` coloré (`backgroundPrimary`), dont le fond peint
-naturellement derrière la barre système désormais transparente.
+naturellement derrière la barre système (désormais un voile noir léger, quasi transparent).
 
 ## Vérification
 
