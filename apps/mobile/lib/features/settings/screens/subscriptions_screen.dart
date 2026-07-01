@@ -196,7 +196,11 @@ class _SubscriptionTile extends ConsumerWidget {
   }
 
   Future<void> _reconnect(BuildContext context, WidgetRef ref) async {
-    final connection = resolvePremiumConnection(source);
+    // `forceGenericConnection` est un superset : renvoie la connexion curée si
+    // utilisable, sinon un flux générique depuis l'URL. Couvre donc aussi les
+    // sources libres connectées génériquement (backend sans `premium_connection`).
+    final connection =
+        resolvePremiumConnection(source) ?? forceGenericConnection(source);
     if (connection == null) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -258,11 +262,23 @@ class _AddSubscriptionSheetState extends ConsumerState<_AddSubscriptionSheet> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final eligible = ref.watch(eligibleSubscriptionSourcesProvider);
-    final visible = _query.isEmpty
-        ? eligible
-        : eligible
-            .where((source) => source.name.toLowerCase().contains(_query))
-            .toList();
+    final loginConnectable = ref.watch(loginConnectableSourcesProvider);
+    bool matchesQuery(Source source) =>
+        _query.isEmpty || source.name.toLowerCase().contains(_query);
+    final eligibleVisible = eligible.where(matchesQuery).toList();
+    final loginVisible = loginConnectable.where(matchesQuery).toList();
+    final hasAny = eligible.isNotEmpty || loginConnectable.isNotEmpty;
+    final hasVisible = eligibleVisible.isNotEmpty || loginVisible.isNotEmpty;
+    List<Widget> tilesFor(
+      List<Source> sources,
+      PremiumConnection Function(Source) resolve,
+    ) =>
+        [
+          for (final source in sources) ...[
+            _EligibleSourceTile(source: source, connection: resolve(source)),
+            Divider(color: colors.border.withValues(alpha: 0.5)),
+          ],
+        ];
 
     return FractionallySizedBox(
       heightFactor: 0.82,
@@ -312,7 +328,7 @@ class _AddSubscriptionSheetState extends ConsumerState<_AddSubscriptionSheet> {
                   ],
                 ),
               ),
-              if (eligible.isNotEmpty)
+              if (hasAny)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(
                     FacteurSpacing.space4,
@@ -334,7 +350,7 @@ class _AddSubscriptionSheetState extends ConsumerState<_AddSubscriptionSheet> {
                   ),
                 ),
               Expanded(
-                child: eligible.isEmpty
+                child: !hasAny
                     ? _NoEligibleSources(
                         onChooseSources: () {
                           final router = GoRouter.of(context);
@@ -342,7 +358,7 @@ class _AddSubscriptionSheetState extends ConsumerState<_AddSubscriptionSheet> {
                           router.pushNamed(RouteNames.sources);
                         },
                       )
-                    : visible.isEmpty
+                    : !hasVisible
                         ? Center(
                             child: Text(
                               'Aucun média ne correspond à cette recherche.',
@@ -352,20 +368,59 @@ class _AddSubscriptionSheetState extends ConsumerState<_AddSubscriptionSheet> {
                                   ?.copyWith(color: colors.textSecondary),
                             ),
                           )
-                        : ListView.separated(
+                        : ListView(
                             padding: const EdgeInsets.fromLTRB(
                               FacteurSpacing.space4,
                               0,
                               FacteurSpacing.space4,
                               FacteurSpacing.space6,
                             ),
-                            itemCount: visible.length,
-                            separatorBuilder: (_, __) => Divider(
-                              color: colors.border.withValues(alpha: 0.5),
-                            ),
-                            itemBuilder: (_, index) => _EligibleSourceTile(
-                              source: visible[index],
-                            ),
+                            children: [
+                              ...tilesFor(
+                                eligibleVisible,
+                                (source) => resolvePremiumConnection(source)!,
+                              ),
+                              if (loginVisible.isNotEmpty) ...[
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: FacteurSpacing.space2,
+                                    bottom: FacteurSpacing.space1,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Un autre site demande une connexion ?',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Connecte ton compte sur n’importe quel '
+                                        'média que tu suis pour lire ses articles '
+                                        'dans Facteur.',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: colors.textSecondary,
+                                              height: 1.4,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                ...tilesFor(
+                                  loginVisible,
+                                  (source) => forceGenericConnection(source)!,
+                                ),
+                              ],
+                            ],
                           ),
               ),
             ],
@@ -427,14 +482,14 @@ class _NoEligibleSources extends StatelessWidget {
 }
 
 class _EligibleSourceTile extends ConsumerWidget {
-  const _EligibleSourceTile({required this.source});
+  const _EligibleSourceTile({required this.source, required this.connection});
 
   final Source source;
+  final PremiumConnection connection;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
-    final connection = resolvePremiumConnection(source)!;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: FacteurSpacing.space2),
