@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Abonnements",
+      "summary": "Reconnecte tes abonnements en un geste après une mise à jour, et connecte ton compte à plus de médias, y compris la presse étrangère."
+    },
+    {
       "tag": "Notifications",
       "summary": "La notif du matin affiche de nouveau les titres à la une, sans doublon visuel."
     },
