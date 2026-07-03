@@ -115,19 +115,25 @@ class CollectionService:
         result = await self.session.execute(stmt)
         collections = result.scalars().all()
 
-        response = []
-        for col in collections:
-            # Count items
-            count_stmt = (
-                select(func.count())
-                .select_from(CollectionItem)
-                .where(CollectionItem.collection_id == col.id)
-            )
-            item_count = await self.session.scalar(count_stmt) or 0
+        col_ids = [col.id for col in collections]
 
-            # Count read items
+        # Comptages agrégés en 2 requêtes (au lieu de 2 requêtes par collection)
+        # pour tenir l'ouverture instantanée de la modal de collections côté
+        # mobile. `item_count` sert au picker ; `read_count` alimente les badges
+        # « X non lus » de l'écran Sauvegardés (conservé).
+        item_counts: dict[UUID, int] = {}
+        read_counts: dict[UUID, int] = {}
+        if col_ids:
+            item_stmt = (
+                select(CollectionItem.collection_id, func.count())
+                .where(CollectionItem.collection_id.in_(col_ids))
+                .group_by(CollectionItem.collection_id)
+            )
+            for cid, cnt in (await self.session.execute(item_stmt)).all():
+                item_counts[cid] = cnt or 0
+
             read_stmt = (
-                select(func.count())
+                select(CollectionItem.collection_id, func.count())
                 .select_from(CollectionItem)
                 .join(
                     UserContentStatus,
@@ -135,11 +141,18 @@ class CollectionService:
                     & (UserContentStatus.user_id == user_id),
                 )
                 .where(
-                    CollectionItem.collection_id == col.id,
+                    CollectionItem.collection_id.in_(col_ids),
                     UserContentStatus.status == ContentStatus.CONSUMED,
                 )
+                .group_by(CollectionItem.collection_id)
             )
-            read_count = await self.session.scalar(read_stmt) or 0
+            for cid, cnt in (await self.session.execute(read_stmt)).all():
+                read_counts[cid] = cnt or 0
+
+        response = []
+        for col in collections:
+            item_count = item_counts.get(col.id, 0)
+            read_count = read_counts.get(col.id, 0)
 
             # Get 4 most recent thumbnails for mosaic
             thumb_stmt = (
