@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "Le navigateur intégré garde ta navigation : un retour arrière remonte les pages visitées au lieu de te renvoyer au feed. Le choix des collections s'ouvre instantanément, et le bouton tournesol indique mieux qu'il partage l'article."
+    },
+    {
       "tag": "Lettres",
       "summary": "Le rappel des lettres est plus discret, et ta progression ne recule plus une fois une étape franchie."
     },
