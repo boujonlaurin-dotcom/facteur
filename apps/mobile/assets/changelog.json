@@ -1,8 +1,8 @@
 {
   "unreleased": [
     {
-      "tag": "Notif du jour",
-      "summary": "Un seul message du Facteur en tête de ton édition : chaque jour, il te suggère une fonctionnalité utile selon ton profil, à la place des bandeaux qui s'empilaient."
+      "tag": "Abonnements",
+      "summary": "Tes sources abonnées gardent la couverture médiatique avant d'ouvrir l'article complet, et tu peux connecter ton compte depuis la fiche de n'importe quelle source suivie."
     },
     {
       "tag": "Lecture",
