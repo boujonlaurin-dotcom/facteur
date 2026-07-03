@@ -183,24 +183,8 @@ class _CollectionPickerSheetState extends ConsumerState<CollectionPickerSheet>
             // Divider
             Divider(color: colors.border.withOpacity(0.3)),
 
-            // Collections list
-            collectionsAsync.when(
-              data: (collections) {
-                _preSelectDefault(collections);
-                return _buildCollectionsList(collections, colors);
-              },
-              loading: () => const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator.adaptive()),
-              ),
-              error: (_, __) => Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Erreur de chargement',
-                  style: TextStyle(color: colors.textSecondary),
-                ),
-              ),
-            ),
+            // Collections list (voir _buildCollectionsSection).
+            _buildCollectionsSection(collectionsAsync, colors),
 
             // Confirm button
             if (_selectedIds.isNotEmpty) ...[
@@ -308,6 +292,40 @@ class _CollectionPickerSheetState extends ConsumerState<CollectionPickerSheet>
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
         ),
       ],
+    );
+  }
+
+  /// Section liste des collections.
+  ///
+  /// Ouverture instantanée : le provider est gardé en cache (pas d'autoDispose),
+  /// donc on rend d'abord la dernière liste connue (`valueOrNull`, préservée
+  /// pendant un refresh) au lieu d'un spinner plein écran. Le loader n'apparaît
+  /// que si aucune donnée n'a jamais été chargée.
+  ///
+  /// Appel *synchrone* (et non un `Builder`) pour que `_preSelectDefault`
+  /// s'exécute pendant le build parent, avant l'évaluation du bouton
+  /// « Confirmer » plus bas (qui dépend de `_selectedIds`).
+  Widget _buildCollectionsSection(
+    AsyncValue<List<Collection>> collectionsAsync,
+    FacteurColors colors,
+  ) {
+    final cached = collectionsAsync.valueOrNull;
+    if (cached != null) {
+      _preSelectDefault(cached);
+      return _buildCollectionsList(cached, colors);
+    }
+    if (collectionsAsync.hasError) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          'Erreur de chargement',
+          style: TextStyle(color: colors.textSecondary),
+        ),
+      );
+    }
+    return const Padding(
+      padding: EdgeInsets.all(24),
+      child: Center(child: CircularProgressIndicator.adaptive()),
     );
   }
 
