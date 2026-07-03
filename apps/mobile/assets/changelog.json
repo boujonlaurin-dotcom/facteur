@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Flâner",
+      "summary": "Ouverture des sections plus visible et ajout de sources simplifié."
+    },
+    {
       "tag": "Lettres",
       "summary": "Le rappel des lettres est plus discret, et ta progression ne recule plus une fois une étape franchie."
     },
