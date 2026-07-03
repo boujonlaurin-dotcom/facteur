@@ -873,6 +873,34 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollController.jumpTo(0);
   }
 
+  /// Gère le retour arrière du reader (bouton header + bouton système Android).
+  ///
+  /// En mode WebView, on remonte d'abord l'historique interne du navigateur
+  /// (l'utilisateur a pu suivre des liens dans la page) : un retour ne quitte
+  /// le WebView vers le reader que lorsqu'on est revenu sur la page d'origine.
+  /// Hors WebView, on ferme l'écran normalement (retour au feed).
+  Future<void> _handleReaderBack() async {
+    if (!_isWebViewActive) {
+      if (mounted) context.pop(_content);
+      return;
+    }
+    // `_premiumWebController` n'est renseigné que sur le chemin premium
+    // (flutter_inappwebview) ; sinon on est sur le WebView gratuit
+    // (webview_flutter). Les deux exposent canGoBack()/goBack() mais sans
+    // interface commune (packages distincts) : on capture le contrôleur actif
+    // via ses deux méthodes pour n'avoir qu'un seul chemin de retour.
+    final premium = _premiumWebController;
+    final free = _webViewController;
+    final Future<bool> Function()? canGoBack =
+        premium?.canGoBack ?? free?.canGoBack;
+    final Future<void> Function()? goBack = premium?.goBack ?? free?.goBack;
+    if (canGoBack != null && await canGoBack()) {
+      await goBack!();
+      return;
+    }
+    if (mounted) _exitWebViewMode();
+  }
+
   /// Scroll listener driving WebView activation.
   void _onScrollToSite() {
     if (!_ctaTapped || !_offsetsComputed) return;
@@ -1173,6 +1201,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _content = content.copyWith(isSaved: newSaved);
     });
 
+    // Ouverture immédiate de la modal au save (pas à l'unsave), sans attendre
+    // les appels réseau : la sheet lit les collections déjà en cache. Le
+    // toggleSave + l'ajout à la collection par défaut se poursuivent en fond.
+    if (newSaved) {
+      CollectionPickerSheet.show(
+        context,
+        content.id,
+        onAddNote: () => _openNoteSheet(),
+      );
+    }
+
     try {
       final supabase = Supabase.instance.client;
       final apiClient = ApiClient(supabase);
@@ -1187,11 +1226,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ref.invalidate(collectionsProvider);
           unawaited(ref.read(lettersProvider.notifier).silentRefresh());
         }
-        CollectionPickerSheet.show(
-          context,
-          content.id,
-          onAddNote: () => _openNoteSheet(),
-        );
       }
     } catch (e) {
       // Rollback on error
@@ -1847,131 +1881,142 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       return _buildWebOpenPrompt(context, content);
     }
 
-    return Scaffold(
-      backgroundColor: colors.backgroundPrimary,
-      body: AnimatedBuilder(
-        animation: _exitAnimController,
-        builder: (context, child) {
-          final scale = 1.0 - 0.03 * _exitAnimController.value;
-          return Transform.scale(
-            scale: _isExitAnimating ? scale : 1.0,
-            child: child,
-          );
-        },
-        child: Stack(
-          children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification is ScrollUpdateNotification) {
-                  final delta = notification.scrollDelta ?? 0.0;
-                  final metrics = notification.metrics;
-                  if (metrics.pixels <= 0 &&
-                      !_isWebViewActive &&
-                      !_footerRevealLocked) {
-                    _footerOffset.value = 0.0;
-                  }
+    return PopScope(
+      // En mode WebView, on intercepte le retour système pour remonter
+      // l'historique interne du navigateur avant de quitter vers le reader.
+      canPop: !_isWebViewActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleReaderBack();
+      },
+      child: Scaffold(
+        backgroundColor: colors.backgroundPrimary,
+        body: AnimatedBuilder(
+          animation: _exitAnimController,
+          builder: (context, child) {
+            final scale = 1.0 - 0.03 * _exitAnimController.value;
+            return Transform.scale(
+              scale: _isExitAnimating ? scale : 1.0,
+              child: child,
+            );
+          },
+          child: Stack(
+            children: [
+              NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollUpdateNotification) {
+                    final delta = notification.scrollDelta ?? 0.0;
+                    final metrics = notification.metrics;
+                    if (metrics.pixels <= 0 &&
+                        !_isWebViewActive &&
+                        !_footerRevealLocked) {
+                      _footerOffset.value = 0.0;
+                    }
 
-                  _onScrollDelta(delta);
-                  // Track reading progress from any scrollable (including in-app reader)
-                  if (metrics.maxScrollExtent > 0) {
-                    final rawProgress =
-                        metrics.pixels / metrics.maxScrollExtent;
-                    // Footer becomes permanent at end of ALL content (incl.
-                    // perspectives) for native in-app reading. Skip for
-                    // scroll-to-site (CTA tapped) where reaching the end means
-                    // revealing the WebView, not finishing reading — locking
-                    // the footer there would freeze it visible during the
-                    // entire WebView session.
-                    if (!_footerPermanent.value &&
-                        !_ctaTapped &&
-                        rawProgress >= 0.98) {
-                      _footerPermanent.value = true;
-                      _animateFooterTo(0.0);
-                    }
-                    // Progress bar uses article-only extent so perspectives don't dilute it
-                    final articleExtent =
-                        _articleContentExtent ?? metrics.maxScrollExtent;
-                    final barProgress = metrics.pixels / articleExtent;
-                    final capped = _isPartialContent
-                        ? (barProgress * 0.25).clamp(0.0, 0.25)
-                        : barProgress.clamp(0.0, 1.0);
-                    _readingProgress.value = capped;
-                    if (capped > _maxReadingProgress) {
-                      _maxReadingProgress = capped;
+                    _onScrollDelta(delta);
+                    // Track reading progress from any scrollable (including in-app reader)
+                    if (metrics.maxScrollExtent > 0) {
+                      final rawProgress =
+                          metrics.pixels / metrics.maxScrollExtent;
+                      // Footer becomes permanent at end of ALL content (incl.
+                      // perspectives) for native in-app reading. Skip for
+                      // scroll-to-site (CTA tapped) where reaching the end means
+                      // revealing the WebView, not finishing reading — locking
+                      // the footer there would freeze it visible during the
+                      // entire WebView session.
+                      if (!_footerPermanent.value &&
+                          !_ctaTapped &&
+                          rawProgress >= 0.98) {
+                        _footerPermanent.value = true;
+                        _animateFooterTo(0.0);
+                      }
+                      // Progress bar uses article-only extent so perspectives don't dilute it
+                      final articleExtent =
+                          _articleContentExtent ?? metrics.maxScrollExtent;
+                      final barProgress = metrics.pixels / articleExtent;
+                      final capped = _isPartialContent
+                          ? (barProgress * 0.25).clamp(0.0, 0.25)
+                          : barProgress.clamp(0.0, 1.0);
+                      _readingProgress.value = capped;
+                      if (capped > _maxReadingProgress) {
+                        _maxReadingProgress = capped;
+                      }
                     }
                   }
-                }
-                return false;
-              },
-              child: Positioned.fill(
-                child: isVideoContent
-                    ? _buildVideoContent(context, content)
-                    : useScrollToSite
-                        ? _buildScrollToSiteContent(context, content)
-                        : useInAppReading
-                            ? _buildInAppContent(context, content)
-                            : _buildWebViewFallback(
-                                content,
-                                isConnectedPremiumSource:
-                                    isConnectedPremiumSource,
-                              ),
+                  return false;
+                },
+                child: Positioned.fill(
+                  child: isVideoContent
+                      ? _buildVideoContent(context, content)
+                      : useScrollToSite
+                          ? _buildScrollToSiteContent(context, content)
+                          : useInAppReading
+                              ? _buildInAppContent(context, content)
+                              : _buildWebViewFallback(
+                                  content,
+                                  isConnectedPremiumSource:
+                                      isConnectedPremiumSource,
+                                ),
+                ),
               ),
-            ),
-            // Header — pinned at the top of the screen; no scroll-driven
-            // translation. Earlier iterations slid the header up/down on
-            // scroll but the result felt unstable in the WebView, so the
-            // header is now permanently visible.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: RepaintBoundary(child: _buildHeader(context, content)),
-            ),
-            // Reading progress bar — pinned right below the header.
-            if (content.hasInAppContent ||
-                _isWebViewActive ||
-                isVideoContent ||
-                (!useScrollToSite && !useInAppReading))
+              // Header — pinned at the top of the screen; no scroll-driven
+              // translation. Earlier iterations slid the header up/down on
+              // scroll but the result felt unstable in the WebView, so the
+              // header is now permanently visible.
               Positioned(
-                top: MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                top: 0,
                 left: 0,
                 right: 0,
-                child: RepaintBoundary(child: _buildReadingProgressBar(colors)),
+                child: RepaintBoundary(child: _buildHeader(context, content)),
               ),
-            // Exit animation overlay — fade-to-white + scale-down
-            if (_isExitAnimating)
-              AnimatedBuilder(
-                animation: _exitAnimController,
-                builder: (context, _) {
-                  return Positioned.fill(
-                    child: IgnorePointer(
-                      child: ColoredBox(
-                        color: Colors.white.withValues(
-                          alpha: 0.6 * _exitAnimController.value,
+              // Reading progress bar — pinned right below the header.
+              if (content.hasInAppContent ||
+                  _isWebViewActive ||
+                  isVideoContent ||
+                  (!useScrollToSite && !useInAppReading))
+                Positioned(
+                  top:
+                      MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                  left: 0,
+                  right: 0,
+                  child:
+                      RepaintBoundary(child: _buildReadingProgressBar(colors)),
+                ),
+              // Exit animation overlay — fade-to-white + scale-down
+              if (_isExitAnimating)
+                AnimatedBuilder(
+                  animation: _exitAnimController,
+                  builder: (context, _) {
+                    return Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: Colors.white.withValues(
+                            alpha: 0.6 * _exitAnimController.value,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
+              // Footer — always rendered, mirrors header slide behavior.
+              // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildContentFooter(
+                  context,
+                  content,
+                  isPureWebview:
+                      _showWebView && !useScrollToSite && !useInAppReading,
+                ),
               ),
-            // Footer — always rendered, mirrors header slide behavior.
-            // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _buildContentFooter(
-                context,
-                content,
-                isPureWebview:
-                    _showWebView && !useScrollToSite && !useInAppReading,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
+        // All actions migrated to the persistent footer (article + video/audio).
+        floatingActionButton: null,
       ),
-      // All actions migrated to the persistent footer (article + video/audio).
-      floatingActionButton: null,
     );
   }
 
@@ -2322,22 +2367,52 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
 
                   // 🌻 Recommander
-                  ScaleTransition(
-                    scale: _likeScaleAnimation,
-                    child: IconButton(
-                      style: iconButtonStyle.copyWith(
-                        backgroundColor: content.isLiked
-                            ? WidgetStatePropertyAll(colors.primary)
-                            : null,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ScaleTransition(
+                        scale: _likeScaleAnimation,
+                        child: IconButton(
+                          style: iconButtonStyle.copyWith(
+                            backgroundColor: content.isLiked
+                                ? WidgetStatePropertyAll(colors.primary)
+                                : null,
+                          ),
+                          onPressed: _toggleLike,
+                          icon: SunflowerIcon(
+                            isActive: content.isLiked,
+                            size: 26,
+                            inactiveColor: colors.textSecondary,
+                          ),
+                          tooltip: 'Recommander',
+                        ),
                       ),
-                      onPressed: _toggleLike,
-                      icon: SunflowerIcon(
-                        isActive: content.isLiked,
-                        size: 26,
-                        inactiveColor: colors.textSecondary,
+                      // Petit glyphe « republier » (style retweet) pour signifier
+                      // que le tournesol partage l'article aux autres lecteurs.
+                      // Purement décoratif, toujours visible, ne capte pas le tap.
+                      Positioned(
+                        right: 2,
+                        bottom: 2,
+                        child: IgnorePointer(
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: content.isLiked
+                                  ? colors.primary
+                                  : colors.backgroundSecondary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              PhosphorIcons.repeat(PhosphorIconsStyle.bold),
+                              size: 11,
+                              color: content.isLiked
+                                  ? Colors.white
+                                  : colors.textSecondary,
+                            ),
+                          ),
+                        ),
                       ),
-                      tooltip: 'Recommander',
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -2460,9 +2535,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     size: 16,
                     color: colors.textSecondary,
                   ),
-                  onPressed: _isWebViewActive
-                      ? _exitWebViewMode
-                      : () => context.pop(_content),
+                  onPressed: _handleReaderBack,
                 ),
                 const SizedBox(width: 4),
 
