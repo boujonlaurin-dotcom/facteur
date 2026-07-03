@@ -102,14 +102,18 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
   // --- Sous-vues -------------------------------------------------------------
 
   Widget _collapsedButton() {
+    // Rapproché des cartes (marge haute nulle, bouton compact) et rendu plus
+    // discret (police 12, gris atténué, icône « + » plus petite) : c'est un
+    // vecteur de croissance, pas une action proéminente. Libellé générique
+    // (sans le thème) — le contexte de section suffit.
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       alignment: Alignment.center,
       child: TextButton.icon(
         onPressed: widget.onSearch,
-        icon: const Icon(Icons.add_circle_outline_rounded, size: 15),
-        label: Text('Plus de sources (${widget.label})'),
-        style: _discreetCtaStyle,
+        icon: const Icon(Icons.add_rounded, size: 14),
+        label: const Text('Ajouter plus de sources'),
+        style: _collapsedCtaStyle,
       ),
     );
   }
@@ -312,6 +316,16 @@ class _EtofferThemeFooterState extends ConsumerState<EtofferThemeFooter> {
     padding: const EdgeInsets.symmetric(horizontal: 8),
     minimumSize: const Size(0, 32),
     textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+  );
+
+  /// Variante encore plus discrète et compacte pour le footer **replié**
+  /// « Ajouter plus de sources » (thème riche) : plus proche des cartes, moins
+  /// proéminente que le CTA de recherche du footer déplié.
+  static final _collapsedCtaStyle = TextButton.styleFrom(
+    foregroundColor: const Color(0xFF807E7C),
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    minimumSize: const Size(0, 30),
+    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
   );
 
   // --- Action ----------------------------------------------------------------

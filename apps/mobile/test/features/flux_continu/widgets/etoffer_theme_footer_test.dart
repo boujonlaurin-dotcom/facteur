@@ -140,7 +140,7 @@ void main() {
     expect(find.text('Chercher une source Tech'), findsOneWidget);
   });
 
-  testWidgets('Cas A — replié : bouton « Plus de sources (Tech) » '
+  testWidgets('Cas A — replié : bouton « Ajouter plus de sources » '
       'seul, tap → onSearch (catalogue filtré), pas de dépli in-place',
       (tester) async {
     var searched = false;
@@ -159,13 +159,15 @@ void main() {
     ));
     await tester.pump();
 
-    // Replié : ni recherche, ni source — juste le bouton renommé.
-    expect(find.text('Plus de sources (Tech)'), findsOneWidget);
+    // Replié : ni recherche, ni source — juste le bouton renommé (générique,
+    // sans le libellé du thème).
+    expect(find.text('Ajouter plus de sources'), findsOneWidget);
+    expect(find.text('Plus de sources (Tech)'), findsNothing);
     expect(find.text('Étoffer Tech'), findsNothing);
     expect(find.text('Chercher une source Tech'), findsNothing);
     expect(find.text('Heidi.news'), findsNothing);
 
-    await tester.tap(find.text('Plus de sources (Tech)'));
+    await tester.tap(find.text('Ajouter plus de sources'));
     await tester.pumpAndSettle();
 
     // Plus de dépli in-place : l'action mène au catalogue via onSearch.

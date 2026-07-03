@@ -72,6 +72,75 @@ void main() {
     });
   });
 
+  group('estimateSectionFooterReserve', () {
+    test('digest → réserve le footer « Tout lire › »', () {
+      expect(
+        estimateSectionFooterReserve(
+          isDigest: true,
+          isSourceNonEmpty: false,
+          isRichThemeWithSlug: false,
+        ),
+        kSeeAllFooterHeight,
+      );
+    });
+
+    test('source non vide → réserve le footer « Tout lire › »', () {
+      expect(
+        estimateSectionFooterReserve(
+          isDigest: false,
+          isSourceNonEmpty: true,
+          isRichThemeWithSlug: false,
+        ),
+        kSeeAllFooterHeight,
+      );
+    });
+
+    test('thème riche → réserve le footer replié « Ajouter plus de sources »',
+        () {
+      expect(
+        estimateSectionFooterReserve(
+          isDigest: false,
+          isSourceNonEmpty: false,
+          isRichThemeWithSlug: true,
+        ),
+        kEtofferCollapsedFooterHeight,
+      );
+    });
+
+    test('aucun footer contenu (empty-state, thème maigre) → 0', () {
+      expect(
+        estimateSectionFooterReserve(
+          isDigest: false,
+          isSourceNonEmpty: false,
+          isRichThemeWithSlug: false,
+        ),
+        0,
+      );
+    });
+
+    test('réserver le footer retire une carte au seuil (bascule 3 → 2)', () {
+      // no-blurb chrome 54 + 3·146 = 492. À usable = 495 le fit tient 3 cartes
+      // SANS footer, mais le footer « Tout lire › » (36) fait déborder → 2.
+      const usable = 495.0;
+      final withoutFooter = fitVisibleCount(
+        usableHeight: usable,
+        bannerHeight: kBannerHeightNoBlurb,
+        footerHeight: 0,
+        cardHeight: kRegularCardHeight,
+        maxCount: 3,
+      );
+      final withFooter = fitVisibleCount(
+        usableHeight: usable,
+        bannerHeight: kBannerHeightNoBlurb,
+        footerHeight: kSeeAllFooterHeight,
+        cardHeight: kRegularCardHeight,
+        maxCount: 3,
+      );
+      expect(withoutFooter, 3);
+      expect(withFooter, 2);
+    });
+  });
+
   group('fitHeroCount', () {
     int fit(double usable, {int maxCount = 5, int minCount = 1}) =>
         fitHeroCount(

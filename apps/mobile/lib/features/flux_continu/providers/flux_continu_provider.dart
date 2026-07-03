@@ -1000,15 +1000,35 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // déborder » ne doit pas tomber à 1). Borné au pool réel pour ne pas
     // inventer de carte.
     final minCount = math.min(2, s.totalCount);
+    // Certains footers (« Tout lire › » sur digest/source, « Ajouter plus de
+    // sources » replié sur un thème riche) ajoutent de la hauteur **réelle sous
+    // les cartes** que la mesure de snap voit (box.size.height footer inclus).
+    // On la réserve dans le budget pour que l'estimation classe la section comme
+    // la mesure la classera — sinon bascule *tall* parasite (cf. plan snap).
+    final footerReserve = estimateSectionFooterReserve(
+      isDigest: s is DigestTopicSection,
+      isSourceNonEmpty: s is FeedThemeSection &&
+          s.kind == SectionKind.source &&
+          s.items.isNotEmpty,
+      isRichThemeWithSlug: s is FeedThemeSection &&
+          s.kind == SectionKind.theme &&
+          !s.underfilled &&
+          s.themeSlug != null &&
+          s.items.isNotEmpty,
+    );
+    // Crédit de la marge basse de la dernière carte (espace blanc sous le pli,
+    // aucun contenu) : sinon une section reste à N−1 alors qu'une Nᵉ carte tient
+    // à 12px près — cf. kLastCardBottomMargin. **Sauf** quand un footer suit la
+    // dernière carte (footerReserve > 0) : sa marge basse n'est plus sous le pli
+    // (le footer la recouvre), donc pas de crédit.
+    final lastCardMarginCredit =
+        footerReserve > 0 ? 0.0 : kLastCardBottomMargin;
     final fitCap = fitVisibleCount(
-      // Crédit de la marge basse de la dernière carte (espace blanc sous le pli,
-      // aucun contenu) : sinon une section reste à N−1 alors qu'une Nᵉ carte tient
-      // à 12px près — cf. kLastCardBottomMargin.
-      usableHeight: usableHeight + kLastCardBottomMargin,
+      usableHeight: usableHeight + lastCardMarginCredit,
       bannerHeight: hasBlurb ? kBannerHeightWithBlurb : kBannerHeightNoBlurb,
-      // Le footer (gap de fin de section) glisse hors écran au scroll : il ne
-      // doit pas coûter une carte → exclu du budget.
-      footerHeight: 0,
+      // Réserve du footer réel de la section (0 quand aucun footer contenu ne
+      // suit les cartes : seul le gap de fin de section, qui glisse hors écran).
+      footerHeight: footerReserve,
       cardHeight: estimateRegularCardHeight(spec),
       maxCount: maxCount,
       minCount: minCount,

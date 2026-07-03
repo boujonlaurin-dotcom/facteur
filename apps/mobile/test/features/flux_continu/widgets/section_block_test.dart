@@ -118,9 +118,11 @@ FeedThemeSection _sourceSection({
   );
 }
 
-/// Finder du chevron « > » de navigation, rendu comme glyphe texte intégré au
-/// titre du banner (Text.rich) plutôt qu'une icône Phosphor.
-Finder _chevron() => find.textContaining('>', findRichText: true);
+/// Finder du chevron de navigation, désormais rendu comme **icône** Phosphor
+/// (`caretRight` bold) en WidgetSpan dans le titre du banner — le glyphe texte
+/// « > » historique héritait d'une baseline décalée (cf. section_banner.dart).
+Finder _chevron() =>
+    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.bold));
 
 void main() {
   setUpAll(() {
@@ -242,8 +244,10 @@ void main() {
       expect(find.byType(FluxContinuArticleCard), findsOneWidget);
       // Le footer « riche » reste replié : un simple bouton renommé qui mène
       // droit au catalogue filtré (plus de dépli in-place).
-      expect(find.text('Plus de sources (Tech)'), findsOneWidget);
+      expect(find.text('Ajouter plus de sources'), findsOneWidget);
       expect(find.text('Chercher une source Tech'), findsNothing);
+      // Thème → pas de « Tout lire › » (il porte déjà le footer d'ajout).
+      expect(find.textContaining('Tout lire'), findsNothing);
     });
   });
 
@@ -417,6 +421,79 @@ void main() {
 
       expect(_chevron(), findsNothing);
       expect(find.textContaining('+4'), findsNothing);
+    });
+  });
+
+  group('SectionBlock — « Tout lire › » (sections sans footer d\'ajout)', () {
+    testWidgets('Actus du jour rend « Tout lire › » cliquable → onSeeAll',
+        (tester) async {
+      var opened = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () => opened = true,
+        ),
+      ));
+
+      expect(find.text('Tout lire'), findsOneWidget);
+      await tester.tap(find.text('Tout lire'));
+      await tester.pumpAndSettle();
+      expect(opened, isTrue);
+    });
+
+    testWidgets('section source non vide rend « Tout lire › »', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      expect(find.text('Tout lire'), findsOneWidget);
+    });
+
+    testWidgets('section source vide (empty-state) : pas de « Tout lire › » '
+        '(le CTA curation le remplace)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 0),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      expect(find.text('Tout lire'), findsNothing);
+      expect(find.text('Voir toute la curation'), findsOneWidget);
+    });
+
+    testWidgets('thème riche : pas de « Tout lire › » (footer d\'ajout déjà là)',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 7, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+          onAddSources: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Tout lire'), findsNothing);
+      expect(find.text('Ajouter plus de sources'), findsOneWidget);
+    });
+
+    testWidgets('sans onSeeAll : pas de « Tout lire › » sur digest',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.textContaining('Tout lire'), findsNothing);
     });
   });
 

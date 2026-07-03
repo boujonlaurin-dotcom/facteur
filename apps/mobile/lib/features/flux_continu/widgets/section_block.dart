@@ -235,6 +235,9 @@ class SectionBlock extends StatelessWidget {
                 onSwipeConversion: onSwipeConversion,
                 onLongPressConversion: onLongPressConversion,
               ),
+          // Actus du jour — pas de footer d'ajout de sources → on re-signale
+          // l'ouverture de la section par un « Tout lire › » discret cliquable.
+          if (onSeeAll != null) _seeAllFooter(),
         ];
       case FeedThemeSection(
           :final items,
@@ -380,8 +383,49 @@ class SectionBlock extends StatelessWidget {
               label: label,
               onSearch: onAddSources,
             ),
+          // Section source non vide — pas de footer « Ajouter plus de sources »
+          // (réservé aux thèmes) → « Tout lire › » discret pour re-signaler
+          // l'ouverture de la page source. Exclut la veille (rendue plus haut).
+          if (section.kind == SectionKind.source && onSeeAll != null)
+            _seeAllFooter(),
         ];
     }
+  }
+
+  /// « Tout lire › » — CTA discret de bas de section, re-signalant l'ouverture
+  /// de la page dédiée sur les sections **sans** footer d'ajout de sources
+  /// (Actus du jour, sources non vides ; les thèmes portent déjà « Ajouter plus
+  /// de sources »). Icône *après* le texte (chevron de progression), donc un
+  /// `Row` explicite plutôt que `TextButton.icon`. Rendu seulement si [onSeeAll]
+  /// est câblé. La hauteur réservée par ce footer est anticipée par le fit
+  /// (`kSeeAllFooterHeight`) pour ne pas dérégler le snap.
+  /// Style du CTA « Tout lire › » — figé en `static final` (et non alloué à
+  /// chaque build) : `SectionBlock` se reconstruit par section à chaque frame
+  /// au scroll, un `styleFrom` inline y rebâtirait le `ButtonStyle` inutilement.
+  static final _seeAllFooterStyle = TextButton.styleFrom(
+    foregroundColor: const Color(0xFF5D5B5A),
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    minimumSize: const Size(0, 32),
+    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+  );
+
+  Widget _seeAllFooter() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      alignment: Alignment.center,
+      child: TextButton(
+        onPressed: onSeeAll,
+        style: _seeAllFooterStyle,
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Tout lire'),
+            SizedBox(width: 2),
+            Icon(Icons.chevron_right_rounded, size: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Pied d'une section thématique : footer « Étoffer [thème] » (vrai vecteur

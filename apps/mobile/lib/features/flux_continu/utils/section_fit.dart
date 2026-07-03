@@ -65,6 +65,22 @@ const double kBannerHeightWithBlurb = 82;
 /// (SizedBox 16 du SectionBlock).
 const double kSectionFooterHeight = 16;
 
+/// Hauteur réelle (px) réservée par le footer discret « Tout lire › »
+/// (`SectionBlock._seeAllFooter`) rendu en pied des sections **sans** footer
+/// d'ajout de sources (Actus du jour, sources non vides). `TextButton` compact
+/// (`minimumSize` (0, 32)) + marge basse ≈ 36. Doit être **retirée du budget de
+/// fit** : contrairement au gap de fin de section, ce footer porte du contenu
+/// (bouton cliquable) sous les cartes → `_recomputeSnapAnchors` le mesure
+/// (`box.size.height`), donc l'estimation doit l'anticiper sous peine de bascule
+/// *tall* parasite.
+const double kSeeAllFooterHeight = 36;
+
+/// Hauteur réelle (px) réservée par le footer replié « Ajouter plus de sources »
+/// (`EtofferThemeFooter._collapsedButton`) en pied d'un thème riche : bouton
+/// compact (`minimumSize` (0, 30)) + marge basse ≈ 40. Même raison que
+/// [kSeeAllFooterHeight] : mesurée au runtime, donc réservée au fit.
+const double kEtofferCollapsedFooterHeight = 40;
+
 /// Plancher de plausibilité (px) du viewport utile mesuré. En dessous, la mesure
 /// est considérée **non fiable** (mesure transitoire / render box détachée au
 /// moment d'un changement de mode d'affichage ou d'une recompose hors-écran) :
@@ -134,6 +150,31 @@ int fitVisibleCount({
   if (budget <= 0) return lo;
   final fit = (budget / cardHeight).floor();
   return fit.clamp(lo, maxCount);
+}
+
+/// Hauteur (px) que le footer d'une section ajoute **réellement sous les
+/// cartes** — donc à réserver dans le budget de fit pour que l'estimation
+/// (`fitVisibleCount`) et la mesure runtime (`_recomputeSnapAnchors`, qui lit
+/// `box.size.height` footer inclus) s'accordent. Sans cette réserve, une section
+/// que le fit croit *courte* (footer ignoré) est mesurée *tall* (footer
+/// compris) → un point de snap intermédiaire parasite se glisse et le scroll par
+/// snaps se dérègle. Arithmétique pure côté section_fit ; la logique de *type*
+/// (quel footer une section rend) reste côté provider, qui dérive les booléens.
+///
+/// - [isDigest] : Actus du jour → footer « Tout lire › » ([kSeeAllFooterHeight]).
+/// - [isSourceNonEmpty] : section source avec articles → « Tout lire › ».
+/// - [isRichThemeWithSlug] : thème riche (footer replié « Ajouter plus de
+///   sources ») → [kEtofferCollapsedFooterHeight].
+/// - Sinon (thème vide/maigre = footer déplié 0-1 carte, empty-states) → `0` :
+///   la section est courte, le fit n'est pas contraignant.
+double estimateSectionFooterReserve({
+  required bool isDigest,
+  required bool isSourceNonEmpty,
+  required bool isRichThemeWithSlug,
+}) {
+  if (isDigest || isSourceNonEmpty) return kSeeAllFooterHeight;
+  if (isRichThemeWithSlug) return kEtofferCollapsedFooterHeight;
+  return 0;
 }
 
 /// Number of articles the hero card may show so it fits within [usableHeight].
