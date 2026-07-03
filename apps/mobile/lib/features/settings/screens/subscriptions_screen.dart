@@ -13,11 +13,34 @@ import '../../sources/widgets/source_logo_avatar.dart';
 
 /// Écran « Mes abonnements » : point d'entrée global pour gérer les sources
 /// payantes connectées (statut de session, reconnexion, dissociation).
-class SubscriptionsScreen extends ConsumerWidget {
-  const SubscriptionsScreen({super.key});
+///
+/// [openAddSheet] (query param `?add=1`) auto-ouvre la feuille d'ajout au
+/// premier frame — CTA « Lier mon abonnement » de la Notif du jour, sans le
+/// tap intermédiaire sur la liste.
+class SubscriptionsScreen extends ConsumerStatefulWidget {
+  const SubscriptionsScreen({super.key, this.openAddSheet = false});
+
+  final bool openAddSheet;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SubscriptionsScreen> createState() =>
+      _SubscriptionsScreenState();
+}
+
+class _SubscriptionsScreenState extends ConsumerState<SubscriptionsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openAddSheet) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showAddSubscriptionSheet(context);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final subscribed = ref.watch(subscribedSourcesProvider);
     final isLoading = ref.watch(userSourcesProvider).isLoading;

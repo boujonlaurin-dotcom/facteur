@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Notif du jour",
+      "summary": "Un seul message du Facteur en tête de ton édition : chaque jour, il te suggère une fonctionnalité utile selon ton profil, à la place des bandeaux qui s'empilaient."
+    },
+    {
       "tag": "Lecture",
       "summary": "Le navigateur intégré garde ta navigation : un retour arrière remonte les pages visitées au lieu de te renvoyer au feed. Le choix des collections s'ouvre instantanément, et le bouton tournesol indique mieux qu'il partage l'article."
     },
