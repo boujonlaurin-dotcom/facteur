@@ -1762,11 +1762,18 @@ class _FsManage extends StatelessWidget {
   Widget build(BuildContext context) {
     // Le masquage est désormais porté par le curseur de priorité (palier
     // « Masqué »). Cette section ne subsiste que pour la connexion premium.
-    if (source.premiumConnection == null) return const SizedBox.shrink();
+    // Sources payantes curées (paywall) : bouton visible indépendamment du
+    // suivi (aligné sur `eligibleSubscriptionSourcesProvider`). Nouveau cas
+    // générique (source suivie avec URL http(s) mais sans `premium_connection`
+    // curé, ex. Cerveau & Psycho) : réservé aux sources suivies, aligné sur
+    // `loginConnectableSourcesProvider` de la feuille Réglages.
+    final connection = resolvePremiumConnection(source) ??
+        (source.isTrusted ? forceGenericConnection(source) : null);
+    if (connection == null) return const SizedBox.shrink();
 
     return _FsSection(
       title: 'Gestion de la source',
-      child: _FsPremium(source: source),
+      child: _FsPremium(source: source, connection: connection),
     );
   }
 }
@@ -1775,19 +1782,21 @@ class _FsManage extends StatelessWidget {
 /// propose un, indépendamment du suivi.
 class _FsPremium extends ConsumerWidget {
   final Source source;
-  const _FsPremium({required this.source});
+  final PremiumConnection connection;
+  const _FsPremium({required this.source, required this.connection});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final linked = source.hasSubscription;
+    // Une connexion générique = source sans abonnement payant curé : on parle
+    // de « compte » (connexion login) plutôt que d'« abonnement ».
+    final isGeneric = connection.isGeneric;
 
     final title = linked
-        ? 'Abonnement associé'
-        : (source.premiumConnection!.isGeneric
-              ? 'Associer mon abonnement'
-              : 'Connecter mon abonnement');
+        ? (isGeneric ? 'Compte connecté' : 'Abonnement associé')
+        : (isGeneric ? 'Connecter mon compte' : 'Connecter mon abonnement');
 
     return InkWell(
       borderRadius: BorderRadius.circular(FacteurRadius.large),
@@ -1827,8 +1836,11 @@ class _FsPremium extends ConsumerWidget {
                   ),
                   const SizedBox(height: 1),
                   Text(
-                    'Lis les articles réservés aux abonnés directement dans '
-                    'Facteur.',
+                    isGeneric
+                        ? 'Connecte ton compte pour lire les articles de ce '
+                              'média directement dans Facteur.'
+                        : 'Lis les articles réservés aux abonnés directement '
+                              'dans Facteur.',
                     style: textTheme.labelSmall?.copyWith(
                       color: colors.textTertiary,
                       height: 1.4,
@@ -1877,6 +1889,7 @@ class _FsPremium extends ConsumerWidget {
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(
           source: source,
+          connection: connection,
           onConnected: () => ref
               .read(userSourcesProvider.notifier)
               .connectSubscription(source.id),

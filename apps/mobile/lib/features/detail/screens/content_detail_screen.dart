@@ -537,11 +537,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Pre-load the WebView controller for progressive scroll-to-site.
+  /// Vrai si [content] provient d'une source premium suivie dont l'abonnement
+  /// est connecté (session cookies) — on sert alors le `PremiumWebView` plutôt
+  /// que le contrôleur gratuit. Lecture ponctuelle (non réactive).
+  bool _isConnectedPremiumSource(Content? content) {
+    if (content == null) return false;
+    final userSources = ref.read(userSourcesProvider).valueOrNull ?? const [];
+    return userSources.any(
+      (s) => s.id == content.source.id && s.hasSubscription,
+    );
+  }
+
   void _initScrollToSiteWebView() {
     final content = _content;
     if (content == null || kIsWeb) return;
     if (content.contentType != ContentType.article) return;
     if (!content.hasInAppContent) return;
+
+    // Source premium connectée : la couche révélée au scroll rend un
+    // `PremiumWebView` (cookies) — inutile (et contre-productif : paywall)
+    // de charger le contrôleur gratuit sur l'URL payante. `_buildWebViewLayer`
+    // court-circuite avant de toucher `_webViewController` sur ce chemin.
+    if (_isConnectedPremiumSource(content)) return;
 
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -1857,14 +1874,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite = !isConnectedPremiumSource &&
-        content.hasInAppContent &&
+    // Les sources premium connectées gardent l'intermédiaire (reader +
+    // couverture médiatique) comme les sources non-premium : la révélation du
+    // site au scroll bascule sur le `PremiumWebView` (cookies) plutôt que sur
+    // le contrôleur gratuit (cf. `_buildWebViewLayer`), pour ne pas retomber
+    // sur le paywall. On n'exclut donc plus `isConnectedPremiumSource` ici.
+    final useScrollToSite = content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
-    final useInAppReading = !isConnectedPremiumSource &&
-        content.hasInAppContent &&
+    final useInAppReading = content.hasInAppContent &&
         !_showWebView &&
         !useScrollToSite;
     final isVideoContent = content.isVideo;
@@ -2735,6 +2755,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Widget _buildPartialArticleInlineButton(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    // Source premium connectée : signaler que l'article complet est débloqué
+    // par l'abonnement (badge premium en fin de libellé).
+    final content = _content;
+    final isConnectedPremiumSource = _isConnectedPremiumSource(content);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: FacteurSpacing.space4,
@@ -2766,6 +2790,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (isConnectedPremiumSource) ...[
+                const SizedBox(width: 6),
+                _PremiumBadge(colors: colors),
+              ],
               const SizedBox(width: 4),
               Icon(
                 PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
@@ -2819,6 +2847,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final articleText = content.htmlContent ?? content.description;
     final isPartial = isPartialContent(articleText);
 
+    // Source premium connectée : la couche WebView révélée au scroll doit
+    // basculer sur le `PremiumWebView` (cookies) pour servir l'article complet.
+    final isConnectedPremiumSource = _isConnectedPremiumSource(content);
+
     String? readingTime;
     if (content.durationSeconds != null && content.durationSeconds! > 0) {
       final minutes = (content.durationSeconds! / 60).ceil();
@@ -2842,7 +2874,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           left: 0,
           right: 0,
           bottom: 0,
-          child: _buildWebViewLayer(),
+          child: _buildWebViewLayer(
+            isConnectedPremiumSource: isConnectedPremiumSource,
+          ),
         ),
 
         // LAYER 1: Scrollable article content with opaque background.
@@ -3026,8 +3060,52 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// WebView layer — fixed in viewport behind the scrollable content.
-  Widget _buildWebViewLayer() {
+  Widget _buildWebViewLayer({bool isConnectedPremiumSource = false}) {
     if (kIsWeb) return _buildWebViewFallback(_content!);
+
+    // Source premium connectée : révéler le `PremiumWebView` (cookies +
+    // détection paywall), pas le contrôleur gratuit `webview_flutter` — sinon
+    // l'abonné retomberait sur le paywall. La machinerie scroll-to-site est
+    // agnostique du contrôleur (pilotée par le `_scrollController` Flutter et
+    // les callbacks ScrollBridge que `PremiumWebView` émet à l'identique).
+    if (isConnectedPremiumSource) {
+      final content = _content;
+      if (content == null) return const SizedBox.shrink();
+      final webView = PremiumWebView(
+        source: content.source,
+        url: WebUri(content.url),
+        sessionStore: ref.read(premiumSessionStoreProvider),
+        enableScrollBridge: true,
+        detectPaywall: true,
+        onWebViewCreated: (c) => _premiumWebController = c,
+        onGestureStart: _onGestureStart,
+        onGestureDelta: _onGestureDelta,
+        onGestureEnd: _onGestureEnd,
+        onScrollY: _updateWebScrollY,
+        onProgress: _applyWebReadingProgress,
+        onPaywallDetected: _onPremiumPaywallDetected,
+        gestureRecognizers: _isWebViewActive
+            ? swipeBackCompatiblePlatformViewGestureRecognizers()
+            : const {},
+      );
+      // La couche 0 est full-bleed (pas de Column) → on héberge la bannière de
+      // session expirée dans un Stack, alignée en haut quand la WebView est
+      // active.
+      return Stack(
+        children: [
+          Positioned.fill(child: webView),
+          if (_premiumSessionExpired && _isWebViewActive)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _PremiumSessionExpiredBanner(
+                onReconnect: () => _reconnectPremium(content),
+              ),
+            ),
+        ],
+      );
+    }
 
     // Initialize WebView if not already done (e.g. content loaded after init)
     if (_webViewController == null) {
@@ -3758,6 +3836,45 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 /// Bandeau non-bloquant affiché en mode reader premium quand un paywall est
 /// détecté (session du média expirée). Propose de se reconnecter sans
 /// dissocier l'abonnement.
+/// Petit badge premium (couronne) affiché en fin de libellé du bouton
+/// « Article complet » quand l'article est débloqué par un abonnement connecté.
+class _PremiumBadge extends StatelessWidget {
+  final FacteurColors colors;
+
+  const _PremiumBadge({required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.crown(PhosphorIconsStyle.fill),
+            size: 12,
+            color: colors.primary,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'Premium',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10.5,
+                  letterSpacing: 0,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PremiumSessionExpiredBanner extends StatelessWidget {
   final VoidCallback onReconnect;
 
