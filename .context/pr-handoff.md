@@ -1,37 +1,36 @@
-## Lettres : throttle bandeau + complétion d'action monotone
+# feat(mobile): « Notif du jour » — bandeau agrégateur quotidien en tête de l'Essentiel
 
-Deux régressions distinctes de la feature « Lettres du Facteur ».
+## Quoi
 
-### 1. Bandeau bruyant (mobile) — throttle 7 jours
-`LettresNotificationBanner` réapparaissait à chaque ouverture d'app tant qu'une lettre était
-active (dismiss session-only, jamais persisté). Ajout d'une persistance SharedPreferences
-(`lettres_banner_last_shown_v1`, epoch ms) : **max 1 affichage / 7 jours**, le timestamp étant
-écrit dès le 1er affichage visible de la session (couvre « affiché puis ignoré » ET « affiché
-puis dismiss »). Pattern repris de `nudge_storage.dart`.
+Une **ligne de notification unique** en tête du feed Essentiel (sous le bandeau Lettres) : chaque jour, le Facteur met en avant une fonctionnalité peu vue, choisie selon le profil. Un seul message à la fois, **jusqu'à 3/jour** (le suivant après action ou dismiss), rotation quotidienne déterministe.
 
-### 2. Complétion d'action non-monotone (backend) — fix générique
-`refresh_letter_status` remplaçait `completed_actions` par le résultat live des détecteurs → une
-action déjà validée régressait si l'état live repassait sous le seuil (ex. `_detect_mute_3_sources`
-compte `cardinality(muted_sources)` : dé-masquer sous 3 décochait l'action). Fix au **niveau
-générique du refresh** : union de l'état persisté (`completed_actions` = « ever reached ») avec le
-recompute live → monotone pour **toutes** les actions (mutes, suivis, etc.). Les détecteurs restent
-purs. **Aucune migration** (le champ JSONB persiste déjà l'état).
+Story : `docs/stories/core/23.1.notif-du-jour.md`.
 
-### Diagnostic compte PO (Supabase read-only)
-`boujon.laurin@gmail.com` (user `d47836da-9aa9-4235-ac40-061c5c0ead48`) : `muted_sources = []`
-(count 0), `letter_3` en statut `upcoming`, `completed_actions = []`. La régression `mute_3_sources`
-n'a donc **jamais été déclenchée** sur son compte (letter_3 pas active, 0 mute) : bug latent pour
-lui, réel pour tout user qui dé-masque après avoir atteint 3 sources.
+## Moteur
 
-### Fichiers
-- `packages/api/app/services/letters/service.py` — union monotone dans `refresh_letter_status`
-- `packages/api/tests/routers/test_letters_routes.py` — `test_completed_action_is_monotone`
-- `apps/mobile/lib/features/lettres/widgets/lettres_notification_banner.dart` — throttle prefs
-- `apps/mobile/test/features/lettres/widgets/lettres_notification_banner_test.dart` — 3 tests throttle
-- `apps/mobile/assets/changelog.json` — entrée `Lettres` + fix corruption JSON de fusion (#924/#925)
+- **File** : `notifDuJourQueueProvider` trie les messages éligibles par `relevance(profil) + jitter(jour, id)` (ε = 0.15, hash FNV `id#jour` → stable intra-jour, permute inter-jour pour les pertinences proches uniquement).
+- **9 messages** : 6 profil (serein, source, tournée, veille, premium, recommencer-fallback) + **3 nudges absorbés** (renudge notif 0.9, well-informed NPS 0.85 en rendu custom, géoloc 0.7) — leurs `*ShouldShowProvider` et caps existants sont réutilisés tels quels (avancés à la consommation).
+- **Day store** : `notif_du_jour_state_v1` (SharedPreferences), `{day, consumed[]}`, reset à minuit, cap 3.
+- **Rendu hifi** : surface, radius 14, ombre 0x14, carré icône 34 teinté (ocre/green/steel), DM Sans 13.5, CTA-lien + flèche, croix 30 ; repli AnimatedSize + fondu + translation 300ms, reduced-motion instantané, press scale + haptique.
 
-### Vérif
-- Mobile : 7/7 tests du bandeau verts + `flutter analyze` clean.
-- Backend : syntaxe OK ; tests DB (`test_completed_action_is_monotone` + suite letters) à valider
-  en CI — pas de Postgres test local en Conductor (OrbStack down).
-- Alembic : 1 head inchangé, aucune migration.
+## Dépréciations (PR 1)
+
+- Supprimés : `NotificationRenudgeBanner`, `WellInformedPrompt`, `GeolocPromptBanner` (widgets standalone) + leurs 3 slivers du feed.
+- `FirstImpressionSlot` réduit aux modales (`iosAddToHome`, `notifModal`) ; la carte cède aussi au bandeau Lettres (`lettresBannerVisibleThisSessionProvider`). Lettres → PR 3.
+
+## Fix CTA (décision PO « taps propres »)
+
+- Source → `RouteNames.addSource` (panneau d'ajout direct).
+- Premium → `/settings/subscriptions?add=1` : `SubscriptionsScreen` auto-ouvre la feuille d'ajout.
+- « Config » sorti de la rotation → tuile « Ma configuration » (barre de progression onboarding) dans `profile_screen.dart`.
+
+## Tests
+
+35 nouveaux (`test/features/notif_du_jour/`) : sélecteur (déterminisme, rotation bornée à ε, fallback), éligibilité par message, day store (reset minuit, cap, idempotence), widget (anti-flash, un-à-la-fois, X → persist + suivant, cap 3, reduced motion, tap Serein in-place, NPS custom, gates). Zones impactées : 446 verts (lettres, flux_continu, well_informed, notifications, settings).
+
+Aucune migration / changement backend. Changelog `unreleased` ajouté (« Notif du jour »).
+
+## Reste hors PR
+
+- Validation on-device Android des demandes OS (renudge/géoloc) via la file.
+- Calibration relevance/ε avec le PO ; PR 3 Lettres.

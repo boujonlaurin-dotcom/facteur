@@ -30,14 +30,13 @@ import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
 import '../../feedback/widgets/feedback_closing_card.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
+import '../../notif_du_jour/widgets/notif_du_jour_card.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
-import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../../settings/widgets/display_mode_bottom_sheet.dart';
 import '../../sources/models/source_theme_filters.dart';
 import '../../tour/providers/guided_tour_controller.dart';
 import '../../tour/tour_anchors.dart';
-import '../../well_informed/widgets/well_informed_prompt.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -52,7 +51,6 @@ import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
 import '../widgets/tournee_composer_sheet.dart';
-import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
@@ -1172,7 +1170,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Widget _buildContent(BuildContext context, FluxContinuState state) {
     final notifier = ref.read(fluxContinuProvider.notifier);
     final colors = context.facteurColors;
-    final impressionSlot = ref.watch(firstImpressionSlotProvider);
     // Android peut fermer l'app programmatiquement ; iOS l'interdit (App
     // Store) → on y montre une phrase de clôture au lieu du bouton.
     final isAndroid = defaultTargetPlatform == TargetPlatform.android;
@@ -1198,22 +1195,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           slivers: [
             // NB : le header (logo · streak · réglages) vit dans le scaffold de
             // page partagé — fixe, hors du scroll.
-            SliverToBoxAdapter(
-              child: impressionSlot == FirstImpressionSlot.renudgeBanner
-                  ? const NotificationRenudgeBanner()
-                  : const SizedBox.shrink(),
-            ),
-            SliverToBoxAdapter(
-              child: impressionSlot == FirstImpressionSlot.wellInformed
-                  ? const WellInformedPrompt()
-                  : const SizedBox.shrink(),
-            ),
-            SliverToBoxAdapter(
-              child: impressionSlot == FirstImpressionSlot.geolocPrompt
-                  ? const GeolocPromptBanner()
-                  : const SizedBox.shrink(),
-            ),
             const SliverToBoxAdapter(child: LettresNotificationBanner()),
+            // « Notif du jour » : file unique agrégeant les anciens nudges
+            // inline (renudge / well-informed / géoloc) + messages profil.
+            // Se gate elle-même sur les modales restantes et le bandeau
+            // Lettres.
+            const SliverToBoxAdapter(child: NotifDuJourCard()),
             // One SliverToBoxAdapter per section. Sections never resize during
             // a session, so the simpler non-lazy adapter is sufficient and
             // keeps the GlobalKey measurement reliable.

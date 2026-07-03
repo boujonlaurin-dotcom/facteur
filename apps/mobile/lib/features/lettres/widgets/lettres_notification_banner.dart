@@ -26,9 +26,14 @@ const _kLastShownKey = 'lettres_banner_last_shown_v1';
 /// compte comme un affichage (le timestamp est déjà persisté à l'affichage).
 const _kThrottleWindow = Duration(days: 7);
 
+/// Vrai dès que le bandeau Lettres s'est affiché cette session. Lu par la
+/// « Notif du jour » pour s'effacer (un seul point de parole en tête de feed).
+final lettresBannerVisibleThisSessionProvider =
+    StateProvider<bool>((_) => false);
+
 /// Banner inline (feed) — apparait quand une lettre est `active`, masqué sur
 /// `/lettres*`, après dismiss session-only (cohérent avec les autres nudges,
-/// cf. notification_renudge_banner.dart) et throttlé à 1 affichage / 7 jours
+/// cohérent avec la Notif du jour) et throttlé à 1 affichage / 7 jours
 /// (persisté via SharedPreferences).
 ///
 /// Mini-réplique du `ProgressionHeader` : avatar de grade (anneau animé + badge
@@ -107,6 +112,13 @@ class _LettresNotificationBannerState
     if (!_recordedThisSession) {
       _recordedThisSession = true;
       _recordShown();
+      // Signale l'affichage à la « Notif du jour » (post-frame : pas de
+      // mutation de provider pendant un build).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(lettresBannerVisibleThisSessionProvider.notifier).state =
+            true;
+      });
     }
 
     final colors = context.facteurColors;

@@ -597,8 +597,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'subscriptions', // /settings/subscriptions
             name: RouteNames.subscriptions,
-            pageBuilder: (context, state) =>
-                const FullSwipeCupertinoPage(child: SubscriptionsScreen()),
+            pageBuilder: (context, state) => FullSwipeCupertinoPage(
+              child: SubscriptionsScreen(
+                // `?add=1` → auto-ouverture de la feuille d'ajout (CTA
+                // « Lier mon abonnement » de la Notif du jour).
+                openAddSheet: state.uri.queryParameters['add'] == '1',
+              ),
+            ),
           ),
           GoRoute(
             path: 'notifications', // /settings/notifications
