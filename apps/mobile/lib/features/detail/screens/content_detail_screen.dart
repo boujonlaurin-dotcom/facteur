@@ -37,6 +37,7 @@ import '../../sources/widgets/premium_web_view.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
+import '../utils/webview_history_tracker.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/deep_recommendation_card.dart';
@@ -223,6 +224,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // pour réutiliser la session du média (cookies). Distinct du WebView
   // webview_flutter du scroll-to-site des sources gratuites.
   InAppWebViewController? _premiumWebController;
+  // Suit la profondeur de navigation utilisateur dans le WebView pour sortir
+  // en 1 clic sur l'article et ne remonter l'historique que pour de vraies
+  // navigations de liens suivies (cf. WebViewHistoryTracker).
+  final _historyTracker = WebViewHistoryTracker();
   // Bandeau non-bloquant « Session expirée — Reconnecter » (paywall détecté en
   // mode reader sur une source connectée).
   bool _premiumSessionExpired = false;
@@ -548,6 +553,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
+  /// Horodatage courant (ms) pour [_historyTracker] — centralisé pour alléger
+  /// le câblage des callbacks WebView.
+  int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+
   void _initScrollToSiteWebView() {
     final content = _content;
     if (content == null || kIsWeb) return;
@@ -560,10 +569,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // court-circuite avant de toucher `_webViewController` sur ce chemin.
     if (_isConnectedPremiumSource(content)) return;
 
+    _historyTracker.reset(_nowMs());
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
-        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
+        NavigationDelegate(
+          onPageStarted: (_) =>
+              _historyTracker.onNavStart(_nowMs()),
+          onPageFinished: (_) {
+            _injectScrollBridgeScript();
+            _historyTracker.onNavFinish();
+          },
+        ),
       )
       ..addJavaScriptChannel(
         'ScrollBridge',
@@ -892,9 +909,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Gère le retour arrière du reader (bouton header + bouton système Android).
   ///
-  /// En mode WebView, on remonte d'abord l'historique interne du navigateur
-  /// (l'utilisateur a pu suivre des liens dans la page) : un retour ne quitte
-  /// le WebView vers le reader que lorsqu'on est revenu sur la page d'origine.
+  /// En mode WebView, on remonte l'historique interne du navigateur **seulement**
+  /// pour de vraies navigations de liens suivies par l'utilisateur (profondeur
+  /// suivie par [_historyTracker]) : sur la page d'origine de l'article la
+  /// profondeur est nulle, donc **1 clic suffit** pour sortir vers le reader.
+  /// `canGoBack()` reste une simple garde de sécurité (les entrées d'historique
+  /// fantômes du chargement le rendraient sinon toujours `true`).
   /// Hors WebView, on ferme l'écran normalement (retour au feed).
   Future<void> _handleReaderBack() async {
     if (!_isWebViewActive) {
@@ -911,7 +931,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final Future<bool> Function()? canGoBack =
         premium?.canGoBack ?? free?.canGoBack;
     final Future<void> Function()? goBack = premium?.goBack ?? free?.goBack;
-    if (canGoBack != null && await canGoBack()) {
+    if (_historyTracker.canClimb &&
+        canGoBack != null &&
+        await canGoBack()) {
+      _historyTracker.willGoBack();
       await goBack!();
       return;
     }
@@ -3077,7 +3100,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sessionStore: ref.read(premiumSessionStoreProvider),
         enableScrollBridge: true,
         detectPaywall: true,
-        onWebViewCreated: (c) => _premiumWebController = c,
+        onWebViewCreated: (c) {
+          _premiumWebController = c;
+          _historyTracker.reset(_nowMs());
+        },
+        onLoadStart: (_) =>
+            _historyTracker.onNavStart(_nowMs()),
+        onLoadStop: (_) => _historyTracker.onNavFinish(),
         onGestureStart: _onGestureStart,
         onGestureDelta: _onGestureDelta,
         onGestureEnd: _onGestureEnd,
@@ -3727,7 +3756,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sessionStore: ref.read(premiumSessionStoreProvider),
         enableScrollBridge: true,
         detectPaywall: true,
-        onWebViewCreated: (c) => _premiumWebController = c,
+        onWebViewCreated: (c) {
+          _premiumWebController = c;
+          _historyTracker.reset(_nowMs());
+        },
+        onLoadStart: (_) =>
+            _historyTracker.onNavStart(_nowMs()),
+        onLoadStop: (_) => _historyTracker.onNavFinish(),
         onGestureStart: _onGestureStart,
         onGestureDelta: _onGestureDelta,
         onGestureEnd: _onGestureEnd,
@@ -3750,16 +3785,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
-    _webViewController ??= WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
-      )
-      ..addJavaScriptChannel(
-        'ScrollBridge',
-        onMessageReceived: _onScrollBridgeMessage,
-      )
-      ..loadRequest(Uri.parse(content.url));
+    if (_webViewController == null) {
+      _historyTracker.reset(_nowMs());
+      _webViewController = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageStarted: (_) => _historyTracker
+                .onNavStart(_nowMs()),
+            onPageFinished: (_) {
+              _injectScrollBridgeScript();
+              _historyTracker.onNavFinish();
+            },
+          ),
+        )
+        ..addJavaScriptChannel(
+          'ScrollBridge',
+          onMessageReceived: _onScrollBridgeMessage,
+        )
+        ..loadRequest(Uri.parse(content.url));
+    }
 
     // CTA discret : source payante non connectée → proposer de lire avec son
     // abonnement (ouvre le flow de connexion).
