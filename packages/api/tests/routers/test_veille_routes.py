@@ -70,7 +70,12 @@ async def curated_tech_source(db_session):
 
 @pytest_asyncio.fixture
 async def tech_content(db_session, curated_tech_source):
-    """3 articles tech : un matche le thème, un matche keyword 'ia', un matche les deux."""
+    """3 articles tech : un matche le thème, un matche keyword 'ia', un matche les deux.
+
+    Qualité normale (thumbnail + full) : sans anti-starvation (C), un article
+    source-seul frais mais sans image score ~43-47 (< seuil 48) et disparaîtrait ;
+    on teste la curation (floor/gate/prédicat), pas le bord du seuil composite.
+    """
     items = [
         Content(
             id=uuid4(),
@@ -83,6 +88,8 @@ async def tech_content(db_session, curated_tech_source):
             guid=f"gpt5-{uuid4()}",
             theme="tech",
             topics=["ai", "openai"],
+            thumbnail_url="https://tech.example.com/gpt5.jpg",
+            content_quality="full",
         ),
         Content(
             id=uuid4(),
@@ -95,6 +102,8 @@ async def tech_content(db_session, curated_tech_source):
             guid=f"bourse-{uuid4()}",
             theme="economy",
             topics=["markets"],
+            thumbnail_url="https://tech.example.com/bourse.jpg",
+            content_quality="full",
         ),
         Content(
             id=uuid4(),
@@ -107,6 +116,8 @@ async def tech_content(db_session, curated_tech_source):
             guid=f"velo-{uuid4()}",
             theme="society",
             topics=["mobility"],
+            thumbnail_url="https://tech.example.com/velo.jpg",
+            content_quality="full",
         ),
     ]
     db_session.add_all(items)
@@ -223,9 +234,7 @@ class TestConfigCRUD:
         payload = {
             "theme_id": "tech",
             "theme_label": "Tech",
-            "keywords": [
-                {"keyword": f"keyword-{i}", "position": i} for i in range(21)
-            ],
+            "keywords": [{"keyword": f"keyword-{i}", "position": i} for i in range(21)],
         }
         async with _client() as c:
             r = await c.post("/api/veille/config", json=payload)
@@ -253,12 +262,16 @@ class TestFavoriteIntegration:
 
     async def _favorites(self, db_session, user_id):
         rows = (
-            await db_session.execute(
-                select(UserFavoriteInterest).where(
-                    UserFavoriteInterest.user_id == user_id
+            (
+                await db_session.execute(
+                    select(UserFavoriteInterest).where(
+                        UserFavoriteInterest.user_id == user_id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return list(rows)
 
     async def test_post_config_auto_creates_favorite(
@@ -305,14 +318,10 @@ class TestFavoriteIntegration:
         self, auth_user, curated_tech_source, db_session
     ):
         db_session.add(
-            UserFavoriteInterest(
-                user_id=auth_user, position=0, interest_slug="tech"
-            )
+            UserFavoriteInterest(user_id=auth_user, position=0, interest_slug="tech")
         )
         db_session.add(
-            UserFavoriteInterest(
-                user_id=auth_user, position=1, interest_slug="society"
-            )
+            UserFavoriteInterest(user_id=auth_user, position=1, interest_slug="society")
         )
         await db_session.commit()
 
@@ -371,9 +380,7 @@ class TestFavoriteIntegration:
         favs = await self._favorites(db_session, auth_user)
         assert favs == []
 
-    async def test_get_config_self_heals_missing_favorite(
-        self, auth_user, db_session
-    ):
+    async def test_get_config_self_heals_missing_favorite(self, auth_user, db_session):
         """Story 23.4 : une config active orpheline (sans favori — cas proton) est
         réparée au `GET /config` (self-heal idempotent, commit dédié)."""
         cfg = VeilleConfig(
@@ -457,16 +464,18 @@ class TestFeed:
     async def test_feed_matches_keyword(
         self, auth_user, curated_tech_source, tech_content
     ):
+        # 2 mots-clés distincts (floor durci B : un keyword-only exige ≥ 2 hits
+        # distincts) — les deux matchent "Vélo électrique nouveau modèle".
         payload = {
             "theme_id": "tech",
             "theme_label": "Tech",
-            "keywords": [{"keyword": "vélo"}],
+            "keywords": [{"keyword": "vélo"}, {"keyword": "électrique"}],
         }
         async with _client() as c:
             await c.post("/api/veille/config", json=payload)
             r = await c.get("/api/veille/feed")
         items = r.json()["items"]
-        # Seul l'article "Vélo électrique" matche le keyword. GPT-5 n'entre plus
+        # Seul l'article "Vélo électrique" matche les keywords. GPT-5 n'entre plus
         # via le thème (retiré du prédicat) → 1 seul résultat (contrat inversé).
         assert len(items) == 1
         velo = items[0]
@@ -514,9 +523,7 @@ class TestFeedTwoBlocks:
             "theme_id": "tech",
             "theme_label": "Tech",
             "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
-            "source_selections": [
-                {"kind": "followed", "source_id": str(source_id)}
-            ],
+            "source_selections": [{"kind": "followed", "source_id": str(source_id)}],
         }
 
     async def test_feed_exposes_group_per_item(
@@ -558,15 +565,22 @@ class TestFeedTwoBlocks:
         self, auth_user, curated_tech_source, tech_content, external_ai_content
     ):
         # Gate-all « released » : le Bloc A filtre désormais aussi les sources
-        # configurées (floor + seuil). Pour garder 3 articles on-angle dans le
-        # Bloc A, on qualifie les 3 articles de la source configurée par un axe
-        # (topic « ai » pour GPT-5, mots-clés « bourse »/« vélo » pour les deux
-        # autres) — sinon ils seraient floor-pruned comme source-seuls.
+        # configurées (floor durci + gate + seuil). Pour garder 3 articles
+        # on-angle dans le Bloc A, on qualifie les 3 articles de la source
+        # configurée par un axe : topic « ai » pour GPT-5, et **2 mots-clés
+        # distincts** pour les deux autres (« bourse »/« marchés » pour Bourse,
+        # « vélo »/« électrique » pour Vélo) — un unigramme seul serait
+        # floor-pruned depuis le durcissement du floor (B).
         payload = {
             "theme_id": "tech",
             "theme_label": "Tech",
             "topics": [{"topic_id": "ai", "label": "IA", "kind": "preset"}],
-            "keywords": [{"keyword": "bourse"}, {"keyword": "vélo"}],
+            "keywords": [
+                {"keyword": "bourse"},
+                {"keyword": "marchés"},
+                {"keyword": "vélo"},
+                {"keyword": "électrique"},
+            ],
             "source_selections": [
                 {"kind": "followed", "source_id": str(curated_tech_source.id)}
             ],
@@ -928,9 +942,7 @@ class TestResolveSourceCandidates:
 class TestOtherThemeIngestion:
     """theme_id='other' (tuile Autre) doit mapper vers theme='custom' à l'ingestion."""
 
-    async def test_other_theme_niche_source_ingestion(
-        self, auth_user, monkeypatch
-    ):
+    async def test_other_theme_niche_source_ingestion(self, auth_user, monkeypatch):
         from app.services import source_service
         from app.workers import rss_sync
 
@@ -996,9 +1008,7 @@ class TestOtherThemeIngestion:
         async def _fake_detect(self, url):
             raise ValueError("No RSS feed found")
 
-        monkeypatch.setattr(
-            source_service.SourceService, "detect_source", _fake_detect
-        )
+        monkeypatch.setattr(source_service.SourceService, "detect_source", _fake_detect)
 
         payload = {
             "theme_id": "other",
@@ -1038,9 +1048,7 @@ class TestOtherThemeIngestion:
         assert len(data["unconnected_sources"]) == 1
         assert data["unconnected_sources"][0]["client_slug"] == "niche-sans-flux"
         assert data["unconnected_sources"][0]["name"] == "Site sans flux"
-        assert (
-            data["unconnected_sources"][0]["url"] == "https://exemple-sans-rss.test"
-        )
+        assert data["unconnected_sources"][0]["url"] == "https://exemple-sans-rss.test"
         assert data["unconnected_sources"][0]["reason"]
 
 

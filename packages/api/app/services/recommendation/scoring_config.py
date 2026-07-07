@@ -371,18 +371,31 @@ class ScoringWeights:
     # pas un free-pass » : source-seul = 0 contribution de pertinence.
     VEILLE_SOURCE_ON_TOPIC_BONUS = 12.0
 
-    # Seuil de pertinence (score final piliers, échelle ~0-100) en-deçà duquel
-    # un article candidat est élagué du feed veille. Relevé 40→48 (Story 23.4)
-    # avec la curation v2 : source-seul frais+riche ≈ 44 (< 48, écarté en plus
-    # par le floor) ; 1 mot-clé+source ≈ 52-58 ; topic+source ≈ 62-70 ;
-    # topic+2kw+source ≈ 75-82. Point de calibration tunable via les logs prod
-    # (max_score / pass_count / floor_pruned_count / threshold_pruned_count).
+    # Seuil de pertinence (score **composite** piliers pondérés, échelle ~0-100)
+    # en-deçà duquel un article candidat est élagué du feed veille. Relevé 40→48
+    # (Story 23.4) : 1 mot-clé+source ≈ 52-58 ; topic+source ≈ 62-70 ;
+    # topic+2kw+source ≈ 75-82. Limite connue : source+fraîcheur+qualité = 60 %
+    # du poids, donc un hors-sujet frais+propre franchit le composite ; c'est le
+    # gate dédié au pilier pertinence (`VEILLE_PERTINENCE_GATE`) qui couvre ce
+    # trou. Calibration tunable via les logs prod (max_score / pass_count /
+    # floor_pruned_count / gate_pruned_count / threshold_pruned_count).
     VEILLE_RELEVANCE_THRESHOLD = 48.0
 
-    # Anti-starvation : si après scoring moins de N articles passent ET que des
-    # candidats on-axis ont été coupés par le *seuil* (jamais par le floor), on
-    # relâche le seuil d'un cran (max -8, plancher 40).
-    VEILLE_MIN_FEED_SIZE = 5
+    # Gate sur le **pilier pertinence normalisé** (0-100), appliqué en plus du
+    # seuil composite quand la config porte un axe topic/mot-clé. Exige un
+    # minimum de pertinence *thématique*, là où le composite offre ~37-40 pts
+    # d'office (source 25 % + fraîcheur 20 % + qualité 15 %) à tout article
+    # frais+propre. Calibration (pertinence = raw/160×100) : 1kw+source 18.8
+    # coupé ; 2kw seuls 16.9 coupé ; 2kw+source 24.4 passe ; 3kw+source 30
+    # passe ; topic seul 31.3 passe. Bouton de réglage (20→25) via les logs prod.
+    VEILLE_PERTINENCE_GATE = 20.0
+
+    # Floor de mots-clés : nombre de hits distincts minimum pour qu'un candidat
+    # *keyword-only* (sans topic canonique) qualifie le floor. Un hit « fort »
+    # (topic canonique OU mot-clé multi-mots, p.ex. « coupe du monde ») qualifie
+    # à lui seul. À 1, un unigramme générique (« budget », « europe ») suffisait
+    # à faire entrer un hors-sujet. Bouton de détente (2→3) via les logs prod.
+    VEILLE_FLOOR_MIN_KEYWORD_HITS = 2
 
     # Plafond du pool de candidats scorés par fetch (borne le coût ILIKE +
     # scoring sur un feed curé ; offsets au-delà renvoient vide — acceptable).
@@ -392,6 +405,13 @@ class ScoringWeights:
     # S'applique au **Bloc B « Couverture élargie »** (topics/mots-clés, sources
     # non configurées).
     VEILLE_RECENCY_HOURS = 168
+
+    # Kill-switch : restreint les langues du Bloc B « Couverture élargie » aux
+    # langues des sources configurées ∪ {fr} (Content.language NULL toléré, car
+    # beaucoup d'articles n'ont pas de langue détectée). Le Bloc A n'est jamais
+    # filtré (source choisie = langue assumée). False → comportement multilingue
+    # historique.
+    VEILLE_BLOCK_B_LANGUAGE_FILTER = True
 
     # Fenêtre de récence (heures) du **Bloc A « Tes sources »** : 30 j. Les
     # sources niche configurées ont souvent des flux RSS lents/peu fréquents —
@@ -404,6 +424,14 @@ class ScoringWeights:
     # qu'une source bavarde (flux dense) ne monopolise pas le bloc malgré la
     # fenêtre 30 j. Appliqué via `diversify()` après tri par score.
     VEILLE_SOURCE_DIVERSITY_CAP = 3
+
+    # Pool Bloc A **par source** : nombre max de candidats récents retenus par
+    # source configurée *avant* scoring (via window function
+    # `row_number() OVER (PARTITION BY source_id ...)`). Sans ça, le cap externe
+    # global `VEILLE_CANDIDATE_CAP` trié par date laisse une source dense capter
+    # tout le pool et affame les sources discrètes (flux lents). N=30 = 10× le
+    # cap de diversité final (`VEILLE_SOURCE_DIVERSITY_CAP=3`).
+    VEILLE_BLOCK_A_PER_SOURCE_CANDIDATES = 30
 
     # --- TOPIC-AWARE FEED DIVERSIFICATION (Phase 2 — Budget Neutre) ---
 
