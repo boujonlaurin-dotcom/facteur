@@ -25,10 +25,16 @@ class FeedbackClosingCard extends ConsumerStatefulWidget {
   /// de la section de clôture reste calée sur l'ancienne hauteur.
   final VoidCallback? onLayoutChanged;
 
+  /// Quand `true`, la carte est rendue **sans son chrome extérieur** (margin +
+  /// decoration + shadow + padding) : juste la Column interne, pour être
+  /// embarquée en sous-bloc d'une autre carte (cf. [ClosingCardV18.secondary]).
+  final bool embedded;
+
   const FeedbackClosingCard({
     super.key,
     this.digestDate,
     this.onLayoutChanged,
+    this.embedded = false,
   });
 
   @override
@@ -57,6 +63,55 @@ class _FeedbackClosingCardState extends ConsumerState<FeedbackClosingCard> {
       });
     }
 
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Tampon « TON AVIS COMPTE » dans l'esprit des cartes de tournée.
+        Transform.rotate(
+          angle: -2 * math.pi / 180,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: colors.primary, width: 1.5),
+            ),
+            child: Text(
+              'TON AVIS COMPTE',
+              style: GoogleFonts.courierPrime(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: colors.primary,
+                letterSpacing: 2.0,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+
+        // Micro-feedback emoji (toujours présent).
+        SentimentPicker(
+          digestDate: widget.digestDate,
+          onLayoutChanged: widget.onLayoutChanged,
+        ),
+
+        // Invitation au call (conditionnelle, gated backend).
+        if (showCall) ...[
+          const SizedBox(height: 18),
+          Divider(
+            height: 1,
+            color: colors.textTertiary.withValues(alpha: 0.15),
+          ),
+          const SizedBox(height: 16),
+          _CallInviteTeaser(
+            onTap: () =>
+                CallInviteSheet.show(context, segment: invite?.segment),
+          ),
+        ],
+      ],
+    );
+
+    // Embarquée : pas de chrome propre, la carte hôte fournit boîte + padding.
+    if (widget.embedded) return content;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(18, 8, 18, 8),
       clipBehavior: Clip.antiAlias,
@@ -73,51 +128,7 @@ class _FeedbackClosingCardState extends ConsumerState<FeedbackClosingCard> {
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Tampon « TON AVIS COMPTE » dans l'esprit des cartes de tournée.
-            Transform.rotate(
-              angle: -2 * math.pi / 180,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  border: Border.all(color: colors.primary, width: 1.5),
-                ),
-                child: Text(
-                  'TON AVIS COMPTE',
-                  style: GoogleFonts.courierPrime(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: colors.primary,
-                    letterSpacing: 2.0,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-
-            // Micro-feedback emoji (toujours présent).
-            SentimentPicker(
-              digestDate: widget.digestDate,
-              onLayoutChanged: widget.onLayoutChanged,
-            ),
-
-            // Invitation au call (conditionnelle, gated backend).
-            if (showCall) ...[
-              const SizedBox(height: 18),
-              Divider(
-                height: 1,
-                color: colors.textTertiary.withValues(alpha: 0.15),
-              ),
-              const SizedBox(height: 16),
-              _CallInviteTeaser(
-                onTap: () =>
-                    CallInviteSheet.show(context, segment: invite?.segment),
-              ),
-            ],
-          ],
-        ),
+        child: content,
       ),
     );
   }

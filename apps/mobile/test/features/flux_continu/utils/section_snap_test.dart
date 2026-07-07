@@ -48,10 +48,13 @@ void main() {
   });
 
   group('resolveSnapTarget', () {
-    test('free while inside a tall section (it fills the screen)', () {
-      // Landing at 450, inside the (300, 600) interior: no edge shows ⇒ free,
-      // regardless of travel direction.
-      for (final dir in [1.0, -1.0]) {
+    test(
+        'free while inside a tall section on descent/idle (it fills the screen)',
+        () {
+      // Landing at 450, inside the (300, 600) interior: no edge shows ⇒ free
+      // on descent (dir=1) and idle (dir=0). Upward is handled separately —
+      // snap is now the default on the way up (see the UP-only tests below).
+      for (final dir in [1.0, 0.0]) {
         final target = resolveSnapTarget(
           currentPixels: 430,
           naturalLanding: 450,
@@ -61,6 +64,67 @@ void main() {
         );
         expect(target, isNull, reason: 'dir=$dir should stay free at 450');
       }
+    });
+
+    // --- Task 2: snap-by-default on the way up, fast-fling escape -----------
+
+    test('a slow upward scroll inside a tall section snaps (no longer free)',
+        () {
+      // Same landing (450) inside the (300,600) interior, but travelling UP
+      // slowly (velocity below kFastUpwardVelocity). The free-reading guard is
+      // descent/idle-only now ⇒ this re-frames onto an anchor instead of
+      // staying free. Small overshoot ⇒ pulled to the nearest point (300).
+      final target = resolveSnapTarget(
+        currentPixels: 430,
+        naturalLanding: 450,
+        velocity: -200,
+        scrollDirection: -1, // up, slow
+        frames: frames,
+      );
+      expect(target, isNotNull,
+          reason: 'slow upward should snap, not stay free');
+      expect(snapPointsOf(frames), contains(target));
+    });
+
+    test('a fast upward fling escapes free (rewind several sections)', () {
+      // Same landing inside the tall interior, but a hard upward fling
+      // (velocity ≥ kFastUpwardVelocity) ⇒ the snap steps aside so the native
+      // ballistic can rewind. The one deliberate UP-only exception.
+      final target = resolveSnapTarget(
+        currentPixels: 430,
+        naturalLanding: 450,
+        velocity: -kFastUpwardVelocity - 100,
+        scrollDirection: -1, // up, fast
+        frames: frames,
+      );
+      expect(target, isNull);
+    });
+
+    test('a fast upward fling escapes even outside any free zone', () {
+      // Lift at the finale (1200) with a fast upward fling landing far past the
+      // sections. Without the escape this would one-step to 600; with it, free.
+      final target = resolveSnapTarget(
+        currentPixels: 1200,
+        naturalLanding: -5000,
+        velocity: -kFastUpwardVelocity - 500,
+        scrollDirection: -1, // up, fast
+        frames: frames,
+      );
+      expect(target, isNull);
+    });
+
+    test('a slow upward fling below the threshold still one-steps (no escape)',
+        () {
+      // Just under kFastUpwardVelocity heading up from the finale ⇒ still
+      // snaps one frame back (600), no free escape.
+      final target = resolveSnapTarget(
+        currentPixels: 1200,
+        naturalLanding: 1200 - beyond,
+        velocity: -kFastUpwardVelocity + 1,
+        scrollDirection: -1, // up, just under the threshold
+        frames: frames,
+      );
+      expect(target, 600.0);
     });
 
     // --- One-step cap: a fling NEVER skips a section ------------------------
@@ -79,20 +143,22 @@ void main() {
       expect(target, 300.0);
     });
 
-    test('a violent fling up only recedes ONE frame (never skips)', () {
-      // Lift at the last frame (1200) with a huge upward landing past 0. Cap ⇒
-      // previous adjacent point only: 600.
+    test('a moderate fling up only recedes ONE frame (never skips)', () {
+      // Lift at the last frame (1200) with a huge upward landing past 0, but a
+      // velocity BELOW kFastUpwardVelocity (a *violent* up-fling now escapes
+      // free — see the Task 2 tests). Cap ⇒ previous adjacent point only: 600.
       final target = resolveSnapTarget(
         currentPixels: 1200,
         naturalLanding: -5000,
-        velocity: -9000,
-        scrollDirection: -1, // up
+        velocity: -300,
+        scrollDirection: -1, // up, sub-threshold
         frames: frames,
       );
       expect(target, 600.0);
     });
 
-    test('a hard fling from inside a tall section stops at its bottom (one step)',
+    test(
+        'a hard fling from inside a tall section stops at its bottom (one step)',
         () {
       // Lift inside the (300, 600) interior, huge landing past the section.
       // The cap advances to the section's own bottom frame (600), not beyond.

@@ -119,10 +119,11 @@ FeedThemeSection _sourceSection({
 }
 
 /// Finder du chevron de navigation, désormais rendu comme **icône** Phosphor
-/// (`caretRight` bold) en WidgetSpan dans le titre du banner — le glyphe texte
-/// « > » historique héritait d'une baseline décalée (cf. section_banner.dart).
+/// (`caretRight` fill — trait plein, plus épais que bold) en WidgetSpan dans le
+/// titre du banner — le glyphe texte « > » historique héritait d'une baseline
+/// décalée (cf. section_banner.dart).
 Finder _chevron() =>
-    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.bold));
+    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.fill));
 
 void main() {
   setUpAll(() {

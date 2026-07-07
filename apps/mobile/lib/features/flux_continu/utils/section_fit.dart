@@ -72,8 +72,9 @@ const double kSectionFooterHeight = 16;
 /// fit** : contrairement au gap de fin de section, ce footer porte du contenu
 /// (bouton cliquable) sous les cartes → `_recomputeSnapAnchors` le mesure
 /// (`box.size.height`), donc l'estimation doit l'anticiper sous peine de bascule
-/// *tall* parasite.
-const double kSeeAllFooterHeight = 36;
+/// *tall* parasite. Resserré (était 36) après rapprochement du CTA de sa
+/// section (`minimumSize` 32→28 + marge haute −6, marge basse 2).
+const double kSeeAllFooterHeight = 28;
 
 /// Hauteur réelle (px) réservée par le footer replié « Ajouter plus de sources »
 /// (`EtofferThemeFooter._collapsedButton`) en pied d'un thème riche : bouton
@@ -123,9 +124,9 @@ const double kHeroMediumHeight = 88;
 /// Conservative height of one regular article card, for the user's current
 /// display mode. Exposed as a function (not just the constant) so call sites
 /// read intent and a future per-card refinement has a single seam.
-double estimateRegularCardHeight(
-        [DisplayModeSpec spec = DisplayModeSpec.normal]) =>
-    spec.regularCardHeight;
+double estimateRegularCardHeight([
+  DisplayModeSpec spec = DisplayModeSpec.normal,
+]) => spec.regularCardHeight;
 
 /// Largest article count in `[minCount, maxCount]` whose stack
 /// (`bannerHeight + count·cardHeight + footerHeight`) fits within

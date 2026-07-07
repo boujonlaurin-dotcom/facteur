@@ -26,11 +26,18 @@ class ClosingCardV18 extends ConsumerWidget {
   /// par l'App Store). Ignorée si [onClose] est fourni (cas Android).
   final String? closeHint;
 
+  /// Sous-carte secondaire rendue à l'intérieur de la carte de clôture, sous
+  /// un divider (ex. « Ton avis compte » = [FeedbackClosingCard] embarquée).
+  /// Fait partie de la même boîte visuelle → mesurée par les ancres de snap
+  /// avec la carte principale.
+  final Widget? secondary;
+
   const ClosingCardV18({
     super.key,
     this.onContinue,
     this.onClose,
     this.closeHint,
+    this.secondary,
   });
 
   @override
@@ -131,6 +138,15 @@ class ClosingCardV18 extends ConsumerWidget {
                   color: colors.textTertiary,
                 ),
               ),
+            ],
+            if (secondary != null) ...[
+              const SizedBox(height: 20),
+              Divider(
+                height: 1,
+                color: colors.textTertiary.withValues(alpha: 0.15),
+              ),
+              const SizedBox(height: 16),
+              secondary!,
             ],
           ],
         ),

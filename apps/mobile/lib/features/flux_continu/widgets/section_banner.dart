@@ -22,10 +22,12 @@ class SectionBanner extends StatelessWidget {
   /// sections (theme1 / theme2) wire this up.
   final VoidCallback? onTapFavorite;
 
-  /// Story 23.4 — optional settings affordance (top-right tune button). Only
-  /// wired for the veille section → opens the veille config in edit mode. As
-  /// an independent hit target it sits **outside** the `IgnorePointer`s so it
-  /// captures taps before the banner's fold InkWell.
+  /// Story 23.4 — optional settings affordance (tune button). Only wired for
+  /// the veille section → opens the veille config in edit mode. Rendered inline
+  /// in the title, right after the favorite star (order: titre ★ ⚙), so it is
+  /// visible in the flow rather than floating. As a nested `InkWell` it stays an
+  /// independent hit target, capturing taps before the banner's fold InkWell
+  /// (descendant wins over ancestor).
   final VoidCallback? onTapSettings;
 
   /// When true, the banner renders in a larger "page hero" variant (bigger
@@ -99,11 +101,6 @@ class SectionBanner extends StatelessWidget {
     fontSize: 12,
     height: 1.36,
   );
-
-  double _trailingControlReserve() {
-    if (onTapSettings != null) return 58;
-    return 0;
-  }
 
   String? _displayBlurbFor(String title, String? rawBlurb) {
     // Keep the visible copy current even when a route was opened with a stale
@@ -180,18 +177,6 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           ),
-          // Bouton réglages (veille) — hit target indépendant, hors
-          // IgnorePointer pour rester tappable.
-          if (onTapSettings != null)
-            Positioned(
-              top: 8,
-              right: 10,
-              child: _SettingsButton(
-                color: colors.textSecondary,
-                border: colors.border,
-                onTap: onTapSettings!,
-              ),
-            ),
           Padding(
             // With a blurb the content fills `minHeight` exactly, so the
             // centered column has no slack and the accent dash sticks to the
@@ -211,85 +196,94 @@ class SectionBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: illustrationAsset == null
-                          ? _trailingControlReserve()
-                          : 0,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (suggested) ...[
-                          _SuggestedBadge(accent: accent, onTap: onTapInfo),
-                          const SizedBox(height: 8),
-                        ],
-                        _AccentDash(accent: accent, large: large),
-                        Padding(
-                          padding: EdgeInsets.only(
-                            top: 2,
-                            bottom: hasBlurb ? (large ? 10 : 8) : 0,
-                          ),
-                          child: Text.rich(
-                            // Borne le titre : la page Flâner (`large`) tolère
-                            // 2 lignes, mais les bannières inline (dont la
-                            // veille, au label long `Ma veille — {config}`)
-                            // restent sur 1 ligne pour ne jamais dépasser le
-                            // budget de hauteur `kBannerHeightWithBlurb` que le
-                            // snap/fit suppose.
-                            maxLines: large ? 2 : 1,
-                            overflow: TextOverflow.ellipsis,
-                            TextSpan(
-                              text: title,
-                              children: <InlineSpan>[
-                                if (tappable) ...[
-                                  // Chevron de tappabilité rendu comme icône
-                                  // centrée verticalement sur le titre (même
-                                  // pattern que l'étoile favorite ci-dessous) :
-                                  // trait épais et alignement propre, là où le
-                                  // glyphe texte « > » héritait d'une baseline
-                                  // décalée et d'un trait fin.
-                                  const WidgetSpan(child: SizedBox(width: 3)),
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: Icon(
-                                      PhosphorIcons.caretRight(
-                                        PhosphorIconsStyle.bold,
-                                      ),
-                                      size: large ? 24 : 17,
-                                      color: colors.textPrimary,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (suggested) ...[
+                        _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                        const SizedBox(height: 8),
+                      ],
+                      _AccentDash(accent: accent, large: large),
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: 2,
+                          bottom: hasBlurb ? (large ? 10 : 8) : 0,
+                        ),
+                        child: Text.rich(
+                          // Borne le titre : la page Flâner (`large`) tolère
+                          // 2 lignes, mais les bannières inline (dont la
+                          // veille, au label long `Ma veille — {config}`)
+                          // restent sur 1 ligne pour ne jamais dépasser le
+                          // budget de hauteur `kBannerHeightWithBlurb` que le
+                          // snap/fit suppose.
+                          maxLines: large ? 2 : 1,
+                          overflow: TextOverflow.ellipsis,
+                          TextSpan(
+                            text: title,
+                            children: <InlineSpan>[
+                              if (tappable) ...[
+                                // Chevron de tappabilité rendu comme icône
+                                // centrée verticalement sur le titre (même
+                                // pattern que l'étoile favorite ci-dessous) :
+                                // trait épais et alignement propre, là où le
+                                // glyphe texte « > » héritait d'une baseline
+                                // décalée et d'un trait fin.
+                                const WidgetSpan(child: SizedBox(width: 3)),
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: Icon(
+                                    PhosphorIcons.caretRight(
+                                      PhosphorIconsStyle.fill,
                                     ),
+                                    size: large ? 24 : 20,
+                                    color: colors.textPrimary,
                                   ),
-                                ],
-                                if (onTapFavorite != null) ...[
-                                  const TextSpan(text: '  '),
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: _FavoriteStar(
-                                      color: colors.textTertiary,
-                                      onTap: onTapFavorite!,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ],
-                              style: (large ? _titleStyleLarge : _titleStyleInline)
-                                  .copyWith(color: colors.textPrimary),
-                            ),
+                              if (onTapFavorite != null) ...[
+                                const TextSpan(text: '  '),
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: _FavoriteStar(
+                                    color: colors.textTertiary,
+                                    onTap: onTapFavorite!,
+                                  ),
+                                ),
+                              ],
+                              // Réglages veille inline, juste après l'étoile
+                              // favori (ordre : titre ★ ⚙). Hit target
+                              // indépendant : l'InkWell du bouton gagne sur
+                              // l'InkWell de pli du banner (descendant > ancêtre).
+                              if (onTapSettings != null) ...[
+                                const TextSpan(text: ' '),
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: _SettingsButton(
+                                    color: colors.textSecondary,
+                                    border: colors.border,
+                                    onTap: onTapSettings!,
+                                  ),
+                                ),
+                              ],
+                            ],
+                            style:
+                                (large ? _titleStyleLarge : _titleStyleInline)
+                                    .copyWith(color: colors.textPrimary),
                           ),
                         ),
-                        if (hasBlurb)
-                          Text(
-                            effectiveBlurb,
-                            // Défensif : même budget 82px — borne le blurb pour
-                            // garder une hauteur déterministe.
-                            maxLines: large ? 3 : 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: (large ? _blurbStyleLarge : _blurbStyleInline)
-                                .copyWith(color: colors.textSecondary),
-                          ),
-                      ],
-                    ),
+                      ),
+                      if (hasBlurb)
+                        Text(
+                          effectiveBlurb,
+                          // Défensif : même budget 82px — borne le blurb pour
+                          // garder une hauteur déterministe.
+                          maxLines: large ? 3 : 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: (large ? _blurbStyleLarge : _blurbStyleInline)
+                              .copyWith(color: colors.textSecondary),
+                        ),
+                    ],
                   ),
                 ),
                 if (logoUrl != null) ...[

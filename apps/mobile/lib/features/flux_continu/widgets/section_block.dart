@@ -33,7 +33,7 @@ class SectionBlock extends StatelessWidget {
   /// same position.
   final Set<String> pendingFeedbackIds;
   final void Function(String contentId, FluxFeedbackChip chip)?
-      onSelectFeedbackChip;
+  onSelectFeedbackChip;
   final ValueChanged<String>? onResolveFeedback;
   final ValueChanged<String>? onUndoFeedback;
 
@@ -106,13 +106,16 @@ class SectionBlock extends StatelessWidget {
       );
     }
     final cards = _buildCards();
-    final hiddenCount =
-        (section.totalCount - section.coreVisibleCount).clamp(0, 999);
+    final hiddenCount = (section.totalCount - section.coreVisibleCount).clamp(
+      0,
+      999,
+    );
     // Section source sans article récent (≤72h) mais avec des cartes plus
     // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
     // la blurb du banner. L'empty-state (aucun article même vieux) reste géré
     // par _buildCards et n'affiche pas cette note.
-    final effectiveBlurb = section is FeedThemeSection &&
+    final effectiveBlurb =
+        section is FeedThemeSection &&
             section.kind == SectionKind.source &&
             section.noRecentSource &&
             section.items.isNotEmpty
@@ -130,8 +133,8 @@ class SectionBlock extends StatelessWidget {
           // l'illustration thème.
           logoUrl:
               section is FeedThemeSection && section.kind == SectionKind.source
-                  ? section.sourceLogoUrl
-                  : null,
+              ? section.sourceLogoUrl
+              : null,
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
           onTap: onSeeAll,
@@ -222,16 +225,17 @@ class SectionBlock extends StatelessWidget {
                 onSwipeDismiss: onDismissArticle == null
                     ? null
                     : () => onDismissArticle!(
-                          pickTopicLead(visible[i]).contentId,
-                        ),
+                        pickTopicLead(visible[i]).contentId,
+                      ),
                 enableSwipeHint:
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
                 onSwipeHintComplete:
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex
-                        ? onSwipeHintComplete
-                        : null,
-                nudgeAnchor:
-                    i == firstSwipeableIndex ? firstSwipeableCardAnchor : null,
+                    ? onSwipeHintComplete
+                    : null,
+                nudgeAnchor: i == firstSwipeableIndex
+                    ? firstSwipeableCardAnchor
+                    : null,
                 onSwipeConversion: onSwipeConversion,
                 onLongPressConversion: onLongPressConversion,
               ),
@@ -240,13 +244,13 @@ class SectionBlock extends StatelessWidget {
           if (onSeeAll != null) _seeAllFooter(),
         ];
       case FeedThemeSection(
-          :final items,
-          :final coreVisibleCount,
-          :final underfilled,
-          :final themeSlug,
-          :final label,
-          :final isPlaceholder,
-        ):
+        :final items,
+        :final coreVisibleCount,
+        :final underfilled,
+        :final themeSlug,
+        :final label,
+        :final isPlaceholder,
+      ):
         // Issue #1 — « squelette stable » : une coquille seed-ée AVANT le
         // fan-out réserve sa hauteur finale (N cartes squelette) pour que
         // l'upsert remplace le contenu **sur place**, sans décaler les sections
@@ -305,8 +309,8 @@ class SectionBlock extends StatelessWidget {
             for (final row in rows)
               switch (row) {
                 VeilleHeaderRow(:final label) => VeilleGroupHeader(
-                    label: label,
-                  ),
+                  label: label,
+                ),
                 VeilleArticleRow(:final content, :final index) =>
                   pendingFeedbackIds.contains(content.id)
                       ? _feedbackInlineFor(content.id)
@@ -316,9 +320,11 @@ class SectionBlock extends StatelessWidget {
                           onSwipeDismiss: onDismissArticle == null
                               ? null
                               : () => onDismissArticle!(content.id),
-                          enableSwipeHint: enableSwipeHintOnFirstCard &&
+                          enableSwipeHint:
+                              enableSwipeHintOnFirstCard &&
                               index == firstSwipeableIndex,
-                          onSwipeHintComplete: enableSwipeHintOnFirstCard &&
+                          onSwipeHintComplete:
+                              enableSwipeHintOnFirstCard &&
                                   index == firstSwipeableIndex
                               ? onSwipeHintComplete
                               : null,
@@ -354,10 +360,11 @@ class SectionBlock extends StatelessWidget {
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
                 onSwipeHintComplete:
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex
-                        ? onSwipeHintComplete
-                        : null,
-                nudgeAnchor:
-                    i == firstSwipeableIndex ? firstSwipeableCardAnchor : null,
+                    ? onSwipeHintComplete
+                    : null,
+                nudgeAnchor: i == firstSwipeableIndex
+                    ? firstSwipeableCardAnchor
+                    : null,
                 onSwipeConversion: onSwipeConversion,
                 onLongPressConversion: onLongPressConversion,
               ),
@@ -376,7 +383,8 @@ class SectionBlock extends StatelessWidget {
           // Thème **riche** (assez d'articles) → footer « Étoffer » **replié** :
           // un bouton discret qui ne charge les sources qu'au tap, pour garder
           // le vecteur de croissance visible sans alourdir la section.
-          if (section.kind == SectionKind.theme && !underfilled &&
+          if (section.kind == SectionKind.theme &&
+              !underfilled &&
               themeSlug != null)
             EtofferThemeFooter(
               slug: themeSlug,
@@ -405,13 +413,20 @@ class SectionBlock extends StatelessWidget {
   static final _seeAllFooterStyle = TextButton.styleFrom(
     foregroundColor: const Color(0xFF5D5B5A),
     padding: const EdgeInsets.symmetric(horizontal: 8),
-    minimumSize: const Size(0, 32),
+    minimumSize: const Size(0, 28),
+    // `shrinkWrap` : sans ça le TextButton réserve un tap-target de 48px de haut
+    // (padded par défaut) → c'est cette hauteur fantôme, pas la marge, qui
+    // éloignait « Tout lire › » de sa section. On la collapse au contenu réel.
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
   );
 
   Widget _seeAllFooter() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      // Marges resserrées : le CTA colle au bas de la dernière carte (qui porte
+      // déjà 12px de padding bas). `kSeeAllFooterHeight` reflète la hauteur
+      // rendue (tap-target collapsé) pour ne pas dérégler le budget de fit.
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 2),
       alignment: Alignment.center,
       child: TextButton(
         onPressed: onSeeAll,
@@ -599,6 +614,6 @@ class SectionSkeletonCard extends StatelessWidget {
 /// Issue #1 — [count] cartes squelette réservant la hauteur finale d'une
 /// section. Partagé par le placeholder de [SectionBlock] et le cold-skeleton
 /// (`_FluxContinuSkeleton`) pour garantir la même géométrie de bout en bout.
-List<Widget> sectionSkeletonCards(int count) =>
-    [for (var i = 0; i < count; i++) const SectionSkeletonCard()];
-
+List<Widget> sectionSkeletonCards(int count) => [
+  for (var i = 0; i < count; i++) const SectionSkeletonCard(),
+];
