@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Veille",
+      "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
+    },
+    {
       "tag": "Bonnes nouvelles",
       "summary": "Les bonnes nouvelles du jour retrouvent leur pertinence, et ta tournée quotidienne propose un peu plus d'articles à découvrir."
     },
