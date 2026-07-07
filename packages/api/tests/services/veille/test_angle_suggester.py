@@ -116,3 +116,75 @@ async def test_suggest_angles_keywords_lowercased_and_stripped():
     suggester = AngleSuggester(llm=llm)
     angles = await suggester.suggest_angles("tech", "Tech", "")
     assert angles[0].keywords == ["majuscules", "espaces internes ok"]
+
+
+# ─── Filtre post-parse des mots-clés génériques (F) ──────────────────────────
+
+
+async def test_parse_drops_generic_unigrams_keeps_multiword():
+    """Un unigramme de discours (« stratégie », « europe ») est retiré ; une
+    expression multi-mots (« conseil constitutionnel ») et un nom propre isolé
+    (« macron ») sont conservés."""
+    llm = _mk_llm(
+        ready=True,
+        response={
+            "angles": [
+                {
+                    "title": "Vie institutionnelle",
+                    "keywords": [
+                        "stratégie",
+                        "europe",
+                        "conseil constitutionnel",
+                        "macron",
+                    ],
+                }
+            ]
+        },
+    )
+    suggester = AngleSuggester(llm=llm)
+    angles = await suggester.suggest_angles("politics", "Politique", "")
+    assert len(angles) == 1
+    assert angles[0].keywords == ["conseil constitutionnel", "macron"]
+
+
+async def test_parse_drops_angle_emptied_by_filter():
+    """Un angle dont TOUS les mots-clés sont génériques est écarté ; les autres
+    angles survivent."""
+    llm = _mk_llm(
+        ready=True,
+        response={
+            "angles": [
+                {"title": "Discours creux", "keywords": ["analyse", "enjeux", "débat"]},
+                {
+                    "title": "Sujet précis",
+                    "keywords": ["intelligence artificielle générative", "mistral ai"],
+                },
+            ]
+        },
+    )
+    suggester = AngleSuggester(llm=llm)
+    angles = await suggester.suggest_angles("tech", "Tech", "")
+    assert len(angles) == 1
+    assert angles[0].title == "Sujet précis"
+
+
+async def test_parse_drops_stopword_unigram():
+    """Un stopword FR isolé (« pour ») est retiré comme un générique."""
+    llm = _mk_llm(
+        ready=True,
+        response={"angles": [{"title": "T", "keywords": ["pour", "coupe du monde"]}]},
+    )
+    suggester = AngleSuggester(llm=llm)
+    angles = await suggester.suggest_angles("sport", "Sport", "")
+    assert angles[0].keywords == ["coupe du monde"]
+
+
+async def test_fallback_uses_multiword_keywords():
+    """Les angles de repli sont ancrés sur le thème via des expressions
+    multi-mots (survivent au floor durci + au filtre denylist)."""
+    llm = _mk_llm(ready=False, response=None)
+    suggester = AngleSuggester(llm=llm)
+    angles = await suggester.suggest_angles("tech", "Tech", "")
+    assert len(angles) >= 3
+    # Chaque mot-clé de repli est multi-mots (contient une espace).
+    assert all(" " in kw for a in angles for kw in a.keywords)

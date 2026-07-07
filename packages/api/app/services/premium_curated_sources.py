@@ -51,6 +51,11 @@ def domain_key(url: str | None) -> str:
 # pour vérifier que la session est active (idéalement un article abonné
 # "evergreen", à défaut la home du média). display_hint = consigne affichée à
 # l'utilisateur pendant la connexion. À enrichir éditorialement sans migration.
+#
+# TODO(product): tous les test_url ci-dessous pointent vers la home (pas un
+# article évergreen abonné réel) — nécessite une curation éditoriale par média.
+# En attendant, la copy mobile ne promet plus "un article test" (parle de
+# "vérification"/"session active"). Cf. docs/bugs/bug-premium-connection-flow-confusion.md
 PREMIUM_CURATED_MAP: dict[str, dict] = {
     "lemonde.fr": {
         "login_url": "https://secure.lemonde.fr/sfuser/connexion",

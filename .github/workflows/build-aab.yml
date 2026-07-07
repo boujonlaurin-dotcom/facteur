@@ -18,6 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify google-services.json (playstore)
+        uses: ./.github/actions/verify-google-services
+        with:
+          flavor: playstore
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:

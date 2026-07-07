@@ -68,6 +68,9 @@ async def _add_content(
     description="",
     hours=2,
     reliability=None,
+    thumbnail_url=None,
+    content_quality=None,
+    language=None,
 ):
     c = Content(
         id=uuid4(),
@@ -80,6 +83,9 @@ async def _add_content(
         guid=str(uuid4()),
         theme=theme,
         topics=topics or [],
+        thumbnail_url=thumbnail_url,
+        content_quality=content_quality,
+        language=language,
     )
     db_session.add(c)
     await db_session.commit()
@@ -127,7 +133,9 @@ async def _make_config(
             )
 
     for sid in source_ids or []:
-        db_session.add(VeilleSource(veille_config_id=cfg.id, source_id=sid, kind="followed"))
+        db_session.add(
+            VeilleSource(veille_config_id=cfg.id, source_id=sid, kind="followed")
+        )
 
     for kpos, kw in enumerate(global_keywords or []):
         db_session.add(
@@ -155,19 +163,30 @@ async def test_theme_only_article_never_enters_pool(db_session, user, source):
 
 
 async def test_topic_outranks_keyword(db_session, user, source):
-    """Thème + topic (>) thème + mot-clé : les deux présents, topic mieux classé."""
-    await _add_content(db_session, source, title="Topic Match", topics=["ai"])
+    """Topic (>) mot-clé : les deux présents, topic mieux classé. La grappe porte
+    2 mots-clés (floor durci B : un keyword-only exige ≥ 2 hits) et les articles
+    sont de qualité normale (au-dessus du seuil composite sans anti-starvation)."""
+    await _add_content(
+        db_session,
+        source,
+        title="Topic Match",
+        topics=["ai"],
+        thumbnail_url="https://img.example.com/x.jpg",
+        content_quality="full",
+    )
     await _add_content(
         db_session,
         source,
         title="Keyword Match transformers",
         topics=["other"],
-        description="modèle transformers",
+        description="nouveau modèle transformers",
+        thumbnail_url="https://img.example.com/x.jpg",
+        content_quality="full",
     )
     await _make_config(
         db_session,
         user,
-        topics=[("ai", "IA", ["transformers"])],
+        topics=[("ai", "IA", ["transformers", "modèle"])],
     )
 
     titles, _ = await _titles(db_session, user)
@@ -176,10 +195,19 @@ async def test_topic_outranks_keyword(db_session, user, source):
     assert titles.index("Topic Match") < titles.index("Keyword Match transformers")
 
 
-async def test_source_only_and_keyword_only_present(db_session, user, source):
-    """Source-seule présente ; mot-clé-seul présent (valide le seuil)."""
+async def test_source_only_config_passthrough_present(db_session, user, source):
+    """Config purement source (floor/gate inactifs) : un article de la source
+    configurée est présent. Article de qualité normale (thumbnail + full) pour
+    dépasser franchement le seuil composite — l'anti-starvation, qui rattrapait
+    les articles source-seuls ~45-47, a été supprimée (C)."""
     await _add_content(
-        db_session, source, title="From Source", theme="economy", topics=["markets"]
+        db_session,
+        source,
+        title="From Source",
+        theme="economy",
+        topics=["markets"],
+        thumbnail_url="https://img.example.com/x.jpg",
+        content_quality="full",
     )
     await _make_config(db_session, user, source_ids=[source.id])
     titles, _ = await _titles(db_session, user)
@@ -187,6 +215,8 @@ async def test_source_only_and_keyword_only_present(db_session, user, source):
 
 
 async def test_keyword_only_present(db_session, user, source):
+    """Config mot-clés seuls : un article matchant qualifie le floor durci (B)
+    via **2 hits distincts** et reste au-dessus du gate + seuil."""
     await _add_content(
         db_session,
         source,
@@ -194,8 +224,11 @@ async def test_keyword_only_present(db_session, user, source):
         theme="society",
         topics=["mobility"],
         description="test du nouveau VAE",
+        thumbnail_url="https://img.example.com/x.jpg",
+        content_quality="full",
     )
-    await _make_config(db_session, user, global_keywords=["vélo"])
+    # 2 mots-clés distincts (floor durci exige ≥ 2 hits pour un keyword-only).
+    await _make_config(db_session, user, global_keywords=["vélo", "électrique"])
     titles, items = await _titles(db_session, user)
     assert "Vélo électrique nouveau modèle" in titles
     # items[i] = (content, axes, group) → axes en position 1.
@@ -237,9 +270,7 @@ async def test_excludes_hidden_seen_and_inactive(db_session, user, source):
     seen = await _add_content(db_session, source, title="Seen AI", topics=["ai"])
 
     db_session.add(
-        UserContentStatus(
-            user_id=user.user_id, content_id=hidden.id, is_hidden=True
-        )
+        UserContentStatus(user_id=user.user_id, content_id=hidden.id, is_hidden=True)
     )
     db_session.add(
         UserContentStatus(
@@ -286,11 +317,13 @@ async def test_pagination_over_scored_set(db_session, user, source):
     assert titles1.isdisjoint(titles2)
 
 
-# ─── Note d'intention `why` + split de récence deux blocs (refonte curation) ──
+# ─── Split de récence deux blocs (refonte curation) ──────────────────────────
 
 
-async def test_intent_why_injected_as_custom_topic(db_session, user):
-    """`build_veille_scoring_context` injecte un angle « Intention » depuis `why`."""
+async def test_why_no_longer_injected_as_custom_topic(db_session, user):
+    """E — la tokenisation des `why` est retirée : `build_veille_scoring_context`
+    ne fabrique plus d'angle « Intention », même quand des sources ont un `why`
+    (le champ `source_intents` n'existe plus sur `VeilleFilters`)."""
     sid = uuid4()
     config = VeilleConfig(
         id=uuid4(),
@@ -299,15 +332,9 @@ async def test_intent_why_injected_as_custom_topic(db_session, user):
         theme_label="Bière",
         status=VeilleStatus.ACTIVE.value,
     )
-    filters = VeilleFilters(
-        theme_id="culture",
-        source_ids=[sid],
-        source_intents={sid: "brasserie artisanale houblon"},
-    )
+    filters = VeilleFilters(theme_id="culture", source_ids=[sid])
     ctx = await build_veille_scoring_context(db_session, config, filters, _now())
-    intention = [t for t in ctx.user_custom_topics if t.topic_name == "Intention"]
-    assert len(intention) == 1
-    assert {"brasserie", "artisanale", "houblon"} <= set(intention[0].keywords)
+    assert all(t.topic_name != "Intention" for t in ctx.user_custom_topics)
 
 
 async def test_recency_split_configured_30d_external_7d(db_session, user, source):
@@ -347,3 +374,128 @@ async def test_recency_split_configured_30d_external_7d(db_session, user, source
     assert by_title.get("Configured 20d") == "sources"
     assert "External 20d" not in by_title
     assert by_title.get("External 2d") == "elargie"
+
+
+# ─── D — pool Bloc A équitable par source ────────────────────────────────────
+
+
+async def test_block_a_per_source_pool_is_fair(db_session, user, source, monkeypatch):
+    """D — une source bavarde ne rafle plus tout le pool : sous un cap externe
+    serré, les articles d'une source discrète (plus anciens, mais dans la fenêtre
+    30 j) restent visibles. Avec l'ancien `ORDER BY published_at DESC LIMIT cap`
+    **global**, les récents de la source dense les évinceraient ; le
+    `row_number() PARTITION BY source_id` borne d'abord chaque source."""
+    from app.services.recommendation.scoring_config import ScoringWeights as _SW
+
+    # Cap externe serré + 2 candidats/source pour rendre l'effet observable sans
+    # insérer des centaines d'articles (l'effet ne mord qu'au-delà du cap global).
+    monkeypatch.setattr(_SW, "VEILLE_BLOCK_A_PER_SOURCE_CANDIDATES", 2)
+    monkeypatch.setattr(_SW, "VEILLE_CANDIDATE_CAP", 3)
+
+    quiet = Source(
+        id=uuid4(),
+        name="Quiet",
+        url="https://q.example.com",
+        feed_url=f"https://q.example.com/{uuid4()}.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=True,
+        reliability_score=ReliabilityScore.HIGH,
+    )
+    db_session.add(quiet)
+    await db_session.commit()
+
+    # Source dense : 5 articles on-topic récents (1 à 5 h).
+    for i in range(5):
+        await _add_content(
+            db_session,
+            source,
+            title=f"Dense {i}",
+            topics=["ai"],
+            hours=i + 1,
+            thumbnail_url="https://img.example.com/x.jpg",
+            content_quality="full",
+        )
+    # Source discrète : 2 articles on-topic plus anciens (100-101 h < 30 j).
+    for i in range(2):
+        await _add_content(
+            db_session,
+            quiet,
+            title=f"Quiet {i}",
+            topics=["ai"],
+            hours=100 + i,
+            thumbnail_url="https://img.example.com/x.jpg",
+            content_quality="full",
+        )
+
+    await _make_config(
+        db_session, user, topics=[("ai", "IA", [])], source_ids=[source.id, quiet.id]
+    )
+
+    titles, _ = await _titles(db_session, user)
+    # La source discrète n'est pas affamée : au moins un de ses articles passe.
+    assert any(t.startswith("Quiet") for t in titles)
+
+
+# ─── G1 — filtre langue du Bloc B ────────────────────────────────────────────
+
+
+async def _add_external_source(db_session, *, language=None):
+    s = Source(
+        id=uuid4(),
+        name=f"Ext {uuid4().hex[:6]}",
+        url=f"https://ext-{uuid4().hex}.com",
+        feed_url=f"https://ext-{uuid4().hex}.com/feed.xml",
+        type=SourceType.ARTICLE,
+        theme="tech",
+        is_active=True,
+        is_curated=True,
+        language=language,
+    )
+    db_session.add(s)
+    await db_session.commit()
+    return s
+
+
+async def test_block_b_language_filter_excludes_foreign(db_session, user, source):
+    """G1 — Bloc B : un article de langue étrangère (en) d'une source non
+    configurée est écarté ; `language=None` passe (permissif)."""
+    ext = await _add_external_source(db_session)
+    await _add_content(
+        db_session, ext, title="AI breakthrough", topics=["ai"], language="en"
+    )
+    await _add_content(
+        db_session, ext, title="Percée IA sans langue", topics=["ai"], language=None
+    )
+    # Source configurée FR (fixture `source`, language=None) → allowed = {fr}.
+    await _make_config(
+        db_session, user, topics=[("ai", "IA", [])], source_ids=[source.id]
+    )
+
+    titles, _ = await _titles(db_session, user)
+    assert "AI breakthrough" not in titles  # en → filtré
+    assert "Percée IA sans langue" in titles  # NULL → permissif
+
+
+async def test_block_b_language_filter_allows_configured_source_language(
+    db_session, user
+):
+    """G1 — une langue portée par une source **configurée** (en) est autorisée au
+    Bloc B : un article externe en anglais redevient visible."""
+    configured_en = await _add_external_source(db_session, language="en")
+    other_en = await _add_external_source(db_session, language="en")
+    await _add_content(
+        db_session,
+        other_en,
+        title="AI breakthrough abroad",
+        topics=["ai"],
+        language="en",
+    )
+    # La config déclare une source de langue en → 'en' entre dans allowed.
+    await _make_config(
+        db_session, user, topics=[("ai", "IA", [])], source_ids=[configured_en.id]
+    )
+
+    titles, _ = await _titles(db_session, user)
+    assert "AI breakthrough abroad" in titles
