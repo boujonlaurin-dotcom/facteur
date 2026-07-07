@@ -119,16 +119,26 @@ class Settings(BaseSettings):
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key (classification + editorial pipeline)
 
-    # Batching de la classification (LR-1 PR 2) — coupe le coût Mistral en
-    # refacturant le gros prompt système (taxonomie 51 topics) moins souvent.
-    # Le worker accumule la file et ne traite que quand `pending >= min_batch`
-    # OU que le plus vieux pending atteint `max_wait_s` (anti-famine du reste
-    # de file). Rollback env-only vers l'ancien comportement : batch_size=5,
-    # min_batch_size=1, max_wait_s=0, interval_s=10.
-    classification_worker_batch_size: int = 12  # cible d'articles / appel batch
-    classification_worker_min_batch_size: int = 8  # seuil mini avant de traiter
-    classification_worker_max_wait_s: int = 300  # plafond d'attente du + vieux pending
-    classification_worker_interval_s: int = 30  # intervalle entre 2 vérifications
+    # Batching de la classification — batch_size=5 est la valeur QUALITÉ-SAFE
+    # (référence PR #152, mars 2026 : passage 20 → 5 explicitement "pour
+    # maximiser la qualité de classification"). La passe 1 `mistral-small`
+    # produit le flag `serene`, seul gate d'entrée vers la passe 2
+    # `is_good_news` : un batch plus gros dilue l'attention du modèle par
+    # article et dégrade la précision de `serene` → mauvais candidats Bonnes
+    # Nouvelles. L'expérimentation de batching plus gros (LR-1 PR 2 : 12 / min 8
+    # / wait 300s) est ABANDONNÉE suite à régression Bonnes Nouvelles constatée
+    # en prod. Avec min_batch_size=1 et max_wait_s=0, la gate d'accumulation
+    # `_should_process()` redevient un no-op (traite dès ≥1 pending).
+    classification_worker_batch_size: int = (
+        5  # cible d'articles / appel batch (qualité-safe, cf. #152)
+    )
+    classification_worker_min_batch_size: int = (
+        1  # seuil mini avant de traiter (1 = pas d'accumulation)
+    )
+    classification_worker_max_wait_s: int = (
+        0  # plafond d'attente du + vieux pending (0 = immédiat)
+    )
+    classification_worker_interval_s: int = 10  # intervalle entre 2 vérifications
 
     # Brave Search API (smart source search)
     brave_api_key: str = ""
