@@ -20,11 +20,99 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.config import get_settings
 from app.services.editorial.llm_client import EditorialLLMClient
+from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 
 logger = structlog.get_logger()
 
 _CACHE_SIZE = 256
+# TTL 24h : après un déploiement durcissant le prompt, d'anciennes suggestions
+# génériques peuvent coexister au plus 24h avant expiration du cache in-process.
 _CACHE_TTL_SECONDS = 86400  # 24h
+
+# Denylist de mots-clés **unigrammes** de discours / d'analyse : ils matchent
+# tout et n'importe quoi (« budget », « europe »…), gonflent le corpus hors-sujet
+# et, avec le floor durci de la curation, ne qualifient de toute façon plus seuls.
+# Filtrés en post-parse (jamais les expressions multi-mots — elles discriminent).
+_GENERIC_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "actualité",
+        "actualités",
+        "analyse",
+        "analyses",
+        "décryptage",
+        "enquête",
+        "enquêtes",
+        "dossier",
+        "dossiers",
+        "reportage",
+        "enjeu",
+        "enjeux",
+        "stratégie",
+        "stratégies",
+        "budget",
+        "débat",
+        "débats",
+        "controverse",
+        "polémique",
+        "tribune",
+        "initiative",
+        "initiatives",
+        "réforme",
+        "réformes",
+        "mesure",
+        "mesures",
+        "projet",
+        "projets",
+        "politique",
+        "politiques",
+        "réglementation",
+        "loi",
+        "lois",
+        "crise",
+        "crises",
+        "croissance",
+        "développement",
+        "impact",
+        "impacts",
+        "bilan",
+        "perspective",
+        "perspectives",
+        "tendance",
+        "tendances",
+        "prospective",
+        "avenir",
+        "futur",
+        "innovation",
+        "innovations",
+        "nouveau",
+        "nouveauté",
+        "nouveautés",
+        "lancement",
+        "question",
+        "questions",
+        "monde",
+        "société",
+        "économie",
+        "europe",
+        "france",
+        "international",
+        "national",
+        "secteur",
+        "secteurs",
+        "marché",
+        "marchés",
+        "acteur",
+        "acteurs",
+        "expert",
+        "experts",
+        "interview",
+        "portrait",
+        "chiffres",
+        "rapport",
+        "étude",
+        "études",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -43,7 +131,7 @@ class _LLMAngle(BaseModel):
 
 _SYSTEM_PROMPT = """Tu es un expert en curation éditoriale francophone, spécialisé en veille thématique.
 
-Tâche : pour un thème et un brief éditorial donnés, propose 8 à 12 ANGLES de veille pertinents. Chaque angle vient avec 3 à 5 mots-clés explicites qui serviront ensuite à filtrer des articles d'actualité.
+Tâche : pour un thème et un brief éditorial donnés, propose 8 à 12 ANGLES de veille pertinents. Chaque angle vient avec 3 à 5 mots-clés explicites qui serviront ensuite à FILTRER des articles d'actualité (match sur le titre / la description).
 
 Format JSON strict :
 {
@@ -56,48 +144,62 @@ Format JSON strict :
   ]
 }
 
-Contraintes :
-- 8 à 12 angles distincts (pas de redondance).
-- title : titre court (max 80 chars), explicite, complémentaire aux autres angles.
-- keywords : 3 à 5 mots ou expressions courtes (1-3 mots chacun), en français, en minuscules. Ce sont les mots qui doivent matcher dans les titres / descriptions des articles. Pense large (synonymes, variantes, noms propres pertinents) mais reste précis pour le sujet.
-- Couvre plusieurs angles complémentaires (différents axes du sujet).
+RÈGLE D'OR des mots-clés — applique ce test à CHAQUE mot-clé :
+« Un article dont le titre contient ce mot-clé parle presque certainement de ce sujet précis. »
+Si ce n'est pas vrai, le mot-clé est trop générique : jette-le.
+
+Contraintes mots-clés :
+- Privilégie les NOMS PROPRES, entités datées et termes techniques : personnes, organisations, lois, produits, événements, lieux précis (ex. « conseil constitutionnel », « jeux olympiques 2024 », « intelligence artificielle générative »).
+- AU MOINS 2 expressions multi-mots (2 à 4 mots) par angle : elles discriminent bien mieux qu'un mot isolé.
+- INTERDIT : le vocabulaire de discours / d'analyse qui matche tout et n'importe quoi — par exemple « stratégie », « budget », « analyse », « enjeux », « débat », « europe », « société », « avenir », « tendance », « réforme », « crise », « impact ». Ces mots ne disent RIEN du sujet précis.
+- 3 à 5 mots-clés par angle, en français, en minuscules.
+
+Contraintes angles :
+- 8 à 12 angles distincts (pas de redondance), complémentaires (différents axes du sujet).
+- title : titre court (max 80 chars), explicite.
 - Réponds UNIQUEMENT avec le JSON, rien d'autre."""
 
 
+def _filter_generic_keywords(keywords: list[str]) -> list[str]:
+    """Écarte les **unigrammes** de discours (denylist + stopwords FR).
+
+    Les expressions **multi-mots** sont toujours conservées : même bâties sur des
+    mots vagues, la combinaison discrimine (« coupe du monde », « conseil
+    constitutionnel »). Ordre d'origine préservé.
+    """
+    # Multi-mots (`" " in kw`) : jamais filtré — la combinaison discrimine même
+    # bâtie sur des mots vagues. Unigramme : écarté s'il est dans la denylist ou
+    # les stopwords FR. Ordre d'origine préservé.
+    return [
+        kw
+        for kw in keywords
+        if " " in kw or (kw not in _GENERIC_KEYWORDS and kw not in FRENCH_STOP_WORDS)
+    ]
+
+
 def _fallback_angles(theme_label: str) -> list[AngleSuggestion]:
-    """Angles génériques si LLM KO — couverture minimale pour ne pas bloquer le flow."""
+    """Angles de repli si le LLM est KO — peu nombreux, ancrés sur le thème.
+
+    Volontairement minimalistes et bâtis sur des **expressions multi-mots**
+    ancrées au thème (elles qualifient le floor durci comme « hit fort » et
+    survivent au filtre denylist). Ces grappes restent génériques : elles
+    produiront un feed court, voire vide — comportement dégradé **assumé** quand
+    le LLM est indisponible, préférable au bruit des anciennes grappes 100 %
+    discours (« analyse », « débat »…) qui inondaient la veille de hors-sujet.
+    """
+    label = theme_label.lower().strip()
     return [
         AngleSuggestion(
             title=f"Actualité {theme_label}",
-            keywords=[theme_label.lower(), "actualité", "nouveau"],
+            keywords=[f"actualité {label}", f"nouveauté {label}"],
         ),
         AngleSuggestion(
-            title="Analyses de fond",
-            keywords=["analyse", "enquête", "décryptage"],
+            title=f"Analyses {theme_label}",
+            keywords=[f"analyse {label}", f"enquête {label}"],
         ),
         AngleSuggestion(
-            title="Innovations et nouveautés",
-            keywords=["innovation", "nouveauté", "lancement"],
-        ),
-        AngleSuggestion(
-            title="Débats et controverses",
-            keywords=["débat", "controverse", "polémique"],
-        ),
-        AngleSuggestion(
-            title="Initiatives et bonnes pratiques",
-            keywords=["initiative", "bonne pratique", "retour d'expérience"],
-        ),
-        AngleSuggestion(
-            title="Acteurs et personnalités",
-            keywords=["interview", "portrait", "personnalité"],
-        ),
-        AngleSuggestion(
-            title="Tendances de fond",
-            keywords=["tendance", "prospective", "futur"],
-        ),
-        AngleSuggestion(
-            title="Réglementation et politique",
-            keywords=["réglementation", "loi", "politique"],
+            title=f"Débats {theme_label}",
+            keywords=[f"débat {label}", f"tribune {label}"],
         ),
     ]
 
@@ -179,14 +281,23 @@ class AngleSuggester:
         except ValidationError as exc:
             logger.warning("angle_suggester.validation_error", error=str(exc))
             return []
-        return [
-            AngleSuggestion(
-                title=a.title.strip(),
-                keywords=[k.strip().lower() for k in a.keywords if k.strip()],
-                reason=None,
+
+        result: list[AngleSuggestion] = []
+        dropped = 0
+        for a in parsed:
+            raw_kws = [k.strip().lower() for k in a.keywords if k.strip()]
+            kept = _filter_generic_keywords(raw_kws)
+            dropped += len(raw_kws) - len(kept)
+            if not kept:
+                # Angle intégralement vidé par le filtre → écarté (une grappe
+                # 100 % générique ne curerait rien d'utile).
+                continue
+            result.append(
+                AngleSuggestion(title=a.title.strip(), keywords=kept, reason=None)
             )
-            for a in parsed
-        ]
+        if dropped:
+            logger.info("angle_suggester.keywords_filtered", dropped=dropped)
+        return result
 
 
 _angle_suggester: AngleSuggester | None = None

@@ -21,6 +21,7 @@ Couvre :
 
 from pathlib import Path
 
+from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.veille import feed_filter
 from scripts import evaluate_veille_curation as ev
 from scripts.evaluate_veille_curation import (
@@ -79,20 +80,51 @@ def test_classify_accept_path():
 
 
 def test_classify_reject_reason():
-    common = {"apply_floor": True, "apply_threshold": True, "threshold": 48.0}
-    # axes ⊆ {source} + floor actif → source-seul écarté
+    common = {
+        "apply_floor": True,
+        "apply_threshold": True,
+        "floor_active": True,
+        "gate_active": True,
+        "threshold": 48.0,
+        "gate": ScoringWeights.VEILLE_PERTINENCE_GATE,
+    }
+    # axes ⊆ {source} + floor durci non qualifié → source-seul écarté
     assert (
-        classify_reject_reason(["source"], 60.0, floor_active=True, **common)
+        classify_reject_reason(
+            ["source"], 60.0, floor_qualified=False, pertinence=50.0, **common
+        )
         == "floor_source_only"
     )
-    # axe topic mais score sous le seuil → below_threshold
+    # keyword-only sous le minimum de hits (floor durci) → floor_weak_keyword
     assert (
-        classify_reject_reason(["topic"], 30.0, floor_active=True, **common)
+        classify_reject_reason(
+            ["source", "keyword"],
+            60.0,
+            floor_qualified=False,
+            pertinence=50.0,
+            **common,
+        )
+        == "floor_weak_keyword"
+    )
+    # qualifie le floor mais pertinence < gate → gate_pertinence
+    assert (
+        classify_reject_reason(
+            ["topic"], 60.0, floor_qualified=True, pertinence=10.0, **common
+        )
+        == "gate_pertinence"
+    )
+    # axe topic, gate OK, mais score composite sous le seuil → below_threshold
+    assert (
+        classify_reject_reason(
+            ["topic"], 30.0, floor_qualified=True, pertinence=40.0, **common
+        )
         == "below_threshold"
     )
-    # a passé floor + seuil mais pas dans le set gardé → cap de diversité
+    # a passé floor + gate + seuil mais pas dans le set gardé → cap de diversité
     assert (
-        classify_reject_reason(["topic"], 60.0, floor_active=True, **common)
+        classify_reject_reason(
+            ["topic"], 60.0, floor_qualified=True, pertinence=40.0, **common
+        )
         == "diversity_capped"
     )
 
@@ -111,7 +143,9 @@ def test_toy_passthrough_leaks_source_only_block_a_fp():
 
 def test_toy_passthrough_keeps_off_source_off_angle():
     """`off_source` (source-seul off_angle) est gardé en laisser-passer."""
-    _score, results = evaluate_config(_toy_configs()[0], apply_floor=False, apply_threshold=False)
+    _score, results = evaluate_config(
+        _toy_configs()[0], apply_floor=False, apply_threshold=False
+    )
     by_id = _by_id(results)
     assert by_id["off_source"].kept is True
     assert by_id["off_source"].accept_path == "source_only"
@@ -133,7 +167,9 @@ def test_toy_word_boundary_prunes_agentic_off_angle():
     """`off_substr` (« agentic ») : mot-entier ⇒ pas d'axe keyword ⇒ source-seul
     ⇒ floor-pruned. En sous-chaîne il aurait survécu au floor (régression Pb 3).
     """
-    _score, results = evaluate_config(_toy_configs()[0], apply_floor=True, apply_threshold=True)
+    _score, results = evaluate_config(
+        _toy_configs()[0], apply_floor=True, apply_threshold=True
+    )
     by_id = _by_id(results)
     off_substr = by_id["off_substr"]
     assert "keyword" not in off_substr.axes
@@ -146,11 +182,27 @@ def test_toy_keyword_absent_relevant_is_floor_fn():
     le coût en rappel mesuré du gate-all."""
     metrics = evaluate_dataset(_toy_configs(), "floor_threshold")
     assert metrics["fn_by_reason"].get("floor_source_only") == 1
-    _score, results = evaluate_config(_toy_configs()[0], apply_floor=True, apply_threshold=True)
+    _score, results = evaluate_config(
+        _toy_configs()[0], apply_floor=True, apply_threshold=True
+    )
     para = _by_id(results)["para"]
     assert para.gold_relevant is True
     assert para.kept is False
     assert para.reject_reason == "floor_source_only"
+
+
+def test_toy_single_unigram_keyword_is_floor_weak_keyword():
+    """`on_kw` (relevant, matche le seul mot-clé unigramme « agent ») : le floor
+    durci (B) exige ≥ 2 hits distincts ou un hit fort → il est écarté et attribué
+    `floor_weak_keyword`. C'est le coût en rappel assumé du durcissement."""
+    _score, results = evaluate_config(
+        _toy_configs()[0], apply_floor=True, apply_threshold=True
+    )
+    on_kw = _by_id(results)["on_kw"]
+    assert on_kw.gold_relevant is True
+    assert "keyword" in on_kw.axes
+    assert on_kw.kept is False
+    assert on_kw.reject_reason == "floor_weak_keyword"
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +213,9 @@ def test_toy_keyword_absent_relevant_is_floor_fn():
 def test_toy_block_b_prefilter_is_word_boundary():
     """`ext_off` (« agentic patterns », source externe) : ni topic ai ni mot-clé
     en mot-entier ⇒ jamais ramené par le prédicat Bloc B → `not_a_candidate`."""
-    _score, results = evaluate_config(_toy_configs()[0], apply_floor=True, apply_threshold=True)
+    _score, results = evaluate_config(
+        _toy_configs()[0], apply_floor=True, apply_threshold=True
+    )
     ext_off = _by_id(results)["ext_off"]
     assert ext_off.block is None
     assert ext_off.kept is False
@@ -170,7 +224,9 @@ def test_toy_block_b_prefilter_is_word_boundary():
 
 def test_toy_block_b_topic_candidate_survives():
     """`ext_on` (topic ai, source externe) entre dans le Bloc B et passe."""
-    _score, results = evaluate_config(_toy_configs()[0], apply_floor=True, apply_threshold=True)
+    _score, results = evaluate_config(
+        _toy_configs()[0], apply_floor=True, apply_threshold=True
+    )
     ext_on = _by_id(results)["ext_on"]
     assert ext_on.block == "B"
     assert ext_on.kept is True

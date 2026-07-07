@@ -57,8 +57,10 @@ void main() {
   });
 
   testWidgets(
-      'PremiumSourceConnection completes login test confirmation flow and '
-      'captures session at confirm', (tester) async {
+      'PremiumSourceConnection gates the login CTA until navigation, then '
+      'completes the confirmation flow and captures session at confirm',
+      (tester) async {
+    final semantics = tester.ensureSemantics();
     var connected = false;
     final jar = _FakeCookieJar();
     // Seed cookies on the media domain so the capture at _confirm persists.
@@ -89,7 +91,18 @@ void main() {
             onConnected: () async {
               connected = true;
             },
-            webViewBuilder: (_, url) => Center(child: Text(url)),
+            // Le builder de test bypass PremiumWebView : on expose un bouton qui
+            // déclenche onLoadStop pour simuler une navigation dans la WebView.
+            webViewBuilder: (_, url, onLoadStop) => Column(
+              children: [
+                Text(url),
+                TextButton(
+                  onPressed: () =>
+                      onLoadStop?.call(WebUri('https://example.com/logged-in')),
+                  child: const Text('simulate-navigation'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -100,22 +113,33 @@ void main() {
     await tester.ensureVisible(find.text('Commencer'));
     await tester.tap(find.text('Commencer'));
     await tester.pumpAndSettle();
-    expect(find.text('Connexion'), findsOneWidget);
+    // Step 1 (login) : titre porté par la sémantique des pills, URL de login
+    // affichée, et CTA masqué tant que l'utilisateur n'a pas navigué (fix #1).
+    expect(find.bySemanticsLabel('Connexion'), findsOneWidget);
     expect(find.text('https://example.com/login'), findsOneWidget);
+    expect(find.text('Continuer'), findsNothing);
 
-    await tester.ensureVisible(find.text('Continuer vers l\'article test'));
-    await tester.tap(find.text('Continuer vers l\'article test'));
+    // Simule la navigation dans la WebView → le CTA doit apparaître.
+    await tester.tap(find.text('simulate-navigation'));
     await tester.pumpAndSettle();
-    expect(find.text('Article test'), findsOneWidget);
+    expect(find.text('Continuer'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Continuer'));
+    await tester.tap(find.text('Continuer'));
+    await tester.pumpAndSettle();
+    // Step 2 (vérification) : copy honnête, plus de promesse d'« article test ».
+    expect(find.bySemanticsLabel('Vérification'), findsOneWidget);
     expect(find.text('https://example.com/test'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('L\'article s\'affiche correctement'));
-    await tester.tap(find.text('L\'article s\'affiche correctement'));
+    await tester.ensureVisible(find.text('Je suis connecté(e)'));
+    await tester.tap(find.text('Je suis connecté(e)'));
     await tester.pumpAndSettle();
 
     expect(connected, isTrue);
     expect(find.text('Abonnement connecté'), findsOneWidget);
     // Session captured at confirm.
     expect(await store.hasSession(source), isTrue);
+
+    semantics.dispose();
   });
 }
