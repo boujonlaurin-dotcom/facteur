@@ -8,14 +8,36 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Firebase config is supplied per environment in app/src/prod and
-// app/src/staging. Keep local builds without credentials usable.
-if (
-    file("src/prod/google-services.json").exists() ||
-    file("src/staging/google-services.json").exists() ||
+// Firebase config commitée par flavor : app/src/beta (com.example.facteur.staging)
+// et app/src/playstore (facteur.app). Un google-services.json Android n'est PAS un
+// secret (identifiants publics + clé API restreinte) → commit assumé. Sans lui,
+// Firebase natif n'embarque aucune ressource `google_app_id`, donc
+// `Firebase.initializeApp()` lève une PlatformException sur CHAQUE appareil → tout
+// l'enregistrement push meurt et 100 % des users retombent sur la notif locale
+// (root cause « notif du jour morte depuis le 1er jour », cf.
+// docs/bugs/bug-notifications-stalled.md).
+val hasGoogleServices =
+    file("src/beta/google-services.json").exists() ||
+    file("src/playstore/google-services.json").exists() ||
     file("google-services.json").exists()
-) {
+
+if (hasGoogleServices) {
     apply(plugin = "com.google.gms.google-services")
+} else {
+    // Filet anti-régression : un build release/bundle (AAB Play Store, APK stable)
+    // sans google-services.json produirait une app « push mort-né ». On échoue fort
+    // et tôt plutôt que de re-livrer en silence. Les builds debug/dev restent
+    // tolérants (dev local sans credentials Firebase).
+    val isReleaseBuild = gradle.startParameter.taskNames.any {
+        it.contains("Release") || it.contains("Bundle")
+    }
+    if (isReleaseBuild) {
+        throw GradleException(
+            "google-services.json manquant — le push serait mort-né. Ajoute " +
+                "apps/mobile/android/app/src/<flavor>/google-services.json " +
+                "(src/beta pour com.example.facteur.staging, src/playstore pour facteur.app)."
+        )
+    }
 }
 
 val keystorePropertiesFile = rootProject.file("key.properties")

@@ -123,8 +123,16 @@ class ServerPushService {
       return _registerToken(token);
     } catch (e) {
       debugPrint('ServerPushService: initialization failed: $e');
+      // On capture aussi le message natif exact (tronqué) en plus du runtimeType :
+      // c'est lui qui révèle la cause racine (ex. « no default options » quand le
+      // google-services.json du flavor manque), invisible avec le seul type.
+      final detail = e.toString();
       unawaited(
-        _capturePushRegister(outcome: 'exception', reason: e.runtimeType.toString()),
+        _capturePushRegister(
+          outcome: 'exception',
+          reason: e.runtimeType.toString(),
+          error: detail.length > 300 ? detail.substring(0, 300) : detail,
+        ),
       );
       await _setRegistered(false);
       await _restoreGenericFallback();
@@ -189,6 +197,7 @@ class ServerPushService {
     required String outcome,
     int? statusCode,
     String? reason,
+    String? error,
   }) async {
     await PostHogService().capture(
       event: 'push_register',
@@ -197,6 +206,7 @@ class ServerPushService {
         'platform': Platform.isIOS ? 'ios' : 'android',
         if (statusCode != null) 'status_code': statusCode,
         if (reason != null) 'reason': reason,
+        if (error != null) 'error': error,
       },
     );
   }
