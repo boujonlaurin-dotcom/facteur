@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "843185260430",
+    "project_id": "facteur-c30dc",
+    "storage_bucket": "facteur-c30dc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:843185260430:android:b1a8fd4cf4c4e38c8fc6df",
+        "android_client_info": {
+          "package_name": "com.example.facteur.staging"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAonAYXZ5KaDwv8V7TjsekBxz5SiFyc4Fk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:843185260430:android:6b6b0688940fb0f98fc6df",
+        "android_client_info": {
+          "package_name": "facteur.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAonAYXZ5KaDwv8V7TjsekBxz5SiFyc4Fk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

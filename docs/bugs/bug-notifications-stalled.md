@@ -1,8 +1,102 @@
 # Bug — Notifs Android qui ne s'envoient plus
 
-**Statut** : investigation en cours.
+**Statut** : root cause PROUVÉ (2026-07) — fix repo livré, runbook ops à exécuter.
 **Plateforme** : Android.
 **Date du signal** : 2026-05-05.
+
+---
+
+## ✅ Root cause PROUVÉ (2026-07) — Firebase Android jamais configuré
+
+Le chemin push n'a **jamais** transporté un seul message : la « notif du jour » est
+cassée **depuis le premier jour sur les stores**. Les PRs #768, #848, #919, #935 ont
+toutes poli soit la **notif locale de repli**, soit l'**instrumentation** — jamais la
+cause réelle.
+
+### Preuve (pas une hypothèse)
+
+- **PostHog `push_register` (60 j)** : 376 événements, **100 % `outcome = exception`,
+  `reason = PlatformException`** (`platform = android`, 9 users). Zéro `token_null`,
+  zéro `endpoint_error` (503), zéro `registered`.
+- **DB prod (Supabase)** : `push_devices = 0`, `push_deliveries = 0`, depuis toujours.
+- **Cause** : `ServerPushService.initAndRegister()` appelle `Firebase.initializeApp()`
+  (`apps/mobile/lib/core/services/server_push_service.dart:91`) qui **lève une
+  `PlatformException` sur chaque appareil** → tout le flux meurt dans le `catch` →
+  100 % des users retombent sur la notif locale.
+  Pourquoi ça throw : `apps/mobile/android/app/build.gradle.kts` n'appliquait le
+  plugin `com.google.gms.google-services` que si un `google-services.json` existait
+  dans `src/prod/` ou `src/staging/`. Or **les vrais flavors sont `beta` et
+  `playstore`** (chemins qui ne matchent pas), **et aucun `google-services.json`
+  n'existait nulle part** → plugin silencieusement sauté → aucune ressource
+  `google_app_id` dans l'APK → Firebase natif sans options par défaut → `PlatformException`.
+
+### « Limite du Play Console ? » → Non
+
+FCM ne dépend d'aucun réglage Play Console et **ne requiert pas** d'empreinte
+SHA-1/SHA-256 (celles-ci ne servent qu'à Firebase Auth / Dynamic Links). Deux vraies
+lacunes de config, jamais satisfaites :
+1. **Firebase Console + build Android (bloqueur ACTIF)** : `facteur.app` et
+   `com.example.facteur.staging` jamais enregistrés dans un projet Firebase → aucun
+   `google-services.json` embarqué → `PlatformException`.
+2. **Railway backend (bloqueur LATENT)** : `FIREBASE_SERVICE_ACCOUNT_*` non défini →
+   `PUT /api/devices` renvoie 503 (`packages/api/app/routers/push_devices.py:43-50`)
+   et le dispatcher reste désactivé. Pas encore atteint car le client meurt avant.
+
+### Fix repo livré (PR de durcissement)
+
+- **Garde-fou Gradle corrigé + durci** (`build.gradle.kts`) : détecte les vrais
+  chemins `src/beta/` + `src/playstore/` (+ fallback `app/`), applique le plugin
+  s'ils existent, et **`throw GradleException`** sur un build release/bundle si aucun
+  `google-services.json` n'est présent → impossible de re-livrer en silence une app
+  « push morte ». Debug/dev restent tolérants.
+- **`google-services.json` commités par flavor** (`src/beta/`, `src/playstore/`) — non
+  secret pour Android. Fournis via le runbook ci-dessous.
+- **Télémétrie d'exception enrichie** (`server_push_service.dart`) : le `catch`
+  capture désormais `error: e.toString()` (tronqué ~300 car.) → le message natif exact
+  (ex. « no default options ») devient visible dans PostHog.
+- **Filet CI** dans `build-aab.yml` / `build-apk.yml` / `weekly-release.yml` : vérifie
+  la présence du `google-services.json` du flavor avant le build (échec tôt et lisible).
+
+### Runbook ops (à exécuter, hors code)
+
+**A. Firebase Console (déblocage n°1)**
+1. Ouvrir/créer le projet Firebase de Facteur.
+2. Add app → Android pour `facteur.app` → télécharger `google-services.json` →
+   `apps/mobile/android/app/src/playstore/` (commit dans la PR de durcissement).
+3. Add app → Android pour `com.example.facteur.staging` → `google-services.json` →
+   `apps/mobile/android/app/src/beta/`.
+4. FCM v1 est activé par défaut ; **aucune** empreinte SHA nécessaire pour le push.
+
+**B. Railway (déblocage n°2)**
+1. Firebase Console → Project settings → Service accounts → Generate new private key.
+2. `base64 -i service-account.json` → coller dans **`FIREBASE_SERVICE_ACCOUNT_BASE64`**
+   sur les 2 services : `api-staging-40d3` **et** `facteur-production` (même service
+   account couvre les 2 packages du même projet Firebase).
+3. Redéployer les 2 services (le dispatcher lit `_firebase_configured()` au boot).
+
+**C. Release** : merger la PR (avec les 2 JSON) → `build-aab.yml` (playstore) → Play
+Console Internal testing ; beta part automatiquement au merge sur `main`.
+
+### Vérification end-to-end
+
+1. PostHog : `registered` apparaît, `exception` s'effondre.
+2. Supabase : `select count(*) from push_devices where revoked_at is null` > 0.
+3. `PUT /api/devices` renvoie 200 (logs Railway : plus de « Push serveur non configuré »).
+4. Supabase : `push_deliveries` avec `status='sent'` > 0.
+5. Réception device (fenêtre 07:30–12:00 locale) avec bullets (`BigTextStyle` data-only).
+6. Anti-régression : renommer un `google-services.json` en local + build release → doit
+   **échouer** avec le message du garde-fou.
+
+### Gap iOS parallèle (hors périmètre immédiat)
+
+Le même schéma existe côté iOS : `Firebase.initializeApp()` a besoin de
+`GoogleService-Info.plist` + une clé APNs uploadée dans Firebase. La preuve prod est
+**Android only** (`facteur.app`). À traiter en second temps si push iOS voulu ; ne
+bloque pas la PR Android.
+
+---
+
+## Historique d'investigation (2026-05, avant preuve du root cause)
 
 ## Signal
 

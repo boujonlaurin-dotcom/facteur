@@ -49,6 +49,11 @@ jobs:
           # écoute push:[production] et serait re-déclenché en double.
           git push origin production
 
+      - name: Verify google-services.json (beta)
+        uses: ./.github/actions/verify-google-services
+        with:
+          flavor: beta
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
