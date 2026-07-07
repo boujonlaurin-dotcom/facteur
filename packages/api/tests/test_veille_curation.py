@@ -6,9 +6,9 @@ toucher le chemin custom-topic de la Tournée (Epic 11) :
 - **Pertinence veille** (`PertinencePillar._score_custom_topics`) : barème
   escaladant (2kw > 1kw), topic > keyword, combo (topic+kw) en tête, source
   suivie conditionnée (boost on-angle only, jamais sur source-seul).
-- **Floor + seuil + anti-starvation** (`feed_filter._score_and_rank`) : la
-  source est un boost, pas un free-pass ; le seuil 48 coupe le bruit ; la
-  relâche anti-starvation ne réadmet jamais un floor-pruned.
+- **Floor durci + gate + seuil** (`feed_filter._score_and_rank`) : la source est
+  un boost, pas un free-pass ; un keyword-only exige ≥ 2 hits ou un hit fort ; le
+  seuil 48 coupe le bruit ; plus d'anti-starvation (aucune réadmission).
 - **DB end-to-end** (`fetch_veille_feed`) : un article source-seule off-angle
   est exclu du feed.
 - **Régression** : un custom topic Epic 11 (sans `is_veille`) garde le `+25` plat.
@@ -41,11 +41,13 @@ from app.services.veille.feed_filter import (
 
 
 def _score_and_rank(candidates, context, filters):
-    """Shim Bloc B (floor + seuil + anti-starvation) — comportement historique."""
+    """Shim Bloc B (floor durci + gate pertinence + seuil, sans anti-starvation)."""
     return _score_block(
         candidates, context, filters, apply_floor=True, apply_threshold=True
     )
-from app.services.veille.scoring_context import VeilleAngleTopic, _tokenize_intent
+
+
+from app.services.veille.scoring_context import VeilleAngleTopic
 
 # ─── Helpers légers pour le pilier Pertinence ────────────────────────────────
 
@@ -92,7 +94,8 @@ def test_keyword_bonus_escalates_with_distinct_matches():
     )
     assert one == pytest.approx(ScoringWeights.VEILLE_KEYWORD_BASE_BONUS)
     assert two == pytest.approx(
-        ScoringWeights.VEILLE_KEYWORD_BASE_BONUS + ScoringWeights.VEILLE_KEYWORD_INCREMENT
+        ScoringWeights.VEILLE_KEYWORD_BASE_BONUS
+        + ScoringWeights.VEILLE_KEYWORD_INCREMENT
     )
     assert two > one
 
@@ -128,7 +131,9 @@ def test_keyword_bonus_is_capped():
 
 def test_topic_beats_single_keyword():
     """Le topic canonique (+50) pèse plus qu'un mot-clé seul (+18)."""
-    topic_only = _angle_score(_Content(topics=["ai"], title="Intelligence artificielle"))
+    topic_only = _angle_score(
+        _Content(topics=["ai"], title="Intelligence artificielle")
+    )
     kw_only = _angle_score(_Content(topics=["tech"], title="Un nouveau LLM"))
     assert topic_only == pytest.approx(ScoringWeights.VEILLE_TOPIC_MATCH_BONUS)
     assert topic_only > kw_only
@@ -188,7 +193,7 @@ def test_non_veille_custom_topic_keeps_flat_bonus():
     assert score == pytest.approx(ScoringWeights.CUSTOM_TOPIC_BASE_BONUS)
 
 
-# ─── Floor + seuil + anti-starvation (`_score_and_rank`) ─────────────────────
+# ─── Floor durci + gate + seuil (`_score_and_rank`) ──────────────────────────
 
 
 def _make_source(name="Src", followed=True):
@@ -237,7 +242,9 @@ def _veille_context(followed_ids):
 def _veille_filters(source_ids):
     return VeilleFilters(
         theme_id="tech",
-        angles=[VeilleAngle(topic_id="ai", label="IA", keywords=["llm", "gpt", "agent"])],
+        angles=[
+            VeilleAngle(topic_id="ai", label="IA", keywords=["llm", "gpt", "agent"])
+        ],
         source_ids=list(source_ids),
         global_keywords=[],
     )
@@ -269,43 +276,21 @@ def test_on_topic_from_unfollowed_source_survives():
     assert {c.id for c, _s, _a in kept} == {on_topic.id}
 
 
-def test_threshold_cuts_below_floor_score():
-    """Le seuil 48 reste au-dessus du plancher anti-starvation (40)."""
-    assert ScoringWeights.VEILLE_RELEVANCE_THRESHOLD > 40.0
-
-
-def test_anti_starvation_never_readmits_floor_pruned():
-    """Sous le min feed, on relâche le seuil — mais jamais un source-seul."""
+def test_no_readmission_even_when_feed_empty():
+    """Anti-starvation supprimée (C) : même quand tout est coupé et que le feed
+    serait vide (``pass_count == 0``), aucun candidat n'est réadmis."""
     src = _make_source()
-    # 1 seul on-angle faible + plein de source-seul off-angle.
-    weak = _make_content(src, topics=["tech"], title="Un agent vaguement tech")
-    floods = [
-        _make_content(src, topics=["tech"], title=f"Bon plan #{i}", mins=40 + i)
+    # Tous source-seuls off-angle → tous floor-pruned. Aucune relâche ne les
+    # ramène (avant, l'anti-starvation aurait pu réadmettre des sous-seuil).
+    off = [
+        _make_content(src, topics=["sport"], title=f"Résultat #{i}", mins=30 + i)
         for i in range(6)
     ]
     flt = _veille_filters([src.id])
     ctx = _veille_context([src.id])
 
-    kept = _score_and_rank([weak, *floods], ctx, flt)
-    kept_ids = {c.id for c, _s, _a in kept}
-    # Aucun des articles source-seule (floods) n'est réadmis par l'anti-starvation.
-    for f in floods:
-        assert f.id not in kept_ids
-
-
-# ─── Note d'intention `why` : tokenisation ───────────────────────────────────
-
-
-def test_tokenize_intent_strips_stopwords_and_short_tokens():
-    """Stopwords FR + tokens < 4 caractères retirés ; dédup ordre stable."""
-    tokens = _tokenize_intent(["Je veux suivre la brasserie artisanale et le houblon"])
-    assert {"brasserie", "artisanale", "houblon"} <= set(tokens)
-    assert "la" not in tokens
-    assert "et" not in tokens
-
-
-def test_tokenize_intent_dedupes():
-    assert _tokenize_intent(["houblon houblon HOUBLON"]).count("houblon") == 1
+    kept = _score_and_rank(off, ctx, flt)
+    assert kept == []
 
 
 # ─── Bloc A « Tes sources » : gate-all + cap diversité ───────────────────────
@@ -325,9 +310,7 @@ def test_block_a_gates_source_only_off_angle():
     flt = _veille_filters([src.id])  # config a un topic 'ai' + des mots-clés
     ctx = _veille_context([src.id])
 
-    kept = _score_block(
-        [source_only], ctx, flt, apply_floor=True, apply_threshold=True
-    )
+    kept = _score_block([source_only], ctx, flt, apply_floor=True, apply_threshold=True)
     assert kept == []
 
 
@@ -411,6 +394,12 @@ async def _insert_content(db_session, source_id, *, topics, title) -> UUID:
             theme="tech",
             topics=topics,
             content_quality="full",
+            # Thumbnail → article de qualité « normale » (aligné sur le helper
+            # unitaire `_make_content`). Sans ça, un article source-seul frais
+            # score ~47 (< seuil 48) et n'était retenu que par l'anti-starvation
+            # (supprimée, C) : la passthrough source-seule teste alors le floor,
+            # pas le bord du seuil.
+            thumbnail_url="https://img.example.com/thumb.jpg",
         )
     )
     await db_session.commit()

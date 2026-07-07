@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Veille",
+      "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
+    },
+    {
       "tag": "Abonnements",
       "summary": "Tes sources abonnées gardent la couverture médiatique avant d'ouvrir l'article complet, et tu peux connecter ton compte depuis la fiche de n'importe quelle source suivie."
     },

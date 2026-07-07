@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import structlog
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -35,6 +35,7 @@ from app.services.recommendation.filter_presets import (
 )
 from app.services.recommendation.helpers.diversification import diversify
 from app.services.recommendation.helpers.keyword_match import matches_word_boundary
+from app.services.recommendation.pillars.pertinence import SUBTOPIC_LABELS
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import PillarScoringEngine
 from app.services.veille.scoring_context import build_veille_scoring_context
@@ -64,14 +65,17 @@ class VeilleFilters:
     angles: list[VeilleAngle] = field(default_factory=list)
     source_ids: list[UUID] = field(default_factory=list)
     global_keywords: list[str] = field(default_factory=list)
-    # Notes d'intention texte libre (`VeilleSource.why`) par source configurée.
-    # Tokenisées en mots-clés « Intention » côté scoring_context pour affiner le
-    # tri sans nouveau code de scoring (cf. plan refonte curation, étape 6).
-    source_intents: dict[UUID, str] = field(default_factory=dict)
+    # Langues des sources configurées (`Source.language`), ∪ {fr}, pour filtrer
+    # le Bloc B « Couverture élargie » (jamais le Bloc A). Cf. G1 refonte veille.
+    source_languages: set[str] = field(default_factory=set)
 
     @property
     def topic_slugs(self) -> list[str]:
-        return [a.topic_id for a in self.angles]
+        # Filtre les slugs vides : un `topic_id` non canonique est neutralisé en
+        # "" par `load_veille_filters` (G2) — il ne doit ni entrer dans le
+        # prédicat SQL, ni compter comme axe `topic`. Sa grappe de mots-clés,
+        # elle, survit via `all_keywords`.
+        return [a.topic_id for a in self.angles if a.topic_id]
 
     @property
     def all_keywords(self) -> list[str]:
@@ -138,25 +142,34 @@ async def load_veille_filters(
         else:
             keywords_by_topic.setdefault(topic_id, []).append(keyword)
 
+    # G2 — un `topic_id` non canonique (les 95 slugs `angle-*` morts issus des
+    # suggestions LLM) est neutralisé en "" : il sort du prédicat SQL, de
+    # `matched_on` et de `user_subtopics` (le floor redevient honnête). Sa grappe
+    # de mots-clés survit (custom-topic `slug_parent=""` côté scoring_context).
+    canon = frozenset(SUBTOPIC_LABELS)
     angles = [
         VeilleAngle(
-            topic_id=topic_id,
+            topic_id=topic_id if (topic_id or "").lower().strip() in canon else "",
             label=label,
             keywords=keywords_by_topic.get(row_id, []),
         )
         for row_id, topic_id, label in topic_rows
     ]
 
+    # Jointure Source pour porter la langue des sources configurées (G1) — le
+    # Bloc B filtre les langues à `source_languages ∪ {fr}`. `why` n'est plus lu
+    # ici (tokenisation d'intention retirée, E) ; il reste servi par l'endpoint
+    # config via son propre chemin (badge santé inchangé).
     source_rows = (
         await session.execute(
-            select(VeilleSource.source_id, VeilleSource.why).where(
-                VeilleSource.veille_config_id == config.id
-            )
+            select(VeilleSource.source_id, Source.language)
+            .join(Source, Source.id == VeilleSource.source_id)
+            .where(VeilleSource.veille_config_id == config.id)
         )
     ).all()
-    source_ids = [sid for sid, _why in source_rows]
-    source_intents = {
-        sid: why.strip() for sid, why in source_rows if why and why.strip()
+    source_ids = [sid for sid, _lang in source_rows]
+    source_languages = {
+        lang.lower().strip() for _sid, lang in source_rows if lang and lang.strip()
     }
 
     return VeilleFilters(
@@ -164,7 +177,7 @@ async def load_veille_filters(
         angles=angles,
         source_ids=source_ids,
         global_keywords=global_keywords,
-        source_intents=source_intents,
+        source_languages=source_languages,
     )
 
 
@@ -222,31 +235,52 @@ def _matched_axes(
     topic_slugs: set[str],
     source_ids: set[UUID],
     keywords: list[str],
-) -> list[str]:
-    """Axes **qualifiants** sur lesquels l'article matche (exposés au front).
+) -> tuple[list[str], bool]:
+    """Axes qualifiants + drapeau `floor_qualified` (floor durci, B).
 
-    Le thème n'est plus un axe qualifiant : l'inclusion est gérée par le
-    prédicat fort + le seuil de score. On garde topic/source/keyword. Les
-    collections sont pré-calculées par l'appelant (hot path : ~CANDIDATE_CAP
-    appels par fetch).
+    Renvoie ``(axes, floor_qualified)`` :
+
+    - ``axes`` (exposés au front — sémantique ``matched_on`` **inchangée**) :
+      ``keyword`` dès **1** hit mot-entier, ``topic``/``source`` selon
+      appartenance. Le thème n'est pas un axe qualifiant (inclusion gérée par le
+      prédicat fort + le seuil). Mot-entier via ``matches_word_boundary``
+      (primitive du pilier Pertinence et du prédicat SQL ``\\m…\\M``) et non
+      sous-chaîne : sinon un mot-clé survit sur un fragment (« nets » ⊂
+      « internets »).
+    - ``floor_qualified`` (**B**) : ``True`` si l'article porte un axe ``topic``
+      **OU** un hit « fort » (mot-clé multi-mots, p.ex. « coupe du monde »)
+      **OU** ≥ ``VEILLE_FLOOR_MIN_KEYWORD_HITS`` hits **distincts**. Un unigramme
+      générique seul ne qualifie plus (fix du bruit sur les kw LLM génériques).
+      Un même mot-clé en titre+description = 1 hit (``matches_word_boundary``
+      couvre les deux champs).
+
+    Collections pré-calculées par l'appelant (hot path : ~CANDIDATE_CAP appels).
     """
     axes: list[str] = []
     if topic_slugs and content.topics and any(t in topic_slugs for t in content.topics):
         axes.append("topic")
     if source_ids and content.source_id in source_ids:
         axes.append("source")
+
+    min_hits = ScoringWeights.VEILLE_FLOOR_MIN_KEYWORD_HITS
+    hits = 0
+    strong = False
     if keywords:
         title_lower = (content.title or "").lower()
         desc_lower = (content.description or "").lower()
-        # Mot-entier (réutilise `matches_word_boundary`, déjà la primitive du
-        # pilier Pertinence et du prédicat SQL `\m…\M`) et non plus sous-chaîne :
-        # sinon un mot-clé générique survit sur un fragment (« nets » ⊂
-        # « internets ») et fait passer un article hors-sujet au-dessus du floor
-        # dans le Bloc A (où la requête par source court-circuite le prédicat
-        # SQL). Aligne l'axe `keyword` exposé sur le scoring et le prédicat.
-        if any(matches_word_boundary(kw, title_lower, desc_lower) for kw in keywords):
+        for kw in keywords:
+            if not matches_word_boundary(kw, title_lower, desc_lower):
+                continue
+            hits += 1
+            if " " in kw:  # mot-clé multi-mots = hit « fort »
+                strong = True
+            if strong or hits >= min_hits:
+                break  # qualifié (fort ou ≥ N) — inutile de continuer
+        if hits:
             axes.append("keyword")
-    return axes
+
+    floor_qualified = ("topic" in axes) or strong or hits >= min_hits
+    return axes, floor_qualified
 
 
 def _score_block(
@@ -278,13 +312,18 @@ def _score_block(
     - **Bloc B « Couverture élargie »** (`apply_floor=True`,
       `apply_threshold=True`) : comportement historique (Story 23.4) —
 
-      1. **Floor** : « la source est un boost, pas un free-pass » — tout candidat
-         dont les axes ⊆ ``{source}`` est écarté. N'agit que si un axe
-         topic/keyword existe.
-      2. **Seuil** : on garde score ≥ ``VEILLE_RELEVANCE_THRESHOLD``.
-      3. **Anti-starvation** : sous ``VEILLE_MIN_FEED_SIZE`` passants ET des
-         candidats coupés par le *seuil* (jamais le floor), on relâche d'un cran
-         (``max(threshold-8, 40)``) — scopée au bloc courant.
+      1. **Floor durci (B)** : « la source est un boost, pas un free-pass » — un
+         candidat dont les axes ⊆ ``{source}`` est écarté ; en plus, un
+         *keyword-only* ne qualifie que sur un hit fort (multi-mots) ou ≥
+         ``VEILLE_FLOOR_MIN_KEYWORD_HITS`` hits distincts (cf. `_matched_axes`).
+         N'agit que si un axe topic/keyword existe (``floor_active``).
+      2. **Gate pertinence (A)** : au-dessus du floor, on exige aussi
+         pertinence normalisée ≥ ``VEILLE_PERTINENCE_GATE`` — le seuil composite
+         seul laisse passer un hors-sujet frais+propre (source+fraîcheur+qualité
+         = 60 % du poids). Même condition d'activation que le floor.
+      3. **Seuil composite** : on garde score ≥ ``VEILLE_RELEVANCE_THRESHOLD``.
+         Plus d'anti-starvation (C) : aucun candidat sous le seuil n'est réadmis
+         — un feed court honnête vaut mieux qu'un feed rempli de bruit.
     """
     engine = PillarScoringEngine()
     # Pré-calcul hors boucle : ces dérivations sont stables sur tout le fetch.
@@ -292,41 +331,41 @@ def _score_block(
     source_ids = set(filters.source_ids)
     keywords = filters.all_keywords
     threshold = ScoringWeights.VEILLE_RELEVANCE_THRESHOLD
-    # Le floor n'a de sens que s'il existe un axe topic/keyword à côté de la
-    # source. Sans cela (config source-seule), la source est l'unique filtre.
-    floor_active = apply_floor and bool(topic_slugs or keywords)
+    gate = ScoringWeights.VEILLE_PERTINENCE_GATE
+    # Floor et gate n'ont de sens qu'avec un axe topic/keyword à côté de la
+    # source. Sans cela (config source-seule), la source est l'unique filtre :
+    # ni floor ni gate (passthrough conservé — fallback documenté).
+    has_topic_or_kw = bool(topic_slugs or keywords)
+    floor_active = apply_floor and has_topic_or_kw
+    gate_active = apply_threshold and has_topic_or_kw
 
     passing: list[tuple[Content, float, list[str]]] = []
-    # Candidats on-axis sous le seuil — réservés à l'anti-starvation.
-    below_threshold: list[tuple[Content, float, list[str]]] = []
     max_score = 0.0
     floor_pruned_count = 0
+    gate_pruned_count = 0
+    threshold_pruned_count = 0
     for content in candidates:
-        axes = _matched_axes(content, topic_slugs, source_ids, keywords)
-        if floor_active and "topic" not in axes and "keyword" not in axes:
-            # Floor : axes ⊆ {source} (ou vide) → source-seul, écarté.
+        axes, floor_qualified = _matched_axes(
+            content, topic_slugs, source_ids, keywords
+        )
+        if floor_active and not floor_qualified:
+            # Floor durci (B) : ni topic, ni hit fort, ni ≥ N hits distincts.
             floor_pruned_count += 1
             continue
         result = engine.compute_score(content, context)
+        if gate_active and result.pillar_scores.get("pertinence", 0.0) < gate:
+            # Gate pertinence (A) : composite franchi mais lien au sujet trop
+            # faible → écarté.
+            gate_pruned_count += 1
+            continue
         score = result.final_score
         if score > max_score:
             max_score = score
         if not apply_threshold or score >= threshold:
             passing.append((content, score, axes))
         else:
-            below_threshold.append((content, score, axes))
-
-    threshold_pruned_count = len(below_threshold)
-    if (
-        apply_threshold
-        and len(passing) < ScoringWeights.VEILLE_MIN_FEED_SIZE
-        and below_threshold
-    ):
-        relaxed = max(threshold - 8.0, 40.0)
-        if relaxed < threshold:
-            readmitted = [item for item in below_threshold if item[1] >= relaxed]
-            passing.extend(readmitted)
-            threshold_pruned_count -= len(readmitted)
+            # Seuil composite (C) : sous le seuil → écarté, sans réadmission.
+            threshold_pruned_count += 1
 
     _epoch = datetime.min.replace(tzinfo=UTC)
     passing.sort(
@@ -351,6 +390,7 @@ def _score_block(
         pass_count=len(passing),
         max_score=round(max_score, 1),
         floor_pruned_count=floor_pruned_count,
+        gate_pruned_count=gate_pruned_count,
         threshold_pruned_count=threshold_pruned_count,
     )
     return passing
@@ -370,13 +410,15 @@ async def fetch_veille_feed(
     ``(Content, matched_on, group)`` où ``group`` ∈ ``{"sources", "elargie"}`` :
 
     - **Bloc A « Tes sources »** (``group="sources"``) : articles des sources
-      configurées, fenêtre 30 j, scoring complet, **gate-all** (floor + seuil —
-      ajustements « released »), cap de diversité 3/source. Le floor n'agit que
-      si la config porte un axe topic/mot-clé ; une config purement source garde
-      le laisser-passer.
+      configurées, fenêtre 30 j, **pool équitable par source** (window function,
+      D — une source dense n'affame plus les discrètes), scoring complet,
+      **gate-all** (floor durci + gate pertinence + seuil), cap de diversité
+      3/source. Floor/gate n'agissent que si la config porte un axe
+      topic/mot-clé ; une config purement source garde le laisser-passer.
     - **Bloc B « Couverture élargie »** (``group="elargie"``) : articles
-      topic/mots-clés **hors** sources configurées, fenêtre 7 j, comportement
-      historique (floor + seuil + anti-starvation).
+      topic/mots-clés **hors** sources configurées, fenêtre 7 j, **filtre langue**
+      (G1 — langues des sources configurées ∪ {fr}, NULL toléré), floor durci +
+      gate pertinence + seuil (plus d'anti-starvation).
 
     Les deux blocs scorés sont concaténés (A puis B), tagués, puis paginés sur
     l'ensemble — la pagination offset/limit reste plate côté API.
@@ -406,11 +448,13 @@ async def fetch_veille_feed(
     if serein:
         serein_prefs = await load_serein_preferences(session, user_id)
 
-    def _base_query():
+    def _apply_common_filters(q):
+        """Filtres communs (exclusions user, source active, serein) applicables
+        à un select **entité `Content`** comme à une **projection `Content.id`**
+        (sous-requête de rang du Bloc A). Le join Source est requis pour
+        ``is_active`` et pour le filtre serein (``Source.theme``)."""
         q = (
-            select(Content)
-            .join(Content.source)
-            .options(selectinload(Content.source))
+            q.join(Content.source)
             .where(~exclude_user_status)
             .where(Source.is_active.is_(True))
         )
@@ -422,16 +466,45 @@ async def fetch_veille_feed(
             )
         return q
 
+    def _base_query():
+        # Select entité pour le scoring (charge Content.source en une passe).
+        return _apply_common_filters(
+            select(Content).options(selectinload(Content.source))
+        )
+
     context = await build_veille_scoring_context(session, config, filters, now)
 
-    # ─── Bloc A « Tes sources » — fenêtre 30 j, laisser-passer ───────────────
+    # ─── Bloc A « Tes sources » — fenêtre 30 j, pool équitable par source ─────
     block_a: list[tuple[Content, float, list[str]]] = []
     if filters.source_ids:
         cutoff_a = now - timedelta(hours=ScoringWeights.VEILLE_CONFIGURED_RECENCY_HOURS)
-        query_a = (
-            _base_query()
+        # Pool équitable (D) : au lieu d'un `ORDER BY published_at LIMIT 300`
+        # global (une source dense capte tout le pool et affame les discrètes),
+        # on range les candidats par source (row_number) et on retient les N
+        # plus récents de **chaque** source, puis on borne l'ensemble au cap
+        # externe. Sous-requête sur les seuls `id` (mêmes filtres communs).
+        ranked = (
+            _apply_common_filters(
+                select(
+                    Content.id.label("id"),
+                    func.row_number()
+                    .over(
+                        partition_by=Content.source_id,
+                        order_by=Content.published_at.desc(),
+                    )
+                    .label("rn"),
+                )
+            )
             .where(Content.source_id.in_(filters.source_ids))
             .where(Content.published_at >= cutoff_a)
+            .subquery()
+        )
+        per_source_ids = select(ranked.c.id).where(
+            ranked.c.rn <= ScoringWeights.VEILLE_BLOCK_A_PER_SOURCE_CANDIDATES
+        )
+        query_a = (
+            _base_query()
+            .where(Content.id.in_(per_source_ids))
             .order_by(Content.published_at.desc())
             .limit(ScoringWeights.VEILLE_CANDIDATE_CAP)
         )
@@ -463,6 +536,19 @@ async def fetch_veille_feed(
         )
         if filters.source_ids:
             query_b = query_b.where(Content.source_id.notin_(filters.source_ids))
+        if ScoringWeights.VEILLE_BLOCK_B_LANGUAGE_FILTER:
+            # Filtre langue (G1) : le Bloc B ratisse le pool global, souvent
+            # multilingue. On restreint aux langues des sources configurées
+            # ∪ {fr} ; `Content.language IS NULL` passe (permissif : beaucoup
+            # d'articles n'ont pas de langue détectée). Le Bloc A n'est jamais
+            # filtré (source choisie = langue assumée).
+            allowed_languages = filters.source_languages | {"fr"}
+            query_b = query_b.where(
+                or_(
+                    Content.language.in_(allowed_languages),
+                    Content.language.is_(None),
+                )
+            )
         query_b = query_b.order_by(Content.published_at.desc()).limit(
             ScoringWeights.VEILLE_CANDIDATE_CAP
         )
