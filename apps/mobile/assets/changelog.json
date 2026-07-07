@@ -5,6 +5,14 @@
       "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
     },
     {
+      "tag": "Bonnes nouvelles",
+      "summary": "Les bonnes nouvelles du jour retrouvent leur pertinence, et ta tournée quotidienne propose un peu plus d'articles à découvrir."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Connecter un abonnement est plus clair : une barre d'étapes te situe dans la procédure, et le bouton pour continuer n'apparaît qu'une fois connecté au média."
+    },
+    {
       "tag": "Abonnements",
       "summary": "Tes sources abonnées gardent la couverture médiatique avant d'ouvrir l'article complet, et tu peux connecter ton compte depuis la fiche de n'importe quelle source suivie."
     },
