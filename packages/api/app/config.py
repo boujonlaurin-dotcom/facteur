@@ -129,9 +129,15 @@ class Settings(BaseSettings):
     # / wait 300s) est ABANDONNÉE suite à régression Bonnes Nouvelles constatée
     # en prod. Avec min_batch_size=1 et max_wait_s=0, la gate d'accumulation
     # `_should_process()` redevient un no-op (traite dès ≥1 pending).
-    classification_worker_batch_size: int = 5  # cible d'articles / appel batch (qualité-safe, cf. #152)
-    classification_worker_min_batch_size: int = 1  # seuil mini avant de traiter (1 = pas d'accumulation)
-    classification_worker_max_wait_s: int = 0  # plafond d'attente du + vieux pending (0 = immédiat)
+    classification_worker_batch_size: int = (
+        5  # cible d'articles / appel batch (qualité-safe, cf. #152)
+    )
+    classification_worker_min_batch_size: int = (
+        1  # seuil mini avant de traiter (1 = pas d'accumulation)
+    )
+    classification_worker_max_wait_s: int = (
+        0  # plafond d'attente du + vieux pending (0 = immédiat)
+    )
     classification_worker_interval_s: int = 10  # intervalle entre 2 vérifications
 
     # Brave Search API (smart source search)
