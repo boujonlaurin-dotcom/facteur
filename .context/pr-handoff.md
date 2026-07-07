@@ -1,36 +1,44 @@
-# feat(mobile): « Notif du jour » — bandeau agrégateur quotidien en tête de l'Essentiel
+# fix(search): recherche de sources — pertinence + latence (backend, sans migration)
 
-## Quoi
+Corrige 3 axes de la recherche de sources (« Ajouter une source » / Veille), confirmés par
+`source_search_logs`. Une seule cause racine côté orchestrateur
+`SmartSourceSearchService.search`. 100 % backend, additif, **aucune migration**.
 
-Une **ligne de notification unique** en tête du feed Essentiel (sous le bandeau Lettres) : chaque jour, le Facteur met en avant une fonctionnalité peu vue, choisie selon le profil. Un seul message à la fois, **jusqu'à 3/jour** (le suivant après action ou dismiss), rotation quotidienne déterministe.
+## Changements
 
-Story : `docs/stories/core/23.1.notif-du-jour.md`.
+1. **URL collée → détection de flux directe.** `_classify_query` renvoyait `url_like` sans
+   jamais brancher le résultat → une URL partait en recherche texte (9-31 s, 0 résultat). Nouvelle
+   branche `(0)` dans `search()` : normalise l'URL, `_detect_with_root_fallback`, renvoie 1 résultat
+   `layer="direct"` et saute Brave/GNews/Mistral. Reddit exclu (path `/r/<sub>` non résolu au root).
+   Pas de flux → fall-through au pipeline normal (jamais vide). Nouveau score `direct: 0.85`.
 
-## Moteur
+2. **Le filtre content_type déclenche sa couche.** Le chip « YouTube » + `micode` n'appelait
+   jamais la couche (heuristique texte ratée). Désormais `content_type == "youtube"` déclenche
+   **toujours** la couche ; `None` garde l'heuristique. Idem Reddit. `external_eligible` déjà False
+   avec un filtre → externes correctement sautés, pas de double-fire.
 
-- **File** : `notifDuJourQueueProvider` trie les messages éligibles par `relevance(profil) + jitter(jour, id)` (ε = 0.15, hash FNV `id#jour` → stable intra-jour, permute inter-jour pour les pertinences proches uniquement).
-- **9 messages** : 6 profil (serein, source, tournée, veille, premium, recommencer-fallback) + **3 nudges absorbés** (renudge notif 0.9, well-informed NPS 0.85 en rendu custom, géoloc 0.7) — leurs `*ShouldShowProvider` et caps existants sont réutilisés tels quels (avancés à la consommation).
-- **Day store** : `notif_du_jour_state_v1` (SharedPreferences), `{day, consumed[]}`, reset à minuit, cap 3.
-- **Rendu hifi** : surface, radius 14, ombre 0x14, carré icône 34 teinté (ocre/green/steel), DM Sans 13.5, CTA-lien + flèche, croix 30 ; repli AnimatedSize + fondu + translation 300ms, reduced-motion instantané, press scale + haptique.
+3. **Gate de pertinence sur les résultats EXTERNES.** Fonction pure `_is_relevant_external`
+   (token overlap / substring dé-espacé / trigrammes de caractères). N'utilise **pas**
+   `jaccard_similarity` (qui drop <3 char + chiffres → tuerait `bdm`/`11`). Appliquée au point de
+   convergence `_detect_candidates` (Brave/GNews) + inline dans `_search_mistral`. **Jamais** sur le
+   catalogue. Validé 7/7 sur cas prod : garde onemondial↔onzemondial, snowball, blog-moderateur→BDM,
+   micode, usine-digitale ; drop insight-clement→BDM, hypertext→BBF.
 
-## Dépréciations (PR 1)
-
-- Supprimés : `NotificationRenudgeBanner`, `WellInformedPrompt`, `GeolocPromptBanner` (widgets standalone) + leurs 3 slivers du feed.
-- `FirstImpressionSlot` réduit aux modales (`iosAddToHome`, `notifModal`) ; la carte cède aussi au bandeau Lettres (`lettresBannerVisibleThisSessionProvider`). Lettres → PR 3.
-
-## Fix CTA (décision PO « taps propres »)
-
-- Source → `RouteNames.addSource` (panneau d'ajout direct).
-- Premium → `/settings/subscriptions?add=1` : `SubscriptionsScreen` auto-ouvre la feuille d'ajout.
-- « Config » sorti de la rotation → tuile « Ma configuration » (barre de progression onboarding) dans `profile_screen.dart`.
+4. **Dédup par feed_url + host.** `seen_urls` (URL exacte) → helper `_dedup_add` : dédup par
+   `feed_url` (toujours) + par host (externes seulement, hors `_PATH_LEVEL_PLATFORMS`). Deux chaînes
+   YouTube / deux Substack survivent ; « blog modérateur » ne renvoie plus BDM ×2.
 
 ## Tests
 
-35 nouveaux (`test/features/notif_du_jour/`) : sélecteur (déterminisme, rotation bornée à ε, fallback), éligibilité par message, day store (reset minuit, cap, idempotence), widget (anti-flash, un-à-la-fois, X → persist + suivant, cap 3, reduced motion, tap Serein in-place, NPS custom, gates). Zones impactées : 446 verts (lettres, flux_continu, well_informed, notifications, settings).
+- `test_smart_source_search.py` : `_classify_query` (url_like/free_text/youtube/reddit),
+  `_is_relevant_external` (7 cas prod + vides + token court `bdm`), `_dedup_add` (feed_url, host
+  externe, 2 chaînes YouTube, 2 catalogue même host), gate `_detect_candidates` on/off-topic.
+- `test_smart_source_search_session.py` : URL avec flux → `layers=["direct"]`, catalog/brave non
+  appelés ; URL sans flux → fall-through catalogue ; `content_type=youtube`+`micode` → couche
+  youtube, externes sautés ; régression `content_type=None`+`micode` → youtube non déclenché.
+- `pytest tests/services/search/` : **95 passed**. `ruff` : clean.
 
-Aucune migration / changement backend. Changelog `unreleased` ajouté (« Notif du jour »).
+## Différé (suivi PO, hors PR)
 
-## Reste hors PR
-
-- Validation on-device Android des demandes OS (renudge/géoloc) via la file.
-- Calibration relevance/ε avec le PO ; PR 3 Lettres.
+Ajout d'Onze Mondial au catalogue + colonne `aliases text[]` (équivalence chiffre↔mot `11`↔`onze`).
+Le gate est calibré pour au moins **ne pas casser** onemondial → onzemondial (trigramme ~0,55).

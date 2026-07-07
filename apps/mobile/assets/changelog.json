@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Recherche",
+      "summary": "Trouver une source est plus rapide et mieux ciblé."
+    },
+    {
       "tag": "Abonnements",
       "summary": "Tes sources abonnées gardent la couverture médiatique avant d'ouvrir l'article complet, et tu peux connecter ton compte depuis la fiche de n'importe quelle source suivie."
     },
