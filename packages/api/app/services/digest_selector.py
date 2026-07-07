@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-"""Service de sélection d'articles pour le Digest quotidien (7 articles).
+"""Service de sélection d'articles pour le Digest quotidien (cible: 10 articles).
 
 Ce service implémente l'algorithme de sélection intelligent pour Epic 10,
 avec contraintes de diversité et mécanisme de fallback.
 
 Contraintes de diversité:
-- Maximum 1 article par source (fallback à 2 si < 7 sources distinctes)
+- Maximum 1 article par source (fallback à 2 si < cible sources distinctes)
 - Maximum 2 articles par thème
 - Minimum 4 sources différentes
 
 Completion:
-- Seuil de completion à 5/7 interactions (configurable via COMPLETION_THRESHOLD)
+- Seuil de completion à 5 interactions (le "moment de fermeture" reste ancré
+  sur 5, configurable via COMPLETION_THRESHOLD, indépendamment de la taille du
+  pool disponible TARGET_DIGEST_SIZE)
 
 Fallback:
-- Si le pool utilisateur < 7 articles, complète avec les sources curatées
+- Si le pool utilisateur < cible articles, complète avec les sources curatées
 
 Réutilise l'infrastructure de scoring existante sans modification.
 """
@@ -205,7 +207,13 @@ class DiversityConstraints:
 
     MAX_PER_SOURCE = 1
     MAX_PER_THEME = 2
-    TARGET_DIGEST_SIZE = 7
+    # Taille cible du pool quotidien disponible (Actus du jour + Bonnes
+    # nouvelles). Relevée 7 → 10 à la demande du PO pour offrir un pool
+    # légèrement plus profond (8-10 articles disponibles/jour) sans toucher au
+    # clustering (TOPIC_CLUSTER_THRESHOLD / TOPIC_MAX_ARTICLES inchangés). Le
+    # "moment de fermeture" reste ancré sur COMPLETION_THRESHOLD=5 : on élargit
+    # le pool disponible, pas le rituel de complétion.
+    TARGET_DIGEST_SIZE = 10
     COMPLETION_THRESHOLD = 5
     MIN_SOURCES = 4
 
@@ -213,8 +221,9 @@ class DiversityConstraints:
 class DigestSelector:
     """Sélecteur intelligent d'articles pour le digest quotidien.
 
-    Cette classe implémente la logique de sélection des 7 articles
-    du digest avec garanties de diversité et mécanisme de fallback.
+    Cette classe implémente la logique de sélection des articles
+    du digest (cible ``TARGET_DIGEST_SIZE``) avec garanties de diversité
+    et mécanisme de fallback.
 
     Usage:
         selector = DigestSelector(session)
@@ -240,7 +249,7 @@ class DigestSelector:
     async def select_for_user(
         self,
         user_id: UUID,
-        limit: int = 7,
+        limit: int = 10,
         hours_lookback: int = 168,
         mode: str = "pour_vous",
         global_trending_context: GlobalTrendingContext | None = None,
@@ -253,7 +262,7 @@ class DigestSelector:
 
         Args:
             user_id: ID de l'utilisateur
-            limit: Nombre d'articles à sélectionner (défaut: 7)
+            limit: Nombre d'articles à sélectionner (défaut: 10, cf. TARGET_DIGEST_SIZE)
             hours_lookback: Fenêtre temporelle pour les candidats (défaut: 168h/7j)
             mode: Mode de digest (pour_vous ou serein)
             global_trending_context: Contexte trending pré-calculé (batch) ou None (on-demand)
@@ -1499,7 +1508,7 @@ class DigestSelector:
         """Sélectionne les articles avec contraintes de diversité.
 
         Contraintes:
-        - Maximum 1 article par source (fallback à 2 si < 5 sources distinctes)
+        - Maximum 1 article par source (fallback à 2 si < `target_count` sources distinctes)
         - Maximum 2 articles par thème (relaxé à 7 en mode THEME_FOCUS)
         - Minimum 3 sources différentes
         - Diversité revue de presse: score ÷ 2 dès le 2ème article d'une même source
@@ -1515,16 +1524,21 @@ class DigestSelector:
 
         effective_max_per_theme = self.constraints.MAX_PER_THEME
 
-        # Count distinct sources in candidate pool for fallback decision
+        # Count distinct sources in candidate pool for fallback decision.
+        # Seuil = `target_count` réellement demandé (et non la constante
+        # TARGET_DIGEST_SIZE) : on ne relâche à 2 articles/source que si le pool
+        # de sources distinctes ne suffit pas à remplir la cible 1-par-source.
+        # Découplé de TARGET_DIGEST_SIZE pour ne pas sur-relâcher la diversité
+        # des utilisateurs à petit `weekly_goal` quand on relève la cible globale.
         distinct_sources = {candidate[0].source_id for candidate in scored_candidates}
         effective_max_per_source = self.constraints.MAX_PER_SOURCE
 
-        if len(distinct_sources) < self.constraints.TARGET_DIGEST_SIZE:
+        if len(distinct_sources) < target_count:
             effective_max_per_source = 2
             logger.info(
                 "digest_diversity_fallback_max_per_source",
                 distinct_sources=len(distinct_sources),
-                target=self.constraints.TARGET_DIGEST_SIZE,
+                target=target_count,
                 effective_max_per_source=effective_max_per_source,
             )
 

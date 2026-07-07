@@ -390,8 +390,9 @@ class TestDiversityConstraints:
     def test_max_per_theme_is_two(self):
         assert DiversityConstraints.MAX_PER_THEME == 2
 
-    def test_target_digest_size_is_seven(self):
-        assert DiversityConstraints.TARGET_DIGEST_SIZE == 7
+    def test_target_digest_size_is_ten(self):
+        # Relevé 7 → 10 (pool quotidien plus profond, cf. demande PO).
+        assert DiversityConstraints.TARGET_DIGEST_SIZE == 10
 
     def test_completion_threshold_is_five(self):
         assert DiversityConstraints.COMPLETION_THRESHOLD == 5
