@@ -4,8 +4,10 @@ import pytest
 
 from app.services.search.cache import hash_query, normalize_query
 from app.services.search.smart_source_search import (
+    SmartSourceSearchService,
     _classify_query,
     _compute_score,
+    _is_relevant_external,
     _is_strong_catalog_match,
 )
 
@@ -42,6 +44,155 @@ class TestClassifyQuery:
 
     def test_classify_free_text_with_spaces(self):
         assert _classify_query("  la newsletter finance  ") == "free_text"
+
+    def test_classify_bare_domain_url_like(self):
+        assert _classify_query("usine-digitale.fr") == "url_like"
+
+    def test_classify_full_url_url_like(self):
+        assert _classify_query("https://www.usine-digitale.fr/") == "url_like"
+
+    def test_classify_two_word_name_is_free_text(self):
+        # "usine digitale" (space, no dot) must NOT be treated as a URL.
+        assert _classify_query("usine digitale") == "free_text"
+
+    def test_classify_youtube_url_url_like(self):
+        assert _classify_query("youtube.com/@micode") == "url_like"
+
+    def test_classify_reddit_url_url_like(self):
+        assert _classify_query("reddit.com/r/france") == "url_like"
+
+
+# ─── External relevance gate ─────────────────────────────────────
+
+
+class TestIsRelevantExternal:
+    # --- cases that must be KEPT (validated 7/7 on prod logs) ---
+    def test_keeps_onemondial_onzemondial(self):
+        # trigram rule: onemondial ↔ onzemondial ~0.55
+        assert (
+            _is_relevant_external("onemondial", "Onze Mondial", "onzemondial.com")
+            is True
+        )
+
+    def test_keeps_snowball_name_match(self):
+        assert (
+            _is_relevant_external(
+                "snowball", "Snowball Innovation GmbH", "snowball.company"
+            )
+            is True
+        )
+
+    def test_keeps_blog_moderateur_bdm(self):
+        # host is correct (blogdumoderateur) — name token overlap keeps it.
+        assert (
+            _is_relevant_external(
+                "blog moderateur", "Blog du Modérateur", "www.blogdumoderateur.com"
+            )
+            is True
+        )
+
+    def test_keeps_micode(self):
+        assert _is_relevant_external("micode", "Micode", "www.youtube.com") is True
+
+    def test_keeps_usine_digitale(self):
+        assert (
+            _is_relevant_external(
+                "usine digitale", "L'Usine Digitale", "www.usine-digitale.fr"
+            )
+            is True
+        )
+
+    # --- cases that must be DROPPED ---
+    def test_drops_insight_clement_bdm(self):
+        assert (
+            _is_relevant_external(
+                "insight clement formont",
+                "Blog du Modérateur",
+                "www.blogdumoderateur.com",
+            )
+            is False
+        )
+
+    def test_drops_hypertext_library_bulletin(self):
+        assert (
+            _is_relevant_external(
+                "hypertext",
+                "Bulletin des bibliothèques de France",
+                "bbf.enssib.fr",
+            )
+            is False
+        )
+
+    # --- never over-filter ---
+    def test_empty_query_returns_true(self):
+        assert _is_relevant_external("", "Anything", "example.com") is True
+
+    def test_tokenless_candidate_returns_true(self):
+        assert _is_relevant_external("micode", "", "") is True
+
+    def test_keeps_short_token_bdm(self):
+        # "bdm" is <3 chars — jaccard_similarity would drop it; we must not.
+        assert _is_relevant_external("bdm", "BDM", "www.blogdumoderateur.com") is True
+
+
+# ─── feed_url + host dedup helper ────────────────────────────────
+
+
+class TestDedupAdd:
+    def test_dedup_by_feed_url(self):
+        seen_feeds: set[str] = set()
+        seen_hosts: set[str] = set()
+        a = {"feed_url": "https://x.com/feed", "url": "https://x.com/a"}
+        b = {"feed_url": "https://x.com/feed", "url": "https://x.com/b"}
+        assert SmartSourceSearchService._dedup_add(a, seen_feeds, seen_hosts) is True
+        assert SmartSourceSearchService._dedup_add(b, seen_feeds, seen_hosts) is False
+
+    def test_external_dedup_by_host(self):
+        seen_feeds: set[str] = set()
+        seen_hosts: set[str] = set()
+        a = {
+            "feed_url": "https://bdm.com/rss",
+            "url": "https://www.blogdumoderateur.com/a",
+        }
+        b = {
+            "feed_url": "https://bdm.com/atom",  # different feed, same host
+            "url": "https://www.blogdumoderateur.com/b",
+        }
+        assert SmartSourceSearchService._dedup_add(a, seen_feeds, seen_hosts) is True
+        assert SmartSourceSearchService._dedup_add(b, seen_feeds, seen_hosts) is False
+
+    def test_two_youtube_channels_both_survive(self):
+        seen_feeds: set[str] = set()
+        seen_hosts: set[str] = set()
+        a = {
+            "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=A",
+            "url": "https://www.youtube.com/@a",
+        }
+        b = {
+            "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=B",
+            "url": "https://www.youtube.com/@b",
+        }
+        assert SmartSourceSearchService._dedup_add(a, seen_feeds, seen_hosts) is True
+        # path-level platform → host is NOT deduped, distinct feed → kept.
+        assert SmartSourceSearchService._dedup_add(b, seen_feeds, seen_hosts) is True
+
+    def test_two_catalog_sources_same_host_both_survive(self):
+        # Catalog results are exempt from host dedup: two curated sources on
+        # the same host but distinct feed_url both survive.
+        seen_feeds: set[str] = set()
+        seen_hosts: set[str] = set()
+        a = {
+            "feed_url": "https://shared.substack.com/feed/a",
+            "url": "https://shared.substack.com/a",
+            "in_catalog": True,
+        }
+        b = {
+            "feed_url": "https://shared.substack.com/feed/b",
+            "url": "https://shared.substack.com/b",
+            "in_catalog": True,
+        }
+        assert SmartSourceSearchService._dedup_add(a, seen_feeds, seen_hosts) is True
+        assert SmartSourceSearchService._dedup_add(b, seen_feeds, seen_hosts) is True
 
 
 # ─── compute_score tests ─────────────────────────────────────────
@@ -384,6 +535,59 @@ class TestCacheKey:
         )
 
         assert SmartSourceSearchService._cache_key("not a url") is None
+
+
+class TestDetectCandidatesRelevanceGate:
+    @pytest.mark.asyncio
+    async def test_offtopic_candidate_dropped(self, monkeypatch):
+        """External candidate whose resolved name/host is off-topic is dropped."""
+
+        async def fake_detect(self, url):
+            return (
+                "https://www.blogdumoderateur.com",
+                {
+                    "feed_url": "https://www.blogdumoderateur.com/feed",
+                    "name": "Blog du Modérateur",
+                    "type": "article",
+                },
+            )
+
+        monkeypatch.setattr(
+            SmartSourceSearchService, "_detect_with_root_fallback", fake_detect
+        )
+        svc = SmartSourceSearchService.__new__(SmartSourceSearchService)
+        out = await svc._detect_candidates(
+            [("https://www.blogdumoderateur.com/x", "", "")],
+            "brave",
+            [],
+            query_normalized="insight clement formont",
+        )
+        assert out == []
+
+    @pytest.mark.asyncio
+    async def test_ontopic_candidate_kept(self, monkeypatch):
+        async def fake_detect(self, url):
+            return (
+                "https://www.usine-digitale.fr",
+                {
+                    "feed_url": "https://www.usine-digitale.fr/rss",
+                    "name": "L'Usine Digitale",
+                    "type": "article",
+                },
+            )
+
+        monkeypatch.setattr(
+            SmartSourceSearchService, "_detect_with_root_fallback", fake_detect
+        )
+        svc = SmartSourceSearchService.__new__(SmartSourceSearchService)
+        out = await svc._detect_candidates(
+            [("https://www.usine-digitale.fr/x", "", "")],
+            "brave",
+            [],
+            query_normalized="usine digitale",
+        )
+        assert len(out) == 1
+        assert out[0]["feed_url"] == "https://www.usine-digitale.fr/rss"
 
 
 class TestLooksFrench:
