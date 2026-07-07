@@ -234,9 +234,9 @@ class SectionBanner extends StatelessWidget {
                                   alignment: PlaceholderAlignment.middle,
                                   child: Icon(
                                     PhosphorIcons.caretRight(
-                                      PhosphorIconsStyle.fill,
+                                      PhosphorIconsStyle.bold,
                                     ),
-                                    size: large ? 24 : 17,
+                                    size: large ? 24 : 20,
                                     color: colors.textPrimary,
                                   ),
                                 ),
