@@ -376,9 +376,7 @@ class SmartSourceSearchService:
         self.google_news = GoogleNewsProvider()
 
     @staticmethod
-    def _dedup_add(
-        r: dict, seen_feeds: set[str], seen_hosts: set[str]
-    ) -> bool:
+    def _dedup_add(r: dict, seen_feeds: set[str], seen_hosts: set[str]) -> bool:
         """Register *r*'s dedup keys; return True if it is new and kept.
 
         Dedup by ``feed_url`` always (blog-modérateur returned BDM twice under
