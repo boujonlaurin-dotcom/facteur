@@ -1,6 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Essentiel",
+      "summary": "Les titres de section sont plus lisibles, le « Tout lire » colle à sa section, et « Ton avis compte » est désormais intégré à la carte de fin de tournée."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "La lecture de ta tournée est plus fluide, les sections sont mieux cadrées à l'écran, et tu personnalises ta veille en un geste depuis son titre."
+    },
+    {
       "tag": "Abonnements",
       "summary": "Tes sources abonnées gardent la couverture médiatique avant d'ouvrir l'article complet, et tu peux connecter ton compte depuis la fiche de n'importe quelle source suivie."
     },

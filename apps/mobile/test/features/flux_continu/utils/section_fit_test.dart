@@ -120,7 +120,7 @@ void main() {
 
     test('réserver le footer retire une carte au seuil (bascule 3 → 2)', () {
       // no-blurb chrome 54 + 3·146 = 492. À usable = 495 le fit tient 3 cartes
-      // SANS footer, mais le footer « Tout lire › » (36) fait déborder → 2.
+      // SANS footer, mais le footer « Tout lire › » (28) fait déborder → 2.
       const usable = 495.0;
       final withoutFooter = fitVisibleCount(
         usableHeight: usable,
