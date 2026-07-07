@@ -1,6 +1,8 @@
 {
   "unreleased": [
     {
+      "tag": "Recherche",
+      "summary": "Trouver une source est plus rapide et mieux ciblé."
       "tag": "Veille",
       "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
     },
