@@ -1,0 +1,37 @@
+{
+  "run_id": "run-test",
+  "agent": "agent:media-eval-collecteur-debunkages@v1",
+  "genere_at": "2026-07-08T10:00:00Z",
+  "version_prompt": null,
+  "items": [
+    {
+      "media_domaine": "cnews.fr",
+      "type_signal": "sanction_arcom",
+      "url_debunkage": "https://www.arcom.fr/decision-cnews-2025-042",
+      "emetteur": "arcom",
+      "gravite": "significative",
+      "suite_donnee": "contestation",
+      "publie_at": "2025-11-12",
+      "resume": "Sanction de 20 000 EUR pour manquement au pluralisme, confirmée par le Conseil d'Etat.",
+      "citation": "L'ARCOM sanctionne la chaîne CNEWS…",
+      "source_urls": [
+        "https://www.arcom.fr/decision-cnews-2025-042",
+        "https://www.conseil-etat.fr/decision-2026-011"
+      ],
+      "sources_consultees": []
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "type_signal": "avis_cdjm",
+      "url_debunkage": "https://cdjm.org/avis/26-014",
+      "emetteur": "cdjm",
+      "gravite": "mineure",
+      "suite_donnee": "aucune",
+      "publie_at": "2026-02-03",
+      "resume": "Avis fondé : chiffre erroné non attribué dans un bandeau.",
+      "citation": "Le CDJM déclare la saisine fondée…",
+      "source_urls": ["https://cdjm.org/avis/26-014"],
+      "sources_consultees": []
+    }
+  ]
+}
