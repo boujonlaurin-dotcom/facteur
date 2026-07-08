@@ -95,8 +95,10 @@ class VeilleConfigState {
   /// Story 23.4 — sujet principal **obligatoire** (drill macro→granulaire en
   /// Step 1). Slug canonique (`AvailableSubtopics`, ex. `ai`) qui matche
   /// `Content.topics` côté scoring. Émis en position 0 (`kind:'preset'`) à
-  /// l'upsert ; devient le gate principal de la curation. Null pour le thème
-  /// "Autre" (chemin free-text/mots-clés).
+  /// l'upsert ; devient le gate principal de la curation. Pour le thème
+  /// "Autre" (chemin free-text), dérivé du `customThemeLabel` (`kind:'custom'`)
+  /// par `setCustomThemeLabel` — jamais `null` une fois un label saisi, sinon
+  /// aucun topic ne serait jamais persisté pour ce chemin.
   final String? mainTopicSlug;
   final String? mainTopicLabel;
 
@@ -348,12 +350,25 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
     // Changer de thème reset les topics pré-sélectionnés (les preset topics
     // dépendent du thème) ET le sujet principal granulaire (Story 23.4 — la
     // grille granulaire dépend du macro). Les customTopics persistent.
+    //
+    // Reset aussi les angles/sources/mots-clés du thème précédent : sans ça
+    // ils restent affichés/cochés en Step 2/3 après un changement de thème,
+    // obligeant à tout décocher à la main (feedback PO — édition pénible).
+    // Les suggestions sont réarmées pour être re-fetchées sur le nouveau
+    // thème.
     if (state.selectedTheme == id) return;
     state = state.copyWith(
       selectedTheme: id,
       mainTopicSlug: null,
       mainTopicLabel: null,
       selectedTopics: const {},
+      selectedSuggestions: const {},
+      selectedSourceIds: const {},
+      sourcesMeta: const {},
+      keywords: const {},
+      angleKeywords: const {},
+      angleSuggestionsRequested: true,
+      sourceSuggestionsRequested: true,
       // Reset customThemeLabel quand on quitte 'other'.
       customThemeLabel: id == kVeilleOtherThemeSlug
           ? state.customThemeLabel
@@ -380,11 +395,38 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
 
   /// Label libre quand le user a choisi la tuile "Autre". Trim + cap 120 chars
   /// (aligné avec backend `VeilleConfigUpsert.theme_label`).
+  ///
+  /// Dérive aussi `mainTopicSlug`/`mainTopicLabel` de ce label : sur le
+  /// chemin "Autre" il n'y a pas de grille de sous-thèmes pour poser le sujet
+  /// principal autrement, et sans lui `_buildUpsertRequest` n'émet jamais de
+  /// topic en position 0 — le sujet ne se sauvegarde donc jamais en DB (seul
+  /// `editorialBrief` persiste), rien à restaurer à la réouverture. Le label
+  /// complet est aussi seedé comme mot-clé multi-mots (jamais filtré par le
+  /// denylist backend) pour que ce sujet ait un signal de matching minimal.
   void setCustomThemeLabel(String? raw) {
     final v = (raw ?? '').trim();
     final next = v.isEmpty ? null : (v.length > 120 ? v.substring(0, 120) : v);
     if (next == state.customThemeLabel) return;
-    state = state.copyWith(customThemeLabel: next);
+    if (next == null) {
+      state = state.copyWith(
+        customThemeLabel: null,
+        mainTopicSlug: null,
+        mainTopicLabel: null,
+      );
+      return;
+    }
+    final slug = _slugifyCustom(next);
+    final nextLabels = Map<String, String>.from(state.topicLabels)
+      ..[slug] = next;
+    final nextAngleKw = Map<String, List<String>>.from(state.angleKeywords)
+      ..[slug] = _normalizeAngleKeywords([next]);
+    state = state.copyWith(
+      customThemeLabel: next,
+      mainTopicSlug: slug,
+      mainTopicLabel: next,
+      topicLabels: nextLabels,
+      angleKeywords: nextAngleKw,
+    );
   }
 
   /// Hydrate `topicLabels` pour les preset topics rendus par Step 1 — sans
@@ -1100,6 +1142,11 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       step: 1,
       introCompleted: true,
       selectedTheme: macro,
+      // Thème "Autre" : le label custom est le sujet, restauré depuis
+      // `theme_label` pour que le champ libre du Step 1 ne réapparaisse pas
+      // vide à la réouverture (round-trip complet du fix « sujet non
+      // sauvegardé »).
+      customThemeLabel: macro == kVeilleOtherThemeSlug ? cfg.themeLabel : null,
       mainTopicSlug: mainSlug,
       mainTopicLabel: mainLabel,
       selectedTopics: selectedTopics,

@@ -85,6 +85,46 @@ void main() {
     expect(container.read(veilleConfigProvider).customThemeLabel, isNull);
   });
 
+  test(
+    'setCustomThemeLabel dérive un sujet principal (thème "Autre" sans grille)',
+    () {
+      notifier.selectTheme(kVeilleOtherThemeSlug);
+      notifier.setCustomThemeLabel('Concert Coldplay Lyon');
+
+      final s = container.read(veilleConfigProvider);
+      expect(s.mainTopicSlug, 'custom-concert-coldplay-lyon');
+      expect(s.mainTopicLabel, 'Concert Coldplay Lyon');
+      expect(s.angleKeywords[s.mainTopicSlug], ['concert coldplay lyon']);
+
+      notifier.setCustomThemeLabel(null);
+      final cleared = container.read(veilleConfigProvider);
+      expect(cleared.mainTopicSlug, isNull);
+      expect(cleared.mainTopicLabel, isNull);
+    },
+  );
+
+  test(
+    'submit émet le sujet dérivé du thème "Autre" en position 0 (kind custom)',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.selectTheme(kVeilleOtherThemeSlug);
+      n.setCustomThemeLabel('Concert Coldplay Lyon');
+      await n.submit();
+
+      final topics = repo.captured!.topics;
+      expect(topics.first.topicId, 'custom-concert-coldplay-lyon');
+      expect(topics.first.kind, 'custom');
+      expect(topics.first.position, 0);
+      expect(topics.first.keywords, ['concert coldplay lyon']);
+    },
+  );
+
   test('addKeyword normalise + dédupe + respecte le cap maxKeywords', () {
     for (var i = 0; i < VeilleConfigNotifier.maxKeywords + 5; i++) {
       notifier.addKeyword('kw-$i');
@@ -537,6 +577,44 @@ void main() {
     expect(s.mainTopicLabel, isNull);
   });
 
+  test(
+    'selectTheme vide angles/sources/mots-clés du thème précédent '
+    '(édition pénible — feedback PO)',
+    () {
+      notifier.selectTheme('tech');
+      notifier.selectMainTopic('ai', 'IA');
+      notifier.addKeyword('llm');
+      notifier.toggleAngle(angle);
+      notifier.addUrlSourceToVeille(
+        name: 'Blog niche',
+        url: 'https://example.com/rss.xml',
+      );
+      notifier.registerSuggestedSources(const [
+        VeilleSourceSuggestionDto(
+          name: 'MACBA',
+          url: 'https://www.macba.cat',
+          why: 'Musée officiel',
+          relevanceScore: 1,
+        ),
+      ]);
+      final s0 = container.read(veilleConfigProvider);
+      expect(s0.selectedSuggestions, isNotEmpty);
+      expect(s0.selectedSourceIds, isNotEmpty);
+      expect(s0.keywords, isNotEmpty);
+      expect(s0.angleKeywords, isNotEmpty);
+
+      notifier.selectTheme('sport');
+      final s1 = container.read(veilleConfigProvider);
+      expect(s1.selectedSuggestions, isEmpty);
+      expect(s1.selectedSourceIds, isEmpty);
+      expect(s1.sourcesMeta, isEmpty);
+      expect(s1.keywords, isEmpty);
+      expect(s1.angleKeywords, isEmpty);
+      expect(s1.angleSuggestionsRequested, isTrue);
+      expect(s1.sourceSuggestionsRequested, isTrue);
+    },
+  );
+
   test('selectMainTopic re-tap désélectionne', () {
     notifier.selectTheme('tech');
     notifier.selectMainTopic('ai', 'IA');
@@ -610,4 +688,150 @@ void main() {
       expect(s.selectedSuggestions, contains('angle-x'));
     },
   );
+
+  // ─── Fix « sujet non sauvegardé » sur le chemin "Autre"/free-text ─────────
+
+  test(
+    'setCustomThemeLabel dérive un mainTopicSlug custom (thème Autre)',
+    () {
+      notifier.selectTheme(kVeilleOtherThemeSlug);
+      notifier.setCustomThemeLabel('Concert de jazz');
+      final s = container.read(veilleConfigProvider);
+      expect(s.mainTopicSlug, 'custom-concert-de-jazz');
+      expect(s.mainTopicLabel, 'Concert de jazz');
+      expect(s.topicLabels['custom-concert-de-jazz'], 'Concert de jazz');
+      // Le label complet est seedé comme mot-clé multi-mots (signal de
+      // matching qui échappe au denylist backend).
+      expect(s.angleKeywords['custom-concert-de-jazz'], ['concert de jazz']);
+    },
+  );
+
+  test('setCustomThemeLabel vidé remet mainTopicSlug/Label à null', () {
+    notifier.selectTheme(kVeilleOtherThemeSlug);
+    notifier.setCustomThemeLabel('Concert de jazz');
+    notifier.setCustomThemeLabel('   '); // effacement
+    final s = container.read(veilleConfigProvider);
+    expect(s.customThemeLabel, isNull);
+    expect(s.mainTopicSlug, isNull);
+    expect(s.mainTopicLabel, isNull);
+  });
+
+  test(
+    'thème Autre + brief seul → topic position 0 custom persisté au submit',
+    () async {
+      final repo = _CaptureRepo();
+      final c = ProviderContainer(
+        overrides: [veilleRepositoryProvider.overrideWithValue(repo)],
+      );
+      addTearDown(c.dispose);
+      final n = c.read(veilleConfigProvider.notifier);
+
+      n.selectTheme(kVeilleOtherThemeSlug);
+      n.setCustomThemeLabel('Concert de jazz');
+      n.setEditorialBrief('Les meilleurs concerts à Paris');
+      await n.submit();
+
+      final topic = repo.captured!.topics.first;
+      expect(topic.position, 0);
+      expect(topic.topicId, 'custom-concert-de-jazz');
+      expect(topic.kind, 'custom');
+      expect(topic.label, 'Concert de jazz');
+    },
+  );
+
+  test(
+    'hydrateFromActiveConfig restaure customThemeLabel pour un thème Autre',
+    () {
+      final cfg = VeilleConfigDto(
+        id: 'cfg-1',
+        userId: 'user-1',
+        themeId: kVeilleOtherThemeSlug,
+        themeLabel: 'Concert de jazz',
+        status: 'active',
+        createdAt: DateTime(2024),
+        updatedAt: DateTime(2024),
+        topics: const [
+          VeilleTopicDto(
+            id: 't0',
+            topicId: 'custom-concert-de-jazz',
+            label: 'Concert de jazz',
+            kind: 'custom',
+            reason: null,
+            position: 0,
+            keywords: [],
+          ),
+        ],
+        sources: const [],
+        keywords: const [],
+      );
+
+      notifier.hydrateFromActiveConfig(cfg);
+      final s = container.read(veilleConfigProvider);
+      expect(s.selectedTheme, kVeilleOtherThemeSlug);
+      expect(s.customThemeLabel, 'Concert de jazz', reason: 'champ Step 1 rempli');
+      expect(s.mainTopicSlug, 'custom-concert-de-jazz');
+      expect(s.mainTopicLabel, 'Concert de jazz');
+    },
+  );
+
+  // ─── Fix UX : changer de thème réinitialise angles/sources/mots-clés ──────
+
+  test('selectTheme vide angles/sources/keywords + réarme les suggestions', () {
+    // Scénario réel : on édite une config 'tech' existante (hydrate met les
+    // flags de suggestion à false), puis on change de thème.
+    final cfg = VeilleConfigDto(
+      id: 'cfg-1',
+      userId: 'user-1',
+      themeId: 'tech',
+      themeLabel: 'Tech',
+      status: 'active',
+      createdAt: DateTime(2024),
+      updatedAt: DateTime(2024),
+      topics: const [
+        VeilleTopicDto(
+          id: 't0',
+          topicId: 'ai',
+          label: 'IA',
+          kind: 'preset',
+          reason: null,
+          position: 0,
+          keywords: [],
+        ),
+      ],
+      sources: const [],
+      keywords: const [],
+    );
+    notifier.hydrateFromActiveConfig(cfg);
+    // Sélections du thème 'tech' dans tous les buckets.
+    notifier.toggleAngle(
+      const VeilleAngleSuggestionDto(
+        title: 'Startups',
+        keywords: ['seed', 'levée'],
+      ),
+    );
+    notifier.addKeyword('gpt');
+    notifier.addCustomSourceToVeille(
+      sourceId: 'src-1',
+      name: 'Le Monde',
+      url: 'https://lemonde.fr',
+    );
+    var s = container.read(veilleConfigProvider);
+    expect(s.angleSuggestionsRequested, isFalse, reason: 'édition = flags off');
+    expect(s.selectedSuggestions, isNotEmpty);
+    expect(s.selectedSourceIds, isNotEmpty);
+    expect(s.keywords, isNotEmpty);
+
+    notifier.selectTheme('culture');
+
+    s = container.read(veilleConfigProvider);
+    expect(s.selectedTheme, 'culture');
+    expect(s.mainTopicSlug, isNull);
+    expect(s.selectedSuggestions, isEmpty);
+    expect(s.selectedSourceIds, isEmpty);
+    expect(s.sourcesMeta, isEmpty);
+    expect(s.keywords, isEmpty);
+    expect(s.angleKeywords, isEmpty);
+    expect(s.angleSuggestionsRequested, isTrue, reason: 'refetch réarmé');
+    expect(s.sourceSuggestionsRequested, isTrue, reason: 'refetch réarmé');
+  });
 }
