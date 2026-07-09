@@ -140,6 +140,12 @@ class Settings(BaseSettings):
     )
     classification_worker_interval_s: int = 10  # intervalle entre 2 vérifications
 
+    # Garde-fou anti-angle-mort (bug-classification-worker-stopped) : le job
+    # scheduler `classification_queue_health_check` alerte Sentry si le plus
+    # vieux pending dépasse ce seuil (en heures). Signal externe qui fonctionne
+    # même si la task du worker est morte, tant que le scheduler tourne.
+    classification_queue_alert_age_hours: int = 12
+
     # Brave Search API (smart source search)
     brave_api_key: str = ""
     brave_monthly_cap: int = 1800
