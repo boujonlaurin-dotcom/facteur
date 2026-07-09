@@ -416,16 +416,12 @@ class VeilleConfigNotifier extends StateNotifier<VeilleConfigState> {
       return;
     }
     final slug = _slugifyCustom(next);
-    final nextLabels = Map<String, String>.from(state.topicLabels)
-      ..[slug] = next;
-    final nextAngleKw = Map<String, List<String>>.from(state.angleKeywords)
-      ..[slug] = _normalizeAngleKeywords([next]);
     state = state.copyWith(
       customThemeLabel: next,
       mainTopicSlug: slug,
       mainTopicLabel: next,
-      topicLabels: nextLabels,
-      angleKeywords: nextAngleKw,
+      topicLabels: {...state.topicLabels, slug: next},
+      angleKeywords: {...state.angleKeywords, slug: _normalizeAngleKeywords([next])},
     );
   }
 

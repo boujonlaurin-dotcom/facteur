@@ -94,6 +94,7 @@ void main() {
       final s = container.read(veilleConfigProvider);
       expect(s.mainTopicSlug, 'custom-concert-coldplay-lyon');
       expect(s.mainTopicLabel, 'Concert Coldplay Lyon');
+      expect(s.topicLabels['custom-concert-coldplay-lyon'], 'Concert Coldplay Lyon');
       expect(s.angleKeywords[s.mainTopicSlug], ['concert coldplay lyon']);
 
       notifier.setCustomThemeLabel(null);
@@ -690,21 +691,6 @@ void main() {
   );
 
   // ─── Fix « sujet non sauvegardé » sur le chemin "Autre"/free-text ─────────
-
-  test(
-    'setCustomThemeLabel dérive un mainTopicSlug custom (thème Autre)',
-    () {
-      notifier.selectTheme(kVeilleOtherThemeSlug);
-      notifier.setCustomThemeLabel('Concert de jazz');
-      final s = container.read(veilleConfigProvider);
-      expect(s.mainTopicSlug, 'custom-concert-de-jazz');
-      expect(s.mainTopicLabel, 'Concert de jazz');
-      expect(s.topicLabels['custom-concert-de-jazz'], 'Concert de jazz');
-      // Le label complet est seedé comme mot-clé multi-mots (signal de
-      // matching qui échappe au denylist backend).
-      expect(s.angleKeywords['custom-concert-de-jazz'], ['concert de jazz']);
-    },
-  );
 
   test('setCustomThemeLabel vidé remet mainTopicSlug/Label à null', () {
     notifier.selectTheme(kVeilleOtherThemeSlug);
