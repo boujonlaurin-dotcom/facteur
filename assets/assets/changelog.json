@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Intérêts",
+      "summary": "Règle le niveau de suivi de chaque thème et sujet d'un simple curseur, comme sur les fiches source."
+    },
+    {
       "tag": "Essentiel",
       "summary": "Les titres de section sont plus lisibles, le « Tout lire » colle à sa section, et « Ton avis compte » est désormais intégré à la carte de fin de tournée."
     },
