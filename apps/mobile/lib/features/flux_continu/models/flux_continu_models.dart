@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 
+/// Story 22.5 — en-dessous de ce nombre de sources suivies sur un thème, une
+/// section thème **riche** porte le CTA « Ajouter des sources » ; au-dessus,
+/// « Tout lire › ». Co-localisé avec le modèle (importé par le widget de rendu
+/// [SectionBlock] et par le provider) pour éviter une dépendance widget→provider.
+/// Pendant du seuil maigre/riche `kThinSectionMaxItems`/`kRichSectionMinItems`.
+const int kThemeFewFollowedSources = 6; // < 6 = « peu de sources »
+
 /// Identifier for the **type** of a Flux Continu V1.8 section.
 ///
 /// Multiplicity (0..N) is no longer encoded here — there's a single `theme`
@@ -354,6 +361,15 @@ class FeedThemeSection extends FluxSection {
   /// la réserve à 1 carte.
   final bool isPlaceholder;
 
+  /// Story 22.5 — nombre de sources suivies par l'utilisateur sur ce thème
+  /// (dérivé de `themesFollowedProvider`, `0` pour un sujet custom ou tant que
+  /// le provider n'est pas résolu). Pilote le CTA de bas de section thème
+  /// **riche** : « Tout lire » si ≥ `kThemeFewFollowedSources`, sinon
+  /// « Ajouter des sources ». Comme `coreVisibleCount`/`origin`, il DOIT
+  /// survivre au dédup/loadMore via `copyWith` — sinon toute section riche
+  /// retombe en « Ajouter » au premier recompose.
+  final int followedSourceCount;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -372,6 +388,7 @@ class FeedThemeSection extends FluxSection {
     this.noRecentSource = false,
     this.underfilled = false,
     this.isPlaceholder = false,
+    this.followedSourceCount = 0,
     super.blurb,
     super.illustrationAsset,
   });
@@ -395,6 +412,10 @@ class FeedThemeSection extends FluxSection {
     bool? noRecentSource,
     bool? underfilled,
     bool? isPlaceholder,
+    // Story 22.5 — re-stampé par `_stampFollowedCounts` quand
+    // `themesFollowedProvider` résout. Omis par les autres callers (dédup/
+    // loadMore) → préservé via `?? this.followedSourceCount`.
+    int? followedSourceCount,
   }) {
     return FeedThemeSection(
       kind: kind,
@@ -417,6 +438,10 @@ class FeedThemeSection extends FluxSection {
       noRecentSource: noRecentSource ?? this.noRecentSource,
       underfilled: underfilled ?? this.underfilled,
       isPlaceholder: isPlaceholder ?? this.isPlaceholder,
+      // Story 22.5 — même piège que coreVisibleCount/origin : sans ce report,
+      // le count retombe à 0 au recompose → CTA « Ajouter » sur une section
+      // pourtant riche en sources suivies.
+      followedSourceCount: followedSourceCount ?? this.followedSourceCount,
       blurb: blurb,
       illustrationAsset: illustrationAsset,
     );
