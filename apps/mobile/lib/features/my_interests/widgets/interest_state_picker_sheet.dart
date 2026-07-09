@@ -16,6 +16,27 @@ import '../models/user_interests_state.dart';
 ///   Explorer sans entrer dans le top 5 de la Tournée du jour.
 enum FavoriteSemantics { theme, pinnedTopic }
 
+/// Résout label / icône / description d'un [InterestState] en tenant compte de
+/// la sémantique « Épinglé » (sujet personnalisé). Source unique partagée par
+/// le picker (`_StateOption`) et le curseur `InterestPrioritySlider`, pour ne
+/// pas dupliquer l'override pinned (strings + punaise) dans les deux widgets.
+extension InterestStateSemantics on InterestState {
+  bool _isPinned(FavoriteSemantics semantics) =>
+      this == InterestState.favorite &&
+      semantics == FavoriteSemantics.pinnedTopic;
+
+  String labelFor(FavoriteSemantics semantics) =>
+      _isPinned(semantics) ? 'Épinglé' : label;
+
+  IconData iconFor(FavoriteSemantics semantics) => _isPinned(semantics)
+      ? PhosphorIcons.pushPin(PhosphorIconsStyle.fill)
+      : iconData;
+
+  String descriptionFor(FavoriteSemantics semantics) => _isPinned(semantics)
+      ? 'Apparaît comme onglet dans la section Flâner.'
+      : description;
+}
+
 class InterestStatePickerSheet extends StatelessWidget {
   final String title;
   final InterestState currentState;
@@ -122,19 +143,11 @@ class _StateOption extends StatelessWidget {
     required this.favoriteSemantics,
   });
 
-  bool get _isPinnedTopic =>
-      state == InterestState.favorite &&
-      favoriteSemantics == FavoriteSemantics.pinnedTopic;
+  String get _label => state.labelFor(favoriteSemantics);
 
-  String get _label =>
-      _isPinnedTopic ? 'Épinglé' : state.label;
+  String get _description => state.descriptionFor(favoriteSemantics);
 
-  String get _description => _isPinnedTopic
-      ? 'Apparaît comme onglet dans la section Flâner.'
-      : state.description;
-
-  IconData get _icon =>
-      _isPinnedTopic ? PhosphorIcons.pushPin(PhosphorIconsStyle.fill) : state.iconData;
+  IconData get _icon => state.iconFor(favoriteSemantics);
 
   @override
   Widget build(BuildContext context) {

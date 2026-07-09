@@ -1,14 +1,22 @@
 {
   "unreleased": [
     {
+      "tag": "Intérêts",
+      "summary": "Règle le niveau de suivi de chaque thème et sujet d'un simple curseur, comme sur les fiches source."
+    },
+    {
       "tag": "Essentiel",
       "summary": "Les titres de section sont plus lisibles, le « Tout lire » colle à sa section, et « Ton avis compte » est désormais intégré à la carte de fin de tournée."
     },
     {
       "tag": "Tournée",
       "summary": "La lecture de ta tournée est plus fluide, les sections sont mieux cadrées à l'écran, et tu personnalises ta veille en un geste depuis son titre."
+    },
+    {
       "tag": "Recherche",
       "summary": "Trouver une source est plus rapide et mieux ciblé."
+    },
+    {
       "tag": "Veille",
       "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
     },
