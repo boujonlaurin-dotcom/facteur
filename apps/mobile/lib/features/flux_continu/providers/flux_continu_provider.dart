@@ -26,8 +26,9 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/models/source_model.dart';
+import '../../sources/models/theme_source_model.dart' show FollowedTheme;
 import '../../sources/providers/sources_providers.dart'
-    show userSourcesProvider;
+    show userSourcesProvider, themesFollowedProvider;
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../repositories/essentiel_repository.dart';
@@ -308,6 +309,21 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       final wasPresent = prev?.valueOrNull?.today != null;
       final isPresent = next.valueOrNull?.today != null;
       if (wasPresent == isPresent) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // Story 22.5 — `themesFollowedProvider` est lazy : ce listen le déclenche
+    // dès l'init du notifier et recompose à sa résolution (et à tout changement
+    // du count après follow/unfollow) pour re-stamper `followedSourceCount`
+    // ([_stampFollowedCounts]) → le CTA « Tout lire »/« Ajouter » se corrige
+    // sans attendre un refetch complet.
+    ref.listen<AsyncValue<List<FollowedTheme>>>(themesFollowedProvider, (
+      prev,
+      next,
+    ) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      if (next.valueOrNull == null) return;
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
@@ -824,13 +840,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ),
       usableHeight,
     );
+    final stampedSections = _stampFollowedCounts(finalSections);
     final grilleSlotIndex = _resolveGrilleSlotIndex(
       orderedKeys: orderedKeys,
-      finalSections: finalSections,
+      finalSections: stampedSections,
     );
 
     return FluxContinuState(
-      sections: finalSections,
+      sections: stampedSections,
       grilleSlotIndex: grilleSlotIndex,
       isSerene: isSerene,
       closingDismissed: _closingDismissed,
@@ -942,6 +959,28 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// No-op conservé comme seam (appelé par [_compose]).
   FluxSection _fitHeroSection(FluxSection essentiel, double? usableHeight) {
     return essentiel;
+  }
+
+  /// Story 22.5 — (re)stampe `followedSourceCount` sur les sections **thème**
+  /// (macro-thème avec `themeSlug`) depuis `themesFollowedProvider`. Appelé en
+  /// toute fin de [_compose] : source unique de vérité, insensible au timing du
+  /// provider lazy (au 1ᵉʳ compose il est null → count 0 → « Ajouter » ; sa
+  /// résolution déclenche un recompose via le listener de build() → re-stamp).
+  /// Les sujets custom (`themeSlug == null`) et thèmes absents du provider
+  /// gardent 0.
+  List<FluxSection> _stampFollowedCounts(List<FluxSection> sections) {
+    final themes = ref.read(themesFollowedProvider).valueOrNull;
+    if (themes == null || themes.isEmpty) return sections;
+    final bySlug = {for (final t in themes) t.slug: t.followedSourcesCount};
+    return [
+      for (final s in sections)
+        if (s is FeedThemeSection &&
+            s.themeSlug != null &&
+            bySlug.containsKey(s.themeSlug))
+          s.copyWith(followedSourceCount: bySlug[s.themeSlug])
+        else
+          s,
+    ];
   }
 
   /// Story 22.3 — retire les sections **suggérées** vidées par le dédup
@@ -1518,6 +1557,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       hasMore: hasMore,
       origin: origin,
       reason: reason,
+      // `followedSourceCount` n'est PAS stampé ici : `themesFollowedProvider`
+      // est lazy → non résolu au 1ᵉʳ fan-out. Il est (re)stampé à la fin de
+      // [_compose] ([_stampFollowedCounts]), qui re-tourne quand le provider
+      // résout (listener dans build()). Défaut 0 en attendant.
     );
   }
 

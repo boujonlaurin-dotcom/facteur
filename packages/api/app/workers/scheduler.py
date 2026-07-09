@@ -13,6 +13,9 @@ from app.jobs.digest_generation_job import (
     run_digest_generation,
 )
 from app.jobs.purge_deleted_users import purge_deleted_users
+from app.jobs.recompute_source_coverage_themes import (
+    recompute_source_coverage_themes,
+)
 from app.jobs.recompute_source_language import recompute_source_language
 from app.services.observability.cost_budget import log_budget_projection
 from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
@@ -541,6 +544,21 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Recalcul `sources.coverage_themes` (couverture éditoriale data-driven 90j)
+    # — hebdo dimanche 03h45 Paris. La couverture dérive lentement (pas besoin
+    # de tourner tous les jours) ; fenêtre nocturne à faible pression pool
+    # (après recompute_source_language 03h30). Sert la découverte, jamais le
+    # scoring. Cf. story 22.5.
+    scheduler.add_job(
+        recompute_source_coverage_themes,
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=45, timezone=_PARIS_TZ),
+        id="recompute_source_coverage_themes",
+        name="Recompute Source.coverage_themes (couverture éditoriale 90j)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Projection budget coût API externes (évidence G3 scaling) : conso du mois
     # courant par provider/call_site + projection ×2.25 (89→200 users), loguée
     # une fois par jour. Read-only, ne change aucun comportement.
@@ -613,6 +631,7 @@ def start_scheduler() -> None:
             "storage_cleanup",
             "purge_deleted_users",
             "recompute_source_language",
+            "recompute_source_coverage_themes",
             "zombie_session_sweeper",
             "pool_health_probe",
             "daily_essentiel_push_dispatch",

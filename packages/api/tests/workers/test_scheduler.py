@@ -33,6 +33,38 @@ from app.workers.scheduler import (
 class TestScheduler:
     """Tests for the background job scheduler configuration."""
 
+    def test_scheduler_has_coverage_themes_job_weekly_sunday(self):
+        """Story 22.5 : recompute_source_coverage_themes hebdo dim. 03:45 Paris."""
+        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            captured = {}
+
+            def capture_add_job(*args, **kwargs):
+                job_id = kwargs.get("id")
+                if job_id:
+                    captured[job_id] = {
+                        "func": args[0] if args else kwargs.get("func"),
+                        **kwargs,
+                    }
+
+            mock_scheduler.add_job = capture_add_job
+            start_scheduler()
+
+            assert "recompute_source_coverage_themes" in captured
+            job = captured["recompute_source_coverage_themes"]
+            assert job["func"].__name__ == "recompute_source_coverage_themes"
+            assert isinstance(job["trigger"], CronTrigger)
+            assert "Europe/Paris" in str(job["trigger"].timezone)
+            # Hebdo (day_of_week=sun) et sérialisé (max_instances=1, coalesce).
+            fields = {f.name: str(f) for f in job["trigger"].fields}
+            assert fields.get("day_of_week") == "sun"
+            assert fields.get("hour") == "3"
+            assert fields.get("minute") == "45"
+            assert job["max_instances"] == 1
+            assert job["coalesce"] is True
+
     def test_scheduler_has_daily_digest_job(self):
         """TEST-01: Verify daily digest job is scheduled at 07:30 Paris time."""
         with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:

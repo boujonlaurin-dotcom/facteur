@@ -250,7 +250,25 @@ THEME_LABELS = {
     "culture": "Culture",
     "science": "Science",
     "international": "International",
+    "sport": "Sport",
 }
+
+
+def _source_matches_theme(slug: str):
+    """Clause de rattachement d'une `Source` à un thème pour la **découverte**.
+
+    Une source appartient à un thème si c'est son thème primaire, un de ses
+    thèmes secondaires (curé, input scoring) OU un de ses `coverage_themes`
+    (couverture éditoriale data-driven, story 22.5). Factorisée : partagée par
+    les trois endpoints de découverte par thème (`get_sources_by_theme` ×2,
+    `suggest_sources_for_theme`). Volontairement **absente** du count de
+    `get_themes_followed`, qui ne doit pas être gonflé par la couverture.
+    """
+    return (
+        (Source.theme == slug)
+        | (Source.secondary_themes.any(slug))
+        | (Source.coverage_themes.any(slug))
+    )
 
 
 def _source_to_response(
@@ -484,7 +502,7 @@ async def get_sources_by_theme(
         select(Source)
         .where(Source.is_active.is_(True))
         .where(Source.is_curated.is_(True))
-        .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+        .where(_source_matches_theme(slug))
         .order_by(Source.name)
         .limit(limit)
     )
@@ -505,7 +523,7 @@ async def get_sources_by_theme(
             select(Source)
             .where(Source.is_active.is_(True))
             .where(Source.is_curated.is_(False))
-            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+            .where(_source_matches_theme(slug))
             .order_by(Source.name)
             .limit(remaining)
         )
@@ -632,7 +650,7 @@ async def suggest_sources_for_theme(
             select(Source)
             .where(Source.is_active.is_(True))
             .where(Source.is_curated.is_(True))
-            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+            .where(_source_matches_theme(slug))
             .order_by(Source.name)
             .limit(_QUALITY_CATALOG_SCAN_LIMIT)
         )
