@@ -497,9 +497,7 @@ def start_scheduler() -> None:
     # scoring. Cf. story 22.5.
     scheduler.add_job(
         recompute_source_coverage_themes,
-        trigger=CronTrigger(
-            day_of_week="sun", hour=3, minute=45, timezone=_PARIS_TZ
-        ),
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=45, timezone=_PARIS_TZ),
         id="recompute_source_coverage_themes",
         name="Recompute Source.coverage_themes (couverture éditoriale 90j)",
         replace_existing=True,
