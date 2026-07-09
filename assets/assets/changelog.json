@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Des suggestions de sources plus riches par thème, et un accès direct « Tout lire »."
+    },
+    {
       "tag": "Intérêts",
       "summary": "Règle le niveau de suivi de chaque thème et sujet d'un simple curseur, comme sur les fiches source."
     },
