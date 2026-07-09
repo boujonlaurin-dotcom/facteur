@@ -10,7 +10,9 @@ Takes a free-text topic name from the user and maps it to:
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 
 import httpx
@@ -25,6 +27,16 @@ from app.services.ml.classification_service import (
 )
 
 log = structlog.get_logger()
+
+async def _await_with_budget[T](coro: Awaitable[T], timeout: float | None) -> T:
+    """Await [coro], bounding it with [timeout] seconds when provided.
+
+    On timeout the coroutine is cancelled and asyncio.TimeoutError propagates,
+    so callers treat it like any other LLM failure and fall back to fuzzy.
+    """
+    if timeout is not None:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    return await coro
 
 # Build the topic list for the enrichment prompt
 _TOPIC_LIST = "\n".join(
@@ -138,11 +150,18 @@ class TopicEnrichmentService:
             )
         return self._client
 
-    async def enrich(self, topic_name: str) -> TopicEnrichmentResult:
+    async def enrich(
+        self, topic_name: str, *, llm_timeout: float | None = None
+    ) -> TopicEnrichmentResult:
         """Enrich a free-text topic name via LLM one-shot call.
 
         Args:
             topic_name: User-provided topic name (e.g. "Voiture électrique")
+            llm_timeout: Optional hard budget (seconds) on the LLM call. If the
+                call exceeds it, we bail to the fuzzy fallback instead of letting
+                the client hit its own receive timeout. Used on the onboarding /
+                create path where a fast, slightly-degraded answer beats a
+                silent save failure.
 
         Returns:
             TopicEnrichmentResult with slug_parent, keywords, intent_description,
@@ -157,8 +176,10 @@ class TopicEnrichmentService:
         # Try LLM enrichment first
         if self._ready:
             try:
-                return await self._enrich_via_llm(topic_name.strip())
-            except Exception as e:
+                return await _await_with_budget(
+                    self._enrich_via_llm(topic_name.strip()), llm_timeout
+                )
+            except Exception as e:  # incl. asyncio.TimeoutError from wait_for
                 log.warning(
                     "topic_enrichment.llm_failed",
                     topic=topic_name,
@@ -288,12 +309,15 @@ class TopicEnrichmentService:
         )
 
     async def disambiguate(
-        self, name: str, theme: str | None = None
+        self, name: str, theme: str | None = None, *, llm_timeout: float | None = None
     ) -> list[DisambiguationCandidate]:
         """Disambiguate a free-text topic name via LLM.
 
         Returns 1-3 candidates depending on ambiguity.
         Falls back to enrich() if LLM fails.
+
+        [llm_timeout] bounds each LLM call (disambiguation + the enrich fallback)
+        so the endpoint answers well under the client receive timeout.
         """
         if not name or not name.strip():
             raise ValueError("name cannot be empty")
@@ -302,8 +326,10 @@ class TopicEnrichmentService:
 
         if self._ready:
             try:
-                return await self._disambiguate_via_llm(name, theme)
-            except Exception as e:
+                return await _await_with_budget(
+                    self._disambiguate_via_llm(name, theme), llm_timeout
+                )
+            except Exception as e:  # incl. asyncio.TimeoutError from wait_for
                 log.warning(
                     "topic_disambiguation.llm_failed",
                     name=name,
@@ -311,7 +337,7 @@ class TopicEnrichmentService:
                 )
 
         # Fallback: use enrich() and wrap as single candidate
-        result = await self.enrich(name)
+        result = await self.enrich(name, llm_timeout=llm_timeout)
         return [
             DisambiguationCandidate(
                 canonical_name=result.canonical_name or name,
