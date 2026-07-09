@@ -1,8 +1,8 @@
 {
   "unreleased": [
     {
-      "tag": "Onboarding",
-      "summary": "Tes sujets personnalisés sont validés et enregistrés dès que tu les ajoutes."
+      "tag": "Intérêts",
+      "summary": "Règle le niveau de suivi de chaque thème et sujet d'un simple curseur, comme sur les fiches source."
     },
     {
       "tag": "Essentiel",
@@ -19,6 +19,10 @@
     {
       "tag": "Veille",
       "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
+    },
+    {
+      "tag": "Veille",
+      "summary": "Ton sujet de veille est bien mémorisé, même quand tu le saisis librement, et changer de thème repart d'une base propre sans avoir à tout décocher."
     },
     {
       "tag": "Bonnes nouvelles",
