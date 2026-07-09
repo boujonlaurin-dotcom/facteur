@@ -28,6 +28,7 @@ from app.services.ml.classification_service import (
 
 log = structlog.get_logger()
 
+
 async def _await_with_budget[T](coro: Awaitable[T], timeout: float | None) -> T:
     """Await [coro], bounding it with [timeout] seconds when provided.
 
@@ -37,6 +38,7 @@ async def _await_with_budget[T](coro: Awaitable[T], timeout: float | None) -> T:
     if timeout is not None:
         return await asyncio.wait_for(coro, timeout=timeout)
     return await coro
+
 
 # Build the topic list for the enrichment prompt
 _TOPIC_LIST = "\n".join(
