@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facteur · Architecture agentique d'évaluation des médias (C1–C11)</title>
+<style>
+  :root {
+    --ink: #1b2430;
+    --ink-soft: #48566a;
+    --line: #e3e8ef;
+    --bg: #f6f8fb;
+    --card: #ffffff;
+    --brand: #2f5fe0;
+    --brand-soft: #eaf0ff;
+    --code: #0f766e;
+    --code-soft: #e6f6f3;
+    --agent: #7c3aed;
+    --agent-soft: #f1eafe;
+    --human: #b45309;
+    --human-soft: #fdf1e0;
+    --ok: #15803d;
+    --warn: #b91c1c;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.05);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 22px 96px; }
+  header.hero {
+    background: linear-gradient(135deg, #1b2a4e 0%, #2f5fe0 100%);
+    color: #fff;
+    padding: 54px 0 46px;
+    box-shadow: var(--shadow);
+  }
+  header.hero .wrap { padding-bottom: 0; }
+  .eyebrow {
+    text-transform: uppercase; letter-spacing: .14em; font-size: 12px;
+    font-weight: 700; opacity: .82; margin: 0 0 10px;
+  }
+  header.hero h1 { font-size: 34px; line-height: 1.15; margin: 0 0 14px; font-weight: 800; }
+  header.hero p.lede { font-size: 17px; max-width: 760px; margin: 0; opacity: .95; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22);
+    padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  }
+
+  nav.toc {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 22px; margin: -30px 0 40px; box-shadow: var(--shadow);
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 6px 24px;
+  }
+  nav.toc a { color: var(--ink-soft); text-decoration: none; font-size: 14px; font-weight: 600; padding: 5px 0; display: block; border-bottom: 1px solid transparent; }
+  nav.toc a:hover { color: var(--brand); }
+  nav.toc .toc-num { color: var(--brand); font-weight: 800; margin-right: 8px; }
+
+  section { margin: 0 0 52px; }
+  h2 {
+    font-size: 24px; font-weight: 800; margin: 0 0 6px; letter-spacing: -.01em;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  h2 .num {
+    font-size: 15px; font-weight: 800; color: #fff; background: var(--brand);
+    border-radius: 8px; padding: 2px 10px; letter-spacing: 0;
+  }
+  h3 { font-size: 18px; font-weight: 700; margin: 30px 0 10px; }
+  .section-lede { color: var(--ink-soft); font-size: 16px; margin: 0 0 22px; max-width: 820px; }
+  p { margin: 0 0 14px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; box-shadow: var(--shadow); }
+  .grid { display: grid; gap: 18px; }
+  .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .grid-3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+  /* Voie badges */
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; padding: 3px 9px; border-radius: 6px; white-space: nowrap; }
+  .b-code  { color: var(--code);  background: var(--code-soft); }
+  .b-agent { color: var(--agent); background: var(--agent-soft); }
+  .b-human { color: var(--human); background: var(--human-soft); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .d-code { background: var(--code); } .d-agent { background: var(--agent); } .d-human { background: var(--human); }
+
+  /* Pipeline */
+  .pipeline { display: flex; flex-direction: column; gap: 0; }
+  .stage {
+    display: grid; grid-template-columns: 46px 1fr; gap: 16px; align-items: stretch;
+    position: relative;
+  }
+  .stage .rail { display: flex; flex-direction: column; align-items: center; }
+  .stage .knob {
+    width: 34px; height: 34px; border-radius: 50%; background: var(--brand); color: #fff;
+    display: grid; place-items: center; font-weight: 800; font-size: 15px; flex: 0 0 auto; z-index: 1;
+  }
+  .stage .line { width: 2px; flex: 1; background: var(--line); }
+  .stage .body { padding: 0 0 20px; }
+  .stage .body h4 { margin: 4px 0 4px; font-size: 16px; }
+  .stage .body p { margin: 0; color: var(--ink-soft); font-size: 14.5px; }
+  .stage .body code { font-size: 12.5px; }
+  .stage.collecte .knob { background: var(--code); }
+  .stage.eval .knob { background: var(--agent); }
+  .stage.store .knob { background: #334155; }
+
+  code, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; background: #f1f4f8; padding: 1px 6px; border-radius: 5px; color: #223; }
+  .arrow { color: var(--ink-soft); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 0; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); font-weight: 700; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  /* Criterion cards */
+  .crit { border-top: 4px solid var(--brand); }
+  .crit .crit-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 4px; }
+  .crit .crit-title { font-size: 17px; font-weight: 800; margin: 0; }
+  .crit .crit-sub { color: var(--ink-soft); font-size: 13px; margin: 2px 0 0; }
+  .crit .pts { font-size: 13px; font-weight: 800; color: var(--brand); background: var(--brand-soft); border-radius: 8px; padding: 4px 10px; white-space: nowrap; }
+  .crit.pilier-rigueur { border-top-color: #2f5fe0; }
+  .crit.pilier-transparence { border-top-color: #0f766e; }
+  .crit.pilier-independance { border-top-color: #7c3aed; }
+  .det-table td:last-child { font-weight: 700; text-align: right; white-space: nowrap; }
+  .flag-2eval { font-size: 11px; font-weight: 800; color: var(--human); background: var(--human-soft); border-radius: 5px; padding: 2px 7px; }
+
+  .callout { border-left: 4px solid var(--brand); background: var(--brand-soft); border-radius: 0 10px 10px 0; padding: 14px 18px; margin: 18px 0; }
+  .callout.warn { border-left-color: var(--warn); background: #fdeceb; }
+  .callout.ok { border-left-color: var(--ok); background: #eaf6ee; }
+  .callout strong { color: var(--ink); }
+
+  ul.clean { margin: 6px 0 0; padding-left: 20px; }
+  ul.clean li { margin: 5px 0; }
+
+  .split-note { font-size: 13px; color: var(--ink-soft); }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 4px 0 26px; font-size: 13.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--ink-soft); }
+
+  footer { border-top: 1px solid var(--line); padding: 26px 0; color: var(--ink-soft); font-size: 13px; text-align: center; }
+  a.link { color: var(--brand); text-decoration: none; font-weight: 600; }
+  a.link:hover { text-decoration: underline; }
+
+  @media (max-width: 620px) {
+    header.hero h1 { font-size: 27px; }
+    h2 { font-size: 21px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Facteur · Méthodologie ouverte v1.2</p>
+    <h1>Architecture agentique d'évaluation des médias</h1>
+    <p class="lede">Comment Facteur évalue la fiabilité d'un média sur 11 critères (100 points) grâce à un pipeline qui sépare strictement la <strong>collecte de signaux</strong> de leur <strong>évaluation par des sous-agents</strong>, avec un score toujours dérivé par code, jamais choisi librement par un modèle.</p>
+    <div class="meta-row">
+      <span class="pill">Vague 1 · 6 critères · 54 pts</span>
+      <span class="pill">3 voies de collecte</span>
+      <span class="pill">1 sous-agent par critère</span>
+      <span class="pill">Score dérivé par code</span>
+      <span class="pill">Calibré sur golden set humain</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <nav class="toc">
+    <a href="#principe"><span class="toc-num">1</span>Le principe fondateur</a>
+    <a href="#macro"><span class="toc-num">2</span>Pipeline macro</a>
+    <a href="#voies"><span class="toc-num">3</span>Les 3 voies de collecte</a>
+    <a href="#store"><span class="toc-num">4</span>Le data store</a>
+    <a href="#harness"><span class="toc-num">5</span>Le harness évaluateur</a>
+    <a href="#gardefous"><span class="toc-num">6</span>Garde-fous codés en dur</a>
+    <a href="#criteres"><span class="toc-num">7</span>Vue par critère (vague 1)</a>
+    <a href="#calibration"><span class="toc-num">8</span>Calibration &amp; confiance</a>
+    <a href="#perimetre"><span class="toc-num">9</span>Périmètre V0 &amp; phasage</a>
+  </nav>
+
+  <div class="legend">
+    <span><span class="dot d-code"></span> Voie CODE : déterministe</span>
+    <span><span class="dot d-agent"></span> Voie AGENT : jugement</span>
+    <span><span class="dot d-human"></span> Voie HUMAIN : inaccessible &amp; contradictoire</span>
+  </div>
+
+  <!-- 1 -->
+  <section id="principe">
+    <h2><span class="num">1</span> Le principe fondateur : collecte ≠ évaluation</h2>
+    <p class="section-lede">Deux phases, un data store entre les deux. La collecte produit des observations factuelles, la collecte <strong>ne note jamais</strong>. L'évaluation lit uniquement ces observations, l'évaluation <strong>ne collecte jamais</strong>.</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="margin-top:0;">Phase COLLECTE</h3>
+        <p class="split-note">Produit des <strong>signaux</strong> : observations factuelles avec source, URL, date, citation et capture horodatée (snapshot). Chère (fetch, navigation, lecture) donc tourne <strong>une fois</strong>.</p>
+        <ul class="clean split-note">
+          <li>Statuts distincts : <code>present</code>, <code>absent_verifie</code>, <code>partiel</code>, <code>bloque_acces</code>.</li>
+          <li>« Absence vérifiée » et « bloqué » sont tracés, pas confondus avec un échec.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Phase ÉVALUATION</h3>
+        <p class="split-note">Un sous-agent par critère, <strong>sans accès web</strong>, ne lit que les signaux d'un couple (média, critère) + le barème verbatim. Bon marché (lecture de JSON) donc peut tourner <strong>N fois</strong>.</p>
+        <ul class="clean split-note">
+          <li>Rend des <strong>déterminations énumérables</strong>, jamais un score chiffré.</li>
+          <li>Chaque affirmation cite des <code>signal_ids</code> précis.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <strong>Quatre garanties alignées sur la méthodo :</strong> reproductibilité (re-noter sans re-collecter, indispensable au contradictoire), traçabilité (chaque point cite ses signaux), auditabilité du non-collecté (absence vérifiée vs accès bloqué), coût maîtrisé (collecte une fois, évaluation N fois).
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="macro">
+    <h2><span class="num">2</span> Le pipeline macro</h2>
+    <p class="section-lede">Le flux complet d'un run, du référentiel média à la fiche publiée. Les agents collecteurs et les agents évaluateurs sont des rôles <strong>distincts</strong> : jamais le même agent cherche et note.</p>
+    <div class="card">
+      <div class="pipeline">
+        <div class="stage store">
+          <div class="rail"><div class="knob">1</div><div class="line"></div></div>
+          <div class="body">
+            <h4>Référentiel média <span class="badge b-code"><span class="dot d-code"></span> CODE</span></h4>
+            <p><code>seed_medias.py</code> → domaine, type (presse en ligne / audiovisuel), volume/jour, paywall. Conditionne échantillons et routage.</p>
+          </div>
+        </div>
+        <div class="stage collecte">
+          <div class="rail"><div class="knob">2</div><div class="line"></div></div>
+          <div class="body">
+            <h4>Collecte, 3 voies en parallèle <span class="badge b-code"><span class="dot d-code"></span> CODE</span> <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span> <span class="badge b-human"><span class="dot d-human"></span> HUMAIN</span></h4>
+            <p>Voie A : <code>collect_*.py</code> écrit en DB. Voie B : agents Claude → artefacts JSON dans <code>.context/media_eval/&lt;run_id&gt;/</code>, jamais d'écriture DB directe. Voie C : humain (paywall, golden set). Sortie unique : des signaux horodatés + snapshots. Zéro notation.</p>
+          </div>
+        </div>
+        <div class="stage store">
+          <div class="rail"><div class="knob">3</div><div class="line"></div></div>
+          <div class="body">
+            <h4>Ingestion &amp; data store <span class="badge b-code"><span class="dot d-code"></span> CODE</span></h4>
+            <p><code>ingest_artifacts.py</code> valide les artefacts agents (Pydantic strict) puis insère signaux + débunkages. Rejet en bloc si un artefact est invalide : rien n'est écrit.</p>
+          </div>
+        </div>
+        <div class="stage store">
+          <div class="rail"><div class="knob">4</div><div class="line"></div></div>
+          <div class="body">
+            <h4>Construction de l'entrée d'évaluation <span class="badge b-code"><span class="dot d-code"></span> CODE</span></h4>
+            <p><code>build_eval_input.py</code> → <code>eval_inputs/&lt;media&gt;_&lt;critere&gt;.json</code> : signaux + barème verbatim. Applique les garde-fous <strong>amont</strong> (fraîcheur, raccourci JTI, déclencheur fallback C1) et calcule <code>version_prompt</code> = sha256 de la rubrique.</p>
+          </div>
+        </div>
+        <div class="stage eval">
+          <div class="rail"><div class="knob">5</div><div class="line"></div></div>
+          <div class="body">
+            <h4>Évaluation par sous-agents <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span></h4>
+            <p>1 agent par critère, sans accès web → <code>evaluations_&lt;media&gt;_&lt;critere&gt;.json</code> : déterminations + justification + <code>signal_ids_cites</code>. Aucun score chiffré.</p>
+          </div>
+        </div>
+        <div class="stage store">
+          <div class="rail"><div class="knob">6</div><div class="line"></div></div>
+          <div class="body">
+            <h4>Ingestion des évaluations <span class="badge b-code"><span class="dot d-code"></span> CODE</span></h4>
+            <p><code>ingest_evaluations.py</code> applique les garde-fous <strong>aval</strong> (signal_ids valides / bon média / bon critère, corroboration, <code>bloque_acces</code> → revue) puis <strong>dérive le score par code</strong>.</p>
+          </div>
+        </div>
+        <div class="stage store">
+          <div class="rail"><div class="knob">7</div><div class="line"></div></div>
+          <div class="body">
+            <h4>Synthèse de la fiche <span class="badge b-code"><span class="dot d-code"></span> CODE</span></h4>
+            <p><code>synthese_fiche.py</code> renormalise sur les critères applicables (règle de trois), attribue la lettre A–E et le niveau de confiance (haute / moyenne / basse).</p>
+          </div>
+        </div>
+        <div class="stage store">
+          <div class="rail"><div class="knob">8</div></div>
+          <div class="body">
+            <h4>Mesure d'accord vs golden set <span class="badge b-human"><span class="dot d-human"></span> HUMAIN</span> <span class="badge b-code"><span class="dot d-code"></span> CODE</span></h4>
+            <p><code>evaluate_golden_agreement.py</code> compare la sortie du harness à la notation humaine de référence. On ne publie rien tant que l'accord n'est pas stable.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="voies">
+    <h2><span class="num">3</span> Les trois voies de collecte</h2>
+    <p class="section-lede">Règle de routage : le code pour le déterministe, l'agent pour le jugement, l'humain pour l'inaccessible et le contradictoire. Un signal descend toujours au niveau le plus bas (le moins cher) capable de le produire de façon fiable.</p>
+    <div class="grid grid-3">
+      <div class="card" style="border-top:4px solid var(--code);">
+        <p style="margin:0 0 8px;"><span class="badge b-code"><span class="dot d-code"></span> VOIE A · CODE</span></p>
+        <p class="split-note" style="margin-bottom:10px;">Scripts + edge functions planifiables. Déterministe, répétable, quasi gratuit.</p>
+        <ul class="clean split-note">
+          <li>Crawl structurel (mentions légales, chartes, corrections, publicité) + snapshots.</li>
+          <li>Registres : Pappers, CPPAP, JTI, avis CDJM.</li>
+          <li>Constitution du corpus (échantillonnage stratifié documenté).</li>
+          <li>Pré-métriques d'articles (bylines, labels, liens).</li>
+        </ul>
+      </div>
+      <div class="card" style="border-top:4px solid var(--agent);">
+        <p style="margin:0 0 8px;"><span class="badge b-agent"><span class="dot d-agent"></span> VOIE B · AGENT</span></p>
+        <p class="split-note" style="margin-bottom:10px;">Sous-agents Claude avec accès web (dont fetch navigateur). Lecture, recherche ouverte, qualification. <strong>N'écrivent jamais en DB.</strong></p>
+        <ul class="clean split-note">
+          <li>Recherche ouverte : débunkages, condamnations, départs, déclarations.</li>
+          <li>Qualification : pondérer un débunkage, juger une charte.</li>
+          <li>Analyse de corpus (vague 2) : sourçage, cadrage, diversité.</li>
+          <li>Extraction structurée (page « Qui sommes-nous » → données).</li>
+        </ul>
+      </div>
+      <div class="card" style="border-top:4px solid var(--human);">
+        <p style="margin:0 0 8px;"><span class="badge b-human"><span class="dot d-human"></span> VOIE C · HUMAIN</span></p>
+        <p class="split-note" style="margin-bottom:10px;">Rare et ciblé : là où ni le code ni l'agent ne peuvent aller, ou là où la méthodo exige un regard second.</p>
+        <ul class="clean split-note">
+          <li>Corpus paywallé (copie manuelle déposée, puis analyse en voie B).</li>
+          <li>Double évaluation C9 / C11, divergences documentées.</li>
+          <li>Contreseing du fallback C1 avant entrée au score.</li>
+          <li>Golden set de calibration.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="callout">
+      <strong>Répartition observée sur les ~40 signaux de la grille :</strong> environ <strong>40 % collectables par code</strong>, <strong>45 % par agents</strong>, <strong>15 % exigent l'humain</strong>. Le point de rupture identifié au batch-test #1 (27/06/2026) n'est pas l'intelligence mais l'<strong>accès</strong> (blocklist, paywalls) et la <strong>disponibilité</strong> (zéro donnée tierce sur les médias de niche). L'accès est donc traité comme une propriété du signal (statut dédié), pas comme un échec de collecte.
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="store">
+    <h2><span class="num">4</span> Le data store (tables <code>media_eval_*</code>)</h2>
+    <p class="section-lede">Tout ce que la fiche publiée doit contenir (source, URL, date, citation) est un champ obligatoire dès la collecte, pas une reconstruction a posteriori. RLS deny-all sur toutes les tables (outillage interne).</p>
+    <div class="card" style="padding-top:8px;">
+      <table>
+        <thead><tr><th>Table</th><th>Grain</th><th>Rôle</th></tr></thead>
+        <tbody>
+          <tr><td><code>medias</code></td><td>domaine / média</td><td>Référentiel : type presse en ligne / audiovisuel, volume/jour, paywall, rubriques d'opinion. Distinct de <code>sources</code> (grain feed RSS de l'app live).</td></tr>
+          <tr><td><code>snapshots</code></td><td>page</td><td>Capture horodatée + hash d'une page type (mentions légales, charte, corrections). Preuve, gère les incohérences internes.</td></tr>
+          <tr><td><code>corpus_articles</code></td><td>article</td><td>Échantillon délibéré et figé (stratifié rubrique × mois), texte stable, pré-métriques. Vide en V0.</td></tr>
+          <tr><td><code>signaux</code></td><td>observation</td><td><strong>La table pivot.</strong> media_id, critere, type_signal, statut, valeur (jsonb + citation), voie, collecteur, source_urls, snapshot_id, sources_consultees.</td></tr>
+          <tr><td><code>debunkages</code></td><td>débunkage</td><td>emetteur + <code>poids_emetteur</code> (dérivé par code), gravité, suite donnée. Alimente le signal C1.</td></tr>
+          <tr><td><code>evaluations</code></td><td>(média, critère)</td><td>score, niveau, justification, signal_ids cités, évaluateur (agent / humain), version_methodo, version_prompt, evalue_at.</td></tr>
+          <tr><td><code>fiches</code></td><td>média</td><td>score brut, score renormalisé, lettre, critères N/A, confiance, statut (brouillon / contradictoire / publiée).</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="split-note" style="margin-top:14px;"><strong>Articulation avec l'app.</strong> <code>media_eval_*</code> est le système d'audit versionné ; les colonnes plates de <code>sources</code> (<code>reliability_score</code>…) sont un cache applicatif. À terme, les fiches pourront <em>alimenter</em> ces colonnes par projection. Ce n'est pas un doublon : un média = N sources.</p>
+  </section>
+
+  <!-- 5 -->
+  <section id="harness">
+    <h2><span class="num">5</span> Le harness d'évaluation par sous-agents</h2>
+    <p class="section-lede">Un contrat d'entrée / sortie strict, verrouillé par validation programmatique. L'agent produit du jugement énumérable ; le code produit le score.</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="margin-top:0;">Entrée</h3>
+        <ul class="clean split-note">
+          <li>Les signaux du data store pour un couple (média, critère).</li>
+          <li>Le barème §4 du critère, lu <strong>verbatim</strong>.</li>
+          <li>D'éventuels <code>pre_flags</code> posés par les garde-fous amont.</li>
+          <li><strong>Aucun accès web, fichier ou base.</strong> Signal manquant → l'agent le dit, il ne va pas le chercher.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Sortie</h3>
+        <p class="split-note" style="margin-bottom:8px;">JSON structuré <code>evaluations_&lt;media&gt;_&lt;critere&gt;.json</code> :</p>
+        <ul class="clean split-note">
+          <li><code>determinations</code> : valeurs énumérées par la rubrique (rien d'autre).</li>
+          <li><code>justification</code> : 2 à 6 phrases, chacune adossée à des signal_ids.</li>
+          <li><code>signal_ids_cites</code> : <strong>non vide</strong>, sauf N/A.</li>
+          <li><code>flags</code> : dans le contrat uniquement.</li>
+          <li><strong>Pas de champ <code>score</code></strong> : rejet à la validation.</li>
+        </ul>
+      </div>
+    </div>
+    <h3>Les flags autorisés et leur effet (appliqué par code)</h3>
+    <div class="card" style="padding-top:8px;">
+      <table>
+        <thead><tr><th>Flag</th><th>Sens</th><th>Effet</th></tr></thead>
+        <tbody>
+          <tr><td><code>donnees_insuffisantes</code></td><td>Signaux insuffisants pour appliquer le barème</td><td>Critère <strong>N/A</strong>, exclu de la renormalisation</td></tr>
+          <tr><td><code>signaux_contradictoires</code></td><td>Les signaux se contredisent</td><td>Score partiel + justification ; confiance dégradée</td></tr>
+          <tr><td><code>bloque_acces</code></td><td>Seuls signaux pertinents = accès bloqué</td><td><strong>Revue requise</strong>, jamais converti en 0</td></tr>
+          <tr><td><code>revue_humaine_requise</code></td><td>Cas limite signalé par l'agent</td><td>Confiance <strong>basse</strong> sur la fiche</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout ok">
+      <strong>Le score faisant foi est dérivé par code</strong> (<code>derive_score</code>), depuis les <code>determinations</code> énumérables, jamais choisi librement par le modèle. Même philosophie que <code>derive_reliability</code> pour les sources. La validation Pydantic rejette en bloc un artefact non conforme : le rejet devient un feedback loop, pas un piège.
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="gardefous">
+    <h2><span class="num">6</span> Les garde-fous, codés en dur (jamais dans les prompts)</h2>
+    <p class="section-lede">Toute règle mécanique de la méthodo sort du prompt et devient une validation programmatique. Deux moments : <strong>amont</strong> (avant l'agent, dans <code>build_eval_input.py</code>) et <strong>aval</strong> (après l'agent, dans <code>ingest_evaluations.py</code>).</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="margin-top:0;">Amont · <code>build_eval_input.py</code></h3>
+        <ul class="clean split-note">
+          <li><strong>Fraîcheur</strong> : signal événementiel &gt; 730 jours → exclu (N/A automatique).</li>
+          <li><strong>Raccourci JTI</strong> : certification valide → C8 plein, sans passage par l'agent.</li>
+          <li><strong>Déclencheur fallback C1</strong> : &lt; 3 débunkages / 2 ans → pre_flag <code>fallback_c1_declenche</code>.</li>
+          <li><strong>Neutralité ARCOM</strong> : presse en ligne → signaux ARCOM exclus (N/A structurel neutre).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Aval · <code>ingest_evaluations.py</code></h3>
+        <ul class="clean split-note">
+          <li><strong>Intégrité des citations</strong> : chaque signal_id doit exister, bon média, bon critère.</li>
+          <li><strong>Corroboration</strong> : ≥ 2 sources indépendantes pour un score plein, sinon plafonné au palier inférieur.</li>
+          <li><strong>Bloqué ≠ zéro</strong> : <code>bloque_acces</code> → revue requise, jamais 0.</li>
+          <li><strong>Score dérivé</strong> par code depuis les déterminations.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="split-note" style="margin-top:14px;"><strong>Synthèse (pur calcul)</strong> : renormalisation sur 100 (règle de trois sur les critères évaluables), lettre A–E, niveau de confiance HAUTE / MOYENNE / BASSE. Une confiance BASSE n'est pas publiable.</p>
+  </section>
+
+  <!-- 7 -->
+  <section id="criteres">
+    <h2><span class="num">7</span> Vue par critère : vague 1 (54 pts)</h2>
+    <p class="section-lede">Chaque critère a son sous-agent, son barème verbatim, ses types de signaux attendus et ses déterminations énumérables. L'agent choisit une détermination ; le code en dérive le score.</p>
+
+    <div class="grid grid-2">
+
+      <!-- C1 -->
+      <div class="card crit pilier-rigueur">
+        <div class="crit-head">
+          <div>
+            <p class="crit-title">C1 · Véracité et exactitude</p>
+            <p class="crit-sub">Pilier Rigueur · échelle continue · volet données tierces (V0)</p>
+          </div>
+          <span class="pts">20 pts</span>
+        </div>
+        <p class="split-note" style="margin:10px 0 6px;">Voies dominantes : <span class="badge b-code"><span class="dot d-code"></span> CODE</span> <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span> <span class="badge b-human"><span class="dot d-human"></span> HUMAIN</span> (fallback)</p>
+        <p class="split-note" style="margin:0 0 8px;"><strong>Signaux :</strong> débunkage, sanction_arcom, condamnation_justice, avis_cdjm. Chaque débunkage pondéré par émetteur / gravité / suite donnée (poids dérivé par code).</p>
+        <table class="det-table">
+          <thead><tr><th>determination · profil_veracite</th><th>Score</th></tr></thead>
+          <tbody>
+            <tr><td>aucun_signal_negatif</td><td>20</td></tr>
+            <tr><td>problemes_mineurs_corriges</td><td>15</td></tr>
+            <tr><td>problemes_mixtes</td><td>10</td></tr>
+            <tr><td>problemes_significatifs</td><td>5</td></tr>
+            <tr><td>fabrication_ou_refus_non_corrige</td><td>0</td></tr>
+          </tbody>
+        </table>
+        <p class="split-note" style="margin:10px 0 0;">Critère radicalement asymétrique : médias exposés = données abondantes ; médias de niche = zéro (fallback = voie principale, non instruit en V0 → N/A).</p>
+      </div>
+
+      <!-- C5 -->
+      <div class="card crit pilier-transparence">
+        <div class="crit-head">
+          <div>
+            <p class="crit-title">C5 · Transparence propriété &amp; financement</p>
+            <p class="crit-sub">Pilier Transparence · échelle continue</p>
+          </div>
+          <span class="pts">10 pts</span>
+        </div>
+        <p class="split-note" style="margin:10px 0 6px;">Voies dominantes : <span class="badge b-code"><span class="dot d-code"></span> CODE</span> <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span></p>
+        <p class="split-note" style="margin:0 0 8px;"><strong>Signaux :</strong> mentions_legales, identification_proprietaire, structure_actionnariat, enregistrement_cppap, transparence_financement.</p>
+        <table class="det-table">
+          <thead><tr><th>determination · profil_signaux</th><th>Score</th></tr></thead>
+          <tbody>
+            <tr><td>positifs_majoritaires</td><td>10</td></tr>
+            <tr><td>mixtes</td><td>5</td></tr>
+            <tr><td>negatifs</td><td>0</td></tr>
+          </tbody>
+        </table>
+        <p class="split-note" style="margin:10px 0 0;">Disponible et homogène sur tous les médias testés, petits inclus. Fondation fiable à scorer en premier.</p>
+      </div>
+
+      <!-- C7 -->
+      <div class="card crit pilier-transparence">
+        <div class="crit-head">
+          <div>
+            <p class="crit-title">C7 · Séparation éditorial / publicité</p>
+            <p class="crit-sub">Pilier Transparence · échelle continue</p>
+          </div>
+          <span class="pts">4 pts</span>
+        </div>
+        <p class="split-note" style="margin:10px 0 6px;">Voies dominantes : <span class="badge b-code"><span class="dot d-code"></span> CODE</span> <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span></p>
+        <p class="split-note" style="margin:0 0 8px;"><strong>Signaux :</strong> marquage_contenu_sponsorise, regie_pub_identifiee, politique_publicitaire. Le native advertising non labellisé se voit (jugement visuel), ne se regexe pas.</p>
+        <table class="det-table">
+          <thead><tr><th>determination · profil_signaux</th><th>Score</th></tr></thead>
+          <tbody>
+            <tr><td>positifs_majoritaires</td><td>4</td></tr>
+            <tr><td>mixtes</td><td>2</td></tr>
+            <tr><td>negatifs</td><td>0</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- C8 -->
+      <div class="card crit pilier-transparence">
+        <div class="crit-head">
+          <div>
+            <p class="crit-title">C8 · Engagement déontologique formel</p>
+            <p class="crit-sub">Pilier Transparence · échelle continue</p>
+          </div>
+          <span class="pts">4 pts</span>
+        </div>
+        <p class="split-note" style="margin:10px 0 6px;">Voies dominantes : <span class="badge b-code"><span class="dot d-code"></span> CODE</span> <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span></p>
+        <p class="split-note" style="margin:0 0 8px;"><strong>Signaux :</strong> charte_deontologique, adhesion_cdjm, certification_jti, reference_charte_externe.</p>
+        <table class="det-table">
+          <thead><tr><th>determination · profil_signaux</th><th>Score</th></tr></thead>
+          <tbody>
+            <tr><td>positifs_majoritaires</td><td>4</td></tr>
+            <tr><td>mixtes</td><td>2</td></tr>
+            <tr><td>negatifs</td><td>0</td></tr>
+          </tbody>
+        </table>
+        <div class="callout" style="margin:12px 0 0; padding:10px 14px;"><span class="split-note"><strong>Raccourci JTI :</strong> certification valide = 4/4 sans examen de l'agent. Le seul critère de la grille avec un raccourci automatique.</span></div>
+      </div>
+
+      <!-- C9 -->
+      <div class="card crit pilier-independance">
+        <div class="crit-head">
+          <div>
+            <p class="crit-title">C9 · Indépendance éditoriale <span class="flag-2eval">⚑ double éval</span></p>
+            <p class="crit-sub">Pilier Indépendance · 3 niveaux</p>
+          </div>
+          <span class="pts">10 pts</span>
+        </div>
+        <p class="split-note" style="margin:10px 0 6px;">Voies dominantes : <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span> <span class="badge b-human"><span class="dot d-human"></span> HUMAIN</span></p>
+        <p class="split-note" style="margin:0 0 8px;"><strong>Signaux :</strong> charte_independance, societe_journalistes, independance_capital, intervention_actionnaire (négatif), statuts_redaction. « Partiel » vs « complet » = une question de clauses (droit de veto, agrément), pas de présence.</p>
+        <table class="det-table">
+          <thead><tr><th>determination · niveau</th><th>Score</th></tr></thead>
+          <tbody>
+            <tr><td>0 · Absent</td><td>0</td></tr>
+            <tr><td>1 · Partiel</td><td>5</td></tr>
+            <tr><td>2 · Complet</td><td>10</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- C11 -->
+      <div class="card crit pilier-transparence">
+        <div class="crit-head">
+          <div>
+            <p class="crit-title">C11 · Transparence du positionnement <span class="flag-2eval">⚑ double éval</span></p>
+            <p class="crit-sub">Pilier Transparence · 3 niveaux · volet manifeste (V0)</p>
+          </div>
+          <span class="pts">6 pts</span>
+        </div>
+        <p class="split-note" style="margin:10px 0 6px;">Voies dominantes : <span class="badge b-code"><span class="dot d-code"></span> CODE</span> <span class="badge b-agent"><span class="dot d-agent"></span> AGENT</span></p>
+        <p class="split-note" style="margin:0 0 8px;"><strong>Signaux :</strong> manifeste_positionnement, ligne_editoriale_publiee, auto_description_orientation, rubriques_opinion_identifiees. On évalue la <em>transparence</em> du positionnement, jamais sa nature politique.</p>
+        <table class="det-table">
+          <thead><tr><th>determination · niveau</th><th>Score</th></tr></thead>
+          <tbody>
+            <tr><td>0 · Opaque</td><td>0</td></tr>
+            <tr><td>1 · Partiel</td><td>3</td></tr>
+            <tr><td>2 · Transparent</td><td>6</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+    <p class="split-note" style="margin-top:18px;">Hors vague 1 : C2, C3, C4, C6, C10 sont article-dépendants (vague 2), plus C1 (fallback) et C11 (volet cadrage). Ils dépendent du corpus + d'un fetch navigateur + d'une stratégie paywall.</p>
+  </section>
+
+  <!-- 8 -->
+  <section id="calibration">
+    <h2><span class="num">8</span> Calibration &amp; confiance</h2>
+    <p class="section-lede">On ne fait pas confiance au harness par principe : on le mesure contre un golden set humain avant toute évaluation en série.</p>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="margin-top:0;">Golden set</h3>
+        <p class="split-note">Notation humaine de référence (Laurin), critère par critère. Chaque version du harness (prompt ou modèle) est mesurée contre ce set : accord exact sur les échelles à 3 niveaux (C9, C11), écart toléré sur les échelles continues.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Puis QA en continu</h3>
+        <p class="split-note">Une fois l'accord stable : QA humaine en échantillonnage (1 fiche sur N revue intégralement) + double évaluation systématique C9 / C11. Rien n'est publié tant que l'accord agent/humain n'est pas stable.</p>
+      </div>
+    </div>
+    <div class="callout ok">
+      <strong>Critères de succès V0 :</strong> 100 % des artefacts évaluateurs passent la validation sans édition manuelle · accord vs golden sur ≥ 4 critères / 6 par média · Reporterre sort C1 en N/A <code>donnees_insuffisantes</code> (pas 0) et renormalise sur 34 pts · <strong>zéro écriture DB par agent</strong> (par construction).
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="perimetre">
+    <h2><span class="num">9</span> Périmètre V0 &amp; phasage</h2>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="margin-top:0;">Vague 1 : le socle structurel</h3>
+        <p class="split-note">Scorable dès maintenant : C5, C7, C8, C9, C11 (manifeste) + C1 (données tierces). Collecte code + agents sur pages du média et registres ouverts. Homogène sur tous les médias, petits inclus. Budget : ~25-30 appels d'outils web et 5-10 min d'agent par média.</p>
+        <p class="split-note" style="margin-bottom:0;"><strong>Médias pilotes :</strong> CNEWS (audiovisuel, ARCOM applicable) et Reporterre (presse en ligne de niche, teste <code>donnees_insuffisantes</code> + renormalisation avec N/A).</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0;">Vague 2 : les critères article-dépendants</h3>
+        <p class="split-note">C2, C4, C6, C10 + C1 (fallback) + C11 (cadrage). Prérequis : fetch navigateur + stratégie paywall + échantillonneur stratifié. À lancer sur 2-3 médias pilotes avant d'industrialiser.</p>
+        <p class="split-note" style="margin-bottom:0;"><strong>Hors scope V0 :</strong> corpus d'articles (table créée, vide), paywall, procédure contradictoire, UI/API, lien avec <code>sources.reliability_score</code>, scheduling, multi-évaluateurs, SDK Anthropic.</p>
+      </div>
+    </div>
+    <h3>Sept arbitrages par défaut (réversibles, à valider en revue méthodo)</h3>
+    <div class="card" style="padding-top:8px;">
+      <table>
+        <thead><tr><th>Cas limite</th><th>Choix par défaut</th></tr></thead>
+        <tbody>
+          <tr><td>C1 sur médias à faible empreinte</td><td>Fallback (5 articles) = voie par défaut, déclenchée si &lt; 3 débunkages / 2 ans.</td></tr>
+          <tr><td>Biais ARCOM (audiovisuel sur-instruit)</td><td>Absence ARCOM pour la presse en ligne = N/A structurel neutre.</td></tr>
+          <tr><td>« Bloqué » ≠ « absent »</td><td>Statut <code>bloque_acces</code> natif, jamais converti en 0.</td></tr>
+          <tr><td>Médias à fort paywall</td><td>Cascade : compte de test → reproductions tierces → collecte manuelle.</td></tr>
+          <tr><td>NewsGuard / Societe.com faibles</td><td>NewsGuard retiré ; Pappers officialisé (API, gratuit).</td></tr>
+          <tr><td>Auto-déclaratif des petits médias</td><td>Accepté pour la transparence : la présence vérifiable du document vaut preuve.</td></tr>
+          <tr><td>Prérequis technique non négociable</td><td>Fetch navigateur obligatoire (fetch simple aveugle sur ~40 % du panel).</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>Source de vérité : <a class="link" href="README.md">docs/media-eval/README.md</a> · <a class="link" href="architecture-v1.2.md">architecture-v1.2.md</a> · <a class="link" href="rubrics/_common.md">rubrics/_common.md</a> · <code>packages/api/scripts/media_eval/</code></p>
+    <p>Facteur · Méthodologie ouverte v1.2 · Document de synthèse pour toute personne rejoignant le projet.</p>
+  </footer>
+
+</div>
+</body>
+</html>
