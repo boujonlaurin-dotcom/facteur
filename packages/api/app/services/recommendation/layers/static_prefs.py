@@ -42,23 +42,22 @@ class StaticPreferenceLayer(BaseScoringLayer):
                         content.id, self.name, 15.0, "Pref: Recent content"
                     )
 
-        elif recency_pref == "timeless":
-            # On s'en fiche un peu de la récence, donc on peut redonner des points aux vieux articles
-            # pour qu'ils remontent malgré le decay du CoreLayer.
-            if content.published_at:
-                published = content.published_at
-                now = context.now
-                # Ensure both are tz-aware for safe subtraction
-                if published.tzinfo is None:
-                    published = published.replace(tzinfo=datetime.UTC)
-                if now.tzinfo is None:
-                    now = now.replace(tzinfo=datetime.UTC)
-                hours_old = (now - published).total_seconds() / 3600.0
-                if hours_old > 48:
-                    score += 10.0  # Bonus "Archive"
-                    context.add_reason(
-                        content.id, self.name, 10.0, "Pref: Timeless content"
-                    )
+        # On s'en fiche un peu de la récence, donc on peut redonner des points aux vieux articles
+        # pour qu'ils remontent malgré le decay du CoreLayer.
+        elif recency_pref == "timeless" and content.published_at:
+            published = content.published_at
+            now = context.now
+            # Ensure both are tz-aware for safe subtraction
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=datetime.UTC)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=datetime.UTC)
+            hours_old = (now - published).total_seconds() / 3600.0
+            if hours_old > 48:
+                score += 10.0  # Bonus "Archive"
+                context.add_reason(
+                    content.id, self.name, 10.0, "Pref: Timeless content"
+                )
 
         # 2. Format Preference
         # short, long, audio, video

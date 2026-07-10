@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
 
+    # Firebase Admin SDK. JSON brut ou base64 ; vide désactive l'envoi tout en
+    # laissant les endpoints d'enregistrement disponibles.
+    firebase_service_account_json: str = ""
+    firebase_service_account_base64: str = ""
+
     # PostHog (Story 14.1 — retention cohorts)
     posthog_api_key: str = ""
     posthog_host: str = "https://eu.i.posthog.com"
@@ -114,6 +119,33 @@ class Settings(BaseSettings):
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key (classification + editorial pipeline)
 
+    # Batching de la classification — batch_size=5 est la valeur QUALITÉ-SAFE
+    # (référence PR #152, mars 2026 : passage 20 → 5 explicitement "pour
+    # maximiser la qualité de classification"). La passe 1 `mistral-small`
+    # produit le flag `serene`, seul gate d'entrée vers la passe 2
+    # `is_good_news` : un batch plus gros dilue l'attention du modèle par
+    # article et dégrade la précision de `serene` → mauvais candidats Bonnes
+    # Nouvelles. L'expérimentation de batching plus gros (LR-1 PR 2 : 12 / min 8
+    # / wait 300s) est ABANDONNÉE suite à régression Bonnes Nouvelles constatée
+    # en prod. Avec min_batch_size=1 et max_wait_s=0, la gate d'accumulation
+    # `_should_process()` redevient un no-op (traite dès ≥1 pending).
+    classification_worker_batch_size: int = (
+        5  # cible d'articles / appel batch (qualité-safe, cf. #152)
+    )
+    classification_worker_min_batch_size: int = (
+        1  # seuil mini avant de traiter (1 = pas d'accumulation)
+    )
+    classification_worker_max_wait_s: int = (
+        0  # plafond d'attente du + vieux pending (0 = immédiat)
+    )
+    classification_worker_interval_s: int = 10  # intervalle entre 2 vérifications
+
+    # Garde-fou anti-angle-mort (bug-classification-worker-stopped) : le job
+    # scheduler `classification_queue_health_check` alerte Sentry si le plus
+    # vieux pending dépasse ce seuil (en heures). Signal externe qui fonctionne
+    # même si la task du worker est morte, tant que le scheduler tourne.
+    classification_queue_alert_age_hours: int = 12
+
     # Brave Search API (smart source search)
     brave_api_key: str = ""
     brave_monthly_cap: int = 1800
@@ -123,10 +155,39 @@ class Settings(BaseSettings):
     # Medium = bon compromis qualité/coût ; override pour switch large si besoin.
     veille_llm_model: str = "mistral-medium-latest"
 
+    # Divergence éditoriale (LR-1 PR 2) — l'analyse LLM de divergence n'apporte
+    # de valeur que sur des sujets bien couverts. En deçà de ce seuil de
+    # perspectives, on saute l'appel mistral-large et on garde le fallback
+    # déterministe `compute_divergence_level` (divergence_level toujours rempli).
+    divergence_llm_min_perspectives: int = 4
+
     # Observabilité scaling (enabler WP-E) — instrumentation API externes +
     # sonde pool. Purement additif : ne change aucun comportement métier.
     usage_tracking_enabled: bool = True  # kill-switch insert api_usage_events
-    pool_alert_threshold_pct: int = 80  # seuil alerte sonde pool périodique (%)
+    # Alerte pool à 2 seuils (Axe D, incident PYTHON-5M). La sonde
+    # `_pool_health_probe` (5 min) compare `usage_pct` à ces seuils :
+    # - warn : pression SOUTENUE (>= pool_warn_sustained_probes sondes
+    #   consécutives) >= pool_warn_threshold_pct → Sentry level=warning
+    #   (early warning, ignore les pics transitoires du rituel matinal).
+    # - page : >= pool_page_threshold_pct → Sentry level=fatal immédiat,
+    #   sans fenêtre "soutenu" (saturation imminente, on réveille quelqu'un).
+    pool_warn_threshold_pct: int = 70  # seuil early-warning pression pool (%)
+    pool_page_threshold_pct: int = 90  # seuil page/critique pression pool (%)
+    pool_warn_sustained_probes: int = 2  # sondes consécutives >= warn avant alerte
+
+    # Gouvernance coût (PR-S3). Les caps Brave/Mistral search sont désormais
+    # lus depuis api_usage_events (persistant). TTL du cache du COUNT mensuel.
+    cost_budget_cache_ttl_s: int = 120
+
+    # Mistral rate limiting (LR-1 PR 1) — borne le burst éditorial qui causait
+    # ~28 % de 429 (curation + deep_matcher + perspective fan-out non bornés sur
+    # le modèle large). Token-bucket /minute + cap de concurrence, partagés au
+    # niveau process, appliqués aux seuls appels `large`. Les défauts sont
+    # conservateurs (à affiner via LR-3 selon le plan Mistral) et configurables
+    # sans redéploiement de code.
+    mistral_rate_limit_enabled: bool = True  # kill-switch throttle large
+    mistral_large_rpm: int = 60  # requêtes large/minute (token-bucket)
+    mistral_large_concurrency: int = 4  # appels large simultanés (semaphore)
 
     # GitHub (app update feature)
     github_token: str = ""

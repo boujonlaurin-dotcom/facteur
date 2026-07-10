@@ -1,6 +1,230 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Des suggestions de sources plus riches par thème, et un accès direct « Tout lire »."
+    },
+    {
+      "tag": "Intérêts",
+      "summary": "Règle le niveau de suivi de chaque thème et sujet d'un simple curseur, comme sur les fiches source."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Les titres de section sont plus lisibles, le « Tout lire » colle à sa section, et « Ton avis compte » est désormais intégré à la carte de fin de tournée."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "La lecture de ta tournée est plus fluide, les sections sont mieux cadrées à l'écran, et tu personnalises ta veille en un geste depuis son titre."
+    },
+    {
+      "tag": "Recherche",
+      "summary": "Trouver une source est plus rapide et mieux ciblé."
+    },
+    {
+      "tag": "Veille",
+      "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
+    },
+    {
+      "tag": "Veille",
+      "summary": "Ton sujet de veille est bien mémorisé, même quand tu le saisis librement, et changer de thème repart d'une base propre sans avoir à tout décocher."
+    },
+    {
+      "tag": "Bonnes nouvelles",
+      "summary": "Les bonnes nouvelles du jour retrouvent leur pertinence, et ta tournée quotidienne propose un peu plus d'articles à découvrir."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Connecter un abonnement est plus clair : une barre d'étapes te situe dans la procédure, et le bouton pour continuer n'apparaît qu'une fois connecté au média."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Tes sources abonnées gardent la couverture médiatique avant d'ouvrir l'article complet, et tu peux connecter ton compte depuis la fiche de n'importe quelle source suivie."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Le navigateur intégré garde ta navigation : un retour arrière remonte les pages visitées au lieu de te renvoyer au feed. Le choix des collections s'ouvre instantanément, et le bouton tournesol indique mieux qu'il partage l'article."
+    },
+    {
+      "tag": "Lettres",
+      "summary": "Le rappel des lettres est plus discret, et ta progression ne recule plus une fois une étape franchie."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Les sources que tu ranges dans ta Tournée y restent : elles ne se perdent plus ni ne réapparaissent ailleurs après un réagencement."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Reconnecte tes abonnements en un geste après une mise à jour, et connecte ton compte à plus de médias, y compris la presse étrangère."
+    },
+    {
+      "tag": "Notifications",
+      "summary": "La notif du matin affiche de nouveau les titres à la une, sans doublon visuel."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Au pied de chaque thème de ta Tournée, des sources de qualité à suivre pour enrichir ton actu, et une recherche pour trouver les tiennes."
+    },
+    {
+      "tag": "Pour toi",
+      "summary": "Le flux récompense désormais les personnalités et sujets que tu lis souvent, avec une raison claire (« Parce que tu lis souvent … »)."
+    },
+    {
+      "tag": "Fiabilité",
+      "summary": "Indice de fiabilité de la source affiché sur les perspectives évaluées."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Ouverture plus fluide : les sections se remplissent sur place, sans saut ni réorganisation pendant que tu lis."
+    },
+    {
+      "tag": "La Grille",
+      "summary": "Le mot du jour ne se répète plus avant longtemps, et le vocabulaire s'enrichit (pays et régions inclus)."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Les articles lus restent marqués « Lu » de façon fiable, même après un rafraîchissement du flux."
+    },
+    {
+      "tag": "Widget",
+      "summary": "Le widget se rafraîchit à nouveau, avec un bouton pour forcer la mise à jour."
+    },
+    {
+      "tag": "Mise à jour",
+      "summary": "Sur Android, les mises à jour passent désormais par une invite native du Play Store, plus fiable, avec téléchargement en arrière-plan."
+    },
+    {
+      "tag": "Mise à jour",
+      "summary": "Facteur te prévient quand une nouvelle version est disponible sur l'App Store, et t'invite à mettre à jour."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Fiche source plus claire : description repliable, nombre d'abonnés affiché, et réglage de la priorité dans ton flux au curseur."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Ta Tournée du jour propose plus de sujets, choisis pour toi par le Facteur."
+    },
+    {
+      "tag": "Perspectives",
+      "summary": "Couverture médiatique plus lisible : repères Gauche/Droite sous la barre, source cliquable et aperçu de l'article au toucher prolongé."
+    },
+    {
+      "tag": "Reader",
+      "summary": "La barre de biais de la Couverture médiatique passe en pleine largeur et devient interactive : touche un bord politique pour filer vers ces articles. Et à l'ouverture d'un article sur son site, le bandeau cookies n'est plus masqué."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Ta carte du jour est plus compacte (titres resserrés) et tient mieux à l'écran, et la fin de tournée est épurée avec des idées d'activités plus inspirantes."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Carrousels plus nets : le bas des cartes ne se coupe plus quand leurs tailles diffèrent, et les points de défilement respirent mieux."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Tes sections favorites les mieux fournies remontent en haut, et celles à un seul article sont complétées automatiquement."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Tournée du jour plus fiable : tes thèmes et sources favoris s'affichent du premier coup."
+    },
+    {
+      "tag": "Notifications",
+      "summary": "Fini les demandes d'autorisation à répétition : Facteur ne te sollicite plus qu'une fois, et plus jamais pendant ta lecture."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Ouverture nettement plus rapide : tes sections apparaissent l'une après l'autre dès qu'elles sont prêtes, au lieu d'attendre que tout charge d'un coup."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "La fin de tournée est plus incarnée : un récap de ce que tu as lu et des idées d'activités à faire maintenant, hors de l'écran. L'aperçu au long-press marche aussi sur ton Essentiel et dans tous les carrousels d'articles."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Fiche source plus complète depuis un article : lecteurs, notes, description et reco réapparaissent, avec une échelle de fiabilité accessible d'un tap."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Un tour guidé te présente tes pages dès la première ouverture."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Sélection des médias plus fluide : davantage de suggestions, petites animations de validation à chaque étape, et un écran de fin qui va jusqu'au bout avant de t'emmener dans l'app."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Fiches sources plus complètes pendant l'inscription (couverture, fréquence, derniers articles), cartes de sélection mieux alignées, et plus de carte « Actus du jour » réduite à un seul article."
+    },
+    {
+      "tag": "Pas de recul",
+      "summary": "L'analyse de fond « Pas de recul » s'affiche désormais instantanément à l'ouverture d'un article, sans attente."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix de tes médias repensé : sections claires qui s'ouvrent une à une, et un ton plus direct dans tout le questionnaire."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choisir tes médias devient plus simple et lisible : un swipe guidé par petits groupes, et des suggestions présentées en cartes faciles à parcourir."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Ta Tournée se complète chaque jour avec des sections « Choisie pour vous », à partir des thèmes et sources que tu suis. Un tap sur le badge explique le pourquoi ; tu peux garder ou retirer, et tout désactiver d'un switch."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Ouverture d'article instantanée depuis l'Essentiel : titre, image et source s'affichent tout de suite, sans écran blanc."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Sections plus aérées et plus d'articles à l'écran : une source sans actu récente affiche désormais ses articles plus anciens plutôt qu'un vide."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Des sources spécialisées sur chacun de tes sujets dès l'inscription."
+    },
+    {
+      "tag": "Notifications",
+      "summary": "Ton Essentiel du jour arrive maintenant par notification, même app fermée : un rappel fiable le matin pour ton moment de lecture."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Une fiche source repensée : articles récents, thèmes couverts et fréquence de publication."
+    },
+    {
+      "tag": "Couverture médiatique",
+      "summary": "La couverture médiatique reste affichée sous l'article : compare les titres dans un carrousel, et « Analyse Facteur » remonte une synthèse neutre en un tap. Présentation allégée et plus lisible, qui se détache mieux de l'article."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "En-tête d'article épuré : un tap sur la source ouvre sa fiche, et les titres comparés s'affichent plus sobrement."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Tri des sources plus clair et plus fluide : carte lisible, un seul tampon, et un temps « on affine » en fin de tri."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Choix des sources plus clair et suggestions plus pertinentes."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Calibre tes suggestions d'un geste : un tri tactile de quelques médias, vivant et explorable, qui ajuste tout ton feed en direct."
+    },
+    {
+      "tag": "Onboarding",
+      "summary": "Sources les plus actives mises en avant, et le format (vidéo, podcast…) affiché d'un coup d'œil."
+    },
+    {
+      "tag": "Corrections",
+      "summary": "Saisie d'un sujet plus fluide à l'onboarding, fermeture évidente de la modal Favoris, et navigation des lettres de progression fiabilisée."
+    },
+    {
+      "tag": "Grille",
+      "summary": "Le mot du jour vient d'un vrai titre de l'actu, et on te montre où il se cachait."
+    },
+    {
       "tag": "Sources",
       "summary": "Fiche source repensée : présentation du média en premier, évaluation accessible et repliée."
     },

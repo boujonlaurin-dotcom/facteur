@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 
+/// Story 22.5 — en-dessous de ce nombre de sources suivies sur un thème, une
+/// section thème **riche** porte le CTA « Ajouter des sources » ; au-dessus,
+/// « Tout lire › ». Co-localisé avec le modèle (importé par le widget de rendu
+/// [SectionBlock] et par le provider) pour éviter une dépendance widget→provider.
+/// Pendant du seuil maigre/riche `kThinSectionMaxItems`/`kRichSectionMinItems`.
+const int kThemeFewFollowedSources = 6; // < 6 = « peu de sources »
+
 /// Identifier for the **type** of a Flux Continu V1.8 section.
 ///
 /// Multiplicity (0..N) is no longer encoded here — there's a single `theme`
@@ -16,6 +23,59 @@ import '../../feed/models/content_model.dart';
 /// source favorite rendue comme section premium (hero logo + top-3 classé),
 /// réutilisant le payload [FeedThemeSection] (champs `sourceId`/`sourceLogoUrl`).
 enum SectionKind { essentiel, bonnes, theme, veille, source }
+
+/// Origine d'une section de la Tournée du jour (Story 22.3).
+///
+/// `validated` = section **dédiée** (favori épinglé / source Essentiel /
+/// veille) — toujours rendue, jamais masquée par l'algo. `suggested` = section
+/// « Choisie pour vous » qui remplit un slot restant, issue d'un thème/source
+/// que l'utilisateur suit déjà mais n'a pas épinglé. Défaut `validated` →
+/// rétro-compat des payloads/sections qui ne portent pas le champ.
+enum SectionOrigin { validated, suggested }
+
+/// Une puce de transparence d'une suggestion (miroir de `ScoreContribution`
+/// côté backend, cf. `schemas/content.py`). Story 22.3.
+class SuggestionContribution {
+  final String label;
+  final double points;
+  final String? pillar;
+
+  const SuggestionContribution({
+    required this.label,
+    this.points = 0,
+    this.pillar,
+  });
+
+  factory SuggestionContribution.fromJson(Map<String, dynamic> json) {
+    return SuggestionContribution(
+      label: (json['label'] as String?) ?? '',
+      points: (json['points'] as num?)?.toDouble() ?? 0,
+      pillar: json['pillar'] as String?,
+    );
+  }
+}
+
+/// Raison « Pourquoi cette section ? » d'une suggestion (Story 22.3).
+///
+/// `label` = la contribution dominante (titre de la sheet) ; `breakdown` =
+/// 2-3 puces honnêtes construites côté backend depuis les seules composantes
+/// réellement présentes (préférence déclarée / lue + N articles + variété).
+class SuggestionReason {
+  final String label;
+  final List<SuggestionContribution> breakdown;
+
+  const SuggestionReason({required this.label, this.breakdown = const []});
+
+  factory SuggestionReason.fromJson(Map<String, dynamic> json) {
+    return SuggestionReason(
+      label: (json['label'] as String?) ?? '',
+      breakdown: ((json['breakdown'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(SuggestionContribution.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
 
 /// Stable identity for a section across rebuilds.
 ///
@@ -91,6 +151,7 @@ class EssentielArticle {
   final String contentId;
   final String title;
   final String url;
+  final String? description;
   final String? thumbnailUrl;
   final DateTime publishedAt;
   final String sourceName;
@@ -119,6 +180,7 @@ class EssentielArticle {
     required this.sourceLetter,
     required this.sectionLabel,
     required this.rank,
+    this.description,
     this.thumbnailUrl,
     this.kind = SectionKind.theme,
     this.theme,
@@ -140,6 +202,7 @@ class EssentielArticle {
       contentId: (json['content_id'] as String?) ?? '',
       title: (json['title'] as String?) ?? '',
       url: (json['url'] as String?) ?? '',
+      description: json['description'] as String?,
       thumbnailUrl: json['thumbnail_url'] as String?,
       publishedAt:
           DateTime.tryParse(json['published_at'] as String? ?? '') ??
@@ -165,6 +228,7 @@ class EssentielArticle {
     'content_id': contentId,
     'title': title,
     'url': url,
+    'description': description,
     'thumbnail_url': thumbnailUrl,
     'published_at': publishedAt.toIso8601String(),
     'source': {'name': sourceName},
@@ -270,6 +334,42 @@ class FeedThemeSection extends FluxSection {
   /// the "Chargement…" label and ignore taps.
   final bool isLoadingMore;
 
+  /// Story 22.3 — origine de la section. `suggested` ⇒ section « Choisie pour
+  /// vous » (badge + « i » explicatif, dismiss/promotion). Défaut `validated`.
+  final SectionOrigin origin;
+
+  /// Raison de transparence (non null seulement quand [origin] est `suggested`).
+  final SuggestionReason? reason;
+
+  /// Section source : true quand la source n'a aucun article récent (≤72h) et
+  /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
+  final bool noRecentSource;
+
+  /// Cohérence Tournée : true quand cette section favorite **maigre** (≤1
+  /// survivant post-dédup) a été **enrichie** (réinjection des articles déjà
+  /// renvoyés par le backend mais strippés par la dédup) et/ou doit porter le
+  /// CTA « Ajouter plus de sources » (thèmes). Dérivé à chaque `_compose` (jamais
+  /// persisté dans `_themes`/`_sources`) — ne survit donc pas hors d'un recompose.
+  final bool underfilled;
+
+  /// Issue #1 — « squelette stable » : true quand la section est une **coquille**
+  /// seed-ée AVANT le fan-out (réserve l'ordre + la hauteur finale via des cartes
+  /// squelette). Le builder réel (`_buildFavoriteThemeSection`/`_buildSourceSection`/
+  /// `_buildSuggestedSection`) reconstruit la section avec le défaut `false` →
+  /// l'upsert par `sectionKey` remplace la coquille → plus placeholder. Le fit
+  /// (`_capSectionToFit`) early-return sur les placeholders pour ne pas rabattre
+  /// la réserve à 1 carte.
+  final bool isPlaceholder;
+
+  /// Story 22.5 — nombre de sources suivies par l'utilisateur sur ce thème
+  /// (dérivé de `themesFollowedProvider`, `0` pour un sujet custom ou tant que
+  /// le provider n'est pas résolu). Pilote le CTA de bas de section thème
+  /// **riche** : « Tout lire » si ≥ `kThemeFewFollowedSources`, sinon
+  /// « Ajouter des sources ». Comme `coreVisibleCount`/`origin`, il DOIT
+  /// survivre au dédup/loadMore via `copyWith` — sinon toute section riche
+  /// retombe en « Ajouter » au premier recompose.
+  final int followedSourceCount;
+
   const FeedThemeSection({
     required super.kind,
     required super.label,
@@ -283,12 +383,21 @@ class FeedThemeSection extends FluxSection {
     this.currentPage = 1,
     this.hasMore = true,
     this.isLoadingMore = false,
+    this.origin = SectionOrigin.validated,
+    this.reason,
+    this.noRecentSource = false,
+    this.underfilled = false,
+    this.isPlaceholder = false,
+    this.followedSourceCount = 0,
     super.blurb,
     super.illustrationAsset,
   });
 
   @override
   int get totalCount => items.length;
+
+  /// Raccourci : la section est une suggestion « Choisie pour vous ».
+  bool get isSuggested => origin == SectionOrigin.suggested;
 
   FeedThemeSection copyWith({
     List<Content>? items,
@@ -300,6 +409,13 @@ class FeedThemeSection extends FluxSection {
     // `loadMoreTheme` (qui recopient via copyWith) réinitialiseraient le compte
     // au défaut à chaque recompose — le piège le plus facile à introduire.
     int? coreVisibleCount,
+    bool? noRecentSource,
+    bool? underfilled,
+    bool? isPlaceholder,
+    // Story 22.5 — re-stampé par `_stampFollowedCounts` quand
+    // `themesFollowedProvider` résout. Omis par les autres callers (dédup/
+    // loadMore) → préservé via `?? this.followedSourceCount`.
+    int? followedSourceCount,
   }) {
     return FeedThemeSection(
       kind: kind,
@@ -314,6 +430,18 @@ class FeedThemeSection extends FluxSection {
       currentPage: currentPage ?? this.currentPage,
       hasMore: hasMore ?? this.hasMore,
       isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      // Story 22.3 — origin/reason doivent survivre au dédup/filtre/loadMore
+      // (même piège que coreVisibleCount ci-dessus) : un copyWith qui les
+      // perdrait retirerait le badge « Choisie pour vous » au 1ᵉʳ recompose.
+      origin: origin,
+      reason: reason,
+      noRecentSource: noRecentSource ?? this.noRecentSource,
+      underfilled: underfilled ?? this.underfilled,
+      isPlaceholder: isPlaceholder ?? this.isPlaceholder,
+      // Story 22.5 — même piège que coreVisibleCount/origin : sans ce report,
+      // le count retombe à 0 au recompose → CTA « Ajouter » sur une section
+      // pourtant riche en sources suivies.
+      followedSourceCount: followedSourceCount ?? this.followedSourceCount,
       blurb: blurb,
       illustrationAsset: illustrationAsset,
     );
@@ -418,6 +546,13 @@ class FluxContinuState {
   /// `false` ; le screen rend un scaffold placeholder tant qu'il est `true`.
   final bool isSkeleton;
 
+  /// Cohérence Tournée — `sectionKey` des sections favorites (thème/source)
+  /// **maigres** (≤1 survivant post-dédup) du cycle courant, qu'elles soient
+  /// affichées ou poussées hors cap. Source unique consommée par la modal
+  /// « Mes favoris » pour signaler les favoris peu fournis. Vide tant que rien
+  /// n'est classé (squelette / aucun favori résolu).
+  final Set<String> thinFavoriteKeys;
+
   const FluxContinuState({
     this.sections = const [],
     this.grilleSlotIndex,
@@ -428,6 +563,7 @@ class FluxContinuState {
     this.isLoading = true,
     this.error,
     this.isSkeleton = false,
+    this.thinFavoriteKeys = const {},
   });
 
   FluxContinuState copyWith({
@@ -441,6 +577,7 @@ class FluxContinuState {
     Object? error,
     bool clearError = false,
     bool? isSkeleton,
+    Set<String>? thinFavoriteKeys,
   }) {
     return FluxContinuState(
       sections: sections ?? this.sections,
@@ -452,6 +589,7 @@ class FluxContinuState {
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
       isSkeleton: isSkeleton ?? this.isSkeleton,
+      thinFavoriteKeys: thinFavoriteKeys ?? this.thinFavoriteKeys,
     );
   }
 

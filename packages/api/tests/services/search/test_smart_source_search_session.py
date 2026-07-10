@@ -244,6 +244,284 @@ async def test_cache_hit_releases_session():
 
 
 @pytest.mark.asyncio
+async def test_pasted_url_with_feed_short_circuits_direct():
+    """A pasted URL that resolves to a feed returns via the `direct` layer,
+    skipping catalog and every external provider."""
+    db = _FakeSession()
+    user_id = str(uuid4())
+
+    catalog_calls = {"n": 0}
+    brave_calls = {"n": 0}
+
+    async def spy_catalog(self, *a, **k):
+        catalog_calls["n"] += 1
+        return []
+
+    async def spy_brave(self, *a, **k):
+        brave_calls["n"] += 1
+        return []
+
+    async def fake_detect(self, url):
+        return (
+            "https://www.usine-digitale.fr",
+            {
+                "feed_url": "https://www.usine-digitale.fr/rss",
+                "name": "L'Usine Digitale",
+                "type": "article",
+            },
+        )
+
+    async def hook() -> None:
+        await db.close()
+
+    svc = _make_service(db, on_phase1_done=hook)
+
+    with (
+        patch.object(
+            SmartSourceSearchService,
+            "_get_user_themes",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(SmartSourceSearchService, "_search_catalog", new=spy_catalog),
+        patch.object(
+            SmartSourceSearchService,
+            "_detect_with_root_fallback",
+            new=fake_detect,
+        ),
+        patch.object(SmartSourceSearchService, "_search_brave", new=spy_brave),
+        patch(
+            "app.services.search.smart_source_search.search_cache_get",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search.search_cache_set",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search._record_search_log",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        svc.brave = SimpleNamespace(is_ready=True)  # type: ignore[assignment]
+        out = await svc.search(
+            "https://www.usine-digitale.fr/", user_id, content_type=None, expand=False
+        )
+
+    assert out["layers_called"] == ["direct"]
+    assert catalog_calls["n"] == 0
+    assert brave_calls["n"] == 0
+    assert len(out["results"]) == 1
+    assert out["results"][0]["source_layer"] == "direct"
+
+
+@pytest.mark.asyncio
+async def test_pasted_url_without_feed_falls_through_to_catalog():
+    """A URL with no discoverable feed must NOT return empty — it falls
+    through to the normal pipeline (catalog first)."""
+    db = _FakeSession()
+    user_id = str(uuid4())
+
+    catalog_calls = {"n": 0}
+
+    async def spy_catalog(self, *a, **k):
+        catalog_calls["n"] += 1
+        return []
+
+    async def fake_detect_none(self, url):
+        return None
+
+    async def hook() -> None:
+        await db.close()
+
+    svc = _make_service(db, on_phase1_done=hook)
+
+    with (
+        patch.object(
+            SmartSourceSearchService,
+            "_get_user_themes",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(SmartSourceSearchService, "_search_catalog", new=spy_catalog),
+        patch.object(
+            SmartSourceSearchService,
+            "_detect_with_root_fallback",
+            new=fake_detect_none,
+        ),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_brave",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_google_news",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_mistral",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "app.services.search.smart_source_search.search_cache_get",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search.search_cache_set",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search._record_search_log",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        svc.brave = SimpleNamespace(is_ready=True)  # type: ignore[assignment]
+        out = await svc.search(
+            "https://no-feed-host.example.com/",
+            user_id,
+            content_type=None,
+            expand=False,
+        )
+
+    assert "direct" not in out["layers_called"]
+    assert "catalog" in out["layers_called"]
+    assert catalog_calls["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_youtube_filter_always_fires_layer():
+    """content_type='youtube' fires the YouTube layer even without a text
+    heuristic hit, and skips the external providers."""
+    db = _FakeSession()
+    user_id = str(uuid4())
+
+    yt_calls = {"n": 0}
+    brave_calls = {"n": 0}
+
+    async def spy_youtube(self, query, user_themes):
+        yt_calls["n"] += 1
+        return [
+            {
+                "name": "Micode",
+                "type": "youtube",
+                "url": "https://www.youtube.com/@micode",
+                "feed_url": "https://www.youtube.com/feeds/videos.xml?channel_id=X",
+                "in_catalog": False,
+                "score": 0.9,
+                "source_layer": "youtube",
+            }
+        ]
+
+    async def spy_brave(self, *a, **k):
+        brave_calls["n"] += 1
+        return []
+
+    async def hook() -> None:
+        await db.close()
+
+    svc = _make_service(db, on_phase1_done=hook)
+
+    with (
+        patch.object(
+            SmartSourceSearchService,
+            "_get_user_themes",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_catalog",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(SmartSourceSearchService, "_search_youtube", new=spy_youtube),
+        patch.object(SmartSourceSearchService, "_search_brave", new=spy_brave),
+        patch(
+            "app.services.search.smart_source_search.search_cache_get",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search.search_cache_set",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search._record_search_log",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        svc.brave = SimpleNamespace(is_ready=True)  # type: ignore[assignment]
+        out = await svc.search(
+            "micode", user_id, content_type="youtube", expand=False
+        )
+
+    assert "youtube" in out["layers_called"]
+    assert yt_calls["n"] == 1
+    assert brave_calls["n"] == 0  # content_type filter → externals skipped
+
+
+@pytest.mark.asyncio
+async def test_youtube_layer_not_fired_without_filter_or_heuristic():
+    """Regression: content_type=None + a plain word must NOT fire YouTube."""
+    db = _FakeSession()
+    user_id = str(uuid4())
+
+    yt_calls = {"n": 0}
+
+    async def spy_youtube(self, query, user_themes):
+        yt_calls["n"] += 1
+        return []
+
+    async def hook() -> None:
+        await db.close()
+
+    svc = _make_service(db, on_phase1_done=hook)
+
+    with (
+        patch.object(
+            SmartSourceSearchService,
+            "_get_user_themes",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_catalog",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(SmartSourceSearchService, "_search_youtube", new=spy_youtube),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_brave",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_google_news",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch.object(
+            SmartSourceSearchService,
+            "_search_mistral",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "app.services.search.smart_source_search.search_cache_get",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search.search_cache_set",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "app.services.search.smart_source_search._record_search_log",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        svc.brave = SimpleNamespace(is_ready=True)  # type: ignore[assignment]
+        out = await svc.search("micode", user_id, content_type=None, expand=False)
+
+    assert "youtube" not in out["layers_called"]
+    assert yt_calls["n"] == 0
+
+
+@pytest.mark.asyncio
 async def test_double_close_is_safe():
     db = _FakeSession()
 

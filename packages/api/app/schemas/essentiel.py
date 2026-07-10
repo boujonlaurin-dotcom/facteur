@@ -39,6 +39,9 @@ class EssentielArticle(BaseModel):
     content_id: UUID
     title: str
     url: str
+    description: str | None = Field(
+        None, description="Chapô/description pour l'aperçu au long-press (mobile)"
+    )
     thumbnail_url: str | None = None
     published_at: datetime
     source: SourceMini

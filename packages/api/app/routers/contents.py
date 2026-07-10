@@ -1,7 +1,5 @@
-import asyncio
 import time
 import uuid
-from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -13,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
 from app.models.content import Content
-from app.models.enums import BiasStance, ContentType
+from app.models.enums import BiasStance
 from app.schemas.collection import SaveContentRequest
 from app.schemas.content import (
     ArticleFeedbackRequest,
@@ -24,7 +22,6 @@ from app.schemas.content import (
     NoteUpsertRequest,
 )
 from app.services.collection_service import CollectionService
-from app.services.content_extractor import ContentExtractor
 from app.services.content_service import ContentService
 from app.services.feed_cache import FEED_CACHE
 from app.services.title_annotation_service import (
@@ -39,15 +36,6 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
-# Round 3 fix (docs/bugs/bug-infinite-load-requests.md — F2.3) :
-# trafilatura.extract peut prendre 10-15s par article. Sans borne, N
-# ouvertures simultanées monopolisent N threads de l'executor par défaut
-# + pressurisent le pool DB au retour (réouverture session pour persist).
-# Cap à 3 extractions concurrentes globales : un user qui ouvre rapidement
-# plusieurs articles ne déclenche pas une tempête parallèle qui sature
-# l'executor ET le pool.
-_EXTRACTION_SEMAPHORE = asyncio.Semaphore(3)
-
 
 @router.get(
     "/{content_id}",
@@ -59,107 +47,13 @@ async def get_content_detail(
     db: AsyncSession = Depends(get_db),
     current_user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Récupère le détail d'un contenu.
-    Enrichit le contenu on-demand via trafilatura si html_content manquant.
-    """
+    """Récupère le détail d'un contenu sans télécharger le site source."""
     service = ContentService(db)
     user_uuid = UUID(current_user_id)
 
     content_data = await service.get_content_detail(content_id, user_uuid)
     if not content_data:
         raise HTTPException(status_code=404, detail="Contenu non trouvé")
-
-    # On-demand enrichment: try to get full content for articles
-    if content_data.get("content_type") == ContentType.ARTICLE:
-        quality = content_data.get("content_quality")
-        extractor = ContentExtractor(download_timeout=10)
-
-        # Compute quality from existing content if not yet done
-        if not quality and (
-            content_data.get("html_content") or content_data.get("description")
-        ):
-            quality = extractor.compute_quality_for_existing(
-                content_data.get("html_content"), content_data.get("description")
-            )
-            content_data["content_quality"] = quality
-
-        # Try trafilatura if content is not full quality
-        # AND no recent extraction attempt (cooldown 6h to prevent retry storms)
-        attempted_at = content_data.get("extraction_attempted_at")
-        cooldown_expired = (
-            attempted_at is None
-            or (datetime.now(UTC) - attempted_at).total_seconds() > 6 * 3600
-        )
-
-        if quality != "full" and cooldown_expired:
-            # Round 2 fix (bug-infinite-load-requests.md item 3) : libère la
-            # session `db` AVANT le `run_in_executor(trafilatura.extract)`
-            # qui peut prendre 15 s. Sans ça la session reste idle-in-tx
-            # pendant toute la durée du thread executor, et chaque ouverture
-            # d'article matin (cold cache) monopolise une conn du pool pour
-            # 15 s. Après extraction, on rouvre une session courte dédiée à
-            # la persistance.
-            try:
-                await db.commit()
-            except Exception:
-                logger.warning("content_detail_precommit_failed", exc_info=True)
-
-            try:
-                # Bornage global (F2.3) : bloque si 3 extractions déjà en
-                # cours pour éviter la saturation executor/pool.
-                async with _EXTRACTION_SEMAPHORE:
-                    result = await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(
-                            None, extractor.extract, content_data["url"]
-                        ),
-                        timeout=15.0,
-                    )
-
-                # Persist enrichment via a short-lived session.
-                async with safe_async_session() as write_session:
-                    stmt = select(Content).where(Content.id == content_id)
-                    db_content = await write_session.scalar(stmt)
-                    if db_content:
-                        db_content.extraction_attempted_at = datetime.now(UTC)
-                        if result.html_content:
-                            content_data["html_content"] = result.html_content
-                            content_data["content_quality"] = result.content_quality
-                            db_content.html_content = result.html_content
-                            db_content.content_quality = result.content_quality
-                            if (
-                                result.reading_time_seconds
-                                and not db_content.duration_seconds
-                            ):
-                                db_content.duration_seconds = (
-                                    result.reading_time_seconds
-                                )
-                                content_data["duration_seconds"] = (
-                                    result.reading_time_seconds
-                                )
-                        elif not db_content.content_quality:
-                            db_content.content_quality = quality or "none"
-                        await write_session.commit()
-
-            except Exception:
-                # Mark attempt even on failure to prevent retry storm.
-                # Courte session dédiée — n'emprunte pas `db` qui est déjà
-                # committée (connexion rendue au pool).
-                try:
-                    async with safe_async_session() as fallback_session:
-                        stmt = select(Content).where(Content.id == content_id)
-                        db_content = await fallback_session.scalar(stmt)
-                        if db_content:
-                            db_content.extraction_attempted_at = datetime.now(UTC)
-                            if not db_content.content_quality:
-                                db_content.content_quality = quality or "none"
-                            await fallback_session.commit()
-                except Exception:
-                    pass  # Don't fail the request over persistence
-                logger.exception(
-                    "on_demand_enrichment_failed",
-                    content_id=str(content_id),
-                )
 
     return content_data
 
@@ -605,6 +499,7 @@ def _perspective_to_dict(p: object) -> dict:
         "bias_stance": p.bias_stance,
         "published_at": p.published_at,
         "description": p.description,
+        "reliability_score": getattr(p, "reliability_score", None),
         "language": getattr(p, "language", None),
     }
 
@@ -1033,6 +928,9 @@ async def _refresh_perspectives_cache_background(
                 "divergence_level": divergence_level,
                 "timings_ms": timings,
             }
+            # Re-attach the pre-computed deep reco: this new body replaces the
+            # cached one, so re-read the store instead of dropping the card.
+            await _attach_deep_from_store(db, response_body, UUID(content_id))
             _perspectives_cache[content_id] = response_body
             _perspectives_source_cache[content_id] = bias_source
             logger.info(
@@ -1049,6 +947,107 @@ async def _refresh_perspectives_cache_background(
         )
     finally:
         _perspectives_refresh_inflight.discard(content_id)
+
+
+def _deep_row_to_dict(matched_content: Content, match_reason: str | None) -> dict:
+    """Render a pre-computed deep reco (matched Content + reason) as a dict.
+
+    Mirrors the mobile « Pas de recul » card contract: the matched article's
+    display fields plus a human reason. ``match_reason`` falls back to a neutral
+    default so the card always has a sub-line (cf. PR audit, commit 7d2b89d).
+    """
+    source = getattr(matched_content, "source", None)
+    ctype = getattr(matched_content, "content_type", None)
+    ctype_str = (
+        ctype.value if hasattr(ctype, "value") else (str(ctype) if ctype else "article")
+    )
+    published_at = getattr(matched_content, "published_at", None)
+    return {
+        "content_id": str(matched_content.id),
+        "title": matched_content.title,
+        "url": matched_content.url,
+        "thumbnail_url": matched_content.thumbnail_url,
+        "content_type": ctype_str,
+        "source_id": str(matched_content.source_id)
+        if matched_content.source_id
+        else None,
+        "source_name": source.name if source else None,
+        "source_logo_url": source.logo_url if source else None,
+        "published_at": published_at.isoformat() if published_at else None,
+        "match_reason": match_reason
+        or "Une analyse de fond pour replacer ce sujet dans son contexte.",
+        "description": matched_content.description,
+    }
+
+
+async def _attach_deep_from_store(
+    db: AsyncSession,
+    response_body: dict,
+    content_id: UUID,
+) -> None:
+    """Attach the pre-computed « Pas de recul » deep reco to a body.
+
+    Reads ``content_deep_recommendations`` (filled 1×/batch in the editorial
+    pipeline's global phase — story 27.1). No LLM call at open time: a missing
+    row (article opened outside the digest, or batch not run yet) or a sentinel
+    row (matched_content_id NULL = computed, no relevant match) both yield no
+    card. ``deep_pending`` is always resolved — the reader never polls again.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.exc import SQLAlchemyError
+    from sqlalchemy.orm import joinedload
+
+    from app.models.content import Content
+    from app.models.content_deep_recommendation import ContentDeepRecommendation
+
+    response_body["deep_pending"] = False
+    response_body["deep_recommendation"] = None
+
+    try:
+        row = (
+            await db.execute(
+                select(ContentDeepRecommendation).where(
+                    ContentDeepRecommendation.content_id == content_id
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None or row.matched_content_id is None:
+            return
+
+        matched_content = (
+            (
+                await db.execute(
+                    select(Content)
+                    .options(joinedload(Content.source))
+                    .where(Content.id == row.matched_content_id)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if matched_content is None:
+            return
+
+        response_body["deep_recommendation"] = _deep_row_to_dict(
+            matched_content, row.match_reason
+        )
+    except SQLAlchemyError as e:
+        # The deep-reco store may be unavailable — e.g. migration ``zz01`` not
+        # yet applied to the shared Supabase DB (schema drift). The « Pas de
+        # recul » card is strictly optional: degrade to no card rather than let
+        # a missing/erroring store 500 the whole /perspectives response, which
+        # would also blank out « Couverture médiatique » (both render from the
+        # same body). Defaults above already yield a clean "no card".
+        logger.warning(
+            "deep_reco_store_unavailable",
+            content_id=str(content_id),
+            error=str(e),
+        )
+        # Clear the aborted transaction so request teardown stays clean.
+        import contextlib
+
+        with contextlib.suppress(Exception):  # pragma: no cover - best-effort cleanup
+            await db.rollback()
 
 
 # --------------------------------------------------------------------------- #
@@ -1188,6 +1187,17 @@ async def _attach_highlight_spans(
       `semantic_equiv`, otherwise `"spacy"`. Bubbled up to the response
       header `X-Bias-Annotation-Source` for debugging.
     """
+    # DÉSACTIVÉ (T1) : le highlighting des biais n'est plus affiché côté app.
+    # Court-circuit en tête → aucun span renvoyé (titres rendus en plain par le
+    # front) et plus aucun calcul LLM/spaCy serve-time. Neutralise les 3 sites
+    # d'appel d'un coup. Le header `X-Bias-Annotation-Source` reste valide
+    # ("spacy"). Réactivation triviale = retirer ce bloc. La logique d'origine
+    # est conservée intégralement ci-dessous.
+    for p in perspectives_dicts:
+        p["highlight_spans"] = []
+        p["shared_tokens"] = []
+    return (None, "spacy")
+
     try:
         svc = get_title_annotation_service()
         # Skip the cluster cache lookup when the content isn't clustered —
@@ -1344,6 +1354,9 @@ async def get_perspectives(
                 cache_key,
                 current_user_id,
             )
+        # Refresh the pre-computed deep reco (cheap PK lookup): the editorial
+        # batch may have filled the store after this body was first cached.
+        await _attach_deep_from_store(db, cached_response, content_id)
         return cached_response
 
     # Track perspective open (Story 19.1 — Lettres du Facteur, action 4).
@@ -1472,6 +1485,7 @@ async def get_perspectives(
             "divergence_level": stored_divergence_level or derived_divergence,
             "timings_ms": timings,
         }
+        await _attach_deep_from_store(db, response_body, content_id)
         _perspectives_cache[cache_key] = response_body
         _perspectives_source_cache[cache_key] = bias_source
         logger.info(
@@ -1621,6 +1635,7 @@ async def get_perspectives(
 
     # Store partial response immediately; background refresh replaces this
     # same cache key with the complete Google-enriched response.
+    await _attach_deep_from_store(db, response_body, content_id)
     _perspectives_cache[cache_key] = response_body
     _perspectives_source_cache[cache_key] = bias_source
     background_tasks.add_task(

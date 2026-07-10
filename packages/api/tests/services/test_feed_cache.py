@@ -69,8 +69,8 @@ def test_ttl_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_disabled_cache_is_noop() -> None:
-    """TTL=0 disables the cache: put/get/invalidate become no-ops, no entries stored."""
-    cache = FeedPageCache(ttl_seconds=0.0)
+    """Both TTLs=0 disables the cache: put/get/invalidate become no-ops."""
+    cache = FeedPageCache(ttl_seconds=0.0, personalized_ttl_seconds=0.0)
     assert not cache.enabled
     user = uuid4()
     cache.put(user, b"x")
@@ -147,7 +147,7 @@ def test_ttl_from_env_default(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_ttl_from_env_zero_disables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FEED_CACHE_TTL_SECONDS", "0")
     cache = FeedPageCache()
-    assert not cache.enabled
+    assert not cache.default_enabled
 
 
 def test_ttl_from_env_invalid_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -160,7 +160,7 @@ def test_ttl_from_env_negative_clamps_to_zero(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("FEED_CACHE_TTL_SECONDS", "-5")
     cache = FeedPageCache()
     assert cache.ttl_seconds == 0.0
-    assert not cache.enabled
+    assert not cache.default_enabled
 
 
 def test_clear_drops_all(cache: FeedPageCache) -> None:
@@ -182,3 +182,102 @@ def test_reset_stats(cache: FeedPageCache) -> None:
     assert s["hits"] == 0
     assert s["misses"] == 0
     assert s["invalidations"] == 0
+
+
+# --- Personalized variants (app-load slowdown fix) -------------------------
+
+
+def test_variant_isolated_from_default(cache: FeedPageCache) -> None:
+    """A personalized variant and the default view share a user but not a slot."""
+    user = uuid4()
+    cache.put(user, b"default")
+    cache.put(user, b"theme-tech", variant="p|theme=tech")
+    assert cache.get(user) == b"default"
+    assert cache.get(user, variant="p|theme=tech") == b"theme-tech"
+
+
+def test_variants_isolated_from_each_other(cache: FeedPageCache) -> None:
+    user = uuid4()
+    cache.put(user, b"tech", variant="p|theme=tech")
+    cache.put(user, b"science", variant="p|theme=science")
+    assert cache.get(user, variant="p|theme=tech") == b"tech"
+    assert cache.get(user, variant="p|theme=science") == b"science"
+
+
+def test_invalidate_purges_all_variants(cache: FeedPageCache) -> None:
+    """A write invalidation drops the default view AND every personalized
+    section for that user, but leaves other users untouched."""
+    a, b = uuid4(), uuid4()
+    cache.put(a, b"default-a")
+    cache.put(a, b"tech-a", variant="p|theme=tech")
+    cache.put(a, b"science-a", variant="p|theme=science")
+    cache.put(b, b"tech-b", variant="p|theme=tech")
+
+    cache.invalidate(a)
+
+    assert cache.get(a) is None
+    assert cache.get(a, variant="p|theme=tech") is None
+    assert cache.get(a, variant="p|theme=science") is None
+    # One invalidate call == one counted invalidation, regardless of variant count.
+    assert cache.stats()["invalidations"] == 1
+    # Other users are not collateral.
+    assert cache.get(b, variant="p|theme=tech") == b"tech-b"
+
+
+def test_variant_lock_is_per_variant(cache: FeedPageCache) -> None:
+    """Locks are keyed by (user, variant): different variants get distinct locks."""
+    user = uuid4()
+    lock_default = cache.lock(user)
+    lock_tech = cache.lock(user, variant="p|theme=tech")
+    lock_tech_again = cache.lock(user, variant="p|theme=tech")
+    assert lock_default is not lock_tech
+    assert lock_tech is lock_tech_again
+
+
+def test_personalized_ttl_independent_kill_switch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default TTL=0 + personalized TTL>0: default puts are no-ops, personalized
+    puts are cached (and vice-versa)."""
+    cache = FeedPageCache(ttl_seconds=0.0, personalized_ttl_seconds=60.0)
+    assert cache.enabled
+    assert not cache.default_enabled
+    assert cache.personalized_enabled
+    user = uuid4()
+    cache.put(user, b"default")  # no-op (default disabled)
+    cache.put(user, b"tech", variant="p|theme=tech")
+    assert cache.get(user) is None
+    assert cache.get(user, variant="p|theme=tech") == b"tech"
+
+
+def test_personalized_ttl_from_env_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("FEED_CACHE_PERSONALIZED_TTL_SECONDS", raising=False)
+    cache = FeedPageCache()
+    assert cache.personalized_ttl_seconds == 60.0
+
+
+def test_personalized_ttl_from_env_zero_disables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEED_CACHE_PERSONALIZED_TTL_SECONDS", "0")
+    cache = FeedPageCache()
+    assert not cache.personalized_enabled
+
+
+def test_personalized_variant_uses_personalized_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A personalized entry expires on the personalized TTL, not the default."""
+    cache = FeedPageCache(ttl_seconds=30.0, personalized_ttl_seconds=60.0)
+    user = uuid4()
+
+    fake_now = [1000.0]
+    monkeypatch.setattr("app.services.feed_cache.time.monotonic", lambda: fake_now[0])
+
+    cache.put(user, b"tech", variant="p|theme=tech")
+    # Past the default TTL (30s) but within the personalized TTL (60s).
+    fake_now[0] += 45.0
+    assert cache.get(user, variant="p|theme=tech") == b"tech"
+    # Past the personalized TTL.
+    fake_now[0] += 20.0
+    assert cache.get(user, variant="p|theme=tech") is None

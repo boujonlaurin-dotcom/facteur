@@ -20,10 +20,15 @@ class ConclusionLiveFeed extends StatefulWidget {
   /// Cadence de révélation des titres (exposée pour les tests).
   final Duration revealInterval;
 
+  /// Phase de completion : l'API a répondu, on finit calmement de monter le
+  /// compteur jusqu'à son total avant la navigation.
+  final bool isCompleting;
+
   const ConclusionLiveFeed({
     super.key,
     required this.entries,
-    this.revealInterval = const Duration(milliseconds: 800),
+    this.revealInterval = const Duration(milliseconds: 1000),
+    this.isCompleting = false,
   });
 
   @override
@@ -48,6 +53,11 @@ class _ConclusionLiveFeedState extends State<ConclusionLiveFeed> {
   /// Fenêtre de titres visibles simultanément.
   static const int _windowSize = 5;
 
+  /// Nombre maximum d'articles révélés : on ne montre que les tops articles
+  /// de « Ton Essentiel » (3 à 5), pas tout le flux des sources — un compteur
+  /// calme et lisible plutôt qu'un défilement épileptique.
+  static const int _maxReveal = 5;
+
   /// Logos affichés dans la strip avant le badge « +N ».
   static const int _maxLogos = 8;
 
@@ -55,6 +65,7 @@ class _ConclusionLiveFeedState extends State<ConclusionLiveFeed> {
   final Set<String> _seenKeys = {};
   int _revealed = 0;
   Timer? _timer;
+  Timer? _completionTimer;
   bool _reduceMotion = false;
 
   @override
@@ -82,12 +93,37 @@ class _ConclusionLiveFeedState extends State<ConclusionLiveFeed> {
     _ingest(widget.entries);
     if (_reduceMotion) {
       _revealed = _queue.length;
+    } else if (widget.isCompleting && !oldWidget.isCompleting) {
+      // Entrée en phase de completion : on accélère le timer pour flusher
+      // rapidement le compteur jusqu'au total avant la navigation.
+      _speedUpTimer();
     }
+  }
+
+  /// Termine calmement la révélation des derniers titres restants (≤ quelques
+  /// articles vu le cap [_maxReveal]) avant que l'écran ne soit quitté. Cadence
+  /// posée (280 ms) pour éviter tout défilement épileptique.
+  void _speedUpTimer() {
+    if (_reduceMotion) return;
+    _timer?.cancel();
+    _timer = null;
+    _completionTimer?.cancel();
+    _completionTimer = Timer.periodic(
+      const Duration(milliseconds: 280),
+      (timer) {
+        if (_revealed >= _queue.length) {
+          timer.cancel();
+          return;
+        }
+        setState(() => _revealed++);
+      },
+    );
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _completionTimer?.cancel();
     super.dispose();
   }
 
@@ -101,6 +137,8 @@ class _ConclusionLiveFeedState extends State<ConclusionLiveFeed> {
     );
     for (var i = 0; i < maxItems; i++) {
       for (final entry in entries) {
+        // Cap : on ne révèle que les tops articles (≤ _maxReveal).
+        if (_queue.length >= _maxReveal) return;
         if (i >= entry.items.length) continue;
         final title = entry.items[i].title;
         if (title.isEmpty) continue;

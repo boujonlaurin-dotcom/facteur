@@ -27,16 +27,28 @@ class DivergenceInlineBadge extends StatelessWidget {
   /// (~+45 %) ; toutes les autres call-sites gardent 1.0.
   final double scale;
 
+  /// Boost **léger** du niveau `medium` (« Avis variés »), réservé au header
+  /// Couverture médiatique : label en `textSecondary` + poids w600, opacité des
+  /// dots remontée. Ni `textPrimary` ni w700 (réservés à `high`). Sans effet sur
+  /// les autres niveaux ; défaut `false` ⇒ les call-sites feed/flux inchangés.
+  final bool prominentMedium;
+
   const DivergenceInlineBadge({
     super.key,
     this.divergenceLevel,
     this.iconOnly = false,
     this.scale = 1.0,
+    this.prominentMedium = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final config = _configFor(divergenceLevel, context.facteurColors, iconOnly);
+    final config = _configFor(
+      divergenceLevel,
+      context.facteurColors,
+      iconOnly,
+      prominentMedium,
+    );
     if (config == null) return const SizedBox.shrink();
 
     final glyph = CustomPaint(
@@ -55,7 +67,7 @@ class DivergenceInlineBadge extends StatelessWidget {
           config.label,
           style: GoogleFonts.courierPrime(
             fontSize: 8 * scale,
-            fontWeight: config.bold ? FontWeight.w700 : FontWeight.w500,
+            fontWeight: config.labelWeight,
             color: config.labelColor,
             letterSpacing: 0.35 * scale,
           ),
@@ -68,6 +80,7 @@ class DivergenceInlineBadge extends StatelessWidget {
     String? level,
     FacteurColors colors,
     bool iconOnly,
+    bool prominentMedium,
   ) {
     switch (level) {
       case 'low':
@@ -80,12 +93,14 @@ class DivergenceInlineBadge extends StatelessWidget {
             _Dot(19, 6, colors.success, dotOpacity),
           ],
           labelColor: colors.textSecondary,
-          bold: false,
+          labelWeight: FontWeight.w500,
         );
       case 'medium':
-        // En iconOnly les dots portent tout le sens — on remonte l'opacité
-        // pour qu'ils restent lisibles sans le label.
-        final dotOpacity = iconOnly ? 0.85 : 0.5;
+        // Boost léger réservé au header Couverture (label visible) : dots à 0.7
+        // au lieu de 0.5, label secondary w600. En iconOnly les dots portent
+        // tout le sens — on remonte l'opacité comme avant.
+        final boosted = prominentMedium && !iconOnly;
+        final dotOpacity = iconOnly ? 0.85 : (boosted ? 0.7 : 0.5);
         return _BadgeConfig(
           label: 'AVIS VARIÉS',
           dots: [
@@ -95,8 +110,8 @@ class DivergenceInlineBadge extends StatelessWidget {
             _Dot(20, 6, colors.textTertiary, dotOpacity),
             _Dot(25, 6, colors.textTertiary, dotOpacity),
           ],
-          labelColor: colors.textTertiary,
-          bold: false,
+          labelColor: boosted ? colors.textSecondary : colors.textTertiary,
+          labelWeight: boosted ? FontWeight.w600 : FontWeight.w500,
         );
       case 'high':
         return _BadgeConfig(
@@ -108,7 +123,7 @@ class DivergenceInlineBadge extends StatelessWidget {
             _Dot(24, 6, colors.biasRight, 1.0),
           ],
           labelColor: colors.textPrimary,
-          bold: true,
+          labelWeight: FontWeight.w700,
         );
       default:
         return null;
@@ -120,12 +135,15 @@ class _BadgeConfig {
   final String label;
   final List<_Dot> dots;
   final Color labelColor;
-  final bool bold;
+
+  /// Poids du label (granulaire — remplace l'ancien `bold` binaire) : w500
+  /// (low/medium discret), w600 (medium boosté), w700 (high polarisé).
+  final FontWeight labelWeight;
   const _BadgeConfig({
     required this.label,
     required this.dots,
     required this.labelColor,
-    required this.bold,
+    required this.labelWeight,
   });
 }
 

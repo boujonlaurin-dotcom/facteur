@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,6 +30,10 @@ class ConclusionAnimationScreen extends ConsumerStatefulWidget {
 
 class _ConclusionAnimationScreenState
     extends ConsumerState<ConclusionAnimationScreen> {
+  /// Phase de completion : `ConclusionSuccess` reçu, on laisse l'animation du
+  /// compteur « flusher » rapidement jusqu'au total avant de naviguer.
+  bool _isCompleting = false;
+
   @override
   void initState() {
     super.initState();
@@ -45,8 +51,17 @@ class _ConclusionAnimationScreenState
 
     // Écouter les changements d'état pour naviguer
     ref.listen<ConclusionState>(conclusionNotifierProvider, (previous, next) {
-      if (next is ConclusionSuccess) {
-        _completeOnboarding();
+      if (next is ConclusionSuccess && !_isCompleting) {
+        // On ne navigue pas immédiatement : on passe en phase de completion
+        // pour laisser le compteur finir de monter jusqu'au total, puis on
+        // navigue après un court délai.
+        setState(() => _isCompleting = true);
+        unawaited(
+          Future.delayed(
+            const Duration(milliseconds: 1200),
+            _completeOnboarding,
+          ),
+        );
       }
     });
 
@@ -54,9 +69,10 @@ class _ConclusionAnimationScreenState
       backgroundColor: colors.backgroundPrimary,
       body: SafeArea(
         child: switch (conclusionState) {
-          ConclusionLoading() => const _LoadingView(),
-          ConclusionSuccess() =>
-            const _LoadingView(), // Garde l'animation pendant la transition
+          ConclusionLoading() => _LoadingView(isCompleting: _isCompleting),
+          ConclusionSuccess() => _LoadingView(
+            isCompleting: _isCompleting,
+          ), // Garde l'animation pendant la transition
           ConclusionError() => LaurinFallbackView(
             title: OnboardingFallbackStrings.title,
             subtitle: OnboardingFallbackStrings.subtitle,
@@ -103,7 +119,9 @@ class _ConclusionAnimationScreenState
 /// Vue de chargement : feed vivant (vrais titres des sources choisies) quand
 /// des données sont disponibles, sinon loader minimaliste classique.
 class _LoadingView extends ConsumerWidget {
-  const _LoadingView();
+  final bool isCompleting;
+
+  const _LoadingView({this.isCompleting = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -137,7 +155,10 @@ class _LoadingView extends ConsumerWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: FacteurSpacing.space6),
-        child: ConclusionLiveFeed(entries: entries),
+        child: ConclusionLiveFeed(
+          entries: entries,
+          isCompleting: isCompleting,
+        ),
       ),
     );
   }

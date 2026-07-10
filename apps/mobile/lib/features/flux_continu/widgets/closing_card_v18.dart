@@ -1,9 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../config/theme.dart';
+import '../providers/weather_provider.dart';
+import '../utils/closing_activity.dart';
 import 'tournee_cta_buttons.dart';
 
 /// Closing card displayed after the four Flux Continu sections.
@@ -11,13 +14,10 @@ import 'tournee_cta_buttons.dart';
 /// Layout per maquette V6 :
 /// - "FIN DE TOURNÉE" stamp Courier Prime 10 w700, color/border #2E7D32,
 ///   rotation -2°.
-/// - Heading "Vous êtes à jour" Fraunces 700 24px.
-/// - Description (DM Sans 13, line-height 1.5, max-w 280, centered) — "X
-///   étape(s) parcourue(s)" or "Tournée terminée" when empty.
+/// - Heading "Tu es à jour" Fraunces 700 24px.
 /// - Primary CTA "Continuer à Flâner" (background #D35400) + ghost CTA
 ///   "Refermer pour aujourd'hui" (border 1.5px rgba(0,0,0,0.1)).
-class ClosingCardV18 extends StatelessWidget {
-  final int articleCount;
+class ClosingCardV18 extends ConsumerWidget {
   final VoidCallback? onContinue;
   final VoidCallback? onClose;
 
@@ -26,17 +26,28 @@ class ClosingCardV18 extends StatelessWidget {
   /// par l'App Store). Ignorée si [onClose] est fourni (cas Android).
   final String? closeHint;
 
+  /// Sous-carte secondaire rendue à l'intérieur de la carte de clôture, sous
+  /// un divider (ex. « Ton avis compte » = [FeedbackClosingCard] embarquée).
+  /// Fait partie de la même boîte visuelle → mesurée par les ancres de snap
+  /// avec la carte principale.
+  final Widget? secondary;
+
   const ClosingCardV18({
     super.key,
-    required this.articleCount,
     this.onContinue,
     this.onClose,
     this.closeHint,
+    this.secondary,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
+    // Météo en cours/échec → null → pickClosingActivities retombe sur
+    // l'intérieur (carte calme, pas de spinner). La logique vit dans la
+    // fonction pure.
+    final condition = ref.watch(weatherProvider).valueOrNull?.condition;
+    final activities = pickClosingActivities(condition: condition);
     return Container(
       margin: const EdgeInsets.fromLTRB(18, 30, 18, 24),
       clipBehavior: Clip.antiAlias,
@@ -87,7 +98,7 @@ class ClosingCardV18 extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              'Vous êtes à jour',
+              'Tu es à jour',
               textAlign: TextAlign.center,
               style: GoogleFonts.fraunces(
                 fontSize: 24,
@@ -97,19 +108,8 @@ class ClosingCardV18 extends StatelessWidget {
                 color: colors.textPrimary,
               ),
             ),
-            const SizedBox(height: 8),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 280),
-              child: Text(
-                _stepLabel(articleCount),
-                textAlign: TextAlign.center,
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: colors.textSecondary,
-                ),
-              ),
-            ),
+            const SizedBox(height: 18),
+            _ActivitySuggestions(activities: activities),
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -139,15 +139,75 @@ class ClosingCardV18 extends StatelessWidget {
                 ),
               ),
             ],
+            if (secondary != null) ...[
+              const SizedBox(height: 20),
+              Divider(
+                height: 1,
+                color: colors.textTertiary.withValues(alpha: 0.15),
+              ),
+              const SizedBox(height: 16),
+              secondary!,
+            ],
           ],
         ),
       ),
     );
   }
+}
 
-  String _stepLabel(int count) {
-    if (count <= 0) return 'Tournée terminée';
-    final plural = count > 1 ? 's' : '';
-    return '$count étape$plural parcourue$plural';
+/// Bloc discret « Et si tu en profitais pour… » : trois propositions tangibles
+/// hors-écran à faire maintenant. Toujours affiché (même si rien n'a été lu) —
+/// c'est la valeur ajoutée de la fin de tournée. Reste léger : pas de CTA, juste
+/// des invitations tournées en question.
+class _ActivitySuggestions extends StatelessWidget {
+  final List<ClosingActivity> activities;
+
+  const _ActivitySuggestions({required this.activities});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    if (activities.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Et si tu en profitais pour…',
+          style: GoogleFonts.dmSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: colors.textTertiary,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Fond blanc (plus de container orange) : les propositions reposent
+        // directement sur la surface de la carte pour alléger la fin de tournée.
+        Column(
+          children: [
+            for (final activity in activities)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(
+                  children: [
+                    Text(activity.emoji, style: const TextStyle(fontSize: 17)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        activity.prompt,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
+                          color: colors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 }

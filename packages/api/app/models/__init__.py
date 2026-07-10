@@ -6,6 +6,7 @@ from app.models.classification_queue import ClassificationQueue
 from app.models.cluster_title_annotation import ClusterTitleAnnotation
 from app.models.collection import Collection, CollectionItem
 from app.models.content import Content, UserContentStatus
+from app.models.content_deep_recommendation import ContentDeepRecommendation
 from app.models.curation import CurationAnnotation
 from app.models.daily_digest import DailyDigest
 from app.models.digest_completion import DigestCompletion
@@ -17,15 +18,26 @@ from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.grille_game_state import GrilleGameState
 from app.models.grille_puzzle import GrillePuzzle
 from app.models.host_feed_resolution import HostFeedResolution
-from app.models.learning import UserEntityPreference
+from app.models.learning import UserEntityAffinity, UserEntityPreference
+from app.models.media_eval import (
+    MediaEvalCorpusArticle,
+    MediaEvalDebunkage,
+    MediaEvalEvaluation,
+    MediaEvalFiche,
+    MediaEvalMedia,
+    MediaEvalSignal,
+    MediaEvalSnapshot,
+)
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
+from app.models.push_notification import PushDelivery, PushDevice
 from app.models.serene_report import SereneReport
 from app.models.source import Source, UserSource
 from app.models.source_search_log import SourceSearchLog
 from app.models.subscription import UserSubscription
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
 from app.models.user_favorites import UserFavoriteInterest, UserFavoriteSource
+from app.models.user_feedback import DigestSentiment, FeedbackInvite
 from app.models.user_letter_progress import UserLetterProgress
 from app.models.user_notification_preferences import UserNotificationPreferences
 from app.models.user_personalization import UserPersonalization
@@ -59,6 +71,8 @@ __all__ = [
     # Content models
     "Content",
     "UserContentStatus",
+    # Pré-calcul « Pas de recul » (Story 27.1)
+    "ContentDeepRecommendation",
     # Classification Queue (US-2)
     "ClassificationQueue",
     # Analytics
@@ -79,6 +93,8 @@ __all__ = [
     "UserPersonalization",
     # Notification preferences (push activation v1)
     "UserNotificationPreferences",
+    "PushDevice",
+    "PushDelivery",
     # Collections (Saved Groups)
     "Collection",
     "CollectionItem",
@@ -107,6 +123,7 @@ __all__ = [
     # Serene Feedback
     "SereneReport",
     # Entity Preferences (follow/mute on named entities)
+    "UserEntityAffinity",
     "UserEntityPreference",
     # Self-reported "well-informed" score (Story 14.3)
     "UserWellInformedRating",
@@ -121,4 +138,15 @@ __all__ = [
     # La Grille du jour (Story 24.1)
     "GrillePuzzle",
     "GrilleGameState",
+    # User Feedback System (Epic 13)
+    "DigestSentiment",
+    "FeedbackInvite",
+    # Évaluation des médias C1-C11 (media-eval.0)
+    "MediaEvalMedia",
+    "MediaEvalSnapshot",
+    "MediaEvalCorpusArticle",
+    "MediaEvalSignal",
+    "MediaEvalDebunkage",
+    "MediaEvalEvaluation",
+    "MediaEvalFiche",
 ]

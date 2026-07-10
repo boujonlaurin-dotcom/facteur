@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Déclencheur de scroll-to-top pour l'onglet Flâner.
@@ -21,6 +22,13 @@ final essentielScrollTriggerProvider = StateProvider<int>((ref) => 0);
 final tourneeLastDedicatedSectionProvider = StateProvider<String?>(
   (ref) => null,
 );
+
+/// Cible de scroll demandée par le tour guidé : le bridge y pose la `GlobalKey`
+/// de la section à révéler (`tourActusSectionKey`) pendant l'étape « descends
+/// dans tes cartes ». `FluxContinuScreen` l'écoute et `ensureVisible` la cible,
+/// puis remet le provider à `null`. `StateProvider` plutôt qu'un trigger compteur
+/// car la valeur transporte la clé elle-même.
+final tourScrollTargetProvider = StateProvider<GlobalKey?>((ref) => null);
 
 /// Visibilité du footer (MainBottomNav) — masqué au scroll vers le bas, révélé
 /// au scroll vers le haut, partout dans l'app (comportement LinkedIn).

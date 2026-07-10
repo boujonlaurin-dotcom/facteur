@@ -8,6 +8,7 @@ from app.models.content import Content
 from app.models.enums import ContentType, InterestState
 from app.services.recommendation.helpers import (
     compute_coverage_score,
+    iter_entity_names,
     matches_word_boundary,
 )
 from app.services.recommendation.pillars.base import BasePillar, PillarContribution
@@ -99,12 +100,14 @@ def _subtopic_label(slug: str) -> str:
 
 def _get_effective_theme(content: Content, user_interests: set[str]) -> str | None:
     """Determine effective theme: content.theme > source.theme > secondary_themes."""
-    if hasattr(content, "theme") and content.theme:
-        if content.theme in user_interests:
-            return content.theme
-    if content.source and content.source.theme:
-        if content.source.theme in user_interests:
-            return content.source.theme
+    if hasattr(content, "theme") and content.theme and content.theme in user_interests:
+        return content.theme
+    if (
+        content.source
+        and content.source.theme
+        and content.source.theme in user_interests
+    ):
+        return content.source.theme
     if content.source and getattr(content.source, "secondary_themes", None):
         matched = set(content.source.secondary_themes) & user_interests
         if matched:
@@ -159,6 +162,12 @@ class PertinencePillar(BasePillar):
         score += format_result[0]
         contributions.extend(format_result[1])
 
+        # --- 5a. Entity Affinity (PR2 « le levier ») ---
+        # Récompense bornée des entités nommées lues souvent (affinité apprise).
+        entity_result = self._score_entities(content, context)
+        score += entity_result[0]
+        contributions.extend(entity_result[1])
+
         # --- 5b. Coverage Bonus (multi-sources sur même cluster) ---
         # Un sujet relayé par plusieurs médias distincts dans les 24h dernières
         # est plus probablement "l'essentiel" que les 3 articles standalone
@@ -206,6 +215,43 @@ class PertinencePillar(BasePillar):
             label = "Sujet relayé"
         return bonus, [PillarContribution(label=label, points=bonus)]
 
+    def _score_entities(
+        self, content: Content, context: ScoringContext
+    ) -> tuple[float, list[PillarContribution]]:
+        """Bonus calibré pour les entités nommées lues souvent (PR2).
+
+        `bonus = Σ ENTITY_AFFINITY_BASE * (affinity - 1.0)` sur les entités de
+        l'article dont l'affinité apprise > 1.0, plafonné à
+        `ENTITY_AFFINITY_MAX_BONUS` (garde-fou diversité). La raison nomme
+        l'entité au plus gros apport, en **casse live** (issue de l'article,
+        pas du stockage normalisé).
+        """
+        affinity = context.user_entity_affinity
+        entities = getattr(content, "entities", None)
+        if not affinity or not entities:
+            return 0.0, []
+
+        bonus = 0.0
+        top_entity = ""
+        top_contribution = 0.0
+        for display, key in iter_entity_names(entities):
+            aff = affinity.get(key, 1.0)
+            if aff <= 1.0:
+                continue
+
+            contribution = ScoringWeights.ENTITY_AFFINITY_BASE * (aff - 1.0)
+            bonus += contribution
+            if contribution > top_contribution:
+                top_contribution = contribution
+                top_entity = display
+
+        if bonus <= 0 or not top_entity:
+            return 0.0, []
+
+        bonus = min(bonus, ScoringWeights.ENTITY_AFFINITY_MAX_BONUS)
+        label = f"{ScoringWeights.ENTITY_AFFINITY_REASON_PREFIX} {top_entity}"
+        return bonus, [PillarContribution(label=label, points=bonus)]
+
     def _score_theme_mismatch(
         self,
         theme_points: float,
@@ -238,20 +284,26 @@ class PertinencePillar(BasePillar):
     ) -> tuple[float, PillarContribution | None]:
         """3-tier theme matching: content.theme > source.theme > secondary_themes."""
         # Tier 1: Article-level theme (ML-inferred)
-        if hasattr(content, "theme") and content.theme:
-            if content.theme in context.user_interests:
-                label = f"Thème : {_theme_label(content.theme)}"
-                return ScoringWeights.THEME_MATCH, PillarContribution(
-                    label=label, points=ScoringWeights.THEME_MATCH
-                )
+        if (
+            hasattr(content, "theme")
+            and content.theme
+            and content.theme in context.user_interests
+        ):
+            label = f"Thème : {_theme_label(content.theme)}"
+            return ScoringWeights.THEME_MATCH, PillarContribution(
+                label=label, points=ScoringWeights.THEME_MATCH
+            )
 
         # Tier 2: Source primary theme
-        if content.source and content.source.theme:
-            if content.source.theme in context.user_interests:
-                label = f"Thème : {_theme_label(content.source.theme)}"
-                return ScoringWeights.THEME_MATCH, PillarContribution(
-                    label=label, points=ScoringWeights.THEME_MATCH
-                )
+        if (
+            content.source
+            and content.source.theme
+            and content.source.theme in context.user_interests
+        ):
+            label = f"Thème : {_theme_label(content.source.theme)}"
+            return ScoringWeights.THEME_MATCH, PillarContribution(
+                label=label, points=ScoringWeights.THEME_MATCH
+            )
 
         # Tier 3: Source secondary themes (70% of primary)
         if content.source and getattr(content.source, "secondary_themes", None):
@@ -273,22 +325,34 @@ class PertinencePillar(BasePillar):
         if not context.user_subtopics or not content.topics:
             return 0.0, []
 
-        content_topics = {t.lower().strip() for t in content.topics if t}
         user_subtopics = {s.lower().strip() for s in context.user_subtopics}
-        matches = content_topics & user_subtopics
-        match_count = min(len(matches), ScoringWeights.TOPIC_MAX_MATCHES)
 
-        if match_count == 0:
+        matched_topics: list[tuple[str, float]] = []
+        seen_topics: set[str] = set()
+        for index, raw_topic in enumerate(content.topics):
+            topic = raw_topic.lower().strip() if isinstance(raw_topic, str) else ""
+            if not topic or topic in seen_topics:
+                continue
+            seen_topics.add(topic)
+            if topic not in user_subtopics:
+                continue
+
+            position_factor = ScoringWeights.SUBTOPIC_POSITION_FACTOR**index
+            matched_topics.append((topic, position_factor))
+            if len(matched_topics) >= ScoringWeights.TOPIC_MAX_MATCHES:
+                break
+
+        if not matched_topics:
             return 0.0, []
 
         weights = context.user_subtopic_weights
-        matched_list = sorted(matches)[:match_count]
+        matched_list = [topic for topic, _ in matched_topics]
         score = 0.0
         boosted_topics = []
 
-        for topic in matched_list:
+        for topic, position_factor in matched_topics:
             w = weights.get(topic, 1.0)
-            score += ScoringWeights.TOPIC_MATCH * w
+            score += ScoringWeights.TOPIC_MATCH * w * position_factor
             if w > 1.0:
                 boosted_topics.append(topic)
 

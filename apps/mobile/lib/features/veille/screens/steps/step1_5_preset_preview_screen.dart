@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../../config/theme.dart';
+import '../../../../widgets/design/facteur_image.dart';
 import '../../models/veille_config.dart';
 import '../../providers/veille_config_provider.dart';
 import '../../providers/veille_presets_provider.dart';
@@ -231,12 +232,14 @@ class _SourcesGrid extends StatelessWidget {
               children: [
                 if (s.logoUrl != null && s.logoUrl!.isNotEmpty)
                   ClipOval(
-                    child: Image.network(
-                      s.logoUrl!,
+                    // Web : proxy backend (CORS) via FacteurImage — logoUrl peut
+                    // être un favicon google qui taint le canvas CanvasKit.
+                    child: FacteurImage(
+                      imageUrl: s.logoUrl!,
                       width: 32,
                       height: 32,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _SourceInitial(name: s.name),
+                      errorWidget: (_) => _SourceInitial(name: s.name),
                     ),
                   )
                 else

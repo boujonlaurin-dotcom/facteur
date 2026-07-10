@@ -7,6 +7,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../../core/api/notification_preferences_api_service.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/services/push_notification_service.dart';
+import '../../../core/services/server_push_service.dart';
 
 /// État des préférences de notifications
 @immutable
@@ -112,18 +113,7 @@ class NotificationsSettingsNotifier
   static const _kGoodNewsEnabled = 'notif_good_news_enabled';
   static const _kGoodNewsTimeSlot = 'notif_good_news_time_slot';
   static const _kNotifVeilleEnabled = 'notif_veille_enabled';
-  // Derniers teasers connus, écrits/lus en direct dans la box (hors `state`,
-  // `_persist` et `_patchBackend`) : purement locaux, jamais shippés au
-  // backend. Le contenu d'une notif locale étant « cuit » au scheduling, ces
-  // clés permettent aux 3 points de déclenchement (cold start, load frais,
-  // mutation réglages) de re-poser la variante B personnalisée. Publiques pour
-  // que `main.dart` (cold start) lise la même clé sans dupliquer le littéral.
-  static const kEssentielTeasers = 'notif_essentiel_teasers';
   static const kGoodNewsTeasers = 'notif_good_news_teasers';
-  // Dernier état connu de la préférence `serein_enabled`, persisté localement
-  // pour cuire la notif digest sur le bon ton (en-tête + CTA apaisés) aux 3
-  // points de scheduling. Publique : `main.dart` (cold start) la lit aussi.
-  static const kSereinNotif = 'notif_serein_enabled';
 
   Future<Box<dynamic>> _box() => Hive.openBox<dynamic>(_boxName);
 
@@ -238,18 +228,18 @@ class NotificationsSettingsNotifier
     await push.cancelWeeklyCommunityPick();
     await push.cancelGoodNewsNotification();
     final box = await _box();
-    final essentielTeasers = readTeasers(box, kEssentielTeasers);
     final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
-    final serene = readSerein(box);
+    final serverRegistered = box.get(
+      ServerPushService.serverRegisteredKey,
+      defaultValue: false,
+    ) as bool;
     if (state.pushEnabled) {
-      await push.scheduleDailyDigestNotification(
-        timeSlot: state.timeSlot,
-        variant: essentielTeasers.isEmpty
-            ? NotifVariant.variantA
-            : NotifVariant.variantB,
-        teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
-        serene: serene,
-      );
+      if (!serverRegistered) {
+        await ServerPushService.scheduleDigestFallback(
+          box: box,
+          timeSlot: state.timeSlot,
+        );
+      }
       if (state.preset == NotifPreset.curieux) {
         await push.scheduleWeeklyCommunityPick();
       }
@@ -272,20 +262,13 @@ class NotificationsSettingsNotifier
     return raw.whereType<String>().toList(growable: false);
   }
 
-  /// Lecture défensive du flag serein persisté (défaut `false`). Statique +
-  /// publique : `main.dart` (cold start) lit la même clé sans dupliquer le cast.
-  static bool readSerein(Box<dynamic> box) {
-    final raw = box.get(kSereinNotif);
-    return raw is bool ? raw : false;
-  }
-
-  /// Met à jour les teasers persistés depuis le dernier digest chargé, puis
-  /// replanifie les notifs perso. Appelée fire-and-forget depuis
-  /// `fluxContinuProvider` après un load frais.
+  /// Persiste les teasers du dernier fetch Flux Continu pour alimenter la notif
+  /// digest LOCALE en bullets (variantB) quand le push serveur est indisponible
+  /// (cf. bug-notif-matin-avatar-double-sans-bullets, Part 1).
   ///
-  /// Écriture **conditionnelle** : on n'écrase une liste persistée que si la
-  /// fraîche est non vide — un échec réseau transitoire (digest partiel) ne
-  /// doit pas effacer la perso d'hier.
+  /// > Tradeoff assumé (phasé) : ces bullets viennent du dernier fetch
+  /// > (potentiellement J-1) ; le digest exact du jour viendra du push serveur
+  /// > (Part 2).
   Future<void> syncDigestTeasers({
     required List<String> essentielTeasers,
     required List<String> goodNewsTeasers,
@@ -293,12 +276,15 @@ class NotificationsSettingsNotifier
   }) async {
     final box = await _box();
     if (essentielTeasers.isNotEmpty) {
-      await box.put(kEssentielTeasers, essentielTeasers);
+      await box.put(ServerPushService.essentielTeasersKey, essentielTeasers);
+      await box.put(ServerPushService.essentielSereneKey, sereinEnabled);
+    } else {
+      await box.delete(ServerPushService.essentielTeasersKey);
+      await box.delete(ServerPushService.essentielSereneKey);
     }
     if (goodNewsTeasers.isNotEmpty) {
       await box.put(kGoodNewsTeasers, goodNewsTeasers);
     }
-    await box.put(kSereinNotif, sereinEnabled);
     await _reschedule();
   }
 
@@ -315,7 +301,7 @@ class NotificationsSettingsNotifier
       final pushService = PushNotificationService();
       final granted = await pushService.requestPermission();
       if (!granted) return;
-      await pushService.requestExactAlarmPermission();
+      await ServerPushService.instance.initAndRegister();
     }
     await _commit(state.copyWith(pushEnabled: value));
   }
@@ -380,7 +366,7 @@ class NotificationsSettingsNotifier
       final pushService = PushNotificationService();
       final granted = await pushService.requestPermission();
       if (!granted) return;
-      await pushService.requestExactAlarmPermission();
+      await pushService.requestExactAlarmPermission(userInitiated: true);
     }
     await _commit(state.copyWith(goodNewsEnabled: value));
   }
@@ -410,7 +396,7 @@ class NotificationsSettingsNotifier
       final pushService = PushNotificationService();
       final granted = await pushService.requestPermission();
       if (!granted) return;
-      await pushService.requestExactAlarmPermission();
+      await pushService.requestExactAlarmPermission(userInitiated: true);
     }
     await _commit(state.copyWith(notifVeilleEnabled: value));
   }

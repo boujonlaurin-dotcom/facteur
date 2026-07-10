@@ -1,13 +1,17 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../../../config/theme.dart';
 import '../../../../core/providers/analytics_provider.dart';
 import '../../../custom_topics/models/topic_models.dart';
 import '../../../custom_topics/providers/custom_topics_provider.dart';
+import '../../../custom_topics/widgets/entity_add_sheet.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../data/available_subtopics.dart';
 import '../../onboarding_strings.dart';
@@ -25,17 +29,15 @@ class SubtopicsQuestion extends ConsumerStatefulWidget {
 class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   Set<String> _selectedSubtopics = {};
   final Set<String> _selectedEntities = {};
-  final Map<String, List<String>> _customTopics = {};
-  String? _addingForTheme;
-  final TextEditingController _customController = TextEditingController();
-  // Clé sur le champ « sujet custom » pour le faire défiler au-dessus du clavier
-  // dès son apparition (cf. _startAddingCustom).
-  final GlobalKey _customFieldKey = GlobalKey();
   bool _saving = false;
 
   late final PageController _pageController;
   int _currentTheme = 0;
   final Set<int> _visitedPages = {0};
+
+  /// Brève phase « validé » sur la carte courante avant le scroll horizontal
+  /// vers le thème suivant.
+  bool _isValidatingCurrentPage = false;
 
   List<String> get _selectedThemes =>
       ref.read(onboardingProvider).answers.themes ?? [];
@@ -82,7 +84,6 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
 
   @override
   void dispose() {
-    _customController.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -123,102 +124,66 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     });
   }
 
-  void _startAddingCustom(String themeSlug) {
-    setState(() {
-      _addingForTheme = themeSlug;
-      _customController.clear();
-    });
-    // Le champ vient d'apparaître (autofocus → clavier qui monte). On attend que
-    // le clavier soit en place puis on fait défiler le champ au-dessus de lui.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 250), () {
-        final ctx = _customFieldKey.currentContext;
-        if (!mounted || ctx == null) return;
-        Scrollable.ensureVisible(
-          ctx,
-          alignment: 0.4,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      });
-    });
+  /// Ouvre la fenêtre de désambiguïsation (`EntityAddSheet`) — même composant que
+  /// « Mes Intérêts ». Le sujet est validé, créé et confirmé **au moment de
+  /// l'ajout** (plus de batch terminal silencieux). Le chip « saved » apparaît
+  /// ensuite automatiquement car il est dérivé de `customTopicsProvider`.
+  void _openAddSheet(String themeSlug) {
+    HapticFeedback.selectionClick();
+    EntityAddSheet.show(context, themeSlug: themeSlug);
   }
 
-  void _submitCustomTopic(String themeSlug) {
-    final name = _customController.text.trim();
-    if (name.isEmpty) return;
-
-    setState(() {
-      _customTopics.putIfAbsent(themeSlug, () => []);
-      _customTopics[themeSlug]!.add(name);
-      _addingForTheme = null;
-      _customController.clear();
-    });
-  }
-
-  void _removeCustomTopic(String themeSlug, String name) {
-    setState(() {
-      _customTopics[themeSlug]?.remove(name);
-    });
+  /// Retire un sujet custom déjà persisté (chip « saved ») — cohérent avec les
+  /// réglages. Best-effort : le provider rollback son état optimiste en cas
+  /// d'échec réseau.
+  Future<void> _removeSavedCustom(String topicId) async {
+    // Un placeholder optimiste (id `temp_…`) n'existe pas encore côté serveur.
+    if (topicId.startsWith('temp_')) return;
+    HapticFeedback.selectionClick();
+    try {
+      await ref.read(customTopicsProvider.notifier).unfollowTopic(topicId);
+    } catch (_) {
+      // L'état optimiste est déjà restauré par le provider ; rien à faire ici.
+    }
   }
 
   Future<void> _continue() async {
-    // Collect custom topics + entities to save via API BEFORE navigating.
-    // Non-bloquant : les échecs sont loggués et résumés en fin d'onboarding,
-    // jamais opposés à la progression utilisateur.
+    // Les sujets custom sont désormais sauvés à l'ajout via EntityAddSheet — il
+    // ne reste que les entités populaires cochées à persister ici. Non-bloquant :
+    // un échec est mesuré (Sentry + analytics) et résumé en dernier recours,
+    // jamais opposé à la progression utilisateur.
     final notifier = ref.read(customTopicsProvider.notifier);
-    final attempts = <_TopicAttempt>[];
+    final analytics = ref.read(analyticsServiceProvider);
 
-    for (final entry in _customTopics.entries) {
-      for (final topicName in entry.value) {
-        attempts.add(_TopicAttempt(
-          name: topicName,
-          future: notifier
-              .followTopic(topicName, slugParent: entry.key)
-              .then<Object?>((v) => v)
-              .catchError((Object e, StackTrace st) {
-            debugPrint(
-              '[ONBOARDING_TELEMETRY] event=custom_topic_failed '
-              'name="$topicName" theme=${entry.key} error=$e',
-            );
-            return null;
-          }),
-        ));
-      }
-    }
-    for (final entityName in _selectedEntities) {
-      attempts.add(_TopicAttempt(
-        name: entityName,
-        future: notifier
-            .followTopic(entityName)
-            .then<Object?>((v) => v)
-            .catchError((Object e, StackTrace st) {
-          debugPrint(
-            '[ONBOARDING_TELEMETRY] event=custom_entity_failed '
-            'name="$entityName" error=$e',
-          );
-          return null;
-        }),
-      ));
-    }
-
-    if (attempts.isNotEmpty) {
+    if (_selectedEntities.isNotEmpty) {
       setState(() => _saving = true);
-      final results = await Future.wait(attempts.map((a) => a.future));
-      final failedNames = <String>[
-        for (var i = 0; i < attempts.length; i++)
-          if (results[i] == null) attempts[i].name,
-      ];
+      final failedNames = <String>[];
+      for (final entityName in _selectedEntities) {
+        try {
+          await notifier.followTopic(entityName);
+        } catch (e, st) {
+          // 409 = déjà suivi → succès silencieux, pas un échec.
+          if (e is DioException && e.response?.statusCode == 409) continue;
+          unawaited(Sentry.captureException(e, stackTrace: st));
+          unawaited(analytics.trackCustomTopicSaveFailed(
+            name: entityName,
+            origin: 'onboarding',
+            error: e.toString(),
+          ));
+          failedNames.add(entityName);
+        }
+      }
 
       if (failedNames.isNotEmpty) {
-        // Stocke dans l'état — la bottom sheet de synthèse s'affichera
-        // après la conclusion, à la place du snackbar éphémère.
+        // Dernier recours : la bottom sheet de synthèse s'affichera après la
+        // conclusion. Dans le cas nominal cette liste reste vide.
         ref
             .read(onboardingProvider.notifier)
             .recordFailedCustomTopics(failedNames);
       }
     }
 
+    if (!mounted) return;
     // Save subtopics LAST — this triggers navigation to the next step
     ref.read(onboardingProvider.notifier).selectSubtopics(
           _selectedSubtopics.toList(),
@@ -287,17 +252,57 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                     itemCount: selectedThemes.length,
                     itemBuilder: (context, index) {
                       final theme = _resolveTheme(selectedThemes[index]);
+                      final isValidating = index == _currentTheme &&
+                          _isValidatingCurrentPage;
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: SingleChildScrollView(
-                          physics: const BouncingScrollPhysics(),
-                          // Extent supplémentaire quand le clavier monte, sinon
-                          // le champ « sujet custom » reste caché derrière lui.
-                          padding: EdgeInsets.only(
-                            bottom: MediaQuery.viewInsetsOf(context).bottom +
-                                FacteurSpacing.space6,
+                        child: AnimatedScale(
+                          scale: isValidating ? 0.96 : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeInOut,
+                          child: AnimatedOpacity(
+                            opacity: isValidating ? 0.7 : 1.0,
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            child: Stack(
+                              children: [
+                                SingleChildScrollView(
+                                  physics: const BouncingScrollPhysics(),
+                                  // Extent supplémentaire quand le clavier monte,
+                                  // sinon le champ « sujet custom » reste caché
+                                  // derrière lui.
+                                  padding: EdgeInsets.only(
+                                    bottom:
+                                        MediaQuery.viewInsetsOf(context).bottom +
+                                            FacteurSpacing.space6,
+                                  ),
+                                  child: _buildThemeCard(
+                                    theme,
+                                    includeHeader: false,
+                                  ),
+                                ),
+                                if (isValidating)
+                                  Positioned.fill(
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(
+                                          FacteurSpacing.space3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade500,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: Icon(
+                                          PhosphorIcons.check(),
+                                          color: Colors.white,
+                                          size: 28,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                          child: _buildThemeCard(theme, includeHeader: false),
                         ),
                       );
                     },
@@ -319,7 +324,9 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           ElevatedButton(
             onPressed: _saving
                 ? null
-                : (isLastPage ? _onContinuePressed : _goToNextPage),
+                : (isLastPage
+                    ? _onContinuePressed
+                    : _validateAndGoToNextPage),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 24),
             ),
@@ -421,6 +428,17 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     );
   }
 
+  /// Joue un bref état « validé » sur la carte courante (scale/opacité +
+  /// check vert) puis enchaîne le scroll vers le thème suivant.
+  Future<void> _validateAndGoToNextPage() async {
+    setState(() => _isValidatingCurrentPage = true);
+    HapticFeedback.selectionClick();
+    await Future.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    setState(() => _isValidatingCurrentPage = false);
+    _goToNextPage();
+  }
+
   Future<void> _onContinuePressed() async {
     final selectedThemes = _selectedThemes;
     final allVisited = _visitedPages.length >= selectedThemes.length;
@@ -465,8 +483,13 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       ...defaultEnts
           .where((d) => !backendNames.contains(d.name.toLowerCase())),
     ];
-    final customs = _customTopics[theme.slug] ?? [];
-    final canAddMore = customs.length < 3;
+    // Sujets custom dérivés du provider (source de vérité) filtrés par thème :
+    // ils sont persistés à l'ajout via EntityAddSheet et hydratés au restart.
+    final savedCustoms = (ref.watch(customTopicsProvider).valueOrNull ??
+            const <UserTopicProfile>[])
+        .where((t) => t.slugParent == theme.slug)
+        .toList();
+    final canAddMore = savedCustoms.length < 3;
     final colors = context.facteurColors;
 
     return Container(
@@ -549,18 +572,17 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
             ),
           ],
 
-          // Custom topics
-          if (customs.isNotEmpty) ...[
+          // Custom topics (saved) — dérivés du provider, supprimables.
+          if (savedCustoms.isNotEmpty) ...[
             const SizedBox(height: FacteurSpacing.space2),
             Wrap(
               spacing: FacteurSpacing.space2,
               runSpacing: FacteurSpacing.space2,
-              children: customs
-                  .map((name) => _RemovableCustomChip(
-                        name: name,
+              children: savedCustoms
+                  .map((topic) => _RemovableCustomChip(
+                        name: topic.name,
                         themeColor: theme.color,
-                        onRemove: () =>
-                            _removeCustomTopic(theme.slug, name),
+                        onRemove: () => _removeSavedCustom(topic.id),
                       ))
                   .toList(),
             ),
@@ -568,44 +590,11 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
 
           const SizedBox(height: FacteurSpacing.space2),
 
-          // Add custom topic CTA
-          if (_addingForTheme == theme.slug)
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    key: _customFieldKey,
-                    controller: _customController,
-                    autofocus: true,
-                    scrollPadding: const EdgeInsets.only(bottom: 240),
-                    decoration: InputDecoration(
-                      hintText: AvailableSubtopics
-                              .customTopicPlaceholders[theme.slug] ??
-                          OnboardingStrings.addCustomTopicHint,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onSubmitted: (_) => _submitCustomTopic(theme.slug),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  onPressed: () => _submitCustomTopic(theme.slug),
-                  icon: Icon(Icons.check, color: theme.color),
-                  constraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                ),
-              ],
-            )
-          else if (canAddMore)
+          // Add custom topic CTA — ouvre la fenêtre de désambiguïsation qui
+          // valide + confirme + persiste le sujet au moment de l'ajout.
+          if (canAddMore)
             GestureDetector(
-              onTap: () => _startAddingCustom(theme.slug),
+              onTap: () => _openAddSheet(theme.slug),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -638,12 +627,6 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
       ),
     );
   }
-}
-
-class _TopicAttempt {
-  final String name;
-  final Future<Object?> future;
-  const _TopicAttempt({required this.name, required this.future});
 }
 
 class _EntityChip extends StatelessWidget {

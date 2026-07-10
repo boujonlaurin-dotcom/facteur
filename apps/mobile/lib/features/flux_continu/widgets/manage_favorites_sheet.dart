@@ -20,9 +20,12 @@ import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
+import '../../tour/tour_anchors.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
+import '../providers/flux_continu_provider.dart' show fluxContinuProvider;
 import '../providers/tournee_order_prefs_provider.dart' hide applyOrder;
+import '../providers/tournee_smart_arrangement_provider.dart';
 import '../utils/theme_color_mapping.dart';
 import 'choice_tile.dart';
 
@@ -34,8 +37,15 @@ import 'choice_tile.dart';
 /// scrolle vers la section Flâner à l'ouverture — le contenu est identique.
 enum ManageFavoritesEntry { essentiel, flaner }
 
-/// Accent des Actus du jour (aligné provider Tournée).
+/// Accent des Actus du jour (aligné provider Tournée). Sert aussi d'**identité
+/// « Essentiel »** dans cette sheet (en-tête + puces « → Essentiel »).
 const Color _kEssentielAccent = Color(0xFFB0470A);
+
+/// Identité visuelle **« Flâner »** dans cette sheet : le brun du bandeau de la
+/// page Flâner (déjà reconnaissable). Colore l'en-tête « Onglets de ta page
+/// Flâner » et les puces « → Flâner », pour que la destination d'un déplacement
+/// soit lisible par sa couleur (et plus par celle, arbitraire, de la carte).
+const Color _kFlanerAccent = Color(0xFF5D4037);
 
 /// Accent des Bonnes Nouvelles (aligné provider Tournée).
 const Color _kBonnesAccent = Color(0xFF2E7D32);
@@ -49,15 +59,25 @@ Future<void> showManageFavoritesSheet(
   BuildContext context, {
   ManageFavoritesEntry entry = ManageFavoritesEntry.essentiel,
 }) {
+  // NB z-order : on N'utilise PAS `useRootNavigator: true` à dessein. La feuille
+  // vit ainsi dans le navigator de **branche**, ce qui laisse l'overlay racine
+  // du tour guidé ([tourFavorisSheetKey]) se rendre au-dessus pour la cerner
+  // (cf. plan tour guidé, étape 2). Repasser en root navigator casserait le
+  // spotlight de l'étape « Compose ta Tournée ».
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
+    enableDrag: true,
+    isDismissible: true,
     barrierColor: Colors.black.withValues(alpha: 0.5),
-    builder: (ctx) => ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-        child: _ManageFavoritesContent(entry: entry),
+    builder: (ctx) => KeyedSubtree(
+      key: tourFavorisSheetKey,
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+          child: _ManageFavoritesContent(entry: entry),
+        ),
       ),
     ),
   );
@@ -314,10 +334,25 @@ class _ManageFavoritesContentState
 
   // ── Réordres ──────────────────────────────────────────────────────────────
 
+  /// Garde-fou des réordres : ne pas réécrire l'ordre tant que les données
+  /// d'appartenance (intérêts + sources) ne sont pas chargées — sinon un favori
+  /// non matérialisé serait élagué de l'ordre (cf. `mergeVisibleReorder`).
+  bool get _membershipDataReady =>
+      ref.read(userInterestsProvider).valueOrNull != null &&
+      ref.read(userSourcesStateProvider).valueOrNull != null;
+
   Future<void> _persistEssentielReorder(List<_FavItem> ordered) async {
+    if (!_membershipDataReady) return;
+
+    // Réordre non destructif : on ne permute que les clés rendues ; toute clé
+    // d'ordre non rendue cette frame (catalogue en cours, source absente du
+    // catalogue, clé masquée) est préservée à sa position. Seul `_onRemove`
+    // retire une clé.
+    final prevOrder = ref.read(tourneeOrderPrefsProvider).order;
+    final renderedKeys = ordered.map((e) => e.key).toList();
     await ref
         .read(tourneeOrderPrefsProvider.notifier)
-        .setOrder(ordered.map((e) => e.key).toList());
+        .setOrder(mergeVisibleReorder(prevOrder, renderedKeys));
     final themeRefs = <FavoriteRef>[
       for (final e in ordered)
         if (e.kind == _FavKind.theme) ThemeFavoriteRef(slug: e.id),
@@ -333,9 +368,16 @@ class _ManageFavoritesContentState
   }
 
   Future<void> _persistFlanerReorder(List<_FavItem> ordered) async {
+    // Même garde-fou + réordre non destructif que côté Essentiel (cf.
+    // `_persistEssentielReorder`) : une clé `source:`/`topic:` non résolue dans
+    // `pinned_tabs_order_v1` est préservée à sa place, jamais élaguée.
+    if (!_membershipDataReady) return;
+
+    final prevOrder = ref.read(tabOrderPrefsProvider);
+    final renderedKeys = ordered.map((e) => e.key).toList();
     await ref
         .read(tabOrderPrefsProvider.notifier)
-        .setOrder(ordered.map((e) => e.key).toList());
+        .setOrder(mergeVisibleReorder(prevOrder, renderedKeys));
     final topicIds = [
       for (final e in ordered)
         if (e.kind == _FavKind.subject) e.id,
@@ -443,6 +485,11 @@ class _ManageFavoritesContentState
     final tournee = ref.watch(tourneeOrderPrefsProvider);
     final tabOrder = ref.watch(tabOrderPrefsProvider);
     final isSerene = ref.watch(sereinToggleProvider).enabled;
+    // Cohérence Tournée — clés favorites maigres (peu d'articles aujourd'hui).
+    // Set vide si la Tournée n'est pas (encore) chargée → aucun indicateur
+    // (dégradation propre).
+    final thinKeys = ref.watch(fluxContinuProvider).valueOrNull?.thinFavoriteKeys ??
+        const <String>{};
 
     // ── Membership ────────────────────────────────────────────────────────
     final favoriteThemeSlugs = <String>[
@@ -610,7 +657,7 @@ class _ManageFavoritesContentState
       top: false,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.88,
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
         ),
         child: Container(
           decoration: BoxDecoration(
@@ -618,13 +665,16 @@ class _ManageFavoritesContentState
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header fixe : handle cosmétique centré + bouton de fermeture
+              // explicite (chemin garanti 1 tap, le SingleChildScrollView
+              // interne capturant sinon le drag-to-dismiss natif).
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
@@ -632,8 +682,28 @@ class _ManageFavoritesContentState
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                const SizedBox(height: FacteurSpacing.space4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(Icons.close, color: colors.textTertiary),
+                      tooltip: 'Fermer',
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: FacteurSpacing.space2),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                 Text(
                   'Mes favoris',
                   style: textTheme.displaySmall?.copyWith(
@@ -659,6 +729,7 @@ class _ManageFavoritesContentState
                   counter:
                       '${essentielOrdered.length.clamp(0, kTourneeVisibleCap)}'
                       '/$kTourneeVisibleCap',
+                  accent: _kEssentielAccent,
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -673,6 +744,9 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kTourneeVisibleCap,
                     capLabel: 'Hors Tournée du jour ($kTourneeVisibleCap)',
+                    thinKeys: thinKeys,
+                    // Destination du déplacement = Flâner ⇒ puces brun Flâner.
+                    moveAccent: _kFlanerAccent,
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...essentielOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -698,6 +772,7 @@ class _ManageFavoritesContentState
                   counter:
                       '${flanerOrdered.length.clamp(0, kMaxFavoriteTabs)}'
                       '/$kMaxFavoriteTabs',
+                  accent: _kFlanerAccent,
                   colors: colors,
                 ),
                 const SizedBox(height: 8),
@@ -713,6 +788,11 @@ class _ManageFavoritesContentState
                     colors: colors,
                     cap: kMaxFavoriteTabs,
                     capLabel: 'Hors onglets ($kMaxFavoriteTabs)',
+                    // Les favoris Flâner ne sont pas dans la Tournée → aucune clé
+                    // ne matche, mais on garde le câblage uniforme.
+                    thinKeys: thinKeys,
+                    // Destination du déplacement = Essentiel ⇒ puces ocre.
+                    moveAccent: _kEssentielAccent,
                     onReorder: (oldIndex, newIndex) {
                       final reordered = [...flanerOrdered];
                       if (newIndex > oldIndex) newIndex -= 1;
@@ -823,6 +903,9 @@ class _ManageFavoritesContentState
                 const SizedBox(height: FacteurSpacing.space4),
                 _SectionLabel(label: 'GÉRER', colors: colors),
                 const SizedBox(height: 4),
+                // Story 22.3 — switch discret « Suggestions du facteur » : active
+                // ou non les sections « Choisie pour vous » de la Tournée.
+                const _SmartArrangementSwitch(),
                 ChoiceTile(
                   icon: Icons.rss_feed,
                   accent: colors.sectionVeille1,
@@ -845,8 +928,11 @@ class _ManageFavoritesContentState
                     router.pushNamed(RouteNames.myInterests);
                   },
                 ),
-              ],
-            ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -865,8 +951,15 @@ class _FavList extends StatelessWidget {
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
+
+  /// Couleur de la puce de déplacement = identité du **mode de destination**
+  /// (brun Flâner / ocre Essentiel), pas la couleur de la carte (cf. [_MoveChip]).
+  final Color moveAccent;
   final void Function(_FavItem item) onMove;
   final void Function(_FavItem item)? onSubjectVeille;
+
+  /// Clés favorites maigres (Tournée) → micro-indicateur « Peu d'articles ».
+  final Set<String> thinKeys;
 
   const _FavList({
     required this.items,
@@ -878,7 +971,9 @@ class _FavList extends StatelessWidget {
     required this.moveIcon,
     required this.moveTooltip,
     required this.moveLabel,
+    required this.moveAccent,
     required this.onMove,
+    this.thinKeys = const {},
     this.onSubjectVeille,
   });
 
@@ -908,9 +1003,11 @@ class _FavList extends StatelessWidget {
               index: index,
               dimmed: dimmed,
               colors: colors,
+              thin: thinKeys.contains(item.key),
               moveIcon: moveIcon,
               moveTooltip: moveTooltip,
               moveLabel: moveLabel,
+              moveAccent: moveAccent,
               onRemove: () => onRemove(item),
               onMove: () => onMove(item),
               onSubjectVeille: onSubjectVeille == null
@@ -970,9 +1067,14 @@ class _FavRow extends StatelessWidget {
   final int index;
   final bool dimmed;
   final FacteurColors colors;
+
+  /// Cohérence Tournée — ce favori a peu d'articles aujourd'hui (≤1 survivant
+  /// post-dédup) → micro-indicateur ambre près du libellé.
+  final bool thin;
   final IconData moveIcon;
   final String moveTooltip;
   final String moveLabel;
+  final Color moveAccent;
   final VoidCallback onRemove;
   final VoidCallback onMove;
   final VoidCallback? onSubjectVeille;
@@ -985,8 +1087,10 @@ class _FavRow extends StatelessWidget {
     required this.moveIcon,
     required this.moveTooltip,
     required this.moveLabel,
+    required this.moveAccent,
     required this.onRemove,
     required this.onMove,
+    this.thin = false,
     this.onSubjectVeille,
   });
 
@@ -1031,7 +1135,7 @@ class _FavRow extends StatelessWidget {
                             style: const TextStyle(fontSize: 16),
                           ),
                         const SizedBox(width: 10),
-                        Expanded(
+                        Flexible(
                           child: Text(
                             item.label,
                             style: TextStyle(
@@ -1043,6 +1147,11 @@ class _FavRow extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (thin) ...[
+                          const SizedBox(width: 6),
+                          const _ThinBadge(),
+                        ],
+                        const Spacer(),
                       ],
                     ),
                   ),
@@ -1065,7 +1174,10 @@ class _FavRow extends StatelessWidget {
                   icon: moveIcon,
                   label: moveLabel,
                   tooltip: moveTooltip,
-                  accent: item.accent,
+                  // Couleur du mode de destination (Flâner brun / Essentiel
+                  // ocre), pas celle de la carte : « Flâner » devient
+                  // reconnaissable à sa teinte.
+                  accent: moveAccent,
                   onTap: onMove,
                 ),
               _RowIconButton(
@@ -1094,6 +1206,52 @@ class _FavRow extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Micro-indicateur « Peu d'articles » d'un favori maigre (≤1 survivant
+/// post-dédup ce jour). Pilule ambre discrète réutilisant le style des badges
+/// existants (cf. `_SuggestedBadge`/`_MoveChip`). Signale dans la modal les
+/// favoris peu fournis — surtout visibles dans la zone « Hors Tournée du jour ».
+class _ThinBadge extends StatelessWidget {
+  const _ThinBadge();
+
+  // Ambre : aligné sur les tons d'avertissement doux de l'app.
+  static const Color _amber = Color(0xFFB45309);
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Peu d\'articles aujourd\'hui',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(7, 3, 8, 3),
+        decoration: BoxDecoration(
+          color: _amber.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: _amber.withValues(alpha: 0.30), width: 0.8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.warningCircle(PhosphorIconsStyle.fill),
+              size: 11,
+              color: _amber,
+            ),
+            const SizedBox(width: 4),
+            const Text(
+              'Peu d\'articles',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+                color: _amber,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1481,9 +1639,14 @@ class _VeilleTile extends StatelessWidget {
 class _SectionLabel extends StatelessWidget {
   final String label;
 
-  /// Compteur discret affiché en suffixe (ex. « · 5/7 ») rappelant le cap de
+  /// Compteur discret affiché en suffixe (ex. « · 5/10 ») rappelant le cap de
   /// la section. `null` → pas de compteur (ex. en-têtes AJOUTER / GÉRER).
   final String? counter;
+
+  /// Teinte d'identité de la section (ocre Essentiel / brun Flâner). `null` →
+  /// gris tertiaire neutre (en-têtes AJOUTER / GÉRER). Renforce le code couleur
+  /// des puces de déplacement (cf. [_MoveChip]).
+  final Color? accent;
   final FacteurColors colors;
 
   const _SectionLabel({
@@ -1491,12 +1654,13 @@ class _SectionLabel extends StatelessWidget {
     required this.label,
     required this.colors,
     this.counter,
+    this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
     final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: colors.textTertiary,
+      color: accent ?? colors.textTertiary,
       fontWeight: FontWeight.w700,
       letterSpacing: 1.2,
     );
@@ -1507,8 +1671,82 @@ class _SectionLabel extends StatelessWidget {
       children: [
         Flexible(child: Text(label, style: labelStyle)),
         const SizedBox(width: 6),
-        Text('· $counter', style: labelStyle?.copyWith(letterSpacing: 0.2)),
+        Text(
+          '· $counter',
+          style: labelStyle?.copyWith(
+            letterSpacing: 0.2,
+            color: accent?.withValues(alpha: 0.7) ?? colors.textTertiary,
+          ),
+        ),
       ],
+    );
+  }
+}
+
+/// Story 22.3 — switch discret « Suggestions du facteur » : active/désactive
+/// les sections « Choisie pour vous » de la Tournée (préférence serveur
+/// `tournee_smart_arrangement`, default-ON). Calqué sur [ChoiceTile].
+class _SmartArrangementSwitch extends ConsumerWidget {
+  const _SmartArrangementSwitch();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final state = ref.watch(tourneeSmartArrangementProvider);
+    final accent = colors.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accent.withValues(alpha: 0.12),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+              color: accent,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Suggestions du facteur',
+                  style: textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Complète ta Tournée avec des thèmes et sources que tu suis.',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch.adaptive(
+            value: state.enabled,
+            onChanged: state.isLoading
+                ? null
+                : (_) => ref
+                    .read(tourneeSmartArrangementProvider.notifier)
+                    .toggle(),
+          ),
+        ],
+      ),
     );
   }
 }

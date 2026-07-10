@@ -1,0 +1,20 @@
+name: Verify google-services.json
+description: >-
+  Échoue tôt et lisiblement si le google-services.json du flavor manque (sinon le
+  push serait mort-né). Redondant avec le garde-fou Gradle de build.gradle.kts,
+  mais échoue plus tôt et plus lisiblement dans les logs CI, avant les étapes
+  Java/Flutter. Cf. docs/bugs/bug-notifications-stalled.md.
+inputs:
+  flavor:
+    description: "Flavor Android dont le google-services.json est requis (beta | playstore)."
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        f="apps/mobile/android/app/src/${{ inputs.flavor }}/google-services.json"
+        if [ ! -f "$f" ]; then
+          echo "::error::$f manquant — le push serait mort-né (Firebase non configuré)."
+          exit 1
+        fi

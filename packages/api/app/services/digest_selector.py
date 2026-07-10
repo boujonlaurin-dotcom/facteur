@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-"""Service de sélection d'articles pour le Digest quotidien (7 articles).
+"""Service de sélection d'articles pour le Digest quotidien (cible: 10 articles).
 
 Ce service implémente l'algorithme de sélection intelligent pour Epic 10,
 avec contraintes de diversité et mécanisme de fallback.
 
 Contraintes de diversité:
-- Maximum 1 article par source (fallback à 2 si < 7 sources distinctes)
+- Maximum 1 article par source (fallback à 2 si < cible sources distinctes)
 - Maximum 2 articles par thème
 - Minimum 4 sources différentes
 
 Completion:
-- Seuil de completion à 5/7 interactions (configurable via COMPLETION_THRESHOLD)
+- Seuil de completion à 5 interactions (le "moment de fermeture" reste ancré
+  sur 5, configurable via COMPLETION_THRESHOLD, indépendamment de la taille du
+  pool disponible TARGET_DIGEST_SIZE)
 
 Fallback:
-- Si le pool utilisateur < 7 articles, complète avec les sources curatées
+- Si le pool utilisateur < cible articles, complète avec les sources curatées
 
 Réutilise l'infrastructure de scoring existante sans modification.
 """
@@ -151,6 +153,7 @@ class DigestItem:
     rank: int
     reason: str
     breakdown: list[DigestScoreBreakdown] | None = None
+    pillar_scores: dict[str, float] | None = None
 
 
 @dataclass
@@ -182,6 +185,8 @@ class DigestContext:
     source_affinity_scores: dict[UUID, float] = field(default_factory=dict)
     source_priority_multipliers: dict[UUID, float] = field(default_factory=dict)
     subscribed_source_ids: set[UUID] = field(default_factory=set)
+    # PR2: learned positive affinity per named entity {entity_canonical: affinity}
+    user_entity_affinity: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -202,7 +207,13 @@ class DiversityConstraints:
 
     MAX_PER_SOURCE = 1
     MAX_PER_THEME = 2
-    TARGET_DIGEST_SIZE = 7
+    # Taille cible du pool quotidien disponible (Actus du jour + Bonnes
+    # nouvelles). Relevée 7 → 10 à la demande du PO pour offrir un pool
+    # légèrement plus profond (8-10 articles disponibles/jour) sans toucher au
+    # clustering (TOPIC_CLUSTER_THRESHOLD / TOPIC_MAX_ARTICLES inchangés). Le
+    # "moment de fermeture" reste ancré sur COMPLETION_THRESHOLD=5 : on élargit
+    # le pool disponible, pas le rituel de complétion.
+    TARGET_DIGEST_SIZE = 10
     COMPLETION_THRESHOLD = 5
     MIN_SOURCES = 4
 
@@ -210,8 +221,9 @@ class DiversityConstraints:
 class DigestSelector:
     """Sélecteur intelligent d'articles pour le digest quotidien.
 
-    Cette classe implémente la logique de sélection des 7 articles
-    du digest avec garanties de diversité et mécanisme de fallback.
+    Cette classe implémente la logique de sélection des articles
+    du digest (cible ``TARGET_DIGEST_SIZE``) avec garanties de diversité
+    et mécanisme de fallback.
 
     Usage:
         selector = DigestSelector(session)
@@ -237,7 +249,7 @@ class DigestSelector:
     async def select_for_user(
         self,
         user_id: UUID,
-        limit: int = 7,
+        limit: int = 10,
         hours_lookback: int = 168,
         mode: str = "pour_vous",
         global_trending_context: GlobalTrendingContext | None = None,
@@ -250,7 +262,7 @@ class DigestSelector:
 
         Args:
             user_id: ID de l'utilisateur
-            limit: Nombre d'articles à sélectionner (défaut: 7)
+            limit: Nombre d'articles à sélectionner (défaut: 10, cf. TARGET_DIGEST_SIZE)
             hours_lookback: Fenêtre temporelle pour les candidats (défaut: 168h/7j)
             mode: Mode de digest (pour_vous ou serein)
             global_trending_context: Contexte trending pré-calculé (batch) ou None (on-demand)
@@ -543,10 +555,10 @@ class DigestSelector:
                 scoring_time = time.time() - step_start
 
                 non_zero_scores = [
-                    s for _, s, _ in scored_candidates_with_breakdown if s > 0
+                    s for _, s, _, _ in scored_candidates_with_breakdown if s > 0
                 ]
                 zero_scores = [
-                    s for _, s, _ in scored_candidates_with_breakdown if s == 0
+                    s for _, s, _, _ in scored_candidates_with_breakdown if s == 0
                 ]
 
                 logger.info(
@@ -557,7 +569,7 @@ class DigestSelector:
                     zero_count=len(zero_scores),
                     max_score=round(
                         max(
-                            (s for _, s, _ in scored_candidates_with_breakdown),
+                            (s for _, s, _, _ in scored_candidates_with_breakdown),
                             default=0,
                         ),
                         2,
@@ -586,7 +598,9 @@ class DigestSelector:
             user_source_items = []
             curated_items = []
 
-            for i, (content, score, reason, breakdown) in enumerate(selected, 1):
+            for i, (content, score, reason, breakdown, pillar_scores) in enumerate(
+                selected, 1
+            ):
                 digest_items.append(
                     DigestItem(
                         content=content,
@@ -594,6 +608,7 @@ class DigestSelector:
                         rank=i,
                         reason=reason,
                         breakdown=breakdown,
+                        pillar_scores=pillar_scores,
                     )
                 )
                 # Track source type
@@ -692,6 +707,12 @@ class DigestSelector:
         user_subtopics = {row.topic_slug for row in subtopic_rows}
         user_subtopic_weights = {row.topic_slug: row.weight for row in subtopic_rows}
 
+        # PR2: affinité entités apprise (defensive — tolère le schema drift de
+        # la DB partagée staging/prod, comme le feed).
+        from app.services.recommendation_service import _load_entity_affinity_safe
+
+        user_entity_affinity = await _load_entity_affinity_safe(self.session, user_id)
+
         # Construire les sets d'intérêts et poids
         user_interests = set()
         user_interest_weights = {}
@@ -780,6 +801,7 @@ class DigestSelector:
             source_affinity_scores=source_affinity_scores,
             source_priority_multipliers=source_priority_multipliers,
             subscribed_source_ids=subscribed_source_ids,
+            user_entity_affinity=user_entity_affinity,
         )
 
     async def _get_candidates(
@@ -1222,7 +1244,7 @@ class DigestSelector:
         if score_inputs:
             try:
                 scored = await self._score_candidates(score_inputs, context, mode=mode)
-                score_map = {c.id: sc for c, sc, _bd in scored}
+                score_map = {c.id: sc for c, sc, _bd, _pillar_scores in scored}
             except Exception:
                 # Dégradation sûre : sans scoring on garde l'ordre run_for_user.
                 logger.exception(
@@ -1334,7 +1356,7 @@ class DigestSelector:
         candidates: list[Content],
         context: DigestContext,
         mode: str = "pour_vous",
-    ) -> list[tuple[Content, float, list[DigestScoreBreakdown]]]:
+    ) -> list[tuple[Content, float, list[DigestScoreBreakdown], dict[str, float]]]:
         """Score les candidats via le moteur de piliers unifié (PillarScoringEngine).
 
         Le scoring (pertinence/source/fraîcheur/qualité + pénalités) est entièrement
@@ -1365,6 +1387,7 @@ class DigestSelector:
             now=datetime.datetime.now(datetime.UTC),
             user_subtopics=context.user_subtopics,
             user_subtopic_weights=context.user_subtopic_weights,
+            user_entity_affinity=context.user_entity_affinity,
             muted_sources=context.muted_sources,
             muted_themes=context.muted_themes,
             muted_topics=context.muted_topics,
@@ -1444,7 +1467,14 @@ class DigestSelector:
                     breakdown_count=len(breakdown),
                 )
 
-                scored.append((content, final_score, breakdown))
+                scored.append(
+                    (
+                        content,
+                        final_score,
+                        breakdown,
+                        dict(pillar_result.pillar_scores),
+                    )
+                )
             except Exception as e:
                 logger.error(
                     "digest_scoring_failed",
@@ -1457,7 +1487,7 @@ class DigestSelector:
                     exc_info=True,
                 )
                 # Attribuer un score minimal pour ne pas bloquer
-                scored.append((content, 0.0, breakdown))
+                scored.append((content, 0.0, breakdown, {}))
 
         # Trier par score décroissant
         scored.sort(key=lambda x: x[1], reverse=True)
@@ -1466,16 +1496,19 @@ class DigestSelector:
 
     def _select_with_diversity(
         self,
-        scored_candidates: list[tuple[Content, float, list[DigestScoreBreakdown]]],
+        scored_candidates: list[
+            tuple[Content, float, list[DigestScoreBreakdown]]
+            | tuple[Content, float, list[DigestScoreBreakdown], dict[str, float]]
+        ],
         target_count: int,
         mode: str = "pour_vous",
         initial_source_counts: dict[UUID, int] | None = None,
         initial_theme_counts: dict[str, int] | None = None,
-    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown]]]:
+    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown], dict[str, float]]]:
         """Sélectionne les articles avec contraintes de diversité.
 
         Contraintes:
-        - Maximum 1 article par source (fallback à 2 si < 5 sources distinctes)
+        - Maximum 1 article par source (fallback à 2 si < `target_count` sources distinctes)
         - Maximum 2 articles par thème (relaxé à 7 en mode THEME_FOCUS)
         - Minimum 3 sources différentes
         - Diversité revue de presse: score ÷ 2 dès le 2ème article d'une même source
@@ -1485,22 +1518,27 @@ class DigestSelector:
             initial_theme_counts: Compteurs thème pré-existants (pour continuité entre passes)
 
         Returns:
-            Liste de tuples (Content, score, reason, breakdown)
+            Liste de tuples (Content, score, reason, breakdown, pillar_scores)
         """
         DIVERSITY_DIVISOR = ScoringWeights.DIGEST_DIVERSITY_DIVISOR
 
         effective_max_per_theme = self.constraints.MAX_PER_THEME
 
-        # Count distinct sources in candidate pool for fallback decision
-        distinct_sources = {c.source_id for c, _, _ in scored_candidates}
+        # Count distinct sources in candidate pool for fallback decision.
+        # Seuil = `target_count` réellement demandé (et non la constante
+        # TARGET_DIGEST_SIZE) : on ne relâche à 2 articles/source que si le pool
+        # de sources distinctes ne suffit pas à remplir la cible 1-par-source.
+        # Découplé de TARGET_DIGEST_SIZE pour ne pas sur-relâcher la diversité
+        # des utilisateurs à petit `weekly_goal` quand on relève la cible globale.
+        distinct_sources = {candidate[0].source_id for candidate in scored_candidates}
         effective_max_per_source = self.constraints.MAX_PER_SOURCE
 
-        if len(distinct_sources) < self.constraints.TARGET_DIGEST_SIZE:
+        if len(distinct_sources) < target_count:
             effective_max_per_source = 2
             logger.info(
                 "digest_diversity_fallback_max_per_source",
                 distinct_sources=len(distinct_sources),
-                target=self.constraints.TARGET_DIGEST_SIZE,
+                target=target_count,
                 effective_max_per_source=effective_max_per_source,
             )
 
@@ -1508,7 +1546,13 @@ class DigestSelector:
         source_counts: dict[UUID, int] = defaultdict(int, initial_source_counts or {})
         theme_counts: dict[str, int] = defaultdict(int, initial_theme_counts or {})
 
-        for content, score, breakdown in scored_candidates:
+        for candidate in scored_candidates:
+            if len(candidate) == 3:
+                content, score, breakdown = candidate
+                pillar_scores = {}
+            else:
+                content, score, breakdown, pillar_scores = candidate
+
             if len(selected) >= target_count:
                 break
 
@@ -1549,7 +1593,7 @@ class DigestSelector:
             reason = self._generate_reason(
                 content, source_counts, theme_counts, breakdown
             )
-            selected.append((content, final_score, reason, breakdown))
+            selected.append((content, final_score, reason, breakdown, pillar_scores))
             source_counts[source_id] += 1
             if theme:
                 theme_counts[theme] += 1
@@ -1643,7 +1687,7 @@ class DigestSelector:
         context: DigestContext,
         trending_context: GlobalTrendingContext,
         target_count: int,
-    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown]]]:
+    ) -> list[tuple[Content, float, str, list[DigestScoreBreakdown], dict[str, float]]]:
         """Sélection hybride en 2 passes : trending + personnalisé.
 
         Pass 1 : Sélectionner les articles trending/une pertinents pour l'utilisateur
@@ -1696,8 +1740,10 @@ class DigestSelector:
         )
 
         # === PASSE 1 : Score et sélection trending ===
-        _4t = list[tuple[Content, float, str, list[DigestScoreBreakdown]]]
-        pass1_selected: _4t = []
+        _5t = list[
+            tuple[Content, float, str, list[DigestScoreBreakdown], dict[str, float]]
+        ]
+        pass1_selected: _5t = []
         if trending_candidates:
             scored_trending = await self._score_candidates(
                 trending_candidates,
@@ -1706,9 +1752,11 @@ class DigestSelector:
             )
 
             # Ajouter les bonus trending/une
-            _3t = list[tuple[Content, float, list[DigestScoreBreakdown]]]
-            boosted_trending: _3t = []
-            for content, score, breakdown in scored_trending:
+            _4t = list[
+                tuple[Content, float, list[DigestScoreBreakdown], dict[str, float]]
+            ]
+            boosted_trending: _4t = []
+            for content, score, breakdown, pillar_scores in scored_trending:
                 bonus = 0.0
                 bd_copy = list(breakdown)
 
@@ -1732,7 +1780,9 @@ class DigestSelector:
                         )
                     )
 
-                boosted_trending.append((content, score + bonus, bd_copy))
+                boosted_trending.append(
+                    (content, score + bonus, bd_copy, pillar_scores)
+                )
 
             # Trier par score boosté décroissant
             boosted_trending.sort(key=lambda x: x[1], reverse=True)
@@ -1748,7 +1798,7 @@ class DigestSelector:
 
         # === PASSE 2 : Compléter avec personnalisé ===
         remaining_count = target_count - len(pass1_selected)
-        pass2_selected: _4t = []
+        pass2_selected: _5t = []
 
         if remaining_count > 0 and personalized_candidates:
             scored_personalized = await self._score_candidates(
@@ -1760,7 +1810,7 @@ class DigestSelector:
             # Construire les compteurs existants depuis pass 1 pour continuité diversité
             pass1_source_counts: dict[UUID, int] = defaultdict(int)
             pass1_theme_counts: dict[str, int] = defaultdict(int)
-            for content, _, _, _ in pass1_selected:
+            for content, _, _, _, _ in pass1_selected:
                 pass1_source_counts[content.source_id] += 1
                 theme = getattr(content, "theme", None)
                 if not theme and content.source:

@@ -25,7 +25,7 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import safe_async_session
+from app.database import apply_session_timeouts, safe_async_session
 from app.models.daily_digest import DailyDigest
 from app.models.user import UserProfile
 from app.services.digest_generation_state_service import (
@@ -49,6 +49,46 @@ from app.services.editorial.schemas import EditorialPipelineResult
 from app.utils.time import today_paris
 
 logger = structlog.get_logger()
+
+
+def _extract_editorial_actu_ids_from_items(items: Any) -> set[UUID]:
+    """Extract persisted editorial ``actu_article`` ids from DailyDigest.items."""
+    if not isinstance(items, dict):
+        return set()
+
+    subjects = items.get("subjects")
+    if not isinstance(subjects, list):
+        return set()
+
+    content_ids: set[UUID] = set()
+    for subject in subjects:
+        if not isinstance(subject, dict):
+            continue
+        actu = subject.get("actu_article")
+        if not isinstance(actu, dict):
+            continue
+        raw_content_id = actu.get("content_id")
+        if not raw_content_id:
+            continue
+        try:
+            content_ids.add(UUID(str(raw_content_id)))
+        except (TypeError, ValueError):
+            logger.warning(
+                "digest_generation_deep_precompute_bad_content_id",
+                content_id=str(raw_content_id),
+            )
+    return content_ids
+
+
+def _extract_editorial_actu_ids_from_result(
+    result: EditorialPipelineResult,
+) -> set[UUID]:
+    """Extract the article ids the reader will use for Pas de recul lookup."""
+    return {
+        subject.actu_article.content_id
+        for subject in result.subjects
+        if subject.actu_article is not None
+    }
 
 
 async def compute_digest_coverage(
@@ -92,13 +132,19 @@ class DigestGenerationJob:
 
     Attributes:
         batch_size: Nombre d'utilisateurs traités par batch (défaut: 100)
-        concurrency_limit: Nombre de digests générés en parallèle (défaut: 10)
+        concurrency_limit: Nombre de digests générés en parallèle (défaut: 5).
+            Borne le footprint pool du job : `_process_batch` ouvre une session
+            fraîche par user concurrent, donc ce nombre = nb max de slots du
+            pool (20) consommés par le digest. Abaissé 10→5 pour laisser de la
+            marge au trafic feed du rituel matinal (incident PYTHON-5M : pool à
+            100 %). Ne pas remonter sans réduire la concurrence ailleurs : la DB
+            Supabase (max_connections=60) est partagée entre staging et prod.
     """
 
     def __init__(
         self,
         batch_size: int = 100,
-        concurrency_limit: int = 10,
+        concurrency_limit: int = 5,
         hours_lookback: int = 48,
     ):
         self.batch_size = batch_size
@@ -184,7 +230,29 @@ class DigestGenerationJob:
                 )
             except Exception as e:
                 logger.error("digest_generation_global_context_failed", error=str(e))
-                # Graceful degradation: continue without trending
+                # Graceful degradation: continue without trending.
+                # CRITIQUE — une erreur DB ici (ex. statement timeout sous
+                # pression pool le matin) laisse la session partagée en
+                # PENDING_ROLLBACK. Les étapes suivantes (mot du jour, etc.)
+                # réutilisent cette session → PendingRollbackError (PYTHON-5G).
+                # On nettoie la tx et on re-pousse les timeouts SET LOCAL sur
+                # la nouvelle tx que la prochaine query ouvrira.
+                with contextlib.suppress(Exception):
+                    await session.rollback()
+                    await apply_session_timeouts(session)
+
+            # Axe C — libérer la tx batch AVANT le pré-calcul éditorial (3-5 min
+            # de LLM). Sur le chemin succès, la lecture trending ci-dessus laisse
+            # la tx de la session batch ouverte ; sans ce rollback elle reste
+            # `idle in transaction` pendant tout le LLM → monopolise un slot pool
+            # (PYTHON-5M) et risque le timeout `idle_in_tx=60s`. Sûr : le contexte
+            # trending vit dans un local Python (`global_trending_context`,
+            # dataclass d'UUIDs), `state_mark_pending` est déjà commité, et le
+            # pré-calcul re-requête tout sur une tx fraîche. On re-pousse les
+            # `SET LOCAL` timeouts sur la prochaine tx.
+            with contextlib.suppress(Exception):
+                await session.rollback()
+                await apply_session_timeouts(session)
 
             # 1.6 Pre-compute editorial global context ONCE for the batch,
             # for BOTH variants (pour_vous + serein). Previously only
@@ -285,11 +353,17 @@ class DigestGenerationJob:
                 logger.error(
                     "digest_generation_editorial_precompute_failed", error=str(e)
                 )
+                # Même protection que l'étape trending : une erreur DB ici
+                # empoisonne la session batch partagée (PENDING_ROLLBACK) et
+                # ferait échouer le mot du jour juste après (PYTHON-5G).
+                with contextlib.suppress(Exception):
+                    await session.rollback()
+                    await apply_session_timeouts(session)
 
             # 1.7 Auto-matching « mot du jour » → article réel de la tournée.
             # Best-effort, non bloquant : un échec ici ne touche jamais le digest.
             await self._match_grille_featured_article(
-                session, target_date, editorial_ctx_pour_vous
+                target_date, editorial_ctx_pour_vous
             )
 
             # 2. Traiter par batches pour limiter la charge mémoire
@@ -560,26 +634,34 @@ class DigestGenerationJob:
 
     async def _match_grille_featured_article(
         self,
-        session: AsyncSession,
         target_date: datetime.date,
         editorial_ctx_pour_vous,
     ) -> None:
-        """Accroche l'actu du jour qui matche le mot de la Grille (best-effort).
+        """Sélection hybride du mot du jour depuis l'actu réelle (best-effort).
 
-        Fige un snapshot (titre/extrait/url/source) sur le `GrillePuzzle` du jour
-        depuis le contexte éditorial global pour_vous. Entièrement isolé : toute
-        erreur est loggée + remontée à Sentry mais n'altère JAMAIS la génération
-        du digest (le mot du jour est secondaire). Idempotent.
+        Extrait le mot du jour du corpus d'actu, le fige avec son occurrence
+        exacte (titre/desc + surface) sur le `GrillePuzzle` du jour. Le contexte
+        éditorial pour_vous n'est qu'un *bonus* de scoring (peut être None : la
+        sélection retombe sur le corpus brut). Entièrement isolé : toute erreur
+        est loggée + remontée à Sentry mais n'altère JAMAIS la génération du
+        digest (le mot du jour est secondaire). Idempotent.
+
+        Ouvre sa PROPRE session courte (et non la session batch partagée) : si
+        une pré-étape amont a laissé la session batch en PENDING_ROLLBACK, on
+        l'aurait propagé jusqu'à `ensure_daily_puzzle` → PendingRollbackError
+        (PYTHON-5G). Même principe que `_process_batch` (session fraîche par
+        unité de travail) et que la lecture de couverture (`cov_session`).
         """
-        if editorial_ctx_pour_vous is None:
-            return
         try:
-            from app.services.grille_matcher import match_grille_featured_article
+            from app.services.grille_matcher import apply_hybrid_word
+            from app.services.grille_seed import ensure_daily_puzzle
 
-            matched = await match_grille_featured_article(
-                session, target_date, editorial_ctx_pour_vous
-            )
-            await session.commit()
+            async with safe_async_session() as grille_session:
+                await ensure_daily_puzzle(grille_session, target_date)
+                matched = await apply_hybrid_word(
+                    grille_session, target_date, editorial_ctx_pour_vous
+                )
+                await grille_session.commit()
             logger.info(
                 "digest_generation_grille_featured_done",
                 target_date=str(target_date),
@@ -591,8 +673,6 @@ class DigestGenerationJob:
                 target_date=str(target_date),
             )
             sentry_sdk.capture_exception(e)
-            with contextlib.suppress(Exception):
-                await session.rollback()
 
     async def _get_active_users(self, session: AsyncSession) -> list[UUID]:
         """Récupère la liste des utilisateurs actifs (avec profil).
@@ -628,12 +708,13 @@ class DigestGenerationJob:
         the missing serein variant.
         """
         semaphore = asyncio.Semaphore(self.concurrency_limit)
+        deep_precompute_ids: set[UUID] = set()
 
-        async def process_with_limit(user_id: UUID) -> None:
+        async def process_with_limit(user_id: UUID) -> set[UUID]:
             # Open a fresh session per user so errors don't poison peers
             async with semaphore, safe_async_session() as user_session:
                 try:
-                    await self._generate_digest_for_user(
+                    content_ids = await self._generate_digest_for_user(
                         user_session,
                         user_id,
                         target_date,
@@ -642,6 +723,7 @@ class DigestGenerationJob:
                         editorial_ctx_serein,
                     )
                     await user_session.commit()
+                    return content_ids
                 except Exception as e:
                     # Per-user failure is contained here; log and move on
                     await user_session.rollback()
@@ -671,10 +753,14 @@ class DigestGenerationJob:
                             "digest_generation_state_record_failed",
                             user_id=str(user_id),
                         )
+                    return set()
 
         # Premier passage
         tasks = [process_with_limit(uid) for uid in user_ids]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        first_pass_results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in first_pass_results:
+            if isinstance(result, set):
+                deep_precompute_ids.update(result)
 
         async def _missing_pairs() -> list[tuple[UUID, bool]]:
             """Return (user_id, is_serene) pairs missing from daily_digest."""
@@ -708,7 +794,10 @@ class DigestGenerationJob:
             await asyncio.sleep(backoff_seconds)
 
             retry_tasks = [process_with_limit(uid) for uid in missing_user_ids]
-            await asyncio.gather(*retry_tasks, return_exceptions=True)
+            retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
+            for result in retry_results:
+                if isinstance(result, set):
+                    deep_precompute_ids.update(result)
 
         # Final audit log
         final_missing = await _missing_pairs()
@@ -722,6 +811,42 @@ class DigestGenerationJob:
                 ],
             )
 
+        await self._precompute_deep_recommendations_for_digest_ids(deep_precompute_ids)
+
+    async def _precompute_deep_recommendations_for_digest_ids(
+        self,
+        content_ids: set[UUID],
+    ) -> None:
+        """Backfill Pas de recul rows for articles actually served in digests."""
+        if not content_ids:
+            return
+
+        try:
+            from app.services.editorial.pipeline import EditorialPipelineService
+
+            async with safe_async_session() as session:
+                pipeline = EditorialPipelineService(
+                    session,
+                    session_maker=safe_async_session,
+                )
+                try:
+                    await pipeline.precompute_deep_recommendations_for_content_ids(
+                        content_ids,
+                        refresh_existing=False,
+                    )
+                finally:
+                    await pipeline.close()
+            logger.info(
+                "digest_generation_deep_precompute_batch_done",
+                total=len(content_ids),
+            )
+        except Exception as exc:
+            logger.exception(
+                "digest_generation_deep_precompute_batch_failed",
+                total=len(content_ids),
+                error=str(exc),
+            )
+
     async def _generate_digest_for_user(
         self,
         session: AsyncSession,
@@ -730,7 +855,7 @@ class DigestGenerationJob:
         global_trending_context: GlobalTrendingContext | None = None,
         editorial_ctx_pour_vous=None,
         editorial_ctx_serein=None,
-    ) -> None:
+    ) -> set[UUID]:
         """Génère les deux digests (normal + serein) pour un utilisateur.
 
         Args:
@@ -742,6 +867,7 @@ class DigestGenerationJob:
             editorial_ctx_serein: Contexte éditorial pré-calculé (mode serein)
         """
         self.stats["processed"] += 1
+        deep_precompute_ids: set[UUID] = set()
 
         try:
             # Load user profile to get per-user daily article count
@@ -809,6 +935,9 @@ class DigestGenerationJob:
                             is_serene=is_serene,
                         )
                         self.stats["skipped"] += 1
+                        deep_precompute_ids.update(
+                            _extract_editorial_actu_ids_from_items(existing.items)
+                        )
                         await state_mark_success(
                             session, user_id, target_date, is_serene
                         )
@@ -860,6 +989,9 @@ class DigestGenerationJob:
                             is_serene=is_serene,
                         )
                         if digest:
+                            deep_precompute_ids.update(
+                                _extract_editorial_actu_ids_from_result(digest_items)
+                            )
                             # Delete stale (non-editorial) digest now that
                             # the new editorial_v1 is safely created.
                             if stale_digest:
@@ -962,6 +1094,8 @@ class DigestGenerationJob:
             # failure in a fresh session after rolling this one back.
             raise
 
+        return deep_precompute_ids
+
 
 # Fonction principale pour l'export
 
@@ -969,7 +1103,7 @@ class DigestGenerationJob:
 async def run_digest_generation(
     target_date: datetime.date | None = None,
     batch_size: int = 100,
-    concurrency_limit: int = 10,
+    concurrency_limit: int = 5,
 ) -> dict[str, Any]:
     """Fonction principale pour exécuter la génération des digests.
 
@@ -982,7 +1116,8 @@ async def run_digest_generation(
     Args:
         target_date: Date du digest (défaut: aujourd'hui)
         batch_size: Nombre d'utilisateurs par batch (défaut: 100)
-        concurrency_limit: Limite de concurrence (défaut: 10)
+        concurrency_limit: Limite de concurrence (défaut: 5 — borne le
+            footprint pool, cf. PYTHON-5M)
 
     Returns:
         Statistiques d'exécution
@@ -996,6 +1131,7 @@ async def run_digest_generation(
         >>> result = await run_digest_generation(target_date=date(2024, 1, 15))
     """
     from app.services.generation_state import (
+        is_generation_running,
         mark_generation_finished,
         mark_generation_started,
     )
@@ -1003,6 +1139,20 @@ async def run_digest_generation(
     job = DigestGenerationJob(
         batch_size=batch_size, concurrency_limit=concurrency_limit
     )
+
+    # Garde anti-double-digest (Axe B, load-bearing). `run_digest_generation`
+    # a TROIS appelants non coordonnés : le cron 07h30 (scheduler), le watchdog
+    # 08h15 (appel direct), et le startup catchup Railway (appel direct, gardé
+    # par son propre _STARTUP_CATCHUP_LOCK seulement). `max_instances=1` ne voit
+    # que le cron. Si un digest tourne déjà, un 2e run complet = 2 × Semaphore(5)
+    # = 10 slots pool d'un coup → saturation (PYTHON-5M). On skip AVANT
+    # `mark_generation_started()` (qui met _is_running=True et reset _started_at
+    # inconditionnellement, écrasant le timestamp du run en cours). Le
+    # safety-timeout (600s) de generation_state reste l'échappatoire si un run
+    # se bloque > 10 min.
+    if is_generation_running():
+        logger.info("digest_generation_already_running_skipped")
+        return {"skipped": True, "reason": "already_running", "stats": job.stats}
 
     mark_generation_started()
 

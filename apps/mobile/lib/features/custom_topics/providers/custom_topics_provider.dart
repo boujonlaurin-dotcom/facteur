@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
@@ -94,7 +95,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followTopic(name, priorityMultiplier: priorityMultiplier);
+      final created = await repo.followTopic(name,
+          slugParent: slugParent, priorityMultiplier: priorityMultiplier);
 
       // Replace placeholder with server-enriched profile
       if (state.hasValue) {
@@ -117,6 +119,14 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     } catch (e) {
       // Rollback
       state = previousState;
+      // Breadcrumb pour tracer les échecs de suivi (onboarding + réglages) —
+      // ils étaient auparavant avalés côté appelant sans aucun signal Sentry.
+      unawaited(Sentry.addBreadcrumb(Breadcrumb(
+        category: 'custom_topics',
+        message: 'followTopic failed',
+        level: SentryLevel.warning,
+        data: {'name': name, 'slug_parent': slugParent, 'error': e.toString()},
+      )));
       rethrow;
     }
   });
@@ -241,7 +251,8 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
     }
 
     try {
-      final created = await repo.followEntity(name, entityType);
+      final created =
+          await repo.followEntity(name, entityType, slugParent: slugParent);
       if (state.hasValue) {
         final updated = state.value!
             .map((t) => t.id == placeholder.id ? created : t)
@@ -256,6 +267,17 @@ class CustomTopicsNotifier extends AsyncNotifier<List<UserTopicProfile>> {
       return created;
     } catch (e) {
       state = previousState;
+      unawaited(Sentry.addBreadcrumb(Breadcrumb(
+        category: 'custom_topics',
+        message: 'followEntity failed',
+        level: SentryLevel.warning,
+        data: {
+          'name': name,
+          'entity_type': entityType,
+          'slug_parent': slugParent,
+          'error': e.toString(),
+        },
+      )));
       rethrow;
     }
   });

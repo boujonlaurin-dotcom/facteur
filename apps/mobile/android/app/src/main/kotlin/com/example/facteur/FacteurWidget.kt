@@ -104,6 +104,23 @@ abstract class FacteurWidget : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         views.setOnClickPendingIntent(R.id.widget_masthead, openPending)
+
+        // Refresh button: wakes the app and forces a Flux refresh via the
+        // `refresh=1` query param (DeepLinkService → feedProvider.refresh).
+        // Distinct requestCode + data so it never collides with the masthead
+        // open intent above.
+        val refreshIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            data = Uri.parse("io.supabase.facteur://feed?refresh=1")
+        }
+        val refreshPending = PendingIntent.getActivity(
+            context,
+            appWidgetId * 10 + 3,
+            refreshIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        views.setOnClickPendingIntent(R.id.masthead_refresh, refreshPending)
     }
 
     private fun bindArticleList(

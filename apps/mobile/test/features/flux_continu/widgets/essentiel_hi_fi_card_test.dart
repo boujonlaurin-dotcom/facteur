@@ -14,6 +14,7 @@ import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
+import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 
 Widget _wrap(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
@@ -152,6 +153,55 @@ void main() {
       expect(personalizeTaps, 1);
       expect(articleTaps, 0,
           reason: 'Personalize tap must not bubble to the lead InkWell.');
+    });
+
+    testWidgets(
+        'long-press on the lead opens the article preview overlay',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      // La carte elle-même est text-only (aucune FacteurThumbnail) ; l'aperçu
+      // overlay en rend une → signal propre de présence de l'aperçu.
+      expect(find.byType(FacteurThumbnail), findsNothing);
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('Titre 1')));
+      // Dépasse la deadline long-press (500 ms par défaut du GestureDetector).
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      expect(find.byType(FacteurThumbnail), findsOneWidget,
+          reason: 'Long-press should reveal the preview overlay.');
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('long-press on a medium tile opens the preview overlay',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+          onTapPersonalize: () {},
+        ),
+      ));
+
+      final gesture =
+          await tester.startGesture(tester.getCenter(find.text('Titre 2')));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump();
+
+      expect(find.byType(FacteurThumbnail), findsOneWidget);
+
+      await gesture.up();
+      await tester.pumpAndSettle();
     });
 
     testWidgets('renders up to 5 articles (lead + 2 mediums + 2 lights)',
@@ -307,7 +357,9 @@ void main() {
       await tester.pump();
 
       expect(find.byType(SvgPicture), findsOneWidget);
-      expect(find.text('Météo'), findsOneWidget);
+      // Mid-flip les deux faces (pastille date + badge météo) sont montées et
+      // portent chacune un libellé « Météo » → assertion précise reportée après
+      // la fin du flip (cf. plus bas).
       expect(
         find.byWidgetPredicate(
           (widget) =>
@@ -332,6 +384,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       expect(temperatures.scale.value, closeTo(1, 0.001));
       expect(find.byIcon(Icons.keyboard_return_rounded), findsNothing);
+      // Flip terminé → seul le badge météo subsiste, avec son libellé discret
+      // souligné « Météo » (remplace l'ancien chevron).
+      expect(find.text('Météo'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsNothing);
 
       // Tap the weather badge → opens the detail sheet (5-day forecast).
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);

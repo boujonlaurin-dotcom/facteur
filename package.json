@@ -1,0 +1,8 @@
+{
+  "name": "facteur-qa-tooling",
+  "private": true,
+  "description": "Outillage QA web de Facteur — épingle le Playwright Agent CLI utilisé par /validate-feature. Le repo applicatif reste Flutter + Python.",
+  "devDependencies": {
+    "@playwright/cli": "0.1.14"
+  }
+}

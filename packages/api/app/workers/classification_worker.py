@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -22,22 +23,61 @@ from app.services.ml.language_filter import is_french_source, looks_english
 
 settings = get_settings()
 
+# Anti-boucle-serrée du superviseur (_on_task_done) : si le run-loop meurt en
+# rafale (erreur persistante au boot du loop), on ne relance pas indéfiniment —
+# au-delà de _MAX_RAPID_RESTARTS morts dans une fenêtre de _RESTART_WINDOW_S, on
+# abandonne et on laisse la restart-policy Railway (ALWAYS) recycler le process,
+# plutôt que de spammer Sentry en tight loop.
+_MAX_RAPID_RESTARTS = 5
+_RESTART_WINDOW_S = 60.0
+
 
 class ClassificationWorker:
     """Worker qui traite la file d'attente de classification via Mistral API.
 
-    Traite les articles par batch de 5 pour maximiser la qualité de classification.
+    Accumulation par lot (LR-1 PR 2) : le gros prompt système (taxonomie 51
+    topics) est refacturé à chaque appel batch. On attend donc d'avoir
+    `min_batch_size` articles en attente (ou que le plus vieux pending atteigne
+    `max_wait_s`) avant de traiter un lot de `batch_size`. Priorité, retry,
+    reset des items bloqués et sessions DB courtes sont préservés.
     """
 
-    def __init__(self, batch_size: int = 5, interval: int = 10):
+    def __init__(
+        self,
+        batch_size: int | None = None,
+        interval: int | None = None,
+        min_batch_size: int | None = None,
+        max_wait_s: int | None = None,
+    ):
         """Initialize the worker.
 
         Args:
-            batch_size: Nombre d'articles à traiter par lot (réduit de 20→5 pour qualité)
-            interval: Intervalle en secondes entre chaque vérification (réduit de 15→10)
+            batch_size: Nombre max d'articles à traiter par lot (def. settings).
+            interval: Intervalle en secondes entre 2 vérifications (def. settings).
+            min_batch_size: Seuil minimal de pending avant de traiter un lot
+                (gate d'accumulation ; def. settings).
+            max_wait_s: Plafond d'attente — si le plus vieux pending dépasse cet
+                âge, on traite même sous le seuil (anti-famine ; def. settings).
+
+        Les arguments None retombent sur la config (rollback env-only).
         """
-        self.batch_size = batch_size
-        self.interval = interval
+
+        # `or` est dangereux ici : max_wait_s=0 est un override valide
+        # (rollback « traiter dès qu'il y a un item »). On garde donc le
+        # fallback sur None explicite.
+        def _or_setting(value: int | None, default: int) -> int:
+            return value if value is not None else default
+
+        self.batch_size = _or_setting(
+            batch_size, settings.classification_worker_batch_size
+        )
+        self.interval = _or_setting(interval, settings.classification_worker_interval_s)
+        self.min_batch_size = _or_setting(
+            min_batch_size, settings.classification_worker_min_batch_size
+        )
+        self.max_wait_s = _or_setting(
+            max_wait_s, settings.classification_worker_max_wait_s
+        )
         self.running = False
         self._task: asyncio.Task | None = None
 
@@ -64,6 +104,10 @@ class ClassificationWorker:
         self._good_news_classifier = None
         self._loop_count = 0
 
+        # Superviseur : fenêtre glissante de comptage des redémarrages.
+        self._restart_count = 0
+        self._restart_window_start = 0.0
+
     def _get_classifier(self):
         """Lazy load classification service."""
         if self._classifier is None:
@@ -84,7 +128,90 @@ class ClassificationWorker:
         await self._recover_stuck_items()
 
         self.running = True
+        # Superviseur : si la task du run-loop meurt alors qu'on n'a PAS demandé
+        # l'arrêt (self.running toujours True), on veut le savoir et la relancer.
+        # Cf. incident 2026-06-30 : une CancelledError (BaseException, non
+        # attrapée par le `except Exception` du loop) a terminé la task
+        # silencieusement → classif à l'arrêt 10 j sans alerte.
+        self._spawn_loop()
+
+    def _spawn_loop(self) -> None:
+        """Crée la task du run-loop et attache le superviseur (invariant unique).
+
+        Appelé au démarrage (`start()`) et à chaque relance (`_on_task_done`) :
+        « créer la task + accrocher le done-callback » vit à un seul endroit.
+        """
         self._task = asyncio.create_task(self._run_loop())
+        self._task.add_done_callback(self._on_task_done)
+
+    def _on_task_done(self, task: "asyncio.Task") -> None:
+        """Done-callback superviseur du run-loop.
+
+        Appelé par la boucle asyncio quand `_run_loop` se termine. Deux cas :
+
+        - Arrêt volontaire (`stop()` a mis `self.running=False` avant de
+          `cancel()`) → rien à faire, sortie immédiate.
+        - Mort inattendue (`self.running` encore True) → la task a été tuée par
+          un `BaseException` (typiquement `CancelledError`) qui a échappé au
+          `except Exception` du loop. On émet une alerte Sentry + on **relance**
+          la task (superviseur simple, borné pour éviter une tight loop) pour ne
+          plus rester aveugle.
+        """
+        if not self.running:
+            # Arrêt volontaire (stop()) : comportement attendu, pas d'alerte.
+            return
+
+        import time
+
+        import sentry_sdk
+        import structlog
+
+        logger = structlog.get_logger()
+
+        # task.exception() lèverait CancelledError si la task a été annulée → on
+        # ne l'appelle que si elle n'est pas annulée.
+        exc = task.exception() if not task.cancelled() else None
+        if exc is not None:
+            logger.error(
+                "classification_worker.task_died",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            sentry_sdk.capture_exception(exc)
+        else:
+            # Annulation externe (CancelledError) ou fin sans exception alors
+            # que running=True : anormal, on alerte quand même.
+            logger.error(
+                "classification_worker.task_died", error="cancelled_or_no_exception"
+            )
+            sentry_sdk.capture_message(
+                "Classification worker task ended unexpectedly while running=True "
+                "(likely CancelledError) — restarting",
+                level="error",
+            )
+
+        # Anti-boucle-serrée : borne les redémarrages sur une fenêtre glissante.
+        now = time.monotonic()
+        if now - self._restart_window_start > _RESTART_WINDOW_S:
+            self._restart_window_start = now
+            self._restart_count = 0
+        self._restart_count += 1
+
+        if self._restart_count > _MAX_RAPID_RESTARTS:
+            logger.error(
+                "classification_worker.restart_giving_up",
+                restarts=self._restart_count,
+                window_s=_RESTART_WINDOW_S,
+            )
+            sentry_sdk.capture_message(
+                f"Classification worker died {self._restart_count}x in "
+                f"<{int(_RESTART_WINDOW_S)}s — giving up, relying on process restart",
+                level="fatal",
+            )
+            self.running = False
+            return
+
+        self._spawn_loop()
 
     async def _recover_stuck_items(self):
         """Reset items stuck in 'processing' state from previous crash/restart."""
@@ -139,7 +266,10 @@ class ClassificationWorker:
                 if self._loop_count % 30 == 0:
                     await self._reset_stale_processing()
 
-                await self._process_batch()
+                # Gate d'accumulation : ne traiter un lot que si la file est
+                # assez remplie OU si le plus vieux pending a trop attendu.
+                if await self._should_process():
+                    await self._process_batch()
             except Exception as e:
                 import structlog
 
@@ -147,6 +277,25 @@ class ClassificationWorker:
                 logger.error("classification_worker_error", error=str(e))
 
             await asyncio.sleep(self.interval)
+
+    async def _should_process(self) -> bool:
+        """Décide si un lot doit être traité maintenant (gate d'accumulation).
+
+        Vrai si `pending >= min_batch_size` (lot plein) OU si le plus vieux
+        pending dépasse `max_wait_s` (anti-famine du reste de file). Session
+        courte dédiée, ne tient jamais de transaction. Rollback env-only :
+        min_batch_size=1 / max_wait_s=0 redonne le comportement « traiter dès
+        qu'il y a un item ».
+        """
+        async with self.session_maker() as session:
+            service = ClassificationQueueService(session)
+            pending, oldest_age_s = await service.get_pending_stats()
+
+        if pending <= 0:
+            return False
+        if pending >= self.min_batch_size:
+            return True
+        return oldest_age_s is not None and oldest_age_s >= self.max_wait_s
 
     async def _reset_stale_processing(self):
         """Periodically reset items stuck in 'processing' for >10 minutes."""
@@ -166,11 +315,19 @@ class ClassificationWorker:
             logger.error("classification_worker.reset_stale_failed", error=str(e))
 
     async def _process_batch(self):
-        """Process one batch of pending items using batch API call."""
+        """Process one batch of pending items using batch API call.
+
+        3 phases pour ne jamais tenir une transaction DB pendant les appels
+        Mistral (90-180 s au pire) : le timeout serveur
+        idle_in_transaction_session_timeout=60s tuait la session mi-batch
+        (cause racine des IdleInTransactionSessionTimeout Sentry et des kills
+        du zombie_session_sweeper).
+        """
         import structlog
 
         logger = structlog.get_logger()
 
+        # Phase 1 — session courte : dequeue + snapshot des données du batch.
         async with self.session_maker() as session:
             service = ClassificationQueueService(session)
 
@@ -181,154 +338,179 @@ class ClassificationWorker:
 
             logger.info("classification_worker.processing_batch", count=len(items))
 
-            # Load all contents and sources
-            contents: list[Content | None] = []
-            sources: list[Source | None] = []
-            for item in items:
-                content = await session.get(Content, item.content_id)
-                contents.append(content)
-                if content and content.source_id:
-                    source = await session.get(Source, content.source_id)
-                    sources.append(source)
-                else:
-                    sources.append(None)
+            # Load all contents and sources (2 SELECT batchés, pas de N+1)
+            content_rows = await session.execute(
+                select(Content).where(
+                    Content.id.in_([item.content_id for item in items])
+                )
+            )
+            contents_by_id = {c.id: c for c in content_rows.scalars()}
+            contents = [contents_by_id.get(item.content_id) for item in items]
 
-            # Build batch for API call
-            batch_items: list[dict] = []
-            batch_indices: list[int] = []  # Maps batch position → items index
+            source_ids = {c.source_id for c in contents if c and c.source_id}
+            sources_by_id: dict = {}
+            if source_ids:
+                source_rows = await session.execute(
+                    select(Source).where(Source.id.in_(source_ids))
+                )
+                sources_by_id = {s.id: s for s in source_rows.scalars()}
 
-            for i, (item, content, source) in enumerate(
-                zip(items, contents, sources, strict=False)
-            ):
-                if content and content.title:
-                    batch_items.append(
-                        {
-                            "title": content.title or "",
-                            "description": content.description or "",
-                            "source_name": source.name if source else "",
-                        }
-                    )
-                    batch_indices.append(i)
-
-            # Call Mistral API in batch
-            classifier = self._get_classifier()
-            all_results: list[dict] = []
-
-            if classifier and classifier.is_ready() and batch_items:
-                # Step 1: Classify (topics + serene only)
-                all_results = await classifier.classify_batch_async(batch_items)
-
-                # Retry individually for each article that got empty topics
-                empty_indices = [
-                    idx for idx, r in enumerate(all_results) if not r.get("topics")
-                ]
-                if empty_indices:
-                    logger.info(
-                        "classification_worker.individual_retry",
-                        total=len(batch_items),
-                        empty=len(empty_indices),
-                    )
-                    for idx in empty_indices:
-                        bi = batch_items[idx]
-                        result = await classifier.classify_async(
-                            title=bi["title"],
-                            description=bi.get("description", ""),
-                            source_name=bi.get("source_name", ""),
-                        )
-                        if result.get("topics"):
-                            all_results[idx] = result
-
-                # Step 2: Extract entities (separate API call)
-                try:
-                    all_entities = await classifier.extract_entities_batch_async(
-                        batch_items
-                    )
-                    for idx, entities in enumerate(all_entities):
-                        if idx < len(all_results):
-                            all_results[idx]["entities"] = entities
-                except Exception as e:
-                    logger.warning(
-                        "classification_worker.entity_extraction_failed",
-                        error=str(e),
-                    )
-
-                # Step 3: Good-news pass (mistral-large) on serene+FR survivors
-                # Initialize good_news=None for all; only mutated for evaluated items
-                for r in all_results:
-                    r["good_news"] = None
-
-                good_news_indices: list[int] = []
-                good_news_items: list[dict] = []
-                for idx, (bi, result) in enumerate(
-                    zip(batch_items, all_results, strict=False)
-                ):
-                    if result.get("serene") is not True:
-                        continue
-                    source_name = bi.get("source_name", "")
-                    title = bi.get("title", "")
-                    if not is_french_source(source_name):
-                        continue
-                    if looks_english(title):
-                        continue
-                    good_news_indices.append(idx)
-                    good_news_items.append(bi)
-
-                if good_news_items:
-                    gn_classifier = self._get_good_news_classifier()
-                    if gn_classifier and gn_classifier.is_ready():
-                        try:
-                            gn_results = await gn_classifier.classify_batch_async(
-                                good_news_items
-                            )
-                            for offset, idx in enumerate(good_news_indices):
-                                if offset < len(gn_results):
-                                    all_results[idx]["good_news"] = gn_results[offset]
-                            logger.info(
-                                "classification_worker.good_news_pass",
-                                evaluated=len(good_news_items),
-                                positives=sum(1 for v in gn_results if v is True),
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                "classification_worker.good_news_pass_failed",
-                                error=str(e),
-                            )
-            else:
-                all_results = [
+            # Snapshot en structures simples : tout ce dont les phases 2-3 ont
+            # besoin, pour ne garder aucun objet ORM vivant hors session.
+            records: list[dict] = []
+            for item, content in zip(items, contents, strict=False):
+                source = (
+                    sources_by_id.get(content.source_id)
+                    if content and content.source_id
+                    else None
+                )
+                records.append(
                     {
-                        "topics": [],
-                        "serene": None,
-                        "good_news": None,
-                        "is_ad": None,
-                        "entities": [],
+                        "queue_id": item.id,
+                        "content_id": item.content_id,
+                        "retry_count": item.retry_count,
+                        "has_content": content is not None,
+                        "title": (content.title or "") if content else "",
+                        "description": (content.description or "") if content else "",
+                        "source_name": source.name if source else "",
                     }
-                    for _ in batch_items
-                ]
+                )
 
-            # Process results
-            batch_result_idx = 0
-            for i, (item, content, source) in enumerate(
-                zip(items, contents, sources, strict=False)
+        # Build batch for API call. record_for_batch[k] = records index of the
+        # k-ème batch item → permet de remapper all_results[k] sur son record
+        # en phase 3 sans curseur séparé.
+        batch_items: list[dict] = []
+        record_for_batch: list[int] = []
+
+        for i, rec in enumerate(records):
+            if rec["has_content"] and rec["title"]:
+                batch_items.append(
+                    {
+                        "title": rec["title"],
+                        "description": rec["description"],
+                        "source_name": rec["source_name"],
+                    }
+                )
+                record_for_batch.append(i)
+
+        # Phase 2 — hors session : appels Mistral.
+        classifier = self._get_classifier()
+        all_results: list[dict] = []
+
+        if classifier and classifier.is_ready() and batch_items:
+            # Step 1: Classify (topics + serene only)
+            all_results = await classifier.classify_batch_async(batch_items)
+
+            # Retry individually for each article that got empty topics
+            empty_indices = [
+                idx for idx, r in enumerate(all_results) if not r.get("topics")
+            ]
+            if empty_indices:
+                logger.info(
+                    "classification_worker.individual_retry",
+                    total=len(batch_items),
+                    empty=len(empty_indices),
+                )
+                for idx in empty_indices:
+                    bi = batch_items[idx]
+                    result = await classifier.classify_async(
+                        title=bi["title"],
+                        description=bi.get("description", ""),
+                        source_name=bi.get("source_name", ""),
+                    )
+                    if result.get("topics"):
+                        all_results[idx] = result
+
+            # Step 2: Extract entities (separate API call)
+            try:
+                all_entities = await classifier.extract_entities_batch_async(
+                    batch_items
+                )
+                for idx, entities in enumerate(all_entities):
+                    if idx < len(all_results):
+                        all_results[idx]["entities"] = entities
+            except Exception as e:
+                logger.warning(
+                    "classification_worker.entity_extraction_failed",
+                    error=str(e),
+                )
+
+            # Step 3: Good-news pass (mistral-large) on serene+FR survivors
+            # Initialize good_news=None for all; only mutated for evaluated items
+            for r in all_results:
+                r["good_news"] = None
+
+            good_news_indices: list[int] = []
+            good_news_items: list[dict] = []
+            for idx, (bi, result) in enumerate(
+                zip(batch_items, all_results, strict=False)
             ):
+                if result.get("serene") is not True:
+                    continue
+                source_name = bi.get("source_name", "")
+                title = bi.get("title", "")
+                if not is_french_source(source_name):
+                    continue
+                if looks_english(title):
+                    continue
+                good_news_indices.append(idx)
+                good_news_items.append(bi)
+
+            if good_news_items:
+                gn_classifier = self._get_good_news_classifier()
+                if gn_classifier and gn_classifier.is_ready():
+                    try:
+                        gn_results = await gn_classifier.classify_batch_async(
+                            good_news_items
+                        )
+                        for offset, idx in enumerate(good_news_indices):
+                            if offset < len(gn_results):
+                                all_results[idx]["good_news"] = gn_results[offset]
+                        logger.info(
+                            "classification_worker.good_news_pass",
+                            evaluated=len(good_news_items),
+                            positives=sum(1 for v in gn_results if v is True),
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "classification_worker.good_news_pass_failed",
+                            error=str(e),
+                        )
+        else:
+            all_results = [
+                {
+                    "topics": [],
+                    "serene": None,
+                    "good_news": None,
+                    "is_ad": None,
+                    "entities": [],
+                }
+                for _ in batch_items
+            ]
+
+        # Remap les résultats LLM sur leur record d'origine (indices manquants
+        # = articles sans contenu/titre, traités par le fallback ci-dessous).
+        result_by_record: dict[int, dict] = {
+            rec_idx: all_results[k]
+            for k, rec_idx in enumerate(record_for_batch)
+            if k < len(all_results)
+        }
+
+        # Phase 3 — session courte : écrire les résultats.
+        async with self.session_maker() as session:
+            service = ClassificationQueueService(session)
+
+            for i, rec in enumerate(records):
                 try:
-                    if content is None:
-                        await service.mark_completed_with_entities(item.id, [], [])
+                    if not rec["has_content"]:
+                        await service.mark_completed_with_entities(
+                            rec["queue_id"], [], []
+                        )
                         continue
 
                     # Get topics, serene, is_ad and entities from batch result
-                    if i in batch_indices:
-                        result = (
-                            all_results[batch_result_idx]
-                            if batch_result_idx < len(all_results)
-                            else {
-                                "topics": [],
-                                "serene": None,
-                                "good_news": None,
-                                "is_ad": None,
-                                "entities": [],
-                            }
-                        )
-                        batch_result_idx += 1
+                    result = result_by_record.get(i)
+                    if result is not None:
                         topics = result.get("topics", [])
                         is_serene = result.get("serene")
                         is_good_news = result.get("good_news")
@@ -344,18 +526,20 @@ class ClassificationWorker:
                     # If still no topics after individual retry, let the retry
                     # mechanism handle it (mark_failed will requeue up to 3 times)
                     if not topics:
-                        if item.retry_count < 2:
-                            await service.mark_failed(item.id, "empty_classification")
+                        if rec["retry_count"] < 2:
+                            await service.mark_failed(
+                                rec["queue_id"], "empty_classification"
+                            )
                             continue
                         # After max retries, mark completed with empty topics
                         logger.warning(
                             "classification_worker.exhausted_retries",
-                            content_id=str(item.content_id),
-                            title=(content.title or "")[:80],
+                            content_id=str(rec["content_id"]),
+                            title=rec["title"][:80],
                         )
 
                     await service.mark_completed_with_entities(
-                        item.id,
+                        rec["queue_id"],
                         topics,
                         entities,
                         is_serene=is_serene,
@@ -364,7 +548,7 @@ class ClassificationWorker:
                     )
 
                 except Exception as e:
-                    await service.mark_failed(item.id, str(e)[:500])
+                    await service.mark_failed(rec["queue_id"], str(e)[:500])
 
 
 # Global worker instance (singleton)

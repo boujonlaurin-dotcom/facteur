@@ -102,6 +102,56 @@ void main() {
       expect(result.intentDescription, 'Suivi actualites mobilite');
     });
 
+    test('sends slug_parent in body when provided (explicit parent)', () async {
+      when(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {'name': 'Tennis', 'slug_parent': 'sport'},
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).thenAnswer((_) async => {
+            'id': 'uuid-tennis',
+            'topic_name': 'Tennis',
+            'slug_parent': 'sport',
+            'priority_multiplier': 1.0,
+          });
+
+      final result =
+          await repository.followTopic('Tennis', slugParent: 'sport');
+
+      expect(result.slugParent, 'sport');
+      // Vérifie explicitement que slug_parent a bien été envoyé au backend.
+      verify(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {'name': 'Tennis', 'slug_parent': 'sport'},
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).called(1);
+    });
+
+    test('omits slug_parent from body when not provided', () async {
+      when(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {'name': 'IA'},
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).thenAnswer((_) async => {
+            'id': 'uuid-ia',
+            'topic_name': 'IA',
+            'slug_parent': 'ai',
+            'priority_multiplier': 1.0,
+          });
+
+      await repository.followTopic('IA');
+
+      // body ne contient PAS la clé slug_parent (le backend devine via LLM).
+      verify(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {'name': 'IA'},
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).called(1);
+    });
+
     test('rethrows DioException on 409 conflict (duplicate)', () async {
       when(() => mockApiClient.post(
             'personalization/topics/',
@@ -119,6 +169,69 @@ void main() {
 
       expect(
           () => repository.followTopic('IA'), throwsA(isA<DioException>()));
+    });
+  });
+
+  group('followEntity', () {
+    test('sends entity_type and slug_parent in body when provided', () async {
+      when(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {
+              'name': 'Kylian Mbappe',
+              'entity_type': 'PERSON',
+              'slug_parent': 'sport',
+            },
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).thenAnswer((_) async => {
+            'id': 'uuid-entity',
+            'topic_name': 'Kylian Mbappe',
+            'slug_parent': 'sport',
+            'entity_type': 'PERSON',
+            'canonical_name': 'Kylian Mbappe',
+            'priority_multiplier': 1.0,
+          });
+
+      final result = await repository.followEntity('Kylian Mbappe', 'PERSON',
+          slugParent: 'sport');
+
+      expect(result.slugParent, 'sport');
+      expect(result.entityType, 'PERSON');
+      verify(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {
+              'name': 'Kylian Mbappe',
+              'entity_type': 'PERSON',
+              'slug_parent': 'sport',
+            },
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).called(1);
+    });
+
+    test('omits slug_parent when not provided', () async {
+      when(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {'name': 'OpenAI', 'entity_type': 'ORG'},
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).thenAnswer((_) async => {
+            'id': 'uuid-org',
+            'topic_name': 'OpenAI',
+            'slug_parent': 'ai',
+            'entity_type': 'ORG',
+            'canonical_name': 'OpenAI',
+            'priority_multiplier': 1.0,
+          });
+
+      await repository.followEntity('OpenAI', 'ORG');
+
+      verify(() => mockApiClient.post(
+            'personalization/topics/',
+            body: {'name': 'OpenAI', 'entity_type': 'ORG'},
+            queryParameters: any(named: 'queryParameters'),
+            options: any(named: 'options'),
+          )).called(1);
     });
   });
 

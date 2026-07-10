@@ -1,12 +1,13 @@
 """Service source."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.content import Content
 from app.models.enums import InterestState
 from app.models.source import Source, UserSource
 from app.models.user_favorites import UserFavoriteSource
@@ -47,6 +48,30 @@ class SourceService:
     def _has_paywall(s: Source) -> bool:
         return is_paywalled_source(s, curated_map=PREMIUM_CURATED_MAP)
 
+    @staticmethod
+    def _can_connect_login(s: Source) -> bool:
+        """Une connexion (login) peut-elle être associée à cette source ?
+
+        Vrai si une connexion premium se résout (config explicite / map curée /
+        fallback paywall) **OU** si la source a une URL http(s) valide : décision
+        PO « connecter un login à toute source suivie » (sites étrangers à login).
+        L'utilisateur se connecte alors génériquement sur le site du média ; aucun
+        identifiant n'est stocké côté serveur.
+
+        L'opt-out explicite ``premium_connection_config.enabled = false`` reste une
+        blocklist : il bloque la connexion même si l'URL est valide (source dont la
+        connexion WebView est connue comme incompatible).
+        """
+        config = getattr(s, "premium_connection_config", None)
+        if PremiumConnectionResponse.is_explicitly_disabled(config):
+            return False
+        if SourceService._premium_connection(s) is not None:
+            return True
+        url = getattr(s, "url", None)
+        return isinstance(url, str) and url.strip().lower().startswith(
+            ("http://", "https://")
+        )
+
     async def _load_user_source_context(
         self, user_id: UUID
     ) -> tuple[set[UUID], dict[UUID, float], dict[UUID, bool]]:
@@ -73,6 +98,24 @@ class SourceService:
         subscriptions = {row.source_id: row.has_subscription for row in rows}
         return trusted_ids, multipliers, subscriptions
 
+    async def _load_articles_30d(self, source_ids: list[UUID]) -> dict[UUID, int]:
+        """Volume de publication 30 j par source en UN seul GROUP BY batché.
+
+        Évite le N+1 (jamais d'appel par source) — une requête couvre toute la
+        liste curée. S'appuie sur l'index composite ``ix_contents_source_published``
+        (source_id, published_at) ; aucune colonne DB ni migration.
+        """
+        if not source_ids:
+            return {}
+        cutoff = datetime.now(UTC) - timedelta(days=30)
+        result = await self.db.execute(
+            select(Content.source_id, func.count())
+            .where(Content.source_id.in_(source_ids))
+            .where(Content.published_at >= cutoff)
+            .group_by(Content.source_id)
+        )
+        return {row[0]: row[1] for row in result.all()}
+
     def _build_source_response(
         self,
         s: Source,
@@ -84,6 +127,7 @@ class SourceService:
         multipliers: dict[UUID, float],
         subscriptions: dict[UUID, bool],
         follower_count: int = 0,
+        articles_30d_map: dict[UUID, int] | None = None,
     ) -> SourceResponse:
         """Construit un SourceResponse à partir d'un objet Source et du contexte user.
 
@@ -105,6 +149,7 @@ class SourceService:
             priority_multiplier=multipliers.get(s.id, 1.0),
             has_subscription=subscriptions.get(s.id, False),
             content_count=0,  # TODO
+            articles_30d=(articles_30d_map or {}).get(s.id, 0),
             follower_count=follower_count,
             bias_stance=getattr(s.bias_stance, "value", "unknown"),
             reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -151,6 +196,14 @@ class SourceService:
         curated_result = await self.db.execute(
             select(Source).where(Source.is_curated, Source.is_active)
         )
+        curated_sources = curated_result.scalars().all()
+
+        # 1 query batchée : volume de publication 30 j pour TOUTES les curées
+        # (onboarding « sources productives »). Le custom reste à 0 (hors-scope).
+        articles_30d_map = await self._load_articles_30d(
+            [s.id for s in curated_sources]
+        )
+
         curated = [
             self._build_source_response(
                 s,
@@ -160,8 +213,9 @@ class SourceService:
                 muted_source_ids=muted_source_ids,
                 multipliers=multipliers,
                 subscriptions=subscriptions,
+                articles_30d_map=articles_30d_map,
             )
-            for s in curated_result.scalars().all()
+            for s in curated_sources
         ]
 
         # 1 query : sources custom (distinct pour éviter doublons user_sources)
@@ -202,6 +256,7 @@ class SourceService:
             select(Source).where(Source.is_curated, Source.is_active)
         )
         sources = curated_result.scalars().all()
+        articles_30d_map = await self._load_articles_30d([s.id for s in sources])
 
         trusted_source_ids: set[UUID] = set()
         muted_source_ids: set[UUID] = set()
@@ -232,6 +287,7 @@ class SourceService:
                 muted_source_ids=muted_source_ids,
                 multipliers=multipliers,
                 subscriptions=subscriptions,
+                articles_30d_map=articles_30d_map,
             )
             for s in sources
         ]
@@ -494,9 +550,13 @@ class SourceService:
     ) -> SourceResponse | None:
         """Met à jour le has_subscription d'une source.
 
-        La connexion positive exige une config premium explicite côté source,
-        puis crée le lien UserSource si nécessaire. La dissociation reste
-        autorisée même si la config source a été retirée.
+        La connexion positive exige seulement qu'un login soit possible
+        (``_can_connect_login``) : connexion premium résolue (config explicite /
+        map curée / fallback paywall) **ou** simple URL http(s) valide (login
+        générique sur le site, décision PO « toute source suivie »). La config
+        curée améliore l'expérience sans servir de whitelist bloquante ; seul
+        l'opt-out explicite ``premium_connection_config.enabled = false`` bloque.
+        La dissociation reste toujours autorisée.
         """
         user_uuid = UUID(user_id)
         source_uuid = UUID(source_id)
@@ -505,7 +565,7 @@ class SourceService:
         if not source:
             return None
 
-        if has_subscription and self._premium_connection(source) is None:
+        if has_subscription and not self._can_connect_login(source):
             raise PremiumConnectionNotEnabled
 
         user_source = await self.db.scalar(

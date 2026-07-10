@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
@@ -20,16 +21,22 @@ import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
+import '../../../core/ui/notification_service.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
+import '../../detail/content_preview_mapper.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
+import '../../feedback/widgets/feedback_closing_card.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
+import '../../notif_du_jour/widgets/notif_du_jour_card.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
-import '../../notifications/widgets/notification_renudge_banner.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
-import '../../well_informed/widgets/well_informed_prompt.dart';
+import '../../settings/widgets/display_mode_bottom_sheet.dart';
+import '../../sources/models/source_theme_filters.dart';
+import '../../tour/providers/guided_tour_controller.dart';
+import '../../tour/tour_anchors.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -44,10 +51,10 @@ import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
 import '../widgets/tournee_composer_sheet.dart';
-import '../widgets/geoloc_prompt_banner.dart';
 import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
+import '../widgets/suggestion_reason_sheet.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -60,6 +67,15 @@ const double _kStickyThreshold = 60.0;
 /// track (4) + refresh strip (2). **Must mirror the real sticky bar height** —
 /// it feeds the snap framing AND the fit budget ([usableViewportHeightProvider]).
 const double _kStickyBarHeight = 50.0;
+
+/// px. Anti-crop safety inset for section-top snap anchors. Each snap `top` is
+/// pulled up by this much so a section poses a hair **below** the sticky header
+/// rather than flush — absorbing the small measurement jitter that
+/// intermittently cropped a section's first line under the header. Kept minimal
+/// (a few px): large enough to never crop, small enough to never reveal the
+/// previous section. A *mitigation* — the real fix is measuring anchors on a
+/// stabilised layout (gesture-start + post-fit recompute). Tune on device.
+const double kSnapTopSafety = 4.0;
 
 // Section-snap tuning lives in `utils/section_snap.dart` (kSnapCaptureFraction,
 // kBoundaryCrossVelocity, kSnapEpsilon, kSnapSpring) so the resting-position
@@ -90,26 +106,10 @@ const _closingTab = StickyTab(
 // Carte de personnalisation (virtuelle — pas de section correspondante).
 const _persoCardTab = StickyTab(label: 'Pour toi', accent: Color(0xFFB0470A));
 
-/// Drag-time feedforward payload for [_SectionPassageDot]. Computed live in
-/// [_FluxContinuScreenState._updateBoundaryApproach] and broadcast via a
-/// [ValueNotifier] so the dots rebuild without a per-frame `setState`.
-/// - [dotIndex] : the passage dot sitting at the boundary the gesture is
-///   approaching (= the section index *before* it, same `k-1` convention as
-///   [_FluxContinuScreenState._pulsePassageForStickyIndex]), or `null` when the
-///   next snap point in the travel direction is **not** an inter-section
-///   boundary (a tall section's free-reading bottom) — so no « va snapper » cue
-///   appears inside the free interior, matching the physics which returns `null`
-///   there too.
-/// - [proximity] : ramps 0→1 as the lift point nears that boundary, reaching 1
-///   exactly at [kSectionEdgeMargin] (the deadband where the snap commits), so
-///   the dot peaks precisely at the switch threshold.
-typedef _BoundaryApproach = ({int? dotIndex, double proximity});
-
 /// Signed *travel* direction from a [ScrollDirection]: +1 scrolling down (offset
-/// increasing), -1 up, 0 idle/unknown. Single mapping shared by the drag-time
-/// feedforward ([_FluxContinuScreenState._updateBoundaryApproach]) and the snap
-/// physics ([_SectionSnapPhysics._resolveTarget]) so the cue and the commit can
-/// never disagree on « which way am I going ».
+/// increasing), -1 up, 0 idle/unknown. Shared mapping used by the snap physics
+/// ([_SectionSnapPhysics._resolveTarget]) and the active-section tracking so
+/// they can never disagree on « which way am I going ».
 double _travelDirection(ScrollDirection d) => switch (d) {
       ScrollDirection.reverse => 1.0,
       ScrollDirection.forward => -1.0,
@@ -128,8 +128,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ScrollController _tabsScroll = ScrollController();
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
-  final ValueNotifier<_SectionPassagePulse?> _sectionPassagePulse =
-      ValueNotifier(null);
 
   final List<GlobalKey> _sectionKeys = [];
 
@@ -169,8 +167,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   bool _gestureNudgeRequested = false;
   bool _showSwipeHint = false;
 
-  int _passagePulseSequence = 0;
-
   /// Mutable, stable holder of the section-start anchors (absolute scroll
   /// pixels). Passed *by reference* to the immutable [_SectionSnapPhysics],
   /// which reads it live — the physics is rebuilt every frame and must never
@@ -178,28 +174,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// resize mid-session), never per scroll frame.
   final _SnapAnchors _snapAnchors = _SnapAnchors();
   bool _snapAnchorsRecomputeScheduled = false;
-
-  /// Drag-time « distance to the next boundary » cue, written by
-  /// [_updateBoundaryApproach] on every scroll frame (quantized) and read by the
-  /// in-flow [_SectionPassageDot]s. Feedforward twin of [_sectionPassagePulse]
-  /// (the post-validation pulse) — both ride the same dot so the gesture reads
-  /// as a single continuous « j'approche un seuil → je l'ai franchi ».
-  final ValueNotifier<_BoundaryApproach?> _boundaryApproach = ValueNotifier(
-    null,
-  );
-
-  /// Sorted snap points of [_snapAnchors], cached once per layout (frames only
-  /// change on layout, never per scroll frame) so the per-frame
-  /// [_updateBoundaryApproach] doesn't re-allocate + re-sort them every frame.
-  List<double> _snapPoints = const [];
-
-  /// Maps a section *top* (an inter-section boundary) to the passage dot above
-  /// it (section index − 1). Rebuilt alongside the snap anchors in
-  /// [_recomputeSnapAnchors]; [_updateBoundaryApproach] looks up an approached
-  /// snap point here directly (the offsets are bit-identical to the stored
-  /// frame tops). Tops absent here (a tall section's bottom, the first section,
-  /// the virtual cards) carry no « va snapper » cue.
-  final Map<double, int> _dotIndexByTop = {};
 
   /// (A3) Indices (into `state.sections`) of sections taller than the viewport —
   /// the ones with a free-reading interior (`bottom > top`, same predicate as
@@ -247,8 +221,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     _tabsScroll.dispose();
     _stickyVisible.dispose();
     _activeIndex.dispose();
-    _sectionPassagePulse.dispose();
-    _boundaryApproach.dispose();
     _tallSections.dispose();
     _pullHintTimer?.cancel();
     super.dispose();
@@ -263,7 +235,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       _stickyVisible.value = showSticky;
     }
     _updateActiveSection();
-    _updateBoundaryApproach(pos);
 
     if (currentScroll > _maxScrollDepthPx) {
       _maxScrollDepthPx = currentScroll;
@@ -340,7 +311,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // boundary crossing, so this fires exactly once per step.
       if (_stickyVisible.value) {
         unawaited(_triggerSectionChangeHaptic());
-        _pulsePassageForStickyIndex(activeAt);
       }
       _activeIndex.value = activeAt;
       _alignTabsToActive(activeAt);
@@ -356,86 +326,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     return -1;
   }
 
-  void _pulsePassageForStickyIndex(int stickyIndex) {
-    final sectionIndex = _sectionIndexForStickyIndex(stickyIndex);
-    if (sectionIndex <= 0) return;
-    _sectionPassagePulse.value = _SectionPassagePulse(
-      index: sectionIndex - 1,
-      sequence: ++_passagePulseSequence,
-    );
-  }
-
+  /// Fires when a scroll gesture *starts*. Refreshes the snap anchors so the
+  /// ballistic that follows reads frames measured on the current, settled
+  /// layout — not stale ones from before the fit converged (a source of the
+  /// intermittent top-crop). Post-frame + coalesced, so it never runs per
+  /// frame. Returns `false` to let the notification bubble.
   bool _onScrollNotification(ScrollNotification n) {
+    if (n is ScrollStartNotification) {
+      _scheduleAnchorRecompute();
+    }
     return false;
-  }
-
-  /// (A1) Feedforward: as the reader drags toward a section boundary, ramp the
-  /// in-flow passage dot that sits there so the snap reads as « j'approche un
-  /// seuil marqué » *before* the finger lifts — not a post-hoc surprise. Runs
-  /// inside [_onScroll] (already firing every frame); reuses the live snap
-  /// anchors and the shared [snapPointsOf], so the cue is mechanically true to
-  /// where the snap commits. Cheap: writes a quantized value to
-  /// [_boundaryApproach] only when it changes.
-  void _updateBoundaryApproach(ScrollPosition pos) {
-    final points = _snapPoints;
-    final currentScroll = pos.pixels;
-    // Header zone (above the first section): the sticky is hidden anyway ⇒ no
-    // boundary cue.
-    if (points.isEmpty || currentScroll <= points.first) {
-      if (_boundaryApproach.value != null) _boundaryApproach.value = null;
-      return;
-    }
-    // Travel direction (shared mapping with the physics). On idle, keep the
-    // previous value so a pause mid-drag doesn't flicker the cue off.
-    final dir = _travelDirection(pos.userScrollDirection);
-    if (dir == 0) return;
-
-    // The next snap point strictly in the travel direction.
-    double? edge;
-    if (dir > 0) {
-      for (final p in points) {
-        if (p > currentScroll + kSnapEpsilon) {
-          edge = p;
-          break;
-        }
-      }
-    } else {
-      for (var i = points.length - 1; i >= 0; i--) {
-        if (points[i] < currentScroll - kSnapEpsilon) {
-          edge = points[i];
-          break;
-        }
-      }
-    }
-    if (edge == null) {
-      if (_boundaryApproach.value != null) _boundaryApproach.value = null;
-      return;
-    }
-
-    // Proximity ramps to 1 across the deadband where the snap commits, so the
-    // dot peaks exactly at the switch threshold. The cue rides a dot only when
-    // the approached point is an inter-section boundary (present in
-    // [_dotIndexByTop]); a tall section's bottom maps to null ⇒ no « va snapper »
-    // cue inside the free interior.
-    final dist = (edge - currentScroll).abs();
-    final proximity = (1 - dist / kSectionEdgeMargin).clamp(0.0, 1.0);
-    // Quantize (~20 steps) so the small dot rebuilds only a handful of times
-    // per gesture rather than every frame.
-    final quantized = (proximity * 20).round() / 20;
-    final next = (dotIndex: _dotIndexByTop[edge], proximity: quantized);
-    final cur = _boundaryApproach.value;
-    if (cur == null ||
-        cur.dotIndex != next.dotIndex ||
-        cur.proximity != next.proximity) {
-      _boundaryApproach.value = next;
-    }
   }
 
   Future<void> _triggerSectionChangeHaptic() async {
     try {
-      await Haptics.vibrate(HapticsType.medium, usage: HapticsUsage.touch);
+      await Haptics.vibrate(HapticsType.heavy, usage: HapticsUsage.touch);
     } catch (_) {
-      await HapticFeedback.mediumImpact();
+      await HapticFeedback.heavyImpact();
     }
   }
 
@@ -454,8 +361,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   void _recomputeSnapAnchors() {
     if (!_scroll.hasClients) {
       _snapAnchors.values = const [];
-      _snapPoints = const [];
-      _dotIndexByTop.clear();
       _tallSections.value = const {};
       return;
     }
@@ -474,15 +379,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // écriture seulement si la valeur arrondie change.
     _publishUsableHeight(visibleBottom - _kStickyBarHeight);
     final result = <SectionFrame>[];
-    _dotIndexByTop.clear();
     final tall = <int>{};
+    // Measured global top of the currently-active sticky entry — captured for
+    // the debug crop detector below.
+    double? activeTopGlobal;
     for (var k = 0; k < _stickyEntryKeys.length; k++) {
       final ctx = _stickyEntryKeys[k].currentContext;
       if (ctx == null) continue;
       final box = ctx.findRenderObject();
       if (box is! RenderBox || !box.attached) continue;
       final topGlobal = box.localToGlobal(Offset.zero, ancestor: scrollBox).dy;
-      final top = offset + (topGlobal - _kStickyBarHeight);
+      if (k == _activeIndex.value) activeTopGlobal = topGlobal;
+      // Anti-crop safety inset ([kSnapTopSafety]): pose the section a hair below
+      // the header instead of flush, absorbing measurement jitter that would
+      // otherwise crop its first line under the sticky bar.
+      final top = offset + (topGlobal - _kStickyBarHeight) - kSnapTopSafety;
       // Bottom flush to the visible bottom (above the footer). `bottom - top =
       // sectionHeight - usableViewport`, so `bottom > top` exactly when the
       // section is taller than the visible area — i.e. only those gain a
@@ -490,35 +401,41 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       final bottom = offset + (topGlobal + box.size.height) - visibleBottom;
       result.add((top: top, bottom: bottom));
       // Map this entry to its real section index (virtual cards ⇒ −1) for the
-      // A1 passage-dot cue and the A3 free-read fade. Same convention as
-      // [_pulsePassageForStickyIndex].
+      // A3 free-read fade.
       final sectionIndex = _sectionIndexForStickyIndex(k);
-      if (sectionIndex > 0) {
-        _dotIndexByTop[top] = sectionIndex - 1;
-      }
       if (sectionIndex >= 0 && bottom > top + kSnapEpsilon) {
         tall.add(sectionIndex);
       }
     }
     result.sort((a, b) => a.top.compareTo(b.top));
     _snapAnchors.values = result;
-    _snapPoints = snapPointsOf(result);
     if (!setEquals(_tallSections.value, tall)) {
       _tallSections.value = tall;
     }
-    // Filet de vérification (pas de pilotage) : en debug, signale toute section
-    // multi-articles qui reste « tall » malgré le fit côté provider — c'est le
-    // symptôme d'une estimation `section_fit` trop généreuse (constantes à
-    // régler). `_FreeReadEdgeFade` ne devrait plus jamais s'afficher dessus.
+    // Filet de vérification (pas de pilotage), debug only :
+    // 1) toute section multi-articles qui reste « tall » malgré le fit côté
+    //    provider — symptôme d'une estimation `section_fit` trop généreuse.
+    // 2) **détecteur de crop** : la section active dont le haut mesuré est passé
+    //    au-dessus du header (topGlobal < barre sticky) — le signal reproductible
+    //    qu'on cherchait pour caler [kSnapTopSafety] et le durcissement du calcul.
     assert(() {
-      if (tall.isEmpty) return true;
       final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
-      if (sections == null) return true;
-      for (final idx in tall) {
-        if (idx < 0 || idx >= sections.length) continue;
+      if (sections != null) {
+        for (final idx in tall) {
+          if (idx < 0 || idx >= sections.length) continue;
+          debugPrint(
+            '[fit-net] section "${sections[idx].label}" dépasse l\'écran '
+            '(reste tall) — estimation section_fit trop généreuse, à régler.',
+          );
+        }
+      }
+      if (activeTopGlobal != null &&
+          activeTopGlobal < _kStickyBarHeight - kSnapTopSafety - kSnapEpsilon) {
         debugPrint(
-          '[fit-net] section "${sections[idx].label}" dépasse l\'écran '
-          '(reste tall) — estimation section_fit trop généreuse, à régler.',
+          '[fit-net] CROP — section active haut mesuré à '
+          '${activeTopGlobal.toStringAsFixed(1)}px < header '
+          '($_kStickyBarHeight) : le haut passe sous le sticky bar '
+          '(mesure sur layout non stabilisé — durcir le recompute).',
         );
       }
       return true;
@@ -542,6 +459,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     final current = notifier.state;
     if (current != null && (current - rounded).abs() < 1.0) return;
     notifier.state = rounded;
+    // The published budget just moved ⇒ the provider will recompute how many
+    // cards each section shows, changing section heights. Schedule a fresh
+    // anchor recompute so the frames reflect the *final* card count, not the
+    // transient one measured here. Coalesced + idempotent: once the height
+    // stabilises this early-returns above, so the loop terminates.
+    _scheduleAnchorRecompute();
   }
 
   /// Defers an anchor recompute to the next post-frame (when layout is settled),
@@ -666,6 +589,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         .then((_) => _restoreLastDedicatedSection());
   }
 
+  /// Story 22.3 — ouvre la sheet « Pourquoi cette section ? » d'une suggestion
+  /// « Choisie pour vous ». Les actions garder/retirer délèguent au notifier
+  /// (promotion en favori / dismiss local), avec confirmation discrète.
+  void _openSuggestionSheet(
+    BuildContext context,
+    FeedThemeSection section,
+    FluxContinuNotifier notifier,
+  ) {
+    showSuggestionReasonSheet(
+      context,
+      sectionTitle: section.label,
+      reason: section.reason,
+      onKeep: () async {
+        await notifier.promoteSuggestion(section);
+        NotificationService.showSuccess('Ajoutée à tes favoris');
+      },
+      onDismiss: () async {
+        await notifier.dismissSuggestion(section);
+        NotificationService.showSuccess('Suggestion retirée');
+      },
+    );
+  }
+
   /// Opens the dedicated full-page view for a [DigestTopicSection]
   /// (Actus du jour, Bonnes Nouvelles). Mirrors [_openThemeSection].
   void _openDigestSection(BuildContext context, DigestTopicSection section) {
@@ -699,6 +645,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (article is DigestItem) {
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
+        extra: article.toPreviewContent(),
       );
     } else if (article is Content) {
       await context.push(
@@ -708,6 +655,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     } else if (article is EssentielArticle) {
       await context.push(
         '${RoutePaths.fluxContinu}/content/${article.contentId}',
+        extra: article.toPreviewContent(),
       );
     } else {
       return;
@@ -730,8 +678,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     _gestureNudgeRequested = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      final location =
-          GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
+      final location = GoRouter.of(
+        context,
+      ).routerDelegate.currentConfiguration.uri.path;
       if (!location.startsWith(RoutePaths.fluxContinu)) {
         _gestureNudgeRequested = false;
         return;
@@ -880,12 +829,29 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// 3. la modal d'activation des notifications.
   /// La page Essentiel chargée sert de fond aux modales : à leur fermeture elle
   /// est révélée intacte (plus d'écran gris ni de contexte démonté).
+  /// Façade post-onboarding : consomme le flag (anti-replay), puis joue le tour
+  /// guidé **d'abord** ; à sa conclusion (`onComplete`, tiré une seule fois sur
+  /// finish/skip — ou immédiatement si le tour a déjà été vu), enchaîne les
+  /// modales (dialog customs échoués → thème → notif). `onComplete` est exécuté
+  /// par le controller (état Riverpod stable) : on re-garde `mounted` à l'entrée
+  /// de [_runPostOnboardingModals], jamais de `ref` après démontage.
   Future<void> _runPostOnboardingFlow() async {
     if (!mounted) return;
     final failedCustomTopics = ref.read(postOnboardingFlowPendingProvider);
     if (failedCustomTopics == null) return;
     // Consomme le flag immédiatement : un refetch/rebuild ne doit pas rejouer.
     ref.read(postOnboardingFlowPendingProvider.notifier).state = null;
+
+    await ref.read(guidedTourControllerProvider.notifier).start(
+          onComplete: () =>
+              unawaited(_runPostOnboardingModals(failedCustomTopics)),
+        );
+  }
+
+  /// Les modales historiques, jouées une fois le tour guidé conclu. Le `failed`
+  /// est capturé dans la closure `onComplete` pour survivre à la durée du tour.
+  Future<void> _runPostOnboardingModals(List<String> failedCustomTopics) async {
+    if (!mounted) return;
 
     if (mounted && failedCustomTopics.isNotEmpty) {
       // Dialog bloquant : les bottom sheets suivants poseraient un barrier qui
@@ -911,6 +877,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
 
     if (mounted) {
       await showThemeChoiceBottomSheet(context, ref);
+    }
+
+    // Modal de choix d'affichage (Normal / Minimaliste / Ludique), jouée une
+    // seule fois en fin d'onboarding, entre le thème et la modal notif. Gardée
+    // par un flag Hive persistant (belt-and-suspenders : ce flow ne tourne déjà
+    // qu'une fois). Sheet dismissible (pas de barrier non-fermable) → non
+    // intrusive, conforme à la directive PO « conservateur ».
+    if (mounted) {
+      final settingsBox = await Hive.openBox<dynamic>('settings');
+      final displayModeModalSeen = settingsBox.get('display_mode_modal_seen',
+          defaultValue: false) as bool;
+      if (!displayModeModalSeen && mounted) {
+        await showDisplayModeBottomSheet(context, ref);
+        await settingsBox.put('display_mode_modal_seen', true);
+      }
     }
 
     if (mounted) {
@@ -941,6 +922,25 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _restoreLastDedicatedSection();
+      });
+    });
+    // Tour guidé (étape « descends dans tes cartes ») : le bridge pose la clé
+    // de la section à révéler ; on l'`ensureVisible` puis on remet à null.
+    ref.listen<GlobalKey?>(tourScrollTargetProvider, (_, key) {
+      if (key == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = key.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+            alignment: 0.1,
+          );
+        }
+        if (mounted) {
+          ref.read(tourScrollTargetProvider.notifier).state = null;
+        }
       });
     });
     // Flow post-onboarding : joué une seule fois quand Essentiel a chargé ses
@@ -1087,11 +1087,6 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Widget _buildContent(BuildContext context, FluxContinuState state) {
     final notifier = ref.read(fluxContinuProvider.notifier);
     final colors = context.facteurColors;
-    final impressionSlot = ref.watch(firstImpressionSlotProvider);
-    final totalArticles = state.sections.fold<int>(
-      0,
-      (sum, s) => sum + s.totalCount,
-    );
     // Android peut fermer l'app programmatiquement ; iOS l'interdit (App
     // Store) → on y montre une phrase de clôture au lieu du bouton.
     final isAndroid = defaultTargetPlatform == TargetPlatform.android;
@@ -1117,22 +1112,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           slivers: [
             // NB : le header (logo · streak · réglages) vit dans le scaffold de
             // page partagé — fixe, hors du scroll.
-            SliverToBoxAdapter(
-              child: impressionSlot == FirstImpressionSlot.renudgeBanner
-                  ? const NotificationRenudgeBanner()
-                  : const SizedBox.shrink(),
-            ),
-            SliverToBoxAdapter(
-              child: impressionSlot == FirstImpressionSlot.wellInformed
-                  ? const WellInformedPrompt()
-                  : const SizedBox.shrink(),
-            ),
-            SliverToBoxAdapter(
-              child: impressionSlot == FirstImpressionSlot.geolocPrompt
-                  ? const GeolocPromptBanner()
-                  : const SizedBox.shrink(),
-            ),
             const SliverToBoxAdapter(child: LettresNotificationBanner()),
+            // « Notif du jour » : file unique agrégeant les anciens nudges
+            // inline (renudge / well-informed / géoloc) + messages profil.
+            // Se gate elle-même sur les modales restantes et le bandeau
+            // Lettres.
+            const SliverToBoxAdapter(child: NotifDuJourCard()),
             // One SliverToBoxAdapter per section. Sections never resize during
             // a session, so the simpler non-lazy adapter is sufficient and
             // keeps the GlobalKey measurement reliable.
@@ -1167,16 +1152,30 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
             // ferme réellement l'app sur Android (SystemNavigator.pop) ; sur iOS,
             // la fermeture programmatique est interdite → on masque le bouton et
             // on affiche une phrase de clôture à la place.
+            // La carte feedback (Epic 13) est fusionnée SOUS `_closingKey` avec
+            // la carte « Fin de tournée » : c'est la boîte portée par cette clé
+            // que [_recomputeSnapAnchors] mesure pour cadrer le bas de la
+            // section de clôture. Rendue en sliver séparé sans clé, elle était
+            // invisible du calcul d'ancres → le snap la « repoussait » hors zone
+            // de repos. La Column les réunit en une seule section mesurable.
             SliverToBoxAdapter(
               child: KeyedSubtree(
                 key: _closingKey,
+                // « Ton avis compte » est désormais une sous-carte interne de
+                // « Tu es à jour », séparée par un divider : une seule boîte
+                // visuelle mesurée par les ancres de snap. Sa hauteur change en
+                // asynchrone (résolution invite / vote → « Merci ») ⇒ elle
+                // signale ces relayouts pour rafraîchir les ancres de snap.
                 child: ClosingCardV18(
-                  articleCount: totalArticles,
                   onContinue: () => context.go(RoutePaths.flaner),
                   onClose: isAndroid ? () => SystemNavigator.pop() : null,
                   closeHint: isAndroid
                       ? null
                       : 'Vous pouvez refermer l’app — à demain',
+                  secondary: FeedbackClosingCard(
+                    embedded: true,
+                    onLayoutChanged: _scheduleAnchorRecompute,
+                  ),
                 ),
               ),
             ),
@@ -1233,19 +1232,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       if (state.grilleSlotIndex == i) {
         slivers.add(_grilleSliver);
       }
-      if (i > 0) {
-        slivers.add(
-          SliverToBoxAdapter(
-            child: _SectionPassageDot(
-              index: i - 1,
-              pulseListenable: _sectionPassagePulse,
-              approachListenable: _boundaryApproach,
-            ),
-          ),
-        );
-      }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
+      // Story 22.3 — une section suggérée ne porte pas l'étoile « favori »
+      // (elle se gère via son badge « Choisie pour vous » + sheet), pour ne pas
+      // confondre les deux affordances.
+      final isSuggested = section is FeedThemeSection && section.isSuggested;
       // Mode personnalisé : préfixe l'inline « Gérer / Tes N favoris » au-dessus
       // du `SectionBlock`, à l'intérieur du subtree mesuré → l'inline fait
       // partie du bloc de snap de cette section (cf. [inlineTargetIndex]).
@@ -1255,60 +1247,85 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         SliverToBoxAdapter(
           child: KeyedSubtree(
             key: _sectionKeys[i],
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (showInlineHere)
-                  MyInterestsIntro(
-                    favoriteCount: favoriteCount,
-                    onTapManage: () => showTourneeComposerSheet(context),
+            // Ancre du tour guidé (étape 2 — 1ʳᵉ section de contenu après le
+            // hero). `inlineTargetIndex` désigne déjà cette section.
+            child: KeyedSubtree(
+              key: i == inlineTargetIndex ? tourActusSectionKey : null,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (showInlineHere)
+                    MyInterestsIntro(
+                      favoriteCount: favoriteCount,
+                      onTapManage: () => showTourneeComposerSheet(context),
+                    ),
+                  _FreeReadEdgeFade(
+                    index: i,
+                    tallSections: _tallSections,
+                    child: SectionBlock(
+                      section: section,
+                      onTapArticle: (a) => _openArticle(context, a),
+                      onDismissArticle: _onSwipeDismiss,
+                      pendingFeedbackIds: _pendingFeedback,
+                      onSelectFeedbackChip: (id, chip) =>
+                          _onSelectFeedbackChip(context, id, chip),
+                      onResolveFeedback: _resolveFeedback,
+                      onUndoFeedback: _undoFeedback,
+                      enableSwipeHintOnFirstCard:
+                          i == firstSwipeableSectionIndex && _showSwipeHint,
+                      onSwipeHintComplete: _onSwipeHintComplete,
+                      firstSwipeableCardAnchor: i == firstSwipeableSectionIndex
+                          ? fluxContinuFirstCardKey
+                          : null,
+                      onSwipeConversion: _recordSwipeConversion,
+                      onLongPressConversion: _recordLongPressConversion,
+                      onTapFavorite: isFavorite && !isSuggested
+                          ? () => showTourneeComposerSheet(context)
+                          : null,
+                      // Story 22.3 — badge « Choisie pour vous » → sheet explicative.
+                      onTapSuggestionInfo: isSuggested
+                          ? () =>
+                              _openSuggestionSheet(context, section, notifier)
+                          : null,
+                      // Story 23.4 — bouton réglages (tune) sur la section veille →
+                      // ouvre la config en édition. Réutilisé par le CTA d'état vide.
+                      onTapSettings: section.kind == SectionKind.veille
+                          ? () => context.push(
+                                '${RoutePaths.veilleConfig}?mode=edit',
+                              )
+                          : null,
+                      // CTA « Plus de sources (X) » / footer « Étoffer X » d'une
+                      // section thème → page **dédiée** du thème
+                      // (`ThemeSourcesScreen` : catalogue backend complet du
+                      // thème, ajout par source). Sujet custom (hors macro-thème,
+                      // sans page dédiée) → page d'ajout générique.
+                      onAddSources: section is FeedThemeSection &&
+                              section.kind == SectionKind.theme
+                          ? () {
+                              if (isCatalogTheme(section.themeSlug)) {
+                                // Même route que le ThemeExplorer (catalogue
+                                // dédié du thème) : push par chemin + `extra` =
+                                // libellé pour le titre.
+                                context.push(
+                                  '/settings/sources/theme/${section.themeSlug}',
+                                  extra: section.label,
+                                );
+                              } else {
+                                context.pushNamed(RouteNames.addSource);
+                              }
+                            }
+                          : null,
+                      onSeeAll: section is FeedThemeSection
+                          ? (section.kind == SectionKind.source
+                              ? () => _openSourceSection(context, section)
+                              : () => _openThemeSection(context, section))
+                          : section is DigestTopicSection
+                              ? () => _openDigestSection(context, section)
+                              : null,
+                    ),
                   ),
-                _FreeReadEdgeFade(
-                  index: i,
-                  tallSections: _tallSections,
-                  child: SectionBlock(
-                    section: section,
-                    onTapArticle: (a) => _openArticle(context, a),
-                    onDismissArticle: _onSwipeDismiss,
-                    pendingFeedbackIds: _pendingFeedback,
-                    onSelectFeedbackChip: (id, chip) =>
-                        _onSelectFeedbackChip(context, id, chip),
-                    onResolveFeedback: _resolveFeedback,
-                    onUndoFeedback: _undoFeedback,
-                    enableSwipeHintOnFirstCard:
-                        i == firstSwipeableSectionIndex && _showSwipeHint,
-                    onSwipeHintComplete: _onSwipeHintComplete,
-                    firstSwipeableCardAnchor: i == firstSwipeableSectionIndex
-                        ? fluxContinuFirstCardKey
-                        : null,
-                    onSwipeConversion: _recordSwipeConversion,
-                    onLongPressConversion: _recordLongPressConversion,
-                    onTapFavorite: isFavorite
-                        ? () => showTourneeComposerSheet(context)
-                        : null,
-                    // Story 23.4 — bouton réglages (tune) sur la section veille →
-                    // ouvre la config en édition. Réutilisé par le CTA d'état vide.
-                    onTapSettings: section.kind == SectionKind.veille
-                        ? () => context.push(
-                              '${RoutePaths.veilleConfig}?mode=edit',
-                            )
-                        : null,
-                    // Tournée bugs E2E — CTA « Ajouter des sources » de l'empty-state
-                    // d'une section thème favorite vide → ouvre « Composer ma Tournée ».
-                    onAddSources: section is FeedThemeSection &&
-                            section.kind == SectionKind.theme
-                        ? () => showTourneeComposerSheet(context)
-                        : null,
-                    onSeeAll: section is FeedThemeSection
-                        ? (section.kind == SectionKind.source
-                            ? () => _openSourceSection(context, section)
-                            : () => _openThemeSection(context, section))
-                        : section is DigestTopicSection
-                            ? () => _openDigestSection(context, section)
-                            : null,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -1381,7 +1398,10 @@ class _FluxContinuSkeleton extends StatelessWidget {
             logoUrl: isSource ? section.sourceLogoUrl : null,
           ),
         );
-        children.add(const ExploreDiscoverySkeleton());
+        // Issue #1 — réserve la **hauteur finale** (coreVisibleCount cartes) avec
+        // la même carte squelette que les coquilles de section, pour que la
+        // séquence cold-skeleton → Phase 1 → Phase 2 garde une géométrie stable.
+        children.addAll(sectionSkeletonCards(section.coreVisibleCount));
         children.add(const SizedBox(height: 16));
       }
     }
@@ -1519,151 +1539,6 @@ double _simulationEndX(Simulation sim, ScrollMetrics position) {
     if (sim.isDone(t)) break;
   }
   return last;
-}
-
-class _SectionPassagePulse {
-  final int index;
-  final int sequence;
-
-  const _SectionPassagePulse({required this.index, required this.sequence});
-}
-
-class _SectionPassageDot extends StatefulWidget {
-  final int index;
-  final ValueListenable<_SectionPassagePulse?> pulseListenable;
-
-  /// (A1) Drag-time feedforward: when `value.dotIndex == index`, the dot grows
-  /// and brightens with `value.proximity` *before* the snap commits, fusing
-  /// feedforward and the post-validation [pulseListenable] pulse in one object.
-  final ValueListenable<_BoundaryApproach?> approachListenable;
-
-  _SectionPassageDot({
-    required this.index,
-    required this.pulseListenable,
-    required this.approachListenable,
-  }) : super(key: ValueKey('section_passage_dot_$index'));
-
-  @override
-  State<_SectionPassageDot> createState() => _SectionPassageDotState();
-}
-
-class _SectionPassageDotState extends State<_SectionPassageDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulseController;
-
-  /// Cached rebuild trigger (pulse OR drag-approach) so the merged listenable
-  /// isn't re-allocated on every build. Rebuilt only if [approachListenable]
-  /// identity changes.
-  late Listenable _repaint;
-  int _lastSequence = -1;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 360),
-    );
-    _repaint = Listenable.merge([_pulseController, widget.approachListenable]);
-    widget.pulseListenable.addListener(_onPulse);
-  }
-
-  @override
-  void didUpdateWidget(_SectionPassageDot oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.pulseListenable != widget.pulseListenable) {
-      oldWidget.pulseListenable.removeListener(_onPulse);
-      widget.pulseListenable.addListener(_onPulse);
-    }
-    if (oldWidget.approachListenable != widget.approachListenable) {
-      _repaint = Listenable.merge([
-        _pulseController,
-        widget.approachListenable,
-      ]);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.pulseListenable.removeListener(_onPulse);
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  void _onPulse() {
-    final pulse = widget.pulseListenable.value;
-    if (pulse == null || pulse.index != widget.index) return;
-    if (pulse.sequence == _lastSequence) return;
-    _lastSequence = pulse.sequence;
-    _pulseController
-      ..stop()
-      ..value = 0
-      ..forward();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final dotColor = context.isDarkMode
-        ? Colors.white.withValues(alpha: 0.42)
-        : Colors.black.withValues(alpha: 0.34);
-    return Semantics(
-      label: 'Passage de section',
-      child: SizedBox(
-        height: 36,
-        child: Align(
-          alignment: const Alignment(0, -0.68),
-          child: AnimatedBuilder(
-            // Rebuild on either the post-validation pulse OR the drag-time
-            // approach cue — both feed the same dot (cached merged listenable).
-            animation: _repaint,
-            builder: (context, _) {
-              final t = Curves.easeOutCubic.transform(_pulseController.value);
-              final pulseBump = 0.30 * (1 - (2 * t - 1).abs()).clamp(0.0, 1.0);
-              final glow = (1 - t).clamp(0.0, 1.0);
-              // Feedforward proximity (0 when this dot isn't the one being
-              // approached). Folded into the same scale/alpha/shadow as the
-              // pulse so the two cues read as one continuous gesture.
-              final approach = widget.approachListenable.value;
-              final proximity =
-                  (approach != null && approach.dotIndex == widget.index)
-                      ? approach.proximity
-                      : 0.0;
-              final scale = 1 + pulseBump + 0.9 * proximity;
-              final fillAlpha = (0.76 + 0.14 * glow + 0.20 * proximity).clamp(
-                0.0,
-                1.0,
-              );
-              return Transform.scale(
-                scale: scale,
-                child: Container(
-                  width: 2.5,
-                  height: 2.5,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: dotColor.withValues(alpha: fillAlpha),
-                    boxShadow: [
-                      BoxShadow(
-                        color: dotColor.withValues(
-                          alpha: 0.13 * glow + 0.30 * proximity,
-                        ),
-                        blurRadius: 5 + 4 * proximity,
-                        spreadRadius: 0.5 + proximity,
-                      ),
-                    ],
-                    border: Border.all(
-                      color: colors.backgroundPrimary.withValues(alpha: 0.78),
-                      width: 0.75,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// (A3) « Carte haute = lecture libre » signifier. A section taller than the

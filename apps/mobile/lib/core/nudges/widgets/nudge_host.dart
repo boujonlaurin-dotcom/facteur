@@ -81,6 +81,7 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
   }
 
   Future<void> _waitForAnchor(String id, int generation) async {
+    double? lastY;
     for (var attempt = 0; attempt < 60; attempt++) {
       await Future<void>.delayed(
         attempt == 0 ? Duration.zero : const Duration(milliseconds: 100),
@@ -98,28 +99,39 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
         return;
       }
       final anchor = _anchorFor(id, currentLocation);
-      // N'afficher que si l'ancre est réellement visible à l'écran : un
-      // spotlight sur une cible hors viewport peint le voile plein écran sans
-      // trou ni bulle accessibles → utilisateur bloqué derrière un voile
-      // uniforme (freeze au refresh de l'Essentiel).
-      if (anchor != null && _isAnchorOnScreen(anchor)) {
-        _showSpotlight(id, anchor);
+      // Mesure unique du render box : Y du haut de l'ancre si elle est montée,
+      // mesurée ET entièrement visible, sinon null. Deux raisons de ne pas
+      // afficher :
+      // - hors viewport → le spotlight peint le voile plein écran sans trou ni
+      //   bulle accessibles → utilisateur bloqué (freeze au refresh Essentiel) ;
+      // - en plein scroll → l'overlay fige les coordonnées à la création, donc
+      //   un Y qui bouge entre deux sondages (~100 ms) décalerait voile/trou.
+      // On exige donc une ancre visible ET stable (même Y sur deux sondages
+      // consécutifs) avant d'afficher (cf. bug-modals-intrusives).
+      final y = anchor == null ? null : _onScreenAnchorTopY(anchor);
+      if (y != null && lastY != null && (y - lastY).abs() < 1.0) {
+        _showSpotlight(id, anchor!);
         unawaited(_watchAnchorWhileShown(id, anchor));
         return;
       }
+      lastY = y;
     }
   }
 
-  /// Vrai si la cible est montée, mesurée et entièrement visible verticalement
-  /// (il faut aussi la place pour le trou du spotlight et la bulle).
-  bool _isAnchorOnScreen(GlobalKey anchor) {
+  /// Position Y globale (haut de l'ancre) si elle est montée, mesurée ET
+  /// entièrement visible verticalement (il faut aussi la place pour le trou du
+  /// spotlight et la bulle), sinon `null`. Une seule mesure du render box sert
+  /// à la fois à décider de l'affichage et à détecter un scroll (Y qui varie
+  /// entre deux sondages).
+  double? _onScreenAnchorTopY(GlobalKey anchor) {
     final ctx = anchor.currentContext;
-    if (ctx == null || !mounted) return false;
+    if (ctx == null || !mounted) return null;
     final box = ctx.findRenderObject();
-    if (box is! RenderBox || !box.attached || !box.hasSize) return false;
-    final topLeft = box.localToGlobal(Offset.zero);
-    final screen = MediaQuery.sizeOf(context);
-    return topLeft.dy >= 0 && topLeft.dy + box.size.height <= screen.height;
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    final topY = box.localToGlobal(Offset.zero).dy;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    if (topY < 0 || topY + box.size.height > screenHeight) return null;
+    return topY;
   }
 
   /// Tant que le spotlight est affiché, vérifie que sa cible existe toujours :
@@ -130,7 +142,12 @@ class _NudgeHostState extends ConsumerState<NudgeHost> {
     while (mounted && _current != null && _shownForId == id) {
       await Future<void>.delayed(const Duration(milliseconds: 300));
       if (!mounted || _current == null || _shownForId != id) return;
-      if (anchor.currentContext == null) {
+      // `_onScreenAnchorTopY` renvoie null si la cible est démontée (rebuild des
+      // sections au pull-to-refresh) OU déplacée hors viewport (scroll pendant
+      // l'affichage) : l'overlay garde alors les coordonnées figées à la
+      // création → voile/trou décalés. On ferme proprement sans markSeen
+      // (l'utilisateur n'a pas eu le temps de lire) — cf. bug-modals-intrusives.
+      if (_onScreenAnchorTopY(anchor) == null) {
         _closeSpotlight(id, markSeen: false);
         return;
       }

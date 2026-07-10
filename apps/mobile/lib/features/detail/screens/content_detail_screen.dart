@@ -24,23 +24,23 @@ import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
-import '../../../core/providers/navigation_providers.dart';
 import '../../feed/providers/feed_provider.dart';
+import '../../../config/routes.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/repositories/user_interests_repository.dart'
-    show FavoriteCapReachedException;
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/premium_source_connection.dart';
 import '../../sources/widgets/premium_web_view.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
+import '../utils/webview_history_tracker.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
+import '../widgets/deep_recommendation_card.dart';
 import '../widgets/youtube_player_widget.dart';
 import '../widgets/note_input_sheet.dart';
 import '../../../core/nudges/nudge_coordinator.dart';
@@ -48,7 +48,6 @@ import '../../../core/nudges/nudge_counters.dart';
 import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
-import '../../../config/topic_labels.dart';
 import '../../digest/widgets/editorial_badge.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../lettres/providers/letters_provider.dart';
@@ -184,12 +183,12 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
 }
 
 /// Height of the header content area (below the status bar).
-/// = top padding (16) + icon row (~36) + bottom padding (8) + 2px safety margin.
-const double _kHeaderContentHeight = 62;
+/// = top padding (12) + icon row (~39) + bottom padding (8) + 2px safety margin.
+const double _kHeaderContentHeight = 59;
 
 /// Visual bottom of the header for overlay anchoring (progress bar, sticky headers).
 /// Slightly less than the true bottom to guarantee 1px overlap and eliminate rounding gaps.
-const double _kHeaderVisualBottom = 59;
+const double _kHeaderVisualBottom = 56;
 
 /// Height of the footer content area (above the safe-area bottom inset).
 /// = vertical padding (12+12) + button row height (44).
@@ -225,6 +224,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // pour réutiliser la session du média (cookies). Distinct du WebView
   // webview_flutter du scroll-to-site des sources gratuites.
   InAppWebViewController? _premiumWebController;
+  // Suit la profondeur de navigation utilisateur dans le WebView pour sortir
+  // en 1 clic sur l'article et ne remonter l'historique que pour de vraies
+  // navigations de liens suivies (cf. WebViewHistoryTracker).
+  final _historyTracker = WebViewHistoryTracker();
   // Bandeau non-bloquant « Session expirée — Reconnecter » (paywall détecté en
   // mode reader sur une source connectée).
   bool _premiumSessionExpired = false;
@@ -281,6 +284,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
+  // « Arrival gate » WebView : à l'entrée dans une WebView, le footer est caché
+  // et toute *révélation* est bloquée tant qu'on n'a pas scrollé d'au moins
+  // [_kWebViewFooterRevealThreshold] px — sinon la garde overscroll (scroll à 0)
+  // re-révèle le footer au moindre contact et masque le bandeau cookies que les
+  // sites verrouillent en bas d'écran. La garde ne concerne QUE le mode WebView.
+  bool _footerRevealLocked = false;
+  static const double _kWebViewFooterRevealThreshold = 48.0; // px
   double _footerAutoStart = 0.0;
   double _footerAutoTarget = 0.0;
   late AnimationController _footerAutoController;
@@ -305,11 +315,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   PerspectivesSectionStatus get _perspectivesStatus =>
       resolvePerspectivesStatus(_perspectivesResponse);
 
+  /// Le wash du titre de référence se déclenche quand la couverture est prête
+  /// (la section est désormais toujours dépliée — plus de toggle).
+  bool get _showPivot => _perspectivesStatus == PerspectivesSectionStatus.ready;
+
   List<Perspective> get _inlinePerspectives {
     final response = _perspectivesResponse;
     if (response == null) return const <Perspective>[];
     return response.perspectives
         .map(
+          // DÉSACTIVÉ (T1) : highlighting biais retiré → on n'alimente plus
+          // highlightSpans / sharedTokens (défaut const []) ⇒ titres plain dans
+          // le carrousel de couverture et le bottom sheet.
           (PerspectiveData p) => Perspective(
             title: p.title,
             url: p.url,
@@ -317,22 +334,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             sourceDomain: p.sourceDomain,
             biasStance: p.biasStance,
             publishedAt: p.publishedAt,
-            highlightSpans: p.highlightSpans,
-            sharedTokens: p.sharedTokens,
+            description: p.description,
+            reliabilityScore: p.reliabilityScore,
           ),
         )
         .toList();
   }
 
-  // Perspectives analysis state (lifted from inline section)
-  PerspectivesAnalysisState _perspectivesAnalysisState =
-      PerspectivesAnalysisState.idle;
-  String? _perspectivesAnalysisText;
-  final GlobalKey _analysisZoneKey = GlobalKey();
-
-  // Perspectives section state
-  Set<String> _perspectivesSelectedSegments = {};
-  bool _perspectivesExpanded = false;
+  // État réactif du bottom sheet « Analyse Facteur ». Le sheet écoute ce
+  // notifier pour refléter loading → done/error sans rebuild de l'écran.
+  final ValueNotifier<AnalysisSheetData> _analysisSheetData = ValueNotifier(
+    const AnalysisSheetData(),
+  );
 
   /// `true` lorsqu'on lit une "autre source" (perspective) : URL seule, pas de
   /// Content backend ⇒ pas de fetch / perspectives / tracking.
@@ -370,6 +383,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _contentResolved = true;
       _isConsumed = false;
       _showWebView = true;
+      // Arrival gate : footer caché + révélation verrouillée jusqu'au 1er scroll
+      // (laisse le bandeau cookies du site visible en bas).
+      _footerOffset.value = 1.0;
+      _footerRevealLocked = true;
     } else {
       _content = widget.content;
       if (_content != null) {
@@ -525,16 +542,45 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Pre-load the WebView controller for progressive scroll-to-site.
+  /// Vrai si [content] provient d'une source premium suivie dont l'abonnement
+  /// est connecté (session cookies) — on sert alors le `PremiumWebView` plutôt
+  /// que le contrôleur gratuit. Lecture ponctuelle (non réactive).
+  bool _isConnectedPremiumSource(Content? content) {
+    if (content == null) return false;
+    final userSources = ref.read(userSourcesProvider).valueOrNull ?? const [];
+    return userSources.any(
+      (s) => s.id == content.source.id && s.hasSubscription,
+    );
+  }
+
+  /// Horodatage courant (ms) pour [_historyTracker] — centralisé pour alléger
+  /// le câblage des callbacks WebView.
+  int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+
   void _initScrollToSiteWebView() {
     final content = _content;
     if (content == null || kIsWeb) return;
     if (content.contentType != ContentType.article) return;
     if (!content.hasInAppContent) return;
 
+    // Source premium connectée : la couche révélée au scroll rend un
+    // `PremiumWebView` (cookies) — inutile (et contre-productif : paywall)
+    // de charger le contrôleur gratuit sur l'URL payante. `_buildWebViewLayer`
+    // court-circuite avant de toucher `_webViewController` sur ce chemin.
+    if (_isConnectedPremiumSource(content)) return;
+
+    _historyTracker.reset(_nowMs());
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
-        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
+        NavigationDelegate(
+          onPageStarted: (_) =>
+              _historyTracker.onNavStart(_nowMs()),
+          onPageFinished: (_) {
+            _injectScrollBridgeScript();
+            _historyTracker.onNavFinish();
+          },
+        ),
       )
       ..addJavaScriptChannel(
         'ScrollBridge',
@@ -674,7 +720,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
     if (msg.startsWith('scroll_y:')) {
       final y = double.tryParse(msg.substring(9));
-      if (y != null) _webScrollY = y;
+      if (y != null) _updateWebScrollY(y);
       return;
     }
     if (msg.startsWith('progress:')) {
@@ -848,30 +894,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _offsetsComputed = true;
   }
 
-  /// Shared handler for the inline "Couverture médiatique" toggle.
-  void _onPerspectivesToggle() {
-    HapticFeedback.lightImpact();
-    setState(() {
-      _perspectivesExpanded = !_perspectivesExpanded;
-    });
-  }
-
-  /// Toggles a perspectives bias-bar segment filter. Mirrors the logic in
-  /// [_PerspectivesInlineSectionState._onSegmentTapInternal].
-  void _onPerspectivesSegmentTap(String key) {
-    setState(() {
-      final current = _perspectivesSelectedSegments;
-      if (current.contains(key)) {
-        _perspectivesSelectedSegments =
-            current.length == 1 ? {} : (Set.from(current)..remove(key));
-      } else {
-        _perspectivesSelectedSegments = current.isEmpty || current.length == 3
-            ? {key}
-            : (Set.from(current)..add(key));
-      }
-    });
-  }
-
   /// Exit WebView mode and return to in-app article reading.
   void _exitWebViewMode() {
     setState(() {
@@ -883,6 +905,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerPermanent.value = false;
     _animateFooterTo(0.0);
     _scrollController.jumpTo(0);
+  }
+
+  /// Gère le retour arrière du reader (bouton header + bouton système Android).
+  ///
+  /// En mode WebView, on remonte l'historique interne du navigateur **seulement**
+  /// pour de vraies navigations de liens suivies par l'utilisateur (profondeur
+  /// suivie par [_historyTracker]) : sur la page d'origine de l'article la
+  /// profondeur est nulle, donc **1 clic suffit** pour sortir vers le reader.
+  /// `canGoBack()` reste une simple garde de sécurité (les entrées d'historique
+  /// fantômes du chargement le rendraient sinon toujours `true`).
+  /// Hors WebView, on ferme l'écran normalement (retour au feed).
+  Future<void> _handleReaderBack() async {
+    if (!_isWebViewActive) {
+      if (mounted) context.pop(_content);
+      return;
+    }
+    // `_premiumWebController` n'est renseigné que sur le chemin premium
+    // (flutter_inappwebview) ; sinon on est sur le WebView gratuit
+    // (webview_flutter). Les deux exposent canGoBack()/goBack() mais sans
+    // interface commune (packages distincts) : on capture le contrôleur actif
+    // via ses deux méthodes pour n'avoir qu'un seul chemin de retour.
+    final premium = _premiumWebController;
+    final free = _webViewController;
+    final Future<bool> Function()? canGoBack =
+        premium?.canGoBack ?? free?.canGoBack;
+    final Future<void> Function()? goBack = premium?.goBack ?? free?.goBack;
+    if (_historyTracker.canClimb &&
+        canGoBack != null &&
+        await canGoBack()) {
+      _historyTracker.willGoBack();
+      await goBack!();
+      return;
+    }
+    if (mounted) _exitWebViewMode();
   }
 
   /// Scroll listener driving WebView activation.
@@ -921,6 +977,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _scrollStopTimer?.cancel();
       _inactivityTimer?.cancel();
       _animateFooterTo(1.0);
+      // Arrival gate : verrouille la révélation jusqu'au 1er scroll dans le site
+      // (la garde overscroll `_webScrollY <= 0` re-révélerait sinon le footer).
+      _footerRevealLocked = true;
     }
   }
 
@@ -938,13 +997,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerAutoController.forward(from: 0);
   }
 
+  /// Met à jour [_webScrollY] depuis la WebView (ScrollBridge ou callback
+  /// premium) et **lève l'arrival gate** dès que le scroll dépasse le seuil :
+  /// le footer peut alors réapparaître normalement au scroll vers le haut.
+  void _updateWebScrollY(double y) {
+    _webScrollY = y;
+    if (_footerRevealLocked && y >= _kWebViewFooterRevealThreshold) {
+      _footerRevealLocked = false;
+    }
+  }
+
   /// Apply a page-scroll-equivalent [delta] (positive = page going down)
   /// to the footer offset. The header is pinned and never reacts to scroll.
   void _applyChromeOffsetDelta(double delta) {
     if (_footerPermanent.value) return;
+    // Arrival gate : tant que verrouillée, on ignore les deltas de *révélation*
+    // (delta négatif = scroll vers le haut) pour ne pas découvrir le footer sur
+    // le bandeau cookies ; seuls les masquages (delta positif) passent.
+    if (_footerRevealLocked && delta < 0) return;
     final footerHeight =
         _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
-    _footerOffset.value = (_footerOffset.value + delta / footerHeight).clamp(
+    // Hide a touch faster than it reveals: bias downward (hide) deltas so the
+    // footer clears the way more readily when the user scrolls into the article.
+    final adjusted = delta > 0 ? delta * 1.4 : delta;
+    _footerOffset.value = (_footerOffset.value + adjusted / footerHeight).clamp(
       0.0,
       1.0,
     );
@@ -963,7 +1039,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _applyChromeOffsetDelta(delta);
     }
     _scrollStopTimer?.cancel();
-    _scrollStopTimer = Timer(const Duration(milliseconds: 2000), () {
+    _scrollStopTimer = Timer(const Duration(seconds: 10), () {
       if (mounted) _animateFooterTo(0.0);
     });
   }
@@ -992,7 +1068,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onGestureEnd(double velocityPxPerSec) {
     if (_content?.isVideo ?? false) return;
     if (_webScrollY <= 0) {
-      if (!_footerPermanent.value && _footerOffset.value != 0) {
+      // Arrival gate : ne pas re-révéler le footer en haut de page tant que la
+      // garde est armée (sinon masque le bandeau cookies dès le 1er contact).
+      if (!_footerRevealLocked &&
+          !_footerPermanent.value &&
+          _footerOffset.value != 0) {
         _animateFooterTo(0);
       }
       return;
@@ -1004,6 +1084,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     } else if (velocityPxPerSec < -kVelocitySnapThreshold) {
       target = 0.0;
     }
+    // Arrival gate : ignore un flick de révélation (target 0.0) avant le seuil.
+    if (_footerRevealLocked && target == 0.0) return;
     if (target != null &&
         !_footerPermanent.value &&
         _footerOffset.value != target) {
@@ -1159,6 +1241,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _content = content.copyWith(isSaved: newSaved);
     });
 
+    // Ouverture immédiate de la modal au save (pas à l'unsave), sans attendre
+    // les appels réseau : la sheet lit les collections déjà en cache. Le
+    // toggleSave + l'ajout à la collection par défaut se poursuivent en fond.
+    if (newSaved) {
+      CollectionPickerSheet.show(
+        context,
+        content.id,
+        onAddNote: () => _openNoteSheet(),
+      );
+    }
+
     try {
       final supabase = Supabase.instance.client;
       final apiClient = ApiClient(supabase);
@@ -1173,11 +1266,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ref.invalidate(collectionsProvider);
           unawaited(ref.read(lettersProvider.notifier).silentRefresh());
         }
-        CollectionPickerSheet.show(
-          context,
-          content.id,
-          onAddNote: () => _openNoteSheet(),
-        );
       }
     } catch (e) {
       // Rollback on error
@@ -1419,6 +1507,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _articleLayerUnmountTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
     _perspectivesRefetchTimer?.cancel();
+    _analysisSheetData.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
     _perspectivesPulseController?.dispose();
@@ -1675,8 +1764,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         setState(() {
           _perspectivesResponse = response;
           _perspectivesLoading = false;
-          if (response.perspectives.isEmpty) _perspectivesExpanded = false;
         });
+        // Prefill : si le back renvoie déjà l'analyse cachée, on seed le sheet
+        // en `done` → ouverture immédiate sans 2ᵉ appel.
+        final cached = response.analysis;
+        if (cached != null && cached.trim().isNotEmpty) {
+          _analysisSheetData.value = AnalysisSheetData(
+            state: PerspectivesAnalysisState.done,
+            text: cached,
+          );
+        }
+        // Refetch one-shot pour compléter une réponse perspectives partielle
+        // (chemin live + refresh background). Le « Pas de recul » est désormais
+        // pré-calculé au digest (story 27.1) et toujours résolu côté serveur
+        // (deep_pending=false) : plus de polling deep à l'ouverture.
         if (response.partial) {
           _schedulePerspectivesPartialRefetch(content.id);
         }
@@ -1692,10 +1793,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             biasDistribution: const {},
           );
           _perspectivesLoading = false;
-          _perspectivesExpanded = false;
         });
       }
     }
+  }
+
+  /// Ouvre l'article de fond « Pas de recul » dans le reader. Le handler de
+  /// route `content/:id` (re)fetch le Content depuis l'id, donc pas d'`extra`.
+  void _openDeepReco(DeepRecommendation reco) {
+    if (reco.contentId.isEmpty) return;
+    context.push('${RoutePaths.flaner}/content/${reco.contentId}');
   }
 
   void _schedulePerspectivesPartialRefetch(String contentId) {
@@ -1707,49 +1814,53 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
-  /// Request Facteur analysis for the perspectives section.
-  /// Called by the floating button in the article reader.
+  /// Request Facteur analysis for the perspectives section. Les transitions
+  /// loading → done/error sont reflétées dans `_analysisSheetData` (le bottom
+  /// sheet l'écoute). Réutilisé comme `onRetry` du sheet.
   Future<void> _requestPerspectivesAnalysis() async {
     final contentId = _perspectivesResponse?.perspectives.isNotEmpty == true
         ? _content?.id
         : null;
     if (contentId == null) return;
 
-    setState(
-      () => _perspectivesAnalysisState = PerspectivesAnalysisState.loading,
+    _analysisSheetData.value = const AnalysisSheetData(
+      state: PerspectivesAnalysisState.loading,
     );
-
-    // Scroll to analysis zone so the user can see the progress
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _analysisZoneKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 400),
-          curve: Curves.easeInOut,
-          alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
-          alignment: 0.8,
-        );
-      }
-    });
 
     try {
       final repository = ref.read(feedRepositoryProvider);
       final result = await repository.analyzePerspectives(contentId);
       if (!mounted) return;
-      setState(() {
-        _perspectivesAnalysisText = result;
-        _perspectivesAnalysisState = result != null
+      _analysisSheetData.value = AnalysisSheetData(
+        state: result != null
             ? PerspectivesAnalysisState.done
-            : PerspectivesAnalysisState.error;
-      });
+            : PerspectivesAnalysisState.error,
+        text: result,
+      );
     } catch (e) {
       debugPrint('Error requesting perspectives analysis: $e');
       if (!mounted) return;
-      setState(
-        () => _perspectivesAnalysisState = PerspectivesAnalysisState.error,
+      _analysisSheetData.value = const AnalysisSheetData(
+        state: PerspectivesAnalysisState.error,
       );
     }
+  }
+
+  /// Ouvre le bottom sheet « Analyse Facteur ». Si l'état est encore `idle`,
+  /// c'est qu'il n'y avait pas d'analyse cachée (sinon le prefill de
+  /// [_fetchPerspectives] aurait déjà seedé `done`) → on lance la requête.
+  /// Le sheet réagit ensuite aux transitions du notifier.
+  void _openPerspectivesAnalysis() {
+    HapticFeedback.mediumImpact();
+    if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
+      _requestPerspectivesAnalysis();
+    }
+    showAnalysisBottomSheet(
+      context: context,
+      data: _analysisSheetData,
+      perspectives: _inlinePerspectives,
+      onRetry: _requestPerspectivesAnalysis,
+    );
   }
 
   @override
@@ -1786,14 +1897,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite = !isConnectedPremiumSource &&
-        content.hasInAppContent &&
+    // Les sources premium connectées gardent l'intermédiaire (reader +
+    // couverture médiatique) comme les sources non-premium : la révélation du
+    // site au scroll bascule sur le `PremiumWebView` (cookies) plutôt que sur
+    // le contrôleur gratuit (cf. `_buildWebViewLayer`), pour ne pas retomber
+    // sur le paywall. On n'exclut donc plus `isConnectedPremiumSource` ici.
+    final useScrollToSite = content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
-    final useInAppReading = !isConnectedPremiumSource &&
-        content.hasInAppContent &&
+    final useInAppReading = content.hasInAppContent &&
         !_showWebView &&
         !useScrollToSite;
     final isVideoContent = content.isVideo;
@@ -1810,129 +1924,142 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       return _buildWebOpenPrompt(context, content);
     }
 
-    return Scaffold(
-      backgroundColor: colors.backgroundPrimary,
-      body: AnimatedBuilder(
-        animation: _exitAnimController,
-        builder: (context, child) {
-          final scale = 1.0 - 0.03 * _exitAnimController.value;
-          return Transform.scale(
-            scale: _isExitAnimating ? scale : 1.0,
-            child: child,
-          );
-        },
-        child: Stack(
-          children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification is ScrollUpdateNotification) {
-                  final delta = notification.scrollDelta ?? 0.0;
-                  final metrics = notification.metrics;
-                  if (metrics.pixels <= 0 && !_isWebViewActive) {
-                    _footerOffset.value = 0.0;
-                  }
+    return PopScope(
+      // En mode WebView, on intercepte le retour système pour remonter
+      // l'historique interne du navigateur avant de quitter vers le reader.
+      canPop: !_isWebViewActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleReaderBack();
+      },
+      child: Scaffold(
+        backgroundColor: colors.backgroundPrimary,
+        body: AnimatedBuilder(
+          animation: _exitAnimController,
+          builder: (context, child) {
+            final scale = 1.0 - 0.03 * _exitAnimController.value;
+            return Transform.scale(
+              scale: _isExitAnimating ? scale : 1.0,
+              child: child,
+            );
+          },
+          child: Stack(
+            children: [
+              NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollUpdateNotification) {
+                    final delta = notification.scrollDelta ?? 0.0;
+                    final metrics = notification.metrics;
+                    if (metrics.pixels <= 0 &&
+                        !_isWebViewActive &&
+                        !_footerRevealLocked) {
+                      _footerOffset.value = 0.0;
+                    }
 
-                  _onScrollDelta(delta);
-                  // Track reading progress from any scrollable (including in-app reader)
-                  if (metrics.maxScrollExtent > 0) {
-                    final rawProgress =
-                        metrics.pixels / metrics.maxScrollExtent;
-                    // Footer becomes permanent at end of ALL content (incl.
-                    // perspectives) for native in-app reading. Skip for
-                    // scroll-to-site (CTA tapped) where reaching the end means
-                    // revealing the WebView, not finishing reading — locking
-                    // the footer there would freeze it visible during the
-                    // entire WebView session.
-                    if (!_footerPermanent.value &&
-                        !_ctaTapped &&
-                        rawProgress >= 0.98) {
-                      _footerPermanent.value = true;
-                      _animateFooterTo(0.0);
-                    }
-                    // Progress bar uses article-only extent so perspectives don't dilute it
-                    final articleExtent =
-                        _articleContentExtent ?? metrics.maxScrollExtent;
-                    final barProgress = metrics.pixels / articleExtent;
-                    final capped = _isPartialContent
-                        ? (barProgress * 0.25).clamp(0.0, 0.25)
-                        : barProgress.clamp(0.0, 1.0);
-                    _readingProgress.value = capped;
-                    if (capped > _maxReadingProgress) {
-                      _maxReadingProgress = capped;
+                    _onScrollDelta(delta);
+                    // Track reading progress from any scrollable (including in-app reader)
+                    if (metrics.maxScrollExtent > 0) {
+                      final rawProgress =
+                          metrics.pixels / metrics.maxScrollExtent;
+                      // Footer becomes permanent at end of ALL content (incl.
+                      // perspectives) for native in-app reading. Skip for
+                      // scroll-to-site (CTA tapped) where reaching the end means
+                      // revealing the WebView, not finishing reading — locking
+                      // the footer there would freeze it visible during the
+                      // entire WebView session.
+                      if (!_footerPermanent.value &&
+                          !_ctaTapped &&
+                          rawProgress >= 0.98) {
+                        _footerPermanent.value = true;
+                        _animateFooterTo(0.0);
+                      }
+                      // Progress bar uses article-only extent so perspectives don't dilute it
+                      final articleExtent =
+                          _articleContentExtent ?? metrics.maxScrollExtent;
+                      final barProgress = metrics.pixels / articleExtent;
+                      final capped = _isPartialContent
+                          ? (barProgress * 0.25).clamp(0.0, 0.25)
+                          : barProgress.clamp(0.0, 1.0);
+                      _readingProgress.value = capped;
+                      if (capped > _maxReadingProgress) {
+                        _maxReadingProgress = capped;
+                      }
                     }
                   }
-                }
-                return false;
-              },
-              child: Positioned.fill(
-                child: isVideoContent
-                    ? _buildVideoContent(context, content)
-                    : useScrollToSite
-                        ? _buildScrollToSiteContent(context, content)
-                        : useInAppReading
-                            ? _buildInAppContent(context, content)
-                            : _buildWebViewFallback(
-                                content,
-                                isConnectedPremiumSource:
-                                    isConnectedPremiumSource,
-                              ),
+                  return false;
+                },
+                child: Positioned.fill(
+                  child: isVideoContent
+                      ? _buildVideoContent(context, content)
+                      : useScrollToSite
+                          ? _buildScrollToSiteContent(context, content)
+                          : useInAppReading
+                              ? _buildInAppContent(context, content)
+                              : _buildWebViewFallback(
+                                  content,
+                                  isConnectedPremiumSource:
+                                      isConnectedPremiumSource,
+                                ),
+                ),
               ),
-            ),
-            // Header — pinned at the top of the screen; no scroll-driven
-            // translation. Earlier iterations slid the header up/down on
-            // scroll but the result felt unstable in the WebView, so the
-            // header is now permanently visible.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: RepaintBoundary(child: _buildHeader(context, content)),
-            ),
-            // Reading progress bar — pinned right below the header.
-            if (content.hasInAppContent ||
-                _isWebViewActive ||
-                isVideoContent ||
-                (!useScrollToSite && !useInAppReading))
+              // Header — pinned at the top of the screen; no scroll-driven
+              // translation. Earlier iterations slid the header up/down on
+              // scroll but the result felt unstable in the WebView, so the
+              // header is now permanently visible.
               Positioned(
-                top: MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                top: 0,
                 left: 0,
                 right: 0,
-                child: RepaintBoundary(child: _buildReadingProgressBar(colors)),
+                child: RepaintBoundary(child: _buildHeader(context, content)),
               ),
-            // Exit animation overlay — fade-to-white + scale-down
-            if (_isExitAnimating)
-              AnimatedBuilder(
-                animation: _exitAnimController,
-                builder: (context, _) {
-                  return Positioned.fill(
-                    child: IgnorePointer(
-                      child: ColoredBox(
-                        color: Colors.white.withValues(
-                          alpha: 0.6 * _exitAnimController.value,
+              // Reading progress bar — pinned right below the header.
+              if (content.hasInAppContent ||
+                  _isWebViewActive ||
+                  isVideoContent ||
+                  (!useScrollToSite && !useInAppReading))
+                Positioned(
+                  top:
+                      MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                  left: 0,
+                  right: 0,
+                  child:
+                      RepaintBoundary(child: _buildReadingProgressBar(colors)),
+                ),
+              // Exit animation overlay — fade-to-white + scale-down
+              if (_isExitAnimating)
+                AnimatedBuilder(
+                  animation: _exitAnimController,
+                  builder: (context, _) {
+                    return Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: Colors.white.withValues(
+                            alpha: 0.6 * _exitAnimController.value,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
+              // Footer — always rendered, mirrors header slide behavior.
+              // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildContentFooter(
+                  context,
+                  content,
+                  isPureWebview:
+                      _showWebView && !useScrollToSite && !useInAppReading,
+                ),
               ),
-            // Footer — always rendered, mirrors header slide behavior.
-            // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _buildContentFooter(
-                context,
-                content,
-                isPureWebview:
-                    _showWebView && !useScrollToSite && !useInAppReading,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
+        // All actions migrated to the persistent footer (article + video/audio).
+        floatingActionButton: null,
       ),
-      // All actions migrated to the persistent footer (article + video/audio).
-      floatingActionButton: null,
     );
   }
 
@@ -1999,6 +2126,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _showWebView = true;
       _ctaTapped = true;
     });
+    // Arrival gate : cache le footer + verrouille la révélation jusqu'au 1er
+    // scroll (préserve le bandeau cookies du site en bas d'écran).
+    _footerRevealLocked = true;
+    _animateFooterTo(1.0);
   }
 
   /// External-source CTA used in the footer for video/audio readers.
@@ -2279,22 +2410,52 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
 
                   // 🌻 Recommander
-                  ScaleTransition(
-                    scale: _likeScaleAnimation,
-                    child: IconButton(
-                      style: iconButtonStyle.copyWith(
-                        backgroundColor: content.isLiked
-                            ? WidgetStatePropertyAll(colors.primary)
-                            : null,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ScaleTransition(
+                        scale: _likeScaleAnimation,
+                        child: IconButton(
+                          style: iconButtonStyle.copyWith(
+                            backgroundColor: content.isLiked
+                                ? WidgetStatePropertyAll(colors.primary)
+                                : null,
+                          ),
+                          onPressed: _toggleLike,
+                          icon: SunflowerIcon(
+                            isActive: content.isLiked,
+                            size: 26,
+                            inactiveColor: colors.textSecondary,
+                          ),
+                          tooltip: 'Recommander',
+                        ),
                       ),
-                      onPressed: _toggleLike,
-                      icon: SunflowerIcon(
-                        isActive: content.isLiked,
-                        size: 26,
-                        inactiveColor: colors.textSecondary,
+                      // Petit glyphe « republier » (style retweet) pour signifier
+                      // que le tournesol partage l'article aux autres lecteurs.
+                      // Purement décoratif, toujours visible, ne capte pas le tap.
+                      Positioned(
+                        right: 2,
+                        bottom: 2,
+                        child: IgnorePointer(
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: content.isLiked
+                                  ? colors.primary
+                                  : colors.backgroundSecondary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              PhosphorIcons.repeat(PhosphorIconsStyle.bold),
+                              size: 11,
+                              color: content.isLiked
+                                  ? Colors.white
+                                  : colors.textSecondary,
+                            ),
+                          ),
+                        ),
                       ),
-                      tooltip: 'Recommander',
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -2384,6 +2545,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             ? InterestState.followed
             : InterestState.unfollowed);
 
+    // Tous les sujets + entités regroupés en une seule balise « X sujets »
+    // (B1) — fini la 2e ligne de chips au-dessus du titre.
+    // La modal n'affiche que le premier topic + toutes les entities.
+    final subjectCount =
+        (content.topics.isNotEmpty ? 1 : 0) + content.entities.length;
+
     // ColoredBox fills the status bar area; SafeArea pushes content below it
     final headerContent = ColoredBox(
       color: colors.backgroundPrimary,
@@ -2391,7 +2558,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         bottom: false,
         child: Container(
           padding: const EdgeInsets.only(
-            top: FacteurSpacing.space4,
+            top: FacteurSpacing.space3,
             bottom: FacteurSpacing.space2,
             left: FacteurSpacing.space2,
             right: FacteurSpacing.space2,
@@ -2411,181 +2578,122 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     size: 16,
                     color: colors.textSecondary,
                   ),
-                  onPressed: _isWebViewActive
-                      ? _exitWebViewMode
-                      : () => context.pop(_content),
+                  onPressed: _handleReaderBack,
                 ),
                 const SizedBox(width: 4),
 
-                // Source logo + name + gear: tappable → filter feed by source
+                // CTA source unique : logo + nom + étoile (indicateur) + heure,
+                // le tout tappable → ouvre directement la modal source (plus de
+                // roue dentée, plus de filtre feed ; le suivi / favori se font
+                // dans la modal). Balise « X sujets » séparée à droite.
                 Expanded(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _SourceBadgeNudge(
-                          child: GestureDetector(
-                            onTap: () {
-                              ref
-                                  .read(feedProvider.notifier)
-                                  .setSource(content.source.id);
-                              ref
-                                  .read(feedScrollTriggerProvider.notifier)
-                                  .state++;
-                              context.pop(_content);
-                            },
-                            onLongPress: () => TopicChip.showArticleSheet(
-                              context,
-                              content,
-                              initialSection: ArticleSheetSection.source,
-                            ),
-                            behavior: HitTestBehavior.opaque,
-                            child: Row(
-                              children: [
-                                // Source logo (28px, fallback initiales)
-                                SourceLogoAvatar(
-                                  source: content.source,
-                                  size: 28,
-                                  radius: 10,
+                  child: _SourceBadgeNudge(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(16),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () => TopicChip.showArticleSheet(
+                                  context,
+                                  content,
+                                  initialSection: ArticleSheetSection.source,
                                 ),
-                                const SizedBox(width: 8),
-
-                                // Source Name + Time + Badges
-                                Flexible(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                child: Ink(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colors.backgroundSecondary,
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color:
+                                          colors.border.withValues(alpha: 0.6),
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      // Ligne 1 : Nom (mini-chip) + Badges
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Opacity(
-                                              opacity: 0.9,
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 6,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: Color.lerp(
-                                                    colors.backgroundSecondary,
-                                                    Colors.black,
-                                                    0.003,
-                                                  )!,
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: Text(
-                                                  content.source.name,
-                                                  style: textTheme.labelMedium
-                                                      ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: colors.textPrimary,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          // Bias dot
-                                          if (content.source.biasStance !=
-                                              'unknown') ...[
-                                            const SizedBox(width: 6),
-                                            Container(
-                                              width: 7,
-                                              height: 7,
-                                              decoration: BoxDecoration(
-                                                color: content.source
-                                                    .getBiasColor(),
-                                                shape: BoxShape.circle,
-                                              ),
-                                            ),
-                                          ],
-                                          // Editorial badge (digest articles)
-                                          if (content.editorialBadge !=
-                                              null) ...[
-                                            const SizedBox(width: 6),
-                                            EditorialBadge.chip(
-                                                  content.editorialBadge,
-                                                  context: context,
-                                                ) ??
-                                                const SizedBox.shrink(),
-                                          ],
-                                          // Gear icon — same scale as bias dot
-                                          const SizedBox(width: 4),
-                                          Material(
-                                            color: Colors.transparent,
-                                            shape: const CircleBorder(),
-                                            clipBehavior: Clip.antiAlias,
-                                            child: InkWell(
-                                              onTap: () =>
-                                                  TopicChip.showArticleSheet(
-                                                context,
-                                                content,
-                                                initialSection:
-                                                    ArticleSheetSection.source,
-                                              ),
-                                              child: Padding(
-                                                padding: const EdgeInsets.all(
-                                                  3,
-                                                ),
-                                                child: Icon(
-                                                  PhosphorIcons.gear(
-                                                    PhosphorIconsStyle.regular,
-                                                  ),
-                                                  size: 11,
-                                                  color: colors.textTertiary,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
+                                      SourceLogoAvatar(
+                                        source: content.source,
+                                        size: 26,
+                                        radius: 9,
                                       ),
-                                      const SizedBox(height: 1),
-                                      // Ligne 2 : Temps relatif (icône + format court)
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            PhosphorIcons.clock(
-                                              PhosphorIconsStyle.regular,
-                                            ),
-                                            size: 11,
-                                            color: colors.textTertiary,
+                                      const SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          content.source.name,
+                                          style:
+                                              textTheme.labelMedium?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                            color: colors.textPrimary,
                                           ),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            timeago
-                                                .format(
-                                                  content.publishedAt,
-                                                  locale: 'fr_short',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (effectiveState ==
+                                              InterestState.favorite ||
+                                          effectiveState ==
+                                              InterestState.followed) ...[
+                                        const SizedBox(width: 6),
+                                        Icon(
+                                          effectiveState ==
+                                                  InterestState.favorite
+                                              ? PhosphorIcons.star(
+                                                  PhosphorIconsStyle.fill,
                                                 )
-                                                .replaceAll('il y a ', ''),
-                                            style:
-                                                textTheme.bodySmall?.copyWith(
-                                              color: colors.textTertiary,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
+                                              : PhosphorIcons.star(
+                                                  PhosphorIconsStyle.regular,
+                                                ),
+                                          size: 14,
+                                          color: effectiveState ==
+                                                  InterestState.favorite
+                                              ? colors.primary
+                                              : colors.textTertiary,
+                                        ),
+                                      ],
+                                      if (content.editorialBadge != null) ...[
+                                        const SizedBox(width: 6),
+                                        EditorialBadge.chip(
+                                              content.editorialBadge,
+                                              context: context,
+                                            ) ??
+                                            const SizedBox.shrink(),
+                                      ],
+                                      const SizedBox(width: 5),
+                                      Icon(
+                                        PhosphorIcons.caretRight(
+                                          PhosphorIconsStyle.regular,
+                                        ),
+                                        size: 13,
+                                        color: colors.textTertiary,
                                       ),
                                     ],
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                        ), // _SourceBadgeNudge
-                      ),
-                      const SizedBox(width: 8),
-                      _SourceFollowAction(
-                        sourceId: content.source.id,
-                        state: effectiveState,
-                        colors: colors,
-                      ),
-                    ],
+                        ),
+                        // B1 : tous les sujets regroupés en une balise compacte,
+                        // après le CTA source unique (logo + nom + étoile).
+                        if (subjectCount > 0) ...[
+                          const SizedBox(width: 6),
+                          _SubjectsCountChip(
+                            count: subjectCount,
+                            onTap: () =>
+                                TopicChip.showArticleSheet(context, content),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
 
@@ -2630,193 +2738,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  double _measureChipWidth(
-    String text,
-    TextStyle? style, {
-    bool isEntity = false,
-  }) {
-    const chipHPad = 16.0;
-    const followIconExtra = 13.0; // icon 10px + gap 3px
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: style),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout(maxWidth: isEntity ? 100.0 : double.infinity);
-    return tp.width + chipHPad + (isEntity ? followIconExtra : 0);
-  }
-
-  /// Greedy Wrap simulation: returns how many items from [widths] fit within
-  /// [maxLines] lines of [availWidth], using [spacing] between items.
-  int _simulateWrapVisible(
-    List<double> widths,
-    double availWidth, {
-    double spacing = 6.0,
-    int maxLines = 2,
-  }) {
-    int line = 1;
-    double x = 0;
-    int count = 0;
-    for (final w in widths) {
-      final newX = x == 0 ? w : x + spacing + w;
-      if (newX <= availWidth) {
-        x = newX;
-      } else {
-        if (line >= maxLines) break;
-        line++;
-        x = w;
-      }
-      count++;
-    }
-    return count;
-  }
-
-  /// Builds a 2-line-max Wrap of article chips: Aperçu (if partial) + topic
-  /// chips + entity chips, followed by a +X overflow chip if needed.
-  Widget _buildTagsWrap(
-    BuildContext context,
-    Content content, {
-    bool isPartial = false,
-  }) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    final labelStyle = textTheme.labelSmall;
-    // Build ordered chip list: (widget, estimatedWidth)
-    final chips = <({Widget widget, double width})>[];
-
-    if (isPartial) {
-      const label = 'Aperçu — contenu partiel';
-      chips.add((
-        widget: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: colors.warning.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            label,
-            style: labelStyle?.copyWith(
-              color: colors.warning,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-        width: _measureChipWidth(label, labelStyle),
-      ));
-    }
-
-    for (final slug in content.topics) {
-      final label = getTopicLabel(slug);
-      chips.add((
-        widget: GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(context, content),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              label,
-              style: labelStyle?.copyWith(
-                color: colors.textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-        width: _measureChipWidth(label, labelStyle),
-      ));
-    }
-    for (final entity in content.entities) {
-      chips.add((
-        widget: GestureDetector(
-          onTap: () => TopicChip.showArticleSheet(
-            context,
-            content,
-            initialSection: ArticleSheetSection.entities,
-          ),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colors.textTertiary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              entity.text,
-              style: labelStyle?.copyWith(
-                color: colors.textTertiary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-        width: _measureChipWidth(entity.text, labelStyle),
-      ));
-    }
-
-    if (chips.isEmpty) return const SizedBox.shrink();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const spacing = 6.0;
-        final availWidth = constraints.maxWidth;
-        final widths = chips.map((c) => c.width).toList();
-
-        // How many chips fit in 2 lines without any overflow chip?
-        int visibleCount = _simulateWrapVisible(widths, availWidth);
-        final total = chips.length;
-
-        if (visibleCount < total) {
-          // Need an overflow chip — find the largest visibleCount such that
-          // [visibleCount chips + overflow chip] all fit within 2 lines.
-          // Use the max possible overflow width for a stable estimate.
-          final overflowChipW = _measureChipWidth('+$total sujets', labelStyle);
-          while (visibleCount > 0) {
-            final test = [...widths.take(visibleCount), overflowChipW];
-            if (_simulateWrapVisible(test, availWidth) == test.length) break;
-            visibleCount--;
-          }
-        }
-
-        final overflow = total - visibleCount;
-        final overflowLabel = overflow == 1 ? '+1 sujet' : '+$overflow sujets';
-
-        return Wrap(
-          spacing: spacing,
-          runSpacing: spacing,
-          children: [
-            ...chips.take(visibleCount).map((c) => c.widget),
-            if (overflow > 0)
-              GestureDetector(
-                onTap: () => TopicChip.showArticleSheet(
-                  context,
-                  content,
-                  initialSection: ArticleSheetSection.entities,
-                ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.textTertiary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    overflowLabel,
-                    style: labelStyle?.copyWith(
-                      color: colors.textTertiary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
   Widget _buildReadingProgressBar(FacteurColors colors) {
     return ValueListenableBuilder<double>(
       valueListenable: _readingProgress,
@@ -2824,8 +2745,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
         final clamped = progress.clamp(0.0, 1.0);
-        // Grey→primary color with progressive opacity (20%→100%)
-        final alpha = 0.2 + (clamped * 0.8); // 20% at start → 100% at end
+        // Grey→primary lerp, but opacity stays capped so the bar reads discreet
+        // even at full progress (15% at start → ~50% max at end).
+        final alpha = 0.15 + (clamped * 0.35);
         final barColor = Color.lerp(
           Colors.grey.shade400,
           colors.primary,
@@ -2837,12 +2759,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
           builder: (context, smoothProgress, _) => SizedBox(
-            height: 6.5,
+            height: 3.5,
             child: LinearProgressIndicator(
               value: smoothProgress,
               backgroundColor: Colors.transparent,
               valueColor: AlwaysStoppedAnimation<Color>(barColor),
-              minHeight: 6.5,
+              minHeight: 3.5,
             ),
           ),
         );
@@ -2856,6 +2778,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Widget _buildPartialArticleInlineButton(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    // Source premium connectée : signaler que l'article complet est débloqué
+    // par l'abonnement (badge premium en fin de libellé).
+    final content = _content;
+    final isConnectedPremiumSource = _isConnectedPremiumSource(content);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: FacteurSpacing.space4,
@@ -2887,6 +2813,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (isConnectedPremiumSource) ...[
+                const SizedBox(width: 6),
+                _PremiumBadge(colors: colors),
+              ],
               const SizedBox(width: 4),
               Icon(
                 PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
@@ -2940,6 +2870,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final articleText = content.htmlContent ?? content.description;
     final isPartial = isPartialContent(articleText);
 
+    // Source premium connectée : la couche WebView révélée au scroll doit
+    // basculer sur le `PremiumWebView` (cookies) pour servir l'article complet.
+    final isConnectedPremiumSource = _isConnectedPremiumSource(content);
+
     String? readingTime;
     if (content.durationSeconds != null && content.durationSeconds! > 0) {
       final minutes = (content.durationSeconds! / 60).ceil();
@@ -2963,7 +2897,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           left: 0,
           right: 0,
           bottom: 0,
-          child: _buildWebViewLayer(),
+          child: _buildWebViewLayer(
+            isConnectedPremiumSource: isConnectedPremiumSource,
+          ),
         ),
 
         // LAYER 1: Scrollable article content with opaque background.
@@ -3018,31 +2954,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                                 const SizedBox(height: FacteurSpacing.space3),
                               ],
-                              if (isPartial ||
-                                  content.entities.isNotEmpty ||
-                                  content.topics.isNotEmpty) ...[
-                                _buildTagsWrap(
-                                  context,
-                                  content,
-                                  isPartial: isPartial,
-                                ),
-                                const SizedBox(height: FacteurSpacing.space4),
-                              ],
                               PivotWashTitle(
                                 key: ValueKey(
                                   'article-title-wash-'
-                                  '$_perspectivesExpanded-'
+                                  '$_showPivot-'
                                   '${_perspectivesResponse?.referencePivot?.start}-'
                                   '${_perspectivesResponse?.referencePivot?.end}',
                                 ),
                                 title: content.title,
-                                pivot: _perspectivesExpanded
+                                pivot: _showPivot
                                     ? _perspectivesResponse?.referencePivot
                                     : null,
                                 textStyle: textTheme.displayLarge?.copyWith(
                                   fontSize: 24,
                                 ),
-                                animate: _perspectivesExpanded,
+                                animate: _showPivot,
                               ),
                               const SizedBox(height: FacteurSpacing.space2),
                               if (readingTime != null) ...[
@@ -3071,23 +2997,44 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           ),
                         ),
 
-                        // ZONE 1b: Perspectives section, framed by dividers.
+                        // ZONE 2: Article body — _articleKey scopes scroll-bridge
+                        // measurement to the body, excluding header + perspectives.
+                        Container(
+                          key: _articleKey,
+                          color: colors.backgroundPrimary,
+                          child: ArticleReaderWidget(
+                            htmlContent: content.htmlContent,
+                            description: content.description,
+                            title: content.title,
+                            shrinkWrap: true,
+                            onLinkTap: _animateAndLaunch,
+                            bodyPlaceholder: !_contentResolved
+                                ? _buildArticleBodySkeleton(colors)
+                                : null,
+                            // Clearance de bas de page : quand la bande
+                            // Perspectives suit (elle a son propre spacer final),
+                            // on supprime la clearance du reader pour éviter un
+                            // grand vide entre le corps et Perspectives.
+                            footerSpacing: (isPartial || _showPerspectivesBand)
+                                ? 0
+                                : FacteurSpacing.space8,
+                            footer: _showPerspectivesBand
+                                ? null
+                                : SizedBox(
+                                    height: _kFooterContentHeight + bottomInset,
+                                  ),
+                          ),
+                        ),
+
+                        if (isPartial && _contentResolved)
+                          _buildPartialArticleInlineButton(context),
+
+                        // ZONE 2b: Perspectives section, after the article body
+                        // and its optional "Article complet" CTA. Bande frostée
+                        // encastrée (hairline fine + teinte quasi-invisible) ;
+                        // large respiration au-dessus pour détacher du texte.
                         if (_showPerspectivesBand) ...[
-                          if (_perspectivesStatus !=
-                              PerspectivesSectionStatus.empty)
-                            Container(
-                              color: colors.backgroundPrimary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: FacteurSpacing.space4,
-                              ),
-                              child: Divider(
-                                color: colors.textTertiary.withValues(
-                                  alpha: 0.3,
-                                ),
-                                height: 1,
-                                thickness: 1,
-                              ),
-                            ),
+                          const SizedBox(height: FacteurSpacing.space8),
                           Container(
                             color: colors.backgroundPrimary,
                             child: PerspectivesInlineSection(
@@ -3109,62 +3056,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                       'low',
                               divergenceLevel:
                                   _perspectivesResponse?.divergenceLevel,
-                              externalSelectedSegments:
-                                  _perspectivesSelectedSegments,
-                              onSegmentTap: _onPerspectivesSegmentTap,
-                              onClearSegments: () {
-                                setState(
-                                  () => _perspectivesSelectedSegments = {},
-                                );
-                              },
-                              analysisState: _perspectivesAnalysisState,
-                              analysisText: _perspectivesAnalysisText,
-                              onRequestAnalysis: _requestPerspectivesAnalysis,
-                              analysisZoneKey: _analysisZoneKey,
-                              isExpanded: _perspectivesExpanded,
-                              onToggle: _onPerspectivesToggle,
+                              partial: _perspectivesResponse?.partial ?? false,
+                              onOpenAnalysis: _openPerspectivesAnalysis,
                             ),
                           ),
-                          if (_perspectivesStatus !=
-                              PerspectivesSectionStatus.empty)
-                            Container(
-                              color: colors.backgroundPrimary,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: FacteurSpacing.space4,
-                              ),
-                              child: Divider(
-                                color: colors.textTertiary.withValues(
-                                  alpha: 0.3,
-                                ),
-                                height: 1,
-                                thickness: 1,
-                              ),
-                            ),
-                          const SizedBox(height: FacteurSpacing.space4),
+                          SizedBox(
+                            height: _kFooterContentHeight +
+                                bottomInset +
+                                FacteurSpacing.space4,
+                          ),
                         ],
-
-                        // ZONE 2: Article body — _articleKey scopes scroll-bridge
-                        // measurement to the body, excluding header + perspectives.
-                        Container(
-                          key: _articleKey,
-                          color: colors.backgroundPrimary,
-                          child: ArticleReaderWidget(
-                            htmlContent: content.htmlContent,
-                            description: content.description,
-                            title: content.title,
-                            shrinkWrap: true,
-                            onLinkTap: _animateAndLaunch,
-                            bodyPlaceholder: !_contentResolved
-                                ? _buildArticleBodySkeleton(colors)
-                                : null,
-                            footer: SizedBox(
-                              height: _kFooterContentHeight + bottomInset,
-                            ),
-                          ),
-                        ),
-
-                        if (isPartial && _contentResolved)
-                          _buildPartialArticleInlineButton(context),
 
                         // ZONE 3: Transparent spacer — only after CTA tap to enable scroll animation.
                         // _bridgeKey attached here so _computeScrollOffsets() can measure the bridge zone.
@@ -3182,8 +3083,58 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// WebView layer — fixed in viewport behind the scrollable content.
-  Widget _buildWebViewLayer() {
+  Widget _buildWebViewLayer({bool isConnectedPremiumSource = false}) {
     if (kIsWeb) return _buildWebViewFallback(_content!);
+
+    // Source premium connectée : révéler le `PremiumWebView` (cookies +
+    // détection paywall), pas le contrôleur gratuit `webview_flutter` — sinon
+    // l'abonné retomberait sur le paywall. La machinerie scroll-to-site est
+    // agnostique du contrôleur (pilotée par le `_scrollController` Flutter et
+    // les callbacks ScrollBridge que `PremiumWebView` émet à l'identique).
+    if (isConnectedPremiumSource) {
+      final content = _content;
+      if (content == null) return const SizedBox.shrink();
+      final webView = PremiumWebView(
+        source: content.source,
+        url: WebUri(content.url),
+        sessionStore: ref.read(premiumSessionStoreProvider),
+        enableScrollBridge: true,
+        detectPaywall: true,
+        onWebViewCreated: (c) {
+          _premiumWebController = c;
+          _historyTracker.reset(_nowMs());
+        },
+        onLoadStart: (_) =>
+            _historyTracker.onNavStart(_nowMs()),
+        onLoadStop: (_) => _historyTracker.onNavFinish(),
+        onGestureStart: _onGestureStart,
+        onGestureDelta: _onGestureDelta,
+        onGestureEnd: _onGestureEnd,
+        onScrollY: _updateWebScrollY,
+        onProgress: _applyWebReadingProgress,
+        onPaywallDetected: _onPremiumPaywallDetected,
+        gestureRecognizers: _isWebViewActive
+            ? swipeBackCompatiblePlatformViewGestureRecognizers()
+            : const {},
+      );
+      // La couche 0 est full-bleed (pas de Column) → on héberge la bannière de
+      // session expirée dans un Stack, alignée en haut quand la WebView est
+      // active.
+      return Stack(
+        children: [
+          Positioned.fill(child: webView),
+          if (_premiumSessionExpired && _isWebViewActive)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _PremiumSessionExpiredBanner(
+                onReconnect: () => _reconnectPremium(content),
+              ),
+            ),
+        ],
+      );
+    }
 
     // Initialize WebView if not already done (e.g. content loaded after init)
     if (_webViewController == null) {
@@ -3615,25 +3566,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             aspectRatio: 16 / 9,
                           ),
                         ),
-                      if (isPartial ||
-                          content.entities.isNotEmpty ||
-                          content.topics.isNotEmpty)
-                        _buildTagsWrap(context, content, isPartial: isPartial),
                       PivotWashTitle(
                         key: ValueKey(
                           'article-title-wash-alt-'
-                          '$_perspectivesExpanded-'
+                          '$_showPivot-'
                           '${_perspectivesResponse?.referencePivot?.start}-'
                           '${_perspectivesResponse?.referencePivot?.end}',
                         ),
                         title: content.title,
-                        pivot: _perspectivesExpanded
+                        pivot: _showPivot
                             ? _perspectivesResponse?.referencePivot
                             : null,
                         textStyle: textTheme.displayLarge?.copyWith(
                           fontSize: 24,
                         ),
-                        animate: _perspectivesExpanded,
+                        animate: _showPivot,
                       ),
                       if (readingTime != null)
                         Row(
@@ -3655,59 +3602,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     ],
                   ),
                 ),
-
-                // ── Perspectives section (avant l'article) ─────────────────
-                if (_showPerspectivesBand) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  if (_perspectivesStatus != PerspectivesSectionStatus.empty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4,
-                      ),
-                      child: Divider(
-                        color: colors.textTertiary.withValues(alpha: 0.3),
-                        height: 1,
-                        thickness: 1,
-                      ),
-                    ),
-                  PerspectivesInlineSection(
-                    key: _perspectivesKey,
-                    status: _perspectivesStatus,
-                    perspectives: _inlinePerspectives,
-                    biasDistribution:
-                        _perspectivesResponse?.biasDistribution ?? const {},
-                    keywords: _perspectivesResponse?.keywords ?? const [],
-                    sourceBiasStance:
-                        _perspectivesResponse?.sourceBiasStance ?? 'unknown',
-                    sourceName: _content?.source.name ?? '',
-                    contentId: widget.contentId,
-                    comparisonQuality:
-                        _perspectivesResponse?.comparisonQuality ?? 'low',
-                    divergenceLevel: _perspectivesResponse?.divergenceLevel,
-                    externalSelectedSegments: _perspectivesSelectedSegments,
-                    onSegmentTap: _onPerspectivesSegmentTap,
-                    onClearSegments: () {
-                      setState(() => _perspectivesSelectedSegments = {});
-                    },
-                    analysisState: _perspectivesAnalysisState,
-                    analysisText: _perspectivesAnalysisText,
-                    onRequestAnalysis: _requestPerspectivesAnalysis,
-                    analysisZoneKey: _analysisZoneKey,
-                    isExpanded: _perspectivesExpanded,
-                    onToggle: _onPerspectivesToggle,
-                  ),
-                  if (_perspectivesStatus != PerspectivesSectionStatus.empty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: FacteurSpacing.space4,
-                      ),
-                      child: Divider(
-                        color: colors.textTertiary.withValues(alpha: 0.3),
-                        height: 1,
-                        thickness: 1,
-                      ),
-                    ),
-                ],
 
                 const SizedBox(height: FacteurSpacing.space4),
 
@@ -3743,6 +3637,45 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     SizedBox(key: _articleEndKey, height: 0),
                   ],
                 ),
+
+                // ── Perspectives section (fin du reader) ───────────────────
+                // Bande frostée encastrée (hairline fine + teinte quasi-
+                // invisible) ; large respiration au-dessus pour la détacher.
+                if (_showPerspectivesBand) ...[
+                  const SizedBox(height: FacteurSpacing.space8),
+                  PerspectivesInlineSection(
+                    key: _perspectivesKey,
+                    status: _perspectivesStatus,
+                    perspectives: _inlinePerspectives,
+                    biasDistribution:
+                        _perspectivesResponse?.biasDistribution ?? const {},
+                    keywords: _perspectivesResponse?.keywords ?? const [],
+                    sourceBiasStance:
+                        _perspectivesResponse?.sourceBiasStance ?? 'unknown',
+                    sourceName: _content?.source.name ?? '',
+                    contentId: widget.contentId,
+                    comparisonQuality:
+                        _perspectivesResponse?.comparisonQuality ?? 'low',
+                    divergenceLevel: _perspectivesResponse?.divergenceLevel,
+                    partial: _perspectivesResponse?.partial ?? false,
+                    onOpenAnalysis: _openPerspectivesAnalysis,
+                  ),
+                ],
+
+                // ── « Le pas de recul » (deep reco) ─────────────────────────
+                // Carte d'analyse de fond, surfacée SOUS la couverture
+                // médiatique (perspectives). Silencieuse tant que deep_pending
+                // && reco null (calcul en cours).
+                if (_perspectivesResponse?.deepRecommendation != null &&
+                    !_isExternal) ...[
+                  const SizedBox(height: FacteurSpacing.space4),
+                  DeepRecommendationCard(
+                    reco: _perspectivesResponse!.deepRecommendation!,
+                    onTap: () => _openDeepReco(
+                      _perspectivesResponse!.deepRecommendation!,
+                    ),
+                  ),
+                ],
 
                 // ── Footer clearance ───────────────────────────────────────
                 const SizedBox(height: FacteurSpacing.space4),
@@ -3823,11 +3756,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sessionStore: ref.read(premiumSessionStoreProvider),
         enableScrollBridge: true,
         detectPaywall: true,
-        onWebViewCreated: (c) => _premiumWebController = c,
+        onWebViewCreated: (c) {
+          _premiumWebController = c;
+          _historyTracker.reset(_nowMs());
+        },
+        onLoadStart: (_) =>
+            _historyTracker.onNavStart(_nowMs()),
+        onLoadStop: (_) => _historyTracker.onNavFinish(),
         onGestureStart: _onGestureStart,
         onGestureDelta: _onGestureDelta,
         onGestureEnd: _onGestureEnd,
-        onScrollY: (y) => _webScrollY = y,
+        onScrollY: _updateWebScrollY,
         onProgress: _applyWebReadingProgress,
         onPaywallDetected: _onPremiumPaywallDetected,
         gestureRecognizers: swipeBackCompatiblePlatformViewGestureRecognizers(),
@@ -3846,16 +3785,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
-    _webViewController ??= WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
-      )
-      ..addJavaScriptChannel(
-        'ScrollBridge',
-        onMessageReceived: _onScrollBridgeMessage,
-      )
-      ..loadRequest(Uri.parse(content.url));
+    if (_webViewController == null) {
+      _historyTracker.reset(_nowMs());
+      _webViewController = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageStarted: (_) => _historyTracker
+                .onNavStart(_nowMs()),
+            onPageFinished: (_) {
+              _injectScrollBridgeScript();
+              _historyTracker.onNavFinish();
+            },
+          ),
+        )
+        ..addJavaScriptChannel(
+          'ScrollBridge',
+          onMessageReceived: _onScrollBridgeMessage,
+        )
+        ..loadRequest(Uri.parse(content.url));
+    }
 
     // CTA discret : source payante non connectée → proposer de lire avec son
     // abonnement (ouvre le flow de connexion).
@@ -3932,6 +3881,45 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 /// Bandeau non-bloquant affiché en mode reader premium quand un paywall est
 /// détecté (session du média expirée). Propose de se reconnecter sans
 /// dissocier l'abonnement.
+/// Petit badge premium (couronne) affiché en fin de libellé du bouton
+/// « Article complet » quand l'article est débloqué par un abonnement connecté.
+class _PremiumBadge extends StatelessWidget {
+  final FacteurColors colors;
+
+  const _PremiumBadge({required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.crown(PhosphorIconsStyle.fill),
+            size: 12,
+            color: colors.primary,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'Premium',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10.5,
+                  letterSpacing: 0,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PremiumSessionExpiredBanner extends StatelessWidget {
   final VoidCallback onReconnect;
 
@@ -4012,201 +4000,45 @@ class _PremiumConnectBanner extends StatelessWidget {
   }
 }
 
-/// Action de suivi/favori affichée dans le header du reader.
-///
-/// 3 états visuels dispatchés sur l'[InterestState] live de la source :
-/// - `unfollowed` / `hidden` → chip "Suivre +" (tap = passer en `followed`).
-/// - `followed` → étoile creuse (tap = passer en `favorite`).
-/// - `favorite` → étoile pleine (tap = redescendre en `followed`).
-class _SourceFollowAction extends ConsumerStatefulWidget {
-  final String sourceId;
-  final InterestState state;
-  final FacteurColors colors;
-
-  const _SourceFollowAction({
-    required this.sourceId,
-    required this.state,
-    required this.colors,
-  });
-
-  @override
-  ConsumerState<_SourceFollowAction> createState() =>
-      _SourceFollowActionState();
-}
-
-class _SourceFollowActionState extends ConsumerState<_SourceFollowAction> {
-  bool _busy = false;
-
-  Future<void> _apply(
-    InterestState next, {
-    required String successMessage,
-    required String errorMessage,
-  }) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    HapticFeedback.lightImpact();
-    try {
-      await ref
-          .read(userSourcesStateProvider.notifier)
-          .setSourceState(widget.sourceId, next);
-      if (!mounted) return;
-      NotificationService.showSuccess(successMessage, context: context);
-    } on FavoriteCapReachedException catch (e) {
-      if (!mounted) return;
-      NotificationService.showError(
-        'Maximum ${e.cap} favoris atteints',
-        context: context,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      NotificationService.showError(errorMessage, context: context);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    switch (widget.state) {
-      case InterestState.followed:
-        return _StarToggle(
-          colors: widget.colors,
-          filled: false,
-          busy: _busy,
-          onTap: () => _apply(
-            InterestState.favorite,
-            successMessage: 'Source ajoutée à vos favoris',
-            errorMessage: 'Impossible d\'ajouter aux favoris',
-          ),
-        );
-      case InterestState.favorite:
-        return _StarToggle(
-          colors: widget.colors,
-          filled: true,
-          busy: _busy,
-          onTap: () => _apply(
-            InterestState.followed,
-            successMessage: 'Source retirée de vos favoris',
-            errorMessage: 'Impossible de retirer des favoris',
-          ),
-        );
-      case InterestState.unfollowed:
-      case InterestState.hidden:
-        return _FollowChip(
-          colors: widget.colors,
-          busy: _busy,
-          onTap: () => _apply(
-            InterestState.followed,
-            successMessage: 'Source ajoutée à votre veille',
-            errorMessage: 'Impossible de suivre la source',
-          ),
-        );
-    }
-  }
-}
-
-/// Chip "Suivre +" — apparence inchangée par rapport à la première version.
-class _FollowChip extends StatelessWidget {
-  final FacteurColors colors;
-  final bool busy;
+/// Balise compacte regroupant tous les sujets/entités de l'article (B1).
+/// Remplace l'ancien Wrap de chips au-dessus du titre ; tap → fiche article.
+class _SubjectsCountChip extends StatelessWidget {
+  final int count;
   final VoidCallback onTap;
 
-  const _FollowChip({
-    required this.colors,
-    required this.busy,
-    required this.onTap,
-  });
+  const _SubjectsCountChip({required this.count, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: colors.backgroundSecondary,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: colors.textTertiary.withValues(alpha: 0.3),
-          width: 1,
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final label = count == 1 ? '1 sujet' : '$count sujets';
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: colors.textTertiary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(8),
         ),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: busy ? null : onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (busy)
-                SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    valueColor: AlwaysStoppedAnimation(colors.textSecondary),
-                  ),
-                )
-              else
-                Icon(Icons.add, size: 14, color: colors.textSecondary),
-              const SizedBox(width: 4),
-              Text(
-                'Suivre',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.textSecondary,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2,
-                    ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.tag(PhosphorIconsStyle.regular),
+              size: 11,
+              color: colors.textTertiary,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bouton étoile (creuse → favori, pleine → favori actif) du design system.
-class _StarToggle extends StatelessWidget {
-  final FacteurColors colors;
-  final bool filled;
-  final bool busy;
-  final VoidCallback onTap;
-
-  const _StarToggle({
-    required this.colors,
-    required this.filled,
-    required this.busy,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = colors;
-    final iconColor = filled ? c.primary : c.textSecondary;
-    return Material(
-      color: Colors.transparent,
-      shape: const CircleBorder(),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: busy ? null : onTap,
-        customBorder: const CircleBorder(),
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: busy
-              ? SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    valueColor: AlwaysStoppedAnimation(iconColor),
-                  ),
-                )
-              : Icon(
-                  filled
-                      ? PhosphorIcons.star(PhosphorIconsStyle.fill)
-                      : PhosphorIcons.star(PhosphorIconsStyle.regular),
-                  size: 18,
-                  color: iconColor,
-                ),
+            ),
+          ],
         ),
       ),
     );

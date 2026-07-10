@@ -22,27 +22,32 @@ class FacteurLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final effectiveColor = color ?? context.facteurColors.textPrimary;
     final colors = context.facteurColors;
-    // Detect current theme brightness to choose the right logo
-    final brightness = Theme.of(context).brightness;
-    final isDark = brightness == Brightness.dark;
-    final logoPath = isDark
-        ? 'assets/icons/logo facteur fond_sombre.png'
-        : 'assets/icons/logo_facteur_light.svg';
+    // Logo officiel (SVG vectoriel), pas la variante app-icon. Le PNG
+    // `fallbackLogoPath` sert de repli errorBuilder pour la branche bitmap.
+    const logoPath = 'assets/icons/logo_officiel.svg';
     const fallbackLogoPath = 'assets/icons/facteur_logo.png';
     final logoSize = size * 1.7;
 
+    // [filterColor] n'est passé que lorsqu'un `color` custom est demandé
+    // (effectiveColor != textPrimary) ; par défaut, aucun filtre → le logo
+    // officiel est rendu dans ses vraies couleurs.
     Widget buildLogoImage(String path, [Color? filterColor]) {
+      final colorFilter = filterColor != null
+          ? ColorFilter.mode(filterColor, BlendMode.srcIn)
+          : null;
+
       if (path.endsWith('.svg')) {
         return SvgPicture.asset(
           path,
           width: logoSize,
           height: logoSize,
           fit: BoxFit.contain,
-          colorFilter: filterColor != null
-              ? ColorFilter.mode(filterColor, BlendMode.srcIn)
-              : null,
+          colorFilter: colorFilter,
+          placeholderBuilder: (_) =>
+              SizedBox(width: logoSize, height: logoSize),
         );
       }
+
       final img = Image.asset(
         path,
         width: logoSize,
@@ -59,11 +64,8 @@ class FacteurLogo extends StatelessWidget {
           filterQuality: FilterQuality.high,
         ),
       );
-      if (filterColor != null) {
-        return ColorFiltered(
-          colorFilter: ColorFilter.mode(filterColor, BlendMode.srcIn),
-          child: img,
-        );
+      if (colorFilter != null) {
+        return ColorFiltered(colorFilter: colorFilter, child: img);
       }
       return img;
     }
@@ -73,7 +75,6 @@ class FacteurLogo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (showIcon) ...[
-          // Using theme-appropriate logo (dark/light)
           Transform.translate(
             offset: Offset(0, size * 0.06), // Reduced vertical offset
             child: buildLogoImage(

@@ -39,7 +39,7 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch() async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -280,10 +280,12 @@ void main() {
 
   group('FluxContinuNotifier — favorites-driven theme sections', () {
     test(
-      '0 favorites + empty top-themes fallback → 3 canonical themes fetched',
+      // Story 22.3 — le fallback canonique (tech/environment/science) codé en
+      // dur a été supprimé : un compte 0 favori + top-themes vide ne fetche
+      // plus aucun thème (le padding vient désormais des suggestions backend).
+      '0 favorites + empty top-themes → no canonical theme fetched',
       () async {
         SharedPreferences.setMockInitialValues(<String, Object>{});
-        // Digest absent, feed absent → only the theme fetches matter.
         when(
           () => feedRepo.getFeed(
             page: any(named: 'page'),
@@ -294,12 +296,57 @@ void main() {
           ),
         ).thenAnswer((_) async => _feedResponseWith(3));
 
-        final container = makeContainer(); // 0 favorites in stub
+        final container = makeContainer(); // 0 favorites, top-themes vide
         addTearDown(container.dispose);
 
         await settle(container);
 
-        // 3 fallback canonical theme fetches (tech, environment, science).
+        // Plus de fetch canonique : aucune section thème n'est fetchée.
+        verifyNever(
+          () => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        );
+      },
+    );
+
+    test(
+      // Story 22.3 — une suggestion « Choisie pour vous » (origin=suggested)
+      // remplit un slot : son feed est fetché et la section porte le badge.
+      '0 favorites + a suggested top-theme → suggested theme fetched',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        when(() => fluxRepo.getTopThemes()).thenAnswer(
+          (_) async => const [
+            TopTheme(
+              interestSlug: 'science',
+              weight: 1.0,
+              articleCount: 5,
+              origin: 'suggested',
+              dailyRank: 0,
+              reason: SuggestionReason(label: 'Tu suis ce thème'),
+            ),
+          ],
+        );
+        when(
+          () => feedRepo.getFeed(
+            page: any(named: 'page'),
+            limit: any(named: 'limit'),
+            theme: any(named: 'theme'),
+            serein: any(named: 'serein'),
+            personalized: any(named: 'personalized'),
+          ),
+        ).thenAnswer((_) async => _feedResponseWith(3));
+
+        final container = makeContainer();
+        addTearDown(container.dispose);
+
+        final state = await settle(container);
+
         final captured = verify(
           () => feedRepo.getFeed(
             page: any(named: 'page'),
@@ -309,7 +356,15 @@ void main() {
             personalized: any(named: 'personalized'),
           ),
         ).captured;
-        expect(captured, containsAll(['tech', 'environment', 'science']));
+        expect(captured, contains('science'));
+
+        final suggested = state.sections
+            .whereType<FeedThemeSection>()
+            .where((s) => s.isSuggested)
+            .toList();
+        expect(suggested, hasLength(1));
+        expect(suggested.first.themeSlug, 'science');
+        expect(suggested.first.reason?.label, 'Tu suis ce thème');
       },
     );
 
@@ -445,7 +500,7 @@ void main() {
       );
     });
 
-    test('7 favorites cap (8th ignored)', () async {
+    test('13 favorites cap (14th ignored)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(
         () => feedRepo.getFeed(
@@ -457,17 +512,13 @@ void main() {
         ),
       ).thenAnswer((_) async => _feedResponseWith(3));
 
+      // 14 favoris thème (slugs arbitraires — `visualFor` a un fallback) : le cap
+      // [_kMaxFavoriteSections] = [kTourneeVisibleCap] = 13 garde les 13 premiers,
+      // le 14e est ignoré.
       final container = makeContainer(
         interests: _interestsState(
-          favorites: const [
-            ThemeFavoriteRef(slug: 'tech'),
-            ThemeFavoriteRef(slug: 'science'),
-            ThemeFavoriteRef(slug: 'culture'),
-            ThemeFavoriteRef(slug: 'economy'),
-            ThemeFavoriteRef(slug: 'politics'),
-            ThemeFavoriteRef(slug: 'sport'),
-            ThemeFavoriteRef(slug: 'environment'),
-            ThemeFavoriteRef(slug: 'society'), // 8th — must be dropped
+          favorites: [
+            for (var i = 0; i < 14; i++) ThemeFavoriteRef(slug: 'theme$i'),
           ],
         ),
       );
@@ -478,15 +529,7 @@ void main() {
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, [
-        'tech',
-        'science',
-        'culture',
-        'economy',
-        'politics',
-        'sport',
-        'environment',
-      ]);
+      expect(slugs, [for (var i = 0; i < 13; i++) 'theme$i']);
     });
   });
 
@@ -819,6 +862,7 @@ void main() {
         );
       },
     );
+
   });
 
   group('FluxContinuNotifier — dedup inter-sections', () {
@@ -878,7 +922,8 @@ void main() {
       SharedPreferences.setMockInitialValues(<String, Object>{});
 
       // Topic A's lead shares the hi-fi card's contentId → it must be dropped.
-      // Topic B is untouched → "Actus du jour" survives with one topic.
+      // Topics B & C survive → 2 topics restants, au-dessus du plancher
+      // `_kActusMinTopics` → « Actus du jour » reste affichée sans le doublon.
       final container = makeDedupContainer(
         hiFiContentId: 'shared-1',
         topics: const [
@@ -891,6 +936,11 @@ void main() {
             topicId: 't2',
             label: 'Topic B',
             articles: [DigestItem(contentId: 'b1', title: 'B')],
+          ),
+          DigestTopic(
+            topicId: 't3',
+            label: 'Topic C',
+            articles: [DigestItem(contentId: 'c1', title: 'C')],
           ),
         ],
       );
@@ -910,7 +960,43 @@ void main() {
       final actusLeadIds =
           actus.topics.map((t) => pickTopicLead(t).contentId).toList();
       expect(actusLeadIds, isNot(contains('shared-1')));
-      expect(actusLeadIds, contains('b1'));
+      expect(actusLeadIds, containsAll(<String>['b1', 'c1']));
+    });
+
+    test(
+        'Actus du jour tombée sous le plancher après dedup est masquée '
+        '(pas de carte isolée)', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      // 2 topics au build (≥ plancher), mais le dedup retire le doublon → 1
+      // topic restant < `_kActusMinTopics` → section masquée plutôt qu'1 carte.
+      final container = makeDedupContainer(
+        hiFiContentId: 'shared-1',
+        topics: const [
+          DigestTopic(
+            topicId: 't1',
+            label: 'Topic A',
+            articles: [DigestItem(contentId: 'shared-1', title: 'A')],
+          ),
+          DigestTopic(
+            topicId: 't2',
+            label: 'Topic B',
+            articles: [DigestItem(contentId: 'b1', title: 'B')],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(state.sections.whereType<EssentielSection>(), hasLength(1));
+      expect(
+        state.sections
+            .whereType<DigestTopicSection>()
+            .where((s) => s.kind == SectionKind.essentiel),
+        isEmpty,
+        reason: 'Une Actus du jour réduite à 1 topic par le dedup est masquée',
+      );
     });
 
     test('Actus du jour disappears entirely when fully deduped', () async {
@@ -1067,7 +1153,10 @@ void main() {
 
         final state = await settle(container);
         final theme = state.sections.whereType<FeedThemeSection>().single;
-        // Normal sur la référence 640 : floor((640-68)/146)=3, borné [2,4] ⇒ 3.
+        // Normal sur la référence 640. Thème riche 'tech' → réserve du footer
+        // replié « Ajouter plus de sources » (40) au budget (et donc pas de
+        // crédit marge basse, le footer suivant la dernière carte) :
+        // floor((640-54-40)/146)=3, borné [2,4] ⇒ 3.
         expect(theme.coreVisibleCount, 3);
       },
     );
@@ -1147,10 +1236,13 @@ void main() {
 
       final state = await settle(container);
       final theme = state.sections.whereType<FeedThemeSection>().single;
+      // 500px utiles, banner 54. Thème riche 'tech' → réserve du footer replié
+      // « Ajouter plus de sources » (40), pas de crédit marge basse :
+      // floor((500-54-40)/146)=2, borné [2,4] ⇒ 2.
       expect(theme.coreVisibleCount, 2);
 
       // Dismissing an item routes through _filterSections → copyWith, which must
-      // NOT reset the capped coreVisibleCount back to the default 3.
+      // NOT reset the capped coreVisibleCount.
       container.read(fluxContinuProvider.notifier).confirmDismiss('x4');
       await pumpEventQueue(times: 2);
 
@@ -1173,6 +1265,8 @@ void main() {
           rank: 1,
         );
 
+    // 2 topics : « Actus du jour » doit franchir le plancher `_kActusMinTopics`
+    // (sinon la section est masquée et le base-only n'aurait aucun contenu réel).
     DigestResponse digestWithTopics() => DigestResponse(
           digestId: 'd1',
           userId: 'u1',
@@ -1183,6 +1277,11 @@ void main() {
               topicId: 't1',
               label: 'Topic A',
               articles: [DigestItem(contentId: 'topic-a-1', title: 'A')],
+            ),
+            DigestTopic(
+              topicId: 't2',
+              label: 'Topic B',
+              articles: [DigestItem(contentId: 'topic-b-1', title: 'B')],
             ),
           ],
         );
@@ -1310,21 +1409,28 @@ void main() {
         final skeletonIdx = captured.indexWhere((s) => s.isSkeleton);
         expect(skeletonIdx, greaterThanOrEqualTo(0));
 
-        // base-only : contenu réel (Actus du jour) mais ENCORE aucune section
-        // thème (le fan-out de phase 2 n'a pas répondu).
+        // base-only : la section thème 'tech' existe déjà (en-tête seedé) mais
+        // reste une COQUILLE vide — le fan-out de phase 2 n'a pas encore
+        // répondu. Avec le seed de coquilles, le signal « progressif » porte sur
+        // le remplissage du contenu, pas sur la présence de la section.
         final baseIdx = captured.indexWhere(
           (s) =>
               !s.isSkeleton &&
-              s.sections.isNotEmpty &&
-              s.sections.whereType<FeedThemeSection>().isEmpty,
+              s.sections.whereType<FeedThemeSection>().isNotEmpty &&
+              s.sections
+                  .whereType<FeedThemeSection>()
+                  .every((t) => t.items.isEmpty),
         );
         expect(baseIdx, greaterThan(skeletonIdx),
-            reason:
-                'le haut de page réel remplace le squelette avant le fan-out');
+            reason: 'les en-têtes (haut de page + coquilles favoris) remplacent '
+                'le squelette avant le remplissage du fan-out');
 
-        // complet : la section thème 'tech' est présente, après le base-only.
+        // complet : la section thème 'tech' est REMPLIE (items non vides),
+        // après le base-only.
         final fullIdx = captured.lastIndexWhere(
-          (s) => s.sections.whereType<FeedThemeSection>().isNotEmpty,
+          (s) => s.sections
+              .whereType<FeedThemeSection>()
+              .any((t) => t.items.isNotEmpty),
         );
         expect(fullIdx, greaterThan(baseIdx));
         expect(finalState.isSkeleton, isFalse);
@@ -1362,14 +1468,38 @@ void main() {
   });
 }
 
-/// Stub EssentielRepository returning exactly one [EssentielArticle] so the
-/// hi-fi section is built during the coexistence test.
+/// Stub EssentielRepository centré sur un [EssentielArticle] précis (dont les
+/// tests de coexistence/dédup vérifient la présence), complété par 2 articles de
+/// remplissage pour atteindre le plancher d'affichage de la carte hi-fi
+/// (`_kEssentielMinArticles` = 3). Le primary reste en tête (rank 1).
 class _OneArticleEssentielRepository implements EssentielRepository {
   _OneArticleEssentielRepository(this._article);
   final EssentielArticle _article;
 
   @override
-  Future<List<EssentielArticle>?> fetch() async => [_article];
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => [
+        _article,
+        EssentielArticle(
+          contentId: '${_article.contentId}-filler-1',
+          title: 'Filler 1',
+          url: 'https://x.test/${_article.contentId}-filler-1',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 2,
+        ),
+        EssentielArticle(
+          contentId: '${_article.contentId}-filler-2',
+          title: 'Filler 2',
+          url: 'https://x.test/${_article.contentId}-filler-2',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: 3,
+        ),
+      ];
 }
 
 /// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.
@@ -1378,5 +1508,5 @@ class _FixedEssentielRepository implements EssentielRepository {
   final List<EssentielArticle> _articles;
 
   @override
-  Future<List<EssentielArticle>?> fetch() async => _articles;
+  Future<List<EssentielArticle>?> fetch({bool? serein}) async => _articles;
 }

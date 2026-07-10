@@ -48,7 +48,7 @@ class EditorialConfig:
     curation_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="")
     )
-    # TODO: réactiver pour la prochaine itération Pas de recul
+    # Réactivé pour « Pas de recul » dans le reader (DeepMatcher.match_for_content).
     deep_matching_prompt: PromptConfig = field(
         default_factory=lambda: PromptConfig(system="", temperature=0.2, max_tokens=300)
     )

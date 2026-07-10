@@ -42,6 +42,8 @@ class MediaConcentrationScreen extends ConsumerWidget {
                       child: Image.asset(
                         'assets/images/media_concentration_map.png',
                         fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        semanticLabel: 'Carte de la concentration des médias',
                         errorBuilder: (_, __, ___) => Container(
                           decoration: BoxDecoration(
                             color: colors.surface,
@@ -74,7 +76,7 @@ class MediaConcentrationScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: colors.textPrimary.withOpacity(0.6),
+                        color: colors.textPrimary.withValues(alpha: 0.6),
                         borderRadius: BorderRadius.circular(FacteurRadius.pill),
                       ),
                       child: Row(
@@ -109,14 +111,12 @@ class MediaConcentrationScreen extends ConsumerWidget {
                     color: colors.textSecondary,
                   ),
               children: const [
-                TextSpan(
-                    text: OnboardingStrings.mediaConcentrationTextPart1),
+                TextSpan(text: OnboardingStrings.mediaConcentrationTextPart1),
                 TextSpan(
                   text: OnboardingStrings.mediaConcentrationTextBold1,
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                TextSpan(
-                    text: OnboardingStrings.mediaConcentrationTextPart2),
+                TextSpan(text: OnboardingStrings.mediaConcentrationTextPart2),
               ],
             ),
             textAlign: TextAlign.center,
@@ -145,9 +145,9 @@ class MediaConcentrationScreen extends ConsumerWidget {
 
   void _openFullscreenImage(BuildContext context, FacteurColors colors) {
     Navigator.of(context).push(
-      PageRouteBuilder(
+      PageRouteBuilder<void>(
         opaque: false,
-        barrierColor: Colors.black.withOpacity(0.85),
+        barrierColor: Colors.black.withValues(alpha: 0.85),
         barrierDismissible: true,
         pageBuilder: (context, animation, secondaryAnimation) {
           return FadeTransition(
@@ -169,42 +169,49 @@ class _FullscreenImageViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.of(context).pop(),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: SafeArea(
-          child: Stack(
-            children: [
-              // Zoomable image
-              Center(
-                child: InteractiveViewer(
-                  minScale: 1.0,
-                  maxScale: 4.0,
-                  child: Padding(
-                    padding: const EdgeInsets.all(FacteurSpacing.space4),
-                    child: Image.asset(
-                      'assets/images/media_concentration_map.png',
-                      fit: BoxFit.contain,
-                    ),
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.of(context).pop(),
+              ),
+            ),
+            // Zoomable image
+            Center(
+              child: InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 5.0,
+                boundaryMargin: const EdgeInsets.all(FacteurSpacing.space6),
+                clipBehavior: Clip.none,
+                child: Padding(
+                  padding: const EdgeInsets.all(FacteurSpacing.space4),
+                  child: Image.asset(
+                    'assets/images/media_concentration_map.png',
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    semanticLabel: 'Carte de la concentration des médias',
                   ),
                 ),
               ),
-              // Close button
-              Positioned(
-                top: FacteurSpacing.space2,
-                right: FacteurSpacing.space4,
-                child: IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: IconButton.styleFrom(
-                    backgroundColor: colors.textPrimary.withOpacity(0.5),
-                  ),
-                  icon: Icon(Icons.close,
-                      color: colors.backgroundPrimary, size: 22),
+            ),
+            // Close button
+            Positioned(
+              top: FacteurSpacing.space2,
+              right: FacteurSpacing.space4,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: IconButton.styleFrom(
+                  backgroundColor: colors.textPrimary.withValues(alpha: 0.5),
                 ),
+                icon: Icon(Icons.close,
+                    color: colors.backgroundPrimary, size: 22),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -31,9 +31,14 @@ class TopicRepository {
 
   /// POST personalization/topics/ → UserTopicProfile (LLM-enriched)
   /// Trailing slash required: backend uses redirect_slashes=False.
-  Future<UserTopicProfile> followTopic(String name, {double? priorityMultiplier}) async {
+  /// [slugParent] : thème parent explicite (carrousel onboarding, TopicChip,
+  /// EntityAddSheet…) — le backend le préfère au slug deviné par le LLM, ce qui
+  /// garde le sujet dans la bonne catégorie « Mes Intérêts ».
+  Future<UserTopicProfile> followTopic(String name,
+      {String? slugParent, double? priorityMultiplier}) async {
     try {
       final body = <String, dynamic>{'name': name};
+      if (slugParent != null) body['slug_parent'] = slugParent;
       if (priorityMultiplier != null) body['priority_multiplier'] = priorityMultiplier;
       final data = await _apiClient.post(
         'personalization/topics/',
@@ -106,11 +111,15 @@ class TopicRepository {
   }
 
   /// POST personalization/topics/ with entity_type → UserTopicProfile
-  Future<UserTopicProfile> followEntity(String name, String entityType) async {
+  /// [slugParent] : thème parent explicite préservé côté backend (cf. followTopic).
+  Future<UserTopicProfile> followEntity(String name, String entityType,
+      {String? slugParent}) async {
     try {
+      final body = <String, dynamic>{'name': name, 'entity_type': entityType};
+      if (slugParent != null) body['slug_parent'] = slugParent;
       final data = await _apiClient.post(
         'personalization/topics/',
-        body: {'name': name, 'entity_type': entityType},
+        body: body,
       );
       return UserTopicProfile.fromJson(data as Map<String, dynamic>);
     } on DioException catch (e) {

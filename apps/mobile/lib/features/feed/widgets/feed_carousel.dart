@@ -86,7 +86,7 @@ class _FeedCarouselState extends ConsumerState<FeedCarousel> {
 
   // Compact layout constants — tighter than TopicSection's so feed carousels
   // fit more content above the fold.
-  static const double _footerHeight = 36.0;
+  static const double _footerHeight = 40.0;
   static const double _bodyPadding = 16.0;
   static const double _metaRowHeight = 18.0;
   static const double _spacer = 8.0;
@@ -149,7 +149,11 @@ class _FeedCarouselState extends ConsumerState<FeedCarousel> {
 
     final imageRatio = spec.feedImageAspectRatio ?? _imageAspectRatio;
     final imageHeight = hasImage ? cardWidth / imageRatio : 0.0;
-    return imageHeight + bodyHeight + _footerHeight + _badgeHeight;
+    return imageHeight +
+        bodyHeight +
+        _footerHeight +
+        _badgeHeight +
+        ArticleTitleLayout.carouselHeightSlack(fontScale: spec.fontScale);
   }
 
   double _computeHeight(double cardWidth) {
@@ -232,7 +236,7 @@ class _FeedCarouselState extends ConsumerState<FeedCarousel> {
 
         // Page indicator dots
         if (isMulti) ...[
-          const SizedBox(height: 2),
+          const SizedBox(height: 10),
           _buildPageIndicator(colors, data.items.length),
         ],
 

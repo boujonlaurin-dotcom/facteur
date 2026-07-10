@@ -22,10 +22,12 @@ class SectionBanner extends StatelessWidget {
   /// sections (theme1 / theme2) wire this up.
   final VoidCallback? onTapFavorite;
 
-  /// Story 23.4 — optional settings affordance (top-right tune button). Only
-  /// wired for the veille section → opens the veille config in edit mode. As
-  /// an independent hit target it sits **outside** the `IgnorePointer`s so it
-  /// captures taps before the banner's fold InkWell.
+  /// Story 23.4 — optional settings affordance (tune button). Only wired for
+  /// the veille section → opens the veille config in edit mode. Rendered inline
+  /// in the title, right after the favorite star (order: titre ★ ⚙), so it is
+  /// visible in the flow rather than floating. As a nested `InkWell` it stays an
+  /// independent hit target, capturing taps before the banner's fold InkWell
+  /// (descendant wins over ancestor).
   final VoidCallback? onTapSettings;
 
   /// When true, the banner renders in a larger "page hero" variant (bigger
@@ -51,6 +53,15 @@ class SectionBanner extends StatelessWidget {
   /// est câblé.
   final int hiddenCount;
 
+  /// Story 22.3 — quand true, le banner pose un badge « Choisie pour vous »
+  /// au-dessus du titre, tappable via [onTapInfo] (ouvre la sheet « Pourquoi
+  /// cette section ? »). Signale une section suggérée par le facteur.
+  final bool suggested;
+
+  /// Tap sur le badge « Choisie pour vous » → sheet explicative + actions
+  /// (garder / retirer). Null hors sections suggérées.
+  final VoidCallback? onTapInfo;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -63,12 +74,33 @@ class SectionBanner extends StatelessWidget {
     this.logoUrl,
     this.onTap,
     this.hiddenCount = 0,
+    this.suggested = false,
+    this.onTapInfo,
   });
 
-  double _trailingControlReserve() {
-    if (onTapSettings != null) return 58;
-    return 0;
-  }
+  static final _titleStyleLarge = GoogleFonts.fraunces(
+    fontSize: 24,
+    fontWeight: FontWeight.w700,
+    height: 1.12,
+    letterSpacing: -0.4,
+  );
+
+  static final _titleStyleInline = GoogleFonts.fraunces(
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
+    height: 1.08,
+    letterSpacing: -0.4,
+  );
+
+  static final _blurbStyleLarge = GoogleFonts.dmSans(
+    fontSize: 13,
+    height: 1.42,
+  );
+
+  static final _blurbStyleInline = GoogleFonts.dmSans(
+    fontSize: 12,
+    height: 1.36,
+  );
 
   String? _displayBlurbFor(String title, String? rawBlurb) {
     // Keep the visible copy current even when a route was opened with a stale
@@ -101,13 +133,13 @@ class SectionBanner extends StatelessWidget {
     final borderRadius = large ? largeRadius : inlineRadius;
     final container = Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(0, 3, 0, 5),
+      margin: const EdgeInsets.fromLTRB(0, 2, 0, 4),
       // Thematic sections have no blurb — a single title line doesn't need
       // the taller editorial floor, so we drop it to keep the scroll tight.
       // The `large` page-hero variant gets a taller floor to breathe, while
       // content can still grow naturally when title/blurb wrap.
       constraints: BoxConstraints(
-        minHeight: hasBlurb ? (large ? 140 : 92) : 60,
+        minHeight: hasBlurb ? (large ? 116 : 76) : 48,
       ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -145,18 +177,6 @@ class SectionBanner extends StatelessWidget {
               ),
             ),
           ),
-          // Bouton réglages (veille) — hit target indépendant, hors
-          // IgnorePointer pour rester tappable.
-          if (onTapSettings != null)
-            Positioned(
-              top: 8,
-              right: 10,
-              child: _SettingsButton(
-                color: colors.textSecondary,
-                border: colors.border,
-                onTap: onTapSettings!,
-              ),
-            ),
           Padding(
             // With a blurb the content fills `minHeight` exactly, so the
             // centered column has no slack and the accent dash sticks to the
@@ -165,82 +185,105 @@ class SectionBanner extends StatelessWidget {
             // down. Add a few px of top inset on the blurb variant to match
             // the thematic dash's apparent inset.
             padding: large
-                ? const EdgeInsets.fromLTRB(22, 24, 16, 20)
+                ? const EdgeInsets.fromLTRB(18, 18, 14, 16)
                 : EdgeInsets.fromLTRB(
-                    20,
-                    hasBlurb ? 20 : 8,
-                    14,
-                    hasBlurb ? 14 : 9,
+                    16,
+                    hasBlurb ? 14 : 6,
+                    12,
+                    hasBlurb ? 11 : 7,
                   ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(
-                      right: illustrationAsset == null
-                          ? _trailingControlReserve()
-                          : 0,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _AccentDash(accent: accent, large: large),
-                        Padding(
-                          padding: EdgeInsets.only(
-                            top: 2,
-                            bottom: hasBlurb ? (large ? 10 : 8) : 0,
-                          ),
-                          child: Text.rich(
-                            TextSpan(
-                              text: title,
-                              children: <InlineSpan>[
-                                if (tappable) ...[
-                                  const TextSpan(text: ' '),
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: IgnorePointer(
-                                      child: Icon(
-                                        PhosphorIcons.caretRight(PhosphorIconsStyle.bold),
-                                        size: 18,
-                                        color: colors.textTertiary,
-                                      ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (suggested) ...[
+                        _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                        const SizedBox(height: 8),
+                      ],
+                      _AccentDash(accent: accent, large: large),
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: 2,
+                          bottom: hasBlurb ? (large ? 10 : 8) : 0,
+                        ),
+                        child: Text.rich(
+                          // Borne le titre : la page Flâner (`large`) tolère
+                          // 2 lignes, mais les bannières inline (dont la
+                          // veille, au label long `Ma veille — {config}`)
+                          // restent sur 1 ligne pour ne jamais dépasser le
+                          // budget de hauteur `kBannerHeightWithBlurb` que le
+                          // snap/fit suppose.
+                          maxLines: large ? 2 : 1,
+                          overflow: TextOverflow.ellipsis,
+                          TextSpan(
+                            text: title,
+                            children: <InlineSpan>[
+                              if (tappable) ...[
+                                // Chevron de tappabilité rendu comme icône
+                                // centrée verticalement sur le titre (même
+                                // pattern que l'étoile favorite ci-dessous) :
+                                // trait épais et alignement propre, là où le
+                                // glyphe texte « > » héritait d'une baseline
+                                // décalée et d'un trait fin.
+                                const WidgetSpan(child: SizedBox(width: 3)),
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: Icon(
+                                    PhosphorIcons.caretRight(
+                                      PhosphorIconsStyle.fill,
                                     ),
+                                    size: large ? 24 : 20,
+                                    color: colors.textPrimary,
                                   ),
-                                ],
-                                if (onTapFavorite != null) ...[
-                                  const TextSpan(text: '  '),
-                                  WidgetSpan(
-                                    alignment: PlaceholderAlignment.middle,
-                                    child: _FavoriteStar(
-                                      color: colors.textTertiary,
-                                      onTap: onTapFavorite!,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ],
-                              style: GoogleFonts.fraunces(
-                                fontSize: large ? 28 : 20,
-                                fontWeight: FontWeight.w700,
-                                height: large ? 1.12 : 1.08,
-                                letterSpacing: -0.4,
-                                color: colors.textPrimary,
-                              ),
-                            ),
+                              if (onTapFavorite != null) ...[
+                                const TextSpan(text: '  '),
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: _FavoriteStar(
+                                    color: colors.textTertiary,
+                                    onTap: onTapFavorite!,
+                                  ),
+                                ),
+                              ],
+                              // Réglages veille inline, juste après l'étoile
+                              // favori (ordre : titre ★ ⚙). Hit target
+                              // indépendant : l'InkWell du bouton gagne sur
+                              // l'InkWell de pli du banner (descendant > ancêtre).
+                              if (onTapSettings != null) ...[
+                                const TextSpan(text: ' '),
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: _SettingsButton(
+                                    color: colors.textSecondary,
+                                    border: colors.border,
+                                    onTap: onTapSettings!,
+                                  ),
+                                ),
+                              ],
+                            ],
+                            style:
+                                (large ? _titleStyleLarge : _titleStyleInline)
+                                    .copyWith(color: colors.textPrimary),
                           ),
                         ),
-                        if (hasBlurb)
-                          Text(
-                            effectiveBlurb,
-                            style: GoogleFonts.dmSans(
-                              fontSize: large ? 14 : 12,
-                              height: large ? 1.42 : 1.36,
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                      ],
-                    ),
+                      ),
+                      if (hasBlurb)
+                        Text(
+                          effectiveBlurb,
+                          // Défensif : même budget 82px — borne le blurb pour
+                          // garder une hauteur déterministe.
+                          maxLines: large ? 3 : 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: (large ? _blurbStyleLarge : _blurbStyleInline)
+                              .copyWith(color: colors.textSecondary),
+                        ),
+                    ],
                   ),
                 ),
                 if (logoUrl != null) ...[
@@ -348,6 +391,66 @@ class _SettingsButton extends StatelessWidget {
   }
 }
 
+/// Story 22.3 — pastille « Choisie pour vous » posée au-dessus du titre d'une
+/// section suggérée. Tappable : ouvre la sheet « Pourquoi cette section ? ». Le
+/// « i » signale l'affordance d'explication (transparence totale, PO).
+class _SuggestedBadge extends StatelessWidget {
+  final Color accent;
+  final VoidCallback? onTap;
+
+  const _SuggestedBadge({required this.accent, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 7, 4),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.34), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.sparkle(PhosphorIconsStyle.fill),
+            size: 11,
+            color: accent,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            'Choisie pour vous',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
+              color: accent,
+            ),
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: 5),
+            Icon(
+              PhosphorIcons.info(PhosphorIconsStyle.bold),
+              size: 12,
+              color: accent.withValues(alpha: 0.85),
+            ),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) return badge;
+    return Semantics(
+      button: true,
+      label: 'Pourquoi cette section est proposée',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: badge,
+      ),
+    );
+  }
+}
+
 class _AccentDash extends StatelessWidget {
   final Color accent;
   final bool large;
@@ -358,9 +461,9 @@ class _AccentDash extends StatelessWidget {
   Widget build(BuildContext context) {
     return IgnorePointer(
       child: Container(
-        width: large ? 34 : 28,
+        width: large ? 28 : 22,
         height: 3,
-        margin: const EdgeInsets.only(bottom: 7),
+        margin: const EdgeInsets.only(bottom: 5),
         decoration: BoxDecoration(
           color: accent.withValues(alpha: 0.78),
           borderRadius: BorderRadius.circular(999),

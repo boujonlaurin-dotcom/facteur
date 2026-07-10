@@ -107,10 +107,6 @@ class Content(Base):
     content_quality: Mapped[str | None] = mapped_column(
         String(20), nullable=True, default=None
     )
-    # In-App Reading: last extraction attempt timestamp (prevents infinite retries)
-    extraction_attempted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, default=None
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
@@ -136,16 +132,6 @@ class UserContentStatus(Base):
         Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
         Index("ix_user_content_status_user_liked", "user_id", "is_liked"),
         Index("ix_user_content_status_user_status", "user_id", "status"),
-        # Performance index for digest exclusion queries
-        # Used in _get_candidates() EXISTS subquery that filters out seen/saved/hidden content
-        Index(
-            "ix_user_content_status_exclusion",
-            "user_id",
-            "content_id",
-            "is_hidden",
-            "is_saved",
-            "status",
-        ),
     )
 
     id: Mapped[UUID] = mapped_column(

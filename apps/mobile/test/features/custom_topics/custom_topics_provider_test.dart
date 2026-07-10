@@ -129,10 +129,33 @@ void main() {
       expect(topics.any((t) => t.id.startsWith('temp_')), isFalse);
     });
 
+    test('forwards explicit slugParent to the repository', () async {
+      when(() => mockRepo.getTopics())
+          .thenAnswer((_) async => [mockTopics[0]]);
+      when(() => mockRepo.followTopic('Tennis',
+              slugParent: 'sport',
+              priorityMultiplier: any(named: 'priorityMultiplier')))
+          .thenAnswer((_) async => const UserTopicProfile(
+              id: 'new-tennis', name: 'Tennis', slugParent: 'sport'));
+
+      await container.read(customTopicsProvider.future);
+      final notifier = container.read(customTopicsProvider.notifier);
+
+      final result = await notifier.followTopic('Tennis', slugParent: 'sport');
+
+      expect(result!.slugParent, 'sport');
+      // Le provider doit transmettre le parent explicite au repository.
+      verify(() => mockRepo.followTopic('Tennis',
+          slugParent: 'sport',
+          priorityMultiplier: any(named: 'priorityMultiplier'))).called(1);
+    });
+
     test('rolls back on API error', () async {
       when(() => mockRepo.getTopics())
           .thenAnswer((_) async => [mockTopics[0]]);
-      when(() => mockRepo.followTopic(any()))
+      when(() => mockRepo.followTopic(any(),
+              slugParent: any(named: 'slugParent'),
+              priorityMultiplier: any(named: 'priorityMultiplier')))
           .thenThrow(Exception('API error'));
 
       await container.read(customTopicsProvider.future);

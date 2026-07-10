@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -23,7 +27,7 @@ class _NotifIds {
   static const veilleDelivery = 3;
 }
 
-/// Service de notifications push locales (FCM non utilisé en v1).
+/// Notifications locales, y compris l'affichage au premier plan des pushes FCM.
 class PushNotificationService {
   PushNotificationService._();
 
@@ -93,38 +97,48 @@ class PushNotificationService {
     return true;
   }
 
-  Future<bool> requestExactAlarmPermission() async {
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (androidPlugin != null) {
-      final canSchedule =
-          await androidPlugin.canScheduleExactNotifications() ?? false;
-      if (!canSchedule) {
-        final granted =
-            await androidPlugin.requestExactAlarmsPermission() ?? false;
-        debugPrint(
-            'PushNotificationService: Exact alarm permission requested: $granted');
-        return granted;
-      }
-      return true;
-    }
-    return true;
-  }
+  /// Clé Hive (box `settings`) : marque qu'on a déjà ouvert au moins une fois
+  /// l'écran système « Alarmes et rappels ». Garde one-shot pour les chemins
+  /// automatiques — le pop-up ne doit jamais se rouvrir tout seul après un 1er
+  /// refus (cf. bug-modals-intrusives).
+  static const exactAlarmAskedKey = 'notif_exact_alarm_asked';
 
-  Future<bool> ensureExactAlarmPermission() async {
+  /// Ouvre l'écran système Android « Alarmes et rappels » pour demander la
+  /// permission d'alarme exacte (une `Activity` séparée).
+  ///
+  /// [userInitiated] : `true` UNIQUEMENT quand l'appel découle d'une action
+  /// utilisateur explicite (modal d'activation, toggle Réglages) — l'écran OS
+  /// est alors (ré)ouvert même après un refus précédent. `false` (défaut) pour
+  /// tout chemin automatique : une garde Hive one-shot ([exactAlarmAskedKey])
+  /// empêche de rouvrir l'écran après une 1ère demande, et la planification
+  /// retombe silencieusement en mode inexact.
+  Future<bool> requestExactAlarmPermission({bool userInitiated = false}) async {
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin == null) return true;
+
     final canSchedule =
         await androidPlugin.canScheduleExactNotifications() ?? false;
     if (canSchedule) return true;
-    return await androidPlugin.requestExactAlarmsPermission() ?? false;
+
+    final box = await Hive.openBox<dynamic>('settings');
+    if (!userInitiated &&
+        (box.get(exactAlarmAskedKey, defaultValue: false) as bool)) {
+      debugPrint(
+        'PushNotificationService: exact alarm already requested once - '
+        'skip auto re-prompt (inexact scheduling)',
+      );
+      return false;
+    }
+
+    await box.put(exactAlarmAskedKey, true);
+    final granted = await androidPlugin.requestExactAlarmsPermission() ?? false;
+    debugPrint(
+        'PushNotificationService: Exact alarm permission requested: $granted');
+    return granted;
   }
 
   // --- Copy variants -------------------------------------------------------
-
-  /// Nom affiché comme expéditeur dans la notif Android (MessagingStyle).
-  static const String senderName = 'Ton facteur';
 
   /// Variante A — défaut, sans teaser éditorial.
   static const String defaultTitle = 'Facteur';
@@ -176,16 +190,22 @@ class PushNotificationService {
       case NotifVariant.variantA:
         return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
       case NotifVariant.variantB:
-        final cleaned = (teasers ?? const <String>[])
+        final all = (teasers ?? const <String>[])
             .map((t) => t.trim())
             .where((t) => t.isNotEmpty)
-            .take(2)
             .toList();
+        final cleaned = all.take(2).toList();
         if (cleaned.isEmpty) {
           return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
         }
         final header = serene ? digestHeaderSerene : digestHeader;
-        final cta = serene ? digestCtaSerene : digestCta;
+        // Nombre d'articles « à la une » non rendus en bullets : la ligne CTA
+        // les annonce (« + N autres ! »). Pile 1-2 teasers → aucun reste →
+        // on garde le CTA générique (apaisé ou non).
+        final remaining = all.length - cleaned.length;
+        final cta = remaining > 0
+            ? '+ $remaining ${remaining > 1 ? 'autres' : 'autre'} !'
+            : (serene ? digestCtaSerene : digestCta);
         final bullets = cleaned.map((t) => '• $t').join('\n');
         return (
           title: defaultTitle,
@@ -248,12 +268,6 @@ class PushNotificationService {
         ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
-    const sender = Person(
-      name: senderName,
-      key: 'facteur',
-      important: true,
-      icon: DrawableResourceAndroidIcon('facteur_avatar'),
-    );
     final androidDetails = AndroidNotificationDetails(
       'digest_channel',
       'Digest quotidien',
@@ -262,12 +276,13 @@ class PushNotificationService {
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
-      styleInformation: MessagingStyleInformation(
-        const Person(name: 'Toi'),
-        groupConversation: false,
-        messages: [
-          Message(copy.bigText, DateTime.now(), sender),
-        ],
+      // BigText (et non MessagingStyle) : le multi-ligne est rendu sans avatar
+      // par message — un MessagingStyle sans icône d'expéditeur produit un
+      // monogramme « T » coloré dupliqué à côté de l'icône launcher
+      // (cf. bug-notif-matin-avatar-double-sans-bullets).
+      styleInformation: BigTextStyleInformation(
+        copy.bigText,
+        contentTitle: copy.title,
       ),
     );
     const iosDetails = DarwinNotificationDetails();
@@ -320,7 +335,6 @@ class PushNotificationService {
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
-      largeIcon: const DrawableResourceAndroidBitmap('facteur_avatar'),
       styleInformation: BigTextStyleInformation(
         communityBody,
         contentTitle: communityTitle,
@@ -368,12 +382,6 @@ class PushNotificationService {
         ? AndroidScheduleMode.exactAllowWhileIdle
         : AndroidScheduleMode.inexactAllowWhileIdle;
 
-    const sender = Person(
-      name: senderName,
-      key: 'facteur_goodnews',
-      important: true,
-      icon: DrawableResourceAndroidIcon('facteur_goodnews'),
-    );
     final androidDetails = AndroidNotificationDetails(
       'good_news_channel',
       'Bonnes nouvelles du jour',
@@ -383,12 +391,11 @@ class PushNotificationService {
       priority: Priority.high,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
-      styleInformation: MessagingStyleInformation(
-        const Person(name: 'Toi'),
-        groupConversation: false,
-        messages: [
-          Message(copy.bigText, DateTime.now(), sender),
-        ],
+      // BigText (et non MessagingStyle) : évite l'avatar monogramme dupliqué
+      // (cf. bug-notif-matin-avatar-double-sans-bullets).
+      styleInformation: BigTextStyleInformation(
+        copy.bigText,
+        contentTitle: copy.title,
       ),
     );
     const iosDetails = DarwinNotificationDetails();
@@ -536,6 +543,88 @@ class PushNotificationService {
     await _plugin.cancel(id: _NotifIds.weeklyCommunityPick);
   }
 
+  Future<void> showRemoteNotification(RemoteMessage message) async {
+    final notification = message.notification;
+    final data = message.data;
+    final route = data['route'] as String? ?? '/digest';
+
+    // Le push digest est data-only sur Android (cf. push_dispatcher._send_fcm) :
+    // `message.notification` est null et c'est NOUS qui rendons la notif. On
+    // ignore donc le push uniquement s'il n'y a ni bloc `notification`, ni
+    // données exploitables (teasers / title|body dans `data`).
+    final teasers = _parseTeasers(data['teasers']);
+    final dataTitle = data['title'] as String?;
+    final dataBody = data['body'] as String?;
+    if (notification == null &&
+        teasers.isEmpty &&
+        dataTitle == null &&
+        dataBody == null) {
+      return;
+    }
+
+    // Si le push porte des teasers (`data['teasers']` = JSON liste de titres),
+    // on rend de vrais bullets (variantB) au lieu du corps une-ligne. Sinon,
+    // fallback sur le bloc `notification` FCM, puis sur `data` title/body.
+    final String title;
+    final String body;
+    final String bigText;
+    if (teasers.isNotEmpty) {
+      final copy = buildCopy(variant: NotifVariant.variantB, teasers: teasers);
+      title = copy.title;
+      body = copy.body;
+      bigText = copy.bigText;
+    } else {
+      title = notification?.title ?? dataTitle ?? defaultTitle;
+      body = notification?.body ?? dataBody ?? defaultBody;
+      bigText = body;
+    }
+
+    final androidDetails = AndroidNotificationDetails(
+      'digest_channel',
+      'Digest quotidien',
+      channelDescription: 'Notification quotidienne quand ton récap est prêt',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      styleInformation: BigTextStyleInformation(bigText, contentTitle: title),
+    );
+    const iosDetails = DarwinNotificationDetails();
+    await _plugin.show(
+      id: message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      payload: 'route:$route',
+    );
+  }
+
+  /// Décode `data['teasers']` (JSON liste de titres) de façon défensive :
+  /// renvoie une liste vide si la charge est absente, mal formée, ou non-liste.
+  static List<String> _parseTeasers(Object? raw) {
+    if (raw is! String || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<String>()
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  static void openRoute(String route) {
+    final navigator = _navigatorKey?.currentState;
+    if (navigator == null) return;
+    navigator.pushNamedAndRemoveUntil(route, (_) => false);
+  }
+
   // --- Time helpers --------------------------------------------------------
 
   static TimeOfDay _timeOfDayFor(NotifTimeSlot slot) => switch (slot) {
@@ -576,15 +665,14 @@ class PushNotificationService {
       'PushNotificationService: tapped (id: ${response.id}, payload: $payload)',
     );
 
-    final navigator = _navigatorKey?.currentState;
-    if (navigator == null) return;
-
     final route = _routeFromPayload(payload);
-    navigator.pushNamedAndRemoveUntil(route, (_) => false);
+    openRoute(route);
   }
 
   static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) return '/flux-continu';
+    if (payload == null || !payload.startsWith('route:')) {
+      return '/flux-continu';
+    }
     return payload.substring('route:'.length);
   }
 }

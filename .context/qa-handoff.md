@@ -1,60 +1,55 @@
-# QA Handoff — Modes d'affichage des articles (Story 10.1, finalisation)
-
-> Rempli par l'agent dev. Input de /validate-feature.
+# QA Handoff — « Notif du jour » (bandeau agrégateur quotidien)
 
 ## Feature développée
-Différenciation réelle des 3 modes d'affichage (Normal / Minimaliste / Ludique) : le minimaliste révèle plus d'articles par section (le fit peut monter au-dessus du top 3 nominal, plafond 7) avec titres jusqu'à 5 lignes ; le ludique met l'image en élément principal (pleine largeur en haut de carte, hauteur fixe 170, fontScale 1.05, titres 3 lignes). Bonus : le CTA « Tout lire » de bas de section est remplacé par un banner cliquable (chevron accent + « +X » gris dans le titre) et les chips de thème des tuiles de l'Essentiel sont retirées.
+Ligne de notification unique en tête du feed Essentiel : file de messages (profil + nudges absorbés), un seul visible à la fois, max 3/jour (le suivant après tap CTA ou dismiss croix), rotation quotidienne. Remplace les bandeaux renudge / well-informed / géoloc.
 
 ## PR associée
-À créer via /go (base main).
+Branche `boujonlaurin-dotcom/notif-du-jour-composant` → PR vers `main` (voir `gh pr view`).
 
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Tournée (Flux Continu) | / (home) | Modifié (cartes, banners, fit) |
-| Profil → Affichage des articles | /profile (bottom sheet) | Existant (sélecteur de mode) |
-| Page thème / source (deep-dive) | /flux-continu/theme/:key | Modifié (accès via tap banner) |
-| Flâner (banner large) | page Flâner | Inchangé attendu (pas de chevron) |
+| Essentiel (feed) | `/feed` | Modifié (carte Notif du jour en tête, sous bandeau Lettres) |
+| Mes abonnements | `/settings/subscriptions?add=1` | Modifié (auto-ouverture feuille d'ajout) |
+| Profil | `/settings/profile` | Modifié (tuile « Ma configuration » + barre de progression) |
 
 ## Scénarios de test
 
-### Scénario 1 : Mode minimaliste — plus d'articles
+### Scénario 1 : affichage un-à-la-fois (happy path)
 **Parcours** :
-1. Profil → « Affichage des articles » → Minimaliste → valider
-2. Revenir sur la Tournée
-**Résultat attendu** : cartes texte seul compactes ; les sections (Bonnes Nouvelles incluse) affichent plus de 3 articles si l'écran le permet (jusqu'à 7) ; titres longs jusqu'à 5 lignes ; aucune carte ne déborde de l'écran (filet `[fit-net]` silencieux).
+1. Ouvrir le feed Essentiel (compte connecté, onboarding fait).
+2. Observer la zone sous le bandeau Lettres.
+**Résultat attendu** : au plus **une** carte Notif du jour (icône teintée 34px, titre 1 ligne, CTA-lien avec flèche, croix à droite). Jamais deux messages empilés. Pas de flash au chargement.
 
-### Scénario 2 : Mode ludique — image en haut
+### Scénario 2 : dismiss → message suivant
 **Parcours** :
-1. Profil → « Affichage des articles » → Ludique → valider
-2. Parcourir la Tournée
-**Résultat attendu** : cartes régulières avec image pleine largeur en haut (type carrousel) et texte dessous ; textes à peine plus gros que Normal (1.05) ; titres max 3 lignes ; badge play conservé sur les vidéos ; hero Essentiel inchangé structurellement.
+1. Taper la croix de la carte.
+**Résultat attendu** : repli fluide (~300ms, hauteur + fondu), puis le **message suivant** de la file apparaît. Après 3 consommations dans la journée, plus rien ne s'affiche (recharger : toujours rien — persisté).
 
-### Scénario 3 : Carte ludique avec image cassée (cas d'erreur)
+### Scénario 3 : CTA Serein in-place
+**Parcours** (visible seulement si mode Serein OFF) :
+1. Taper la carte « Pas dans le mood pour l'actu chaude ? ».
+**Résultat attendu** : aucune navigation ; le mode Serein s'active, la carte se replie et le message suivant apparaît.
+
+### Scénario 4 : CTA navigation directe
 **Parcours** :
-1. En mode ludique, trouver un article dont la vignette 404 (ou couper le réseau après le 1er rendu)
-**Résultat attendu** : la carte retombe sur le layout texte standard (pas d'espace vide de 170px, pas d'image grise cassée).
+1. Taper « Tes médias préférés manquent à l'appel ? » (si < 3 sources suivies) → panneau d'ajout de média **direct** (pas la liste).
+2. Taper « Abonné à un média ? Ajoute-le ici » (si sources payantes suivies non liées) → Mes abonnements s'ouvre **avec la feuille d'ajout déjà ouverte**.
+**Résultat attendu** : zéro tap intermédiaire.
 
-### Scénario 4 : Banner cliquable (Bonus 1)
+### Scénario 5 : NPS well-informed inline
+**Parcours** (si le message est dû) :
+1. Carte « Te sens-tu bien informé·e en ce moment ? » : boutons 1..10 à la place du CTA.
+2. Taper un score.
+**Résultat attendu** : soumission (POST well-informed), repli, message suivant. La croix = skip.
+
+### Scénario 6 : profil — Ma configuration
 **Parcours** :
-1. Sur la Tournée, taper le banner d'une section thème, source, veille, Actus du jour et Bonnes Nouvelles
-2. Taper l'étoile favorite d'une section favorite, puis le bouton réglages (tune) de la veille
-**Résultat attendu** : tap banner → ouvre la page « tout lire » de la section ; chevron « > » fin couleur accent après le titre + « +X » gris si articles cachés ; plus aucun bouton « Tout lire » en bas de section ; l'étoile ouvre « Composer ma Tournée » (pas la navigation) ; le tune ouvre la config veille ; le banner large de la page Flâner n'a ni chevron ni tap.
+1. Aller sur `/settings/profile`.
+**Résultat attendu** : tuile « Ma configuration » avec barre de progression, tap → relance le parcours d'onboarding.
 
-### Scénario 5 : Essentiel allégé (Bonus 2)
-**Parcours** :
-1. Observer la carte « Ton Essentiel » (lead + médiums)
-**Résultat attendu** : plus de balises de thème (« Technologie », etc.) sur les tuiles ; le badge « Actu du jour » reste sur le lead concerné ; les tuiles médiums montrent source + titre.
-
-## Critères d'acceptation
-- [ ] Minimaliste : > 3 articles/section sur écran standard ; titres 5 lignes max
-- [ ] Ludique : image pleine largeur en haut, fontScale 1.05, titres 3 lignes, fallback image cassée
-- [ ] Banner cliquable sur les 5 types de sections, chevron + « +X », étoile/tune indépendants
-- [ ] Plus de bouton « Lire plus » en bas des sections
-- [ ] Plus de chips de thème dans l'Essentiel
-- [ ] Aucun débordement de carte dans les 3 modes (logs `[fit-net]` propres)
-
-## Vérifications déjà faites (dev)
-- `flutter analyze` : 0 erreur.
-- `flutter test test/features/flux_continu/ test/features/settings/` : 245/245 verts.
-- Suite complète : retour exact à la baseline (23 échecs pré-existants Hive/Supabase, hors périmètre).
+## Vérifications transverses
+- Console sans erreurs ; réseau sans 4xx/5xx inattendus.
+- Fidélité hifi : fond crème surface, radius 14, ombre douce, pas de bordure ; tints ocre/vert/steel.
+- Les anciens gros bandeaux renudge/géoloc/well-informed n'apparaissent **plus**.
+- ⚠️ Web : les demandes OS (renudge push, géoloc device) ne se testent pas — on-device Android requis (hors QA web).

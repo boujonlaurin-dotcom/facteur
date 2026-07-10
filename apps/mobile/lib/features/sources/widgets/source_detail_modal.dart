@@ -1,24 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../../features/detail/screens/content_detail_screen.dart';
+import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../../widgets/design/facteur_button.dart';
+import '../../feed/models/content_model.dart';
 import '../../flux_continu/utils/theme_color_mapping.dart';
+import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../my_interests/widgets/interest_state_pill.dart';
+import '../../my_interests/widgets/interest_priority_slider.dart';
 import '../models/smart_search_result.dart';
-import '../models/source_coverage.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
+import '../utils/publication_frequency.dart';
 import 'premium_source_connection.dart';
 import 'source_logo_avatar.dart';
 
 /// Espace fine insécable (U+202F) — avant `? ! : ;`, milliers, unités.
 const String _nnbsp = ' ';
+
+typedef SourceArticleOpener =
+    void Function(BuildContext context, Content article);
 
 /// Fiche source v2 — présentation du média d'abord, évaluation repliée.
 ///
@@ -28,7 +37,7 @@ const String _nnbsp = ' ';
 /// 3. `_FsCoverage` (couverture par thèmes, data-dépendante → skeleton)
 /// 4. `_FsArticles` (derniers articles, data-dépendante → skeleton)
 /// 5. `_FsSettings` (priorité, ssi suivie)
-/// 6. `_FsManage` (premium si proposé + masquer)
+/// 6. `_FsManage` (premium si proposé)
 /// 7. Actions (Suivre + favori) en fin de scroll.
 class SourceDetailModal extends ConsumerWidget {
   final Source source;
@@ -37,12 +46,17 @@ class SourceDetailModal extends ConsumerWidget {
   final VoidCallback? onCopyFeedUrl;
 
   /// Articles récents pré-chargés (ex. smart-search). Quand `null`, la fiche
-  /// les charge elle-même via [sourceRecentArticlesProvider].
+  /// se charge elle-même via [sourceProfileProvider] (mode normal).
   final List<SmartSearchRecentItem>? recentItems;
 
   /// Contexte onboarding : quand non-null, le bouton principal reflète l'état
   /// de sélection du questionnaire (et non l'état « confiance » global).
   final bool? isSelectedOverride;
+
+  /// Ouvre un article récent. En mode normal, la fiche conserve le routing
+  /// historique GoRouter. L'onboarding injecte un push root Navigator pour que
+  /// le reader s'affiche au-dessus du flow sans redirection vers `/onboarding`.
+  final SourceArticleOpener? articleOpener;
 
   /// Libellé du bouton principal quand la source n'est pas sélectionnée
   /// (contexte onboarding). Défaut : « Sélectionner cette source ».
@@ -56,6 +70,7 @@ class SourceDetailModal extends ConsumerWidget {
     this.onCopyFeedUrl,
     this.recentItems,
     this.isSelectedOverride,
+    this.articleOpener,
     this.selectLabel,
   });
 
@@ -65,7 +80,8 @@ class SourceDetailModal extends ConsumerWidget {
 
     // Source live depuis le provider : trust/mute/abo restent synchro quand on
     // les bascule depuis la fiche elle-même.
-    final liveSource = ref
+    final liveSource =
+        ref
             .watch(userSourcesProvider)
             .valueOrNull
             ?.where((s) => s.id == source.id)
@@ -103,6 +119,7 @@ class SourceDetailModal extends ConsumerWidget {
                 child: _FsBody(
                   source: liveSource,
                   recentItems: recentItems,
+                  articleOpener: articleOpener,
                 ),
               ),
             ),
@@ -120,23 +137,137 @@ class SourceDetailModal extends ConsumerWidget {
 }
 
 /// Contenu défilant : header → éval → couverture → articles → réglages → gestion.
+///
+/// Deux modes :
+/// - **normal** (`recentItems == null`) : un seul [sourceProfileProvider]
+///   alimente couverture, articles (cartes cliquables) et chip fréquence. En
+///   erreur réseau, la fiche tombe sur un **fallback statique** (header + éval
+///   + réglages + gestion) sans jamais bloquer.
+/// - **smart-search** (`recentItems != null`, depuis `source_add_panel`) :
+///   inchangé — couverture via [sourceCoverageProvider], articles préchargés
+///   en carte minimale (la source n'est pas forcément en base).
 class _FsBody extends ConsumerWidget {
   final Source source;
   final List<SmartSearchRecentItem>? recentItems;
+  final SourceArticleOpener? articleOpener;
 
-  const _FsBody({required this.source, this.recentItems});
+  const _FsBody({required this.source, this.recentItems, this.articleOpener});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final preloaded = recentItems;
+    if (preloaded != null) {
+      return _assemble(
+        display: source,
+        frequencyLabel: null,
+        middle: [
+          _FsCoverageFromProvider(source: source),
+          _FsSection(
+            title: 'Derniers articles',
+            child: _ArticlesContent(items: preloaded),
+          ),
+        ],
+      );
+    }
+
+    final profileAsync = ref.watch(sourceProfileProvider(source.id));
+    final (String? frequencyLabel, List<Widget> middle) = profileAsync.when(
+      loading: () => (
+        null,
+        const [
+          _FsSection(
+            title: 'Couverture par thèmes',
+            child: _CoverageSkeleton(),
+          ),
+          _FsSection(title: 'Derniers articles', child: _ArticlesSkeleton()),
+        ],
+      ),
+      // Fallback gracieux : `/profile` a échoué (réseau/5xx). Plutôt que de
+      // tout masquer (fiche « presque vide »), on retombe sur la couverture via
+      // l'endpoint indépendant `/coverage` (best-effort, se masque seul si lui
+      // aussi échoue) et on propose un retry sur la zone articles. La fréquence
+      // reste masquée (elle dépend du profil).
+      error: (_, __) => (
+        null,
+        [
+          _FsCoverageFromProvider(source: source),
+          _FsArticlesUnavailable(
+            onRetry: () => ref.invalidate(sourceProfileProvider(source.id)),
+          ),
+        ],
+      ),
+      data: (profile) => (
+        humanizeFrequency(profile.articles30d, profile.oldestContentAt),
+        [
+          if (profile.hasCoverage)
+            _FsSection(
+              title: 'Couverture par thèmes',
+              action: '30 derniers jours',
+              child: _CoverageBars(
+                rows: [
+                  for (final t in profile.themeDistribution)
+                    (theme: t.theme, pct: (t.share * 100).round()),
+                ],
+              ),
+            ),
+          _FsArticlesSection(
+            articles: profile.recentArticles,
+            articleOpener: articleOpener,
+          ),
+        ],
+      ),
+    );
+    // Enrichit la fiche avec la source complète du profil (`/profile` renvoie
+    // un `SourceResponse` complet). Ouverte depuis le reader, le `source` initial
+    // est un `SourceMini` léger (lecteurs / scores / description / reco / premium
+    // absents). Dès que `/profile` répond, on superpose ces champs manquants —
+    // sans écraser l'état mutable réactif (`isTrusted`/`isMuted`/`hasSubscription`)
+    // qui vient du `liveSource` (`userSourcesProvider`) et doit rester synchro si
+    // l'utilisateur bascule suivi/masquage depuis la fiche. Loading/error :
+    // on garde le `source` léger inchangé.
+    final display = _enrich(source, profileAsync.valueOrNull?.source);
+    return _assemble(
+      display: display,
+      frequencyLabel: frequencyLabel,
+      middle: middle,
+    );
+  }
+
+  /// Superpose les champs descriptifs de [enriched] (depuis `/profile`) sur le
+  /// [base] réactif, en préservant l'état mutable de suivi/masquage du `base`.
+  Source _enrich(Source base, Source? enriched) {
+    if (enriched == null) return base;
+    return base.copyWith(
+      followerCount: enriched.followerCount,
+      description: enriched.description,
+      scoreIndependence: enriched.scoreIndependence,
+      scoreRigor: enriched.scoreRigor,
+      scoreUx: enriched.scoreUx,
+      reliabilityScore: enriched.reliabilityScore,
+      biasStance: enriched.biasStance,
+      biasOrigin: enriched.biasOrigin,
+      recommendedBy: enriched.recommendedBy,
+      recommendationReason: enriched.recommendationReason,
+      premiumConnection: enriched.premiumConnection,
+    );
+  }
+
+  /// Assemble la fiche autour d'une zone centrale variable. Header, éval,
+  /// réglages et gestion sont communs aux trois états (data/loading/error).
+  /// [display] = source à afficher (enrichie via `/profile` quand disponible).
+  Widget _assemble({
+    required Source display,
+    required String? frequencyLabel,
+    required List<Widget> middle,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FsHeader(source: source),
-        _FsEval(source: source),
-        _FsCoverage(source: source),
-        _FsArticles(source: source, preloaded: recentItems),
-        if (source.isTrusted) _FsSettings(source: source),
-        _FsManage(source: source),
+        _FsHeader(source: display, frequencyLabel: frequencyLabel),
+        _FsEval(source: display),
+        ...middle,
+        if (display.isTrusted) _FsSettings(source: display),
+        _FsManage(source: display),
       ],
     );
   }
@@ -147,7 +278,12 @@ class _FsBody extends ConsumerWidget {
 // ============================================================
 class _FsHeader extends StatelessWidget {
   final Source source;
-  const _FsHeader({required this.source});
+
+  /// Fréquence de publication humanisée (« ~100/jour »…). `null` hors mode
+  /// normal data (smart-search, loading, fallback erreur).
+  final String? frequencyLabel;
+
+  const _FsHeader({required this.source, this.frequencyLabel});
 
   @override
   Widget build(BuildContext context) {
@@ -159,12 +295,30 @@ class _FsHeader extends StatelessWidget {
 
     final signals = <Widget>[];
     if (followerCount > 0) {
-      signals.add(_signal(
-        context,
-        PhosphorIcons.users(PhosphorIconsStyle.regular),
-        'Suivi par ${_formatThousands(followerCount)} '
-        '${followerCount > 1 ? 'lecteurs' : 'lecteur'}',
-      ));
+      signals.add(
+        _signal(
+          context,
+          PhosphorIcons.users(PhosphorIconsStyle.regular),
+          'Suivi par ${_formatThousands(followerCount)} '
+          '${followerCount > 1 ? 'lecteurs' : 'lecteur'}',
+        ),
+      );
+    }
+    if (frequencyLabel != null && frequencyLabel!.isNotEmpty) {
+      signals.add(
+        _signal(
+          context,
+          PhosphorIcons.clock(PhosphorIconsStyle.regular),
+          frequencyLabel!,
+        ),
+      );
+    }
+    // Format (non-article uniquement) : rend lisible vidéo/podcast/Reddit. Rendu
+    // dans l'idiome « signal » du header plutôt qu'en pill, pour rester cohérent
+    // avec les autres signaux (suiveurs, fréquence).
+    final typeIcon = source.getTypeIcon();
+    if (typeIcon != null) {
+      signals.add(_signal(context, typeIcon, source.getTypeLabel()));
     }
 
     return Padding(
@@ -183,8 +337,9 @@ class _FsHeader extends StatelessWidget {
                   children: [
                     Text(
                       source.name,
-                      style: FacteurTypography.serifTitle(colors.textPrimary)
-                          .copyWith(fontSize: 22, letterSpacing: -0.4),
+                      style: FacteurTypography.serifTitle(
+                        colors.textPrimary,
+                      ).copyWith(fontSize: 22, letterSpacing: -0.4),
                     ),
                     if (domain != null) ...[
                       const SizedBox(height: 2),
@@ -213,14 +368,7 @@ class _FsHeader extends StatelessWidget {
           if (source.description != null &&
               source.description!.trim().isNotEmpty) ...[
             const SizedBox(height: 14),
-            Text(
-              source.description!.trim(),
-              style: textTheme.bodyMedium?.copyWith(
-                fontSize: 14,
-                height: 1.55,
-                color: colors.textSecondary,
-              ),
-            ),
+            _ExpandableDescription(text: source.description!.trim()),
           ],
         ],
       ),
@@ -237,12 +385,99 @@ class _FsHeader extends StatelessWidget {
         Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0,
-              ),
+            color: colors.textSecondary,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0,
+          ),
         ),
       ],
+    );
+  }
+}
+
+/// Description de source repliable : tronquée à [_maxLines] lignes avec un fondu
+/// bas (ShaderMask) tant que repliée, et un bouton discret « Lire plus » /
+/// « Réduire ». Le bouton n'apparaît que si le texte dépasse réellement la
+/// limite (détecté via un `TextPainter` mesuré à la largeur disponible).
+class _ExpandableDescription extends StatefulWidget {
+  final String text;
+  const _ExpandableDescription({required this.text});
+
+  @override
+  State<_ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<_ExpandableDescription> {
+  static const int _maxLines = 4;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final style = textTheme.bodyMedium?.copyWith(
+      fontSize: 14,
+      height: 1.55,
+      color: colors.textSecondary,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Le texte dépasse-t-il _maxLines à la largeur disponible ?
+        final painter = TextPainter(
+          text: TextSpan(text: widget.text, style: style),
+          maxLines: _maxLines,
+          textDirection: Directionality.of(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final overflows = painter.didExceedMaxLines;
+        painter.dispose();
+
+        final text = Text(
+          widget.text,
+          style: style,
+          maxLines: _expanded ? null : _maxLines,
+          overflow: _expanded ? TextOverflow.visible : TextOverflow.clip,
+        );
+
+        // Fondu bas tant que replié et que ça dépasse, pour suggérer la suite.
+        final body = (!_expanded && overflows)
+            ? ShaderMask(
+                shaderCallback: (rect) => LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: const [0.0, 0.72, 1.0],
+                  colors: [colors.textSecondary, colors.textSecondary, colors.textSecondary.withValues(alpha: 0.0)],
+                ).createShader(rect),
+                blendMode: BlendMode.dstIn,
+                child: text,
+              )
+            : text;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            body,
+            if (overflows) ...[
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: () => setState(() => _expanded = !_expanded),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    _expanded ? 'Réduire' : 'Lire plus',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.primary,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -272,7 +507,8 @@ class _FsEvalState extends State<_FsEval> {
       widget.source.reliabilityScore,
       colors,
     );
-    final hasEval = widget.source.reliabilityScore != 'unknown' ||
+    final hasEval =
+        widget.source.reliabilityScore != 'unknown' ||
         widget.source.scoreIndependence != null ||
         widget.source.scoreRigor != null ||
         widget.source.scoreUx != null;
@@ -294,33 +530,35 @@ class _FsEvalState extends State<_FsEval> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               child: Row(
                 children: [
-                  Flexible(
-                    child: Text(
-                      'Évaluation Facteur',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.labelMedium?.copyWith(
-                        color: colors.textSecondary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        letterSpacing: 0,
-                      ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Évaluation Facteur',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: colors.textSecondary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'à titre indicatif',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.textTertiary,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 5),
-                  Flexible(
-                    child: Text(
-                      '· à titre indicatif',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: textTheme.labelSmall?.copyWith(
-                        color: colors.textTertiary,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
                   if (hasEval)
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -340,6 +578,23 @@ class _FsEvalState extends State<_FsEval> {
                             color: reliabilityColor,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        // (i) discret : ouvre l'échelle de fiabilité sans
+                        // déclencher le toggle replier/déplier (le
+                        // GestureDetector gagne l'arène de gestes du tap).
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _showReliabilityScaleSheet(context),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              PhosphorIcons.info(PhosphorIconsStyle.regular),
+                              size: 14,
+                              color: colors.textTertiary,
+                              semanticLabel: 'Échelle de fiabilité',
+                            ),
                           ),
                         ),
                       ],
@@ -373,8 +628,7 @@ class _FsEvalState extends State<_FsEval> {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 2, 14, 14),
               child: hasEval
-                  ? _buildEvalBody(context, colors, textTheme, reliabilityLabel,
-                      reliabilityColor)
+                  ? _buildEvalBody(context, colors, textTheme)
                   : _buildNotEvaluated(context, colors, textTheme),
             ),
         ],
@@ -386,23 +640,22 @@ class _FsEvalState extends State<_FsEval> {
     BuildContext context,
     FacteurColors colors,
     TextTheme textTheme,
-    String reliabilityLabel,
-    Color reliabilityColor,
   ) {
     final source = widget.source;
-    final gauges = <Widget>[];
-    void addGauge(String name, double? value) {
+    final badges = <Widget>[];
+    void addBadge(String name, double? value) {
       if (value == null) return; // masquer si null
-      gauges.add(_FsGauge(name: name, value: value));
+      badges.add(_FsGradeBadge(name: name, value: value));
     }
 
-    addGauge('Indépendance', source.scoreIndependence);
-    addGauge('Rigueur', source.scoreRigor);
-    addGauge('Accessibilité', source.scoreUx);
+    addBadge('Indépendance', source.scoreIndependence);
+    addBadge('Rigueur', source.scoreRigor);
+    addBadge('Accessibilité', source.scoreUx);
 
     final reason = source.recommendationReason?.trim();
     final recoBy = source.recommendedBy?.trim();
-    final hasRecoPerso = recoBy != null &&
+    final hasRecoPerso =
+        recoBy != null &&
         recoBy.isNotEmpty &&
         reason != null &&
         reason.isNotEmpty;
@@ -410,37 +663,19 @@ class _FsEvalState extends State<_FsEval> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _evalRow(
-          context,
-          'Fiabilité',
-          Text(
-            reliabilityLabel,
-            style: textTheme.labelMedium?.copyWith(
-              color: reliabilityColor,
-              fontWeight: FontWeight.w700,
-              fontSize: 12.5,
-              letterSpacing: 0,
-            ),
-          ),
-        ),
-        if (gauges.isNotEmpty) ...[
-          const SizedBox(height: 12),
+        if (badges.isNotEmpty) ...[
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (var i = 0; i < gauges.length; i++) ...[
+              for (var i = 0; i < badges.length; i++) ...[
                 if (i > 0) const SizedBox(width: 12),
-                Expanded(child: gauges[i]),
+                Expanded(child: badges[i]),
               ],
             ],
           ),
         ],
         const SizedBox(height: 12),
-        _evalRow(
-          context,
-          'Bord politique',
-          _BiasPill(source: source),
-        ),
+        _evalRow(context, 'Bord politique', _BiasPill(source: source)),
         // Ligne communauté : conditionnelle, masquée par défaut (pas de
         // métrique dédiée pour l'instant — cf. story 7.8 hors périmètre).
         if (hasRecoPerso) ...[
@@ -478,6 +713,93 @@ class _FsEvalState extends State<_FsEval> {
     );
   }
 
+  /// Mini feuille « Échelle de fiabilité » (idiome app). Trois lignes
+  /// explicatives, déclenchée par le `(i)` du résumé d'éval. Sortie du corps
+  /// déplié pour que la valeur de fiabilité n'apparaisse qu'une seule fois.
+  void _showReliabilityScaleSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        final colors = sheetContext.facteurColors;
+        final textTheme = Theme.of(sheetContext).textTheme;
+
+        Widget item(String label, String description) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: RichText(
+              text: TextSpan(
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.textSecondary,
+                  height: 1.4,
+                  fontSize: 13.5,
+                  letterSpacing: 0,
+                ),
+                children: [
+                  TextSpan(
+                    text: label,
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  TextSpan(text: ' = $description'),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: colors.backgroundPrimary,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 2),
+                  child: Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: colors.textTertiary.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Échelle de fiabilité',
+                        style: FacteurTypography.serifTitle(
+                          colors.textPrimary,
+                        ).copyWith(fontSize: 18, letterSpacing: -0.3),
+                      ),
+                      const SizedBox(height: 14),
+                      item('Solide', 'fiabilité élevée'),
+                      item('Mitigée', 'points de vigilance'),
+                      item('Fragile', 'prudence renforcée'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildFooter(
     BuildContext context,
     FacteurColors colors,
@@ -487,9 +809,7 @@ class _FsEvalState extends State<_FsEval> {
       padding: const EdgeInsets.only(top: 10),
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(
-            color: colors.textPrimary.withValues(alpha: 0.08),
-          ),
+          top: BorderSide(color: colors.textPrimary.withValues(alpha: 0.08)),
         ),
       ),
       child: Column(
@@ -526,11 +846,11 @@ class _FsEvalState extends State<_FsEval> {
         Text(
           label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: colors.textSecondary,
-                fontWeight: FontWeight.w500,
-                fontSize: 12.5,
-                letterSpacing: 0,
-              ),
+            color: colors.textSecondary,
+            fontWeight: FontWeight.w500,
+            fontSize: 12.5,
+            letterSpacing: 0,
+          ),
         ),
         value,
       ],
@@ -538,16 +858,18 @@ class _FsEvalState extends State<_FsEval> {
   }
 }
 
-/// Jauge fine pour un pilier d'évaluation (barre + mot dérivé par seuils).
-class _FsGauge extends StatelessWidget {
+/// Badge de note pour un pilier d'évaluation (A à E).
+class _FsGradeBadge extends StatelessWidget {
   final String name;
   final double value;
-  const _FsGauge({required this.name, required this.value});
+  const _FsGradeBadge({required this.name, required this.value});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final grade = _gradeForScore(value);
+    final color = _gradeColor(grade, colors);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -562,24 +884,24 @@ class _FsGauge extends StatelessWidget {
             letterSpacing: 0,
           ),
         ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(2),
-          child: LinearProgressIndicator(
-            value: value.clamp(0.0, 1.0),
-            minHeight: 4,
-            backgroundColor: colors.textPrimary.withValues(alpha: 0.09),
-            valueColor: AlwaysStoppedAnimation<Color>(colors.secondary),
+        const SizedBox(height: 6),
+        Container(
+          width: 34,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(FacteurRadius.small),
+            border: Border.all(color: color.withValues(alpha: 0.22)),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          _gaugeWord(value),
-          style: textTheme.labelSmall?.copyWith(
-            color: colors.textSecondary,
-            fontWeight: FontWeight.w600,
-            fontSize: 11,
-            letterSpacing: 0,
+          child: Text(
+            grade,
+            style: textTheme.labelMedium?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
+              letterSpacing: 0,
+            ),
           ),
         ),
       ],
@@ -604,11 +926,11 @@ class _BiasPill extends StatelessWidget {
       child: Text(
         source.getBiasLabel(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-              fontSize: 11,
-              letterSpacing: 0,
-            ),
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+          letterSpacing: 0,
+        ),
       ),
     );
   }
@@ -676,8 +998,9 @@ class _FsRecoPersoState extends State<_FsRecoPerso> {
                 ),
                 AnimatedRotation(
                   turns: _open ? 0.5 : 0,
-                  duration:
-                      reduceMotion ? Duration.zero : FacteurDurations.fast,
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : FacteurDurations.fast,
                   child: Icon(
                     PhosphorIcons.caretDown(PhosphorIconsStyle.regular),
                     size: 14,
@@ -698,9 +1021,7 @@ class _FsRecoPersoState extends State<_FsRecoPerso> {
                 topRight: Radius.circular(FacteurRadius.medium),
                 bottomRight: Radius.circular(FacteurRadius.medium),
               ),
-              border: Border(
-                left: BorderSide(color: colors.primary, width: 3),
-              ),
+              border: Border(left: BorderSide(color: colors.primary, width: 3)),
             ),
             child: Text(
               widget.comment,
@@ -721,9 +1042,12 @@ class _FsRecoPersoState extends State<_FsRecoPerso> {
 // ============================================================
 // 3. Couverture par thèmes
 // ============================================================
-class _FsCoverage extends ConsumerWidget {
+
+/// Couverture par thèmes alimentée par [sourceCoverageProvider] (mode
+/// smart-search : la source n'est pas forcément dans le profil unifié).
+class _FsCoverageFromProvider extends ConsumerWidget {
   final Source source;
-  const _FsCoverage({required this.source});
+  const _FsCoverageFromProvider({required this.source});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -740,26 +1064,33 @@ class _FsCoverage extends ConsumerWidget {
         return _FsSection(
           title: 'Couverture par thèmes',
           action: coverage.periodLabel.isNotEmpty ? coverage.periodLabel : null,
-          child: _CoverageBars(coverage: coverage),
+          child: _CoverageBars(
+            rows: [for (final r in coverage.rows) (theme: r.theme, pct: r.pct)],
+            caption: coverage.caption,
+          ),
         );
       },
     );
   }
 }
 
+/// Barres de couverture par thème : un rang = `(theme brut, pct 0..100)`.
+/// Partagé par les deux sources de données (profil unifié & coverage legacy).
 class _CoverageBars extends StatelessWidget {
-  final SourceCoverage coverage;
-  const _CoverageBars({required this.coverage});
+  final List<({String theme, int pct})> rows;
+  final String? caption;
+  const _CoverageBars({required this.rows, this.caption});
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final displayRows = _compactCoverageRows(rows);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final row in coverage.rows) ...[
+        for (final row in displayRows) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 9),
             child: Row(
@@ -821,10 +1152,10 @@ class _CoverageBars extends StatelessWidget {
             ),
           ),
         ],
-        if (coverage.caption != null) ...[
+        if (caption != null) ...[
           const SizedBox(height: 1),
           Text(
-            coverage.caption!,
+            caption!,
             style: textTheme.labelSmall?.copyWith(
               color: colors.textTertiary,
               fontSize: 11.5,
@@ -873,36 +1204,209 @@ class _CoverageSkeleton extends StatelessWidget {
 // ============================================================
 // 4. Derniers articles
 // ============================================================
-class _FsArticles extends ConsumerWidget {
-  final Source source;
-  final List<SmartSearchRecentItem>? preloaded;
 
-  const _FsArticles({required this.source, this.preloaded});
+/// Mode normal : articles récents en carte standard [FluxContinuArticleCard]
+/// (tap → reader, read-sync, preview en appui long — gérés par la carte). Les
+/// `Content` viennent complets du profil unifié.
+class _FsArticlesSection extends StatelessWidget {
+  final List<Content> articles;
+  final SourceArticleOpener? articleOpener;
+
+  const _FsArticlesSection({required this.articles, this.articleOpener});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Si des articles ont été pré-chargés (smart-search), on les utilise tels
-    // quels et on évite tout appel réseau.
-    if (preloaded != null) {
-      return _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesContent(items: preloaded!),
-      );
+  Widget build(BuildContext context) {
+    final visible = articles.take(3).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 26, 16, 14),
+          child: _FsSectionHeader(title: 'Derniers articles'),
+        ),
+        if (visible.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: _ArticlesEmptyCard(message: 'Aucun article récent.'),
+          )
+        else
+          // FluxContinuArticleCard porte 12px de padding horizontal interne ;
+          // +4px ici aligne les cartes sur les 16px du reste de la fiche.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              children: [
+                for (final article in visible)
+                  FluxContinuArticleCard(
+                    article: article,
+                    onTap: () => _openArticle(context, article),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _openArticle(BuildContext context, Content article) {
+    final opener = articleOpener;
+    if (opener != null) {
+      opener(context, article);
+      return;
     }
 
-    final articlesAsync = ref.watch(sourceRecentArticlesProvider(source.id));
-    return articlesAsync.when(
-      loading: () => const _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesSkeleton(),
+    // Reader unique (root navigator) : la sheet reste vivante dessous.
+    context.pushNamed(
+      RouteNames.contentDetail,
+      pathParameters: {'id': article.id},
+      extra: article,
+    );
+  }
+}
+
+void openSourceArticleOnRootNavigator(BuildContext context, Content article) {
+  Navigator.of(context, rootNavigator: true).push<void>(
+    FullSwipeCupertinoPage<void>(
+      child: ContentDetailScreen(contentId: article.id, content: article),
+    ).createRoute(context),
+  );
+}
+
+/// Carte vide partagée (mode smart-search & mode normal sans article).
+class _ArticlesEmptyCard extends StatelessWidget {
+  final String message;
+  const _ArticlesEmptyCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        border: Border.all(color: colors.textTertiary.withValues(alpha: 0.25)),
       ),
-      error: (_, __) => const _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesContent(items: []),
+      child: Row(
+        children: [
+          Icon(
+            PhosphorIcons.moonStars(PhosphorIconsStyle.regular),
+            size: 22,
+            color: colors.textTertiary,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: textTheme.labelMedium?.copyWith(
+                color: colors.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13.5,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ],
       ),
-      data: (items) => _FsSection(
-        title: 'Derniers articles',
-        child: _ArticlesContent(items: items),
+    );
+  }
+}
+
+/// Zone articles en erreur réseau (mode normal) : message sobre + retry, au
+/// lieu de masquer la section. Le tap relance [sourceProfileProvider] ; si le
+/// retry réussit, la fiche bascule sur la branche `data` complète.
+class _FsArticlesUnavailable extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _FsArticlesUnavailable({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _FsSectionHeader(title: 'Derniers articles'),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+            decoration: BoxDecoration(
+              color: colors.surface.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(FacteurRadius.large),
+              border: Border.all(
+                color: colors.textTertiary.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  PhosphorIcons.warningCircle(PhosphorIconsStyle.regular),
+                  size: 22,
+                  color: colors.textTertiary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Contenu momentanément indisponible.',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: colors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13.5,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _RetryChip(onTap: onRetry),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pilule « Réessayer » (relance un provider). Réutilisable dans la fiche.
+class _RetryChip extends StatelessWidget {
+  final VoidCallback onTap;
+  const _RetryChip({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return InkWell(
+      borderRadius: BorderRadius.circular(FacteurRadius.pill),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: colors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(FacteurRadius.pill),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.arrowClockwise(PhosphorIconsStyle.regular),
+              size: 14,
+              color: colors.primary,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'Réessayer',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: colors.primary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -914,41 +1418,11 @@ class _ArticlesContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
     final visible = items.take(3).toList();
 
     if (visible.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-        decoration: BoxDecoration(
-          color: colors.surface.withValues(alpha: 0.4),
-          borderRadius: BorderRadius.circular(FacteurRadius.large),
-          border: Border.all(
-            color: colors.textTertiary.withValues(alpha: 0.25),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              PhosphorIcons.moonStars(PhosphorIconsStyle.regular),
-              size: 22,
-              color: colors.textTertiary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Rien publié ces 7 derniers jours.',
-                style: textTheme.labelMedium?.copyWith(
-                  color: colors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13.5,
-                  letterSpacing: 0,
-                ),
-              ),
-            ),
-          ],
-        ),
+      return const _ArticlesEmptyCard(
+        message: 'Rien publié ces 7 derniers jours.',
       );
     }
 
@@ -1047,11 +1521,11 @@ class _ThemeTag extends StatelessWidget {
       child: Text(
         _coverageLabel(theme),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: colors.textSecondary,
-              fontWeight: FontWeight.w600,
-              fontSize: 10,
-              letterSpacing: 0.2,
-            ),
+          color: colors.textSecondary,
+          fontWeight: FontWeight.w600,
+          fontSize: 10,
+          letterSpacing: 0.2,
+        ),
       ),
     );
   }
@@ -1110,35 +1584,31 @@ class _FsSettings extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: _fsCardDecoration(colors),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Priorité dans ton flux',
-                    style: textTheme.labelMedium?.copyWith(
-                      color: colors.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Choisis la place de cette source dans ton flux.',
-                    style: textTheme.labelSmall?.copyWith(
-                      color: colors.textTertiary,
-                      fontSize: 11.5,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ],
+            Text(
+              'Priorité dans ton flux',
+              style: textTheme.labelMedium?.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                letterSpacing: 0,
               ),
             ),
-            const SizedBox(width: 12),
-            SourceStatePill(sourceId: source.id, title: source.name),
+            const SizedBox(height: 4),
+            Text(
+              'Règle la place de cette source dans ton flux : plus elle est '
+              'prioritaire, plus ses articles y remontent.',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.textTertiary,
+                fontSize: 11.5,
+                height: 1.4,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 14),
+            _SourcePrioritySlider(sourceId: source.id),
           ],
         ),
       ),
@@ -1146,61 +1616,66 @@ class _FsSettings extends StatelessWidget {
   }
 }
 
+/// Curseur 4 points (Masqué → Neutre → Suivi → Favori) remplaçant la pastille
+/// + modal de priorité. Fin wrapper autour du widget partagé
+/// [InterestPrioritySlider] : lit l'état courant via `userSourcesStateProvider`
+/// et persiste via `setSourceState` (optimiste ; la position se resynchronise
+/// sur le provider, rollback compris). Le libellé source reste « Favori ».
+class _SourcePrioritySlider extends ConsumerWidget {
+  final String sourceId;
+  const _SourcePrioritySlider({required this.sourceId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final providerState = ref.watch(userSourcesStateProvider).valueOrNull;
+    final currentState =
+        providerState?.stateOf(sourceId) ?? InterestState.followed;
+
+    return InterestPrioritySlider(
+      value: currentState,
+      onChanged: (picked) async {
+        try {
+          await ref
+              .read(userSourcesStateProvider.notifier)
+              .setSourceState(sourceId, picked);
+        } catch (_) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Impossible de mettre à jour cette source.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      },
+    );
+  }
+}
+
 // ============================================================
-// 6. Gestion de la source : premium (si proposé) + masquer
+// 6. Gestion de la source : premium (si proposé)
 // ============================================================
-class _FsManage extends ConsumerStatefulWidget {
+class _FsManage extends StatelessWidget {
   final Source source;
   const _FsManage({required this.source});
 
   @override
-  ConsumerState<_FsManage> createState() => _FsManageState();
-}
-
-class _FsManageState extends ConsumerState<_FsManage> {
-  @override
   Widget build(BuildContext context) {
-    final source = widget.source;
-    final hasPremium = source.premiumConnection != null;
+    // Le masquage est désormais porté par le curseur de priorité (palier
+    // « Masqué »). Cette section ne subsiste que pour la connexion premium.
+    // Sources payantes curées (paywall) : bouton visible indépendamment du
+    // suivi (aligné sur `eligibleSubscriptionSourcesProvider`). Nouveau cas
+    // générique (source suivie avec URL http(s) mais sans `premium_connection`
+    // curé, ex. Cerveau & Psycho) : réservé aux sources suivies, aligné sur
+    // `loginConnectableSourcesProvider` de la feuille Réglages.
+    final connection = resolvePremiumConnection(source) ??
+        (source.isTrusted ? forceGenericConnection(source) : null);
+    if (connection == null) return const SizedBox.shrink();
 
     return _FsSection(
       title: 'Gestion de la source',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (hasPremium) ...[
-            _FsPremium(source: source),
-            const SizedBox(height: 12),
-          ],
-          Align(
-            alignment: Alignment.centerLeft,
-            child: _ManageButton(
-              isOn: source.isMuted,
-              labelOn: 'Source masquée',
-              labelOff: 'Masquer cette source',
-              onTap: () => _toggleMute(context),
-            ),
-          ),
-        ],
-      ),
+      child: _FsPremium(source: source, connection: connection),
     );
-  }
-
-  Future<void> _toggleMute(BuildContext context) async {
-    final source = widget.source;
-    try {
-      await ref
-          .read(userSourcesProvider.notifier)
-          .toggleMute(source.id, source.isMuted);
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de masquer cette source.'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-    }
   }
 }
 
@@ -1208,19 +1683,21 @@ class _FsManageState extends ConsumerState<_FsManage> {
 /// propose un, indépendamment du suivi.
 class _FsPremium extends ConsumerWidget {
   final Source source;
-  const _FsPremium({required this.source});
+  final PremiumConnection connection;
+  const _FsPremium({required this.source, required this.connection});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final linked = source.hasSubscription;
+    // Une connexion générique = source sans abonnement payant curé : on parle
+    // de « compte » (connexion login) plutôt que d'« abonnement ».
+    final isGeneric = connection.isGeneric;
 
     final title = linked
-        ? 'Abonnement associé'
-        : (source.premiumConnection!.isGeneric
-            ? 'Associer mon abonnement'
-            : 'Connecter mon abonnement');
+        ? (isGeneric ? 'Compte connecté' : 'Abonnement associé')
+        : (isGeneric ? 'Connecter mon compte' : 'Connecter mon abonnement');
 
     return InkWell(
       borderRadius: BorderRadius.circular(FacteurRadius.large),
@@ -1260,8 +1737,11 @@ class _FsPremium extends ConsumerWidget {
                   ),
                   const SizedBox(height: 1),
                   Text(
-                    'Lis les articles réservés aux abonnés directement dans '
-                    'Facteur.',
+                    isGeneric
+                        ? 'Connecte ton compte pour lire les articles de ce '
+                              'média directement dans Facteur.'
+                        : 'Lis les articles réservés aux abonnés directement '
+                              'dans Facteur.',
                     style: textTheme.labelSmall?.copyWith(
                       color: colors.textTertiary,
                       height: 1.4,
@@ -1310,68 +1790,10 @@ class _FsPremium extends ConsumerWidget {
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(
           source: source,
+          connection: connection,
           onConnected: () => ref
               .read(userSourcesProvider.notifier)
               .connectSubscription(source.id),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bouton tertiaire de gestion (toggle local, ex. masquer).
-class _ManageButton extends StatelessWidget {
-  final bool isOn;
-  final String labelOn;
-  final String labelOff;
-  final VoidCallback onTap;
-
-  const _ManageButton({
-    required this.isOn,
-    required this.labelOn,
-    required this.labelOff,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(FacteurRadius.medium),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: isOn
-              ? colors.textPrimary.withValues(alpha: 0.05)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(FacteurRadius.medium),
-          border: Border.all(
-            color: isOn ? Colors.transparent : colors.border,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isOn
-                  ? PhosphorIcons.eye(PhosphorIconsStyle.regular)
-                  : PhosphorIcons.eyeSlash(PhosphorIconsStyle.regular),
-              size: 16,
-              color: isOn ? colors.textSecondary : colors.textTertiary,
-            ),
-            const SizedBox(width: 7),
-            Text(
-              isOn ? labelOn : labelOff,
-              style: textTheme.labelMedium?.copyWith(
-                color: isOn ? colors.textPrimary : colors.textSecondary,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-                letterSpacing: 0,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -1402,11 +1824,12 @@ class _FsActionBar extends ConsumerWidget {
 
     final followLabel = inOnboarding
         ? (isSelected
-            ? 'Retirer de ma sélection'
-            : (selectLabel ?? 'Sélectionner cette source'))
+              ? 'Retirer de ma sélection'
+              : (selectLabel ?? 'Sélectionner cette source'))
         : (isSelected ? 'Suivie' : 'Suivre ${source.name}');
 
-    final isFavorite = ref
+    final isFavorite =
+        ref
             .watch(userSourcesStateProvider)
             .valueOrNull
             ?.favorites
@@ -1424,8 +1847,8 @@ class _FsActionBar extends ConsumerWidget {
           Expanded(
             child: FacteurButton(
               onPressed: () {
-                onToggleTrust();
                 Navigator.pop(context);
+                onToggleTrust();
               },
               label: followLabel,
               type: isSelected
@@ -1454,8 +1877,7 @@ class _FsActionBar extends ConsumerWidget {
     WidgetRef ref,
     bool isFavorite,
   ) async {
-    final next =
-        isFavorite ? InterestState.followed : InterestState.favorite;
+    final next = isFavorite ? InterestState.followed : InterestState.favorite;
     try {
       await ref
           .read(userSourcesStateProvider.notifier)
@@ -1498,8 +1920,9 @@ class _StarButton extends StatelessWidget {
               : PhosphorIcons.star(PhosphorIconsStyle.regular),
           size: 19,
           color: isFavorite ? colors.primary : colors.textSecondary,
-          semanticLabel:
-              isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris',
+          semanticLabel: isFavorite
+              ? 'Retirer des favoris'
+              : 'Ajouter aux favoris',
         ),
       ),
     );
@@ -1509,6 +1932,50 @@ class _StarButton extends StatelessWidget {
 // ============================================================
 // Helpers UI partagés
 // ============================================================
+
+/// En-tête de section seul : titre + filet + action optionnelle. Extrait pour
+/// que la section articles (cartes au padding propre) le réutilise.
+class _FsSectionHeader extends StatelessWidget {
+  final String title;
+  final String? action;
+  const _FsSectionHeader({required this.title, this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        Text(
+          title,
+          style: textTheme.labelLarge?.copyWith(
+            color: colors.textPrimary,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            height: 1,
+            color: colors.textPrimary.withValues(alpha: 0.08),
+          ),
+        ),
+        if (action != null) ...[
+          const SizedBox(width: 10),
+          Text(
+            action!,
+            style: textTheme.labelSmall?.copyWith(
+              color: colors.textTertiary,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
 
 /// En-tête de section : titre + filet + action optionnelle, puis contenu.
 class _FsSection extends StatelessWidget {
@@ -1520,43 +1987,12 @@ class _FsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
-                title,
-                style: textTheme.labelLarge?.copyWith(
-                  color: colors.textPrimary,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  height: 1,
-                  color: colors.textPrimary.withValues(alpha: 0.08),
-                ),
-              ),
-              if (action != null) ...[
-                const SizedBox(width: 10),
-                Text(
-                  action!,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colors.textTertiary,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ],
-            ],
-          ),
+          _FsSectionHeader(title: title, action: action),
           const SizedBox(height: 14),
           child,
         ],
@@ -1589,15 +2025,6 @@ class _Skel extends StatelessWidget {
 // ============================================================
 // Helpers data / copy
 // ============================================================
-
-/// Mot dérivé par seuils client pour une jauge d'évaluation (0–1).
-String _gaugeWord(double value) {
-  if (value >= 0.85) return 'Élevée';
-  if (value >= 0.65) return 'Bonne';
-  if (value >= 0.5) return 'Correcte';
-  if (value >= 0.35) return 'Limitée';
-  return 'Faible';
-}
 
 /// Copie fiabilité alignée : Solide / Mitigée / Fragile / Pas encore évaluée.
 String _reliabilityLabel(String reliabilityScore) {
@@ -1647,6 +2074,65 @@ Color _coverageColor(String theme, FacteurColors colors) {
   }
   if (themeMap.containsKey(slug)) return visualFor(slug).accent;
   return getThemeColor(slug, colors);
+}
+
+List<({String theme, int pct})> _compactCoverageRows(
+  List<({String theme, int pct})> rows,
+) {
+  final merged = <String, int>{};
+  for (final row in rows) {
+    final theme = row.theme.trim();
+    if (theme.isEmpty) continue;
+    final key = _isOtherCoverageTheme(theme) ? 'autres' : theme.toLowerCase();
+    merged[key] = (merged[key] ?? 0) + row.pct;
+  }
+
+  final regular = <({String theme, int pct})>[];
+  var otherPct = 0;
+  for (final entry in merged.entries) {
+    if (_isOtherCoverageTheme(entry.key)) {
+      otherPct += entry.value;
+    } else {
+      regular.add((theme: entry.key, pct: entry.value));
+    }
+  }
+  regular.sort((a, b) => b.pct.compareTo(a.pct));
+
+  final top = regular.take(3).toList();
+  final overflow = regular.skip(3).fold<int>(0, (sum, row) => sum + row.pct);
+  final otherTotal = otherPct + overflow;
+  if (otherTotal > 0) top.add((theme: 'autres', pct: otherTotal));
+  return top;
+}
+
+bool _isOtherCoverageTheme(String theme) {
+  final slug = theme.toLowerCase();
+  return slug == 'autres' || slug == 'other' || slug == 'others';
+}
+
+String _gradeForScore(double score) {
+  if (score >= 0.8) return 'A';
+  if (score >= 0.6) return 'B';
+  if (score >= 0.4) return 'C';
+  if (score >= 0.2) return 'D';
+  return 'E';
+}
+
+/// Couleur de note A-E, sobre : positif (A/B), neutre (C), attention discrète
+/// (D/E → `warning`, pas `error` trop agressif pour un signal indicatif).
+Color _gradeColor(String grade, FacteurColors colors) {
+  switch (grade) {
+    case 'A':
+    case 'B':
+      return colors.success;
+    case 'C':
+      return colors.textSecondary;
+    case 'D':
+    case 'E':
+      return colors.warning;
+    default:
+      return colors.textTertiary;
+  }
 }
 
 /// Domaine lisible à partir d'une URL de source (sans `www.`).

@@ -1,4 +1,4 @@
-"""Tests de l'auto-matching « mot du jour » → article réel (Part D)."""
+"""Tests de l'orchestration « mot du jour » → sélection hybride (apply_hybrid_word)."""
 
 from datetime import datetime
 from uuid import uuid4
@@ -7,85 +7,10 @@ import pytest
 
 from app.models.content import Content
 from app.models.enums import ContentType
+from app.models.grille_game_state import STATUS_IN_PROGRESS, GrilleGameState
 from app.models.grille_puzzle import GrillePuzzle
-from app.services.editorial.schemas import (
-    EditorialGlobalContext,
-    EditorialSubject,
-    MatchedActuArticle,
-)
-from app.services.grille_matcher import (
-    _best_subject,
-    match_grille_featured_article,
-    subject_match_score,
-)
+from app.services.grille_matcher import apply_hybrid_word
 from app.utils.time import today_paris
-
-
-def _actu(title, *, content_id=None, source_name="Le Monde"):
-    return MatchedActuArticle(
-        content_id=content_id or uuid4(),
-        title=title,
-        source_name=source_name,
-        source_id=uuid4(),
-        is_user_source=True,
-        published_at=datetime.utcnow(),
-    )
-
-
-def _subject(rank, label, *, theme=None, actu=None):
-    return EditorialSubject(
-        rank=rank,
-        topic_id=f"t{rank}",
-        label=label,
-        selection_reason="parce que",
-        theme=theme,
-        actu_article=actu,
-    )
-
-
-def _ctx(subjects):
-    return EditorialGlobalContext(
-        subjects=subjects, cluster_data=[], generated_at=datetime.utcnow()
-    )
-
-
-# ----- scoring pur ----------------------------------------------------------
-
-
-def test_score_word_boundary_beats_flexion():
-    boundary = _subject(1, "Climat", actu=_actu("Accord mondial sur le climat"))
-    flexion = _subject(2, "Énergie", actu=_actu("La transition climatique s'accélère"))
-    s_boundary = subject_match_score("CLIMAT", "Environnement", boundary)
-    s_flexion = subject_match_score("CLIMAT", "Environnement", flexion)
-    assert s_boundary > s_flexion > 0
-
-
-def test_score_zero_when_unrelated():
-    subj = _subject(1, "Football", actu=_actu("La finale de la coupe approche"))
-    assert subject_match_score("CLIMAT", "Diplomatie", subj) == 0
-
-
-def test_best_subject_picks_matching_lowest_rank():
-    subjects = [
-        _subject(1, "Sport", actu=_actu("Match de gala")),
-        _subject(2, "Climat", actu=_actu("Le climat au cœur du sommet")),
-    ]
-    best = _best_subject("CLIMAT", "Environnement", subjects)
-    assert best is not None
-    assert best.rank == 2
-
-
-def test_best_subject_none_when_no_match():
-    subjects = [_subject(1, "Sport", actu=_actu("Match de gala"))]
-    assert _best_subject("CLIMAT", "Diplomatie", subjects) is None
-
-
-def test_best_subject_skips_subjects_without_actu():
-    subjects = [_subject(1, "Climat", actu=None)]
-    assert _best_subject("CLIMAT", "Environnement", subjects) is None
-
-
-# ----- match_grille_featured_article (DB) -----------------------------------
 
 
 async def _make_puzzle(db, word="CLIMAT"):
@@ -124,84 +49,92 @@ async def _make_content(db, source_id, *, title, description, url):
 
 
 @pytest.mark.asyncio
-async def test_match_sets_snapshot(db_session, test_source):
-    puzzle = await _make_puzzle(db_session)
+async def test_hybrid_overwrites_word_from_actu(db_session, test_source):
+    puzzle = await _make_puzzle(db_session, word="MANDAT")
     content = await _make_content(
         db_session,
         test_source.id,
-        title="Accord mondial sur le climat",
-        description="Les délégations ont trouvé un terrain d'entente historique.",
+        title="Nouvel espoir pour le climat à Belém",
+        description="Les délégations ont trouvé un terrain d'entente.",
         url="https://exemple.fr/climat",
     )
-    ctx = _ctx(
-        [
-            _subject(1, "Sport", actu=_actu("Match de gala")),
-            _subject(
-                2,
-                "Climat",
-                theme="Environnement",
-                actu=_actu(
-                    "Accord mondial sur le climat",
-                    content_id=content.id,
-                    source_name="Le Monde",
-                ),
-            ),
-        ]
-    )
 
-    matched = await match_grille_featured_article(db_session, today_paris(), ctx)
+    matched = await apply_hybrid_word(db_session, today_paris(), None)
     assert matched is True
 
     await db_session.refresh(puzzle)
+    assert puzzle.word == "CLIMAT"  # mot extrait de l'actu, pas le seed
+    assert puzzle.hybrid_word_source == "hybrid"
+    assert puzzle.hybrid_field == "title"
+    assert puzzle.hybrid_match == "climat"
+    assert puzzle.hybrid_snippet == "Nouvel espoir pour le climat à Belém"
     assert puzzle.featured_content_id == content.id
-    assert puzzle.featured_title == "Accord mondial sur le climat"
-    assert puzzle.featured_excerpt is not None
-    assert puzzle.featured_url == "https://exemple.fr/climat"
-    assert puzzle.featured_source == "Le Monde"
-    assert puzzle.featured_matched_at is not None
+    assert puzzle.featured_source == test_source.name
 
 
 @pytest.mark.asyncio
-async def test_match_no_result_leaves_null(db_session):
-    puzzle = await _make_puzzle(db_session)
-    ctx = _ctx([_subject(1, "Sport", actu=_actu("Match de gala"))])
-
-    matched = await match_grille_featured_article(db_session, today_paris(), ctx)
-    assert matched is False
-
-    await db_session.refresh(puzzle)
-    assert puzzle.featured_content_id is None
-    assert puzzle.featured_title is None
-
-
-@pytest.mark.asyncio
-async def test_match_is_idempotent(db_session, test_source):
-    content = await _make_content(
+async def test_hybrid_is_idempotent(db_session, test_source):
+    puzzle = await _make_puzzle(db_session, word="MANDAT")
+    puzzle.hybrid_word_source = "hybrid"
+    await db_session.commit()
+    await _make_content(
         db_session,
         test_source.id,
-        title="Climat",
-        description="desc",
+        title="Le climat se réchauffe",
+        description="x",
         url="https://exemple.fr/c",
     )
-    puzzle = await _make_puzzle(db_session)
-    puzzle.featured_content_id = content.id
-    puzzle.featured_title = "Déjà figé"
-    await db_session.commit()
 
-    ctx = _ctx(
-        [_subject(1, "Climat", actu=_actu("Le climat", content_id=content.id))]
-    )
-    matched = await match_grille_featured_article(db_session, today_paris(), ctx)
-    assert matched is False  # déjà set → skip
+    matched = await apply_hybrid_word(db_session, today_paris(), None)
+    assert matched is False  # déjà posé → skip
 
     await db_session.refresh(puzzle)
-    assert puzzle.featured_title == "Déjà figé"  # inchangé
+    assert puzzle.word == "MANDAT"  # inchangé
 
 
 @pytest.mark.asyncio
-async def test_match_none_ctx_is_noop(db_session):
-    puzzle = await _make_puzzle(db_session)
-    matched = await match_grille_featured_article(db_session, today_paris(), None)
-    assert matched is False
+async def test_hybrid_skips_when_game_already_started(db_session, test_source):
+    puzzle = await _make_puzzle(db_session, word="MANDAT")
+    await _make_content(
+        db_session,
+        test_source.id,
+        title="Le climat se réchauffe",
+        description="x",
+        url="https://exemple.fr/c",
+    )
+    db_session.add(
+        GrilleGameState(
+            user_id=uuid4(),
+            puzzle_date=today_paris(),
+            guesses=[],
+            status=STATUS_IN_PROGRESS,
+            attempts=0,
+        )
+    )
+    await db_session.commit()
+
+    matched = await apply_hybrid_word(db_session, today_paris(), None)
+    assert matched is False  # partie en cours → ne touche pas le mot
+
     await db_session.refresh(puzzle)
-    assert puzzle.featured_content_id is None
+    assert puzzle.word == "MANDAT"
+    assert puzzle.hybrid_word_source is None
+
+
+@pytest.mark.asyncio
+async def test_hybrid_no_candidate_leaves_seed(db_session, test_source):
+    puzzle = await _make_puzzle(db_session, word="MANDAT")
+    await _make_content(
+        db_session,
+        test_source.id,
+        title="Texte sans aucun terme du pool ici",
+        description="ni la non plus voila",
+        url="https://exemple.fr/none",
+    )
+
+    matched = await apply_hybrid_word(db_session, today_paris(), None)
+    assert matched is False
+
+    await db_session.refresh(puzzle)
+    assert puzzle.word == "MANDAT"  # fallback seed intact
+    assert puzzle.hybrid_word_source is None

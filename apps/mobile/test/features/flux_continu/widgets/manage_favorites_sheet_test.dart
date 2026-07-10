@@ -1,10 +1,11 @@
 // Story 10.2 — sheet unifiée « Mes favoris » : deux sections (Essentiel /
 // Flâner), appartenance exclusive des sources (la clé `source:` dans
 // `tournee_order_v1` ⇒ Essentiel, sinon Flâner), déplacement de mode, funnel
-// veille sur les sujets, et caps 7/10 par section.
+// veille sur les sujets, et caps 13/10 (Essentiel/Flâner) par section.
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_smart_arrangement_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/manage_favorites_sheet.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
@@ -177,6 +178,9 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
         sereinToggleProvider.overrideWith(
           (ref) => _StubSereinToggleNotifier(ref, false),
         ),
+        tourneeSmartArrangementProvider.overrideWith(
+          (ref) => TourneeSmartArrangementNotifier(ref),
+        ),
       ],
       child: _wrap(
         Builder(
@@ -330,8 +334,10 @@ void main() {
       sources: _sources(),
     );
 
+    await tester.ensureVisible(find.text('Thèmes'));
     await tester.tap(find.text('Thèmes'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Technologie'));
     await tester.tap(find.text('Technologie'));
     await tester.pumpAndSettle();
 
@@ -346,8 +352,14 @@ void main() {
   });
 
   testWidgets(
-      '« Hors Tournée du jour (7) » apparaît au-delà de 7 sections Essentiel',
+      '« Hors Tournée du jour (13) » apparaît au-delà de 13 sections Essentiel',
       (tester) async {
+    // 9 thèmes + 3 sources + Actus + Bonnes = 14 blocs Essentiel → au-delà du
+    // cap 13. Les sources sont en mode Essentiel via leur clé `source:` dans
+    // `tournee_order_v1`.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['source:s1', 'source:s2', 'source:s3'],
+    });
     await _openSheet(
       tester,
       interests: _interests(favorites: const [
@@ -359,14 +371,24 @@ void main() {
         ThemeFavoriteRef(slug: 'international'),
         ThemeFavoriteRef(slug: 'economy'),
         ThemeFavoriteRef(slug: 'culture'),
+        ThemeFavoriteRef(slug: 'sport'),
       ]),
-      sources: _sources(),
+      sources: _sources(favorites: const [
+        SourceFavoriteRef(sourceId: 's1', position: 0),
+        SourceFavoriteRef(sourceId: 's2', position: 1),
+        SourceFavoriteRef(sourceId: 's3', position: 2),
+      ]),
+      catalog: [
+        _source('s1', 'Le Monde'),
+        _source('s2', 'Mediapart'),
+        _source('s3', 'Le Figaro'),
+      ],
     );
 
-    // Le cap (élargi 5 → 7) est explicité entre parenthèses.
-    expect(find.text('Hors Tournée du jour (7)'), findsOneWidget);
+    // Le cap (élargi → 13) est explicité entre parenthèses.
+    expect(find.text('Hors Tournée du jour (13)'), findsOneWidget);
     // Le compteur de l'en-tête reflète aussi le cap.
-    expect(find.text('· 7/7'), findsOneWidget);
+    expect(find.text('· 13/13'), findsOneWidget);
   });
 
   testWidgets(
@@ -450,6 +472,94 @@ void main() {
     );
   });
 
+  testWidgets(
+      'réordre avec catalogue partiel ne perd pas une source Essentiel non '
+      'résolue (régression « sources qui se perdent »)', (tester) async {
+    // `source:s2` est favorite + Essentiel (clé dans l'ordre) mais ABSENTE du
+    // catalogue (chargement en cours) → sa tuile n'est pas matérialisée. Un
+    // réordre des tuiles rendues ne doit pas l'élaguer de `tournee_order_v1`.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['source:s1', 'source:s2', 'theme:tech'],
+    });
+    await _openSheet(
+      tester,
+      interests: _interests(favorites: const [ThemeFavoriteRef(slug: 'tech')]),
+      sources: _sources(favorites: const [
+        SourceFavoriteRef(sourceId: 's1', position: 0),
+        SourceFavoriteRef(sourceId: 's2', position: 1),
+      ]),
+      catalog: [_source('s1', 'Le Monde')], // s2 non résolu volontairement.
+    );
+
+    // s1 rendu (Essentiel), s2 sauté faute de catalogue.
+    expect(find.text('Le Monde'), findsOneWidget);
+
+    // Réordre réel : on attrape la 1ʳᵉ poignée de drag et on descend d'environ
+    // deux hauteurs de tuile pour franchir une frontière → déclenche onReorder.
+    final handle = find
+        .byIcon(PhosphorIcons.dotsSixVertical(PhosphorIconsStyle.bold))
+        .first;
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.moveBy(const Offset(0, 120));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Le réordre est non destructif : la source non rendue survit dans l'ordre
+    // (avant le fix, `setOrder(renderedKeys)` l'élaguait → repassait en Flâner).
+    final prefs = await SharedPreferences.getInstance();
+    final order = prefs.getStringList('tournee_order_v1') ?? const <String>[];
+    expect(order, contains('source:s2'));
+  });
+
+  testWidgets(
+      'symétrie Flâner : réordre avec catalogue partiel préserve une source '
+      'Flâner non résolue', (tester) async {
+    // s1 (Flâner, rendu) + t1 (sujet, rendu) + s2 (Flâner, NON résolu) dans
+    // `pinned_tabs_order_v1`. Un réordre des tuiles rendues ne doit pas perdre
+    // `source:s2` (même garde-fou que l'Essentiel, code path partagé).
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'pinned_tabs_order_v1': ['topic:t1', 'source:s1', 'source:s2'],
+    });
+    await _openSheet(
+      tester,
+      interests: _interests(
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        customTopics: [_topic('t1', 'Climat')],
+      ),
+      sources: _sources(favorites: const [
+        SourceFavoriteRef(sourceId: 's1', position: 0),
+        SourceFavoriteRef(sourceId: 's2', position: 1),
+      ]),
+      catalog: [_source('s1', 'Le Monde')], // s2 non résolu.
+      entry: ManageFavoritesEntry.flaner,
+    );
+
+    expect(find.text('Climat'), findsOneWidget);
+    expect(find.text('Le Monde'), findsOneWidget);
+
+    // Réordre de la liste Flâner (Climat + Le Monde rendus). Dernière poignée
+    // (Le Monde) glissée vers le haut pour franchir une frontière.
+    final handles = find
+        .byIcon(PhosphorIcons.dotsSixVertical(PhosphorIconsStyle.bold));
+    final gesture = await tester.startGesture(tester.getCenter(handles.last));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveBy(const Offset(0, -40));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.moveBy(const Offset(0, -120));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    final order =
+        prefs.getStringList('pinned_tabs_order_v1') ?? const <String>[];
+    expect(order, contains('source:s2'));
+  });
+
   testWidgets('🔭 sur un sujet ouvre la config veille (pop + route)',
       (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -502,6 +612,9 @@ void main() {
           sereinToggleProvider.overrideWith(
             (ref) => _StubSereinToggleNotifier(ref, false),
           ),
+        tourneeSmartArrangementProvider.overrideWith(
+          (ref) => TourneeSmartArrangementNotifier(ref),
+        ),
         ],
         child: MaterialApp.router(
           theme: ThemeData(

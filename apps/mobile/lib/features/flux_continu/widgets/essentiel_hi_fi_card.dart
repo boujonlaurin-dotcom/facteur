@@ -7,6 +7,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/article_preview_modal.dart';
+import '../../detail/content_preview_mapper.dart';
+import '../../tour/tour_anchors.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
@@ -45,7 +48,10 @@ class EssentielHiFiCard extends ConsumerWidget {
         ? articles.sublist(1, articles.length > 5 ? 5 : articles.length)
         : const <EssentielArticle>[];
 
-    return Container(
+    return KeyedSubtree(
+      // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
+      key: tourEssentielHeroKey,
+      child: Container(
       margin: const EdgeInsets.fromLTRB(
         FacteurSpacing.space3,
         FacteurSpacing.space2,
@@ -77,8 +83,9 @@ class EssentielHiFiCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _Header(accent: accent, onTapPersonalize: onTapPersonalize),
-            // Compaction : gap header→lead resserré space3→space2.
-            const SizedBox(height: FacteurSpacing.space2),
+            // Compaction « cartes ≤ écran » (passe 2, validée UX) : gap
+            // header→lead 8→6 (le fond teinté du lead rétablit la séparation).
+            const SizedBox(height: 6),
             if (lead != null)
               _LeadTile(
                 article: lead,
@@ -87,13 +94,16 @@ class EssentielHiFiCard extends ConsumerWidget {
                 onTap: () => onTapArticle(lead),
               ),
             for (final a in remaining) ...[
-              const SizedBox(height: FacteurSpacing.space2),
+              // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
+              // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
+              const SizedBox(height: 6),
               const _Hairline(),
-              const SizedBox(height: FacteurSpacing.space2),
+              const SizedBox(height: 6),
               _MediumTile(article: a, spec: spec, onTap: () => onTapArticle(a)),
             ],
           ],
         ),
+      ),
       ),
     );
   }
@@ -127,7 +137,7 @@ class _Header extends StatelessWidget {
                     child: Text(
                       'Ton Essentiel',
                       style: GoogleFonts.fraunces(
-                        fontSize: 18,
+                        fontSize: 15,
                         fontWeight: FontWeight.w700,
                         height: 1.15,
                         color: colors.textPrimary,
@@ -374,11 +384,21 @@ class _WeatherBadgeState extends State<_WeatherBadge>
             ),
           ),
         ),
-        Icon(
-          Icons.keyboard_arrow_down_rounded,
-          size: 16,
-          color: colors.textTertiary,
-          semanticLabel: 'Voir la météo détaillée',
+        const SizedBox(height: 2),
+        // Libellé discret souligné « Météo » (remplace l'ancien chevron) :
+        // signale qu'un tap ouvre la modal détaillée 5 jours.
+        Text(
+          'Météo',
+          style: GoogleFonts.courierPrime(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            height: 1.0,
+            letterSpacing: 0.6,
+            color: colors.textTertiary,
+            decoration: TextDecoration.underline,
+            decorationColor: colors.textTertiary.withValues(alpha: 0.6),
+          ),
+          semanticsLabel: 'Voir la météo détaillée',
         ),
       ],
     );
@@ -517,7 +537,9 @@ class _LeadTile extends StatelessWidget {
     final chipAccent = _accentFor(article, accent);
     return Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: _ArticlePreviewGesture(
+        article: article,
+        child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),
         // Lu : grise la tuile (0.6) + coche verte, comme les autres sections
@@ -528,12 +550,9 @@ class _LeadTile extends StatelessWidget {
           child: Stack(
             children: [
               Container(
-                padding: const EdgeInsets.fromLTRB(
-                  FacteurSpacing.space3,
-                  FacteurSpacing.space3,
-                  FacteurSpacing.space3,
-                  FacteurSpacing.space3,
-                ),
+                // Compaction passe 2 (validée UX) : padding héro 12→10. Plancher
+                // dur à 10 — sous ce seuil le texte « fuit » du fond teinté.
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(FacteurRadius.medium),
@@ -558,13 +577,14 @@ class _LeadTile extends StatelessWidget {
                       maxLines: 4 + spec.titleMaxLinesDelta,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
-                        fontSize: 19 * spec.fontScale,
+                        fontSize: 16 * spec.fontScale,
                         fontWeight: FontWeight.w700,
                         height: 1.3,
                         color: colors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: FacteurSpacing.space2),
+                    // Titre→source 8→6 (le badge actu→titre reste à 8, délibéré).
+                    const SizedBox(height: 6),
                     _SourceRow(article: article, accent: chipAccent),
                   ],
                 ),
@@ -577,6 +597,7 @@ class _LeadTile extends StatelessWidget {
                 ),
             ],
           ),
+        ),
         ),
       ),
     );
@@ -599,7 +620,9 @@ class _MediumTile extends StatelessWidget {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     return Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: _ArticlePreviewGesture(
+        article: article,
+        child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
         // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
@@ -636,7 +659,7 @@ class _MediumTile extends StatelessWidget {
                       maxLines: 3 + spec.titleMaxLinesDelta,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.fraunces(
-                        fontSize: 16 * spec.fontScale,
+                        fontSize: 15 * spec.fontScale,
                         fontWeight: FontWeight.w600,
                         height: 1.3,
                         color: colors.textPrimary,
@@ -654,7 +677,31 @@ class _MediumTile extends StatelessWidget {
             ],
           ),
         ),
+        ),
       ),
+    );
+  }
+}
+
+/// Aperçu au long-press, partagé par [_LeadTile] et [_MediumTile] (cf.
+/// flux_continu_article_card.dart). Pas de swipe (choix PO) ni d'haptique
+/// (cohérence FluxContinuArticleCard). Les tuiles vivent dans un scroll
+/// vertical → pas de conflit d'arène, le long-press gagne de façon fiable.
+class _ArticlePreviewGesture extends StatelessWidget {
+  final EssentielArticle article;
+  final Widget child;
+
+  const _ArticlePreviewGesture({required this.article, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: (_) =>
+          ArticlePreviewOverlay.show(context, article.toPreviewContent()),
+      onLongPressMoveUpdate: (d) =>
+          ArticlePreviewOverlay.updateScroll(d.localOffsetFromOrigin.dy),
+      onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+      child: child,
     );
   }
 }

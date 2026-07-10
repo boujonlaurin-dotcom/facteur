@@ -25,9 +25,9 @@ flowchart TB
         TM -->|theme slug| DB_C
     end
 
-    subgraph ENRICHMENT["③ Enrichissement (inline)"]
-        DB_C -->|on-demand| TR[trafilatura +<br>readability-lxml]
-        TR -->|html_content +<br>content_quality| DB_C
+    subgraph READER["③ Contenu du reader"]
+        F -->|content:encoded / description| DB_C
+        DB_C -->|html_content RSS uniquement| APP[Reader mobile]
     end
 
     subgraph DIGEST["④ Digest Generation (07:30 Paris)"]
@@ -145,15 +145,15 @@ Chaque article reçoit :
 
 ---
 
-## ③ Enrichissement contenu
+## ③ Contenu du reader
 
-**Service** : `ContentExtractor` (inline, déclenché à la demande)
+Le backend ne télécharge pas le corps des pages web. Le reader utilise
+uniquement le contenu transmis par le flux RSS.
 
 | Étape | Outil | Output |
 |-------|-------|--------|
-| Extraction full-text | trafilatura + readability-lxml | `html_content` |
+| Ingestion | `content:encoded`, fallback description RSS | `html_content` |
 | Qualité | Heuristique longueur | `content_quality` = "full" / "partial" / "none" |
-| Anti-retry | Timestamp | `extraction_attempted_at` |
 
 ---
 

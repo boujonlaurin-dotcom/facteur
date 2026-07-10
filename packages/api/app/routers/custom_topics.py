@@ -39,6 +39,12 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
+# Hard budget (seconds) on the LLM enrichment/disambiguation call for the
+# user-facing create/disambiguate endpoints. Kept well under the mobile client's
+# 30s receive timeout so a slow Mistral response degrades to the fuzzy fallback
+# instead of surfacing as a silent "topic could not be saved" at onboarding end.
+_LLM_BUDGET_SECONDS = 8.0
+
 
 # --- Pydantic Schemas ---
 
@@ -47,6 +53,11 @@ class CreateTopicRequest(BaseModel):
     name: str
     entity_type: str | None = None
     priority_multiplier: float | None = None
+    # Thème parent explicite fourni par un contexte UI/onboarding (carrousel
+    # sujet, TopicChip, EntityAddSheet…). Quand présent, il prime sur le
+    # `slug_parent` deviné par l'enrichissement LLM — l'utilisateur a déjà
+    # tranché la catégorie, on ne la laisse pas dériver.
+    slug_parent: str | None = None
 
     @field_validator("priority_multiplier")
     @classmethod
@@ -77,6 +88,18 @@ class CreateTopicRequest(BaseModel):
                 f"entity_type doit être PERSON, ORG, EVENT, LOCATION ou PRODUCT (reçu: {v})"
             )
         return v.upper() if v else None
+
+    @field_validator("slug_parent")
+    @classmethod
+    def validate_slug_parent(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if not v:
+            return None
+        if v not in VALID_TOPIC_SLUGS:
+            raise ValueError(f"slug_parent invalide (reçu: {v})")
+        return v
 
 
 class UpdateTopicRequest(BaseModel):
@@ -223,23 +246,34 @@ async def create_topic(
     await user_service.get_or_create_profile(current_user_id)
     await db.flush()
 
-    # LLM enrichment (always, for slug_parent + keywords)
+    # LLM enrichment (always, for slug_parent + keywords). Bounded by a budget
+    # (< client receive timeout) so a slow Mistral call falls back to the fuzzy
+    # match instead of silently failing the save (cf. bug custom-topics-deferred).
     enrichment_service = get_topic_enrichment_service()
     try:
-        result = await enrichment_service.enrich(request.name)
+        result = await enrichment_service.enrich(
+            request.name, llm_timeout=_LLM_BUDGET_SECONDS
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
     # Determine entity fields (explicit request OR auto-detected by enrichment)
     entity_type = request.entity_type or result.entity_type
-    canonical_name = request.name.strip() if entity_type else None
+    topic_name = request.name.strip()
+    canonical_name = topic_name if entity_type else None
+
+    # Parent explicite (UI/onboarding) prime sur le slug deviné par le LLM :
+    # l'utilisateur a déjà choisi la catégorie, on la préserve telle quelle.
+    effective_slug_parent = request.slug_parent or result.slug_parent
 
     # Duplicate check depends on entity vs topic subscription
     if canonical_name:
+        # Entités : dédoublonnage par (user_id, canonical_name) insensible à la
+        # casse — « Kylian Mbappé » et « kylian mbappé » sont la même entité.
         existing = await db.scalar(
             select(UserTopicProfile).where(
                 UserTopicProfile.user_id == user_uuid,
-                UserTopicProfile.canonical_name == canonical_name,
+                func.lower(UserTopicProfile.canonical_name) == canonical_name.lower(),
             )
         )
         if existing:
@@ -248,17 +282,33 @@ async def create_topic(
                 detail=f"Tu suis déjà l'entité '{canonical_name}'",
             )
     else:
+        # Sujets : un même nom dans le même thème parent ne doit pas créer de
+        # doublon. Renvoie l'existant (idempotent) plutôt que de dupliquer une
+        # ligne — robuste aux ré-envois (onboarding multi-sujets, retries).
+        existing_topic = await db.scalar(
+            select(UserTopicProfile).where(
+                UserTopicProfile.user_id == user_uuid,
+                UserTopicProfile.canonical_name.is_(None),
+                func.lower(UserTopicProfile.topic_name) == topic_name.lower(),
+                UserTopicProfile.slug_parent == effective_slug_parent,
+            )
+        )
+        if existing_topic:
+            return _topic_to_response(existing_topic)
+
         count = await db.scalar(
             select(func.count())
             .select_from(UserTopicProfile)
             .where(
                 UserTopicProfile.user_id == user_uuid,
-                UserTopicProfile.slug_parent == result.slug_parent,
+                UserTopicProfile.slug_parent == effective_slug_parent,
                 UserTopicProfile.canonical_name.is_(None),
             )
         )
         if count >= 3:
-            category_label = SLUG_TO_LABEL.get(result.slug_parent, result.slug_parent)
+            category_label = SLUG_TO_LABEL.get(
+                effective_slug_parent, effective_slug_parent
+            )
             raise HTTPException(
                 status_code=409,
                 detail=f"3 sujets personnalisés maximum par thème ({category_label})",
@@ -266,8 +316,8 @@ async def create_topic(
 
     topic = UserTopicProfile(
         user_id=user_uuid,
-        topic_name=request.name.strip(),
-        slug_parent=result.slug_parent,
+        topic_name=topic_name,
+        slug_parent=effective_slug_parent,
         keywords=result.keywords,
         intent_description=result.intent_description,
         entity_type=entity_type,
@@ -288,7 +338,8 @@ async def create_topic(
         "custom_topic_created",
         user_id=current_user_id,
         topic_name=request.name,
-        slug=result.slug_parent,
+        slug=effective_slug_parent,
+        slug_parent_explicit=request.slug_parent is not None,
         entity_type=entity_type,
     )
 
@@ -332,7 +383,7 @@ async def disambiguate_topic(
     enrichment_service = get_topic_enrichment_service()
     try:
         candidates = await enrichment_service.disambiguate(
-            request.name, theme=request.theme
+            request.name, theme=request.theme, llm_timeout=_LLM_BUDGET_SECONDS
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

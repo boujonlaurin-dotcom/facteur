@@ -16,6 +16,7 @@ No time limit on deep articles (can be months old).
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -210,6 +211,151 @@ class DeepMatcher:
             )
         return fallback_matches
 
+    async def match_for_content(
+        self,
+        content: Content,
+        deep_articles: list[Content] | None = None,
+    ) -> MatchedDeepArticle | None:
+        """Match a deep ("Pas de recul") article for a single opened article.
+
+        Reader variant of :meth:`match_for_topics`. Instead of an editorial
+        topic (label + LLM-generated ``deep_angle``), the pivot is the article
+        the user just opened. We derive a pseudo-angle from its ML topics/theme
+        and reuse the exact same machinery — Jaccard pre-filter → optional
+        query expansion → LLM evaluation → deterministic fallback.
+
+        The opened article and any article sharing its cluster (same event)
+        are excluded: a "pas de recul" must add perspective, never echo
+        another dispatch on the same story.
+
+        ``deep_articles`` (optional) lets a caller pass a pool loaded once for a
+        whole batch (digest pré-calcul), avoiding one ``_load_deep_articles``
+        query per pivot. Defaults to loading the pool lazily (reader path).
+
+        Returns ``None`` when nothing relevant is found — better no deep
+        recommendation than a hors-sujet one (same contract as the topic flow).
+        """
+        topics = list(content.topics or [])
+        deep_angle = " ".join(topics) if topics else (content.theme or "")
+        label = (content.title or "").strip()
+
+        if not label and not deep_angle.strip():
+            # No title and no topics/theme — nothing to match on.
+            return None
+
+        pseudo_topic = SelectedTopic(
+            topic_id=str(content.id),
+            label=label,
+            selection_reason="",
+            deep_angle=deep_angle or None,
+            theme=content.theme,
+        )
+
+        if deep_articles is None:
+            deep_articles = await self._load_deep_articles()
+        if not deep_articles:
+            logger.info("deep_matcher.content_no_pool", content_id=str(content.id))
+            return None
+
+        # Exclude the opened article itself and any article in its cluster.
+        cluster_id = content.cluster_id
+        pool = [
+            a
+            for a in deep_articles
+            if a.id != content.id
+            and not (cluster_id is not None and a.cluster_id == cluster_id)
+        ]
+        if not pool:
+            return None
+
+        cluster_entities = self._entity_names(content)
+
+        # Query expansion (best-effort, small LLM) — same as the topic flow.
+        extra_tokens: set[str] = set()
+        if self._llm.is_ready and deep_angle.strip():
+            try:
+                extra_tokens = await self._expand_query(pseudo_topic)
+            except Exception as e:
+                logger.warning(
+                    "deep_matcher.content_expansion_failed",
+                    content_id=str(content.id),
+                    error=str(e),
+                )
+
+        candidates = self._prefilter(
+            topic=pseudo_topic,
+            articles=pool,
+            limit=self._config.pipeline.deep_candidates_prefilter,
+            threshold=self._config.pipeline.deep_jaccard_threshold,
+            extra_tokens=extra_tokens,
+            cluster_entities=cluster_entities,
+        )
+        if not candidates:
+            logger.info(
+                "deep_matcher.content_no_candidates", content_id=str(content.id)
+            )
+            return None
+
+        # Donne à l'arbitre LLM le contenu réel de l'article ouvert (titre +
+        # extrait de description), pas seulement ses topics : juger le « même
+        # sujet » sur le fond réduit les faux positifs. N'entre PAS dans le
+        # Jaccard (le prefilter reste piloté par label+topics) pour ne pas
+        # dégrader le recall en gonflant l'union de tokens du pivot.
+        pivot_excerpt = (
+            " — ".join(
+                p for p in (label, (content.description or "").strip()[:500]) if p
+            )
+            or None
+        )
+
+        if self._llm.is_ready:
+            try:
+                return await self._llm_evaluate(
+                    pseudo_topic,
+                    candidates,
+                    pivot_excerpt=pivot_excerpt,
+                    allow_fallback=False,
+                    default_reason=(
+                        "Une analyse de fond pour replacer ce sujet dans son contexte."
+                    ),
+                )
+            except Exception as e:
+                logger.warning(
+                    "deep_matcher.content_llm_failed",
+                    content_id=str(content.id),
+                    error=str(e),
+                )
+                # Anti-faux-positif : sur erreur LLM, pas de carte plutôt qu'un
+                # fallback Jaccard hors-sujet non vérifié (surface reader 1:1).
+                return None
+
+        # Pas d'arbitre sémantique (LLM indisponible) → on s'abstient : le
+        # prefilter Jaccard seul ne garantit pas un vrai « pas de recul ».
+        logger.info("deep_matcher.content_no_llm_skip", content_id=str(content.id))
+        return None
+
+    @staticmethod
+    def _entity_names(content: Content) -> set[str]:
+        """Lowercase named-entity set from a Content for the prefilter bonus.
+
+        Tolerant of both the JSON-encoded ``{"name": ..., "type": ...}`` form
+        and the legacy ``"name:type"`` form so the overlap bonus fires
+        regardless of how entities were persisted.
+        """
+        names: set[str] = set()
+        for raw in content.entities or []:
+            if not raw:
+                continue
+            name: str | None
+            try:
+                parsed = json.loads(raw)
+                name = parsed.get("name") if isinstance(parsed, dict) else None
+            except (json.JSONDecodeError, TypeError):
+                name = raw.split(":")[0] if ":" in raw else raw
+            if name:
+                names.add(name.lower().strip())
+        return names
+
     async def _load_deep_articles(self) -> list[Content]:
         """Load deep-tier articles older than ``deep_min_age_hours``.
 
@@ -288,13 +434,13 @@ class DeepMatcher:
 
             similarity = self._detector.jaccard_similarity(topic_tokens, article_tokens)
 
-            # Entity overlap bonus: shared named entities boost similarity
+            # Entity overlap bonus: shared named entities boost similarity.
+            # Parse the candidate's entities with the same tolerant helper as
+            # the pivot side — entities are persisted as JSON ({"name": ...})
+            # in prod (classification_queue_service), so the legacy "name:type"
+            # split alone never matched and this bonus silently never fired.
             if cluster_entities and article.entities:
-                article_entity_names = {
-                    e.split(":")[0].lower().strip()
-                    for e in article.entities
-                    if e and ":" in e
-                }
+                article_entity_names = self._entity_names(article)
                 entity_overlap = len(cluster_entities & article_entity_names)
                 if entity_overlap > 0:
                     similarity += min(0.05 * entity_overlap, 0.15)
@@ -310,8 +456,22 @@ class DeepMatcher:
         self,
         topic: SelectedTopic,
         candidates: list[tuple[Content, float]],
+        pivot_excerpt: str | None = None,
+        allow_fallback: bool = True,
+        default_reason: str | None = None,
     ) -> MatchedDeepArticle | None:
-        """Pass 2: LLM picks best deep article from candidates."""
+        """Pass 2: LLM picks best deep article from candidates.
+
+        ``pivot_excerpt`` (optional) is the real content of the pivot article
+        (title + description excerpt) handed to the LLM so it judges the
+        "same subject" on substance, not just topic keywords.
+
+        ``allow_fallback`` controls what happens when the LLM call is
+        unusable (malformed JSON / out-of-range index): the topic/digest flow
+        keeps the permissive Jaccard fallback (``True``), but the reader 1:1
+        flow passes ``False`` so an unverified pick is dropped (anti
+        faux-positif) — better no card than a hors-sujet one.
+        """
         if not candidates:
             return None
 
@@ -322,6 +482,13 @@ class DeepMatcher:
             f"\n    {(c.description or '')[:200]}"
             for i, (c, _score) in enumerate(candidates)
         )
+        if pivot_excerpt:
+            user_message = (
+                f"Article ouvert par le lecteur :\n{pivot_excerpt}\n\n"
+                f"Candidats :\n{candidates_text}"
+            )
+        else:
+            user_message = candidates_text
 
         prompt_cfg = self._config.deep_matching_prompt
         system = prompt_cfg.system.format(
@@ -331,7 +498,7 @@ class DeepMatcher:
 
         raw = await self._llm.chat_json(
             system=system,
-            user_message=candidates_text,
+            user_message=user_message,
             model=prompt_cfg.model,
             temperature=prompt_cfg.temperature,
             max_tokens=prompt_cfg.max_tokens,
@@ -339,6 +506,8 @@ class DeepMatcher:
 
         if not raw or not isinstance(raw, dict):
             # Malformed JSON — exception-like, use permissive threshold.
+            if not allow_fallback:
+                return None
             return self._fallback_pick(
                 candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
             )
@@ -366,6 +535,8 @@ class DeepMatcher:
                 candidates_count=len(candidates),
             )
             # Invalid index — exception-like, use permissive threshold.
+            if not allow_fallback:
+                return None
             return self._fallback_pick(
                 candidates, min_score=self.FALLBACK_MIN_SCORE_LLM_EXCEPTION
             )
@@ -379,7 +550,9 @@ class DeepMatcher:
             source_name=source_name,
             source_id=content.source_id,
             published_at=content.published_at,
-            match_reason=reason or f"Analyse de fond sur {topic.label}",
+            match_reason=reason
+            or default_reason
+            or f"Analyse de fond sur {topic.label}",
             description=content.description,
         )
 

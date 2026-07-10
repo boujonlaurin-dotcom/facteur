@@ -245,7 +245,7 @@ railway status --json
 **Pièges** :
 - **Single uvicorn worker** : si la charge dépasse 1 process, on serialize. Pas de scaling horizontal aujourd'hui.
 - **Scheduler in-process** : RSS sync intervalle, digest 06h, top3 08h, cleanup 03h **partagent le pool API**. Si un job ML cron mange 10 connexions pendant que les users arrivent, l'API étouffe.
-- **`run_in_executor` sans bound** : trafilatura/feedparser peuvent bloquer un thread executor. Voir `bug-infinite-load-requests.md`.
+- **`run_in_executor` sans borne** : `feedparser.parse(url)` peut bloquer un thread executor. Voir `bug-infinite-load-requests.md`.
 
 ### 3.6 Configuration / env / deploy
 

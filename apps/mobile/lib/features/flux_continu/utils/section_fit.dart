@@ -40,18 +40,47 @@ import '../../settings/models/display_mode_spec.dart';
 /// Réglé au plancher réel mesuré (146) pour fitter 3 cartes plus souvent.
 const double kRegularCardHeight = 146;
 
+/// Crédit (px) de la marge basse de la **dernière** carte d'une section. Chaque
+/// carte régulière réserve [kRegularCardHeight] px **dont 12px de marge basse**
+/// (`FluxContinuArticleCard` : `Padding.fromLTRB(12, 0, 12, 12)`). La marge basse
+/// de la *dernière* carte visible n'a aucun contenu — c'est de l'espace blanc qui
+/// peut passer sous le pli sans rien tronquer. On la crédite **une seule fois** au
+/// budget de fit pour ne pas amputer une section à N−1 cartes alors qu'une Nᵉ tient
+/// à 12px près (symptôme : « 3 cartes alors qu'il y a la place pour 4 »). N'élargit
+/// jamais le budget au point de tronquer du contenu réel.
+const double kLastCardBottomMargin = 12;
+
 /// Banner height (px) for a section **without** a blurb (theme / source):
-/// `minHeight 60` + vertical margin (3+5).
-const double kBannerHeightNoBlurb = 68;
+/// `minHeight 48` + vertical margin (2+4). Post-compaction (banner moins
+/// proéminent) — doit matcher la hauteur rendue par `SectionBanner` sinon le
+/// fit ne profite pas du gain de place.
+const double kBannerHeightNoBlurb = 54;
 
 /// Banner height (px) for a section **with** a blurb (Actus du jour, Bonnes
-/// Nouvelles, veille): `minHeight 92` + vertical margin (3+5).
-const double kBannerHeightWithBlurb = 100;
+/// Nouvelles, veille): `minHeight 76` + vertical margin (2+4). Post-compaction.
+const double kBannerHeightWithBlurb = 82;
 
 /// Footer height (px): le CTA « Tout lire » a disparu (le banner de section
 /// est devenu cliquable) — il ne reste que le spacing de fin de section
 /// (SizedBox 16 du SectionBlock).
 const double kSectionFooterHeight = 16;
+
+/// Hauteur réelle (px) réservée par le footer discret « Tout lire › »
+/// (`SectionBlock._seeAllFooter`) rendu en pied des sections **sans** footer
+/// d'ajout de sources (Actus du jour, sources non vides). `TextButton` compact
+/// (`minimumSize` (0, 32)) + marge basse ≈ 36. Doit être **retirée du budget de
+/// fit** : contrairement au gap de fin de section, ce footer porte du contenu
+/// (bouton cliquable) sous les cartes → `_recomputeSnapAnchors` le mesure
+/// (`box.size.height`), donc l'estimation doit l'anticiper sous peine de bascule
+/// *tall* parasite. Resserré (était 36) après rapprochement du CTA de sa
+/// section (`minimumSize` 32→28 + marge haute −6, marge basse 2).
+const double kSeeAllFooterHeight = 28;
+
+/// Hauteur réelle (px) réservée par le footer replié « Ajouter plus de sources »
+/// (`EtofferThemeFooter._collapsedButton`) en pied d'un thème riche : bouton
+/// compact (`minimumSize` (0, 30)) + marge basse ≈ 40. Même raison que
+/// [kSeeAllFooterHeight] : mesurée au runtime, donc réservée au fit.
+const double kEtofferCollapsedFooterHeight = 40;
 
 /// Plancher de plausibilité (px) du viewport utile mesuré. En dessous, la mesure
 /// est considérée **non fiable** (mesure transitoire / render box détachée au
@@ -95,9 +124,9 @@ const double kHeroMediumHeight = 88;
 /// Conservative height of one regular article card, for the user's current
 /// display mode. Exposed as a function (not just the constant) so call sites
 /// read intent and a future per-card refinement has a single seam.
-double estimateRegularCardHeight(
-        [DisplayModeSpec spec = DisplayModeSpec.normal]) =>
-    spec.regularCardHeight;
+double estimateRegularCardHeight([
+  DisplayModeSpec spec = DisplayModeSpec.normal,
+]) => spec.regularCardHeight;
 
 /// Largest article count in `[minCount, maxCount]` whose stack
 /// (`bannerHeight + count·cardHeight + footerHeight`) fits within
@@ -122,6 +151,31 @@ int fitVisibleCount({
   if (budget <= 0) return lo;
   final fit = (budget / cardHeight).floor();
   return fit.clamp(lo, maxCount);
+}
+
+/// Hauteur (px) que le footer d'une section ajoute **réellement sous les
+/// cartes** — donc à réserver dans le budget de fit pour que l'estimation
+/// (`fitVisibleCount`) et la mesure runtime (`_recomputeSnapAnchors`, qui lit
+/// `box.size.height` footer inclus) s'accordent. Sans cette réserve, une section
+/// que le fit croit *courte* (footer ignoré) est mesurée *tall* (footer
+/// compris) → un point de snap intermédiaire parasite se glisse et le scroll par
+/// snaps se dérègle. Arithmétique pure côté section_fit ; la logique de *type*
+/// (quel footer une section rend) reste côté provider, qui dérive les booléens.
+///
+/// - [isDigest] : Actus du jour → footer « Tout lire › » ([kSeeAllFooterHeight]).
+/// - [isSourceNonEmpty] : section source avec articles → « Tout lire › ».
+/// - [isRichThemeWithSlug] : thème riche (footer replié « Ajouter plus de
+///   sources ») → [kEtofferCollapsedFooterHeight].
+/// - Sinon (thème vide/maigre = footer déplié 0-1 carte, empty-states) → `0` :
+///   la section est courte, le fit n'est pas contraignant.
+double estimateSectionFooterReserve({
+  required bool isDigest,
+  required bool isSourceNonEmpty,
+  required bool isRichThemeWithSlug,
+}) {
+  if (isDigest || isSourceNonEmpty) return kSeeAllFooterHeight;
+  if (isRichThemeWithSlug) return kEtofferCollapsedFooterHeight;
+  return 0;
 }
 
 /// Number of articles the hero card may show so it fits within [usableHeight].

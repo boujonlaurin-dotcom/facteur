@@ -29,6 +29,7 @@ class _EmailConfirmationScreenState
     extends ConsumerState<EmailConfirmationScreen> {
   bool _resending = false;
   bool _resent = false;
+  bool _checking = false;
   Timer? _autoRefreshTimer;
 
   @override
@@ -39,7 +40,7 @@ class _EmailConfirmationScreenState
       const Duration(seconds: 6),
       (_) {
         if (mounted) {
-          ref.read(authStateProvider.notifier).refreshUser();
+          unawaited(ref.read(authStateProvider.notifier).refreshUser());
         }
       },
     );
@@ -76,6 +77,33 @@ class _EmailConfirmationScreenState
         NotificationService.showError(
           'Impossible de renvoyer l\'email. Réessaie plus tard.',
         );
+      }
+    }
+  }
+
+  Future<void> _checkConfirmation() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+    try {
+      final confirmed = await ref
+          .read(authStateProvider.notifier)
+          .refreshUser(forceSessionRefresh: true);
+      if (!mounted) return;
+      if (confirmed) {
+        NotificationService.showSuccess('Email confirmé.');
+      } else {
+        NotificationService.showInfo(
+          'Ton email n’est pas encore confirmé. Ouvre le lien reçu par email, puis réessaie.',
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      NotificationService.showError(
+        'Impossible de vérifier la confirmation pour le moment.',
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _checking = false);
       }
     }
   }
@@ -217,8 +245,7 @@ class _EmailConfirmationScreenState
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color:
-                                colors.surfaceElevated.withOpacity(0.5),
+                            color: colors.surfaceElevated.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -252,8 +279,8 @@ class _EmailConfirmationScreenState
                         PrimaryButton(
                           label: 'J\'ai confirmé mon email',
                           icon: PhosphorIcons.check(PhosphorIconsStyle.bold),
-                          onPressed: () =>
-                              ref.read(authStateProvider.notifier).refreshUser(),
+                          onPressed: _checkConfirmation,
+                          isLoading: _checking,
                         ),
 
                         const SizedBox(height: 16),
@@ -269,8 +296,7 @@ class _EmailConfirmationScreenState
                                     horizontal: 20,
                                   ),
                                   decoration: BoxDecoration(
-                                    color:
-                                        colors.success.withOpacity(0.1),
+                                    color: colors.success.withOpacity(0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Row(
@@ -299,8 +325,7 @@ class _EmailConfirmationScreenState
                               : SecondaryButton(
                                   key: const ValueKey('resend'),
                                   label: 'Renvoyer l\'email',
-                                  icon:
-                                      PhosphorIcons.arrowCounterClockwise(
+                                  icon: PhosphorIcons.arrowCounterClockwise(
                                     PhosphorIconsStyle.regular,
                                   ),
                                   onPressed: _resendEmail,

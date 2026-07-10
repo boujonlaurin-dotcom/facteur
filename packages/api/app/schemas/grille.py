@@ -24,6 +24,13 @@ class GrilleFeaturedMixin(BaseModel):
     featuredExcerpt: str | None = None
     featuredUrl: str | None = None
     featuredSource: str | None = None
+    # Sélection hybride : où le mot se cachait dans l'actu réelle.
+    # `hybridField` = "title" | "description" (badge), `hybridSnippet` = texte
+    # exact à afficher, `hybridMatch` = surface exacte à surligner. `null` →
+    # le mobile retombe sur `featuredExcerpt` / `pourquoi`.
+    hybridField: str | None = None
+    hybridSnippet: str | None = None
+    hybridMatch: str | None = None
 
 
 class GrilleEssai(BaseModel):

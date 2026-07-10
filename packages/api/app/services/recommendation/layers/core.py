@@ -25,28 +25,35 @@ class CoreLayer(BaseScoringLayer):
         theme_matched = False
 
         # Tier 1: Article-level theme (ML-inferred, most precise)
-        if hasattr(content, "theme") and content.theme:
-            if content.theme in context.user_interests:
-                score += ScoringWeights.THEME_MATCH
-                context.add_reason(
-                    content.id,
-                    self.name,
-                    ScoringWeights.THEME_MATCH,
-                    f"Thème article: {content.theme}",
-                )
-                theme_matched = True
+        if (
+            hasattr(content, "theme")
+            and content.theme
+            and content.theme in context.user_interests
+        ):
+            score += ScoringWeights.THEME_MATCH
+            context.add_reason(
+                content.id,
+                self.name,
+                ScoringWeights.THEME_MATCH,
+                f"Thème article: {content.theme}",
+            )
+            theme_matched = True
 
         # Tier 2: Source primary theme
-        if not theme_matched and content.source and content.source.theme:
-            if content.source.theme in context.user_interests:
-                score += ScoringWeights.THEME_MATCH
-                context.add_reason(
-                    content.id,
-                    self.name,
-                    ScoringWeights.THEME_MATCH,
-                    f"Thème: {content.source.theme}",
-                )
-                theme_matched = True
+        if (
+            not theme_matched
+            and content.source
+            and content.source.theme
+            and content.source.theme in context.user_interests
+        ):
+            score += ScoringWeights.THEME_MATCH
+            context.add_reason(
+                content.id,
+                self.name,
+                ScoringWeights.THEME_MATCH,
+                f"Thème: {content.source.theme}",
+            )
+            theme_matched = True
 
         # Tier 3: Source secondary themes (bonus réduit à 70% du principal)
         if (

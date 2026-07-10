@@ -20,6 +20,13 @@ class FluxContinuSnapshot {
   /// (SWR in-day, peut être affiché tel quel puis revalidé).
   final bool isStale;
 
+  /// Mode serein actif lors de l'écriture du snapshot. Le contenu mode-dépendant
+  /// (`essentielArticles`, et plus largement les sections feed re-fetchées) n'est
+  /// valide que pour ce mode : sur un toggle serein, le provider doit ignorer un
+  /// snapshot dont `sereinEnabled` diffère du mode courant (pas de réaffichage de
+  /// l'ancien snapshot). `false` par défaut (rétro-compat snapshots sans la clé).
+  final bool sereinEnabled;
+
   /// Horodatage d'écriture (`saved_at`), lu pour le profiling / debug. `null`
   /// si absent ou illisible.
   final DateTime? savedAt;
@@ -29,6 +36,7 @@ class FluxContinuSnapshot {
     required this.topThemes,
     required this.essentielArticles,
     this.isStale = false,
+    this.sereinEnabled = false,
     this.savedAt,
   });
 }
@@ -73,6 +81,7 @@ class FluxContinuCacheService {
             .map(EssentielArticle.fromJson)
             .toList(growable: false),
         isStale: isStale,
+        sereinEnabled: json['serein_enabled'] as bool? ?? false,
         savedAt: DateTime.tryParse(json['saved_at'] as String? ?? ''),
       );
     } catch (e) {
@@ -94,6 +103,7 @@ class FluxContinuCacheService {
     required DualDigestResponse dual,
     required List<TopTheme> topThemes,
     required List<EssentielArticle> essentielArticles,
+    bool sereinEnabled = false,
     DateTime? now,
   }) async {
     try {
@@ -101,6 +111,7 @@ class FluxContinuCacheService {
       final payload = <String, dynamic>{
         'day_key': TourneeProgressService.dayKey(now ?? DateTime.now()),
         'saved_at': DateTime.now().toIso8601String(),
+        'serein_enabled': sereinEnabled,
         'dual': dual.toJson(),
         'top_themes': topThemes.map((t) => t.toJson()).toList(growable: false),
         'essentiel_articles': essentielArticles

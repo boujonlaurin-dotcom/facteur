@@ -1,9 +1,13 @@
+import 'package:dio/dio.dart';
+
 import '../../../core/api/api_client.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_coverage.dart';
 import '../models/source_model.dart';
+import '../models/source_profile.dart';
 import '../models/source_recent_items.dart';
 import '../models/theme_source_model.dart';
+import '../models/theme_suggestions_model.dart';
 
 class SourcesRepository {
   final ApiClient _apiClient;
@@ -281,6 +285,52 @@ class SourcesRepository {
     }
   }
 
+  /// Profil unifié d'une source — fiche source v3
+  /// (`GET /sources/{id}/profile`).
+  ///
+  /// Contrairement à [fetchCoverage] (best-effort → vide), on **propage**
+  /// l'erreur : la fiche s'appuie dessus pour basculer en fallback gracieux
+  /// (couverture via `/coverage` + bouton « Réessayer ») plutôt que d'afficher
+  /// un état vide trompeur.
+  ///
+  /// Un échec **transitoire** (timeout, coupure réseau, 5xx) est retenté
+  /// jusqu'à 2 fois avec un court backoff : pendant l'onboarding la fiche est
+  /// pré-chargée dès l'ouverture de l'écran, et un premier appel peut échouer
+  /// le temps que la session/réseau se stabilise. On ne retente jamais une
+  /// erreur définitive (4xx : 404 source absente, 422 id invalide).
+  Future<SourceProfile> getSourceProfile(String sourceId) async {
+    const maxAttempts = 3;
+    for (var attempt = 1; ; attempt++) {
+      try {
+        final response = await _apiClient.dio.get<Map<String, dynamic>>(
+          'sources/$sourceId/profile',
+        );
+        if (response.statusCode == 200 && response.data != null) {
+          return SourceProfile.fromJson(response.data!);
+        }
+        throw Exception('Failed to load source profile');
+      } catch (e) {
+        if (attempt < maxAttempts && _isTransient(e)) {
+          await Future<void>.delayed(Duration(milliseconds: 250 * attempt));
+          continue;
+        }
+        // ignore: avoid_print
+        print('SourcesRepository: [ERROR] getSourceProfile: $e');
+        rethrow;
+      }
+    }
+  }
+
+  /// Vrai si l'erreur est probablement transitoire (réseau/timeout/5xx) et
+  /// donc justifie un retry. Les réponses 4xx sont définitives.
+  bool _isTransient(Object error) {
+    if (error is! DioException) return false;
+    final status = error.response?.statusCode;
+    if (status != null) return status >= 500;
+    // Pas de réponse : timeout, connexion coupée, annulation réseau.
+    return error.type != DioExceptionType.cancel;
+  }
+
   Future<void> dismissPepiteCarousel() async {
     try {
       await _apiClient.dio.post<dynamic>('sources/pepites/dismiss');
@@ -310,6 +360,28 @@ class SourcesRepository {
       // ignore: avoid_print
       print('SourcesRepository: [ERROR] getSourcesByTheme: $e');
       rethrow;
+    }
+  }
+
+  /// Footer « Étoffer [thème] » : sources poussées (Tiers 1 & 2) couvrant le
+  /// thème, hors sources déjà suivies. Best-effort : un échec renvoie une
+  /// réponse vide (l'UI bascule sur la seule entrée de recherche), le footer
+  /// ne doit jamais casser le rendu de la Tournée.
+  Future<ThemeSuggestions> suggestSourcesForTheme(String slug) async {
+    try {
+      final response = await _apiClient.dio.get<dynamic>(
+        'sources/suggest-for-theme/$slug',
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return ThemeSuggestions.fromJson(
+          response.data as Map<String, dynamic>,
+        );
+      }
+      return ThemeSuggestions(theme: slug, label: '', suggestions: const []);
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] suggestSourcesForTheme: $e');
+      return ThemeSuggestions(theme: slug, label: '', suggestions: const []);
     }
   }
 }

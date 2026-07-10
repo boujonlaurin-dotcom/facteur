@@ -19,6 +19,7 @@ from app.models.host_feed_resolution import HostFeedResolution
 from app.models.source import Source
 from app.models.source_search_log import SourceSearchLog
 from app.models.user import UserInterest
+from app.services.observability.cost_budget import is_over_cap, monthly_call_count
 from app.services.observability.usage_recorder import track_api_call
 from app.services.rss_parser import RSSParser
 from app.services.search.cache import (
@@ -36,10 +37,12 @@ from app.services.search.providers.reddit_search import RedditSearchProvider
 
 logger = structlog.get_logger()
 
-# ─── In-memory rate counters (reset on restart) ─────────────────
-
-_brave_calls_month: int = 0
-_mistral_calls_month: int = 0
+# ─── Rate counters ──────────────────────────────────────────────
+# Les caps mensuels Brave/Mistral sont désormais lus depuis
+# `cost_budget` (persistant, dérivé d'api_usage_events) : les anciens
+# compteurs en mémoire étaient remis à zéro à chaque restart Railway, donc
+# jamais atteints. La limite journalière par user reste en mémoire (fenêtre
+# 24 h, sans enjeu de coût mensuel et hot-path).
 _user_daily_counts: dict[str, int] = {}
 _user_daily_reset_date: str = ""
 
@@ -115,6 +118,88 @@ def _is_strong_catalog_match(result: dict, normalized_query: str) -> bool:
     if name_norm.startswith(normalized_query + " "):
         return True
     return re.search(rf"\b{re.escape(normalized_query)}\b", name_norm) is not None
+
+
+def _relevance_tokens(s: str) -> list[str]:
+    """Tokenize a string keeping SHORT tokens and pure digits.
+
+    Deliberately different from ``jaccard_similarity`` (text_similarity.py),
+    which drops tokens <3 chars and digits — that would kill legitimate source
+    names like "bdm" or "11". We split ``normalize_query`` output on any
+    non-alphanumeric run.
+    """
+    return [t for t in re.split(r"[^a-z0-9]+", normalize_query(s)) if t]
+
+
+def _char_trigrams(s: str) -> set[str]:
+    """Character trigrams of *s* (de-spaced). Short strings map to themselves."""
+    s = s.replace(" ", "")
+    if len(s) < 3:
+        return {s} if s else set()
+    return {s[i : i + 3] for i in range(len(s) - 2)}
+
+
+def _host_core(host: str) -> str:
+    """Return the significant host labels: drop a leading ``www.`` and the TLD."""
+    host = (host or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    parts = [p for p in host.split(".") if p]
+    if len(parts) > 1:
+        parts = parts[:-1]  # drop the TLD label (fr / com / …)
+    return " ".join(parts)
+
+
+def _is_relevant_external(
+    query_normalized: str, cand_name: str, cand_host: str
+) -> bool:
+    """Query↔candidate relevance gate for EXTERNAL results only.
+
+    External providers (Brave / Google News / Mistral) sometimes return feeds
+    unrelated to the query ("insight clement formont" → Blog du Modérateur,
+    "hypertext" → a library bulletin). This drops them. It is NEVER applied to
+    catalog hits.
+
+    Accepts when ANY of these holds:
+      1. token overlap ≥ 50% of the query tokens, or Jaccard ≥ 0.34 ;
+      2. de-spaced substring either direction (query ⊂ name/host or inverse) ;
+      3. char-trigram Jaccard ≥ 0.4 — the rule that keeps
+         "onemondial" ↔ "onzemondial".
+    Empty query or a tokenless candidate returns True (never over-filter).
+    """
+    q_token_list = _relevance_tokens(query_normalized)
+    q_tokens = set(q_token_list)
+    if not q_tokens:
+        return True
+
+    host_core = _host_core(cand_host)
+    name_token_list = _relevance_tokens(cand_name)
+    host_token_list = _relevance_tokens(host_core)
+    name_tokens = set(name_token_list)
+    host_tokens = set(host_token_list)
+    cand_tokens = name_tokens | host_tokens
+    if not cand_tokens:
+        return True
+
+    overlap = q_tokens & cand_tokens
+    if len(overlap) >= 0.5 * len(q_tokens):
+        return True
+    if len(overlap) / len(q_tokens | cand_tokens) >= 0.34:
+        return True
+
+    q_flat = "".join(q_token_list)
+    targets = ["".join(name_token_list), "".join(host_token_list)]
+    if q_flat:
+        for target in targets:
+            if target and (q_flat in target or target in q_flat):
+                return True
+        q_tri = _char_trigrams(q_flat)
+        if q_tri:
+            for target in targets:
+                t_tri = _char_trigrams(target)
+                if t_tri and len(q_tri & t_tri) / len(q_tri | t_tri) >= 0.4:
+                    return True
+    return False
 
 
 async def _record_search_log(
@@ -245,6 +330,9 @@ def _compute_score(
     """Compute composite ranking score."""
     layer_scores = {
         "catalog": 1.0,
+        # A pasted-URL direct hit is an explicit user intent — rank it above
+        # the noisy external layers so it wins the sort in _finalize.
+        "direct": 0.85,
         "youtube": 0.9,
         "reddit": 0.9,
         "brave": 0.8,
@@ -286,6 +374,30 @@ class SmartSourceSearchService:
         self.brave = BraveSearchProvider()
         self.reddit = RedditSearchProvider()
         self.google_news = GoogleNewsProvider()
+
+    @staticmethod
+    def _dedup_add(r: dict, seen_feeds: set[str], seen_hosts: set[str]) -> bool:
+        """Register *r*'s dedup keys; return True if it is new and kept.
+
+        Dedup by ``feed_url`` always (blog-modérateur returned BDM twice under
+        the old exact-URL dedup). Additionally dedup EXTERNAL results by host,
+        except path-level platforms (two YouTube channels / two Substacks share
+        a host but are distinct sources). Catalog results keep their host so two
+        curated sources on the same host (substack) both survive — feed_url is
+        unique per source in DB.
+        """
+        feed = r.get("feed_url")
+        if feed:
+            if feed in seen_feeds:
+                return False
+            seen_feeds.add(feed)
+        if not r.get("in_catalog"):
+            host = (urlparse(r.get("url", "")).netloc or "").lower()
+            if host and host not in SmartSourceSearchService._PATH_LEVEL_PLATFORMS:
+                if host in seen_hosts:
+                    return False
+                seen_hosts.add(host)
+        return True
 
     async def _release_session(self) -> None:
         """Release the request-scoped DB session before slow externals.
@@ -329,13 +441,12 @@ class SmartSourceSearchService:
 
         Returns a dict matching SmartSearchResponse schema.
         """
-        global _brave_calls_month, _mistral_calls_month
-
         start = time.monotonic()
         normalized = normalize_query(query)
         layers_called: list[str] = []
         results: list[dict] = []
-        seen_urls: set[str] = set()
+        seen_feeds: set[str] = set()
+        seen_hosts: set[str] = set()
 
         # Rate limit check
         if not _check_user_rate_limit(user_id):
@@ -371,13 +482,45 @@ class SmartSourceSearchService:
         query_type = _classify_query(query)
         user_themes = await self._get_user_themes(user_id)
 
+        # (0) Pasted URL → resolve its feed directly and skip the search
+        # cascade (Brave→GNews→Mistral was 9-31s for zero benefit). Reddit
+        # URLs (/r/<sub>) don't resolve at the root, so they fall through to
+        # the dedicated reddit layer. Explicit intent → ignore `expand`.
+        if query_type == "url_like":
+            probe_url = query.strip()
+            if not probe_url.startswith(("http://", "https://")):
+                probe_url = "https://" + probe_url
+            probe_host = (urlparse(probe_url).netloc or "").lower()
+            if "reddit.com" not in probe_host:
+                detected = await self._detect_with_root_fallback(probe_url)
+                if detected:
+                    resolved_url, feed_meta = detected
+                    results.append(
+                        self._build_result(
+                            resolved_url, "direct", user_themes, feed_meta
+                        )
+                    )
+                    layers_called.append("direct")
+                    return await self._finalize(
+                        normalized,
+                        results,
+                        layers_called,
+                        start,
+                        False,
+                        user_id=user_id,
+                        query_raw=query,
+                        content_type=content_type,
+                        expand=expand,
+                    )
+                # No feed at that URL → fall through to the normal pipeline
+                # rather than returning empty.
+
         # (a) Catalog ILIKE (optionally filtered by type)
         catalog_results = await self._search_catalog(
             normalized, user_themes, content_type
         )
         for r in catalog_results:
-            if r["url"] not in seen_urls:
-                seen_urls.add(r["url"])
+            if self._dedup_add(r, seen_feeds, seen_hosts):
                 results.append(r)
         layers_called.append("catalog")
 
@@ -423,25 +566,31 @@ class SmartSourceSearchService:
         # slow external HTTP call (LLM/Brave/GoogleNews). Mirrors PR #485.
         await self._release_session()
 
-        # (b) YouTube API — if signal and type allows
-        if content_type in (None, "youtube") and (
-            query_type == "youtube_handle" or "youtube" in normalized
+        # (b) YouTube API — an explicit "youtube" filter ALWAYS fires the layer
+        # (the chip + "micode" used to return 0 results because the text
+        # heuristic never matched); unfiltered queries keep the heuristic.
+        if content_type == "youtube" or (
+            content_type is None
+            and (query_type == "youtube_handle" or "youtube" in normalized)
         ):
             yt_results = await self._search_youtube(query, user_themes)
             for r in yt_results:
-                if r["url"] not in seen_urls:
-                    seen_urls.add(r["url"])
+                if self._dedup_add(r, seen_feeds, seen_hosts):
                     results.append(r)
             layers_called.append("youtube")
 
-        # (c) Reddit JSON — if signal and type allows
-        if content_type in (None, "reddit") and (
-            query_type == "reddit_sub" or "reddit" in normalized or "r/" in normalized
+        # (c) Reddit JSON — symmetric: an explicit "reddit" filter always fires.
+        if content_type == "reddit" or (
+            content_type is None
+            and (
+                query_type == "reddit_sub"
+                or "reddit" in normalized
+                or "r/" in normalized
+            )
         ):
             reddit_results = await self._search_reddit(query, user_themes)
             for r in reddit_results:
-                if r["url"] not in seen_urls:
-                    seen_urls.add(r["url"])
+                if self._dedup_add(r, seen_feeds, seen_hosts):
                     results.append(r)
             layers_called.append("reddit")
 
@@ -457,7 +606,9 @@ class SmartSourceSearchService:
         brave_eligible = (
             external_eligible
             and self.brave.is_ready
-            and _brave_calls_month < settings.brave_monthly_cap
+            and not await is_over_cap(
+                "brave", settings.brave_monthly_cap, call_site="smart_search_brave"
+            )
         )
 
         if expand and external_eligible and brave_eligible:
@@ -465,40 +616,25 @@ class SmartSourceSearchService:
                 self._search_brave(normalized, user_themes),
                 self._search_google_news(normalized, user_themes),
             )
-            _brave_calls_month += 1
             for r in brave_results:
-                if r["url"] not in seen_urls:
-                    seen_urls.add(r["url"])
+                if self._dedup_add(r, seen_feeds, seen_hosts):
                     results.append(r)
             layers_called.append("brave")
             for r in gnews_results:
-                if r["url"] not in seen_urls:
-                    seen_urls.add(r["url"])
+                if self._dedup_add(r, seen_feeds, seen_hosts):
                     results.append(r)
             layers_called.append("google_news")
 
-            if _brave_calls_month >= int(settings.brave_monthly_cap * 0.8):
-                logger.warning(
-                    "smart_search.brave_budget_warning",
-                    calls=_brave_calls_month,
-                    cap=settings.brave_monthly_cap,
-                )
+            await self._warn_if_brave_budget_low(settings)
         else:
             if brave_eligible:
                 brave_results = await self._search_brave(normalized, user_themes)
-                _brave_calls_month += 1
                 for r in brave_results:
-                    if r["url"] not in seen_urls:
-                        seen_urls.add(r["url"])
+                    if self._dedup_add(r, seen_feeds, seen_hosts):
                         results.append(r)
                 layers_called.append("brave")
 
-                if _brave_calls_month >= int(settings.brave_monthly_cap * 0.8):
-                    logger.warning(
-                        "smart_search.brave_budget_warning",
-                        calls=_brave_calls_month,
-                        cap=settings.brave_monthly_cap,
-                    )
+                await self._warn_if_brave_budget_low(settings)
 
             if not expand and len(results) >= MIN_RESULTS_FOR_SHORTCIRCUIT:
                 return await self._finalize(
@@ -516,8 +652,7 @@ class SmartSourceSearchService:
             if external_eligible:
                 gnews_results = await self._search_google_news(normalized, user_themes)
                 for r in gnews_results:
-                    if r["url"] not in seen_urls:
-                        seen_urls.add(r["url"])
+                    if self._dedup_add(r, seen_feeds, seen_hosts):
                         results.append(r)
                 layers_called.append("google_news")
 
@@ -534,13 +669,18 @@ class SmartSourceSearchService:
                         expand=expand,
                     )
 
-        # (f) Mistral fallback — catch-all, skipped when a type filter is set
-        if content_type is None and _mistral_calls_month < settings.mistral_monthly_cap:
+        # (f) Mistral fallback — catch-all, skipped when a type filter is set.
+        # Cap scopé sur le call site `smart_search_mistral` : le provider
+        # `mistral` couvre aussi classif/éditorial/veille (volume bien plus
+        # élevé), qui ne doivent pas consommer le budget du fallback recherche.
+        if content_type is None and not await is_over_cap(
+            "mistral",
+            settings.mistral_monthly_cap,
+            call_site="smart_search_mistral",
+        ):
             mistral_results = await self._search_mistral(normalized, user_themes)
-            _mistral_calls_month += 1
             for r in mistral_results:
-                if r["url"] not in seen_urls:
-                    seen_urls.add(r["url"])
+                if self._dedup_add(r, seen_feeds, seen_hosts):
                     results.append(r)
             layers_called.append("mistral")
 
@@ -905,6 +1045,7 @@ class SmartSourceSearchService:
         candidates: list[tuple[str, str, str]],
         layer: str,
         user_themes: list[str],
+        query_normalized: str = "",
     ) -> list[dict]:
         """Run feed detection on candidates in parallel, short-circuit at 3 hits.
 
@@ -970,17 +1111,38 @@ class SmartSourceSearchService:
         for idx, detected in collected:
             _, fallback_name, fallback_desc = candidates[idx]
             resolved_url, feed_meta = detected
-            results.append(
-                self._build_result(
-                    resolved_url,
-                    layer,
-                    user_themes,
-                    feed_meta,
-                    fallback_name,
-                    fallback_desc,
-                )
+            result = self._build_result(
+                resolved_url,
+                layer,
+                user_themes,
+                feed_meta,
+                fallback_name,
+                fallback_desc,
             )
+            # Relevance gate on the RESOLVED name/host — drops off-topic feeds
+            # returned by external providers (never applied to catalog hits).
+            host = (urlparse(resolved_url).netloc or "").lower()
+            if not _is_relevant_external(query_normalized, result["name"], host):
+                logger.debug(
+                    "smart_search.external_offtopic_drop",
+                    layer=layer,
+                    query=query_normalized,
+                    name=result["name"],
+                    host=host,
+                )
+                continue
+            results.append(result)
         return results
+
+    @staticmethod
+    async def _warn_if_brave_budget_low(settings) -> None:
+        """Log un warning si la conso Brave du mois atteint 80 % du cap."""
+        cap = settings.brave_monthly_cap
+        if cap <= 0:
+            return
+        calls = await monthly_call_count("brave", call_site="smart_search_brave")
+        if calls >= int(cap * 0.8):
+            logger.warning("smart_search.brave_budget_warning", calls=calls, cap=cap)
 
     async def _search_brave(self, query: str, user_themes: list[str]) -> list[dict]:
         """Search Brave and keep only candidates that resolve to a real RSS feed.
@@ -1030,7 +1192,9 @@ class SmartSourceSearchService:
         ranked = sorted(raw_candidates, key=_score, reverse=True)
         candidates = ranked[:5]
 
-        return await self._detect_candidates(candidates, "brave", user_themes)
+        return await self._detect_candidates(
+            candidates, "brave", user_themes, query_normalized=query
+        )
 
     async def _search_google_news(
         self, query: str, user_themes: list[str]
@@ -1045,6 +1209,7 @@ class SmartSourceSearchService:
             [(u, "", "") for u in urls],
             "google_news",
             user_themes,
+            query_normalized=query,
         )
 
     async def _search_mistral(self, query: str, user_themes: list[str]) -> list[dict]:
@@ -1102,16 +1267,25 @@ class SmartSourceSearchService:
                 if not detected:
                     continue
                 resolved_url, feed_meta = detected
-                results.append(
-                    self._build_result(
-                        resolved_url,
-                        "mistral",
-                        user_themes,
-                        feed_meta,
-                        name,
-                        fallback_type=stype,
-                    )
+                result = self._build_result(
+                    resolved_url,
+                    "mistral",
+                    user_themes,
+                    feed_meta,
+                    name,
+                    fallback_type=stype,
                 )
+                host = (urlparse(resolved_url).netloc or "").lower()
+                if not _is_relevant_external(query, result["name"], host):
+                    logger.debug(
+                        "smart_search.external_offtopic_drop",
+                        layer="mistral",
+                        query=query,
+                        name=result["name"],
+                        host=host,
+                    )
+                    continue
+                results.append(result)
             return results
 
         except Exception as e:

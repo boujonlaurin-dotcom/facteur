@@ -12,6 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from sqlalchemy import and_, func, select
 from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
@@ -20,6 +21,7 @@ from app.models.enums import InterestState
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
+from app.schemas.content import ContentResponse
 from app.schemas.source import (
     CoverageResponse,
     CoverageRow,
@@ -35,13 +37,17 @@ from app.schemas.source import (
     SourceCreate,
     SourceDetectRequest,
     SourceDetectResponse,
+    SourceProfileResponse,
     SourceRecentItems,
     SourceResponse,
     SourceSearchResponse,
     ThemeFollowed,
     ThemesFollowedResponse,
+    ThemeShare,
     ThemeSourceGroup,
     ThemeSourcesResponse,
+    ThemeSuggestionItem,
+    ThemeSuggestionsResponse,
     UpdateSourceSubscriptionRequest,
 )
 from app.services.feed_cache import FEED_CACHE
@@ -53,6 +59,10 @@ from app.services.premium_curated_sources import (
 from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
+)
+from app.services.source_recommendation_gate import (
+    is_quality_catalog,
+    passes_safety_gate,
 )
 from app.services.source_service import PremiumConnectionNotEnabled, SourceService
 from app.services.sources_cache import SOURCES_CACHE
@@ -240,16 +250,38 @@ THEME_LABELS = {
     "culture": "Culture",
     "science": "Science",
     "international": "International",
+    "sport": "Sport",
 }
 
 
+def _source_matches_theme(slug: str):
+    """Clause de rattachement d'une `Source` à un thème pour la **découverte**.
+
+    Une source appartient à un thème si c'est son thème primaire, un de ses
+    thèmes secondaires (curé, input scoring) OU un de ses `coverage_themes`
+    (couverture éditoriale data-driven, story 22.5). Factorisée : partagée par
+    les trois endpoints de découverte par thème (`get_sources_by_theme` ×2,
+    `suggest_sources_for_theme`). Volontairement **absente** du count de
+    `get_themes_followed`, qui ne doit pas être gonflé par la couverture.
+    """
+    return (
+        (Source.theme == slug)
+        | (Source.secondary_themes.any(slug))
+        | (Source.coverage_themes.any(slug))
+    )
+
+
 def _source_to_response(
-    s: Source, *, trusted_ids: set[UUID] | None = None
+    s: Source,
+    *,
+    trusted_ids: set[UUID] | None = None,
+    follower_count: int = 0,
 ) -> SourceResponse:
     """Convert Source model to SourceResponse.
 
     `trusted_ids` lets callers flag sources already followed by the current
     user (used by the theme suggestions screen to show "déjà suivie").
+    `follower_count` = nombre d'utilisateurs en état suivi/favori (header fiche).
     """
     return SourceResponse(
         id=s.id,
@@ -262,6 +294,7 @@ def _source_to_response(
         is_curated=s.is_curated,
         is_custom=not s.is_curated,
         is_trusted=trusted_ids is not None and s.id in trusted_ids,
+        follower_count=follower_count,
         content_count=0,
         bias_stance=getattr(s.bias_stance, "value", "unknown"),
         reliability_score=getattr(s.reliability_score, "value", "unknown"),
@@ -469,7 +502,7 @@ async def get_sources_by_theme(
         select(Source)
         .where(Source.is_active.is_(True))
         .where(Source.is_curated.is_(True))
-        .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+        .where(_source_matches_theme(slug))
         .order_by(Source.name)
         .limit(limit)
     )
@@ -490,7 +523,7 @@ async def get_sources_by_theme(
             select(Source)
             .where(Source.is_active.is_(True))
             .where(Source.is_curated.is_(False))
-            .where((Source.theme == slug) | (Source.secondary_themes.any(slug)))
+            .where(_source_matches_theme(slug))
             .order_by(Source.name)
             .limit(remaining)
         )
@@ -544,6 +577,100 @@ async def get_sources_by_theme(
                 total += len(community_responses)
 
     return ThemeSourcesResponse(theme=slug, groups=groups, total_count=total)
+
+
+# Nombre max de sources poussées dans le footer « Étoffer [thème] ». Knob PO :
+# volontairement bas pour rester un footer discret, pas une liste.
+SUGGEST_FOR_THEME_CAP = 3
+# Borne SQL du balayage du catalogue Tier 2 (on filtre ensuite par le gate en
+# Python) — large devant le nombre de sources curées par thème.
+_QUALITY_CATALOG_SCAN_LIMIT = 60
+
+
+@router.get("/suggest-for-theme/{slug}", response_model=ThemeSuggestionsResponse)
+async def suggest_sources_for_theme(
+    slug: str,
+    limit: int = SUGGEST_FOR_THEME_CAP,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> ThemeSuggestionsResponse:
+    """Footer « Étoffer [thème] » — sources **poussées** couvrant le thème.
+
+    Gradation de contrôle éditorial (cf. `source_recommendation_gate`) :
+    - **Tier 1 `facteur_pick`** : pépites curées par l'équipe
+      (`pepite_for_themes` ⊇ slug), branding fort.
+    - **Tier 2 `quality_catalog`** : catalogue évalué passant le gate qualité
+      (fiabilité haute/moyenne, biais connu non alternatif).
+
+    Les deux tiers passent le gate de sécurité : aucune source à fiabilité
+    basse/inconnue ni au positionnement alternatif n'est jamais renvoyée. Le
+    Tier 3 (sources non évaluées / externes) n'est **pas** servi par cet
+    endpoint : il n'est accessible qu'via la recherche explicite de
+    l'utilisateur.
+    """
+    user_uuid = UUID(user_id)
+    cap = max(0, min(limit, SUGGEST_FOR_THEME_CAP))
+
+    # Sources déjà suivies/favori → exclues des suggestions ET flaggées is_trusted.
+    trusted_stmt = select(UserSource.source_id).where(
+        UserSource.user_id == user_uuid,
+        UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+    )
+    trusted_result = await db.execute(trusted_stmt)
+    trusted_ids: set[UUID] = {row[0] for row in trusted_result.all()}
+
+    suggestions: list[ThemeSuggestionItem] = []
+    seen_ids: set[UUID] = set()
+    label = THEME_LABELS.get(slug, slug.capitalize())
+
+    if cap == 0:
+        return ThemeSuggestionsResponse(theme=slug, label=label, suggestions=[])
+
+    # --- Tier 1 : Pépites Facteur (pepite_for_themes ⊇ slug) ---
+    pepite_service = PepiteService(db)
+    pepite_sources = await pepite_service.get_theme_pepite_sources(
+        slug, exclude_ids=trusted_ids
+    )
+    for s in pepite_sources:
+        if len(suggestions) >= cap:
+            break
+        if not passes_safety_gate(s):
+            continue
+        suggestions.append(
+            ThemeSuggestionItem(
+                recommendation_tier="facteur_pick",
+                source=_source_to_response(s, trusted_ids=trusted_ids),
+            )
+        )
+        seen_ids.add(s.id)
+
+    # --- Tier 2 : Catalogue évalué (gate qualité) ---
+    if len(suggestions) < cap:
+        stmt_catalog = (
+            select(Source)
+            .where(Source.is_active.is_(True))
+            .where(Source.is_curated.is_(True))
+            .where(_source_matches_theme(slug))
+            .order_by(Source.name)
+            .limit(_QUALITY_CATALOG_SCAN_LIMIT)
+        )
+        result = await db.execute(stmt_catalog)
+        for s in result.scalars().all():
+            if len(suggestions) >= cap:
+                break
+            if s.id in trusted_ids or s.id in seen_ids:
+                continue
+            if not is_quality_catalog(s):
+                continue
+            suggestions.append(
+                ThemeSuggestionItem(
+                    recommendation_tier="quality_catalog",
+                    source=_source_to_response(s, trusted_ids=trusted_ids),
+                )
+            )
+            seen_ids.add(s.id)
+
+    return ThemeSuggestionsResponse(theme=slug, label=label, suggestions=suggestions)
 
 
 @router.get("/themes-followed", response_model=ThemesFollowedResponse)
@@ -709,21 +836,24 @@ def _format_fr_thousands(value: int) -> str:
     return f"{value:,}".replace(",", _NARROW_NBSP)
 
 
-@router.get("/{source_id}/coverage", response_model=CoverageResponse)
-async def get_source_coverage(
+async def _aggregate_source_themes(
+    db: AsyncSession,
     source_id: UUID,
-    days: int = Query(default=30, ge=1, le=365),
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-) -> CoverageResponse:
-    """Couverture par thèmes d'une source sur une fenêtre glissante.
+    *,
+    days: int,
+) -> tuple[list[tuple[str, int]], int]:
+    """Agrège les contenus d'une source par thème sur une fenêtre glissante.
 
-    Agrège `contents` par `theme` sur les `days` derniers jours. Trie par
-    volume décroissant, conserve le top N et regroupe la longue traîne (ainsi
-    que les thèmes NULL) dans une ligne unique `autres`. La clé `theme` reste
-    brute : le mapping label/couleur est fait côté front.
+    Helper partagé par `/coverage` et `/profile` (zéro duplication).
+
+    Renvoie `(rows, total)` :
+    - `total` = nombre d'articles publiés sur la fenêtre, tous thèmes confondus
+      (avant troncature top-N) ;
+    - `rows` = liste `(theme, count)` triée par volume décroissant : les
+      `COVERAGE_TOP_N` thèmes nommés les plus volumineux, suivis d'une ligne
+      `COVERAGE_OTHER_THEME` repliant la longue traîne **et** les thèmes NULL
+      (présente seulement si non vide). Liste vide quand `total == 0`.
     """
-    period_label = f"{days} derniers jours"
     cutoff = datetime.now(UTC) - timedelta(days=days)
 
     result = await db.execute(
@@ -734,16 +864,10 @@ async def get_source_coverage(
     )
     aggregates = result.all()
 
-    # total_count = somme sur TOUS les thèmes de la fenêtre (avant troncature top-N).
-    total_count = sum(int(count) for _theme, count in aggregates)
-
-    if total_count == 0:
-        return CoverageResponse(
-            period_label=period_label,
-            total_count=0,
-            caption="Aucun article publié sur la période",
-            rows=[],
-        )
+    # total = somme sur TOUS les thèmes de la fenêtre (avant troncature top-N).
+    total = sum(int(count) for _theme, count in aggregates)
+    if total == 0:
+        return [], 0
 
     # Sépare les thèmes nommés (non-NULL) de la part NULL, qui ira dans « autres ».
     named: list[tuple[str, int]] = []
@@ -762,22 +886,41 @@ async def get_source_coverage(
     tail = named[COVERAGE_TOP_N:]
     other_count += sum(count for _theme, count in tail)
 
-    rows = [
-        CoverageRow(
-            theme=theme,
-            count=count,
-            pct=round(count / total_count * 100),
-        )
-        for theme, count in head
-    ]
+    rows: list[tuple[str, int]] = list(head)
     if other_count > 0:
-        rows.append(
-            CoverageRow(
-                theme=COVERAGE_OTHER_THEME,
-                count=other_count,
-                pct=round(other_count / total_count * 100),
-            )
+        rows.append((COVERAGE_OTHER_THEME, other_count))
+    return rows, total
+
+
+@router.get("/{source_id}/coverage", response_model=CoverageResponse)
+async def get_source_coverage(
+    source_id: UUID,
+    days: int = Query(default=30, ge=1, le=365),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> CoverageResponse:
+    """Couverture par thèmes d'une source sur une fenêtre glissante.
+
+    Agrège `contents` par `theme` sur les `days` derniers jours. Trie par
+    volume décroissant, conserve le top N et regroupe la longue traîne (ainsi
+    que les thèmes NULL) dans une ligne unique `autres`. La clé `theme` reste
+    brute : le mapping label/couleur est fait côté front.
+    """
+    period_label = f"{days} derniers jours"
+    rows, total_count = await _aggregate_source_themes(db, source_id, days=days)
+
+    if total_count == 0:
+        return CoverageResponse(
+            period_label=period_label,
+            total_count=0,
+            caption="Aucun article publié sur la période",
+            rows=[],
         )
+
+    coverage_rows = [
+        CoverageRow(theme=theme, count=count, pct=round(count / total_count * 100))
+        for theme, count in rows
+    ]
 
     noun = "article publié" if total_count == 1 else "articles publiés"
     caption = f"{_format_fr_thousands(total_count)} {noun} sur la période"
@@ -786,7 +929,96 @@ async def get_source_coverage(
         period_label=period_label,
         total_count=total_count,
         caption=caption,
-        rows=rows,
+        rows=coverage_rows,
+    )
+
+
+@router.get("/{source_id}/profile", response_model=SourceProfileResponse)
+async def get_source_profile(
+    source_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SourceProfileResponse:
+    """Profil unifié d'une source pour la fiche v3 (lecture seule).
+
+    Une seule réponse regroupe : l'identité de la source, sa couverture par
+    thèmes sur 30 jours (`theme_distribution` + `articles_30d`), la date du
+    plus ancien contenu connu (`oldest_content_at`, hors fenêtre, pour clamper
+    la fréquence côté mobile) et ses 3 articles les plus récents (objets
+    `Content` complets → carte standard cliquable). Placé après `/coverage`,
+    donc après toutes les routes statiques (`/catalog`, `/trending`…).
+    """
+    source = (
+        await db.execute(select(Source).where(Source.id == source_id))
+    ).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+
+    # Source suivie par l'utilisateur courant ? → flag is_trusted (réponse
+    # source) + is_followed_source (cartes article).
+    followed = (
+        await db.execute(
+            select(UserSource.source_id).where(
+                UserSource.user_id == UUID(user_id),
+                UserSource.source_id == source_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
+        )
+    ).first() is not None
+
+    # Nombre d'abonnés de la source dans Facteur (suivi + favori), affiché dans
+    # l'en-tête de la fiche (« Suivi par X lecteurs »).
+    follower_count = (
+        await db.execute(
+            select(func.count(UserSource.user_id)).where(
+                UserSource.source_id == source_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
+        )
+    ).scalar_one()
+
+    source_response = _source_to_response(
+        source,
+        trusted_ids={source_id} if followed else set(),
+        follower_count=follower_count,
+    )
+
+    rows, total = await _aggregate_source_themes(db, source_id, days=30)
+    theme_distribution = [
+        ThemeShare(theme=theme, count=count, share=count / total if total else 0.0)
+        for theme, count in rows
+    ]
+
+    # Plus ancien contenu sur TOUT l'historique (hors fenêtre 30 j).
+    oldest_content_at = (
+        await db.execute(
+            select(func.min(Content.published_at)).where(Content.source_id == source_id)
+        )
+    ).scalar_one_or_none()
+
+    recent_result = await db.execute(
+        select(Content)
+        .options(selectinload(Content.source))
+        .where(Content.source_id == source_id)
+        .order_by(Content.published_at.desc())
+        .limit(3)
+    )
+    recent_articles: list[ContentResponse] = []
+    for content in recent_result.scalars().all():
+        item = ContentResponse.model_validate(content)
+        # `status`, `is_saved`… retombent sur leurs défauts (absents de l'ORM
+        # Content) ; on renseigne le seul flag dérivable ici.
+        item.is_followed_source = followed
+        recent_articles.append(item)
+
+    return SourceProfileResponse(
+        source=source_response,
+        recent_articles=recent_articles,
+        theme_distribution=theme_distribution,
+        articles_30d=total,
+        oldest_content_at=oldest_content_at,
     )
 
 

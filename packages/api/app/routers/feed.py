@@ -34,6 +34,7 @@ from app.schemas.feed import (
 from app.services.feed_cache import FEED_CACHE
 from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 from app.services.recommendation_service import RecommendationService
+from app.utils.db_retry import retry_db_op
 
 logger = structlog.get_logger()
 
@@ -128,6 +129,64 @@ def _is_default_view(
     )
 
 
+def _is_personalized_section_view(
+    *,
+    offset: int,
+    content_type: ContentType | None,
+    mode: FeedFilterMode | None,
+    theme: str | None,
+    topic: str | None,
+    saved_only: bool,
+    has_note: bool,
+    source_id: str | None,
+    entity: str | None,
+    keyword: str | None,
+    include_unfollowed: bool,
+    followed_only: bool,
+    personalized: bool,
+) -> bool:
+    """Eligibility predicate for the personalized-section cache.
+
+    Targets the ~10 parallel `personalized=true` calls the mobile app fires at
+    cold-open for the Tournée du jour sections — the single hottest transaction
+    (p95 ~10 s, app-load slowdown investigation). Each call is keyed by exactly
+    one of theme / topic / source_id; the limit is folded into the cache
+    variant (cf. `_personalized_variant`) rather than pinned here, since the
+    sections fetch with a section-specific page size, not the default 20.
+    """
+    return (
+        personalized
+        and offset == 0
+        and content_type is None
+        and mode is None
+        and not saved_only
+        and not has_note
+        and entity is None
+        and keyword is None
+        and not include_unfollowed
+        and not followed_only
+        # Exactly one section selector — theme, topic, or source_id.
+        and ((theme is not None) + (topic is not None) + (source_id is not None)) == 1
+    )
+
+
+def _personalized_variant(
+    *,
+    theme: str | None,
+    topic: str | None,
+    source_id: str | None,
+    serein: bool,
+    limit: int,
+) -> str:
+    """Stable cache-variant key for a personalized section view.
+
+    Derived from the section selector (theme | topic | source_id), the serein
+    mode, and the page size. `limit` is included so a section re-fetched with a
+    different page size never serves a wrong-sized payload. Always non-None, so
+    it never collides with the default-view key (`variant is None`)."""
+    return f"p|t={theme}|tp={topic}|s={source_id}|sr={int(serein)}|l={limit}"
+
+
 @router.get("/", response_model=FeedResponse)
 async def get_personalized_feed(
     limit: int = Query(20, ge=1, le=50),
@@ -187,10 +246,22 @@ async def get_personalized_feed(
     filter, serein off). Hit retourne le payload sérialisé sans recompute.
     Single-flight via `FEED_CACHE.lock(user_id)` pour éviter le thundering
     herd au cache miss.
+
+    Fix ralentissement ouverture — les vues `personalized=true` des sections
+    Tournée (theme/topic/source) sont désormais cache-éligibles sous une clé
+    composite `(user, variant)` (TTL `FEED_CACHE_PERSONALIZED_TTL_SECONDS`,
+    60s), avec le même pattern single-flight. Coupe le recompute du pipeline
+    piliers sur les ~10 appels parallèles du cold-open.
     """
     user_uuid = UUID(current_user_id)
 
-    cache_eligible = FEED_CACHE.enabled and _is_default_view(
+    # Resolve cache eligibility + the key variant. `variant is None` ⇒ the
+    # default page-1 view (R5). A non-None variant ⇒ a personalized Tournée
+    # section (app-load slowdown fix). Both classes share the get→compute→put
+    # single-flight path below; only the key and TTL differ.
+    cache_eligible = False
+    cache_variant: str | None = None
+    if FEED_CACHE.default_enabled and _is_default_view(
         limit=limit,
         offset=offset,
         content_type=content_type,
@@ -204,19 +275,44 @@ async def get_personalized_feed(
         entity=entity,
         keyword=keyword,
         personalized=personalized,
-    )
+    ):
+        cache_eligible = True
+        cache_variant = None
+    elif FEED_CACHE.personalized_enabled and _is_personalized_section_view(
+        offset=offset,
+        content_type=content_type,
+        mode=mode,
+        theme=theme,
+        topic=topic,
+        saved_only=saved_only,
+        has_note=has_note,
+        source_id=source_id,
+        entity=entity,
+        keyword=keyword,
+        include_unfollowed=include_unfollowed,
+        followed_only=followed_only,
+        personalized=personalized,
+    ):
+        cache_eligible = True
+        cache_variant = _personalized_variant(
+            theme=theme,
+            topic=topic,
+            source_id=source_id,
+            serein=serein,
+            limit=limit,
+        )
 
     if cache_eligible:
         # Fast path: cached and fresh → no DB work, no Pydantic.
-        cached = FEED_CACHE.get(user_uuid)
+        cached = FEED_CACHE.get(user_uuid, cache_variant)
         if cached is not None:
             return Response(content=cached, media_type="application/json")
 
-        # Single-flight: serialize concurrent first-misses for the same user.
-        # 2nd+ waiters re-check after acquiring the lock and pick up the
-        # payload populated by the 1st.
-        async with FEED_CACHE.lock(user_uuid):
-            cached = FEED_CACHE.get(user_uuid)
+        # Single-flight: serialize concurrent first-misses for the same
+        # (user, variant). 2nd+ waiters re-check after acquiring the lock and
+        # pick up the payload populated by the 1st.
+        async with FEED_CACHE.lock(user_uuid, cache_variant):
+            cached = FEED_CACHE.get(user_uuid, cache_variant)
             if cached is not None:
                 return Response(content=cached, media_type="application/json")
             response = await _compute_feed(
@@ -239,7 +335,7 @@ async def get_personalized_feed(
                 followed_only=followed_only,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
-            FEED_CACHE.put(user_uuid, payload)
+            FEED_CACHE.put(user_uuid, payload, cache_variant)
             return Response(content=payload, media_type="application/json")
 
     response = await _compute_feed(
@@ -396,6 +492,7 @@ async def _compute_feed(
         keyword_overflow=keyword_overflow_data,
         entity_overflow=entity_overflow_data,
         carousels=carousels_data,
+        no_recent_source=service.source_no_recent_source,
     )
 
 
@@ -551,97 +648,104 @@ async def get_tab_counts(
     user_uuid = UUID(current_user_id)
     cutoff = datetime.now(UTC) - timedelta(hours=48)
 
-    followed_stmt = select(UserSource.source_id).where(
-        UserSource.user_id == user_uuid,
-        UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
-    )
-    favorites_stmt = select(UserTopicProfile).where(
-        UserTopicProfile.user_id == user_uuid,
-        UserTopicProfile.priority_multiplier == 2.0,
-    )
+    async def _load_counts() -> TabCountsResponse:
+        # Read pur multi-await (badges au chargement, cold-open) → replay sûr.
+        # Toute la phase de requêtes est enveloppée dans `retry_db_op` pour
+        # qu'un hoquet de pool transitoire (PYTHON-4/14/26/27) rejoue après
+        # rollback au lieu de 500 l'utilisateur. Aucun commit ici.
+        followed_stmt = select(UserSource.source_id).where(
+            UserSource.user_id == user_uuid,
+            UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+        )
+        favorites_stmt = select(UserTopicProfile).where(
+            UserTopicProfile.user_id == user_uuid,
+            UserTopicProfile.priority_multiplier == 2.0,
+        )
 
-    followed_result = await db.execute(followed_stmt)
-    followed_source_ids = {row[0] for row in followed_result.all()}
-    favorite_profiles = list((await db.scalars(favorites_stmt)).all())
+        followed_result = await db.execute(followed_stmt)
+        followed_source_ids = {row[0] for row in followed_result.all()}
+        favorite_profiles = list((await db.scalars(favorites_stmt)).all())
 
-    if not followed_source_ids:
-        return TabCountsResponse(total=0)
+        if not followed_source_ids:
+            return TabCountsResponse(total=0)
 
-    # 2. Extract favorite slugs/names to count
-    fav_topic_slugs: set[str] = set()
-    fav_entity_names: set[str] = set()
-    for prof in favorite_profiles:
-        if prof.entity_type is not None:
-            if prof.canonical_name:
-                fav_entity_names.add(prof.canonical_name.lower())
-        else:
-            if prof.slug_parent:
-                fav_topic_slugs.add(prof.slug_parent)
+        # 2. Extract favorite slugs/names to count
+        fav_topic_slugs: set[str] = set()
+        fav_entity_names: set[str] = set()
+        for prof in favorite_profiles:
+            if prof.entity_type is not None:
+                if prof.canonical_name:
+                    fav_entity_names.add(prof.canonical_name.lower())
+            else:
+                if prof.slug_parent:
+                    fav_topic_slugs.add(prof.slug_parent)
 
-    # 3. Lightweight query: only columns needed for counting
-    exclude_stmt = exists().where(
-        UserContentStatus.content_id == Content.id,
-        UserContentStatus.user_id == user_uuid,
-        or_(
-            UserContentStatus.is_hidden,
-            UserContentStatus.status.in_(["seen", "consumed"]),
-        ),
-    )
+        # 3. Lightweight query: only columns needed for counting
+        exclude_stmt = exists().where(
+            UserContentStatus.content_id == Content.id,
+            UserContentStatus.user_id == user_uuid,
+            or_(
+                UserContentStatus.is_hidden,
+                UserContentStatus.status.in_(["seen", "consumed"]),
+            ),
+        )
 
-    stmt = select(Content.id, Content.topics, Content.entities).where(
-        Content.source_id.in_(list(followed_source_ids)),
-        Content.published_at >= cutoff,
-        ~exclude_stmt,
-    )
-    rows = (await db.execute(stmt)).all()
+        stmt = select(Content.id, Content.topics, Content.entities).where(
+            Content.source_id.in_(list(followed_source_ids)),
+            Content.published_at >= cutoff,
+            ~exclude_stmt,
+        )
+        rows = (await db.execute(stmt)).all()
 
-    # 4. Count in Python (single pass over lightweight rows)
-    total = len(rows)
-    topic_counts: dict[str, int] = {}
-    entity_counts: dict[str, int] = {}
-    theme_counts: dict[str, int] = {}
+        # 4. Count in Python (single pass over lightweight rows)
+        total = len(rows)
+        topic_counts: dict[str, int] = {}
+        entity_counts: dict[str, int] = {}
+        theme_counts: dict[str, int] = {}
 
-    for row in rows:
-        topics = row.topics or []
-        entities_raw = row.entities or []
+        for row in rows:
+            topics = row.topics or []
+            entities_raw = row.entities or []
 
-        for slug in fav_topic_slugs:
-            if slug in topics:
-                topic_counts[slug] = topic_counts.get(slug, 0) + 1
+            for slug in fav_topic_slugs:
+                if slug in topics:
+                    topic_counts[slug] = topic_counts.get(slug, 0) + 1
 
-        if fav_entity_names and entities_raw:
-            for raw_entity in entities_raw:
-                try:
-                    parsed = _json.loads(raw_entity)
-                    name = parsed.get("name", "").lower()
-                except (ValueError, AttributeError):
-                    name = raw_entity.lower()
-                if name in fav_entity_names:
-                    entity_counts[name] = entity_counts.get(name, 0) + 1
+            if fav_entity_names and entities_raw:
+                for raw_entity in entities_raw:
+                    try:
+                        parsed = _json.loads(raw_entity)
+                        name = parsed.get("name", "").lower()
+                    except (ValueError, AttributeError):
+                        name = raw_entity.lower()
+                    if name in fav_entity_names:
+                        entity_counts[name] = entity_counts.get(name, 0) + 1
 
-        # Theme: count each article once per theme (not per topic)
-        seen_themes: set[str] = set()
-        for topic_slug in topics:
-            theme_slug = TOPIC_TO_THEME.get(topic_slug)
-            if theme_slug and theme_slug not in seen_themes:
-                seen_themes.add(theme_slug)
-                theme_counts[theme_slug] = theme_counts.get(theme_slug, 0) + 1
+            # Theme: count each article once per theme (not per topic)
+            seen_themes: set[str] = set()
+            for topic_slug in topics:
+                theme_slug = TOPIC_TO_THEME.get(topic_slug)
+                if theme_slug and theme_slug not in seen_themes:
+                    seen_themes.add(theme_slug)
+                    theme_counts[theme_slug] = theme_counts.get(theme_slug, 0) + 1
 
-    logger.info(
-        "tab_counts_served",
-        user_id=current_user_id,
-        total=total,
-        topic_count=len(topic_counts),
-        entity_count=len(entity_counts),
-        theme_count=len(theme_counts),
-    )
+        logger.info(
+            "tab_counts_served",
+            user_id=current_user_id,
+            total=total,
+            topic_count=len(topic_counts),
+            entity_count=len(entity_counts),
+            theme_count=len(theme_counts),
+        )
 
-    return TabCountsResponse(
-        total=total,
-        topics=topic_counts,
-        entities=entity_counts,
-        themes=theme_counts,
-    )
+        return TabCountsResponse(
+            total=total,
+            topics=topic_counts,
+            entities=entity_counts,
+            themes=theme_counts,
+        )
+
+    return await retry_db_op(_load_counts, session=db, op_name="feed.tab_counts")
 
 
 @router.get("/trending-topics", response_model=list[TrendingTopicResponse])

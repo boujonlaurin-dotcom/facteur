@@ -8,6 +8,7 @@ propage immédiatement vers PostHog via `identify()`.
 
 from __future__ import annotations
 
+import hmac
 from typing import Literal
 from uuid import UUID
 
@@ -63,7 +64,7 @@ def require_admin_token(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin API disabled: ADMIN_API_TOKEN not configured",
         )
-    if not x_admin_token or x_admin_token != expected:
+    if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing X-Admin-Token header",

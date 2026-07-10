@@ -1184,6 +1184,26 @@ class TestLetter3Detection:
 
         assert "mute_3_sources" not in resp.json()["completed_actions"]
 
+    async def test_completed_action_is_monotone(self, auth_user, db_session):
+        """Régression : une action acquise ne doit pas régresser quand l'état
+        live repasse sous le seuil (dé-masquer une source)."""
+        await _activate_letter(db_session, auth_user, "letter_3")
+        await _set_muted_sources(db_session, auth_user, 3)
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_3/refresh-status")
+        assert "mute_3_sources" in resp.json()["completed_actions"]
+
+        # L'utilisateur dé-masque : cardinality repasse sous 3.
+        perso = await db_session.get(UserPersonalization, auth_user)
+        perso.muted_sources = perso.muted_sources[:1]
+        await db_session.commit()
+
+        async with _client() as ac:
+            resp = await ac.post("/api/letters/letter_3/refresh-status")
+        # L'action reste acquise (monotone).
+        assert "mute_3_sources" in resp.json()["completed_actions"]
+
     async def test_add_5_youtube_channels_detected(self, auth_user, db_session):
         await _activate_letter(db_session, auth_user, "letter_3")
         await _add_youtube_sources(db_session, auth_user, 5)

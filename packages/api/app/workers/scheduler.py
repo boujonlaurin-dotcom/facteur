@@ -5,6 +5,7 @@ import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.jobs.digest_generation_job import (
@@ -12,7 +13,13 @@ from app.jobs.digest_generation_job import (
     run_digest_generation,
 )
 from app.jobs.purge_deleted_users import purge_deleted_users
+from app.jobs.recompute_source_coverage_themes import (
+    recompute_source_coverage_themes,
+)
 from app.jobs.recompute_source_language import recompute_source_language
+from app.services.observability.cost_budget import log_budget_projection
+from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
+from app.services.recommendation.scoring_config import ScoringWeights
 from app.workers.rss_sync import sync_all_sources
 from app.workers.storage_cleanup import cleanup_old_articles
 
@@ -37,8 +44,87 @@ _PARIS_TZ = pytz.timezone("Europe/Paris")
 # sont déjà dans le pool candidat.
 DIGEST_CRON_HOUR_PARIS = 7
 DIGEST_CRON_MINUTE_PARIS = 30
+# 06h50 (et non 07h20) : le decay doit rester AVANT le digest (07h30) mais
+# sans chevaucher la fenêtre de pression pool du rituel matinal (~07h20-07h35,
+# digest concurrent + pic de trafic feed). Cf. incident PYTHON-5M.
+SUBTOPIC_DECAY_HOUR_PARIS = 6
+SUBTOPIC_DECAY_MINUTE_PARIS = 50
 
 scheduler: AsyncIOScheduler | None = None
+
+
+def decayed_subtopic_weight(
+    weight: float, decay: float = ScoringWeights.SUBTOPIC_DECAY
+) -> float:
+    """Return a subtopic weight moved one daily step toward neutral 1.0."""
+    return 1.0 + (weight - 1.0) * decay
+
+
+async def decay_user_subtopic_weights() -> None:
+    """Apply the daily O(1) decay to all learned subtopic weights."""
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    UPDATE user_subtopics
+                    SET weight = 1.0 + (weight - 1.0) * :decay
+                    WHERE weight != 1.0
+                    """
+                ),
+                {"decay": ScoringWeights.SUBTOPIC_DECAY},
+            )
+            await session.commit()
+            logger.info(
+                "subtopic_weight_decay_completed",
+                decay=ScoringWeights.SUBTOPIC_DECAY,
+                rowcount=getattr(result, "rowcount", None),
+            )
+    except Exception as exc:
+        logger.error(
+            "subtopic_weight_decay_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+
+
+async def decay_user_entity_affinity() -> None:
+    """Apply the daily O(1) decay to all learned entity affinities (PR2).
+
+    Miroir de `decay_user_subtopic_weights` côté entités : ramène chaque
+    `affinity` d'un cran vers le neutre 1.0 (idempotent, ne touche pas les
+    lignes déjà à 1.0). Tourne à 06:50 Paris, avant le digest (07:30).
+    """
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    UPDATE user_entity_affinity
+                    SET affinity = 1.0 + (affinity - 1.0) * :decay
+                    WHERE affinity != 1.0
+                    """
+                ),
+                {"decay": ScoringWeights.ENTITY_AFFINITY_DECAY},
+            )
+            await session.commit()
+            logger.info(
+                "entity_affinity_decay_completed",
+                decay=ScoringWeights.ENTITY_AFFINITY_DECAY,
+                rowcount=getattr(result, "rowcount", None),
+            )
+    except Exception as exc:
+        logger.error(
+            "entity_affinity_decay_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
 
 
 async def _digest_watchdog() -> None:
@@ -83,6 +169,22 @@ async def _digest_watchdog() -> None:
                 )
 
                 if coverage < 0.90:
+                    # Garde call-site (Axe B) : si un digest tourne déjà
+                    # (cron 07h30 encore en cours, ou startup catchup), ne pas
+                    # lancer un 2e run complet → éviterait le pic pool x2
+                    # (2 × Semaphore(5)). La garde in-function de
+                    # `run_digest_generation` bloque aussi, mais on skip ici
+                    # pour ne pas même payer l'ouverture de session.
+                    from app.services.generation_state import is_generation_running
+
+                    if is_generation_running():
+                        logger.info(
+                            "digest_watchdog_skipped_generation_in_progress",
+                            coverage_pct=round(coverage * 100, 1),
+                            missing=expected_pairs - pair_count,
+                        )
+                        return
+
                     logger.warning(
                         "digest_watchdog_low_coverage_triggering_generation",
                         coverage_pct=round(coverage * 100, 1),
@@ -145,11 +247,24 @@ async def _zombie_session_sweeper() -> None:
             # 0, sans dépendre du log warning conditionnel ci-dessous.
             logger.info("db_idle_in_transaction_swept", count=len(killed))
             if killed:
+                count = len(killed)
+                max_idle_s = max(r[2] for r in killed)
                 logger.warning(
                     "zombie_session_sweeper_killed",
-                    count=len(killed),
+                    count=count,
                     pids=[r[1] for r in killed],
-                    max_idle_s=max(r[2] for r in killed),
+                    max_idle_s=max_idle_s,
+                )
+                # Alerte (Axe D) : un zombie tué = une connexion a échappé aux
+                # 3 couches (rollback en finally + timeout Postgres + ce
+                # sweeper) → un `safe_async_session` est manqué quelque part,
+                # investigate. Rare → niveau error (pas juste un warning noyé).
+                import sentry_sdk
+
+                sentry_sdk.capture_message(
+                    f"Zombie session(s) swept: {count} idle-in-tx killed "
+                    f"(max idle {max_idle_s}s) — a safe_async_session is missing",
+                    level="error",
                 )
             else:
                 logger.debug("zombie_session_sweeper_clean")
@@ -157,14 +272,31 @@ async def _zombie_session_sweeper() -> None:
         logger.exception("zombie_session_sweeper_failed")
 
 
+# Sondes consécutives où `usage_pct >= pool_warn_threshold_pct`. Permet à la
+# sonde de distinguer un pic transitoire (1 sonde — rituel matinal) d'une
+# pression SOUTENUE (>= pool_warn_sustained_probes) avant de lever le warning.
+# État module-level : volontairement non persisté (un redémarrage ré-arme la
+# fenêtre, ce qui est le comportement voulu).
+_pool_warn_streak = 0
+
+
 async def _pool_health_probe() -> None:
-    """Sonde active du pool DB toutes les 5 min (enabler observabilité scaling).
+    """Sonde active du pool DB toutes les 5 min — alerte à 2 seuils (Axe D).
 
     `/api/health/pool` ne loggue `db_pool_pressure_high` que lorsqu'il est
     *appelé* (passif). Cette sonde lit le pool périodiquement pour rendre la
     pression visible dans structlog/Sentry sans dépendre d'un appel externe,
     en réutilisant la même introspection (`read_pool_stats`).
+
+    Deux seuils (incident PYTHON-5M) :
+    - **warn** (`pool_warn_threshold_pct`, défaut 70 %) : alerte Sentry
+      `level=warning` seulement si la pression est SOUTENUE, c.-à-d.
+      `pool_warn_sustained_probes` sondes consécutives au-dessus du seuil
+      (early warning sans bruit sur les pics transitoires du rituel matinal).
+    - **page** (`pool_page_threshold_pct`, défaut 90 %) : alerte Sentry
+      `level=fatal` immédiate, dès la première sonde (saturation imminente).
     """
+    global _pool_warn_streak
     import sentry_sdk
 
     from app.database import engine
@@ -173,32 +305,140 @@ async def _pool_health_probe() -> None:
     try:
         stats = read_pool_stats(engine)
         usage_pct = stats.get("usage_pct")
-        threshold = settings.pool_alert_threshold_pct
-        if usage_pct is not None and usage_pct >= threshold:
-            logger.warning("db_pool_pressure_high", source="probe", **stats)
+
+        # NullPool (dev) n'expose pas usage_pct → rien à évaluer.
+        if usage_pct is None:
+            logger.info("db_pool_probe", **stats)
+            return
+
+        page_threshold = settings.pool_page_threshold_pct
+        warn_threshold = settings.pool_warn_threshold_pct
+
+        if usage_pct < warn_threshold:
+            # Sous le seuil warn : un retour sous le seuil casse le "soutenu".
+            _pool_warn_streak = 0
+            logger.info("db_pool_probe", **stats)
+            return
+
+        # À partir d'ici on est >= warn : toute mesure compte pour le streak
+        # (page >= warn par construction), puis on choisit la sévérité.
+        _pool_warn_streak += 1
+
+        if usage_pct >= page_threshold:
+            logger.error(
+                "db_pool_pressure_critical",
+                source="probe",
+                severity="page",
+                threshold=page_threshold,
+                **stats,
+            )
             sentry_sdk.capture_message(
-                f"DB pool pressure high: {usage_pct}% (>= {threshold}%)",
+                f"DB pool pressure CRITICAL: {usage_pct}% (>= {page_threshold}%)",
+                level="fatal",
+            )
+        elif _pool_warn_streak >= settings.pool_warn_sustained_probes:
+            logger.warning(
+                "db_pool_pressure_high",
+                source="probe",
+                severity="warn",
+                threshold=warn_threshold,
+                sustained_probes=_pool_warn_streak,
+                **stats,
+            )
+            sentry_sdk.capture_message(
+                f"DB pool pressure sustained: {usage_pct}% (>= "
+                f"{warn_threshold}% for {_pool_warn_streak} consecutive probes)",
                 level="warning",
             )
         else:
-            logger.info("db_pool_probe", **stats)
+            # Seuil franchi mais pas encore soutenu : on garde la trace en
+            # info (visible/requêtable) sans réveiller personne.
+            logger.info("db_pool_probe", warn_pending=True, **stats)
     except Exception:
         logger.exception("pool_health_probe_failed")
 
 
+async def _classification_queue_health_check() -> None:
+    """Alerte externe si la file de classification stagne (angle-mort worker).
+
+    Bug 2026-06-30 : la task asyncio du ClassificationWorker est morte
+    isolément (CancelledError) sans repasser `running=False` ni redémarrer →
+    26 k pending empilés, `content.theme` NULL sur tout le frais, 10 j sans
+    aucune alerte. Le superviseur `_on_task_done` du worker couvre désormais la
+    mort de la task ; ce job est la **2e couche** : il fonctionne même si le
+    worker est mort (ou jamais démarré), tant que le scheduler tourne.
+
+    Lit `get_pending_stats()` (réutilisé de la gate d'accumulation) et
+    `capture_message` Sentry `level=error` si le plus vieux pending dépasse
+    `classification_queue_alert_age_hours` (défaut 12 h). Le message est
+    volontairement stable (pas d'âge exact dedans) pour garder un fingerprint
+    Sentry unique ; les valeurs exactes vont dans le log structuré.
+    """
+    import sentry_sdk
+
+    from app.database import safe_async_session
+    from app.services.classification_queue_service import ClassificationQueueService
+
+    try:
+        async with safe_async_session() as session:
+            service = ClassificationQueueService(session)
+            pending, oldest_age_s = await service.get_pending_stats()
+
+        threshold_h = settings.classification_queue_alert_age_hours
+        oldest_age_h = (
+            round(oldest_age_s / 3600, 2) if oldest_age_s is not None else None
+        )
+        logger.info(
+            "classification_queue_health",
+            pending=pending,
+            oldest_age_s=oldest_age_s,
+            oldest_age_h=oldest_age_h,
+            threshold_h=threshold_h,
+        )
+
+        if oldest_age_h is not None and oldest_age_h > threshold_h:
+            logger.warning(
+                "classification_queue_stalled",
+                pending=pending,
+                oldest_age_h=oldest_age_h,
+                threshold_h=threshold_h,
+            )
+            sentry_sdk.capture_message(
+                f"Classification queue stalled: oldest pending exceeds "
+                f"{threshold_h}h — worker may be down",
+                level="error",
+            )
+    except Exception:
+        logger.exception("classification_queue_health_check_failed")
+
+
 def start_scheduler() -> None:
-    """Démarre le scheduler."""
+    """Démarre le scheduler.
+
+    Discipline de sérialisation (incident PYTHON-5M, fenêtre pool partagée) :
+    **chaque** `add_job` porte `max_instances=1` (+ `coalesce=True`) pour qu'un
+    run qui déborde sur le tick suivant ne lance jamais un 2e run concurrent
+    consommant le pool en double. APScheduler met déjà `max_instances=1` par
+    défaut → c'est défensif/documentaire ; le vrai correctif anti-double-digest
+    (3 appelants non coordonnés : cron, watchdog, startup catchup) est la garde
+    in-function `is_generation_running()` dans `run_digest_generation`, que
+    `max_instances` ne peut pas couvrir (il ne voit que le cron).
+    """
     global scheduler
 
     scheduler = AsyncIOScheduler()
 
-    # Job de synchronisation RSS (Intervalle)
+    # Job de synchronisation RSS (Intervalle).
+    # max_instances=1 + coalesce=True : voir la discipline de sérialisation
+    # documentée dans la docstring de start_scheduler (appliquée à tous les jobs).
     scheduler.add_job(
         sync_all_sources,
         trigger=IntervalTrigger(minutes=settings.rss_sync_interval_minutes),
         id="rss_sync",
         name="RSS Feed Synchronization",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Job Digest Quotidien (07h30 Paris — voir DIGEST_CRON_HOUR_PARIS pour le
@@ -217,6 +457,42 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,
+        max_instances=1,
+    )
+
+    # Daily learned-subtopic decay (07h20 Paris) so digest scoring at 07h30
+    # uses weights nudged toward neutral without requiring a schema migration.
+    scheduler.add_job(
+        decay_user_subtopic_weights,
+        trigger=CronTrigger(
+            hour=SUBTOPIC_DECAY_HOUR_PARIS,
+            minute=SUBTOPIC_DECAY_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
+        id="subtopic_weight_decay",
+        name="Subtopic Weight Decay",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Daily learned-entity-affinity decay (06h50 Paris) — miroir du decay
+    # subtopics : ramène les affinités entités vers le neutre 1.0 avant le
+    # digest (07h30). Même fenêtre 06h50 (hors pression pool matinale).
+    scheduler.add_job(
+        decay_user_entity_affinity,
+        trigger=CronTrigger(
+            hour=SUBTOPIC_DECAY_HOUR_PARIS,
+            minute=SUBTOPIC_DECAY_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
+        id="entity_affinity_decay",
+        name="Entity Affinity Decay",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Watchdog 08h15 — vérifie la couverture et relance si < 90%.
@@ -230,6 +506,7 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,
+        max_instances=1,
     )
 
     # Job Storage Cleanup Quotidien (3h00 Paris - heure creuse)
@@ -239,6 +516,8 @@ def start_scheduler() -> None:
         id="storage_cleanup",
         name="Storage Cleanup",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Hard-delete soft-deleted user accounts older than 30 days (4h00 Paris,
@@ -249,6 +528,8 @@ def start_scheduler() -> None:
         id="purge_deleted_users",
         name="Purge soft-deleted users (>30d)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Recalcul `sources.language` à partir des Content des 30 derniers jours
@@ -259,6 +540,36 @@ def start_scheduler() -> None:
         id="recompute_source_language",
         name="Recompute Source.language (majoritaire 30j)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Recalcul `sources.coverage_themes` (couverture éditoriale data-driven 90j)
+    # — hebdo dimanche 03h45 Paris. La couverture dérive lentement (pas besoin
+    # de tourner tous les jours) ; fenêtre nocturne à faible pression pool
+    # (après recompute_source_language 03h30). Sert la découverte, jamais le
+    # scoring. Cf. story 22.5.
+    scheduler.add_job(
+        recompute_source_coverage_themes,
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=45, timezone=_PARIS_TZ),
+        id="recompute_source_coverage_themes",
+        name="Recompute Source.coverage_themes (couverture éditoriale 90j)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Projection budget coût API externes (évidence G3 scaling) : conso du mois
+    # courant par provider/call_site + projection ×2.25 (89→200 users), loguée
+    # une fois par jour. Read-only, ne change aucun comportement.
+    scheduler.add_job(
+        log_budget_projection,
+        trigger=CronTrigger(hour=5, minute=0, timezone=_PARIS_TZ),
+        id="cost_budget_projection",
+        name="Cost budget projection (api_usage_events)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Zombie session sweeper — kill Supavisor sessions stuck in
@@ -270,6 +581,8 @@ def start_scheduler() -> None:
         id="zombie_session_sweeper",
         name="Zombie session sweeper (idle in tx > 5min)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     # Sonde pool DB active (5 min) — rend la pression pool visible dans
@@ -280,6 +593,32 @@ def start_scheduler() -> None:
         id="pool_health_probe",
         name="DB pool health probe (5min)",
         replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    scheduler.add_job(
+        dispatch_daily_essentiel_pushes,
+        trigger=IntervalTrigger(minutes=5),
+        id="daily_essentiel_push_dispatch",
+        name="Daily Essentiel server push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Garde-fou file de classification (30 min) — alerte Sentry si le plus
+    # vieux pending dépasse le seuil (défaut 12 h). 2e couche par-dessus le
+    # superviseur `_on_task_done` du worker : détecte l'angle-mort même si la
+    # task du worker est morte (bug-classification-worker-stopped).
+    scheduler.add_job(
+        _classification_queue_health_check,
+        trigger=IntervalTrigger(minutes=30),
+        id="classification_queue_health_check",
+        name="Classification queue health check (stall alert)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
     )
 
     scheduler.start()
@@ -292,8 +631,11 @@ def start_scheduler() -> None:
             "storage_cleanup",
             "purge_deleted_users",
             "recompute_source_language",
+            "recompute_source_coverage_themes",
             "zombie_session_sweeper",
             "pool_health_probe",
+            "daily_essentiel_push_dispatch",
+            "classification_queue_health_check",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
         digest_cron="07:30 Europe/Paris",

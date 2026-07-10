@@ -106,12 +106,35 @@ void main() {
       expect(action.route, '/grille');
     });
 
-    test('login-callback URI is ignored (handled by Supabase SDK)', () {
+    test('login-callback URI is identified as an auth callback', () {
       final action = DeepLinkService.parse(
         Uri.parse('io.supabase.facteur://login-callback#access_token=xyz'),
       );
-      expect(action.target, WidgetDeepLinkTarget.ignored);
-      expect(action.route, isNull);
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/splash');
+      expect(action.authType, isNull);
+    });
+
+    test('login-callback recovery URI routes to reset password', () {
+      final action = DeepLinkService.parse(
+        Uri.parse(
+          'io.supabase.facteur://login-callback#access_token=xyz&type=recovery',
+        ),
+      );
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/reset-password');
+      expect(action.authType, 'recovery');
+    });
+
+    test('login-callback query recovery also routes to reset password', () {
+      final action = DeepLinkService.parse(
+        Uri.parse(
+          'io.supabase.facteur://login-callback?code=abc&type=recovery',
+        ),
+      );
+      expect(action.target, WidgetDeepLinkTarget.authCallback);
+      expect(action.route, '/reset-password');
+      expect(action.authType, 'recovery');
     });
 
     test('foreign scheme → unhandled', () {
@@ -134,6 +157,69 @@ void main() {
       );
       expect(action.target, WidgetDeepLinkTarget.article);
       expect(action.position, isNull);
+    });
+
+    test('feed?refresh=1 → flâner + refresh flag (bouton refresh widget)', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://feed?refresh=1'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.feed);
+      expect(action.route, '/flaner');
+      expect(action.refresh, isTrue);
+    });
+
+    test('feed sans refresh → flag refresh false', () {
+      final action = DeepLinkService.parse(
+        Uri.parse('io.supabase.facteur://feed'),
+      );
+      expect(action.target, WidgetDeepLinkTarget.feed);
+      expect(action.refresh, isFalse);
+    });
+  });
+
+  group('DeepLinkService pending (cold-start seed)', () {
+    tearDown(DeepLinkService.resetForTest);
+
+    test('seedPending + pendingRoute resolves the route without consuming', () {
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+
+      service.seedPending(
+        Uri.parse('io.supabase.facteur://feed/content/abc-123'),
+      );
+
+      // Resolves but does not consume — repeatable.
+      expect(service.pendingRoute(), '/flaner/content/abc-123');
+      expect(service.pendingRoute(), '/flaner/content/abc-123');
+    });
+
+    test('clearPending makes pendingRoute null', () {
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+
+      service.seedPending(Uri.parse('io.supabase.facteur://digest/xyz'));
+      expect(service.pendingRoute(), '/flux-continu/content/xyz');
+
+      service.clearPending();
+      expect(service.pendingRoute(), isNull);
+    });
+
+    test('seedPending ignores foreign schemes', () {
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+
+      service.seedPending(Uri.parse('https://facteur.app/digest'));
+      expect(service.pendingRoute(), isNull);
+    });
+
+    test('pendingRoute is null for non-navigable (auth callback) links', () {
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+
+      service.seedPending(
+        Uri.parse('io.supabase.facteur://login-callback#access_token=xyz'),
+      );
+      expect(service.pendingRoute(), isNull);
     });
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,11 +18,13 @@ import 'package:flutter_downloader/flutter_downloader.dart';
 import 'app.dart';
 import 'config/constants.dart';
 import 'core/auth/supabase_storage.dart';
+import 'core/api/notification_preferences_api_service.dart';
+import 'core/services/deep_link_service.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
+import 'core/services/server_push_service.dart';
 import 'core/ui/notification_service.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
-import 'features/settings/providers/notifications_settings_provider.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:timeago/src/messages/fr_messages.dart'
@@ -57,11 +60,22 @@ Future<void> _bootstrap() async {
   timeago.setLocaleMessages('fr', fr_messages.FrMessages());
   timeago.setLocaleMessages('fr_short', FrCompactMessages());
 
+  // Edge-to-edge : le contenu de l'app dessine derrière les barres système
+  // (status bar + barre de navigation), permettant des barres transparentes
+  // façon LinkedIn plutôt que le fond noir système par défaut.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
   SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
+    SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
       statusBarBrightness: Brightness.dark,
+      // Voile noir léger (pas full transparent) : garantit le contraste de la
+      // pilule gestuelle / des boutons système sur les fonds clairs.
+      systemNavigationBarColor: Colors.black.withValues(alpha: 0.15),
+      // Désactive le scrim/contraste auto qui réintroduit un fond opaque
+      systemNavigationBarContrastEnforced: false,
+      systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
 
@@ -72,6 +86,18 @@ Future<void> _bootstrap() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  // Initialiser flutter_downloader (Android DownloadManager) pour la mise
+  // à jour APK : permet au téléchargement de continuer en arrière-plan.
+  // Gate Android-only : sur iOS l'init crash (AppDelegate ne wire pas
+  // setPluginRegistrantCallback) et la feature (sideload APK) ne s'applique
+  // pas. Sur web `dart:io` Platform throw.
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
+    } catch (e) {
+      debugPrint('Main: FlutterDownloader init failed (non-critical): $e');
+    }
+  }
   await Hive.initFlutter();
 
   final boxesSw = Stopwatch()..start();
@@ -193,6 +219,7 @@ Future<void> _bootstrap() async {
             properties: _userIdentifyProperties(user, appVersion: appVersion),
           );
           unawaited(_loginRevenueCatSafe(user.id));
+          unawaited(_registerServerPushIfEnabled());
         }
         break;
       case AuthChangeEvent.signedOut:
@@ -203,6 +230,25 @@ Future<void> _bootstrap() async {
         break;
     }
   });
+
+  // Résout le deep link de cold-start AVANT la 1ère redirection du router pour
+  // qu'il soit la source de vérité de l'atterrissage post-auth (sinon course
+  // entre `flushPendingIfReady` → article et le redirect → Flâner, cf.
+  // bug widget cold-open). Best-effort, borné à ~300ms — un échec/timeout
+  // laisse simplement DeepLinkService.start() retomber sur getInitialLink.
+  if (!kIsWeb && Platform.isAndroid) {
+    try {
+      final initialUri = await AppLinks().getInitialLink().timeout(
+            const Duration(milliseconds: 300),
+            onTimeout: () => null,
+          );
+      if (initialUri != null) {
+        DeepLinkService.instance.seedPending(initialUri);
+      }
+    } catch (e) {
+      debugPrint('Main: getInitialLink seed failed (non-critical): $e');
+    }
+  }
 
   debugPrint('[PERF] boot.pre_runapp_ms=${bootSw.elapsedMilliseconds}');
 
@@ -222,8 +268,23 @@ Future<void> _bootstrap() async {
   unawaited(_initDeferredServices(posthog: posthog));
 }
 
+Future<void> _registerServerPushIfEnabled() async {
+  final box = await Hive.openBox<dynamic>('settings');
+  final enabled =
+      box.get('push_notifications_enabled', defaultValue: false) as bool;
+  if (enabled) {
+    await ServerPushService.instance.initAndRegister();
+  }
+}
+
 /// Init FlutterDownloader avec fallback silencieux (non-critique).
 Future<void> _initDownloaderSafe() async {
+  // flutter_downloader ne sert qu'à la MAJ in-app par APK (Android uniquement ;
+  // la feature app_update est déjà gardée `!Platform.isAndroid` partout).
+  // Sur iOS, FlutterDownloader.initialize() déclenche un fatalError natif
+  // (setPluginRegistrantCallback absent d'AppDelegate) → crash AU LANCEMENT,
+  // non rattrapable par le try/catch Dart. On skip donc l'init hors Android.
+  if (kIsWeb || !Platform.isAndroid) return;
   try {
     await FlutterDownloader.initialize(debug: false, ignoreSsl: false);
   } catch (e) {
@@ -266,7 +327,10 @@ Future<void> _initRevenueCatSafe() async {
 /// Permet à un achat Web Billing fait depuis la landing — où l'`app_user_id`
 /// est déjà le user_id Supabase — de suivre le bon compte dans l'app.
 Future<void> _loginRevenueCatSafe(String userId) async {
-  if (kIsWeb) return;
+  // Garde isConfigured OBLIGATOIRE : si RevenueCat n'est pas configuré (clé API
+  // absente), Purchases.logIn lève un fatalError NATIF (cf. crash post-login
+  // EXC_BREAKPOINT/PurchasesHybridCommon) que le try/catch Dart ne rattrape PAS.
+  if (kIsWeb || !RevenueCatConstants.isConfigured(isIOS: Platform.isIOS)) return;
   try {
     await Purchases.logIn(userId);
   } catch (e) {
@@ -277,7 +341,9 @@ Future<void> _loginRevenueCatSafe(String userId) async {
 /// Délie l'identité RevenueCat au logout : évite que l'utilisateur suivant
 /// hérite par erreur des entitlements du précédent sur un device partagé.
 Future<void> _logoutRevenueCatSafe() async {
-  if (kIsWeb) return;
+  // Même garde que _loginRevenueCatSafe : Purchases.logOut fatalError natif si
+  // RevenueCat n'est pas configuré.
+  if (kIsWeb || !RevenueCatConstants.isConfigured(isIOS: Platform.isIOS)) return;
   try {
     await Purchases.logOut();
   } catch (e) {
@@ -312,58 +378,45 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
     await pushNotificationService.init();
 
     final settingsBox = Hive.box<dynamic>('settings');
+    // Opt-in STRICT : sur install fraîche (clé Hive absente, avant toute
+    // réponse à la modal d'activation) le push est considéré désactivé.
+    // `defaultValue: false` aligne cette lecture sur les deux autres
+    // (_registerServerPushIfEnabled + server_push_service) — sinon le boot
+    // croyait le push actif et déclenchait scheduling + permissions
+    // (pop-up « Alarmes et rappels » intempestif, cf. bug-modals-intrusives).
     final pushEnabled = settingsBox.get('push_notifications_enabled',
-        defaultValue: true) as bool;
+        defaultValue: false) as bool;
     bootPushEnabledHive = pushEnabled;
-
-    // Cold start : re-pose la variante B personnalisée avec les derniers
-    // teasers persistés (le home les rafraîchira au 1er load frais). Liste vide
-    // (1er lancement) → variante A générique, acceptable. Clé + lecture
-    // défensive partagées avec le provider (source de vérité).
-    final essentielTeasers = NotificationsSettingsNotifier.readTeasers(
-      settingsBox,
-      NotificationsSettingsNotifier.kEssentielTeasers,
-    );
-    final digestVariant = essentielTeasers.isEmpty
-        ? NotifVariant.variantA
-        : NotifVariant.variantB;
-    final digestSerene = NotificationsSettingsNotifier.readSerein(settingsBox);
 
     // Diagnostic + scheduling sont indépendants : collecter le diagnostic
     // pendant la planification (alarms + permission). `pushEnabled=false`
     // → on collecte quand même le diagnostic (cf. bug-notifications-stalled).
     final diagFuture = pushNotificationService.getDiagnostics();
     if (pushEnabled) {
-      await pushNotificationService.ensureExactAlarmPermission();
-      // Si une notification personnalisée (avec les sujets du digest) a été
-      // planifiée par DigestNotifier._updateNotificationWithTopics(), on la
-      // préserve — écraser avec le corps statique régresserait la feature.
-      final alreadyScheduled =
-          await pushNotificationService.isDigestNotificationScheduled();
-      if (!alreadyScheduled) {
-        final scheduled =
-            await pushNotificationService.scheduleDailyDigestNotification(
-          variant: digestVariant,
-          teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
-          serene: digestSerene,
+      final timeSlot = NotifTimeSlotX.fromWire(
+        settingsBox.get('notif_time_slot') as String?,
+      );
+      final serverRegistered =
+          await ServerPushService.instance.initAndRegister();
+      if (serverRegistered) {
+        await pushNotificationService.cancelDigestNotification();
+      } else {
+        // Planification directe : AUCUNE demande de permission exact-alarm
+        // automatique. Si la permission n'est pas accordée, la notif tombe
+        // silencieusement en mode inexact (cf. scheduleDailyDigestNotification).
+        // Le pop-up OS « Alarmes et rappels » ne doit jamais se rouvrir tout
+        // seul (bug-modals-intrusives) ; l'opt-in exact-alarm est strictement
+        // initié par l'utilisateur (modal d'activation / Réglages).
+        //
+        final scheduled = await ServerPushService.scheduleDigestFallback(
+          box: settingsBox,
+          timeSlot: timeSlot,
         );
         if (!scheduled) {
           debugPrint(
-            'Main: WARNING — digest notification scheduling failed, retrying...',
+            'Main: WARNING - digest notification scheduling failed (inexact)',
           );
-          await pushNotificationService.requestExactAlarmPermission();
-          final retryOk =
-              await pushNotificationService.scheduleDailyDigestNotification(
-            variant: digestVariant,
-            teasers: essentielTeasers.isEmpty ? null : essentielTeasers,
-            serene: digestSerene,
-          );
-          debugPrint('Main: Retry result: $retryOk');
         }
-      } else {
-        debugPrint(
-          'Main: Digest notification already scheduled — skipping static placeholder.',
-        );
       }
     }
     bootNotifDiag = await diagFuture;

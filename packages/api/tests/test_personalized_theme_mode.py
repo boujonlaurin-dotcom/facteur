@@ -725,3 +725,108 @@ class TestThemeFocusFilterUnclassified:
         # Régression : les secondary_themes déversaient les articles non
         # classifiés des sources généralistes dans des sections sans rapport.
         assert "secondary_themes" not in sql
+
+
+# ── Repli « pas d'article récent » sur les sections SOURCE ───────────────────
+
+
+def _stub_scalars_by_call(captured: list, per_call: list):
+    """`session.scalars` retournant un résultat différent par appel successif.
+
+    `per_call[i]` = la liste d'items renvoyée au i-ème appel (le dernier élément
+    est réutilisé si plus d'appels sont émis). Permet de simuler « les paliers
+    24/48/72h ne ramènent rien, mais la fenêtre 30 j (4ᵉ appel) ramène des
+    articles anciens »."""
+
+    state = {"i": 0}
+
+    async def _scalars(stmt):
+        captured.append(str(stmt.compile(compile_kwargs={"literal_binds": False})))
+        idx = min(state["i"], len(per_call) - 1)
+        state["i"] += 1
+        r = MagicMock()
+        r.all.return_value = per_call[idx]
+        return r
+
+    return _scalars
+
+
+@pytest.mark.asyncio
+async def test_source_stale_fallback_when_no_recent_article():
+    """source + personalized : aucun article ≤72h (3 paliers vides) mais des
+    articles ≤30 j → la 4ᵉ requête (repli 720h) remplit la section et lève le
+    flag `source_no_recent_source`."""
+    service, session = _make_service()
+    captured: list[str] = []
+    stale = [_mock_content()]
+    # Paliers 24/48/72h vides, puis la fenêtre 30 j ramène un article ancien.
+    session.scalars = _stub_scalars_by_call(captured, [[], [], [], stale])
+
+    result = await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            source_id=uuid4(),
+            personalized=True,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    assert result, "le repli 30 j doit remplir la section avec des articles anciens"
+    assert service.source_no_recent_source is True
+    # 3 paliers adaptatifs + 1 requête de repli.
+    assert len(captured) == 4, f"attendu 4 requêtes, vu {len(captured)}"
+
+
+@pytest.mark.asyncio
+async def test_source_no_stale_fallback_when_fresh_article():
+    """source + personalized : un article frais (≤72h) → pas de repli, flag à
+    False."""
+    service, session = _make_service()
+    captured: list[str] = []
+    fresh = [_mock_content() for _ in range(8)]
+    session.scalars = _stub_scalars_by_call(captured, [fresh])
+
+    result = await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            source_id=uuid4(),
+            personalized=True,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    assert result, "section non vide avec un article frais"
+    assert service.source_no_recent_source is False
+    # Le pool ≥ seuil dès le 1er palier → pas de requête de repli.
+    assert len(captured) == 1
+
+
+@pytest.mark.asyncio
+async def test_source_no_fallback_flag_when_totally_empty():
+    """source + personalized : aucun article même > 30 j → section vide, flag à
+    False (l'empty-state « aucun article » s'affichera, pas « Pas d'article
+    récent. »)."""
+    service, session = _make_service()
+    captured: list[str] = []
+    # Tous les paliers ET le repli 30 j sont vides.
+    session.scalars = _stub_scalars_by_call(captured, [[]])
+
+    result = await asyncio.wait_for(
+        service._get_candidates(
+            user_id=uuid4(),
+            limit_candidates=500,
+            source_id=uuid4(),
+            personalized=True,
+            followed_source_ids={uuid4()},
+        ),
+        timeout=5.0,
+    )
+
+    assert result == []
+    assert service.source_no_recent_source is False
+    # 3 paliers vides + 1 repli vide.
+    assert len(captured) == 4

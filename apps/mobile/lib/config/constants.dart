@@ -267,6 +267,12 @@ class AppUpdateConstants {
   /// Release tag injected by CI (e.g. "beta-20260221-1430")
   static const String releaseTag = String.fromEnvironment('APP_RELEASE_TAG');
 
+  /// Build distribué via Play Store : pas de check version + pas de
+  /// download APK (Play Store gère les MAJ, et REQUEST_INSTALL_PACKAGES
+  /// est banni).
+  static const bool isPlayStoreBuild =
+      bool.fromEnvironment('PLAYSTORE_BUILD');
+
   /// Update channel injected by CI : "beta" pour le flavor staging (env
   /// continu), "stable" pour le flavor prod (vrais users). Sélectionne le
   /// préfixe de tag filtré côté backend : stable→release-, beta→beta-.
@@ -343,6 +349,11 @@ class ExternalLinks {
   /// Lien d'invitation au groupe WhatsApp "Facteur - Retours & idées"
   static const String whatsappGroupUrl =
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
+
+  /// URL Calendly pour prendre un call qualitatif avec l'équipe (Epic 13).
+  /// TODO(laurin): remplacer par le vrai lien Calendly avant le merge.
+  static const String calendlyUrl =
+      'https://calendly.com/laurin-facteur/feedback';
 }
 
 /// Liens légaux et support — pages statiques servies par le landing facteur.app.

@@ -9,7 +9,6 @@ import '../../../widgets/design/facteur_thumbnail.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
-import '../../feed/repositories/feed_repository.dart';
 import '../providers/digest_provider.dart';
 import '../../feed/utils/article_title_layout.dart';
 import '../../feed/widgets/dismiss_banner.dart';
@@ -17,7 +16,6 @@ import '../../feed/widgets/feed_card.dart';
 import '../../feed/widgets/initial_circle.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
-import '../../feed/widgets/perspectives_loading_sheet.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../sources/models/source_model.dart';
 import '../models/digest_models.dart';
@@ -178,6 +176,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
 
   /// Estimate a single card's height based on its content.
   double _estimateCardHeight(DigestItem article, double cardWidth) {
+    final spec = ref.read(displayModeSpecProvider);
     final hasImage = _imageWillRender(article);
 
     final titleLines = ArticleTitleLayout.estimateTitleLines(
@@ -185,7 +184,10 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       availableWidth: cardWidth - _bodyPadding,
       hasImage: hasImage,
     );
-    final titleHeight = titleLines * ArticleTitleLayout.titleLineHeight;
+    // La carte rend le titre à `fontSize * spec.fontScale` ; l'estimation doit
+    // suivre sinon le mode Ludique sous-estime et le footer est rogné.
+    final titleHeight =
+        titleLines * ArticleTitleLayout.titleLineHeight * spec.fontScale;
 
     double bodyHeight = _bodyPadding + titleHeight + _spacer + _metaRowHeight;
 
@@ -203,7 +205,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
           maxLines: descMax,
         );
         if (descLines > 0) {
-          bodyHeight += _spacer + descLines * ArticleTitleLayout.descLineHeight;
+          bodyHeight += _spacer +
+              descLines * ArticleTitleLayout.descLineHeight * spec.fontScale;
         }
       }
     }
@@ -213,7 +216,11 @@ class _TopicSectionState extends ConsumerState<TopicSection>
     // Estimation volontairement serrée ; tout écart résiduel est
     // absorbé par Align(center) dans _buildPageView (moitié/moitié).
     final badgeHeight = widget.editorialMode ? 0.0 : _badgeHeight;
-    return imageHeight + bodyHeight + _footerHeight + badgeHeight;
+    return imageHeight +
+        bodyHeight +
+        _footerHeight +
+        badgeHeight +
+        ArticleTitleLayout.carouselHeightSlack(fontScale: spec.fontScale);
   }
 
   /// Compute carousel height: max of all cards (adjacent cards peek at 0.88).
@@ -337,7 +344,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
 
           // Page indicator dots (only for multi-article)
           if (isMulti) ...[
-            const SizedBox(height: 2),
+            const SizedBox(height: 10),
             _buildPageIndicator(colors, topic.articles.length),
           ],
         ],
@@ -757,7 +764,7 @@ class _TopicSectionState extends ConsumerState<TopicSection>
               _buildSingleArticle(visibleArticle),
 
             if (hasCarousel) ...[
-              const SizedBox(height: 2),
+              const SizedBox(height: 10),
               LayoutBuilder(
                 builder: (context, constraints) {
                   // Center the indicator under the visible card (viewportFraction=0.96)
@@ -877,6 +884,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => PerspectivesBottomSheet(
+        // DÉSACTIVÉ (T1) : highlighting biais retiré → spans non alimentés
+        // (défaut const []) ⇒ titres plain.
         perspectives: response.perspectives
             .map((p) => Perspective(
                   title: p.title,
@@ -885,8 +894,8 @@ class _TopicSectionState extends ConsumerState<TopicSection>
                   sourceDomain: p.sourceDomain,
                   biasStance: p.biasStance,
                   publishedAt: p.publishedAt,
-                  highlightSpans: p.highlightSpans,
-                  sharedTokens: p.sharedTokens,
+                  description: p.description,
+                  reliabilityScore: p.reliabilityScore,
                 ))
             .toList(),
         biasDistribution: response.biasDistribution,

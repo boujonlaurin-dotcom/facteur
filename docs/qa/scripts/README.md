@@ -41,6 +41,11 @@ cd packages/api && source .venv/bin/activate && python -m pytest ../../docs/qa/s
 
 # API live testing (needs running server)
 ./docs/qa/scripts/validate_phase1_api.sh http://localhost:8000 YOUR_AUTH_TOKEN
+
+# Staging APK release gate before promoting main to production
+FACTEUR_AUTH_TOKEN='Bearer eyJ...' \
+CONTENT_IDS='uuid-1,uuid-2' \
+python docs/qa/scripts/verify_staging_apk_release.py
 ```
 
 ---
@@ -76,6 +81,12 @@ cd packages/api && source .venv/bin/activate && python -m pytest ../../docs/qa/s
 ### 5. `validate_phase1.sh`
 - Shell wrapper with multiple modes
 - Options: `--quick`, `--db-only`, `--full`
+
+### 6. `verify_staging_apk_release.py`
+- Checks the latest `build-apk.yml` run uses the staging API, `SENTRY_ENVIRONMENT=staging`, and `UPDATE_CHANNEL=beta`
+- Verifies staging/prod health endpoints report the expected environments
+- Compares `GET /api/contents/{id}/perspectives` on staging vs production for `CONTENT_IDS` or IDs discovered from `/api/digest`
+- Optionally inspects `content_deep_recommendations` when `DATABASE_URL` is set
 
 ---
 

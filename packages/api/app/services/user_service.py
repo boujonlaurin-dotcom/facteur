@@ -40,6 +40,14 @@ ALLOWED_PREFERENCE_KEYS: frozenset[str] = frozenset(
         "format_preference",
         "personal_goal",
         "acquisition_source",
+        # Axes "profondeur" ré-aiguillés (onboarding v6).
+        "independence_pref",
+        "swipe_liked_count",
+        "swipe_disliked_count",
+        # Story 22.3 — arrangement intelligent de la Tournée (« Choisie pour
+        # vous »). Absence = activé ; seul "false" désactive (default-ON sans
+        # migration). Toggle exposé dans « Composer ma Tournée ».
+        "tournee_smart_arrangement",
     }
 )
 
@@ -160,6 +168,21 @@ class UserService:
             "serein_enabled": ("true" if answers.digest_mode == "serein" else "false")
             if answers.digest_mode is not None
             else None,
+            # Axe indépendance (établis vs indépendants) — réutilisable par le
+            # feed plus tard. Préférence déclarée, persistée telle quelle.
+            "independence_pref": answers.independence_pref,
+            # Résultat du swipe désambiguateur : on persiste un agrégat compact
+            # (compteurs) plutôt que les IDs bruts — tient dans
+            # preference_value (String(100)) et suffit comme signal d'engagement.
+            # L'effet immédiat du swipe (pré-sélection + repondération au reveal)
+            # est entièrement côté client. L'affinité par source → pillars du
+            # feed reste un follow-up explicite (cf. story, hors scope).
+            "swipe_liked_count": str(len(answers.swipe_liked))
+            if answers.swipe_liked
+            else None,
+            "swipe_disliked_count": str(len(answers.swipe_disliked))
+            if answers.swipe_disliked
+            else None,
         }
 
         pref_count = 0
@@ -177,21 +200,12 @@ class UserService:
 
         user_uuid = UUID(user_id)
 
-        # Sauvegarder les intérêts
+        # Sauvegarder les intérêts.
+        # Les 3 premiers thèmes deviennent FAVORITE (sauf si l'utilisateur a déjà
+        # des favoris). On calcule l'état AVANT insertion pour pouvoir faire un
+        # upsert atomique : une double-soumission de l'onboarding ne lève plus
+        # d'IntegrityError sur user_interests_user_slug_uniq.
         interest_count = 0
-        created_interests: dict[str, UserInterest] = {}
-        if answers.themes:
-            for interest_slug in answers.themes:
-                interest = UserInterest(
-                    id=uuid4(),
-                    user_id=user_uuid,
-                    interest_slug=interest_slug,
-                    weight=1.0,
-                )
-                self.db.add(interest)
-                created_interests[interest_slug] = interest
-                interest_count += 1
-
         favorites_seeded = 0
         if answers.themes:
             existing_favorite = await self.db.scalar(
@@ -199,11 +213,35 @@ class UserService:
                     UserFavoriteInterest.user_id == user_uuid
                 )
             )
+            favorite_slugs = (
+                set(answers.themes[:3]) if existing_favorite is None else set()
+            )
+
+            for interest_slug in answers.themes:
+                state = (
+                    InterestState.FAVORITE
+                    if interest_slug in favorite_slugs
+                    else InterestState.FOLLOWED
+                )
+                stmt = (
+                    pg_insert(UserInterest)
+                    .values(
+                        id=uuid4(),
+                        user_id=user_uuid,
+                        interest_slug=interest_slug,
+                        weight=1.0,
+                        state=state,
+                    )
+                    .on_conflict_do_update(
+                        constraint="user_interests_user_slug_uniq",
+                        set_={"weight": 1.0, "state": state},
+                    )
+                )
+                await self.db.execute(stmt)
+                interest_count += 1
+
             if existing_favorite is None:
                 for position, interest_slug in enumerate(answers.themes[:3]):
-                    interest = created_interests.get(interest_slug)
-                    if interest is not None:
-                        interest.state = InterestState.FAVORITE
                     self.db.add(
                         UserFavoriteInterest(
                             user_id=user_uuid,

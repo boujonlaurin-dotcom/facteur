@@ -90,6 +90,13 @@ class ScoringWeights:
     # accessible.
     THEMATIC_HARD_FLOOR = 5
 
+    # Repli « pas d'article récent » pour les sections **source** : si aucune
+    # source n'a publié dans la fenêtre adaptative (≤72h), on élargit jusqu'à
+    # 30 j (720h) pour afficher des articles plus anciens plutôt qu'un
+    # empty-state. Le client est notifié via `no_recent_source` (banner =
+    # « Pas d'article récent. »).
+    SOURCE_STALE_FALLBACK_HOURS = 720  # 30 j — repli « pas d'article récent » (source)
+
     # --- QUALITY LAYER (FQS - Facteur Quality Score) ---
 
     # Bonus léger pour les sources qualitatives (curées par Facteur).
@@ -126,6 +133,8 @@ class ScoringWeights:
     # Réduit de 60→45 car content.theme capture déjà le signal broad.
     TOPIC_MATCH = 45.0
     TOPIC_MAX_MATCHES = 2  # Max 90pts (2 x 45)
+    SUBTOPIC_POSITION_FACTOR = 0.6
+    SUBTOPIC_DECAY = 0.98
 
     # Bonus de précision : si article a match thème ET sous-thème
     # Réduit de 20→18.
@@ -283,6 +292,30 @@ class ScoringWeights:
     # Calibré pour être significatif mais pas dominant vs theme match (50 pts).
     SOURCE_AFFINITY_MAX_BONUS = 25.0
 
+    # --- ENTITY AFFINITY (PR2 — « le levier ») ---
+    # Affinité positive apprise sur les entités nommées (miroir des subtopics).
+    # Le pilier Pertinence récompense `affinity > 1.0` : bonus = BASE * (aff - 1).
+
+    # Bonus par entité aimée, par point d'affinité au-dessus du neutre 1.0.
+    ENTITY_AFFINITY_BASE = 8.0
+
+    # Cap total du bonus entité par article (garde-fou diversité : un article à
+    # 5 entités favorites ne doit pas écraser un article moins ciblé mais plus
+    # pertinent).
+    ENTITY_AFFINITY_MAX_BONUS = 30.0
+
+    # Nombre maximum d'entités apprises par interaction (article). Borne le coût
+    # et empêche un article entity-soup de diluer le signal.
+    ENTITY_AFFINITY_MAX_ENTITIES = 5
+
+    # Decay quotidien vers le neutre 1.0 (= SUBTOPIC_DECAY).
+    ENTITY_AFFINITY_DECAY = 0.98
+
+    # Préfixe de la raison entité, partagé entre le pilier (qui construit le
+    # label `{prefix} {entité}`) et le reason_builder (qui le détecte). Source
+    # unique pour éviter la dérive de la chaîne magique entre les deux.
+    ENTITY_AFFINITY_REASON_PREFIX = "Parce que tu lis souvent"
+
     # --- PILLAR SCORING (v2 Architecture) ---
 
     # Poids relatifs des piliers (doivent sommer à 1.0).
@@ -295,7 +328,11 @@ class ScoringWeights:
 
     # Expected max raw scores per pillar (for 0-100 normalization).
     # Tuned from observed score distributions.
-    MAX_PERTINENCE_RAW = 130.0  # theme(50) + 2 subtopics(90) + precision(18) - overlap
+    # theme(50) + 2 subtopics(90) + precision(18) + entity_affinity(cap 30) - overlap.
+    # Relevé 130→160 (PR2) : sans ce headroom le bonus entité (cap 30) est noyé
+    # par la normalisation `min(raw/expected_max, 1.0)*100`. Effet de bord assumé :
+    # compresse légèrement les scores pertinence existants — à valider sur la jauge.
+    MAX_PERTINENCE_RAW = 160.0
     MAX_SOURCE_RAW = (
         95.0  # trusted(35) + custom(12) + subscription(20) + affinity(25) + curated(10)
     )
@@ -334,18 +371,31 @@ class ScoringWeights:
     # pas un free-pass » : source-seul = 0 contribution de pertinence.
     VEILLE_SOURCE_ON_TOPIC_BONUS = 12.0
 
-    # Seuil de pertinence (score final piliers, échelle ~0-100) en-deçà duquel
-    # un article candidat est élagué du feed veille. Relevé 40→48 (Story 23.4)
-    # avec la curation v2 : source-seul frais+riche ≈ 44 (< 48, écarté en plus
-    # par le floor) ; 1 mot-clé+source ≈ 52-58 ; topic+source ≈ 62-70 ;
-    # topic+2kw+source ≈ 75-82. Point de calibration tunable via les logs prod
-    # (max_score / pass_count / floor_pruned_count / threshold_pruned_count).
+    # Seuil de pertinence (score **composite** piliers pondérés, échelle ~0-100)
+    # en-deçà duquel un article candidat est élagué du feed veille. Relevé 40→48
+    # (Story 23.4) : 1 mot-clé+source ≈ 52-58 ; topic+source ≈ 62-70 ;
+    # topic+2kw+source ≈ 75-82. Limite connue : source+fraîcheur+qualité = 60 %
+    # du poids, donc un hors-sujet frais+propre franchit le composite ; c'est le
+    # gate dédié au pilier pertinence (`VEILLE_PERTINENCE_GATE`) qui couvre ce
+    # trou. Calibration tunable via les logs prod (max_score / pass_count /
+    # floor_pruned_count / gate_pruned_count / threshold_pruned_count).
     VEILLE_RELEVANCE_THRESHOLD = 48.0
 
-    # Anti-starvation : si après scoring moins de N articles passent ET que des
-    # candidats on-axis ont été coupés par le *seuil* (jamais par le floor), on
-    # relâche le seuil d'un cran (max -8, plancher 40).
-    VEILLE_MIN_FEED_SIZE = 5
+    # Gate sur le **pilier pertinence normalisé** (0-100), appliqué en plus du
+    # seuil composite quand la config porte un axe topic/mot-clé. Exige un
+    # minimum de pertinence *thématique*, là où le composite offre ~37-40 pts
+    # d'office (source 25 % + fraîcheur 20 % + qualité 15 %) à tout article
+    # frais+propre. Calibration (pertinence = raw/160×100) : 1kw+source 18.8
+    # coupé ; 2kw seuls 16.9 coupé ; 2kw+source 24.4 passe ; 3kw+source 30
+    # passe ; topic seul 31.3 passe. Bouton de réglage (20→25) via les logs prod.
+    VEILLE_PERTINENCE_GATE = 20.0
+
+    # Floor de mots-clés : nombre de hits distincts minimum pour qu'un candidat
+    # *keyword-only* (sans topic canonique) qualifie le floor. Un hit « fort »
+    # (topic canonique OU mot-clé multi-mots, p.ex. « coupe du monde ») qualifie
+    # à lui seul. À 1, un unigramme générique (« budget », « europe ») suffisait
+    # à faire entrer un hors-sujet. Bouton de détente (2→3) via les logs prod.
+    VEILLE_FLOOR_MIN_KEYWORD_HITS = 2
 
     # Plafond du pool de candidats scorés par fetch (borne le coût ILIKE +
     # scoring sur un feed curé ; offsets au-delà renvoient vide — acceptable).
@@ -355,6 +405,13 @@ class ScoringWeights:
     # S'applique au **Bloc B « Couverture élargie »** (topics/mots-clés, sources
     # non configurées).
     VEILLE_RECENCY_HOURS = 168
+
+    # Kill-switch : restreint les langues du Bloc B « Couverture élargie » aux
+    # langues des sources configurées ∪ {fr} (Content.language NULL toléré, car
+    # beaucoup d'articles n'ont pas de langue détectée). Le Bloc A n'est jamais
+    # filtré (source choisie = langue assumée). False → comportement multilingue
+    # historique.
+    VEILLE_BLOCK_B_LANGUAGE_FILTER = True
 
     # Fenêtre de récence (heures) du **Bloc A « Tes sources »** : 30 j. Les
     # sources niche configurées ont souvent des flux RSS lents/peu fréquents —
@@ -367,6 +424,14 @@ class ScoringWeights:
     # qu'une source bavarde (flux dense) ne monopolise pas le bloc malgré la
     # fenêtre 30 j. Appliqué via `diversify()` après tri par score.
     VEILLE_SOURCE_DIVERSITY_CAP = 3
+
+    # Pool Bloc A **par source** : nombre max de candidats récents retenus par
+    # source configurée *avant* scoring (via window function
+    # `row_number() OVER (PARTITION BY source_id ...)`). Sans ça, le cap externe
+    # global `VEILLE_CANDIDATE_CAP` trié par date laisse une source dense capter
+    # tout le pool et affame les sources discrètes (flux lents). N=30 = 10× le
+    # cap de diversité final (`VEILLE_SOURCE_DIVERSITY_CAP=3`).
+    VEILLE_BLOCK_A_PER_SOURCE_CANDIDATES = 30
 
     # --- TOPIC-AWARE FEED DIVERSIFICATION (Phase 2 — Budget Neutre) ---
 
@@ -397,3 +462,57 @@ class ScoringWeights:
 
     # Minimum articles sharing an entity to form an entity CTA group.
     MIN_FOR_ENTITY_GROUPING = 5
+
+    # --- TOURNÉE SMART ARRANGEMENT (Story 22.3 — « Choisie pour vous ») ---
+    # Arrangement quotidien intelligent par-dessus la config déclarée : les
+    # sections « Choisie pour vous » remplissent les slots restants de la Tournée
+    # avec des thèmes/sources suivis-mais-non-épinglés (jamais hors préférences).
+    # Curseur « Fidèle » : majoritairement préférences réelles, la « surprise » =
+    # variation quotidienne (seed daily + Gumbel basse température), pas découverte.
+
+    # Poids du blend `daily_score` (0–1). Doivent sommer à 1.0.
+    #   explicit : 1.0 si le candidat est directement suivi / déclaré à l'onboarding.
+    #   measured : poids interest/subtopic appris + affinité source (0–1).
+    #   quantity : log-saturé sur le nb d'articles récents (rareté → moins).
+    #   quality  : moyenne reliability des sources du thème (signal qualité).
+    TOURNEE_SUGGEST_W_EXPLICIT = 0.40
+    TOURNEE_SUGGEST_W_MEASURED = 0.30
+    TOURNEE_SUGGEST_W_QUANTITY = 0.20
+    TOURNEE_SUGGEST_W_QUALITY = 0.10
+
+    # Composante `explicit` d'un candidat issu de l'élargissement doux (source
+    # on-thème non directement suivie) : plus faible qu'un suivi direct (1.0).
+    TOURNEE_SUGGEST_SOFT_EXPLICIT = 0.5
+
+    # Plancher de contenu : un candidat avec moins de N articles récents (14 j)
+    # est écarté (jour pauvre → moins de suggestions, jamais d'empty-state suggéré).
+    # Abaissé 3 → 2 : élargit le pool pour que la cible `TOURNEE_TARGET_SECTIONS`
+    # reste atteignable les jours pauvres (tunable).
+    TOURNEE_SUGGEST_CONTENT_FLOOR = 2
+
+    # Saturation log de la composante `quantity` : au-delà, le nb d'articles
+    # n'augmente plus le score (évite qu'un thème bavard domine).
+    TOURNEE_SUGGEST_QUANTITY_SATURATION = 60.0
+
+    # Température Gumbel de la variation quotidienne (basse : ordre stable le
+    # jour, varié le lendemain, sans réordonner brutalement).
+    TOURNEE_SUGGEST_TEMPERATURE = 0.10
+
+    # Cible de sections thématiques de la Tournée (favoris validés + suggestions
+    # « Choisie pour vous » confondus). Seul knob du nombre moyen : les
+    # suggestions **complètent** les favoris jusqu'à cette cible (additif), au
+    # lieu de remplir le reliquat du plafond favoris. Les cartes éditoriales
+    # (Actus, Bonnes, Grille) s'ajoutent par-dessus.
+    TOURNEE_TARGET_SECTIONS = 8
+
+    # Plafond dur de sections « Choisie pour vous » (thèmes + sources confondus)
+    # par arrangement. Levier *distinct* de la cible : aligné sur
+    # `TOURNEE_TARGET_SECTIONS` (donc non contraignant tant qu'ils sont égaux —
+    # un compte neuf est complété jusqu'à la cible), mais permet de plafonner les
+    # suggestions *sous* la cible sans toucher au nombre de sections visé
+    # (ex. cible 10 mais au plus 8 suggérées).
+    TOURNEE_SUGGEST_SUBCAP = 8
+
+    # Fenêtre de récence (jours) du comptage d'articles par candidat (aligné
+    # sur le filtre 14 j du fallback `get_top_themes`).
+    TOURNEE_SUGGEST_RECENCY_DAYS = 14

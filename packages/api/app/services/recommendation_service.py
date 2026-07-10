@@ -9,10 +9,11 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import case, desc, func, select
+from sqlalchemy import case, desc, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.database import SessionMaker, safe_async_session
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, FeedFilterMode, InterestState
 from app.models.source import Source, UserSource
@@ -108,6 +109,38 @@ async def _load_muted_entities_safe(session, user_id: UUID) -> set[str]:
         return set()
 
 
+async def _load_entity_affinity_safe(session, user_id: UUID) -> dict[str, float]:
+    """Charge l'affinité entités apprise de l'user, tolérant au schema drift.
+
+    PR2 « le levier ». Si `user_entity_affinity` est absente (migration ue01
+    pas encore appliquée sur le backend prod de la DB partagée) ou que la query
+    échoue, on dégrade en `{}` plutôt que de faire tomber `/api/feed/` (même
+    posture défensive que `_load_muted_entities_safe`). On ne charge que les
+    affinités > 1.0 (les seules récompensées par le pilier) ; clé déjà
+    lower-strip au stockage.
+    """
+    from app.models.learning import UserEntityAffinity
+
+    try:
+        result = await session.execute(
+            select(
+                UserEntityAffinity.entity_canonical, UserEntityAffinity.affinity
+            ).where(
+                UserEntityAffinity.user_id == user_id,
+                UserEntityAffinity.affinity > 1.0,
+            )
+        )
+        return {row[0]: row[1] for row in result.all()}
+    except Exception as exc:
+        logger.warning(
+            "feed_entity_affinity_unavailable",
+            user_id=str(user_id),
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        return {}
+
+
 from app.schemas.content import RecommendationReason, ScoreContribution
 
 
@@ -184,8 +217,17 @@ from app.services.recommendation.scoring_engine import (
 
 
 class RecommendationService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        session_maker: "SessionMaker | None" = None,
+    ):
         self.session = session
+        # Factory de sessions courtes ad-hoc (capées par phase). Injectable
+        # pour les tests (cf. fixture `fake_session_maker`) car le pattern
+        # savepoint du `db_session` de test n'est pas visible depuis une vraie
+        # connexion pool ouverte par `safe_async_session`. Défaut = prod.
+        self._session_maker: SessionMaker = session_maker or safe_async_session
         self.user_custom_topics: list = []  # Populated by get_feed() for reuse by caller
         self.source_overflow: dict[
             UUID, int
@@ -194,6 +236,9 @@ class RecommendationService:
             dict
         ] = []  # Populated by topic regroupement (Phase 2)
         self.total_candidates: int = 0  # Total candidate pool size (pre-filtering)
+        # Section source : True quand aucun article récent (≤72h) n'existe et que
+        # le feed a dû reculer jusqu'à 30 j (repli « Pas d'article récent. »).
+        self.source_no_recent_source: bool = False
         self.keyword_overflow: list[dict] = []  # Populated by keyword regroupement
         self.entity_overflow: list[dict] = []  # Populated by entity regroupement
         self.carousels: list[dict] = []  # Populated by _build_carousels()
@@ -287,12 +332,25 @@ class RecommendationService:
             DailyDigest.target_date == date_module.today(),
         )
 
-        async def _user_context_on_self():
-            # Réutilise la session injectée — pas de nouvelle connexion pool.
-            profile = await self.session.scalar(profile_stmt)
-            sources = (await self.session.execute(sources_stmt)).all()
-            subtopics = (await self.session.scalars(subtopics_stmt)).all()
-            return profile, sources, subtopics
+        async def _user_context_short():
+            # PYTHON-37 fix : ces lectures tournaient sur `self.session`
+            # (Round 4) → ouvraient sa transaction dès la phase 1, qui restait
+            # ensuite idle pendant les longs `await` (batches parallèles,
+            # scoring) jusqu'à ce que Postgres la tue
+            # (idle_in_transaction_session_timeout=10s) → IdleInTransaction
+            # → /api/feed 500. On exécute désormais ces 3 lectures dans une
+            # short session capée 8s/5s, comme _batch_personalization : la
+            # connexion n'est tenue que le temps du gather puis rendue au pool,
+            # et `self.session` n'ouvre plus sa tx ici.
+            # joinedload(interests/preferences) précharge les collections →
+            # `profile` reste exploitable après le expunge_all() du helper.
+            async with safe_async_session(
+                statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+            ) as s:
+                profile = await s.scalar(profile_stmt)
+                sources = (await s.execute(sources_stmt)).all()
+                subtopics = (await s.scalars(subtopics_stmt)).all()
+                return profile, sources, subtopics
 
         async def _batch_personalization():
             async with safe_async_session(
@@ -302,16 +360,22 @@ class RecommendationService:
                 digest = await s.scalar(digest_stmt)
                 # Epic 13: Load muted entities (defensive — tolère schema drift)
                 muted_entities = await _load_muted_entities_safe(s, user_id)
-                return pz, digest, muted_entities
+                # PR2: Load learned entity affinity (defensive — tolère drift)
+                entity_affinity = await _load_entity_affinity_safe(s, user_id)
+                return pz, digest, muted_entities, entity_affinity
 
-        # gather() préserve le parallélisme : self.session et la short
-        # session de _batch_personalization sont des sessions distinctes,
-        # aucun risque de "concurrent operations on same session".
+        # gather() préserve le parallélisme : _user_context_short et
+        # _batch_personalization ouvrent chacune leur propre short session
+        # (sessions distinctes), aucun risque de "concurrent operations on
+        # same session". Tradeoff PYTHON-37 : 2 connexions courtes
+        # concurrentes pendant la fenêtre du gather, toutes deux rendues au
+        # pool ensuite (vs. self.session qui gardait sa tx ouverte tout le
+        # pipeline). La pression pool résiduelle est traitée séparément.
         (
             (user_profile, followed_sources_rows, subtopics_rows),
-            (personalization, digest_row, muted_entities),
+            (personalization, digest_row, muted_entities, entity_affinity),
         ) = await asyncio.gather(
-            _user_context_on_self(),
+            _user_context_short(),
             _batch_personalization(),
         )
 
@@ -774,6 +838,16 @@ class RecommendationService:
                     for row in rows
                 }
 
+        # Hardening résiduel PYTHON-37 (non activé pour l'instant) : `self.session`
+        # a ouvert sa tx au phase 2 (`_get_candidates`) et la garde idle pendant
+        # ce gather où seules les short sessions font des I/O. Si Postgres tue à
+        # nouveau cette tx (idle_in_transaction_session_timeout=10s) sur une
+        # nouvelle ligne après le fix _user_context_short, insérer ici :
+        #     await self.session.rollback()
+        #     await apply_session_timeouts(self.session)
+        # (libère la tx idle puis re-pose les SET LOCAL sur la prochaine tx).
+        # Laissé en commentaire tant que PYTHON-37 ne réapparaît pas — un
+        # rollback() systématique a un coût et n'est pas justifié sans signal.
         (
             (source_affinity_scores, user_custom_topics),
             impression_data,
@@ -796,6 +870,7 @@ class RecommendationService:
             now=now,
             user_subtopics=user_subtopics,
             user_subtopic_weights=user_subtopic_weights,
+            user_entity_affinity=entity_affinity,
             # Story 4.7
             muted_sources=muted_sources,
             muted_themes=muted_themes,
@@ -823,9 +898,13 @@ class RecommendationService:
             else:
                 score = self.scoring_engine.compute_score(content, context)
             # Serein mode: boost humorous/satirical sources x1.3
-            if serein and hasattr(content, "source") and content.source:
-                if content.source.tone in ("humorous", "satirical"):
-                    score *= 1.3
+            if (
+                serein
+                and hasattr(content, "source")
+                and content.source
+                and content.source.tone in ("humorous", "satirical")
+            ):
+                score *= 1.3
             scored_candidates.append((content, score))
 
         t5 = time.monotonic()
@@ -1551,11 +1630,16 @@ class RecommendationService:
                     new_sources_found=len(new_src_rows),
                     source_names=[r.name for r in new_src_rows[:5]],
                 )
-                # T3A: iterate per source, pick first with enough articles
-                for src_row in new_src_rows:
-                    if len(carousels) >= max_carousels:
-                        break
-
+                # Rotation jour à jour : au lieu de s'arrêter à la première
+                # source valide (toujours la plus récente → carrousel figé), on
+                # collecte TOUTES les sources récentes valides puis on en tire UNE
+                # seedée par le jour. Variété jour à jour, stable dans la journée.
+                # Borne de coût : on ne sonde que les 8 sources les plus récentes
+                # (1 requête article par source).
+                MAX_NEW_SOURCE_PROBES = 8
+                now = datetime.datetime.now(datetime.UTC)
+                candidates: list[tuple[object, list[Content]]] = []
+                for src_row in new_src_rows[:MAX_NEW_SOURCE_PROBES]:
                     # T2: exclude promoted + consumed articles
                     exclusions = []
                     if promoted_ids:
@@ -1585,10 +1669,23 @@ class RecommendationService:
                     # Cooldown post-add 6 h — laisse les articles de la source
                     # remonter naturellement dans le main feed avant de pousser
                     # un carrousel "Récemment ajouté".
-                    now = datetime.datetime.now(datetime.UTC)
                     source_age_seconds = (now - src_row.added_at).total_seconds()
                     if source_age_seconds < 6 * 3600:
                         continue
+
+                    candidates.append((src_row, items, source_age_seconds))
+
+                if candidates:
+                    from app.services.recommendation.randomization import (
+                        compute_seed,
+                        seeded_shuffle,
+                    )
+
+                    seed = compute_seed(str(user_id), "daily")
+                    src_row, items, source_age_seconds = seeded_shuffle(
+                        candidates, seed
+                    )[0]
+
                     position = self._jitter_carousel_position(
                         "new_source", user_id, today
                     )
@@ -1599,6 +1696,7 @@ class RecommendationService:
                         article_count=len(items),
                         position=position,
                         source_age_hours=round(source_age_seconds / 3600, 1),
+                        candidate_count=len(candidates),
                     )
                     badge = {
                         "code": "new_source",
@@ -1617,7 +1715,6 @@ class RecommendationService:
                     )
                     for item in items:
                         promoted_ids.add(item.id)
-                    break  # T3A: only 1 source carousel
 
             # --- quiet_sources: latest article from followed low-volume sources ---
             if len(carousels) < max_carousels:
@@ -1626,50 +1723,88 @@ class RecommendationService:
                 thirty_days_ago = now - datetime.timedelta(days=30)
                 sixty_days_ago = now - datetime.timedelta(days=60)
 
-                quiet_source_ids = (
-                    (
-                        await self.session.execute(
-                            select(UserSource.source_id)
-                            .join(Source, Source.id == UserSource.source_id)
-                            .outerjoin(
-                                Content,
-                                (Content.source_id == UserSource.source_id)
-                                & (Content.published_at >= thirty_days_ago),
-                            )
-                            .where(
-                                UserSource.user_id == user_id,
-                                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
-                                Source.is_active == True,  # noqa: E712
-                            )
-                            .group_by(UserSource.source_id)
-                            .having(func.count(Content.id) < QUIET_SOURCE_MAX_RECENT)
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-
+                # PYTHON-5N fix : l'ancien agrégat `outerjoin(Content) + GROUP BY
+                # + HAVING count() < 3` matérialisait TOUTES les lignes 30j par
+                # source juste pour les compter (1721ms / 5775 lignes sur un user
+                # à 62 sources) → dérapait vers le statement_timeout 30s → 500.
+                # On sonde désormais via LATERAL ... LIMIT 3 (court-circuit dès la
+                # 3ᵉ ligne par source, Index-Only Scan → 198ms / ~186 lignes), sur
+                # une short session capée 8s/5s plutôt que `self.session` (cap 30s).
+                # Tout le bloc est gardé par un try/except : le carrousel est
+                # optionnel, donc un QueryCanceled / erreur DB le SKIP au lieu de
+                # remonter en 500.
                 quiet_articles: list[Content] = []
-                if quiet_source_ids:
-                    latest_per_source = (
-                        select(Content)
-                        .options(selectinload(Content.source))
+                quiet_source_ids: list[UUID] = []
+                try:
+                    probe = (
+                        select(Content.id)
                         .where(
-                            Content.source_id.in_(quiet_source_ids),
-                            Content.published_at >= sixty_days_ago,
-                            Content.id.notin_(promoted_ids | consumed_ids),
+                            Content.source_id == UserSource.source_id,
+                            Content.published_at >= thirty_days_ago,
                         )
-                        .distinct(Content.source_id)
-                        .order_by(
-                            Content.source_id,
-                            Content.published_at.desc(),
+                        .limit(QUIET_SOURCE_MAX_RECENT)
+                        .lateral()
+                    )
+                    quiet_ids_stmt = (
+                        select(UserSource.source_id)
+                        .select_from(UserSource)
+                        .join(Source, Source.id == UserSource.source_id)
+                        .join(probe, literal(True))
+                        .where(
+                            UserSource.user_id == user_id,
+                            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+                            Source.is_active.is_(True),
                         )
+                        .group_by(UserSource.source_id)
+                        .having(func.count() < QUIET_SOURCE_MAX_RECENT)
                     )
-                    quiet_articles = list(
-                        (await self.session.scalars(latest_per_source)).all()
+                    async with self._session_maker(
+                        statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
+                    ) as quiet_s:
+                        quiet_source_ids = list(
+                            (await quiet_s.scalars(quiet_ids_stmt)).all()
+                        )
+                        if quiet_source_ids:
+                            latest_per_source = (
+                                select(Content)
+                                .options(selectinload(Content.source))
+                                .where(
+                                    Content.source_id.in_(quiet_source_ids),
+                                    Content.published_at >= sixty_days_ago,
+                                    Content.id.notin_(promoted_ids | consumed_ids),
+                                )
+                                .distinct(Content.source_id)
+                                .order_by(
+                                    Content.source_id,
+                                    Content.published_at.desc(),
+                                )
+                            )
+                            quiet_articles = list(
+                                (await quiet_s.scalars(latest_per_source)).all()
+                            )
+                    # Round-robin au fil des refresh : au lieu de toujours
+                    # garder les 5 articles les plus récents (mêmes sources
+                    # discrètes en boucle), on shuffle déterministe seedé à
+                    # l'heure sur TOUT le pool avant de couper à 5. Granularité
+                    # "hourly" = varie au fil des refresh, stable dans la fenêtre
+                    # de cache feed 30 s.
+                    from app.services.recommendation.randomization import (
+                        compute_seed,
+                        seeded_shuffle,
                     )
-                    quiet_articles.sort(key=lambda c: c.published_at, reverse=True)
-                    quiet_articles = quiet_articles[:MAX_CAROUSEL_ITEMS]
+
+                    seed = compute_seed(str(user_id), "hourly")
+                    quiet_articles = seeded_shuffle(quiet_articles, seed)[
+                        :MAX_CAROUSEL_ITEMS
+                    ]
+                except Exception as exc:
+                    logger.warning(
+                        "carousel_quiet_sources_skipped",
+                        error=str(exc),
+                        exc_type=type(exc).__name__,
+                    )
+                    quiet_articles = []
+                    quiet_source_ids = []
 
                 logger.info(
                     "carousel_quiet_sources_query",
@@ -2819,6 +2954,31 @@ class RecommendationService:
                 candidates=len(candidates_list),
                 threshold=ScoringWeights.THEMATIC_MIN_POOL_SIZE,
             )
+
+            # Repli « pas d'article récent » pour les sections **source** : si la
+            # source suivie n'a rien publié dans la fenêtre adaptative (≤72h), on
+            # recule jusqu'à 30 j plutôt que de tomber sur un empty-state. Gardé
+            # strictement sur `source_id` (donc hors sections thème) ; `query`
+            # porte déjà `Content.source_id == source_id` + mutes/paywall/langue,
+            # le repli reste cadré à la source. N'entre pas dans le backfill curé
+            # (réservé `_use_two_phase`) → aucune régression thème.
+            if source_id is not None and len(candidates_list) == 0:
+                since_stale = now_window - datetime.timedelta(
+                    hours=ScoringWeights.SOURCE_STALE_FALLBACK_HOURS
+                )
+                stale_list = await _fetch_candidates(
+                    query.where(Content.published_at >= since_stale)
+                )
+                if stale_list:
+                    candidates_list = stale_list
+                    self.source_no_recent_source = True
+                    logger.info(
+                        "feed_source_stale_fallback",
+                        user_id=str(user_id),
+                        source_id=str(source_id),
+                        window=ScoringWeights.SOURCE_STALE_FALLBACK_HOURS,
+                        candidates=len(candidates_list),
+                    )
 
             # Backfill curé NON-suivi : quand l'utilisateur suit ≥1 source
             # (_use_two_phase) mais que le pool suivi reste sous le plancher

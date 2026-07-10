@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_smart_arrangement_provider.dart';
 import 'package:facteur/features/feed/widgets/pin_subjects_sheet.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
@@ -120,6 +121,9 @@ Widget _sheetHost(UserInterestsState interests, Widget child) => ProviderScope(
         veilleActiveConfigProvider.overrideWith(() => _StubVeille()),
         grilleRepositoryProvider.overrideWithValue(_NoGrille()),
         sereinToggleProvider.overrideWith((ref) => _StubSerein(ref)),
+        tourneeSmartArrangementProvider.overrideWith(
+          (ref) => TourneeSmartArrangementNotifier(ref),
+        ),
       ],
       child: MaterialApp(
         theme: ThemeData(
@@ -184,7 +188,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Mes favoris'), findsOneWidget);
-      expect(find.text('TES ONGLETS POUR EXPLORER'), findsOneWidget);
+      expect(find.text('ONGLETS DE TA PAGE FLÂNER'), findsOneWidget);
       // Porte Flâner ⇒ segment « Sujets » présélectionné : le sujet suivi est
       // proposé à l'épinglage.
       expect(find.text('Climat'), findsOneWidget);

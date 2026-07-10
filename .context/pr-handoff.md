@@ -1,31 +1,84 @@
-feat(observabilité): instrumentation API externes + sonde pool + résumé digest (scaling WP-E)
+# feat(media-eval): fondations (schéma, contrats, moteur d'évaluation)
 
-Enabler scaling **purement additif** (aucun impact user-facing, aucun changement de comportement métier). Phase 1 de l'investigation scaling 200 users — *mesurer avant de remédier*. Débloque WP-D (quotas/coûts Mistral), WP-B (digest), WP-A (pool). Doc : `docs/maintenance/maintenance-observabilite-scaling.md`.
+PR 1/2 du MVP pipeline d'évaluation des médias C1–C11 (story
+`docs/stories/core/media-eval.0.mvp-pipeline-evaluation.md`, plan PO validé le
+07/07/2026). Entièrement testable offline — la collecte (voie A + agents) et le
+run pilote arrivent en PR 2.
 
-## Volet 1 — Tracking persistant des appels API externes
-- Nouvelle table append-only **`api_usage_events`** (`provider`, `model`, `call_site`, `user_id`, `status`, `latency_ms`, `created_at` + 2 index). Pas de contrainte d'unicité → zéro hot-row contention.
-- Recorder best-effort **`record_api_call`** (`app/services/observability/usage_recorder.py`) : session courte dédiée (`safe_async_session`), jamais bloquant, ne lève jamais, gated par le kill-switch `usage_tracking_enabled`.
-- 6 call sites instrumentés en `try/finally` (capte aussi `error`/`rate_limited`) : `classification_pass1`, `good_news_pass2`, `editorial` (chokepoint unique curation/pipeline/deep/perspective), `veille_suggester`, `smart_search_mistral`, `smart_search_brave`. Compteurs in-memory veille existants **laissés en place** (pas de rebranchement d'enforcement → WP-D).
+## Ce que fait cette PR
 
-## Volet 2 — Résumé de run digest always-on
-- `compute_digest_coverage(session, target_date)` factorisé depuis le watchdog (source unique de la couverture, partagée scheduler ↔ job).
-- Log always-on `digest_run_summary` (`duration_seconds`, `total_users`, `success`, `failed`, `coverage_pct`) + `coverage_pct` ajouté à l'event PostHog `digest_generated`. Couverture lue dans une session dédiée best-effort. Aucune nouvelle table.
+### Docs source de vérité PO (`docs/media-eval/`)
+- Import de la méthodologie v1.1.1 (PDF converti) + amendements v1.2 actés
+  (raccourci JTI, pondération débunkages, temporalité, lettres A–E).
+- Import de l'architecture collecte ≠ évaluation du 07/07/2026.
+- **Rubriques évaluateur** (`rubrics/_common.md` + `C1/C5/C7/C8/C9/C11.md`) :
+  barème §4 verbatim + section « Sortie structurée » (`determinations`
+  énumérables). Lues verbatim par `build_eval_input.py` ;
+  `version_prompt` = sha256 du fichier rubrique.
 
-## Volet 3 — Sonde pool périodique + métrique idle-in-tx
-- `read_pool_stats(engine)` factorisé (`app/observability/pool_stats.py`), réutilisé par `/api/health/pool` (comportement inchangé) **et** par la nouvelle sonde.
-- Job APScheduler `_pool_health_probe` (interval 5 min) : alerte `db_pool_pressure_high` + `sentry_sdk.capture_message(level="warning")` au seuil `pool_alert_threshold_pct` (défaut 80).
-- `zombie_session_sweeper` émet désormais `db_idle_in_transaction_swept{count}` always-on (idle-in-tx requêtable même à 0).
+### Schéma DB (migration `me01_media_eval_tables`, additive, RLS deny-all)
+7 tables `media_eval_*` : medias (référentiel niveau domaine), snapshots,
+corpus_articles (créée mais vide en V0), signaux (pivot ; statuts
+present/absent_verifie/partiel/bloque_acces ; dédup idempotente par
+`dedupe_key`), debunkages (qualification émetteur/gravité/suite, couple 1-1
+avec un signal C1), evaluations (score NULL si N/A, `signal_ids` cités,
+version_methodo/version_prompt), fiches (renormalisation, lettre, confiance).
+- `down_revision = ue01_user_entity_affinity` → 1 seul head. Idempotente
+  (guard `has_table` par table — la chaîne boote sur les 2 services Railway).
+  RLS pattern `sec02` (ENABLE + REVOKE anon/authenticated, aucune policy).
+- Modèles `app/models/media_eval.py` (StrEnum locaux, enums VARCHAR non natifs,
+  pattern `Source`), enregistrés dans `app/models/__init__.py`.
 
-## Config (kill-switches)
-`usage_tracking_enabled: bool = True` · `pool_alert_threshold_pct: int = 80`.
+### Contrats & garde-fous codés en dur (`scripts/media_eval/`)
+- `schemas.py` : `BAREMES` (100 pts), `CRITERES_VAGUE_1` (54 pts),
+  `NIVEAU_SCORES` C9/C11, `LETTRES`, registre `type_signal` figé, artefacts
+  Pydantic (Signal/Debunkage/Evaluation + enveloppes batch, GoldenSet).
+  **`derive_score(critere, determinations)`** : le score faisant foi est dérivé
+  par code, jamais choisi par le LLM (philosophie `derive_reliability`).
+  Validator dur : éval sans `signal_ids_cites` rejetée (sauf flag
+  `donnees_insuffisantes` → N/A). `poids_emetteur` des débunkages dérivé par
+  code (`arcom/justice/cdjm` = fort, fact-checkers de médias concurrents =
+  moyen, inconnu = faible).
+- `garde_fous.py` (fonctions pures) : fraîcheur 730 j (signaux événementiels
+  seulement, structurels constatés à date), fallback C1 (< 3 débunkages/2 ans),
+  raccourci JTI, corroboration (score plein sans ≥ 2 domaines sources
+  indépendants → palier inférieur + flag `corroboration_insuffisante`),
+  `bloque_acces` → `revue_requise` — jamais converti en 0.
 
-## Migration
-`au01_api_usage_events`, `down_revision = gr02_grille_featured_article` (head courant ; `vf02` du plan était dépassé depuis #784). **1 seul head** confirmé via `alembic heads`. Additive pure (CREATE TABLE + 2 index), rollback trivial. `upgrade head` + `downgrade -1` rejoués sur **DB vide** → OK.
+### Scripts moteur (dry-run par défaut, `--apply` gardé, `--allow-prod` hors DB test)
+`seed_medias.py` (2 pilotes : cnews.fr audiovisuel, reporterre.net presse en
+ligne) · `ingest_artifacts.py` (valide en bloc puis insère — un artefact
+invalide = exit non-zéro, rien d'écrit ; idempotent) · `build_eval_input.py`
+(exports `eval_inputs/<media>_<critere>.json` + garde-fous amont) ·
+`ingest_evaluations.py` (garde-fous aval : signal_ids existants / bon média /
+bon critère, score dérivé, corroboration, statuts) · `synthese_fiche.py`
+(renormalisation sur les seuls critères évalués, lettre, confiance, fiche md +
+ligne DB) · `evaluate_golden_agreement.py` (accord vs gold : exact C9/C11,
+|Δ| ≤ 20 % du barème en continu, désaccords N/A-vs-score listés).
 
-## Tests & VERIFY
-- Nouveaux : `tests/test_usage_recorder.py` (kill-switch, best-effort never-raises, coercition user_id, call_site inconnu), `tests/test_pool_observability.py` (`read_pool_stats` saturé/ok/NullPool + sonde alerte/quiet/registration).
-- Non-régression : `tests/ml/`, `tests/editorial/`, `tests/workers/`, `tests/test_digest_generation_job.py`, `tests/test_health_pool.py`, `tests/services/search/` → **tout vert** (~355 tests sur les modules touchés).
-- Intégration live (Postgres) : 1 ligne/appel écrite (Mistral + Brave), kill-switch ⇒ 0 insert, requête WP-D `GROUP BY provider, model, day` OK.
+## Tests & vérifications
 
-## Risques & rollback
-Write amplification négligeable (append-only + best-effort + flag, ~3k/j). Rollback à chaud : `usage_tracking_enabled=False` (sans redéploiement schéma) ou `alembic downgrade -1`. Pas de changelog user (PR backend sans impact visible).
+- **91 tests** `tests/scripts/media_eval/` (purs + DB savepoint) : contrats,
+  table `derive_score`, bornes fraîcheur 729/730/731 j, fallback 2 vs 3,
+  corroboration, JTI, `bloque_acces` jamais 0, renormalisation 0/1/3 N/A
+  (cas Reporterre max 34), bornes lettres 84.9/85, matrice confiance,
+  idempotence dedupe/évals, rejets (signal d'un autre média/critère,
+  artefact partiellement invalide → rien d'écrit), métriques gold.
+- Migration sur **DB vide** : `upgrade head` → `downgrade -1` → `upgrade head`
+  OK, exactement 1 head (`me01_media_eval_tables`).
+- Smoke E2E offline sur DB jetable : seed → ingest artefacts (5 signaux dont
+  2 couples débunkage, poids dérivés) → build_eval_input (fallback C1 déclenché
+  à 2 débunkages, 6 entrées écrites) → ingest_evaluations (3 évals, C1 N/A) →
+  synthese_fiche (10/20 → 50/100, lettre D, confiance moyenne).
+- Suite backend complète `pytest` + `ruff check`/`format` OK.
+
+Pas d'entrée changelog : outillage interne, aucun impact user (bypass de la
+règle 400 lignes assumé).
+
+## Suite (PR 2)
+
+Collecteurs voie A (`collect_pages_types/cdjm/jti/cppap/pappers/arcom`),
+sous-agents `.claude/agents/media-eval-*`, commande `/media-eval-run`, run
+pilote `pilote-2026-07` (CNEWS puis Reporterre) + golden set Laurin
+(`docs/media-eval/golden/gold_v0.json`) + rapport d'accord. Prérequis :
+`PAPPERS_API_TOKEN` (env locale, compte gratuit).

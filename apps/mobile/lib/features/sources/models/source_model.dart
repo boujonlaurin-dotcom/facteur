@@ -40,14 +40,12 @@ class PremiumConnection {
   bool get isUsable => enabled && loginUrl.isNotEmpty && testUrl.isNotEmpty;
 }
 
-/// Returns the usable premium connection for [source].
-///
-/// Paid sources without curated connection metadata fall back to their home
-/// page so users can still authenticate through the generic WebView flow.
-PremiumConnection? resolvePremiumConnection(Source source) {
+/// Connexion existante si utilisable, sinon flux générique (login=test=home)
+/// dès qu'il y a une URL http(s) valide ; `null` sinon. Cœur partagé par
+/// [resolvePremiumConnection] et [forceGenericConnection].
+PremiumConnection? _genericConnectionFor(Source source) {
   final existing = source.premiumConnection;
   if (existing != null && existing.isUsable) return existing;
-  if (!source.hasPaywall) return null;
 
   final url = source.url?.trim() ?? '';
   if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
@@ -61,6 +59,30 @@ PremiumConnection? resolvePremiumConnection(Source source) {
     isGeneric: true,
   );
 }
+
+/// Returns the usable premium connection for [source].
+///
+/// Paid sources without curated connection metadata fall back to their home
+/// page so users can still authenticate through the generic WebView flow.
+PremiumConnection? resolvePremiumConnection(Source source) {
+  final existing = source.premiumConnection;
+  if (existing != null && existing.isUsable) return existing;
+  if (!source.hasPaywall) return null;
+  return _genericConnectionFor(source);
+}
+
+/// Connexion à associer **intentionnellement** à une source (geste explicite de
+/// l'utilisateur « ce site demande un compte »), sans exiger [Source.hasPaywall].
+///
+/// Superset de [resolvePremiumConnection] : renvoie la connexion existante (curée
+/// ou explicite) si elle est utilisable, sinon synthétise un flux générique dès
+/// qu'il y a une URL http(s) valide. Sert au flux « connecter un login à toute
+/// source suivie » (sources étrangères à login) et à la reconnexion d'un
+/// abonnement même quand le backend n'expose pas de `premium_connection`
+/// (source libre connectée génériquement). [resolvePremiumConnection] reste
+/// réservé au CTA automatique des sources payantes.
+PremiumConnection? forceGenericConnection(Source source) =>
+    _genericConnectionFor(source);
 
 class Source {
   final String id;
@@ -84,6 +106,11 @@ class Source {
   final List<String> secondaryThemes;
   final String sourceTier;
   final int followerCount;
+
+  /// Volume de publication sur 30 j (exposé sur le catalogue par le backend,
+  /// défaut 0 pour les réponses qui ne le calculent pas). Sert au biais
+  /// « sources productives » du recommander d'onboarding.
+  final int articles30d;
   final double priorityMultiplier;
   final bool hasSubscription;
 
@@ -121,6 +148,7 @@ class Source {
     this.secondaryThemes = const [],
     this.sourceTier = 'mainstream',
     this.followerCount = 0,
+    this.articles30d = 0,
     this.priorityMultiplier = 1.0,
     this.hasSubscription = false,
     this.hasPaywall = false,
@@ -152,6 +180,7 @@ class Source {
     List<String>? secondaryThemes,
     String? sourceTier,
     int? followerCount,
+    int? articles30d,
     double? priorityMultiplier,
     bool? hasSubscription,
     bool? hasPaywall,
@@ -182,6 +211,7 @@ class Source {
       secondaryThemes: secondaryThemes ?? this.secondaryThemes,
       sourceTier: sourceTier ?? this.sourceTier,
       followerCount: followerCount ?? this.followerCount,
+      articles30d: articles30d ?? this.articles30d,
       priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
       hasSubscription: hasSubscription ?? this.hasSubscription,
       hasPaywall: hasPaywall ?? this.hasPaywall,
@@ -226,6 +256,7 @@ class Source {
                 const [],
         sourceTier: (json['source_tier'] as String?) ?? 'mainstream',
         followerCount: (json['follower_count'] as int?) ?? 0,
+        articles30d: (json['articles_30d'] as int?) ?? 0,
         priorityMultiplier:
             (json['priority_multiplier'] as num?)?.toDouble() ?? 1.0,
         hasSubscription: (json['has_subscription'] as bool?) ?? false,
@@ -377,7 +408,24 @@ class Source {
       case SourceType.podcast:
         return 'Podcast';
       case SourceType.video:
-        return 'Video';
+        return 'Vidéo';
+    }
+  }
+
+  /// Icône du format, pour le badge type. `null` pour `article` (format
+  /// implicite, jamais badgé) ⇒ le widget [SourceTypeBadge] se masque.
+  IconData? getTypeIcon() {
+    switch (type) {
+      case SourceType.article:
+        return null;
+      case SourceType.youtube:
+        return Icons.smart_display_outlined;
+      case SourceType.podcast:
+        return Icons.podcasts_outlined;
+      case SourceType.video:
+        return Icons.videocam_outlined;
+      case SourceType.reddit:
+        return Icons.forum_outlined;
     }
   }
 }

@@ -847,6 +847,10 @@ class FeedResponse {
   final List<KeywordOverflow> keywordOverflow;
   final List<FeedCarouselData> carousels;
 
+  /// Section source : true quand la source n'a aucun article récent (≤72h) et
+  /// que le backend a reculé jusqu'à 30 j → bannière « Pas d'article récent. ».
+  final bool noRecentSource;
+
   FeedResponse({
     required this.items,
     required this.pagination,
@@ -855,6 +859,7 @@ class FeedResponse {
     this.topicOverflow = const [],
     this.keywordOverflow = const [],
     this.carousels = const [],
+    this.noRecentSource = false,
   });
 
   factory FeedResponse.fromJson(Map<String, dynamic> json) {
@@ -891,6 +896,7 @@ class FeedResponse {
               .map((e) => FeedCarouselData.fromJson(e))
               .toList() ??
           const [],
+      noRecentSource: (json['no_recent_source'] as bool?) ?? false,
     );
   }
 }

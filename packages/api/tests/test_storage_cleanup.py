@@ -1,9 +1,9 @@
 """Tests for storage cleanup worker."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +17,33 @@ def _empty_referenced_ids():
     with patch(
         "app.workers.storage_cleanup._collect_referenced_content_ids",
         new=AsyncMock(return_value=set()),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _skip_queue_purge():
+    """Neutralise la purge classification_queue (session propre, testée à part)."""
+    with patch(
+        "app.workers.storage_cleanup.purge_finished_classification_queue",
+        new=AsyncMock(return_value=0),
+    ):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _noop_apply_session_timeouts():
+    """Neutralise le re-push des timeouts SET LOCAL dans la boucle DELETE.
+
+    `cleanup_old_articles` appelle `apply_session_timeouts` au début de chaque
+    itération du DELETE batché (les `SET LOCAL` ne survivent pas au commit).
+    Ces tests mockent `session.execute` avec des `side_effect` ordonnés ; on
+    neutralise la plomberie SET LOCAL (testée à part dans database) pour ne pas
+    décaler cet ordre — elle ferait sinon 2 `execute` parasites par itération.
+    """
+    with patch(
+        "app.workers.storage_cleanup.apply_session_timeouts",
+        new=AsyncMock(return_value=None),
     ):
         yield
 

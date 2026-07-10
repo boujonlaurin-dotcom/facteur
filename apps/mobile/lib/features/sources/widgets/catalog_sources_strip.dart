@@ -6,9 +6,9 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../models/source_model.dart';
-import '../models/source_theme_filters.dart';
 import '../providers/sources_providers.dart';
 import 'source_logo_avatar.dart';
+import 'theme_filter_chips.dart';
 
 class CatalogSourcesStrip extends ConsumerStatefulWidget {
   final void Function(Source source) onSourceTap;
@@ -142,7 +142,10 @@ class _CatalogSourcesStripState extends ConsumerState<CatalogSourcesStrip> {
             children: [
               Divider(height: 1, color: colors.border),
               const SizedBox(height: 12),
-              _buildThemeChips(colors),
+              ThemeFilterChips(
+                selectedTheme: _selectedTheme,
+                onSelected: (key) => setState(() => _selectedTheme = key),
+              ),
               const SizedBox(height: 10),
               if (curated.isEmpty)
                 Text(
@@ -182,39 +185,6 @@ class _CatalogSourcesStripState extends ConsumerState<CatalogSourcesStrip> {
             context,
           ).textTheme.bodySmall?.copyWith(color: colors.textTertiary),
         ),
-      ),
-    );
-  }
-
-  Widget _buildThemeChips(FacteurColors colors) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: sourceThemeFilters.map((filter) {
-          final selected = _selectedTheme == filter.key;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              label: Text(filter.label),
-              selected: selected,
-              showCheckmark: false,
-              onSelected: (_) => setState(() => _selectedTheme = filter.key),
-              selectedColor: colors.primary,
-              backgroundColor: colors.backgroundSecondary,
-              labelStyle: TextStyle(
-                color: selected ? colors.surface : colors.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-              side: BorderSide(
-                color: selected ? colors.primary : colors.border,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-            ),
-          );
-        }).toList(),
       ),
     );
   }

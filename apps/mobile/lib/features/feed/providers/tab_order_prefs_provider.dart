@@ -53,6 +53,45 @@ List<T> applyOrder<T>(
   return [for (final e in indexed) e.item];
 }
 
+/// Fusionne un réordre **partiel** dans l'ordre complet sans rien perdre.
+///
+/// [visibleOrder] est la nouvelle séquence des seules clés effectivement rendues
+/// (et donc réordonnables) à cet instant. Toute clé de [prevOrder] absente de
+/// [visibleOrder] (tuile non matérialisée : catalogue en cours de chargement,
+/// source hors catalogue, clé masquée) est **préservée à sa position absolue** —
+/// on ne permute que les emplacements occupés par des clés visibles. Les clés
+/// visibles nouvelles (absentes de [prevOrder]) sont ajoutées en queue.
+///
+/// Garanties : (1) aucune clé d'ordre n'est perdue (seul un retrait explicite
+/// retire une clé) ; (2) l'ordre relatif des clés visibles == [visibleOrder] ;
+/// (3) les clés non rendues gardent leur place → l'ordre rendu reste aligné sur
+/// le paramétrage. Remplace un `setOrder(visibleOrder)` destructeur qui élaguait
+/// silencieusement les clés non matérialisées.
+List<String> mergeVisibleReorder(
+  List<String> prevOrder,
+  List<String> visibleOrder,
+) {
+  if (prevOrder.isEmpty) return List<String>.from(visibleOrder);
+  final visibleSet = visibleOrder.toSet();
+  final result = <String>[];
+  var ri = 0;
+  for (final k in prevOrder) {
+    if (visibleSet.contains(k)) {
+      // Emplacement occupé par une clé visible → on y place la prochaine clé de
+      // la séquence réordonnée (l'ordre relatif des visibles est ainsi celui de
+      // [visibleOrder]). Garde anti-dépassement si [prevOrder] dupliquait une
+      // clé (ne devrait pas arriver) : la 2ᵉ occurrence est simplement ignorée.
+      if (ri < visibleOrder.length) result.add(visibleOrder[ri++]);
+    } else {
+      result.add(k); // clé non rendue : préservée à sa place.
+    }
+  }
+  while (ri < visibleOrder.length) {
+    result.add(visibleOrder[ri++]); // clés visibles nouvelles → en queue.
+  }
+  return result;
+}
+
 final tabOrderPrefsProvider =
     StateNotifierProvider<TabOrderPrefsNotifier, List<String>>((ref) {
   return TabOrderPrefsNotifier();

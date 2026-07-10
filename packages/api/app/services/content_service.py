@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
@@ -53,7 +53,6 @@ class ContentService:
             "html_content": content.html_content,
             "audio_url": content.audio_url,
             "content_quality": content.content_quality,
-            "extraction_attempted_at": content.extraction_attempted_at,
             "content_type": content.content_type,
             "duration_seconds": content.duration_seconds,
             "published_at": content.published_at,
@@ -170,6 +169,11 @@ class ContentService:
                 user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
             )
 
+            # PR2: same implicit signal on the article's named entities.
+            await self._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
+            )
+
             # Implicit digest completion: if ≥80% of today's digest is now
             # consumed, insert a digest_completions row (idempotent). This
             # backstops the closure_screen explicit path when users never
@@ -217,29 +221,30 @@ class ContentService:
             elif ratio < 0.1:
                 engagement_factor = 0.2
 
-        # 3. Update UserInterest
-        # Check if interest exists
-        stmt = select(UserInterest).where(
-            UserInterest.user_id == user_id, UserInterest.interest_slug == theme_slug
-        )
-        interest = await self.session.scalar(stmt)
-
+        # 3. Update UserInterest — upsert atomique (Postgres ON CONFLICT)
+        # SEEN (scroll) et CONSUMED (retour WebView) arrivent quasi-simultanément
+        # pour le même (user_id, theme_slug) ; un check-then-insert classique
+        # provoquait une UniqueViolation (user_interests_user_slug_uniq).
+        # NewWeight = OldWeight + (Engagement * Rate), capé à 3.0 pour éviter
+        # l'explosion. À la création : poids 1.0 + boost (découverte de thèmes
+        # via sources généralistes). On ne touche pas `state` sur conflit pour
+        # préserver un éventuel FAVORITE.
         learning_rate = 0.05
+        boost = engagement_factor * learning_rate
 
-        if interest:
-            # NewWeight = OldWeight + (Engagement * Rate)
-            # On cap le poids max à 3.0 pour éviter l'explosion
-            new_weight = interest.weight + (engagement_factor * learning_rate)
-            interest.weight = min(new_weight, 3.0)
-        else:
-            # Create new interest with base weight 1.0 + boost
-            # Cela permet de découvrir de nouveaux thèmes via sources généralistes
-            new_interest = UserInterest(
+        stmt = (
+            insert(UserInterest)
+            .values(
                 user_id=user_id,
                 interest_slug=theme_slug,
-                weight=1.0 + (engagement_factor * learning_rate),
+                weight=1.0 + boost,
             )
-            self.session.add(new_interest)
+            .on_conflict_do_update(
+                constraint="user_interests_user_slug_uniq",
+                set_={"weight": func.least(UserInterest.weight + boost, 3.0)},
+            )
+        )
+        await self.session.execute(stmt)
 
     async def _adjust_subtopic_weights(
         self, user_id: UUID, content_id: UUID, delta: float
@@ -286,25 +291,131 @@ class ContentService:
             from app.services.recommendation.scoring_config import ScoringWeights
 
             theme_slug = content.source.theme
-            stmt = select(UserInterest).where(
-                UserInterest.user_id == user_id,
-                UserInterest.interest_slug == theme_slug,
-            )
-            interest = await self.session.scalar(stmt)
             learning_rate = ScoringWeights.LIKE_INTEREST_RATE
 
-            if interest:
-                new_weight = interest.weight + (
-                    learning_rate * (1.0 if delta > 0 else -1.0)
+            if delta > 0:
+                # Like/bookmark : upsert atomique, poids borné [0.1, 3.0].
+                stmt = (
+                    insert(UserInterest)
+                    .values(
+                        user_id=user_id,
+                        interest_slug=theme_slug,
+                        weight=1.0 + learning_rate,
+                    )
+                    .on_conflict_do_update(
+                        constraint="user_interests_user_slug_uniq",
+                        set_={
+                            "weight": func.greatest(
+                                func.least(UserInterest.weight + learning_rate, 3.0),
+                                0.1,
+                            )
+                        },
+                    )
                 )
-                interest.weight = max(0.1, min(new_weight, 3.0))
-            elif delta > 0:
-                new_interest = UserInterest(
-                    user_id=user_id,
-                    interest_slug=theme_slug,
-                    weight=1.0 + learning_rate,
+                await self.session.execute(stmt)
+            else:
+                # Unlike : décrément ciblé, jamais de création de ligne (pas
+                # d'INSERT → pas de risque de conflit). No-op si l'intérêt
+                # n'existe pas.
+                stmt = (
+                    update(UserInterest)
+                    .where(
+                        UserInterest.user_id == user_id,
+                        UserInterest.interest_slug == theme_slug,
+                    )
+                    .values(
+                        weight=func.greatest(
+                            func.least(UserInterest.weight - learning_rate, 3.0),
+                            0.1,
+                        )
+                    )
                 )
-                self.session.add(new_interest)
+                await self.session.execute(stmt)
+
+    async def _adjust_entity_affinity(
+        self, user_id: UUID, content_id: UUID, delta: float
+    ) -> None:
+        """Ajuste l'affinité entités de l'utilisateur (PR2 « le levier »).
+
+        Miroir exact de `_adjust_subtopic_weights` côté entités nommées :
+        récompense / atténue les entités d'un article suite à un signal
+        (read / like / save / note / dismiss). Borné [0.1, 3.0], cap
+        `ENTITY_AFFINITY_MAX_ENTITIES` entités distinctes/article, entités
+        mutées ignorées. Réutilise les mêmes deltas d'engagement.
+        """
+        from app.models.content import Content
+        from app.models.learning import UserEntityAffinity
+        from app.services.recommendation.helpers import iter_entity_names
+        from app.services.recommendation.scoring_config import ScoringWeights
+        from app.services.recommendation_service import _load_muted_entities_safe
+
+        # Hit identity-map : Content déjà chargé par `_adjust_subtopic_weights`
+        # au même call site → pas de round-trip DB.
+        content = await self.session.get(Content, content_id)
+        if not content or not content.entities:
+            return
+
+        # Clés canoniques (lower-strip, storage == matching), cap N distinctes.
+        entity_keys: list[str] = []
+        for _display, key in iter_entity_names(content.entities):
+            entity_keys.append(key)
+            if len(entity_keys) >= ScoringWeights.ENTITY_AFFINITY_MAX_ENTITIES:
+                break
+
+        if not entity_keys:
+            return
+
+        # Skip entités mutées : un mute explicite ne doit jamais nourrir une
+        # affinité positive. Loader défensif partagé (tolère le schema drift de
+        # la DB partagée staging/prod, comme le feed) ; clé déjà lower-strip.
+        muted = await _load_muted_entities_safe(self.session, user_id)
+        muted_lower = {m.strip().lower() for m in muted}
+        entity_keys = [k for k in entity_keys if k not in muted_lower]
+        if not entity_keys:
+            return
+
+        now = datetime.utcnow()
+        # Affinité bornée [0.1, 3.0], partagée par les deux branches.
+        clamped = func.greatest(
+            func.least(UserEntityAffinity.affinity + delta, 3.0), 0.1
+        )
+        for key in entity_keys:
+            if delta > 0:
+                # Upsert atomique, interaction_count++. Création : affinity=1.0+delta
+                # (jamais de ligne créée < 1.0 sur un signal positif).
+                stmt = (
+                    insert(UserEntityAffinity)
+                    .values(
+                        user_id=user_id,
+                        entity_canonical=key,
+                        affinity=1.0 + delta,
+                        interaction_count=1,
+                        updated_at=now,
+                    )
+                    .on_conflict_do_update(
+                        constraint="uq_user_entity_affinity_user_entity",
+                        set_={
+                            "affinity": clamped,
+                            "interaction_count": (
+                                UserEntityAffinity.interaction_count + 1
+                            ),
+                            "updated_at": now,
+                        },
+                    )
+                )
+                await self.session.execute(stmt)
+            else:
+                # Dismiss/unlike : décrément ciblé, jamais de création de ligne
+                # (no-op si l'entité n'a pas d'affinité existante).
+                stmt = (
+                    update(UserEntityAffinity)
+                    .where(
+                        UserEntityAffinity.user_id == user_id,
+                        UserEntityAffinity.entity_canonical == key,
+                    )
+                    .values(affinity=clamped, updated_at=now)
+                )
+                await self.session.execute(stmt)
 
     async def set_like_status(
         self, user_id: UUID, content_id: UUID, is_liked: bool
@@ -344,6 +455,7 @@ class ContentService:
             else -ScoringWeights.LIKE_TOPIC_BOOST
         )
         await self._adjust_subtopic_weights(user_id, content_id, delta)
+        await self._adjust_entity_affinity(user_id, content_id, delta)
 
         return status
 
@@ -381,6 +493,9 @@ class ContentService:
         # Reinforce subtopic weights on bookmark
         if is_saved:
             await self._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+            )
+            await self._adjust_entity_affinity(
                 user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
             )
 
@@ -426,6 +541,9 @@ class ContentService:
         # Adjust subtopic weights on hide (negative signal for recommendation)
         if is_hidden:
             await self._adjust_subtopic_weights(
+                user_id, content_id, ScoringWeights.DISMISS_TOPIC_PENALTY
+            )
+            await self._adjust_entity_affinity(
                 user_id, content_id, ScoringWeights.DISMISS_TOPIC_PENALTY
             )
 
@@ -507,6 +625,9 @@ class ContentService:
 
         # Reinforce subtopic weights (same as bookmark)
         await self._adjust_subtopic_weights(
+            user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+        )
+        await self._adjust_entity_affinity(
             user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
         )
 

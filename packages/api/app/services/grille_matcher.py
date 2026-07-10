@@ -1,9 +1,9 @@
-"""Auto-matching « mot du jour » → article réel de la tournée.
+"""Orchestration « mot du jour » → sélection hybride depuis l'actu réelle.
 
-À la génération du digest, on cherche dans le contexte éditorial global le sujet
-dont l'actu colle le mieux au mot du jour (et son thème), puis on **fige** un
-snapshot (titre + extrait + url + source) sur le `GrillePuzzle` du jour. Le
-reveal affiche alors un vrai article ; sans match, il retombe sur `pourquoi`.
+À la génération du digest, `apply_hybrid_word` extrait le mot du jour du corpus
+d'actu (cf. `grille_selector`) et **fige** sur le `GrillePuzzle` du jour le mot,
+l'article source (titre/extrait/url/source) et l'occurrence exacte (où le mot se
+cachait). Sans candidat, le puzzle garde son mot seedé + `pourquoi`.
 
 Best-effort et idempotent : appelé depuis le job digest dans un try/except qui
 n'altère jamais le digest. Le runtime de la Grille ne fait aucun join — il lit
@@ -17,75 +17,20 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.content import Content
+from app.models.grille_game_state import GrilleGameState
 from app.models.grille_puzzle import GrillePuzzle
-from app.services.editorial.schemas import EditorialGlobalContext, EditorialSubject
-from app.services.recommendation.helpers.keyword_match import matches_word_boundary
+from app.services.editorial.schemas import EditorialGlobalContext
 
 logger = structlog.get_logger()
 
 # Longueur max de l'extrait figé (description tronquée proprement).
 _EXCERPT_MAX = 240
 
-# Score minimal pour accrocher un article (au moins un match flexion/sous-chaîne).
-_MIN_SCORE = 1
-
 
 def _norm(text: str) -> str:
     """Minuscules sans accent (miroir Python de la normalisation de matching)."""
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(c for c in decomposed if not unicodedata.combining(c)).lower()
-
-
-def subject_match_score(word: str, theme: str, subject: EditorialSubject) -> int:
-    """Force du match d'un sujet éditorial au mot du jour (0 = pas de match).
-
-    On compare le mot (et, en bonus, le thème) au label du sujet, à son thème et
-    au titre de son actu. Un match **mot-entier** (`\\b…\\b`) vaut plus qu'une
-    sous-chaîne — cette dernière tolère les flexions (CLIMAT ⊂ « climatique »).
-    """
-    word_l = _norm(word)
-    if not word_l:
-        return 0
-
-    haystacks: list[str] = [_norm(subject.label)]
-    if subject.theme:
-        haystacks.append(_norm(subject.theme))
-    if subject.actu_article is not None:
-        haystacks.append(_norm(subject.actu_article.title))
-
-    score = 0
-    for hay in haystacks:
-        if matches_word_boundary(word_l, hay):
-            score += 3
-        elif word_l in hay:
-            # Flexion / dérivé (climat → climatique) : match plus faible.
-            score += 2
-
-    # Bonus léger si le thème du sujet recoupe le thème éditorial du puzzle
-    # (« Environnement · Société » → tokens partagés).
-    theme_tokens = {t for t in _norm(theme).replace("·", " ").split() if len(t) > 3}
-    subj_theme = _norm(subject.theme or "")
-    if theme_tokens and any(t in subj_theme for t in theme_tokens):
-        score += 1
-
-    return score
-
-
-def _best_subject(
-    word: str, theme: str, subjects: list[EditorialSubject]
-) -> EditorialSubject | None:
-    """Sujet au meilleur score (>= seuil) portant une actu ; tie-break par rang."""
-    best: EditorialSubject | None = None
-    best_score = 0
-    for subject in sorted(subjects, key=lambda s: s.rank):
-        if subject.actu_article is None:
-            continue
-        score = subject_match_score(word, theme, subject)
-        if score > best_score:
-            best_score = score
-            best = subject
-    return best if best_score >= _MIN_SCORE else None
 
 
 def _excerpt(description: str | None) -> str | None:
@@ -99,53 +44,74 @@ def _excerpt(description: str | None) -> str | None:
     return f"{cut}…"
 
 
-async def match_grille_featured_article(
+async def apply_hybrid_word(
     session: AsyncSession,
     target_date: date,
     editorial_ctx: EditorialGlobalContext | None,
 ) -> bool:
-    """Fige l'article matché sur le puzzle du jour. Retourne True si un match.
+    """Sélection hybride : remplace le mot seedé par un mot extrait de l'actu.
 
-    Idempotent : ne fait rien si le puzzle a déjà un `featured_content_id`. Ne
-    commit pas (le caller gère la transaction) — fait juste un flush.
+    Retourne True si un mot a été posé depuis l'actu (sinon le puzzle garde son
+    mot seedé + `pourquoi`). Ne commit pas (le caller gère la transaction).
+
+    Gardes :
+      - **Idempotence** : no-op si `hybrid_word_source == "hybrid"` déjà posé.
+      - **Anti-overwrite mid-day** (edge case critique) : si ≥1 partie existe
+        déjà pour `target_date`, on ne touche à **rien** — changer `word`
+        re-colorierait les tuiles d'un joueur en cours (`compute_tiles` lit
+        `puzzle.word` live), et l'occurrence hybride serait incohérente avec le
+        mot seedé conservé. En pratique le digest tourne au rollover (07:30) →
+        aucune partie n'existe encore, donc l'overwrite gagne la course.
     """
-    if editorial_ctx is None or not editorial_ctx.subjects:
-        return False
+    from app.services.grille_selector import (
+        WORD_SOURCE_HYBRID,
+        select_daily_word,
+    )
 
     puzzle = await session.scalar(
         select(GrillePuzzle).where(GrillePuzzle.puzzle_date == target_date)
     )
     if puzzle is None:
         return False
-    if puzzle.featured_content_id is not None:
-        logger.info("grille_featured_already_set", target_date=str(target_date))
+    if puzzle.hybrid_word_source == WORD_SOURCE_HYBRID:
+        logger.info("grille_hybrid_already_set", target_date=str(target_date))
         return False
 
-    subject = _best_subject(puzzle.word, puzzle.theme, editorial_ctx.subjects)
-    if subject is None or subject.actu_article is None:
-        logger.info(
-            "grille_featured_no_match",
+    game_exists = await session.scalar(
+        select(GrilleGameState.id)
+        .where(GrilleGameState.puzzle_date == target_date)
+        .limit(1)
+    )
+    if game_exists is not None:
+        logger.warning(
+            "grille_hybrid_skipped_game_started",
             target_date=str(target_date),
-            word=puzzle.word,
         )
         return False
 
-    actu = subject.actu_article
-    content = await session.get(Content, actu.content_id)
+    selection = await select_daily_word(session, target_date, editorial_ctx)
+    if selection is None:
+        logger.info("grille_hybrid_no_candidate", target_date=str(target_date))
+        return False
 
-    puzzle.featured_content_id = actu.content_id
-    puzzle.featured_title = actu.title
-    puzzle.featured_excerpt = _excerpt(content.description if content else None)
-    puzzle.featured_url = content.url if content else None
-    puzzle.featured_source = actu.source_name
+    puzzle.word = selection.word
+    puzzle.featured_content_id = selection.content_id
+    puzzle.featured_title = selection.title
+    puzzle.featured_excerpt = selection.excerpt
+    puzzle.featured_url = selection.url
+    puzzle.featured_source = selection.source_name
     puzzle.featured_matched_at = datetime.utcnow()
+    puzzle.hybrid_field = selection.field
+    puzzle.hybrid_snippet = selection.snippet
+    puzzle.hybrid_match = selection.match_surface
+    puzzle.hybrid_word_source = WORD_SOURCE_HYBRID
     await session.flush()
 
     logger.info(
-        "grille_featured_matched",
+        "grille_hybrid_applied",
         target_date=str(target_date),
-        word=puzzle.word,
-        content_id=str(actu.content_id),
-        source=actu.source_name,
+        word=selection.word,
+        field=selection.field,
+        content_id=str(selection.content_id),
     )
     return True

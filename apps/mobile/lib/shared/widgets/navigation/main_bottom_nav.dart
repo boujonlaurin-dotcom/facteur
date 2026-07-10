@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -21,10 +22,14 @@ class MainBottomNav extends StatelessWidget {
   /// Appelé au tap d'un onglet (actif ou non). Le parent arbitre la suite.
   final ValueChanged<int> onSelect;
 
+  /// Ancre optionnelle du tour guidé posée sur l'onglet « L'Essentiel ».
+  final GlobalKey? essentielTabAnchorKey;
+
   const MainBottomNav({
     super.key,
     required this.currentIndex,
     required this.onSelect,
+    this.essentielTabAnchorKey,
   });
 
   static const BorderRadius _topRadius = BorderRadius.vertical(
@@ -34,12 +39,53 @@ class MainBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = context.isDarkMode;
+    // Sur le web (CanvasKit), le footer est animé par un AnimatedSlide au scroll
+    // (cf. main_shell.dart). Animer un widget qui contient un BackdropFilter force
+    // une re-rasterisation du flou à chaque frame → animation saccadée. On rend
+    // donc le fond quasi-opaque et on retire le blur sur web ; le natif garde le
+    // glassmorphisme (coût absorbé par Skia/Impeller).
     final fillColor = isDark
-        ? context.facteurColors.backgroundPrimary.withValues(alpha: 0.80)
-        : const Color.fromRGBO(242, 232, 213, 0.86);
+        ? context.facteurColors.backgroundPrimary
+            .withValues(alpha: kIsWeb ? 0.97 : 0.80)
+        : const Color.fromRGBO(242, 232, 213, kIsWeb ? 0.98 : 0.86);
     final borderColor = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : const Color.fromRGBO(0, 0, 0, 0.08);
+
+    final content = Container(
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: _topRadius,
+        border: Border(top: BorderSide(color: borderColor)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 50,
+          child: Row(
+            children: [
+              Expanded(
+                child: KeyedSubtree(
+                  key: essentielTabAnchorKey,
+                  child: _FooterTab(
+                    label: 'L’Essentiel',
+                    selected: currentIndex == 0,
+                    onTap: () => onSelect(0),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _FooterTab(
+                  label: 'Flâner',
+                  selected: currentIndex == 1,
+                  onTap: () => onSelect(1),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
 
     return DecoratedBox(
       // Ombre douce projetée vers le haut pour décoller la barre du contenu.
@@ -55,40 +101,13 @@ class MainBottomNav extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: _topRadius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            decoration: BoxDecoration(
-              color: fillColor,
-              borderRadius: _topRadius,
-              border: Border(top: BorderSide(color: borderColor)),
-            ),
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                height: 50,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _FooterTab(
-                        label: 'L’Essentiel',
-                        selected: currentIndex == 0,
-                        onTap: () => onSelect(0),
-                      ),
-                    ),
-                    Expanded(
-                      child: _FooterTab(
-                        label: 'Flâner',
-                        selected: currentIndex == 1,
-                        onTap: () => onSelect(1),
-                      ),
-                    ),
-                  ],
-                ),
+        // Web : pas de BackdropFilter (fond quasi-opaque) pour un slide fluide.
+        child: kIsWeb
+            ? content
+            : BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: content,
               ),
-            ),
-          ),
-        ),
       ),
     );
   }

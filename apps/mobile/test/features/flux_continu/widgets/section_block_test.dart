@@ -15,15 +15,28 @@ import 'package:facteur/features/flux_continu/widgets/section_block.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
+import 'package:facteur/features/sources/models/theme_suggestions_model.dart';
+import 'package:facteur/features/sources/providers/sources_providers.dart';
 import 'package:facteur/features/sources/widgets/source_logo_avatar.dart';
 import 'package:facteur/widgets/design/facteur_image.dart';
 
-Widget _wrap(Widget child, {DisplayModeSpec spec = DisplayModeSpec.normal}) {
+Widget _wrap(
+  Widget child, {
+  DisplayModeSpec spec = DisplayModeSpec.normal,
+  List<Override> overrides = const [],
+}) {
   return ProviderScope(
     // Le spec du mode d'affichage est lu via Hive en prod — court-circuité ici
-    // pour ne pas exiger le bootstrap Hive dans les widget tests.
+    // pour ne pas exiger le bootstrap Hive dans les widget tests. Les sections
+    // thème rendent le footer « Étoffer » (cf. etofferThemeProvider) : on neutralise
+    // l'appel réseau par défaut pour ne pas exiger Supabase.
     overrides: [
       displayModeSpecProvider.overrideWith((ref) => spec),
+      etofferThemeProvider.overrideWith(
+        (ref, slug) async =>
+            ThemeSuggestions(theme: slug, label: 'Tech', suggestions: const []),
+      ),
+      ...overrides,
     ],
     child: MaterialApp(
       theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -69,6 +82,7 @@ FeedThemeSection _themeSection({
   int coreVisibleCount = 3,
   bool hasMore = false,
   bool withThumbnails = false,
+  int followedSourceCount = 0,
 }) {
   return FeedThemeSection(
     kind: SectionKind.theme,
@@ -84,12 +98,14 @@ FeedThemeSection _themeSection({
       ),
     ),
     hasMore: hasMore,
+    followedSourceCount: followedSourceCount,
   );
 }
 
 FeedThemeSection _sourceSection({
   int items = 3,
   String? logoUrl = 'https://logo.test/x.png',
+  bool noRecentSource = false,
 }) {
   return FeedThemeSection(
     kind: SectionKind.source,
@@ -100,12 +116,16 @@ FeedThemeSection _sourceSection({
     sourceLogoUrl: logoUrl,
     items: List.generate(items, (i) => _content('c$i')),
     hasMore: false,
+    noRecentSource: noRecentSource,
   );
 }
 
-/// Finder du chevron « > » de navigation rendu dans le titre du banner.
+/// Finder du chevron de navigation, désormais rendu comme **icône** Phosphor
+/// (`caretRight` fill — trait plein, plus épais que bold) en WidgetSpan dans le
+/// titre du banner — le glyphe texte « > » historique héritait d'une baseline
+/// décalée (cf. section_banner.dart).
 Finder _chevron() =>
-    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.bold));
+    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.fill));
 
 void main() {
   setUpAll(() {
@@ -147,12 +167,47 @@ void main() {
       expect(find.text('Voir toute la curation'), findsOneWidget);
       expect(find.byType(SourceLogoAvatar), findsOneWidget);
     });
+
+    testWidgets(
+        'source noRecentSource + articles anciens : note « Pas d\'article '
+        'récent. » dans le banner + cartes', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 3, noRecentSource: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Les cartes anciennes sont rendues (pas d'empty-state)…
+      expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
+      expect(find.text('Voir toute la curation'), findsNothing);
+      // …et le banner signale l'absence d'article récent.
+      expect(find.text('Pas d\'article récent.'), findsOneWidget);
+    });
+
+    testWidgets(
+        'source noRecentSource mais SANS article : empty-state, pas la note',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 0, noRecentSource: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      // Aucun article même ancien → empty-state, et la note ne s'affiche pas.
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(find.text('Voir toute la curation'), findsOneWidget);
+      expect(find.text('Pas d\'article récent.'), findsNothing);
+    });
   });
 
-  group('SectionBlock — section thème vide (Tournée bugs E2E)', () {
+  group('SectionBlock — section thème vide (footer « Étoffer »)', () {
     testWidgets(
-        'thème favori sans article : empty-state TOUJOURS visible + CTA '
-        '« Ajouter des sources »', (tester) async {
+        'thème favori sans article : footer « Étoffer » déplié + accroche '
+        '+ entrée de recherche câblée sur onAddSources', (tester) async {
       var tapped = false;
       await tester.pumpWidget(_wrap(
         SectionBlock(
@@ -162,16 +217,18 @@ void main() {
           onAddSources: () => tapped = true,
         ),
       ));
+      await tester.pumpAndSettle();
 
-      // Aucune carte, mais la section reste rendue avec son empty-state + CTA.
+      // Aucune carte, mais la section reste rendue avec son footer « Étoffer ».
       expect(find.byType(FluxContinuArticleCard), findsNothing);
       expect(
         find.textContaining('Rien de neuf récemment sur Tech'),
         findsOneWidget,
       );
-      expect(find.text('Ajouter des sources'), findsOneWidget);
+      // L'entrée de recherche (Tier 3) ouvre l'ajout de source (onAddSources).
+      expect(find.text('Chercher une source Tech'), findsOneWidget);
 
-      await tester.tap(find.text('Ajouter des sources'));
+      await tester.tap(find.text('Chercher une source Tech'));
       await tester.pumpAndSettle();
       expect(tapped, isTrue);
     });
@@ -188,7 +245,12 @@ void main() {
       ));
 
       expect(find.byType(FluxContinuArticleCard), findsOneWidget);
-      expect(find.text('Ajouter des sources'), findsNothing);
+      // Le footer « riche » reste replié : un simple bouton renommé qui mène
+      // droit au catalogue filtré (plus de dépli in-place).
+      expect(find.text('Ajouter plus de sources'), findsOneWidget);
+      expect(find.text('Chercher une source Tech'), findsNothing);
+      // Thème → pas de « Tout lire › » (il porte déjà le footer d'ajout).
+      expect(find.textContaining('Tout lire'), findsNothing);
     });
   });
 
@@ -362,6 +424,132 @@ void main() {
 
       expect(_chevron(), findsNothing);
       expect(find.textContaining('+4'), findsNothing);
+    });
+  });
+
+  group('SectionBlock — « Tout lire › » (sections sans footer d\'ajout)', () {
+    testWidgets('Actus du jour rend « Tout lire › » cliquable → onSeeAll',
+        (tester) async {
+      var opened = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () => opened = true,
+        ),
+      ));
+
+      expect(find.text('Tout lire'), findsOneWidget);
+      await tester.tap(find.text('Tout lire'));
+      await tester.pumpAndSettle();
+      expect(opened, isTrue);
+    });
+
+    testWidgets('section source non vide rend « Tout lire › »', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 3),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      expect(find.text('Tout lire'), findsOneWidget);
+    });
+
+    testWidgets('section source vide (empty-state) : pas de « Tout lire › » '
+        '(le CTA curation le remplace)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 0),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+
+      expect(find.text('Tout lire'), findsNothing);
+      expect(find.text('Voir toute la curation'), findsOneWidget);
+    });
+
+    testWidgets(
+        'thème riche + PEU de sources suivies (< 6) : footer « Ajouter », '
+        'pas de « Tout lire › » (Story 22.5)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(
+            items: 7,
+            coreVisibleCount: 3,
+            followedSourceCount: 2,
+          ),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+          onAddSources: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Tout lire'), findsNothing);
+      expect(find.text('Ajouter plus de sources'), findsOneWidget);
+    });
+
+    testWidgets(
+        'thème riche + ASSEZ de sources suivies (>= 6) : « Tout lire › » '
+        'cliquable, pas de footer « Ajouter » (Story 22.5)', (tester) async {
+      var opened = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(
+            items: 7,
+            coreVisibleCount: 3,
+            followedSourceCount: 6,
+          ),
+          onTapArticle: (_) {},
+          onSeeAll: () => opened = true,
+          onAddSources: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ajouter plus de sources'), findsNothing);
+      expect(find.text('Tout lire'), findsOneWidget);
+      await tester.tap(find.text('Tout lire'));
+      await tester.pumpAndSettle();
+      expect(opened, isTrue);
+    });
+
+    testWidgets(
+        'thème maigre (underfilled) : footer « Étoffer » déplié inchangé, '
+        'jamais « Tout lire › » même si sources suivies >= 6 (Story 22.5)',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(
+            items: 1,
+            followedSourceCount: 8,
+          ).copyWith(underfilled: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+          onAddSources: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // Branche underfilled = footer « Étoffer » déplié (recherche de source),
+      // indépendant du count : le CTA « Tout lire » ne s'y substitue pas.
+      expect(find.textContaining('Tout lire'), findsNothing);
+      expect(find.text('Chercher une source Tech'), findsOneWidget);
+    });
+
+    testWidgets('sans onSeeAll : pas de « Tout lire › » sur digest',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _digestTopicSection(topics: 5, coreVisibleCount: 3),
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.textContaining('Tout lire'), findsNothing);
     });
   });
 

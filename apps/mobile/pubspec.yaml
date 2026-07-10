@@ -1,8 +1,7 @@
 name: facteur
 description: Facteur - Curation intelligente de contenus
 publish_to: 'none'
-version: 1.0.0+1
-
+version: 1.0.2+8
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
@@ -62,7 +61,9 @@ dependencies:
   # Deep Links (widget tap → in-app routing)
   app_links: ^6.3.2
 
-  # Push Notifications (local, no FCM)
+  # Push Notifications
+  firebase_core: ^4.0.0
+  firebase_messaging: ^16.0.0
   flutter_local_notifications: ^20.0.0
   timezone: ^0.10.0
   flutter_timezone: ^3.0.1
@@ -87,12 +88,16 @@ dependencies:
   # Spotlight coachmark (Story 16.1 Welcome Tour v2)
   tutorial_coach_mark: ^1.2.12
 
-  # Auto Update (Android APK)
+  # Auto Update (Android APK — flavor beta side-load uniquement)
   package_info_plus: ^8.0.0
   path_provider: ^2.1.2
   open_filex: ^4.5.0
   flutter_downloader: ^1.11.8
   flutter_inappwebview: ^6.1.5
+
+  # Google Play In-App Updates (flavor playstore uniquement — invite native).
+  # Android-only ; lève PlatformException ailleurs → gate par Platform.isAndroid.
+  in_app_update: ^4.2.3
 
   # PWA install prompt detection (Story web.1 — iOS Safari add-to-home)
   web: ^1.1.0
@@ -113,12 +118,13 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icons/logo_facteur_app_icon.png"
+  image_path_android: "assets/icons/logo_android_icon.png"
+  image_path_ios: "assets/icons/logo_facteur_app_icon_ios.png"
   adaptive_icon_background: "#E07A5F"
-  adaptive_icon_foreground: "assets/icons/logo_facteur_app_icon.png"
+  adaptive_icon_foreground: "assets/icons/logo_android_icon.png"
   web:
     generate: true
-    image_path: "assets/icons/facteur_logo.png"
+    image_path: "assets/icons/logo_android_icon.png"
     background_color: "#E07A5F"
     theme_color: "#E07A5F"
 
@@ -153,4 +159,3 @@ flutter:
     - assets/loaders/
     - assets/notifications/
     - assets/changelog.json
-

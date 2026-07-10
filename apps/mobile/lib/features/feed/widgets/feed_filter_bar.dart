@@ -284,7 +284,9 @@ class _SearchTrigger extends StatelessWidget {
         width: 34,
         child: Icon(
           PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-          size: 16,
+          // Loupe agrandie (16 → 22) : l'état inactif n'affiche que l'icône
+          // (pas de placeholder), la boîte 34×34 l'accueille largement.
+          size: 22,
           color: colors.textSecondary,
         ),
       ),

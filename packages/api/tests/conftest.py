@@ -51,6 +51,21 @@ def _reset_feed_cache():
     FEED_CACHE.reset_stats()
 
 
+@pytest.fixture(autouse=True)
+def _reset_mistral_rate_limiter():
+    # The editorial Mistral rate limiter is a module-level singleton (LR-1
+    # PR 1) bound to the running event loop. pytest-asyncio gives each test a
+    # fresh loop, and the token bucket persists across tests — resetting it
+    # gives every test a full bucket on its own loop, so the throttle never
+    # injects real sleeps into unit tests (the limiter's own pacing is tested
+    # directly with a fake clock in tests/editorial/test_rate_limiter.py).
+    from app.services.editorial.llm_client import _reset_large_limiter
+
+    _reset_large_limiter()
+    yield
+    _reset_large_limiter()
+
+
 @pytest.fixture(scope="session")
 def create_tables():
     """Create all database tables from model definitions (once per session).
@@ -126,7 +141,10 @@ def fake_session_maker(db_session):
     """
 
     @asynccontextmanager
-    async def _maker():
+    async def _maker(**_kwargs):
+        # Accepte (et ignore) les kwargs de cap (statement_timeout_ms,
+        # idle_in_tx_timeout_ms) pour matcher la signature de
+        # `safe_async_session` — cf. SessionMaker = Callable[..., ...].
         yield db_session
 
     return _maker

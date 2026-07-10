@@ -250,8 +250,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       decoration: BoxDecoration(
                         color: colors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: colors.primary.withOpacity(0.3)),
+                        border:
+                            Border.all(color: colors.primary.withOpacity(0.3)),
                       ),
                       child: Row(
                         children: [

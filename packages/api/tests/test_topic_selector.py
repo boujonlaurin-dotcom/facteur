@@ -8,16 +8,15 @@ Couvre:
 - _score_and_select_articles: scoring et sélection intra-topic
 """
 
-import pytest
 import uuid
-from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock, MagicMock
+from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock
 
-from app.services.topic_selector import TopicSelector, TopicGroup, ScoredArticle
+import pytest
+
 from app.services.briefing.importance_detector import TopicCluster
 from app.services.digest_selector import DigestContext, GlobalTrendingContext
-from app.schemas.digest import DigestScoreBreakdown
-
+from app.services.topic_selector import ScoredArticle, TopicGroup, TopicSelector
 
 # ─── Factories ────────────────────────────────────────────────────────────────
 
@@ -38,7 +37,7 @@ def make_content(source=None, title=None, published_at=None, theme=None):
     content.id = uuid.uuid4()
     content.source = source or make_source()
     content.source_id = content.source.id
-    content.published_at = published_at or datetime.now(timezone.utc)
+    content.published_at = published_at or datetime.now(UTC)
     content.title = title or f"Article {content.id}"
     content.url = f"https://example.com/{content.id}"
     content.thumbnail_url = None
@@ -54,7 +53,7 @@ def make_content(source=None, title=None, published_at=None, theme=None):
 
 def make_cluster(contents, theme=None, cluster_id=None):
     """Create a TopicCluster from a list of mock contents."""
-    source_ids = set(c.source_id for c in contents)
+    source_ids = {c.source_id for c in contents}
     source_domains = {f"source-{sid}.example.com" for sid in source_ids}
     return TopicCluster(
         cluster_id=cluster_id or str(uuid.uuid4()),
@@ -384,8 +383,11 @@ class TestTopicMatchScoring:
         from app.services.recommendation.scoring_config import ScoringWeights
 
         assert len(topic_breakdowns) == 1
-        # Points should reflect exactly TOPIC_MAX_MATCHES × TOPIC_MATCH
-        assert topic_breakdowns[0].points == ScoringWeights.TOPIC_MATCH * ScoringWeights.TOPIC_MAX_MATCHES
+        # Points reflect article-topic order: topics[0] full, topics[1] decayed.
+        expected = ScoringWeights.TOPIC_MATCH * (
+            1.0 + ScoringWeights.SUBTOPIC_POSITION_FACTOR
+        )
+        assert topic_breakdowns[0].points == expected
 
     def test_article_precision_bonus(self):
         """Topic match + theme match adds SUBTOPIC_PRECISION_BONUS to score."""
@@ -407,7 +409,10 @@ class TestTopicMatchScoring:
 
         assert len(topic_bd) == 1
         # Points = TOPIC_MATCH + SUBTOPIC_PRECISION_BONUS
-        assert topic_bd[0].points == ScoringWeights.TOPIC_MATCH + ScoringWeights.SUBTOPIC_PRECISION_BONUS
+        assert (
+            topic_bd[0].points
+            == ScoringWeights.TOPIC_MATCH + ScoringWeights.SUBTOPIC_PRECISION_BONUS
+        )
 
     def test_article_no_precision_bonus_without_theme(self):
         """Topic match without theme match does NOT trigger precision bonus."""
@@ -478,7 +483,7 @@ class TestScoreAndSelectArticles:
         """Each result should be a ScoredArticle with breakdown."""
         selector = TopicSelector()
         src = make_source()
-        content = make_content(source=src, published_at=datetime.now(timezone.utc))
+        content = make_content(source=src, published_at=datetime.now(UTC))
         cluster = make_cluster([content])
 
         context = make_context()
@@ -513,8 +518,7 @@ class TestSelectTopicsForUser:
                     make_content(
                         source=src,
                         title=f"Article about {src.theme} topic {i}",
-                        published_at=datetime.now(timezone.utc)
-                        - timedelta(hours=i * 6),
+                        published_at=datetime.now(UTC) - timedelta(hours=i * 6),
                     )
                 )
 

@@ -4,8 +4,9 @@
 # Note : les prompts d'écriture (`writing`, `writing_serene`), de pépite
 # (`pepite`), d'actu décalée (`actu_decalee`) ont été supprimés lors du
 # cleanup post-unification du flux (PR cleanup-legacy-feed-mistral). Le
-# bloc `deep_matching` est conservé en commentaire — TODO : réactiver pour
-# la prochaine itération Pas de recul.
+# bloc `deep_matching` a été réactivé pour l'itération « Pas de recul » dans
+# le reader : `DeepMatcher.match_for_content` l'utilise pour recommander un
+# article de fond directement sous la couverture médiatique d'un article ouvert.
 
 curation:
   system: |
@@ -43,52 +44,51 @@ curation:
   temperature: 0.3
   max_tokens: 1000
 
-# TODO: réactiver pour la prochaine itération Pas de recul
-# deep_matching:
-#   system: |
-#     Pour le sujet "{topic_label}", tu cherches un article de fond qui offre
-#     un "pas de recul" — un eclairage systemique, structurel ou historique
-#     DIRECTEMENT lie au sujet de l'actualite chaude.
-#
-#     Angle recherche : {deep_angle}
-#
-#     Evalue les articles candidats et, UNIQUEMENT si l'un d'eux a un lien
-#     thematique clair avec le sujet, selectionne-le.
-#
-#     EXIGENCE STRICTE — REFUSE (`selected_index: null`) si :
-#     - L'article parle d'un tout autre domaine (ex: sujet = people,
-#       candidat = geopolitique ; sujet = foot, candidat = economie).
-#     - Le lien est anecdotique ou force (mots en commun accidentels,
-#       pas de convergence thematique de fond).
-#     - Aucun candidat ne partage au moins une entite nommee (personne,
-#       organisation, pays, concept) ou un champ lexical structurel avec
-#       le sujet.
-#     - Le candidat est une **actualite du meme evenement** : meme fait,
-#       meme jour, memes protagonistes, meme cadrage factuel — meme s'il
-#       est publie par une source de fond. Un "pas de recul" n'est PAS
-#       une autre depeche qui reprend les memes elements, c'est une mise
-#       en perspective qui ajoute un eclairage historique, structurel,
-#       comparatiste ou analytique.
-#     - Le candidat n'apporte **aucun eclairage supplementaire** au-dela
-#       du compte-rendu factuel deja couvert par l'actualite chaude.
-#     - Tu hesites. En cas de doute, renvoie `null`. Mieux vaut pas de
-#       "pas de recul" qu'un article hors-sujet ou redondant qui
-#       decredibilise le digest.
-#
-#     Criteres si tu choisis (cumulatifs) :
-#     - Pertinence systemique (PAS evenementiel — on cherche de l'analyse)
-#     - Complementarite avec l'actualite chaude (perspective differente
-#       mais sur le MEME sujet)
-#     - Qualite de la source et de l'analyse
-#
-#     Reponds UNIQUEMENT en JSON valide :
-#     - Si un candidat convient : {{"selected_index": N, "reason": "1 phrase precisant le lien thematique"}}
-#     - Sinon (cas par defaut si doute) : {{"selected_index": null, "reason": "1 phrase expliquant pourquoi aucun ne convient"}}
-#
-#     N est l'index (0-based) du candidat dans la liste.
-#   model: mistral-large-latest
-#   temperature: 0.2
-#   max_tokens: 300
+deep_matching:
+  system: |
+    Pour le sujet "{topic_label}", tu cherches un article de fond qui offre
+    un "pas de recul" — un eclairage systemique, structurel ou historique
+    DIRECTEMENT lie au sujet de l'actualite chaude.
+
+    Angle recherche : {deep_angle}
+
+    Evalue les articles candidats et, UNIQUEMENT si l'un d'eux a un lien
+    thematique clair avec le sujet, selectionne-le.
+
+    EXIGENCE STRICTE — REFUSE (`selected_index: null`) si :
+    - L'article parle d'un tout autre domaine (ex: sujet = people,
+      candidat = geopolitique ; sujet = foot, candidat = economie).
+    - Le lien est anecdotique ou force (mots en commun accidentels,
+      pas de convergence thematique de fond).
+    - Aucun candidat ne partage au moins une entite nommee (personne,
+      organisation, pays, concept) ou un champ lexical structurel avec
+      le sujet.
+    - Le candidat est une **actualite du meme evenement** : meme fait,
+      meme jour, memes protagonistes, meme cadrage factuel — meme s'il
+      est publie par une source de fond. Un "pas de recul" n'est PAS
+      une autre depeche qui reprend les memes elements, c'est une mise
+      en perspective qui ajoute un eclairage historique, structurel,
+      comparatiste ou analytique.
+    - Le candidat n'apporte **aucun eclairage supplementaire** au-dela
+      du compte-rendu factuel deja couvert par l'actualite chaude.
+    - Tu hesites. En cas de doute, renvoie `null`. Mieux vaut pas de
+      "pas de recul" qu'un article hors-sujet ou redondant qui
+      decredibilise le digest.
+
+    Criteres si tu choisis (cumulatifs) :
+    - Pertinence systemique (PAS evenementiel — on cherche de l'analyse)
+    - Complementarite avec l'actualite chaude (perspective differente
+      mais sur le MEME sujet)
+    - Qualite de la source et de l'analyse
+
+    Reponds UNIQUEMENT en JSON valide :
+    - Si un candidat convient : {{"selected_index": N, "reason": "1 phrase precisant le lien thematique"}}
+    - Sinon (cas par defaut si doute) : {{"selected_index": null, "reason": "1 phrase expliquant pourquoi aucun ne convient"}}
+
+    N est l'index (0-based) du candidat dans la liste.
+  model: mistral-large-latest
+  temperature: 0.2
+  max_tokens: 300
 
 query_expansion:
   system: |

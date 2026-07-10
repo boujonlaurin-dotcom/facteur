@@ -28,10 +28,31 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main production
           git checkout production
+          # Pré-check explicite : production doit être un ancêtre de main.
+          # Sinon = quelqu'un a poussé un commit DIRECTEMENT sur production
+          # (interdit) -> on s'arrête avec un message clair plutôt que l'erreur
+          # cryptique « Not possible to fast-forward » du merge ci-dessous.
+          # Réconciliation : docs/runbooks/recover-from-production-divergence.md
+          if ! git merge-base --is-ancestor origin/production origin/main; then
+            echo "::error::production a divergé de main : un commit a été poussé directement sur production (interdit)."
+            echo "::error::Réconcilier via docs/runbooks/recover-from-production-divergence.md AVANT de relancer ce workflow."
+            exit 1
+          fi
           # --ff-only : refuse d'avancer si production a divergé de main
           # (garde-fou : production ne doit JAMAIS recevoir de commits directs).
           git merge --ff-only origin/main
+          # NB : si la tête de main est un commit de MERGE (ex. après une
+          # réconciliation), ce push peut être refusé côté GitHub avec
+          # « fatal error in commit_refs » — quirk du GITHUB_TOKEN sur les merge
+          # commits. Dans ce cas, pousser le fast-forward à la main puis relancer
+          # (cf. runbook). Ne PAS passer ce push à un PAT : promote-to-production.yml
+          # écoute push:[production] et serait re-déclenché en double.
           git push origin production
+
+      - name: Verify google-services.json (beta)
+        uses: ./.github/actions/verify-google-services
+        with:
+          flavor: beta
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -72,14 +93,16 @@ jobs:
         id: version
         run: echo "version=release-$(date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
 
-      - name: Build APK (prod flavor)
+      - name: Build APK (beta flavor — side-loaded, canal stable)
         run: |
           cd apps/mobile
           # versionCode = epoch (monotone et TOUJOURS > les anciens run_number).
           # github.run_number repart à 1 pour ce workflow neuf -> versionCode=1 ->
           # downgrade refusé par Android ("le package semble ne pas être valide")
           # chez tous les users prod déjà installés. Plafond Android 2.1e9 -> ok ~2036.
-          flutter build apk --release --flavor prod \
+          # Flavor `beta` = APK side-loaded (REQUEST_INSTALL_PACKAGES requis pour
+          # l'auto-update) ; UPDATE_CHANNEL=stable -> pull des tags release-*.
+          flutter build apk --release --flavor beta \
             --build-number=$(date +%s) \
             --dart-define="API_BASE_URL=https://facteur-production.up.railway.app/api" \
             --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
@@ -96,11 +119,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: facteur-app-prod-release
-          path: apps/mobile/build/app/outputs/flutter-apk/app-prod-release.apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk
 
       - name: Rename APK
         run: |
-          mv apps/mobile/build/app/outputs/flutter-apk/app-prod-release.apk \
+          mv apps/mobile/build/app/outputs/flutter-apk/app-beta-release.apk \
              apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
 
       - name: Create Production Release

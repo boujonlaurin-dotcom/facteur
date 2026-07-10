@@ -51,6 +51,11 @@ def domain_key(url: str | None) -> str:
 # pour vérifier que la session est active (idéalement un article abonné
 # "evergreen", à défaut la home du média). display_hint = consigne affichée à
 # l'utilisateur pendant la connexion. À enrichir éditorialement sans migration.
+#
+# TODO(product): tous les test_url ci-dessous pointent vers la home (pas un
+# article évergreen abonné réel) — nécessite une curation éditoriale par média.
+# En attendant, la copy mobile ne promet plus "un article test" (parle de
+# "vérification"/"session active"). Cf. docs/bugs/bug-premium-connection-flow-confusion.md
 PREMIUM_CURATED_MAP: dict[str, dict] = {
     "lemonde.fr": {
         "login_url": "https://secure.lemonde.fr/sfuser/connexion",
@@ -86,6 +91,38 @@ PREMIUM_CURATED_MAP: dict[str, dict] = {
         "login_url": "https://www.telerama.fr/connexion",
         "test_url": "https://www.telerama.fr/",
         "display_hint": "Connecte-toi à ton compte Télérama pour lire les articles abonnés.",
+    },
+    # Grands titres EN à login (PO) : le fallback générique couvre tout le reste,
+    # mais une config curée donne une page de connexion fiable + un libellé clair.
+    "nytimes.com": {
+        "login_url": "https://myaccount.nytimes.com/auth/login",
+        "test_url": "https://www.nytimes.com/",
+        "display_hint": "Connecte-toi à ton compte New York Times pour lire les articles abonnés.",
+    },
+    "theathletic.com": {
+        "login_url": "https://www.theathletic.com/login/",
+        "test_url": "https://www.theathletic.com/",
+        "display_hint": "Connecte-toi à ton compte The Athletic pour lire les articles abonnés.",
+    },
+    "washingtonpost.com": {
+        "login_url": "https://www.washingtonpost.com/subscribe/signin/",
+        "test_url": "https://www.washingtonpost.com/",
+        "display_hint": "Connecte-toi à ton compte Washington Post pour lire les articles abonnés.",
+    },
+    "ft.com": {
+        "login_url": "https://accounts.ft.com/login",
+        "test_url": "https://www.ft.com/",
+        "display_hint": "Connecte-toi à ton compte Financial Times pour lire les articles abonnés.",
+    },
+    "economist.com": {
+        "login_url": "https://www.economist.com/login",
+        "test_url": "https://www.economist.com/",
+        "display_hint": "Connecte-toi à ton compte The Economist pour lire les articles abonnés.",
+    },
+    "wsj.com": {
+        "login_url": "https://accounts.wsj.com/login",
+        "test_url": "https://www.wsj.com/",
+        "display_hint": "Connecte-toi à ton compte Wall Street Journal pour lire les articles abonnés.",
     },
 }
 

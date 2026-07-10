@@ -208,7 +208,7 @@ erDiagram
         int duration_seconds
         enum content_type "article|podcast|youtube|reddit"
         varchar guid UK
-        text html_content "extraction trafilatura"
+        text html_content "contenu fourni par RSS"
         text audio_url
         uuid cluster_id "Story 7.2 clustering"
         text_array topics "ML: 1-3 slugs de 51"
@@ -216,7 +216,6 @@ erDiagram
         bool is_paid "paywall détecté"
         bool is_serene "ML: positif/constructif"
         varchar content_quality "full|partial|none"
-        timestamptz extraction_attempted_at
     }
 
     user_content_status {

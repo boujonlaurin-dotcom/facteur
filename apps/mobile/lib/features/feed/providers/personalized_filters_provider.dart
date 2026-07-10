@@ -65,10 +65,11 @@ final personalizedFiltersProvider = Provider<List<FilterConfig>>((ref) {
     _moveFilterToFront(filters, 'deep_dive');
   }
 
-  // 3. "Rester serein" en premier si Style = Nuanced ou PersonalGoal = 'mental_health' (si existe)
-  // ou si Perspective = 'big_picture' (hypothèse: préfère le recul)
-  if (answers.responseStyle == 'nuanced' ||
-      answers.perspective == 'big_picture') {
+  // 3. "Rester serein" en premier si l'utilisateur a flagué la négativité
+  // (objectif « anxiety »). Les ex-signaux posture (responseStyle == 'nuanced')
+  // et perspective (== 'big_picture') ne sont plus collectés à l'onboarding
+  // (v6) : on s'appuie sur l'objectif, qui est un signal vivant et plus direct.
+  if (answers.objectives?.contains('anxiety') == true) {
     _moveFilterToFront(filters, 'inspiration');
   }
 

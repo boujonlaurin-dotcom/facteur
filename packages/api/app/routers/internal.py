@@ -2,17 +2,16 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.routers.admin_cohorts import require_admin_token
 from app.services.classification_queue_service import ClassificationQueueService
 from app.services.title_annotation_service import get_title_annotation_service
 from app.workers.rss_sync import sync_all_sources
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin_token)])
 
 
 @router.post("/sync", status_code=status.HTTP_200_OK)
-async def trigger_sync(
-    # Ajouter ici une protection admin si nécessaire (Depends(get_current_admin_user))
-):
+async def trigger_sync():
     """Déclenche manuellement la synchronisation RSS de toutes les sources."""
     results = await sync_all_sources()
     return {"message": "Sync completed", "results": results}

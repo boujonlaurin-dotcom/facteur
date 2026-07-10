@@ -72,6 +72,33 @@ def test_editorial_v1_walks_all_slots():
     }
 
 
+def test_editorial_v3_and_future_versions_use_subjects_walker():
+    """Regression PYTHON-4X : un nouvel `editorial_vN` doit être traité comme
+    v1/v2 (même forme `subjects[]`), pas tomber dans la branche flat_v1.
+
+    En prod, editorial_v3 était le 2e format le plus courant (~51k digests)
+    et `extract_content_ids` ne matchait que ("editorial_v1","editorial_v2")
+    → set VIDE pour v3 → contenus non protégés par le storage cleanup →
+    risque de suppression (editorial_article_not_found / 503). Le matching
+    par préfixe `editorial_` couvre v3 et toute version future.
+    """
+    actu, deep, pep = uuid4(), uuid4(), uuid4()
+    items = {
+        "format_version": "editorial_v3",
+        "subjects": [
+            {
+                "actu_article": {"content_id": str(actu)},
+                "extra_actu_articles": [],
+                "deep_article": {"content_id": str(deep)},
+            }
+        ],
+        "pepite": {"content_id": str(pep)},
+    }
+    assert extract_content_ids(items, "editorial_v3") == {actu, deep, pep}
+    # Version future hypothétique : même garantie.
+    assert extract_content_ids(items, "editorial_v9") == {actu, deep, pep}
+
+
 def test_editorial_v1_tolerates_missing_subjects():
     pep = uuid4()
     items = {"pepite": {"content_id": str(pep)}}

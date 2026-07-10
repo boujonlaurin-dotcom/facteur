@@ -1,11 +1,13 @@
 """Schemas source."""
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.models.enums import SourceType
+from app.schemas.content import ContentResponse
 
 ContentTypeFilter = Literal["article", "youtube", "reddit", "podcast"]
 
@@ -27,6 +29,9 @@ class SourceResponse(BaseModel):
     priority_multiplier: float = 1.0
     has_subscription: bool = False
     content_count: int = 0
+    # Volume de publication sur 30 j (calculé côté catalogue, défaut 0).
+    # Additif/rétro-compatible — aucune colonne DB, aucune migration.
+    articles_30d: int = 0
     follower_count: int = 0
     bias_stance: str = "unknown"
     reliability_score: str = "unknown"
@@ -57,6 +62,11 @@ class PremiumConnectionResponse(BaseModel):
     # source) plutôt que d'une config curée/explicite. Le mobile adapte le label
     # du CTA ("Associer" vs "Connecter").
     is_generic: bool = False
+
+    @staticmethod
+    def is_explicitly_disabled(config: object) -> bool:
+        """True when a source opts out of the WebView subscription flow."""
+        return isinstance(config, dict) and config.get("enabled") is False
 
     @classmethod
     def from_config(cls, config: object) -> "PremiumConnectionResponse | None":
@@ -93,6 +103,10 @@ class PremiumConnectionResponse(BaseModel):
            URL http(s) valide → fallback générique (login=test=home de la source,
            ``is_generic=True``) ;
         4. sinon ``None``.
+
+        ``premium_connection_config.enabled = false`` est un opt-out explicite :
+        il sert de blocklist pour les sources dont la connexion WebView est
+        connue comme incompatible, et bloque donc aussi la map curée/le fallback.
         """
         # Import local : évite un cycle schemas → services au chargement.
         from app.services.premium_curated_sources import (
@@ -100,7 +114,11 @@ class PremiumConnectionResponse(BaseModel):
             is_paywalled_source,
         )
 
-        explicit = cls.from_config(getattr(source, "premium_connection_config", None))
+        config = getattr(source, "premium_connection_config", None)
+        if cls.is_explicitly_disabled(config):
+            return None
+
+        explicit = cls.from_config(config)
         if explicit is not None:
             return explicit
 
@@ -280,6 +298,32 @@ class ThemeSourcesResponse(BaseModel):
     total_count: int = 0
 
 
+# Tier de contrôle éditorial d'une source poussée dans le footer
+# « Étoffer [thème] ». `facteur_pick` = pépite curée (branding fort) ;
+# `quality_catalog` = catalogue évalué passant le gate (badge éval visible).
+# Le Tier 3 (« Ta recherche ») n'est jamais sérialisé ici.
+RecommendationTier = Literal["facteur_pick", "quality_catalog"]
+
+
+class ThemeSuggestionItem(BaseModel):
+    """Une source poussée dans le footer « Étoffer [thème] », avec son tier."""
+
+    recommendation_tier: RecommendationTier
+    source: SourceResponse
+
+
+class ThemeSuggestionsResponse(BaseModel):
+    """Réponse du footer « Étoffer [thème] » — tiers POUSSÉS uniquement (1 & 2).
+
+    Vide quand aucune source curée/évaluée ne couvre le thème (l'UI bascule
+    alors sur la seule entrée de recherche, Tier 3).
+    """
+
+    theme: str
+    label: str
+    suggestions: list[ThemeSuggestionItem]
+
+
 class ThemeFollowed(BaseModel):
     """Thème suivi par un utilisateur."""
 
@@ -313,3 +357,32 @@ class CoverageResponse(BaseModel):
     total_count: int
     caption: str
     rows: list[CoverageRow] = []
+
+
+class ThemeShare(BaseModel):
+    """Part d'un thème dans la couverture d'une source (fiche source v3).
+
+    `theme` reste la clé brute backend (mapping label/couleur côté front).
+    `share` ∈ [0, 1] = `count / total` ; le mobile dérive le pourcentage.
+    """
+
+    theme: str
+    count: int
+    share: float
+
+
+class SourceProfileResponse(BaseModel):
+    """Profil unifié d'une source pour la fiche v3.
+
+    Regroupe en une réponse l'identité de la source, sa couverture par thèmes
+    sur 30 jours (`theme_distribution` + `articles_30d`), la date du plus
+    ancien contenu connu (`oldest_content_at`, hors fenêtre, pour clamper le
+    calcul de fréquence côté mobile) et ses articles les plus récents
+    (`Content` complets → carte cliquable standard).
+    """
+
+    source: SourceResponse
+    recent_articles: list[ContentResponse] = []
+    theme_distribution: list[ThemeShare] = []
+    articles_30d: int = 0
+    oldest_content_at: datetime | None = None

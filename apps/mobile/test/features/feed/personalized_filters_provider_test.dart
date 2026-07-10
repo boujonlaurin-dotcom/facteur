@@ -43,14 +43,16 @@ void main() {
       expect(filters[0].key, 'deep_dive');
     });
 
-    test('Prioritizes "inspiration" when perspective is "big_picture"', () {
+    test('Prioritizes "inspiration" when objective includes "anxiety"', () {
       final container = ProviderContainer(
         overrides: [
           onboardingProvider.overrideWith((ref) {
             final notifier = OnboardingNotifier();
-            // The notifier no longer exposes selectPerspective.
-            // Inspiration is also prioritized when responseStyle == nuanced.
-            notifier.selectResponseStyle('nuanced');
+            // Posture/perspective ne sont plus collectés (v6) : « Rester serein »
+            // est désormais priorisé via l'objectif « anxiety ». On combine avec
+            // « learn » (qui pousse deep_dive en tête) pour vérifier que serein
+            // repasse bien devant.
+            notifier.selectObjectives(['learn', 'anxiety']);
             return notifier;
           }),
         ],
@@ -58,8 +60,9 @@ void main() {
 
       final filters = container.read(personalizedFiltersProvider);
 
-      // Logic: big_picture -> inspiration moved to front.
+      // learn → deep_dive en tête, puis anxiety → inspiration repasse devant.
       expect(filters[0].key, 'inspiration');
+      expect(filters[1].key, 'deep_dive');
     });
   });
 }

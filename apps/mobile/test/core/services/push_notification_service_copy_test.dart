@@ -26,7 +26,7 @@ void main() {
       );
     });
 
-    test('variant B caps at 2 titles + CTA line in bigText', () {
+    test('variant B caps at 2 titles + "+ N autres" line in bigText', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
@@ -34,12 +34,34 @@ void main() {
       expect(copy.body, 'Trump');
       expect(
         copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n"
-        "Pour le reste, viens faire un tour sur l'app !",
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n+ 2 autres !",
       );
     });
 
-    test('variant B serene swaps header and CTA, keeps the 2 titles', () {
+    test('variant B with exactly 3 teasers shows "+ 1 autre !" (singular)', () {
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: ['Trump', 'Climat', 'Marseille'],
+      );
+      expect(
+        copy.bigText,
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n+ 1 autre !",
+      );
+    });
+
+    test('variant B with exactly 2 teasers keeps the generic CTA (no rest)', () {
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: ['Trump', 'Climat'],
+      );
+      expect(
+        copy.bigText,
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n"
+        "${PushNotificationService.digestCta}",
+      );
+    });
+
+    test('variant B serene: rest line "+ N autres", header stays serene', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump', 'Climat', 'Marseille'],
@@ -48,8 +70,20 @@ void main() {
       expect(copy.body, 'Trump');
       expect(
         copy.bigText,
+        'Du calme dans ton actu :\n• Trump\n• Climat\n+ 1 autre !',
+      );
+    });
+
+    test('variant B serene with exactly 2 teasers keeps serene CTA', () {
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: ['Trump', 'Climat'],
+        serene: true,
+      );
+      expect(
+        copy.bigText,
         'Du calme dans ton actu :\n• Trump\n• Climat\n'
-        "Le reste t'attend tranquillement dans l'app.",
+        "${PushNotificationService.digestCtaSerene}",
       );
     });
 
