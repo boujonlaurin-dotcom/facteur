@@ -1,6 +1,6 @@
 import asyncio
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import feedparser
 import httpx
@@ -9,18 +9,66 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel
 
 from app.config import get_settings
+from app.services.http_fetch import (
+    fetch_with_impersonation,
+    is_antibot_response,
+)
+from app.services.wordpress_feed import (
+    fetch_wp_posts,
+    fetch_wp_site_info,
+    internal_feed_base_url,
+    post_entries,
+)
 from app.utils.url_safety import validate_url_for_fetch
 
 logger = structlog.get_logger()
 
-# Anti-bot markers in response content indicating CAPTCHA/challenge pages
-_ANTIBOT_MARKERS = [
-    "captcha-delivery.com",
-    "datadome",
-    "cf-challenge",
-    "challenges.cloudflare.com",
-    "cf-chl-bypass",
-]
+# Tracking query params stripped in front of the whole cascade so a polluted
+# paste (betterclinicianproject.com/?utm_source=…&fbclid=…) resolves like the
+# clean URL and the HostFeedResolution cache dedupes correctly. Non-tracking
+# params (e.g. ?feed=rss2) are preserved.
+_TRACKING_PARAM_KEYS = frozenset(
+    {"fbclid", "gclid", "igshid", "mc_cid", "mc_eid", "gclsrc", "dclid", "yclid"}
+)
+
+
+def normalize_input_url(url: str) -> str:
+    """Strip tracking params + fragment and lowercase the host.
+
+    Idempotent and defensive: returns the input unchanged if it isn't a
+    parseable absolute URL. Called at the head of ``detect()`` and by
+    ``SmartSourceSearchService`` before it probes a pasted URL.
+    """
+    if not url:
+        return url
+    try:
+        parsed = urlparse(url.strip())
+    except ValueError:
+        return url
+    if not parsed.scheme or not parsed.netloc:
+        return url
+
+    kept = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not (key.lower().startswith("utm_") or key.lower() in _TRACKING_PARAM_KEYS)
+    ]
+    new_query = urlencode(kept)
+
+    host = (parsed.hostname or "").lower()
+    netloc = host
+    if parsed.port is not None:
+        netloc = f"{host}:{parsed.port}"
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo = f"{userinfo}:{parsed.password}"
+        netloc = f"{userinfo}@{netloc}"
+
+    return urlunparse(
+        (parsed.scheme.lower(), netloc, parsed.path, parsed.params, new_query, "")
+    )
+
 
 # Regex to detect feed-like paths in <a href> attributes on *homepages*.
 # Kept narrow on purpose: a busy French homepage has cross-links to sibling
@@ -153,54 +201,21 @@ class RSSParser:
 
     @staticmethod
     def _is_antibot_response(status_code: int, content: str) -> bool:
-        """Detect if a response is an anti-bot challenge."""
-        if status_code == 403:
-            return True
-        content_lower = content[:2000].lower()
-        return any(marker in content_lower for marker in _ANTIBOT_MARKERS)
+        """Detect if a response is an anti-bot challenge.
+
+        Thin wrapper over ``http_fetch.is_antibot_response`` (single
+        implementation shared with ``SyncService``); kept as a method so
+        existing call sites and tests keep working.
+        """
+        return is_antibot_response(status_code, content)
 
     async def _fetch_with_impersonation(self, url: str) -> str | None:
-        """Fallback fetch using curl-cffi to bypass TLS fingerprinting."""
-        try:
-            from curl_cffi.requests import AsyncSession
-        except ImportError:
-            logger.warning("curl-cffi not installed, skipping anti-bot fallback")
-            return None
+        """Fallback fetch using curl-cffi to bypass TLS fingerprinting.
 
-        try:
-            async with AsyncSession(impersonate="chrome", timeout=10) as s:
-                current_url = validate_url_for_fetch(url)
-                for _ in range(6):
-                    resp = await s.get(
-                        current_url,
-                        allow_redirects=False,
-                        headers={
-                            "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
-                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        },
-                    )
-                    if resp.status_code in {301, 302, 303, 307, 308}:
-                        location = resp.headers.get("location")
-                        if not location:
-                            break
-                        current_url = validate_url_for_fetch(
-                            urljoin(current_url, location)
-                        )
-                        continue
-                    if resp.status_code == 200:
-                        logger.info("curl-cffi fallback succeeded", url=current_url)
-                        return resp.text
-                    logger.warning(
-                        "curl-cffi fallback returned non-200",
-                        url=current_url,
-                        status=resp.status_code,
-                    )
-                    break
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.warning("curl-cffi fetch failed", url=url, error=str(e))
-        return None
+        Delegates to ``http_fetch.fetch_with_impersonation``; kept as an
+        instance method so tests can still ``patch.object(parser, ...)``.
+        """
+        return await fetch_with_impersonation(url)
 
     @staticmethod
     def _try_platform_transform(url: str) -> str | None:
@@ -552,6 +567,85 @@ class RSSParser:
                 return await self._format_response(candidate, feed_data)
         return None
 
+    # ─── WordPress reinforcement (Stages 4b/4c, Story 12.2) ───────
+
+    @staticmethod
+    def _host_root(url: str) -> str | None:
+        """Return ``scheme://host`` for *url*, or None if unparsable."""
+        try:
+            parsed = urlparse(url)
+        except ValueError:
+            return None
+        if not parsed.scheme or not parsed.netloc:
+            return None
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    async def _detect_wordpress(self, root: str, soup: BeautifulSoup) -> bool:
+        """Is this site WordPress? generator meta (cheap) OR ``/wp-json/`` probe."""
+        try:
+            meta = soup.find("meta", attrs={"name": "generator"})
+        except Exception:
+            meta = None
+        if meta and "wordpress" in (meta.get("content") or "").lower():
+            return True
+        try:
+            resp = await self._safe_get(f"{root}/wp-json/")
+        except Exception:
+            return False
+        if resp.status_code == 200:
+            ct = resp.headers.get("content-type", "").lower()
+            if "json" in ct or resp.text.lstrip().startswith("{"):
+                return True
+        return False
+
+    async def _try_wordpress_feed(
+        self, root: str, loop: asyncio.AbstractEventLoop
+    ) -> DetectedFeed | None:
+        """Stage 4b: resolve the canonical WP feed via curl-cffi.
+
+        The httpx suffix probe already tried ``/feed`` and failed — often
+        because the site UA-blocks non-browser clients (e.g. monpetithoublon
+        ``/feed/`` → 500). curl-cffi impersonates Chrome and recovers a REAL
+        feed, so ``SyncService`` still fetches a normal RSS URL.
+        """
+        for candidate in (f"{root}/feed/", f"{root}/?feed=rss2"):
+            text = await self._fetch_with_impersonation(candidate)
+            if not text or not text.lstrip().startswith(
+                ("<?xml", "<rss", "<feed", "<atom")
+            ):
+                continue
+            feed_data = await loop.run_in_executor(None, feedparser.parse, text)
+            if len(feed_data.entries) > 0:
+                logger.info("Found WordPress feed via curl-cffi", url=candidate)
+                return await self._format_response(candidate, feed_data)
+        return None
+
+    async def _try_wordpress_rest(self, root: str) -> DetectedFeed | None:
+        """Stage 4c: WP REST → synthetic internal feed (no migration).
+
+        Only fires when a self base URL is configured (else we'd persist a
+        broken ``feed_url``). ``detect()`` returns the internal endpoint URL;
+        ``SyncService`` fetches it like any other feed.
+        """
+        base = internal_feed_base_url()
+        if not base:
+            return None
+        posts = await fetch_wp_posts(root)
+        if not posts:
+            return None
+        host = urlparse(root).netloc
+        feed_url = f"{base}/internal/feed/wp?{urlencode({'host': host})}"
+        info = await fetch_wp_site_info(root)
+        description = (info or {}).get("description")
+        logger.info("Resolved WordPress via synthetic REST feed", feed_url=feed_url)
+        return DetectedFeed(
+            feed_url=feed_url,
+            title=(info or {}).get("name") or host,
+            description=(description or "")[:200] or None,
+            feed_type="rss",
+            entries=post_entries(posts, limit=3),
+        )
+
     # ─── Main Detection ───────────────────────────────────────────
 
     async def detect(self, url: str) -> DetectedFeed:
@@ -569,6 +663,7 @@ class RSSParser:
         4c. Feed index page follow (recurse into /rss, /flux, … HTML lists).
         5. Expanded suffix fallback with Content-Type validation.
         """
+        url = normalize_input_url(url)
         logger.info("Detecting feed", url=url)
         validate_url_for_fetch(url)
         loop = asyncio.get_event_loop()
@@ -858,6 +953,8 @@ class RSSParser:
         # stations, from which we'd pick the wrong feed).
         common_suffixes = [
             "/feed",  # WordPress
+            "/?feed=rss2",  # WordPress with flat permalinks (no pretty URLs)
+            "/?feed=atom",  # WordPress Atom, flat permalinks
             "/rss",  # Generic
             "/feed.xml",  # Hugo, Jekyll, Eleventy
             "/rss.xml",  # Drupal, custom
@@ -924,6 +1021,25 @@ class RSSParser:
         detection_log.append(
             f"suffix_fallback=tried_{suffix_tried['n']}_of_{len(common_suffixes)}"
         )
+
+        # ── Stage 4b/4c: WordPress reinforcement (Story 12.2) ─────
+        # All cheap probes have failed. WordPress is a large share of the FR
+        # long tail, so it's worth two targeted rungs before giving up:
+        #   4b — resolve the canonical /feed/ via curl-cffi (a REAL feed), and
+        #   4c — if /feed/ is truly gone, expose the open REST API as a
+        #        synthetic internal feed (no migration, SyncService unchanged).
+        root = self._host_root(url)
+        if root and await self._detect_wordpress(root, soup):
+            detection_log.append("wordpress=detected")
+            wp_feed = await self._try_wordpress_feed(root, loop)
+            if wp_feed is not None:
+                detection_log.append(f"wp_feed={wp_feed.feed_url}")
+                return wp_feed
+            wp_rest = await self._try_wordpress_rest(root)
+            if wp_rest is not None:
+                detection_log.append(f"wp_rest={wp_rest.feed_url}")
+                return wp_rest
+            detection_log.append("wordpress=no_feed")
 
         # ── Stage 5: Feed index page follow (Pattern A) ───────────
         # Last resort: some sites (Les Echos, L'Express) require

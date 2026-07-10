@@ -115,6 +115,12 @@ class Settings(BaseSettings):
     # YouTube Data API v3
     youtube_api_key: str = ""
 
+    # Public origin of THIS backend, used to build synthetic internal feed URLs
+    # (Story 12.2, T1b — /internal/feed/wp). Empty → falls back to Railway's
+    # RAILWAY_PUBLIC_DOMAIN; when neither is set the WP-REST synthetic rung is
+    # disabled rather than persisting a broken feed_url.
+    internal_feed_base_url: str = ""
+
     # ML Classification (Story 4.1d) + Editorial Pipeline (Story 10.23)
     ml_enabled: bool = False  # Set to True to enable classification worker
     mistral_api_key: str = ""  # Mistral API key (classification + editorial pipeline)

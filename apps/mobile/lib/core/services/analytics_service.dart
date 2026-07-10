@@ -471,6 +471,26 @@ class AnalyticsService {
     await _logEvent('add_source_expand', {'query': query});
   }
 
+  /// Ajout réussi d'une source depuis le panneau de recherche (catalogue ou
+  /// URL custom). Mesure l'effet des affordances « source vérifiée » / preuve
+  /// inline en regard de `search_abandoned` (émis au dispose sans ajout).
+  /// `sourceId` est vide pour un ajout custom (pas d'entrée catalogue).
+  Future<void> trackSourceAdded({
+    String? sourceId,
+    required String sourceType,
+    required bool inCatalog,
+    required bool isCurated,
+    required String sourceLayer,
+  }) async {
+    await _logEvent('source_added', {
+      'source_id': sourceId ?? '',
+      'source_type': sourceType,
+      'in_catalog': inCatalog,
+      'is_curated': isCurated,
+      'source_layer': sourceLayer,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Story 14.3 — Self-reported "well-informed" score (1-10 NPS).
   // Trois events pour construire le funnel shown → skipped / submitted.
