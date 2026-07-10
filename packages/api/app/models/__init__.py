@@ -19,6 +19,15 @@ from app.models.grille_game_state import GrilleGameState
 from app.models.grille_puzzle import GrillePuzzle
 from app.models.host_feed_resolution import HostFeedResolution
 from app.models.learning import UserEntityAffinity, UserEntityPreference
+from app.models.media_eval import (
+    MediaEvalCorpusArticle,
+    MediaEvalDebunkage,
+    MediaEvalEvaluation,
+    MediaEvalFiche,
+    MediaEvalMedia,
+    MediaEvalSignal,
+    MediaEvalSnapshot,
+)
 from app.models.perspective_analysis import PerspectiveAnalysis
 from app.models.progress import TopicQuiz, UserTopicProgress
 from app.models.push_notification import PushDelivery, PushDevice
@@ -132,4 +141,12 @@ __all__ = [
     # User Feedback System (Epic 13)
     "DigestSentiment",
     "FeedbackInvite",
+    # Évaluation des médias C1-C11 (media-eval.0)
+    "MediaEvalMedia",
+    "MediaEvalSnapshot",
+    "MediaEvalCorpusArticle",
+    "MediaEvalSignal",
+    "MediaEvalDebunkage",
+    "MediaEvalEvaluation",
+    "MediaEvalFiche",
 ]
