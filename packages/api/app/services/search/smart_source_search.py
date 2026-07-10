@@ -21,7 +21,11 @@ from app.models.source_search_log import SourceSearchLog
 from app.models.user import UserInterest
 from app.services.observability.cost_budget import is_over_cap, monthly_call_count
 from app.services.observability.usage_recorder import track_api_call
-from app.services.rss_parser import RSSParser, normalize_input_url
+from app.services.rss_parser import (
+    RSSParser,
+    normalize_input_url,
+    scheme_host_root,
+)
 from app.services.search.cache import (
     normalize_query,
     search_cache_get,
@@ -885,16 +889,7 @@ class SmartSourceSearchService:
         }
     )
 
-    @staticmethod
-    def _root_url(url: str) -> str | None:
-        """Return scheme://host for *url*, or None if unparsable."""
-        try:
-            parsed = urlparse(url)
-        except ValueError:
-            return None
-        if not parsed.scheme or not parsed.netloc:
-            return None
-        return f"{parsed.scheme}://{parsed.netloc}"
+    _root_url = staticmethod(scheme_host_root)
 
     async def detect_feed(self, url: str) -> tuple[str, dict] | None:
         """Public one-off feed detection (root-fallback strategy).

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -241,7 +243,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         // normal : la carte transformée reste visible, pas de reset de la
         // recherche (qui la démonterait), on minimise le pas parasite.
         if (widget.inlineProof || _isCuratedCatalogMatch(result)) {
-          HapticFeedback.mediumImpact();
+          unawaited(HapticFeedback.mediumImpact());
           widget.onSourceAdded?.call(result);
           return;
         }

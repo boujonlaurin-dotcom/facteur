@@ -70,6 +70,17 @@ def normalize_input_url(url: str) -> str:
     )
 
 
+def scheme_host_root(url: str) -> str | None:
+    """Return ``scheme://host`` for *url*, or None if unparsable."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 # Regex to detect feed-like paths in <a href> attributes on *homepages*.
 # Kept narrow on purpose: a busy French homepage has cross-links to sibling
 # sections (e.g. France Culture nav linking to /franceinter/rss), and a
@@ -569,16 +580,7 @@ class RSSParser:
 
     # ─── WordPress reinforcement (Stages 4b/4c, Story 12.2) ───────
 
-    @staticmethod
-    def _host_root(url: str) -> str | None:
-        """Return ``scheme://host`` for *url*, or None if unparsable."""
-        try:
-            parsed = urlparse(url)
-        except ValueError:
-            return None
-        if not parsed.scheme or not parsed.netloc:
-            return None
-        return f"{parsed.scheme}://{parsed.netloc}"
+    _host_root = staticmethod(scheme_host_root)
 
     async def _detect_wordpress(self, root: str, soup: BeautifulSoup) -> bool:
         """Is this site WordPress? generator meta (cheap) OR ``/wp-json/`` probe."""

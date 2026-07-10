@@ -153,13 +153,16 @@ def _post_pubdate(post: dict) -> str:
     return format_datetime(dt)
 
 
+def _post_title(post: dict) -> str:
+    """Plain-text WP post title, falling back to ``Sans titre``."""
+    return _strip_tags((post.get("title") or {}).get("rendered", "")) or "Sans titre"
+
+
 def post_entries(posts: list[dict], limit: int = DEFAULT_POSTS) -> list[dict]:
     """Compact ``{title, link, published_at}`` entries for DetectedFeed preview."""
     entries: list[dict] = []
     for post in posts[:limit]:
-        title = (
-            _strip_tags((post.get("title") or {}).get("rendered", "")) or "Sans titre"
-        )
+        title = _post_title(post)
         entries.append(
             {
                 "title": title,
@@ -183,9 +186,7 @@ def render_wp_rss(
     channel_desc = escape(site_description or "Flux généré depuis l'API WordPress")
     items: list[str] = []
     for post in posts[:limit]:
-        title = (
-            _strip_tags((post.get("title") or {}).get("rendered", "")) or "Sans titre"
-        )
+        title = _post_title(post)
         link = post.get("link", "")
         guid = (post.get("guid") or {}).get("rendered") or link
         excerpt = (post.get("excerpt") or {}).get("rendered", "")
