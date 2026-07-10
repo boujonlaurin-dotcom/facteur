@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/constants.dart';
 import '../auth/session_refresher.dart';
 import 'retry_interceptor.dart';
+import 'user_error_interceptor.dart';
 
 /// Notifier global pour les 410 Gone interceptés par [ApiClient].
 ///
@@ -231,6 +232,11 @@ class ApiClient {
         ],
       ),
     );
+
+    // 3. Interceptor « souci côté device » : remonte à l'utilisateur les 5xx /
+    // timeouts d'un appel opt-in (`extra['userFacing'] == true`), APRÈS les
+    // retries. Silencieux sinon.
+    _dio.interceptors.add(UserErrorInterceptor());
   }
 
   /// Extrait le champ `detail` d'une réponse d'erreur FastAPI (si dispo).

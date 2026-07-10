@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "App",
+      "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
+    },
+    {
       "tag": "Tournée",
       "summary": "Des suggestions de sources plus riches par thème, et un accès direct « Tout lire »."
     },
