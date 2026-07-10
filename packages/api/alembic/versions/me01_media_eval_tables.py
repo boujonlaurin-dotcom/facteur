@@ -1,8 +1,14 @@
-"""media eval — 7 tables du pipeline d'évaluation des médias C1–C11.
+"""media eval — 9 tables du pipeline d'évaluation des médias C1–C11.
 
 Data store collecte ≠ évaluation (cf. docs/media-eval/architecture-v1.2.md) :
-référentiel médias, snapshots, corpus (vide en V0), signaux (pivot),
-débunkages qualifiés, évaluations, fiches.
+runs (l'entité batch — date de référence, périmètre, statut), référentiel
+médias, snapshots, corpus (vide en V0), signaux (pivot), débunkages qualifiés,
+évaluations, fiches, notes de collecte (observations libres des collecteurs,
+hors registre des signaux).
+
+Tout enregistrement daté porte un ``run_id`` FK vers ``media_eval_runs`` :
+un batch est isolable, daté (``date_reference`` pilote la fenêtre de
+fraîcheur) et supprimable en cascade.
 
 Additive pure (CREATE TABLE uniquement) → sûre en expand-contract sur la DB
 partagée staging/prod : le backend prod (ancien code) ignore les tables
@@ -20,15 +26,16 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from alembic import op
 
 revision: str = "me01_media_eval_tables"
-down_revision: str | None = "ue01_user_entity_affinity"
+down_revision: str | None = "cv01_source_coverage_themes"
 branch_labels: str | None = None
 depends_on: str | None = None
 
 _CRITERE_CHECK = "critere IN ({})".format(", ".join(f"'C{i}'" for i in range(1, 12)))
 
-# Ordre de création (les FK imposent medias puis snapshots puis signaux…).
+# Ordre de création (les FK imposent runs+medias puis snapshots puis signaux…).
 # downgrade() droppe en ordre inverse.
 _TABLES = (
+    "media_eval_runs",
     "media_eval_medias",
     "media_eval_snapshots",
     "media_eval_corpus_articles",
@@ -36,6 +43,7 @@ _TABLES = (
     "media_eval_debunkages",
     "media_eval_evaluations",
     "media_eval_fiches",
+    "media_eval_notes_collecte",
 )
 
 
@@ -53,9 +61,39 @@ def _media_fk() -> sa.Column:
     return sa.Column("media_id", PGUUID(as_uuid=True), nullable=False)
 
 
+def _run_fk() -> sa.Column:
+    return sa.Column("run_id", sa.String(length=50), nullable=False)
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
+
+    if not inspector.has_table("media_eval_runs"):
+        op.create_table(
+            "media_eval_runs",
+            sa.Column("run_id", sa.String(length=50), primary_key=True),
+            sa.Column("libelle", sa.Text(), nullable=True),
+            sa.Column("version_methodo", sa.String(length=20), nullable=False),
+            # Date de référence du batch : pilote la fenêtre de fraîcheur
+            # (build_eval_input) → un run rejoué plus tard reste identique.
+            sa.Column("date_reference", sa.Date(), nullable=False),
+            sa.Column("perimetre", JSONB(), nullable=True),
+            sa.Column(
+                "statut",
+                sa.String(length=30),
+                nullable=False,
+                server_default="en_cours",
+            ),
+            sa.Column("notes", sa.Text(), nullable=True),
+            sa.Column(
+                "cree_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=False,
+            ),
+            sa.Column("clos_at", sa.DateTime(timezone=True), nullable=True),
+        )
 
     if not inspector.has_table("media_eval_medias"):
         op.create_table(
@@ -82,6 +120,7 @@ def upgrade() -> None:
             "media_eval_snapshots",
             _uuid_pk(),
             _media_fk(),
+            _run_fk(),
             sa.Column("url", sa.Text(), nullable=False),
             sa.Column("type_page", sa.String(length=30), nullable=False),
             sa.Column("contenu", sa.Text(), nullable=True),
@@ -102,6 +141,9 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(
                 ["media_id"], ["media_eval_medias.id"], ondelete="CASCADE"
             ),
+            sa.ForeignKeyConstraint(
+                ["run_id"], ["media_eval_runs.run_id"], ondelete="CASCADE"
+            ),
         )
         op.create_index(
             "ix_media_eval_snapshots_media_id", "media_eval_snapshots", ["media_id"]
@@ -112,6 +154,7 @@ def upgrade() -> None:
             "media_eval_corpus_articles",
             _uuid_pk(),
             _media_fk(),
+            _run_fk(),
             sa.Column("url", sa.Text(), nullable=False),
             sa.Column("titre", sa.Text(), nullable=True),
             sa.Column("date_pub", sa.Date(), nullable=True),
@@ -128,8 +171,14 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(
                 ["media_id"], ["media_eval_medias.id"], ondelete="CASCADE"
             ),
+            sa.ForeignKeyConstraint(
+                ["run_id"], ["media_eval_runs.run_id"], ondelete="CASCADE"
+            ),
             sa.UniqueConstraint(
-                "media_id", "url", name="uq_media_eval_corpus_media_url"
+                "media_id",
+                "run_id",
+                "url",
+                name="uq_media_eval_corpus_media_run_url",
             ),
         )
 
@@ -150,19 +199,35 @@ def upgrade() -> None:
             ),
             sa.Column("sources_consultees", ARRAY(sa.Text()), nullable=True),
             sa.Column("snapshot_id", PGUUID(as_uuid=True), nullable=True),
-            sa.Column("run_id", sa.String(length=50), nullable=False),
+            _run_fk(),
             sa.Column("dedupe_key", sa.String(length=64), nullable=False),
+            # collecte_at = moment réel de collecte (genere_at de l'artefact) ;
+            # ingere_at = moment d'écriture DB. version_prompt_collecteur =
+            # sha256 du prompt de l'agent collecteur (enveloppe voie B).
             sa.Column(
                 "collecte_at",
                 sa.DateTime(timezone=True),
                 server_default=sa.text("now()"),
                 nullable=False,
             ),
+            sa.Column(
+                "ingere_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=False,
+            ),
+            sa.Column(
+                "version_prompt_collecteur", sa.String(length=64), nullable=True
+            ),
+            sa.Column("note_collecteur", sa.Text(), nullable=True),
             sa.ForeignKeyConstraint(
                 ["media_id"], ["media_eval_medias.id"], ondelete="CASCADE"
             ),
             sa.ForeignKeyConstraint(
                 ["snapshot_id"], ["media_eval_snapshots.id"], ondelete="SET NULL"
+            ),
+            sa.ForeignKeyConstraint(
+                ["run_id"], ["media_eval_runs.run_id"], ondelete="CASCADE"
             ),
             sa.CheckConstraint(_CRITERE_CHECK, name="ck_media_eval_signaux_critere"),
             sa.UniqueConstraint(
@@ -230,7 +295,7 @@ def upgrade() -> None:
             sa.Column("evaluateur", sa.String(length=100), nullable=False),
             sa.Column("version_methodo", sa.String(length=20), nullable=False),
             sa.Column("version_prompt", sa.String(length=64), nullable=False),
-            sa.Column("run_id", sa.String(length=50), nullable=False),
+            _run_fk(),
             sa.Column(
                 "evalue_at",
                 sa.DateTime(timezone=True),
@@ -239,6 +304,9 @@ def upgrade() -> None:
             ),
             sa.ForeignKeyConstraint(
                 ["media_id"], ["media_eval_medias.id"], ondelete="CASCADE"
+            ),
+            sa.ForeignKeyConstraint(
+                ["run_id"], ["media_eval_runs.run_id"], ondelete="CASCADE"
             ),
             sa.CheckConstraint(
                 _CRITERE_CHECK, name="ck_media_eval_evaluations_critere"
@@ -261,7 +329,7 @@ def upgrade() -> None:
             "media_eval_fiches",
             _uuid_pk(),
             _media_fk(),
-            sa.Column("run_id", sa.String(length=50), nullable=False),
+            _run_fk(),
             sa.Column("score_brut", sa.Float(), nullable=False),
             sa.Column("score_max_applicable", sa.Float(), nullable=False),
             sa.Column("score_renormalise", sa.Float(), nullable=False),
@@ -292,8 +360,48 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(
                 ["media_id"], ["media_eval_medias.id"], ondelete="CASCADE"
             ),
+            sa.ForeignKeyConstraint(
+                ["run_id"], ["media_eval_runs.run_id"], ondelete="CASCADE"
+            ),
             sa.UniqueConstraint(
                 "media_id", "run_id", name="uq_media_eval_fiches_media_run"
+            ),
+        )
+
+    if not inspector.has_table("media_eval_notes_collecte"):
+        op.create_table(
+            "media_eval_notes_collecte",
+            _uuid_pk(),
+            _run_fk(),
+            # media_id/critere nullables : une note peut être globale au run,
+            # propre à un média, ou propre à un (média, critère).
+            sa.Column("media_id", PGUUID(as_uuid=True), nullable=True),
+            sa.Column("critere", sa.String(length=3), nullable=True),
+            sa.Column("type_note", sa.String(length=30), nullable=False),
+            sa.Column("contenu", sa.Text(), nullable=False),
+            sa.Column(
+                "source_urls", ARRAY(sa.Text()), nullable=False, server_default="{}"
+            ),
+            sa.Column("collecteur", sa.String(length=100), nullable=False),
+            sa.Column("dedupe_key", sa.String(length=64), nullable=False),
+            sa.Column(
+                "cree_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("now()"),
+                nullable=False,
+            ),
+            sa.ForeignKeyConstraint(
+                ["run_id"], ["media_eval_runs.run_id"], ondelete="CASCADE"
+            ),
+            sa.ForeignKeyConstraint(
+                ["media_id"], ["media_eval_medias.id"], ondelete="CASCADE"
+            ),
+            sa.CheckConstraint(
+                f"critere IS NULL OR {_CRITERE_CHECK}",
+                name="ck_media_eval_notes_critere",
+            ),
+            sa.UniqueConstraint(
+                "run_id", "dedupe_key", name="uq_media_eval_notes_run_dedupe"
             ),
         )
 

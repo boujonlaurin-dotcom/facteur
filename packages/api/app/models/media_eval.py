@@ -5,6 +5,10 @@ collecteurs écrivent des signaux horodatés + snapshots, les évaluateurs (sans
 accès web) citent des ``signal_ids``, la synthèse produit une fiche. Tables
 préfixées ``media_eval_*``, RLS deny-all (migration ``me01``), backend-only.
 
+``media_eval_runs`` est l'entité batch : tout enregistrement daté porte un
+``run_id`` FK — un run est isolable, daté (``date_reference`` pilote la
+fenêtre de fraîcheur, jamais ``now()``) et supprimable en cascade.
+
 ``media_eval_medias`` est un référentiel **niveau domaine**, distinct de
 ``sources`` (niveau feed) : ``source_ids`` fait le lien applicatif futur sans
 FK dure.
@@ -117,6 +121,24 @@ class StatutFiche(StrEnum):
     PUBLIEE = "publiee"
 
 
+class StatutRun(StrEnum):
+    EN_COURS = "en_cours"
+    CLOS = "clos"
+
+
+class TypeNoteCollecte(StrEnum):
+    """Notes libres des collecteurs — hors registre des signaux.
+
+    ``amelioration_protocole`` : revue humaine uniquement (faire évoluer
+    ``TYPE_SIGNAUX``) ; les deux autres sont injectées aux évaluateurs comme
+    contexte non-citable (pas de signal_id → ne peut fonder aucun score).
+    """
+
+    AMELIORATION_PROTOCOLE = "amelioration_protocole"
+    CONTEXTE_MEDIA = "contexte_media"
+    DONNEE_NON_STRUCTUREE = "donnee_non_structuree"
+
+
 def _str_enum(enum_cls: type[StrEnum], length: int = 30) -> Enum:
     """Enum stocké VARCHAR (pas de type Postgres natif), pattern Source."""
     return Enum(
@@ -124,6 +146,34 @@ def _str_enum(enum_cls: type[StrEnum], length: int = 30) -> Enum:
         values_callable=lambda x: [e.value for e in x],
         native_enum=False,
         length=length,
+    )
+
+
+class MediaEvalRun(Base):
+    """L'entité batch : un cycle de collecte + évaluation nommé et daté."""
+
+    __tablename__ = "media_eval_runs"
+
+    run_id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    libelle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version_methodo: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Pilote la fenêtre de fraîcheur (build_eval_input) : un run rejoué plus
+    # tard produit exactement les mêmes entrées évaluateur.
+    date_reference: Mapped[date] = mapped_column(Date, nullable=False)
+    # {"medias": [...], "criteres": [...]} — périmètre prévu du batch.
+    perimetre: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    statut: Mapped[StatutRun] = mapped_column(
+        _str_enum(StatutRun),
+        nullable=False,
+        default=StatutRun.EN_COURS,
+        server_default=StatutRun.EN_COURS.value,
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cree_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )
+    clos_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
@@ -168,6 +218,11 @@ class MediaEvalSnapshot(Base):
         ForeignKey("media_eval_medias.id", ondelete="CASCADE"),
         nullable=False,
     )
+    run_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("media_eval_runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     url: Mapped[str] = mapped_column(Text, nullable=False)
     type_page: Mapped[TypePage] = mapped_column(_str_enum(TypePage), nullable=False)
     contenu: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -189,7 +244,9 @@ class MediaEvalCorpusArticle(Base):
 
     __tablename__ = "media_eval_corpus_articles"
     __table_args__ = (
-        UniqueConstraint("media_id", "url", name="uq_media_eval_corpus_media_url"),
+        UniqueConstraint(
+            "media_id", "run_id", "url", name="uq_media_eval_corpus_media_run_url"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -198,6 +255,11 @@ class MediaEvalCorpusArticle(Base):
     media_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("media_eval_medias.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    run_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("media_eval_runs.run_id", ondelete="CASCADE"),
         nullable=False,
     )
     url: Mapped[str] = mapped_column(Text, nullable=False)
@@ -258,12 +320,26 @@ class MediaEvalSignal(Base):
         ForeignKey("media_eval_snapshots.id", ondelete="SET NULL"),
         nullable=True,
     )
-    run_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    run_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("media_eval_runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     # sha256 canonique calculé par code → ré-ingestion idempotente.
     dedupe_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Moment réel de collecte (genere_at de l'artefact voie B) ≠ ingere_at
+    # (écriture DB). version_prompt_collecteur = sha256 du prompt collecteur.
     collecte_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
+    ingere_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow
+    )
+    version_prompt_collecteur: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    # Contexte libre propre au signal — jamais un signal en soi.
+    note_collecteur: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class MediaEvalDebunkage(Base):
@@ -357,7 +433,11 @@ class MediaEvalEvaluation(Base):
     version_methodo: Mapped[str] = mapped_column(String(20), nullable=False)
     # sha256 du fichier rubrique utilisé (build_eval_input).
     version_prompt: Mapped[str] = mapped_column(String(64), nullable=False)
-    run_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    run_id: Mapped[str] = mapped_column(
+        String(50),
+        ForeignKey("media_eval_runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     evalue_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
