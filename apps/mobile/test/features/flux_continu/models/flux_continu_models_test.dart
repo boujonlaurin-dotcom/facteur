@@ -191,6 +191,32 @@ void main() {
       expect(src.copyWith(noRecentSource: false).noRecentSource, isFalse);
     });
 
+    test('FeedThemeSection: followedSourceCount defaults to 0', () {
+      expect(themeSection().followedSourceCount, 0);
+    });
+
+    test('FeedThemeSection: copyWith preserves followedSourceCount (Story 22.5)',
+        () {
+      // Risque n°1 du hand-off : `followedSourceCount` oublié dans copyWith
+      // retomberait à 0 au 1er dédup/loadMore → CTA « Ajouter » sur une section
+      // pourtant riche en sources suivies. On vérifie qu'il survit quand on ne
+      // le redéfinit pas, et qu'un override explicite prime.
+      final src = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: const Color(0xFF2C3E50),
+        coreVisibleCount: 3,
+        themeSlug: 'tech',
+        items: const <Content>[],
+        followedSourceCount: 7,
+      );
+      // Champ non redéfini → préservé à travers un copyWith orthogonal.
+      expect(src.copyWith(isLoadingMore: true).followedSourceCount, 7);
+      expect(src.copyWith(underfilled: true).followedSourceCount, 7);
+      // Override explicite (re-stamp par _stampFollowedCounts) → prime.
+      expect(src.copyWith(followedSourceCount: 2).followedSourceCount, 2);
+    });
+
     test('blurb is optional and defaults to null', () {
       expect(digestSection(topicCount: 2, core: 2).blurb, isNull);
       expect(themeSection(itemCount: 2, core: 2).blurb, isNull);

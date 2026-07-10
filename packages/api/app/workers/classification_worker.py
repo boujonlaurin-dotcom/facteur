@@ -23,6 +23,14 @@ from app.services.ml.language_filter import is_french_source, looks_english
 
 settings = get_settings()
 
+# Anti-boucle-serrée du superviseur (_on_task_done) : si le run-loop meurt en
+# rafale (erreur persistante au boot du loop), on ne relance pas indéfiniment —
+# au-delà de _MAX_RAPID_RESTARTS morts dans une fenêtre de _RESTART_WINDOW_S, on
+# abandonne et on laisse la restart-policy Railway (ALWAYS) recycler le process,
+# plutôt que de spammer Sentry en tight loop.
+_MAX_RAPID_RESTARTS = 5
+_RESTART_WINDOW_S = 60.0
+
 
 class ClassificationWorker:
     """Worker qui traite la file d'attente de classification via Mistral API.
@@ -96,6 +104,10 @@ class ClassificationWorker:
         self._good_news_classifier = None
         self._loop_count = 0
 
+        # Superviseur : fenêtre glissante de comptage des redémarrages.
+        self._restart_count = 0
+        self._restart_window_start = 0.0
+
     def _get_classifier(self):
         """Lazy load classification service."""
         if self._classifier is None:
@@ -116,7 +128,90 @@ class ClassificationWorker:
         await self._recover_stuck_items()
 
         self.running = True
+        # Superviseur : si la task du run-loop meurt alors qu'on n'a PAS demandé
+        # l'arrêt (self.running toujours True), on veut le savoir et la relancer.
+        # Cf. incident 2026-06-30 : une CancelledError (BaseException, non
+        # attrapée par le `except Exception` du loop) a terminé la task
+        # silencieusement → classif à l'arrêt 10 j sans alerte.
+        self._spawn_loop()
+
+    def _spawn_loop(self) -> None:
+        """Crée la task du run-loop et attache le superviseur (invariant unique).
+
+        Appelé au démarrage (`start()`) et à chaque relance (`_on_task_done`) :
+        « créer la task + accrocher le done-callback » vit à un seul endroit.
+        """
         self._task = asyncio.create_task(self._run_loop())
+        self._task.add_done_callback(self._on_task_done)
+
+    def _on_task_done(self, task: "asyncio.Task") -> None:
+        """Done-callback superviseur du run-loop.
+
+        Appelé par la boucle asyncio quand `_run_loop` se termine. Deux cas :
+
+        - Arrêt volontaire (`stop()` a mis `self.running=False` avant de
+          `cancel()`) → rien à faire, sortie immédiate.
+        - Mort inattendue (`self.running` encore True) → la task a été tuée par
+          un `BaseException` (typiquement `CancelledError`) qui a échappé au
+          `except Exception` du loop. On émet une alerte Sentry + on **relance**
+          la task (superviseur simple, borné pour éviter une tight loop) pour ne
+          plus rester aveugle.
+        """
+        if not self.running:
+            # Arrêt volontaire (stop()) : comportement attendu, pas d'alerte.
+            return
+
+        import time
+
+        import sentry_sdk
+        import structlog
+
+        logger = structlog.get_logger()
+
+        # task.exception() lèverait CancelledError si la task a été annulée → on
+        # ne l'appelle que si elle n'est pas annulée.
+        exc = task.exception() if not task.cancelled() else None
+        if exc is not None:
+            logger.error(
+                "classification_worker.task_died",
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            sentry_sdk.capture_exception(exc)
+        else:
+            # Annulation externe (CancelledError) ou fin sans exception alors
+            # que running=True : anormal, on alerte quand même.
+            logger.error(
+                "classification_worker.task_died", error="cancelled_or_no_exception"
+            )
+            sentry_sdk.capture_message(
+                "Classification worker task ended unexpectedly while running=True "
+                "(likely CancelledError) — restarting",
+                level="error",
+            )
+
+        # Anti-boucle-serrée : borne les redémarrages sur une fenêtre glissante.
+        now = time.monotonic()
+        if now - self._restart_window_start > _RESTART_WINDOW_S:
+            self._restart_window_start = now
+            self._restart_count = 0
+        self._restart_count += 1
+
+        if self._restart_count > _MAX_RAPID_RESTARTS:
+            logger.error(
+                "classification_worker.restart_giving_up",
+                restarts=self._restart_count,
+                window_s=_RESTART_WINDOW_S,
+            )
+            sentry_sdk.capture_message(
+                f"Classification worker died {self._restart_count}x in "
+                f"<{int(_RESTART_WINDOW_S)}s — giving up, relying on process restart",
+                level="fatal",
+            )
+            self.running = False
+            return
+
+        self._spawn_loop()
 
     async def _recover_stuck_items(self):
         """Reset items stuck in 'processing' state from previous crash/restart."""

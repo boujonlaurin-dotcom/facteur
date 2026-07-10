@@ -82,6 +82,7 @@ FeedThemeSection _themeSection({
   int coreVisibleCount = 3,
   bool hasMore = false,
   bool withThumbnails = false,
+  int followedSourceCount = 0,
 }) {
   return FeedThemeSection(
     kind: SectionKind.theme,
@@ -97,6 +98,7 @@ FeedThemeSection _themeSection({
       ),
     ),
     hasMore: hasMore,
+    followedSourceCount: followedSourceCount,
   );
 }
 
@@ -469,11 +471,16 @@ void main() {
       expect(find.text('Voir toute la curation'), findsOneWidget);
     });
 
-    testWidgets('thème riche : pas de « Tout lire › » (footer d\'ajout déjà là)',
-        (tester) async {
+    testWidgets(
+        'thème riche + PEU de sources suivies (< 6) : footer « Ajouter », '
+        'pas de « Tout lire › » (Story 22.5)', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
-          section: _themeSection(items: 7, coreVisibleCount: 3),
+          section: _themeSection(
+            items: 7,
+            coreVisibleCount: 3,
+            followedSourceCount: 2,
+          ),
           onTapArticle: (_) {},
           onSeeAll: () {},
           onAddSources: () {},
@@ -483,6 +490,54 @@ void main() {
 
       expect(find.textContaining('Tout lire'), findsNothing);
       expect(find.text('Ajouter plus de sources'), findsOneWidget);
+    });
+
+    testWidgets(
+        'thème riche + ASSEZ de sources suivies (>= 6) : « Tout lire › » '
+        'cliquable, pas de footer « Ajouter » (Story 22.5)', (tester) async {
+      var opened = false;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(
+            items: 7,
+            coreVisibleCount: 3,
+            followedSourceCount: 6,
+          ),
+          onTapArticle: (_) {},
+          onSeeAll: () => opened = true,
+          onAddSources: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ajouter plus de sources'), findsNothing);
+      expect(find.text('Tout lire'), findsOneWidget);
+      await tester.tap(find.text('Tout lire'));
+      await tester.pumpAndSettle();
+      expect(opened, isTrue);
+    });
+
+    testWidgets(
+        'thème maigre (underfilled) : footer « Étoffer » déplié inchangé, '
+        'jamais « Tout lire › » même si sources suivies >= 6 (Story 22.5)',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(
+            items: 1,
+            followedSourceCount: 8,
+          ).copyWith(underfilled: true),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+          onAddSources: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // Branche underfilled = footer « Étoffer » déplié (recherche de source),
+      // indépendant du count : le CTA « Tout lire » ne s'y substitue pas.
+      expect(find.textContaining('Tout lire'), findsNothing);
+      expect(find.text('Chercher une source Tech'), findsOneWidget);
     });
 
     testWidgets('sans onSeeAll : pas de « Tout lire › » sur digest',

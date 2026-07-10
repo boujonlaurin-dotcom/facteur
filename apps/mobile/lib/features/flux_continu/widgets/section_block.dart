@@ -250,6 +250,7 @@ class SectionBlock extends StatelessWidget {
         :final themeSlug,
         :final label,
         :final isPlaceholder,
+        :final followedSourceCount,
       ):
         // Issue #1 — « squelette stable » : une coquille seed-ée AVANT le
         // fan-out réserve sa hauteur finale (N cartes squelette) pour que
@@ -380,17 +381,27 @@ class SectionBlock extends StatelessWidget {
               initiallyExpanded: true,
               fallbackCtaLabel: 'Plus de sources',
             ),
-          // Thème **riche** (assez d'articles) → footer « Étoffer » **replié** :
-          // un bouton discret qui ne charge les sources qu'au tap, pour garder
-          // le vecteur de croissance visible sans alourdir la section.
+          // Thème **riche** (assez d'articles) — Story 22.5 : le pied dépend du
+          // nombre de sources déjà suivies sur le thème.
+          //  - < kThemeFewFollowedSources sources suivies → footer « Étoffer »
+          //    **replié** (« Ajouter des sources ») : l'user a peu de sources,
+          //    on pousse la découverte.
+          //  - sinon → « Tout lire › » (le thème est déjà bien couvert, on
+          //    signale surtout l'accès à la page complète).
+          // Branches mutuellement exclusives (un seul footer).
           if (section.kind == SectionKind.theme &&
               !underfilled &&
-              themeSlug != null)
+              themeSlug != null &&
+              followedSourceCount < kThemeFewFollowedSources)
             EtofferThemeFooter(
               slug: themeSlug,
               label: label,
               onSearch: onAddSources,
-            ),
+            )
+          else if (section.kind == SectionKind.theme &&
+              !underfilled &&
+              onSeeAll != null)
+            _seeAllFooter(),
           // Section source non vide — pas de footer « Ajouter plus de sources »
           // (réservé aux thèmes) → « Tout lire › » discret pour re-signaler
           // l'ouverture de la page source. Exclut la veille (rendue plus haut).
