@@ -7,7 +7,7 @@ critère ; score dérivé par code ; corroboration plafonnée ; `bloque_acces` �
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import func, select
@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from app.models.media_eval import (
     MediaEvalEvaluation,
     MediaEvalMedia,
+    MediaEvalRun,
     MediaEvalSignal,
     StatutSignal,
     TypeMedia,
@@ -35,6 +36,11 @@ RUN_ID = "run-test"
 
 @pytest.fixture
 async def media_cnews(db_session) -> MediaEvalMedia:
+    db_session.add(
+        MediaEvalRun(
+            run_id=RUN_ID, version_methodo="v1.2", date_reference=date(2026, 1, 1)
+        )
+    )
     media = MediaEvalMedia(
         nom="CNEWS", domaine="cnews.fr", type_media=TypeMedia.AUDIOVISUEL
     )

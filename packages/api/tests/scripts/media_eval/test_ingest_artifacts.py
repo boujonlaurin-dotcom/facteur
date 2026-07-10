@@ -8,6 +8,7 @@ rien. Fixtures savepoint du conftest (`db_session`).
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ from sqlalchemy import func, select
 from app.models.media_eval import (
     MediaEvalDebunkage,
     MediaEvalMedia,
+    MediaEvalRun,
     MediaEvalSignal,
     TypeMedia,
 )
@@ -33,6 +35,11 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "media_eval"
 
 @pytest.fixture
 async def media_cnews(db_session) -> MediaEvalMedia:
+    db_session.add(
+        MediaEvalRun(
+            run_id="run-test", version_methodo="v1.2", date_reference=date(2026, 1, 1)
+        )
+    )
     media = MediaEvalMedia(
         nom="CNEWS", domaine="cnews.fr", type_media=TypeMedia.AUDIOVISUEL
     )
