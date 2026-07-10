@@ -1,87 +1,84 @@
-# Veille — PR 1 « Quick wins » : re-corréler le feed au sujet configuré
+# feat(media-eval): fondations (schéma, contrats, moteur d'évaluation)
 
-Backend-only, **0 migration DB**. Chaque levier est un bouton réglable/réversible
-par constante. Motivé par l'audit du 07/07 (`.context/veille-curation-mecanique.html`,
-memory `project_veille_curation_audit_decorrelation`) : le feed Veille était
-décorrélé de l'intention (topic axis mort 97 %, kw LLM génériques = 31 % du corpus,
-seuil posé sur le composite ⇒ ~60 % hors-sujet, anti-starvation qui réadmet le bruit).
+PR 1/2 du MVP pipeline d'évaluation des médias C1–C11 (story
+`docs/stories/core/media-eval.0.mvp-pipeline-evaluation.md`, plan PO validé le
+07/07/2026). Entièrement testable offline — la collecte (voie A + agents) et le
+run pilote arrivent en PR 2.
 
-## Commit 1 — Mécanique scoring & pool (`feed_filter.py`, `scoring_context.py`, `scoring_config.py`)
+## Ce que fait cette PR
 
-- **Constantes** : `VEILLE_PERTINENCE_GATE=20`, `VEILLE_FLOOR_MIN_KEYWORD_HITS=2`,
-  `VEILLE_BLOCK_A_PER_SOURCE_CANDIDATES=30`, `VEILLE_BLOCK_B_LANGUAGE_FILTER=True` ;
-  suppression de `VEILLE_MIN_FEED_SIZE` (anti-starvation). Seuil composite **48 inchangé**.
-- **E — plus de tokenisation des `why`** : `_tokenize_intent` + l'angle « Intention »
-  retirés. `why` reste en DB / endpoint config (badge santé inchangé).
-- **G2 — slugs non canoniques ignorés** : un `topic_id` hors des 50 slugs canoniques
-  (`SUBTOPIC_LABELS`) est neutralisé en `""` → sort du prédicat SQL, de `matched_on`
-  et de `user_subtopics` (le floor redevient honnête). Ses mots-clés survivent.
-- **B — floor durci** : un keyword-only ne qualifie que sur **≥ 2 hits distincts** ou
-  **1 hit fort** (mot-clé multi-mots, p.ex. « coupe du monde »). `_matched_axes` renvoie
-  désormais `(axes, floor_qualified)`. `matched_on` (front) inchangé.
-- **A — gate pertinence** : en plus du seuil composite, on exige pertinence normalisée
-  ≥ 20 quand la config porte un axe topic/mot-clé (le composite offre ~37-40 pts d'office
-  via source+fraîcheur+qualité). Nouveau compteur `gate_pruned_count` au log
-  `veille.feed_scored`.
-- **C — anti-starvation supprimée** : aucun candidat sous le seuil n'est réadmis
-  (feed court honnête). Revert = un bloc isolé.
-- **D — pool Bloc A équitable par source** : `row_number() OVER (PARTITION BY source_id
-  ORDER BY published_at DESC)` borne chaque source à N=30 avant le cap externe 300 — une
-  source dense n'affame plus les discrètes. `_base_query` refactoré en
-  `_apply_common_filters` (réutilisé par la sous-requête d'ids). Le point incertain du
-  plan (`apply_serein_filter` sur select non-entité) fonctionne — pas de plan B.
-- **G1 — filtre langue Bloc B** : langues des sources configurées ∪ `{fr}`,
-  `Content.language IS NULL` toléré. Bloc A non filtré. Kill-switch.
+### Docs source de vérité PO (`docs/media-eval/`)
+- Import de la méthodologie v1.1.1 (PDF converti) + amendements v1.2 actés
+  (raccourci JTI, pondération débunkages, temporalité, lettres A–E).
+- Import de l'architecture collecte ≠ évaluation du 07/07/2026.
+- **Rubriques évaluateur** (`rubrics/_common.md` + `C1/C5/C7/C8/C9/C11.md`) :
+  barème §4 verbatim + section « Sortie structurée » (`determinations`
+  énumérables). Lues verbatim par `build_eval_input.py` ;
+  `version_prompt` = sha256 du fichier rubrique.
 
-## Commit 2 — F : mots-clés LLM discriminants (`llm/angle_suggester.py`)
+### Schéma DB (migration `me01_media_eval_tables`, additive, RLS deny-all)
+7 tables `media_eval_*` : medias (référentiel niveau domaine), snapshots,
+corpus_articles (créée mais vide en V0), signaux (pivot ; statuts
+present/absent_verifie/partiel/bloque_acces ; dédup idempotente par
+`dedupe_key`), debunkages (qualification émetteur/gravité/suite, couple 1-1
+avec un signal C1), evaluations (score NULL si N/A, `signal_ids` cités,
+version_methodo/version_prompt), fiches (renormalisation, lettre, confiance).
+- `down_revision = ue01_user_entity_affinity` → 1 seul head. Idempotente
+  (guard `has_table` par table — la chaîne boote sur les 2 services Railway).
+  RLS pattern `sec02` (ENABLE + REVOKE anon/authenticated, aucune policy).
+- Modèles `app/models/media_eval.py` (StrEnum locaux, enums VARCHAR non natifs,
+  pattern `Source`), enregistrés dans `app/models/__init__.py`.
 
-- `_SYSTEM_PROMPT` durci : noms propres / entités datées, **≥ 2 expressions multi-mots
-  par angle**, denylist explicite du vocabulaire de discours, règle d'or (« un article
-  qui contient ce mot-clé parle presque certainement de ce sujet ») ; « Pense large »
-  retiré.
-- Filtre post-parse `_filter_generic_keywords` : denylist `_GENERIC_KEYWORDS` (~65
-  unigrammes) + `FRENCH_STOP_WORDS`, jamais les multi-mots ; angle vidé → écarté ; log
-  `angle_suggester.keywords_filtered`.
-- `_fallback_angles` 8 → 3, expressions multi-mots ancrées au thème.
-- Cache TTL 24 h inchangé : d'anciennes suggestions génériques peuvent coexister ≤ 24 h
-  post-deploy.
+### Contrats & garde-fous codés en dur (`scripts/media_eval/`)
+- `schemas.py` : `BAREMES` (100 pts), `CRITERES_VAGUE_1` (54 pts),
+  `NIVEAU_SCORES` C9/C11, `LETTRES`, registre `type_signal` figé, artefacts
+  Pydantic (Signal/Debunkage/Evaluation + enveloppes batch, GoldenSet).
+  **`derive_score(critere, determinations)`** : le score faisant foi est dérivé
+  par code, jamais choisi par le LLM (philosophie `derive_reliability`).
+  Validator dur : éval sans `signal_ids_cites` rejetée (sauf flag
+  `donnees_insuffisantes` → N/A). `poids_emetteur` des débunkages dérivé par
+  code (`arcom/justice/cdjm` = fort, fact-checkers de médias concurrents =
+  moyen, inconnu = faible).
+- `garde_fous.py` (fonctions pures) : fraîcheur 730 j (signaux événementiels
+  seulement, structurels constatés à date), fallback C1 (< 3 débunkages/2 ans),
+  raccourci JTI, corroboration (score plein sans ≥ 2 domaines sources
+  indépendants → palier inférieur + flag `corroboration_insuffisante`),
+  `bloque_acces` → `revue_requise` — jamais converti en 0.
 
-## Effet produit assumé
+### Scripts moteur (dry-run par défaut, `--apply` gardé, `--allow-prod` hors DB test)
+`seed_medias.py` (2 pilotes : cnews.fr audiovisuel, reporterre.net presse en
+ligne) · `ingest_artifacts.py` (valide en bloc puis insère — un artefact
+invalide = exit non-zéro, rien d'écrit ; idempotent) · `build_eval_input.py`
+(exports `eval_inputs/<media>_<critere>.json` + garde-fous amont) ·
+`ingest_evaluations.py` (garde-fous aval : signal_ids existants / bon média /
+bon critère, score dérivé, corroboration, statuts) · `synthese_fiche.py`
+(renormalisation sur les seuls critères évalués, lettre, confiance, fiche md +
+ligne DB) · `evaluate_golden_agreement.py` (accord vs gold : exact C9/C11,
+|Δ| ≤ 20 % du barème en continu, désaccords N/A-vs-score listés).
 
-Les feeds des configs **existantes** (kw génériques + slugs morts toujours en base) vont
-**fortement raccourcir** — 0-10 items honnêtes au lieu de dizaines majoritairement
-hors-sujet. C'est le comportement voulu. Le vrai remède (régénération des configs) est un
-agent suivant. Boutons de détente si trop agressif : `VEILLE_FLOOR_MIN_KEYWORD_HITS`
-(2→1) et `VEILLE_PERTINENCE_GATE` (20→25/0), via les logs prod
-(`floor_pruned_count` / `gate_pruned_count` / `threshold_pruned_count`).
+## Tests & vérifications
 
-## Harness d'audit mis à jour
+- **91 tests** `tests/scripts/media_eval/` (purs + DB savepoint) : contrats,
+  table `derive_score`, bornes fraîcheur 729/730/731 j, fallback 2 vs 3,
+  corroboration, JTI, `bloque_acces` jamais 0, renormalisation 0/1/3 N/A
+  (cas Reporterre max 34), bornes lettres 84.9/85, matrice confiance,
+  idempotence dedupe/évals, rejets (signal d'un autre média/critère,
+  artefact partiellement invalide → rien d'écrit), métriques gold.
+- Migration sur **DB vide** : `upgrade head` → `downgrade -1` → `upgrade head`
+  OK, exactement 1 head (`me01_media_eval_tables`).
+- Smoke E2E offline sur DB jetable : seed → ingest artefacts (5 signaux dont
+  2 couples débunkage, poids dérivés) → build_eval_input (fallback C1 déclenché
+  à 2 débunkages, 6 entrées écrites) → ingest_evaluations (3 évals, C1 N/A) →
+  synthese_fiche (10/20 → 50/100, lettre D, confiance moyenne).
+- Suite backend complète `pytest` + `ruff check`/`format` OK.
 
-`scripts/evaluate_veille_curation.py` (l'outil qui a produit l'audit) est adapté à la
-nouvelle porte : `source_intents` retiré, tuple `_matched_axes` déballé, nouvelles raisons
-de rejet `floor_weak_keyword` (keyword-only sous le min de hits) et `gate_pertinence`.
+Pas d'entrée changelog : outillage interne, aucun impact user (bypass de la
+règle 400 lignes assumé).
 
-## Vérification
+## Suite (PR 2)
 
-- Suites veille + harness : **98 passed** (`test_veille_curation`, `test_veille_scoring`,
-  `test_veille_routes`, `test_angle_suggester`, `test_evaluate_veille_curation`).
-- Suite backend complète : **2034 passed**, 2 échecs pré-existants sans lien (artefacts
-  de fuseau `+02:00` sur le Postgres local, `test_notification_preferences` /
-  `test_sources_recent_items` — verts en CI UTC).
-- `ruff check` + `ruff format` OK sur tout le code modifié.
-- Nouveaux tests ciblés : floor durci (1 hit → pruned, 2 hits / multi-mots → passe),
-  gate (2 hits sans source coupés, +source passe), C (aucune réadmission), D (source
-  discrète non affamée sous cap serré), G1 (article `en` écarté, `NULL` passe, langue
-  d'une source configurée autorisée).
-
-## Hors périmètre (agents suivants)
-
-Réutilisation du brief éditorial au scoring, régénération/migration des configs existantes
-(95 slugs morts + kw génériques restent en base), dédup d'angles, preview du feed à la
-config, état vide UI mobile.
-
-## À valider post-merge (logs prod)
-
-Mesure ex-ante non réalisée (part du corpus FR 7 j matchant ≥ 2 kw distincts de
-« Présidentielle 2027 ») : à confirmer via les logs `veille.feed_scored` en staging pour
-calibrer `VEILLE_FLOOR_MIN_KEYWORD_HITS` (2→3 si le feed reste bruité).
+Collecteurs voie A (`collect_pages_types/cdjm/jti/cppap/pappers/arcom`),
+sous-agents `.claude/agents/media-eval-*`, commande `/media-eval-run`, run
+pilote `pilote-2026-07` (CNEWS puis Reporterre) + golden set Laurin
+(`docs/media-eval/golden/gold_v0.json`) + rapport d'accord. Prérequis :
+`PAPPERS_API_TOKEN` (env locale, compte gratuit).

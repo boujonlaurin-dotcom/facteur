@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
@@ -125,7 +127,9 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
           _loading = false;
         });
       }
-    } on DioException catch (e) {
+    } on DioException catch (e, st) {
+      // Mesurable même si l'utilisateur abandonne avant la fin de l'onboarding.
+      unawaited(Sentry.captureException(e, stackTrace: st));
       if (mounted) {
         final detail = e.response?.data;
         final msg = (detail is Map && detail['detail'] is String)
@@ -155,7 +159,8 @@ class _EntityAddSheetState extends ConsumerState<EntityAddSheet> {
           '"${s.canonicalName}" ajouté à vos intérêts',
         );
       }
-    } on DioException catch (e) {
+    } on DioException catch (e, st) {
+      unawaited(Sentry.captureException(e, stackTrace: st));
       if (mounted) {
         final detail = e.response?.data;
         final msg = (detail is Map && detail['detail'] is String)

@@ -1,6 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Tournée",
+      "summary": "Des suggestions de sources plus riches par thème, et un accès direct « Tout lire »."
+    },
+    {
+      "tag": "Intérêts",
+      "summary": "Règle le niveau de suivi de chaque thème et sujet d'un simple curseur, comme sur les fiches source."
+    },
+    {
       "tag": "Essentiel",
       "summary": "Les titres de section sont plus lisibles, le « Tout lire » colle à sa section, et « Ton avis compte » est désormais intégré à la carte de fin de tournée."
     },
@@ -19,6 +27,10 @@
     {
       "tag": "Sources",
       "summary": "Ajouter une source est plus fiable et plus vivant : les correspondances vérifiées sont clairement signalées et ses premiers articles apparaissent tout de suite."
+    },
+    {
+      "tag": "Veille",
+      "summary": "Ton sujet de veille est bien mémorisé, même quand tu le saisis librement, et changer de thème repart d'une base propre sans avoir à tout décocher."
     },
     {
       "tag": "Bonnes nouvelles",

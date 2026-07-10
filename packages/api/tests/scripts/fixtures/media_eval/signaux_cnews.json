@@ -1,0 +1,42 @@
+{
+  "run_id": "run-test",
+  "agent": "agent:media-eval-collecteur-gouvernance@v1",
+  "genere_at": "2026-07-08T10:00:00Z",
+  "version_prompt": null,
+  "items": [
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C5",
+      "type_signal": "mentions_legales",
+      "statut": "present",
+      "valeur": {"complet": true, "forme_juridique": "SAS", "url": "https://www.cnews.fr/mentions-legales"},
+      "citation": "CNEWS est édité par la Société d'Exploitation d'un Service d'Information (SESI), SAS au capital de…",
+      "source_urls": ["https://www.cnews.fr/mentions-legales"],
+      "sources_consultees": []
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C5",
+      "type_signal": "structure_actionnariat",
+      "statut": "present",
+      "valeur": {"groupe": "Canal+ / Vivendi", "source": "pappers"},
+      "citation": "SESI, détenue par le Groupe Canal+.",
+      "source_urls": ["https://www.pappers.fr/entreprise/sesi"],
+      "sources_consultees": []
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C9",
+      "type_signal": "charte_independance",
+      "statut": "absent_verifie",
+      "valeur": null,
+      "citation": null,
+      "source_urls": [],
+      "sources_consultees": [
+        "https://www.cnews.fr/mentions-legales",
+        "https://www.cnews.fr/qui-sommes-nous",
+        "https://www.google.com/search?q=charte+independance+cnews"
+      ]
+    }
+  ]
+}

@@ -9,7 +9,7 @@ Tests:
 - Job trigger parameters
 """
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from apscheduler.triggers.cron import CronTrigger
@@ -20,6 +20,7 @@ from app.workers.scheduler import (
     DIGEST_CRON_MINUTE_PARIS,
     SUBTOPIC_DECAY_HOUR_PARIS,
     SUBTOPIC_DECAY_MINUTE_PARIS,
+    _classification_queue_health_check,
     _digest_watchdog,
     decay_user_entity_affinity,
     decay_user_subtopic_weights,
@@ -31,6 +32,38 @@ from app.workers.scheduler import (
 
 class TestScheduler:
     """Tests for the background job scheduler configuration."""
+
+    def test_scheduler_has_coverage_themes_job_weekly_sunday(self):
+        """Story 22.5 : recompute_source_coverage_themes hebdo dim. 03:45 Paris."""
+        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            captured = {}
+
+            def capture_add_job(*args, **kwargs):
+                job_id = kwargs.get("id")
+                if job_id:
+                    captured[job_id] = {
+                        "func": args[0] if args else kwargs.get("func"),
+                        **kwargs,
+                    }
+
+            mock_scheduler.add_job = capture_add_job
+            start_scheduler()
+
+            assert "recompute_source_coverage_themes" in captured
+            job = captured["recompute_source_coverage_themes"]
+            assert job["func"].__name__ == "recompute_source_coverage_themes"
+            assert isinstance(job["trigger"], CronTrigger)
+            assert "Europe/Paris" in str(job["trigger"].timezone)
+            # Hebdo (day_of_week=sun) et sérialisé (max_instances=1, coalesce).
+            fields = {f.name: str(f) for f in job["trigger"].fields}
+            assert fields.get("day_of_week") == "sun"
+            assert fields.get("hour") == "3"
+            assert fields.get("minute") == "45"
+            assert job["max_instances"] == 1
+            assert job["coalesce"] is True
 
     def test_scheduler_has_daily_digest_job(self):
         """TEST-01: Verify daily digest job is scheduled at 07:30 Paris time."""
@@ -513,6 +546,115 @@ class TestDigestWatchdogCoverage:
         mock_run.assert_not_awaited()
 
 
+class TestClassificationQueueHealthCheck:
+    """Garde-fou anti-angle-mort (bug-classification-worker-stopped) : alerte
+    Sentry si le plus vieux pending dépasse le seuil (défaut 12 h)."""
+
+    def _patch_stats(self, stats: tuple):
+        """Patch get_pending_stats via une session factice + service mocké."""
+        from contextlib import asynccontextmanager
+
+        mock_session = AsyncMock()
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        service = MagicMock()
+        service.get_pending_stats = AsyncMock(return_value=stats)
+
+        return (
+            patch("app.database.safe_async_session", side_effect=lambda: fake_sm()),
+            patch(
+                "app.services.classification_queue_service.ClassificationQueueService",
+                return_value=service,
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_alerts_when_oldest_exceeds_threshold(self):
+        """oldest_age > 12 h ⇒ capture_message Sentry level=error."""
+        # 13 h en secondes, au-dessus du seuil 12 h.
+        sm_patch, svc_patch = self._patch_stats((26000, 13 * 3600))
+        fake_sentry = MagicMock()
+        with (
+            sm_patch,
+            svc_patch,
+            patch.dict("sys.modules", {"sentry_sdk": fake_sentry}),
+        ):
+            await _classification_queue_health_check()
+
+        fake_sentry.capture_message.assert_called_once()
+        assert fake_sentry.capture_message.call_args.kwargs["level"] == "error"
+
+    @pytest.mark.asyncio
+    async def test_no_alert_under_threshold(self):
+        """oldest_age < 12 h ⇒ aucune alerte."""
+        sm_patch, svc_patch = self._patch_stats((3, 2 * 3600))  # 2 h
+        fake_sentry = MagicMock()
+        with (
+            sm_patch,
+            svc_patch,
+            patch.dict("sys.modules", {"sentry_sdk": fake_sentry}),
+        ):
+            await _classification_queue_health_check()
+
+        fake_sentry.capture_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_alert_when_queue_empty(self):
+        """File vide (oldest=None) ⇒ pas d'alerte, pas de crash."""
+        sm_patch, svc_patch = self._patch_stats((0, None))
+        fake_sentry = MagicMock()
+        with (
+            sm_patch,
+            svc_patch,
+            patch.dict("sys.modules", {"sentry_sdk": fake_sentry}),
+        ):
+            await _classification_queue_health_check()
+
+        fake_sentry.capture_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_swallows_exceptions(self):
+        """Une erreur DB ne doit jamais crasher le scheduler."""
+        from contextlib import asynccontextmanager
+
+        mock_session = AsyncMock()
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        service = MagicMock()
+        service.get_pending_stats = AsyncMock(side_effect=RuntimeError("db down"))
+
+        with (
+            patch("app.database.safe_async_session", side_effect=lambda: fake_sm()),
+            patch(
+                "app.services.classification_queue_service.ClassificationQueueService",
+                return_value=service,
+            ),
+            patch("app.workers.scheduler.logger") as mock_logger,
+        ):
+            await _classification_queue_health_check()  # MUST NOT raise
+
+        mock_logger.exception.assert_called_once_with(
+            "classification_queue_health_check_failed"
+        )
+
+    def test_registered_with_30min_interval(self):
+        """Le job doit être enregistré avec un IntervalTrigger de 30 min."""
+        import inspect
+
+        from app.workers import scheduler as scheduler_mod
+
+        src = inspect.getsource(scheduler_mod.start_scheduler)
+        assert "_classification_queue_health_check" in src
+        assert 'id="classification_queue_health_check"' in src
+        assert "IntervalTrigger(minutes=30)" in src
+
+
 def _capture_all_jobs() -> dict:
     """Run start_scheduler() with a mocked APScheduler and capture every
     add_job(**kwargs) keyed by job id."""
@@ -569,6 +711,7 @@ class TestJobSerialization:
             "zombie_session_sweeper",
             "pool_health_probe",
             "daily_essentiel_push_dispatch",
+            "classification_queue_health_check",
         ):
             assert job_id in captured, f"{job_id} not registered"
 
