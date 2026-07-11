@@ -467,6 +467,26 @@ class AnalyticsService {
     });
   }
 
+  /// Un ajout de sujet/entité personnalisé a échoué (timeout réseau, 4xx/5xx…).
+  /// origin: 'onboarding' | 'custom_topics'. Sert à mesurer la fréquence réelle
+  /// des échecs autrefois avalés côté client (bug custom-topics-deferred-save).
+  Future<void> trackCustomTopicSaveFailed({
+    required String name,
+    required String origin,
+    String? theme,
+    String? error,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'name': name,
+      'origin': origin,
+      'theme': theme,
+      'error': error,
+    };
+    await _logEvent('custom_topic_save_failed', props);
+    await _capturePostHog('custom_topic_save_failed', props);
+  }
+
   /// Generic settings/preference toggle. `key` is a stable snake_case identifier
   /// (e.g. 'notifications_daily_digest'), oldValue/newValue are coerced to string
   /// to keep the event payload shape uniform across bool/int/string toggles.

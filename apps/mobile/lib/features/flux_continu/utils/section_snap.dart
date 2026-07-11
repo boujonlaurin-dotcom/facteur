@@ -15,6 +15,17 @@ const double kSnapEpsilon = 1.0;
 /// smaller ⇒ switches more readily. 0 reverts to the pure edge-triggered feel.
 const double kSectionEdgeMargin = 120.0;
 
+/// px/s. **The only knob for the UP-only fast-rewind exception** — tune it à
+/// l'œil sur device. Snap is now the default *both* ways (a slow upward scroll
+/// re-frames the section above under the header, same as descent). The single
+/// deliberate escape is a **fast upward fling**: past this velocity the snap
+/// steps aside and lets the native ballistic run free, so the reader can rewind
+/// several sections at once. Slow upward stays snapped (so the settle haptic
+/// still fires — unlike the failed velocity floor that killed the pose buzz by
+/// suppressing the snap at low speed). Higher ⇒ harder to trigger the free
+/// rewind (more sections stay snapped on the way up); lower ⇒ easier to escape.
+const double kFastUpwardVelocity = 1400.0;
+
 // ── Réglages du ressort de snap (le « grain » du switch vers une section) ──
 // Le snap est un [ScrollSpringSimulation] : on tune ces 3 leviers à l'œil pour
 // le rendre à la fois smooth ET net. Repères :
@@ -97,22 +108,35 @@ double? resolveSnapTarget({
 }) {
   if (frames.isEmpty) return null;
 
+  // Travel direction: controller first, then the fling sign (lift velocity).
+  final dir = scrollDirection != 0 ? scrollDirection : velocity.sign;
+
+  // UP-only fast-rewind escape: a vigorous upward fling steps the snap aside so
+  // the native ballistic can rewind several sections at once. This is the sole
+  // deliberate exception to "1 gesture = 1 section" — the descent stays
+  // one-step, and a *slow* upward scroll still snaps (so its settle haptic
+  // fires). See [kFastUpwardVelocity].
+  final freeUpwardEscape = dir < 0 && velocity.abs() >= kFastUpwardVelocity;
+  if (freeUpwardEscape) return null;
+
   // Free reading: the landing rests inside a section that fully fills the
-  // viewport (a tall section's open interior). No edge shows ⇒ leave it free.
-  for (final f in frames) {
-    if (f.bottom > f.top + kSnapEpsilon &&
-        naturalLanding > f.top + kSnapEpsilon &&
-        naturalLanding < f.bottom - kSnapEpsilon) {
-      return null;
+  // viewport (a tall section's open interior). No edge shows ⇒ leave it free —
+  // but only on descent/idle (`dir >= 0`). On a slow upward scroll we fall
+  // through to the snap logic so the section above re-frames under the header
+  // instead of drifting (the fix for the "too permissive" rewind).
+  if (dir >= 0) {
+    for (final f in frames) {
+      if (f.bottom > f.top + kSnapEpsilon &&
+          naturalLanding > f.top + kSnapEpsilon &&
+          naturalLanding < f.bottom - kSnapEpsilon) {
+        return null;
+      }
     }
   }
 
   // Every framing offset is a snap point: each section top, plus the bottom of
   // each tall section (rest on its last cards). Sorted ascending.
   final points = snapPointsOf(frames);
-
-  // Travel direction: controller first, then the fling sign (lift velocity).
-  final dir = scrollDirection != 0 ? scrollDirection : velocity.sign;
 
   // Deadband (« marge »): how far the fling's inertia carries past the lift
   // point. A small overshoot — or no direction at all — re-frames the section

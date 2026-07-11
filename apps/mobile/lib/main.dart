@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:app_links/app_links.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +23,7 @@ import 'core/services/deep_link_service.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/server_push_service.dart';
+import 'core/errors/user_facing_error_notifier.dart';
 import 'core/ui/notification_service.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
 
@@ -54,17 +55,65 @@ Future<void> main() async {
   }
 }
 
+/// Chaîne un handler « souci côté device » sur le [FlutterError.onError] déjà
+/// posé par SentryFlutter : on préserve la remontée Sentry, puis on notifie
+/// l'utilisateur *uniquement* si l'exception vient d'un frame build/paint
+/// (écran cassé effectivement vu). Filtres : AssertionError debug + `silent`.
+void _installUserFacingErrorHook() {
+  const enabled = UserErrorBannerConstants.enabled;
+  UserFacingErrorNotifier.instance.configureEnabled(enabled);
+  // Dark launch : tant que le kill-switch est off (défaut de shipping), on
+  // n'installe même pas le wrapper — zéro travail sur le hot path par-frame.
+  if (!enabled) return;
+
+  final previous = FlutterError.onError;
+  FlutterError.onError = (FlutterErrorDetails details) {
+    previous?.call(details);
+
+    if (details.silent) return;
+    if (kDebugMode && details.exception is AssertionError) return;
+
+    final lib = details.library ?? '';
+    final fromUiTree =
+        lib.contains('widgets library') || lib.contains('rendering library');
+    if (!fromUiTree) return;
+
+    final type = details.exception.runtimeType.toString();
+    unawaited(
+      UserFacingErrorNotifier.instance.report(
+        source: UserErrorSource.flutterError,
+        signature: 'flutter_error|$type|$lib',
+        route: lib,
+        detail: type,
+      ),
+    );
+  };
+}
+
 Future<void> _bootstrap() async {
   final bootSw = Stopwatch()..start();
+
+  _installUserFacingErrorHook();
 
   timeago.setLocaleMessages('fr', fr_messages.FrMessages());
   timeago.setLocaleMessages('fr_short', FrCompactMessages());
 
+  // Edge-to-edge : le contenu de l'app dessine derrière les barres système
+  // (status bar + barre de navigation), permettant des barres transparentes
+  // façon LinkedIn plutôt que le fond noir système par défaut.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
   SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
+    SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
       statusBarBrightness: Brightness.dark,
+      // Voile noir léger (pas full transparent) : garantit le contraste de la
+      // pilule gestuelle / des boutons système sur les fonds clairs.
+      systemNavigationBarColor: Colors.black.withValues(alpha: 0.15),
+      // Désactive le scrim/contraste auto qui réintroduit un fond opaque
+      systemNavigationBarContrastEnforced: false,
+      systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
 
@@ -396,9 +445,9 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
         // Le pop-up OS « Alarmes et rappels » ne doit jamais se rouvrir tout
         // seul (bug-modals-intrusives) ; l'opt-in exact-alarm est strictement
         // initié par l'utilisateur (modal d'activation / Réglages).
-        final scheduled =
-            await pushNotificationService.scheduleDailyDigestNotification(
-          variant: NotifVariant.variantA,
+        //
+        final scheduled = await ServerPushService.scheduleDigestFallback(
+          box: settingsBox,
           timeSlot: timeSlot,
         );
         if (!scheduled) {

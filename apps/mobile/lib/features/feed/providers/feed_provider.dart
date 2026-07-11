@@ -9,6 +9,7 @@ import '../models/content_model.dart';
 import '../repositories/feed_repository.dart';
 import '../repositories/personalization_repository.dart';
 import '../services/feed_cache_service.dart';
+import '../services/read_sync_service.dart';
 import '../../custom_topics/providers/personalization_provider.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../saved/providers/saved_feed_provider.dart';
@@ -307,12 +308,16 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         if (ageSeconds >= _silentRevalSkipSeconds) {
           _scheduleSilentRevalidation();
         }
-        _globalItems = parsed.items;
+        // Le patch disque du statut consommé (patchContentStatus) est
+        // best-effort/asynchrone et peut être en retard sur le set durable —
+        // on superpose pour garantir le badge « Lu » (cf. _overlayConsumed).
+        final overlaid = _overlayConsumed(parsed.items, parsed.carousels);
+        _globalItems = overlaid.items;
         print(
-          '[PERF] feedProvider.build(): cache hit (${parsed.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})',
+          '[PERF] feedProvider.build(): cache hit (${overlaid.items.length} items, age=${ageSeconds}s, silent_reval=${ageSeconds >= _silentRevalSkipSeconds})',
         );
-        unawaited(_prefetchForWidget(parsed.items));
-        return FeedState(items: parsed.items, carousels: parsed.carousels);
+        unawaited(_prefetchForWidget(overlaid.items));
+        return FeedState(items: overlaid.items, carousels: overlaid.carousels);
       } catch (e) {
         // Corrupted cache or schema drift — drop silently and fall through.
         print('FeedNotifier: cached feed parse failed, evicting: $e');
@@ -328,9 +333,53 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       '[PERF] feedProvider.build(): ${sw.elapsedMilliseconds}ms (${response.items.length} items)',
     );
 
-    _globalItems = response.items;
-    unawaited(_prefetchForWidget(response.items));
-    return FeedState(items: response.items, carousels: response.carousels);
+    // Cold-load : le set consommé peut déjà être réamorcé depuis la file
+    // durable Hive (flushCurrentUser au boot) avant que cette première page
+    // réseau — encore `unseen` — n'arrive. On superpose pour ne pas repeindre
+    // un article lu en non-lu (cf. _overlayConsumed).
+    final overlaid = _overlayConsumed(response.items, response.carousels);
+    _globalItems = overlaid.items;
+    unawaited(_prefetchForWidget(overlaid.items));
+    return FeedState(items: overlaid.items, carousels: overlaid.carousels);
+  }
+
+  /// Ré-applique le statut « consommé » sur une liste fraîchement fetchée
+  /// (réseau/cache) pour qu'un reload n'efface pas le badge « Lu » tant que le
+  /// POST backend `/status` n'a pas abouti.
+  ///
+  /// Source d'autorité = le Set durable en mémoire [consumedContentIdsProvider]
+  /// (alimenté par [ReadSyncService.markConsumed] dès l'ouverture d'un article)
+  /// **∪** les ids déjà `consumed` dans l'état courant (filet pour une course
+  /// tap → réponse réseau). On élargit volontairement au provider car l'état
+  /// courant a pu être vidé par un refresh antérieur.
+  ({List<Content> items, List<FeedCarouselData> carousels}) _overlayConsumed(
+    List<Content> items,
+    List<FeedCarouselData> carousels,
+  ) {
+    final currentState = state.value;
+    final consumedIds = <String>{
+      ...ref.read(consumedContentIdsProvider),
+      ...?(currentState?.items
+          .where((c) => c.status == ContentStatus.consumed)
+          .map((c) => c.id)),
+      ...?(currentState?.carousels.expand(
+        (carousel) => carousel.items
+            .where((c) => c.status == ContentStatus.consumed)
+            .map((c) => c.id),
+      )),
+    };
+    if (consumedIds.isEmpty) {
+      return (items: items, carousels: carousels);
+    }
+    Content preserve(Content c) => consumedIds.contains(c.id)
+        ? c.copyWith(status: ContentStatus.consumed)
+        : c;
+    return (
+      items: items.map(preserve).toList(),
+      carousels: carousels
+          .map((car) => car.copyWith(items: car.items.map(preserve).toList()))
+          .toList(),
+    );
   }
 
   /// Fire-and-forget background refresh triggered after a cache hit. Keeps
@@ -353,40 +402,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         }
         // Preserve consumed status for items that the user marked while the API
         // call was in flight (race: tap → markContentAsConsumed sets optimistic
-        // state before response arrives and would overwrite it).
-        final currentState = state.value;
-        final consumedIds = <String>{
-          ...?(currentState?.items
-              .where((c) => c.status == ContentStatus.consumed)
-              .map((c) => c.id)),
-          ...?(currentState?.carousels.expand(
-            (carousel) => carousel.items
-                .where((c) => c.status == ContentStatus.consumed)
-                .map((c) => c.id),
-          )),
-        };
-        if (consumedIds.isEmpty) {
-          _globalItems = response.items;
-          state = AsyncData(
-            FeedState(items: response.items, carousels: response.carousels),
-          );
-          return;
-        }
-        Content preserve(Content c) => consumedIds.contains(c.id)
-            ? c.copyWith(status: ContentStatus.consumed)
-            : c;
-        final mergedItems = response.items.map(preserve).toList();
-        _globalItems = mergedItems;
+        // state before response arrives and would overwrite it). Source =
+        // [consumedContentIdsProvider] ∪ état courant (cf. [_overlayConsumed]).
+        final overlaid = _overlayConsumed(response.items, response.carousels);
+        _globalItems = overlaid.items;
         state = AsyncData(
-          FeedState(
-            items: mergedItems,
-            carousels: response.carousels
-                .map(
-                  (car) =>
-                      car.copyWith(items: car.items.map(preserve).toList()),
-                )
-                .toList(),
-          ),
+          FeedState(items: overlaid.items, carousels: overlaid.carousels),
         );
       } catch (e) {
         // Silent: user still sees the cached feed.
@@ -747,10 +768,17 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         return;
       }
 
+      // Superpose le statut « Lu » optimiste sur les nouveaux items : une page
+      // suivante peut contenir un article déjà lu dans la session mais encore
+      // `unseen` côté backend (cf. _overlayConsumed).
+      final overlaid = _overlayConsumed(
+        [...currentItems, ...dedupedNewItems],
+        currentCarousels,
+      );
       state = AsyncData(
         FeedState(
-          items: [...currentItems, ...dedupedNewItems],
-          carousels: currentCarousels, // Keep page 1 carousels
+          items: overlaid.items,
+          carousels: overlaid.carousels, // Keep page 1 carousels
         ),
       );
     } catch (e) {
@@ -782,11 +810,15 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       // call (the backend cache will still give a fast response, but the
       // user has the right to ask for fresh data).
       final response = await _fetchPage(page: 1, forceFresh: true);
+      // Ré-applique le statut « Lu » optimiste : le backend renvoie encore
+      // `unseen` tant que le POST /status n'a pas abouti — sans ça, un
+      // pull-to-refresh / reprise d'app efface le badge (cf. _overlayConsumed).
+      final overlaid = _overlayConsumed(response.items, response.carousels);
       if (_isUnfiltered) {
-        _globalItems = response.items;
+        _globalItems = overlaid.items;
       }
       state = AsyncData(
-        FeedState(items: response.items, carousels: response.carousels),
+        FeedState(items: overlaid.items, carousels: overlaid.carousels),
       );
     } catch (e, stack) {
       // Recovery policy : ne JAMAIS figer le provider en AsyncError si on a

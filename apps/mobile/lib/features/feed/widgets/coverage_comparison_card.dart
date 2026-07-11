@@ -129,12 +129,36 @@ class _Footer extends StatelessWidget {
     this.onSourceTap,
   });
 
+  /// Glyphe de fiabilité discret : ✔ vert pour les sources `high`, ⚠ rouge pour
+  /// `low`. **Rien** pour medium/mixed/unknown (et beaucoup de sources non
+  /// évaluées ⇒ l'icône reste minoritaire — attendu). Couleurs dérivées du
+  /// barème fiabilité, légèrement atténuées.
+  Widget? _reliabilityGlyph(FacteurColors colors) {
+    switch (perspective.reliabilityScore) {
+      case 'high':
+        return Icon(
+          PhosphorIcons.checkCircle(PhosphorIconsStyle.fill),
+          size: 12,
+          color: colors.success.withValues(alpha: 0.9),
+        );
+      case 'low':
+        return Icon(
+          PhosphorIcons.warning(PhosphorIconsStyle.fill),
+          size: 12,
+          color: colors.error.withValues(alpha: 0.9),
+        );
+      default:
+        return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final timeLabel = CoverageComparisonCard.relativeTime(
       perspective.publishedAt,
     );
+    final reliabilityGlyph = _reliabilityGlyph(colors);
 
     // Zone source (pastille + nom) — rendue tappable quand [onSourceTap] est
     // fourni. Le GestureDetector enfant l'emporte sur le tap de la carte pour
@@ -203,6 +227,11 @@ class _Footer extends StatelessWidget {
                   color: biasColor,
                 ),
               ),
+              // Glyphe fiabilité (✔ high / ⚠ low), après le chip biais.
+              if (reliabilityGlyph != null) ...[
+                const SizedBox(width: 5),
+                reliabilityGlyph,
+              ],
             ],
           ),
         ),

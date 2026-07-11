@@ -39,6 +39,12 @@ logger = structlog.get_logger()
 
 router = APIRouter()
 
+# Hard budget (seconds) on the LLM enrichment/disambiguation call for the
+# user-facing create/disambiguate endpoints. Kept well under the mobile client's
+# 30s receive timeout so a slow Mistral response degrades to the fuzzy fallback
+# instead of surfacing as a silent "topic could not be saved" at onboarding end.
+_LLM_BUDGET_SECONDS = 8.0
+
 
 # --- Pydantic Schemas ---
 
@@ -240,10 +246,14 @@ async def create_topic(
     await user_service.get_or_create_profile(current_user_id)
     await db.flush()
 
-    # LLM enrichment (always, for slug_parent + keywords)
+    # LLM enrichment (always, for slug_parent + keywords). Bounded by a budget
+    # (< client receive timeout) so a slow Mistral call falls back to the fuzzy
+    # match instead of silently failing the save (cf. bug custom-topics-deferred).
     enrichment_service = get_topic_enrichment_service()
     try:
-        result = await enrichment_service.enrich(request.name)
+        result = await enrichment_service.enrich(
+            request.name, llm_timeout=_LLM_BUDGET_SECONDS
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -373,7 +383,7 @@ async def disambiguate_topic(
     enrichment_service = get_topic_enrichment_service()
     try:
         candidates = await enrichment_service.disambiguate(
-            request.name, theme=request.theme
+            request.name, theme=request.theme, llm_timeout=_LLM_BUDGET_SECONDS
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

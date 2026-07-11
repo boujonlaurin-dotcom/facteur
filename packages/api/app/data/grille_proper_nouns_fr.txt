@@ -30,6 +30,8 @@ Koweït
 Monaco
 Panama
 Écosse
+Israël
+Brunei
 
 # --- Régions & territoires ---
 Alsace
@@ -42,6 +44,10 @@ Sahara
 Kosovo
 Crimée
 Donbas
+Creuse
+Landes
+Allier
+Cantal
 
 # --- Capitales & grandes villes (monde) ---
 Berlin
@@ -62,6 +68,8 @@ Kaboul
 Boston
 Dallas
 Denver
+Zagreb
+Harare
 
 # --- Villes de France ---
 Nantes

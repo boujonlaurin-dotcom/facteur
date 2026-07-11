@@ -11,6 +11,7 @@ import '../models/source_coverage.dart';
 import '../models/source_model.dart';
 import '../models/source_profile.dart';
 import '../models/theme_source_model.dart';
+import '../models/theme_suggestions_model.dart';
 import '../repositories/sources_repository.dart';
 import '../services/premium_session_store.dart';
 
@@ -49,6 +50,48 @@ final eligibleSubscriptionSourcesProvider = Provider<List<Source>>((ref) {
       )
       .toList()
     ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+});
+
+/// Sources suivies (non abonnées) auxquelles on peut associer un login générique
+/// au-delà des sources payantes curées : tout média suivi avec une URL http(s)
+/// valide. Alimente l'entrée « Un autre site demande une connexion ? » de la
+/// feuille « Ajouter un abonnement » (décision PO « toute source suivie »).
+/// Exclut celles déjà couvertes par [eligibleSubscriptionSourcesProvider]
+/// (sources payantes curées / paywall), qui ont leur propre liste.
+final loginConnectableSourcesProvider = Provider<List<Source>>((ref) {
+  final sources =
+      ref.watch(userSourcesProvider).valueOrNull ?? const <Source>[];
+  final alreadyEligible = ref
+      .watch(eligibleSubscriptionSourcesProvider)
+      .map((s) => s.id)
+      .toSet();
+  return sources
+      .where(
+        (source) =>
+            source.isTrusted &&
+            !source.hasSubscription &&
+            !alreadyEligible.contains(source.id) &&
+            forceGenericConnection(source) != null,
+      )
+      .toList()
+    ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+});
+
+/// Abonnements connectés dont la session locale (cookies) est absente : statut
+/// « Ajouté » conservé côté serveur mais cookies effacés (réinstallation, reset
+/// OS…). Auto-clearing : dès qu'une source est reconnectée (`hasSession` vrai),
+/// elle quitte la liste. Source de vérité du bandeau de reconnexion au lancement.
+final subscriptionsNeedingReconnectProvider =
+    FutureProvider<List<Source>>((ref) async {
+  final subscribed = ref.watch(subscribedSourcesProvider);
+  if (subscribed.isEmpty) return const <Source>[];
+  final store = ref.watch(premiumSessionStoreProvider);
+  // Les lectures de session sont indépendantes : on les parallélise.
+  final sessions = await Future.wait(subscribed.map(store.hasSession));
+  return [
+    for (var i = 0; i < subscribed.length; i++)
+      if (!sessions[i]) subscribed[i],
+  ];
 });
 
 typedef SmartSearchQuery = ({String query, String? contentType, bool expand});
@@ -119,6 +162,15 @@ final sourcesByThemeProvider =
     FutureProvider.family<ThemeSourcesResponse, String>((ref, slug) async {
       final repository = ref.watch(sourcesRepositoryProvider);
       return repository.getSourcesByTheme(slug);
+    });
+
+/// Footer « Étoffer [thème] » — sources poussées (Tiers 1 & 2) couvrant le
+/// thème. Family cachée par slug : un seul appel par thème, réutilisé entre
+/// rebuilds de la Tournée (et entre l'état replié/déplié du footer).
+final etofferThemeProvider =
+    FutureProvider.family<ThemeSuggestions, String>((ref, slug) async {
+      final repository = ref.watch(sourcesRepositoryProvider);
+      return repository.suggestSourcesForTheme(slug);
     });
 
 final userSourcesProvider =

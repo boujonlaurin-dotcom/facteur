@@ -37,6 +37,7 @@ import '../../sources/widgets/premium_web_view.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../../../widgets/sunflower_icon.dart';
 import '../providers/nudge_provider.dart' show NudgeTracker;
+import '../utils/webview_history_tracker.dart';
 import '../widgets/article_reader_widget.dart';
 import '../widgets/audio_player_widget.dart';
 import '../widgets/deep_recommendation_card.dart';
@@ -223,6 +224,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // pour réutiliser la session du média (cookies). Distinct du WebView
   // webview_flutter du scroll-to-site des sources gratuites.
   InAppWebViewController? _premiumWebController;
+  // Suit la profondeur de navigation utilisateur dans le WebView pour sortir
+  // en 1 clic sur l'article et ne remonter l'historique que pour de vraies
+  // navigations de liens suivies (cf. WebViewHistoryTracker).
+  final _historyTracker = WebViewHistoryTracker();
   // Bandeau non-bloquant « Session expirée — Reconnecter » (paywall détecté en
   // mode reader sur une source connectée).
   bool _premiumSessionExpired = false;
@@ -330,6 +335,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             biasStance: p.biasStance,
             publishedAt: p.publishedAt,
             description: p.description,
+            reliabilityScore: p.reliabilityScore,
           ),
         )
         .toList();
@@ -536,16 +542,45 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// Pre-load the WebView controller for progressive scroll-to-site.
+  /// Vrai si [content] provient d'une source premium suivie dont l'abonnement
+  /// est connecté (session cookies) — on sert alors le `PremiumWebView` plutôt
+  /// que le contrôleur gratuit. Lecture ponctuelle (non réactive).
+  bool _isConnectedPremiumSource(Content? content) {
+    if (content == null) return false;
+    final userSources = ref.read(userSourcesProvider).valueOrNull ?? const [];
+    return userSources.any(
+      (s) => s.id == content.source.id && s.hasSubscription,
+    );
+  }
+
+  /// Horodatage courant (ms) pour [_historyTracker] — centralisé pour alléger
+  /// le câblage des callbacks WebView.
+  int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+
   void _initScrollToSiteWebView() {
     final content = _content;
     if (content == null || kIsWeb) return;
     if (content.contentType != ContentType.article) return;
     if (!content.hasInAppContent) return;
 
+    // Source premium connectée : la couche révélée au scroll rend un
+    // `PremiumWebView` (cookies) — inutile (et contre-productif : paywall)
+    // de charger le contrôleur gratuit sur l'URL payante. `_buildWebViewLayer`
+    // court-circuite avant de toucher `_webViewController` sur ce chemin.
+    if (_isConnectedPremiumSource(content)) return;
+
+    _historyTracker.reset(_nowMs());
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
-        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
+        NavigationDelegate(
+          onPageStarted: (_) =>
+              _historyTracker.onNavStart(_nowMs()),
+          onPageFinished: (_) {
+            _injectScrollBridgeScript();
+            _historyTracker.onNavFinish();
+          },
+        ),
       )
       ..addJavaScriptChannel(
         'ScrollBridge',
@@ -872,6 +907,40 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollController.jumpTo(0);
   }
 
+  /// Gère le retour arrière du reader (bouton header + bouton système Android).
+  ///
+  /// En mode WebView, on remonte l'historique interne du navigateur **seulement**
+  /// pour de vraies navigations de liens suivies par l'utilisateur (profondeur
+  /// suivie par [_historyTracker]) : sur la page d'origine de l'article la
+  /// profondeur est nulle, donc **1 clic suffit** pour sortir vers le reader.
+  /// `canGoBack()` reste une simple garde de sécurité (les entrées d'historique
+  /// fantômes du chargement le rendraient sinon toujours `true`).
+  /// Hors WebView, on ferme l'écran normalement (retour au feed).
+  Future<void> _handleReaderBack() async {
+    if (!_isWebViewActive) {
+      if (mounted) context.pop(_content);
+      return;
+    }
+    // `_premiumWebController` n'est renseigné que sur le chemin premium
+    // (flutter_inappwebview) ; sinon on est sur le WebView gratuit
+    // (webview_flutter). Les deux exposent canGoBack()/goBack() mais sans
+    // interface commune (packages distincts) : on capture le contrôleur actif
+    // via ses deux méthodes pour n'avoir qu'un seul chemin de retour.
+    final premium = _premiumWebController;
+    final free = _webViewController;
+    final Future<bool> Function()? canGoBack =
+        premium?.canGoBack ?? free?.canGoBack;
+    final Future<void> Function()? goBack = premium?.goBack ?? free?.goBack;
+    if (_historyTracker.canClimb &&
+        canGoBack != null &&
+        await canGoBack()) {
+      _historyTracker.willGoBack();
+      await goBack!();
+      return;
+    }
+    if (mounted) _exitWebViewMode();
+  }
+
   /// Scroll listener driving WebView activation.
   void _onScrollToSite() {
     if (!_ctaTapped || !_offsetsComputed) return;
@@ -1172,6 +1241,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _content = content.copyWith(isSaved: newSaved);
     });
 
+    // Ouverture immédiate de la modal au save (pas à l'unsave), sans attendre
+    // les appels réseau : la sheet lit les collections déjà en cache. Le
+    // toggleSave + l'ajout à la collection par défaut se poursuivent en fond.
+    if (newSaved) {
+      CollectionPickerSheet.show(
+        context,
+        content.id,
+        onAddNote: () => _openNoteSheet(),
+      );
+    }
+
     try {
       final supabase = Supabase.instance.client;
       final apiClient = ApiClient(supabase);
@@ -1186,11 +1266,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ref.invalidate(collectionsProvider);
           unawaited(ref.read(lettersProvider.notifier).silentRefresh());
         }
-        CollectionPickerSheet.show(
-          context,
-          content.id,
-          onAddNote: () => _openNoteSheet(),
-        );
       }
     } catch (e) {
       // Rollback on error
@@ -1822,14 +1897,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     final articleText = content.htmlContent ?? content.description;
     final hasEnoughContent = plainTextLength(articleText) >= 100;
-    final useScrollToSite = !isConnectedPremiumSource &&
-        content.hasInAppContent &&
+    // Les sources premium connectées gardent l'intermédiaire (reader +
+    // couverture médiatique) comme les sources non-premium : la révélation du
+    // site au scroll bascule sur le `PremiumWebView` (cookies) plutôt que sur
+    // le contrôleur gratuit (cf. `_buildWebViewLayer`), pour ne pas retomber
+    // sur le paywall. On n'exclut donc plus `isConnectedPremiumSource` ici.
+    final useScrollToSite = content.hasInAppContent &&
         content.contentType == ContentType.article &&
         hasEnoughContent &&
         !_showWebView &&
         !kIsWeb;
-    final useInAppReading = !isConnectedPremiumSource &&
-        content.hasInAppContent &&
+    final useInAppReading = content.hasInAppContent &&
         !_showWebView &&
         !useScrollToSite;
     final isVideoContent = content.isVideo;
@@ -1846,131 +1924,142 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       return _buildWebOpenPrompt(context, content);
     }
 
-    return Scaffold(
-      backgroundColor: colors.backgroundPrimary,
-      body: AnimatedBuilder(
-        animation: _exitAnimController,
-        builder: (context, child) {
-          final scale = 1.0 - 0.03 * _exitAnimController.value;
-          return Transform.scale(
-            scale: _isExitAnimating ? scale : 1.0,
-            child: child,
-          );
-        },
-        child: Stack(
-          children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification is ScrollUpdateNotification) {
-                  final delta = notification.scrollDelta ?? 0.0;
-                  final metrics = notification.metrics;
-                  if (metrics.pixels <= 0 &&
-                      !_isWebViewActive &&
-                      !_footerRevealLocked) {
-                    _footerOffset.value = 0.0;
-                  }
+    return PopScope(
+      // En mode WebView, on intercepte le retour système pour remonter
+      // l'historique interne du navigateur avant de quitter vers le reader.
+      canPop: !_isWebViewActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _handleReaderBack();
+      },
+      child: Scaffold(
+        backgroundColor: colors.backgroundPrimary,
+        body: AnimatedBuilder(
+          animation: _exitAnimController,
+          builder: (context, child) {
+            final scale = 1.0 - 0.03 * _exitAnimController.value;
+            return Transform.scale(
+              scale: _isExitAnimating ? scale : 1.0,
+              child: child,
+            );
+          },
+          child: Stack(
+            children: [
+              NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollUpdateNotification) {
+                    final delta = notification.scrollDelta ?? 0.0;
+                    final metrics = notification.metrics;
+                    if (metrics.pixels <= 0 &&
+                        !_isWebViewActive &&
+                        !_footerRevealLocked) {
+                      _footerOffset.value = 0.0;
+                    }
 
-                  _onScrollDelta(delta);
-                  // Track reading progress from any scrollable (including in-app reader)
-                  if (metrics.maxScrollExtent > 0) {
-                    final rawProgress =
-                        metrics.pixels / metrics.maxScrollExtent;
-                    // Footer becomes permanent at end of ALL content (incl.
-                    // perspectives) for native in-app reading. Skip for
-                    // scroll-to-site (CTA tapped) where reaching the end means
-                    // revealing the WebView, not finishing reading — locking
-                    // the footer there would freeze it visible during the
-                    // entire WebView session.
-                    if (!_footerPermanent.value &&
-                        !_ctaTapped &&
-                        rawProgress >= 0.98) {
-                      _footerPermanent.value = true;
-                      _animateFooterTo(0.0);
-                    }
-                    // Progress bar uses article-only extent so perspectives don't dilute it
-                    final articleExtent =
-                        _articleContentExtent ?? metrics.maxScrollExtent;
-                    final barProgress = metrics.pixels / articleExtent;
-                    final capped = _isPartialContent
-                        ? (barProgress * 0.25).clamp(0.0, 0.25)
-                        : barProgress.clamp(0.0, 1.0);
-                    _readingProgress.value = capped;
-                    if (capped > _maxReadingProgress) {
-                      _maxReadingProgress = capped;
+                    _onScrollDelta(delta);
+                    // Track reading progress from any scrollable (including in-app reader)
+                    if (metrics.maxScrollExtent > 0) {
+                      final rawProgress =
+                          metrics.pixels / metrics.maxScrollExtent;
+                      // Footer becomes permanent at end of ALL content (incl.
+                      // perspectives) for native in-app reading. Skip for
+                      // scroll-to-site (CTA tapped) where reaching the end means
+                      // revealing the WebView, not finishing reading — locking
+                      // the footer there would freeze it visible during the
+                      // entire WebView session.
+                      if (!_footerPermanent.value &&
+                          !_ctaTapped &&
+                          rawProgress >= 0.98) {
+                        _footerPermanent.value = true;
+                        _animateFooterTo(0.0);
+                      }
+                      // Progress bar uses article-only extent so perspectives don't dilute it
+                      final articleExtent =
+                          _articleContentExtent ?? metrics.maxScrollExtent;
+                      final barProgress = metrics.pixels / articleExtent;
+                      final capped = _isPartialContent
+                          ? (barProgress * 0.25).clamp(0.0, 0.25)
+                          : barProgress.clamp(0.0, 1.0);
+                      _readingProgress.value = capped;
+                      if (capped > _maxReadingProgress) {
+                        _maxReadingProgress = capped;
+                      }
                     }
                   }
-                }
-                return false;
-              },
-              child: Positioned.fill(
-                child: isVideoContent
-                    ? _buildVideoContent(context, content)
-                    : useScrollToSite
-                        ? _buildScrollToSiteContent(context, content)
-                        : useInAppReading
-                            ? _buildInAppContent(context, content)
-                            : _buildWebViewFallback(
-                                content,
-                                isConnectedPremiumSource:
-                                    isConnectedPremiumSource,
-                              ),
+                  return false;
+                },
+                child: Positioned.fill(
+                  child: isVideoContent
+                      ? _buildVideoContent(context, content)
+                      : useScrollToSite
+                          ? _buildScrollToSiteContent(context, content)
+                          : useInAppReading
+                              ? _buildInAppContent(context, content)
+                              : _buildWebViewFallback(
+                                  content,
+                                  isConnectedPremiumSource:
+                                      isConnectedPremiumSource,
+                                ),
+                ),
               ),
-            ),
-            // Header — pinned at the top of the screen; no scroll-driven
-            // translation. Earlier iterations slid the header up/down on
-            // scroll but the result felt unstable in the WebView, so the
-            // header is now permanently visible.
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: RepaintBoundary(child: _buildHeader(context, content)),
-            ),
-            // Reading progress bar — pinned right below the header.
-            if (content.hasInAppContent ||
-                _isWebViewActive ||
-                isVideoContent ||
-                (!useScrollToSite && !useInAppReading))
+              // Header — pinned at the top of the screen; no scroll-driven
+              // translation. Earlier iterations slid the header up/down on
+              // scroll but the result felt unstable in the WebView, so the
+              // header is now permanently visible.
               Positioned(
-                top: MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                top: 0,
                 left: 0,
                 right: 0,
-                child: RepaintBoundary(child: _buildReadingProgressBar(colors)),
+                child: RepaintBoundary(child: _buildHeader(context, content)),
               ),
-            // Exit animation overlay — fade-to-white + scale-down
-            if (_isExitAnimating)
-              AnimatedBuilder(
-                animation: _exitAnimController,
-                builder: (context, _) {
-                  return Positioned.fill(
-                    child: IgnorePointer(
-                      child: ColoredBox(
-                        color: Colors.white.withValues(
-                          alpha: 0.6 * _exitAnimController.value,
+              // Reading progress bar — pinned right below the header.
+              if (content.hasInAppContent ||
+                  _isWebViewActive ||
+                  isVideoContent ||
+                  (!useScrollToSite && !useInAppReading))
+                Positioned(
+                  top:
+                      MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
+                  left: 0,
+                  right: 0,
+                  child:
+                      RepaintBoundary(child: _buildReadingProgressBar(colors)),
+                ),
+              // Exit animation overlay — fade-to-white + scale-down
+              if (_isExitAnimating)
+                AnimatedBuilder(
+                  animation: _exitAnimController,
+                  builder: (context, _) {
+                    return Positioned.fill(
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          color: Colors.white.withValues(
+                            alpha: 0.6 * _exitAnimController.value,
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
+              // Footer — always rendered, mirrors header slide behavior.
+              // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildContentFooter(
+                  context,
+                  content,
+                  isPureWebview:
+                      _showWebView && !useScrollToSite && !useInAppReading,
+                ),
               ),
-            // Footer — always rendered, mirrors header slide behavior.
-            // Article: full layout. Video/audio: external CTA + bookmark + sunflower.
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: _buildContentFooter(
-                context,
-                content,
-                isPureWebview:
-                    _showWebView && !useScrollToSite && !useInAppReading,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
+        // All actions migrated to the persistent footer (article + video/audio).
+        floatingActionButton: null,
       ),
-      // All actions migrated to the persistent footer (article + video/audio).
-      floatingActionButton: null,
     );
   }
 
@@ -2321,22 +2410,52 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ),
 
                   // 🌻 Recommander
-                  ScaleTransition(
-                    scale: _likeScaleAnimation,
-                    child: IconButton(
-                      style: iconButtonStyle.copyWith(
-                        backgroundColor: content.isLiked
-                            ? WidgetStatePropertyAll(colors.primary)
-                            : null,
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      ScaleTransition(
+                        scale: _likeScaleAnimation,
+                        child: IconButton(
+                          style: iconButtonStyle.copyWith(
+                            backgroundColor: content.isLiked
+                                ? WidgetStatePropertyAll(colors.primary)
+                                : null,
+                          ),
+                          onPressed: _toggleLike,
+                          icon: SunflowerIcon(
+                            isActive: content.isLiked,
+                            size: 26,
+                            inactiveColor: colors.textSecondary,
+                          ),
+                          tooltip: 'Recommander',
+                        ),
                       ),
-                      onPressed: _toggleLike,
-                      icon: SunflowerIcon(
-                        isActive: content.isLiked,
-                        size: 26,
-                        inactiveColor: colors.textSecondary,
+                      // Petit glyphe « republier » (style retweet) pour signifier
+                      // que le tournesol partage l'article aux autres lecteurs.
+                      // Purement décoratif, toujours visible, ne capte pas le tap.
+                      Positioned(
+                        right: 2,
+                        bottom: 2,
+                        child: IgnorePointer(
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              color: content.isLiked
+                                  ? colors.primary
+                                  : colors.backgroundSecondary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              PhosphorIcons.repeat(PhosphorIconsStyle.bold),
+                              size: 11,
+                              color: content.isLiked
+                                  ? Colors.white
+                                  : colors.textSecondary,
+                            ),
+                          ),
+                        ),
                       ),
-                      tooltip: 'Recommander',
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -2459,9 +2578,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     size: 16,
                     color: colors.textSecondary,
                   ),
-                  onPressed: _isWebViewActive
-                      ? _exitWebViewMode
-                      : () => context.pop(_content),
+                  onPressed: _handleReaderBack,
                 ),
                 const SizedBox(width: 4),
 
@@ -2661,6 +2778,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Widget _buildPartialArticleInlineButton(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    // Source premium connectée : signaler que l'article complet est débloqué
+    // par l'abonnement (badge premium en fin de libellé).
+    final content = _content;
+    final isConnectedPremiumSource = _isConnectedPremiumSource(content);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: FacteurSpacing.space4,
@@ -2692,6 +2813,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (isConnectedPremiumSource) ...[
+                const SizedBox(width: 6),
+                _PremiumBadge(colors: colors),
+              ],
               const SizedBox(width: 4),
               Icon(
                 PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
@@ -2745,6 +2870,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final articleText = content.htmlContent ?? content.description;
     final isPartial = isPartialContent(articleText);
 
+    // Source premium connectée : la couche WebView révélée au scroll doit
+    // basculer sur le `PremiumWebView` (cookies) pour servir l'article complet.
+    final isConnectedPremiumSource = _isConnectedPremiumSource(content);
+
     String? readingTime;
     if (content.durationSeconds != null && content.durationSeconds! > 0) {
       final minutes = (content.durationSeconds! / 60).ceil();
@@ -2768,7 +2897,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           left: 0,
           right: 0,
           bottom: 0,
-          child: _buildWebViewLayer(),
+          child: _buildWebViewLayer(
+            isConnectedPremiumSource: isConnectedPremiumSource,
+          ),
         ),
 
         // LAYER 1: Scrollable article content with opaque background.
@@ -2880,11 +3011,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             bodyPlaceholder: !_contentResolved
                                 ? _buildArticleBodySkeleton(colors)
                                 : null,
-                            footerSpacing:
-                                isPartial ? 0 : FacteurSpacing.space8,
-                            footer: SizedBox(
-                              height: _kFooterContentHeight + bottomInset,
-                            ),
+                            // Clearance de bas de page : quand la bande
+                            // Perspectives suit (elle a son propre spacer final),
+                            // on supprime la clearance du reader pour éviter un
+                            // grand vide entre le corps et Perspectives.
+                            footerSpacing: (isPartial || _showPerspectivesBand)
+                                ? 0
+                                : FacteurSpacing.space8,
+                            footer: _showPerspectivesBand
+                                ? null
+                                : SizedBox(
+                                    height: _kFooterContentHeight + bottomInset,
+                                  ),
                           ),
                         ),
 
@@ -2945,8 +3083,58 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   /// WebView layer — fixed in viewport behind the scrollable content.
-  Widget _buildWebViewLayer() {
+  Widget _buildWebViewLayer({bool isConnectedPremiumSource = false}) {
     if (kIsWeb) return _buildWebViewFallback(_content!);
+
+    // Source premium connectée : révéler le `PremiumWebView` (cookies +
+    // détection paywall), pas le contrôleur gratuit `webview_flutter` — sinon
+    // l'abonné retomberait sur le paywall. La machinerie scroll-to-site est
+    // agnostique du contrôleur (pilotée par le `_scrollController` Flutter et
+    // les callbacks ScrollBridge que `PremiumWebView` émet à l'identique).
+    if (isConnectedPremiumSource) {
+      final content = _content;
+      if (content == null) return const SizedBox.shrink();
+      final webView = PremiumWebView(
+        source: content.source,
+        url: WebUri(content.url),
+        sessionStore: ref.read(premiumSessionStoreProvider),
+        enableScrollBridge: true,
+        detectPaywall: true,
+        onWebViewCreated: (c) {
+          _premiumWebController = c;
+          _historyTracker.reset(_nowMs());
+        },
+        onLoadStart: (_) =>
+            _historyTracker.onNavStart(_nowMs()),
+        onLoadStop: (_) => _historyTracker.onNavFinish(),
+        onGestureStart: _onGestureStart,
+        onGestureDelta: _onGestureDelta,
+        onGestureEnd: _onGestureEnd,
+        onScrollY: _updateWebScrollY,
+        onProgress: _applyWebReadingProgress,
+        onPaywallDetected: _onPremiumPaywallDetected,
+        gestureRecognizers: _isWebViewActive
+            ? swipeBackCompatiblePlatformViewGestureRecognizers()
+            : const {},
+      );
+      // La couche 0 est full-bleed (pas de Column) → on héberge la bannière de
+      // session expirée dans un Stack, alignée en haut quand la WebView est
+      // active.
+      return Stack(
+        children: [
+          Positioned.fill(child: webView),
+          if (_premiumSessionExpired && _isWebViewActive)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _PremiumSessionExpiredBanner(
+                onReconnect: () => _reconnectPremium(content),
+              ),
+            ),
+        ],
+      );
+    }
 
     // Initialize WebView if not already done (e.g. content loaded after init)
     if (_webViewController == null) {
@@ -3568,7 +3756,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         sessionStore: ref.read(premiumSessionStoreProvider),
         enableScrollBridge: true,
         detectPaywall: true,
-        onWebViewCreated: (c) => _premiumWebController = c,
+        onWebViewCreated: (c) {
+          _premiumWebController = c;
+          _historyTracker.reset(_nowMs());
+        },
+        onLoadStart: (_) =>
+            _historyTracker.onNavStart(_nowMs()),
+        onLoadStop: (_) => _historyTracker.onNavFinish(),
         onGestureStart: _onGestureStart,
         onGestureDelta: _onGestureDelta,
         onGestureEnd: _onGestureEnd,
@@ -3591,16 +3785,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
-    _webViewController ??= WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(onPageFinished: (_) => _injectScrollBridgeScript()),
-      )
-      ..addJavaScriptChannel(
-        'ScrollBridge',
-        onMessageReceived: _onScrollBridgeMessage,
-      )
-      ..loadRequest(Uri.parse(content.url));
+    if (_webViewController == null) {
+      _historyTracker.reset(_nowMs());
+      _webViewController = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onPageStarted: (_) => _historyTracker
+                .onNavStart(_nowMs()),
+            onPageFinished: (_) {
+              _injectScrollBridgeScript();
+              _historyTracker.onNavFinish();
+            },
+          ),
+        )
+        ..addJavaScriptChannel(
+          'ScrollBridge',
+          onMessageReceived: _onScrollBridgeMessage,
+        )
+        ..loadRequest(Uri.parse(content.url));
+    }
 
     // CTA discret : source payante non connectée → proposer de lire avec son
     // abonnement (ouvre le flow de connexion).
@@ -3677,6 +3881,45 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 /// Bandeau non-bloquant affiché en mode reader premium quand un paywall est
 /// détecté (session du média expirée). Propose de se reconnecter sans
 /// dissocier l'abonnement.
+/// Petit badge premium (couronne) affiché en fin de libellé du bouton
+/// « Article complet » quand l'article est débloqué par un abonnement connecté.
+class _PremiumBadge extends StatelessWidget {
+  final FacteurColors colors;
+
+  const _PremiumBadge({required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIcons.crown(PhosphorIconsStyle.fill),
+            size: 12,
+            color: colors.primary,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'Premium',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 10.5,
+                  letterSpacing: 0,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PremiumSessionExpiredBanner extends StatelessWidget {
   final VoidCallback onReconnect;
 

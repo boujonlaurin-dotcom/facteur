@@ -68,23 +68,30 @@ def _send_fcm(token: str, title: str, body: str, data: dict[str, str]) -> str:
 
     from firebase_admin import messaging
 
+    # Data-only sur Android (pas de bloc `notification` top-level ni
+    # `AndroidNotification`) : sinon le système rend le push directement en une
+    # ligne et IGNORE les `teasers` du `data` → pas de bullets hors-app. Sans
+    # bloc notification, FCM réveille l'app en arrière-plan
+    # (`firebaseMessagingBackgroundHandler`) qui construit le BigText à bullets.
+    # Le titre/corps sont dupliqués dans `data` pour ce rendu client.
+    # iOS ne sait PAS rendre un push depuis le seul `data` (il faut un alert
+    # APNS ou une Notification Service Extension) : on garde donc un alert APNS
+    # visible côté iOS (corps = 1er titre d'article, sans bullets — acceptable,
+    # cf. plan Part 2 étape 3).
+    payload_data = {**data, "title": title, "body": body}
     return messaging.send(
         messaging.Message(
             token=token,
-            notification=messaging.Notification(title=title, body=body),
-            data=data,
-            android=messaging.AndroidConfig(
-                priority="high",
-                notification=messaging.AndroidNotification(
-                    channel_id="digest_channel",
-                    icon="ic_stat_facteur",
-                    color="#D35400",
-                ),
-            ),
+            data=payload_data,
+            android=messaging.AndroidConfig(priority="high"),
             apns=messaging.APNSConfig(
                 headers={"apns-priority": "10"},
                 payload=messaging.APNSPayload(
-                    aps=messaging.Aps(sound="default", content_available=True)
+                    aps=messaging.Aps(
+                        alert=messaging.ApsAlert(title=title, body=body),
+                        sound="default",
+                        content_available=True,
+                    )
                 ),
             ),
         ),

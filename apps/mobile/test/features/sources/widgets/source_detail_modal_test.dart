@@ -264,7 +264,44 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('Gestion de la source'), findsOneWidget);
-        expect(find.text('Associer mon abonnement'), findsOneWidget);
+        // Connexion générique (isGeneric) → CTA « compte », pas « abonnement ».
+        expect(find.text('Connecter mon compte'), findsOneWidget);
+      });
+
+      testWidgets(
+          'followed source without curated premiumConnection shows generic '
+          'connect CTA (http url + isTrusted)', (tester) async {
+        final source = Source(
+          id: 'cerveau-psycho',
+          name: 'Cerveau & Psycho',
+          url: 'https://www.cerveauetpsycho.fr',
+          type: SourceType.article,
+          isTrusted: true,
+        );
+
+        await tester.pumpWidget(_wrap(source: source, state: _emptyState));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Gestion de la source'), findsOneWidget);
+        expect(find.text('Connecter mon compte'), findsOneWidget);
+      });
+
+      testWidgets(
+          'unfollowed source without curated premiumConnection hides the '
+          'generic connect CTA', (tester) async {
+        final source = Source(
+          id: 'cerveau-psycho',
+          name: 'Cerveau & Psycho',
+          url: 'https://www.cerveauetpsycho.fr',
+          type: SourceType.article,
+          isTrusted: false,
+        );
+
+        await tester.pumpWidget(_wrap(source: source));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Gestion de la source'), findsNothing);
+        expect(find.text('Connecter mon compte'), findsNothing);
       });
     },
   );

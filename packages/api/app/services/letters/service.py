@@ -437,7 +437,16 @@ async def refresh_letter_status(
 
     completed = await _recompute_completed(user_id, catalog, db)
     action_ids = [a["id"] for a in catalog["actions"]]
-    merged = [a_id for a_id in action_ids if a_id in completed]
+    # Monotonie générique : une action déjà acquise n'est jamais dé-validée.
+    # Les détecteurs restent purs (reflètent l'état live) ; c'est le cycle de
+    # vie de la lettre qui impose ici que `completed_actions` soit « ever
+    # reached ». Sans ça, un détecteur basé sur un compteur réversible (mutes,
+    # suivis) ferait régresser une lettre en cours — ex. `mute_3_sources` qui
+    # compte cardinality(muted_sources) : dé-masquer sous le seuil de 3
+    # décochait l'action.
+    already_done = set(row.completed_actions or [])
+    reached = already_done | set(completed)
+    merged = [a_id for a_id in action_ids if a_id in reached]
     now = datetime.now(UTC)
     if merged != list(row.completed_actions or []):
         row.completed_actions = merged

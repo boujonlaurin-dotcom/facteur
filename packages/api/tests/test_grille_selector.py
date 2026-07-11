@@ -119,6 +119,14 @@ def test_excludes_yesterday_word():
     assert sel.word != "CLIMAT"
 
 
+def test_excludes_recent_words_set():
+    # Anti-répétition fenêtrée : tous les mots récents sont écartés, pas seulement J-1.
+    corpus = [_art("Le climat, le budget et la grippe en débat")]
+    sel = _select_from_corpus(corpus, {}, set(), exclude={"CLIMAT", "BUDGET"})
+    assert sel is not None
+    assert sel.word not in {"CLIMAT", "BUDGET"}
+
+
 def test_cluster_bonus_breaks_tie_by_score():
     cid = uuid4()
     corpus = [

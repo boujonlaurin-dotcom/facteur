@@ -716,6 +716,109 @@ class TestPerspectiveCountAlignment:
         # Pivot = most recent content of the cluster.
         assert subject.representative_content_id == newer.id
 
+    async def _run_with_few_perspectives(self, mock_dependencies):
+        """Scénario à 2 perspectives connues (GNews left + right).
+
+        Renvoie le sujet calculé. Sert aux deux tests de seuil de divergence
+        (LR-1 PR 2) : 2 perspectives est sous le défaut (4) mais au niveau d'un
+        seuil patché à 2.
+        """
+        from app.services.editorial.pipeline import EditorialPipelineService
+
+        source_id = uuid4()
+        content = _make_content_mock(title="article")
+        content.published_at = datetime(2026, 4, 12, tzinfo=UTC)
+        content.source_id = source_id
+        content.source.url = "https://www.cluster.fr/"
+        content.url = "https://www.cluster.fr/a"
+
+        cluster_id_str = str(uuid4())
+        cluster = _make_cluster_mock(
+            cluster_id=cluster_id_str, label="Retraites", contents=[content]
+        )
+
+        async def _resolve(domain: str, source_name: str | None = None) -> str:
+            return {
+                "cluster.fr": "center",
+                "left.fr": "left",
+                "right.fr": "right",
+            }.get(domain, "unknown")
+
+        mock_dependencies["perspective"].resolve_bias = AsyncMock(side_effect=_resolve)
+        mock_dependencies["perspective"].get_perspectives_hybrid = AsyncMock(
+            return_value=(
+                [
+                    _StubPerspective("left", "L", "left.fr"),
+                    _StubPerspective("right", "R", "right.fr"),
+                ],
+                [],
+            )
+        )
+
+        session = AsyncMock()
+        session.execute = AsyncMock(
+            return_value=MagicMock(all=MagicMock(return_value=[]))
+        )
+        svc = EditorialPipelineService(session)
+
+        with patch(
+            "app.services.editorial.pipeline.ImportanceDetector"
+        ) as mock_detector_cls:
+            mock_detector = MagicMock()
+            mock_detector.build_topic_clusters.return_value = [cluster]
+            mock_detector_cls.return_value = mock_detector
+
+            mock_dependencies["curation"].select_a_la_une.return_value = SelectedTopic(
+                topic_id=cluster_id_str,
+                label="Retraites",
+                selection_reason="Traité par 1 sources",
+                deep_angle="D",
+                source_count=1,
+            )
+            mock_dependencies["curation"].select_topics.return_value = []
+
+            def _populate_actus(
+                subjects, clusters, excluded_source_ids=None, excluded_content_ids=None
+            ):
+                out = []
+                for s in subjects:
+                    actu = MagicMock(spec=MatchedActuArticle)
+                    actu.content_id = uuid4()
+                    actu.source_id = uuid4()
+                    out.append(s.model_copy(update={"actu_article": actu}))
+                return out
+
+            mock_dependencies["actu"].match_global.side_effect = _populate_actus
+
+            result = await svc.compute_global_context([content])
+
+        assert result is not None
+        return result.subjects[0]
+
+    @pytest.mark.asyncio
+    async def test_divergence_llm_skipped_below_threshold(self, mock_dependencies):
+        """2 perspectives < défaut (4) ⇒ pas d'appel LLM, fallback déterministe (LR-1 PR 2)."""
+        subject = await self._run_with_few_perspectives(mock_dependencies)
+
+        # 2 perspectives connues, sous le seuil par défaut → LLM non appelé.
+        assert subject.perspective_count == 2
+        mock_dependencies["perspective"].analyze_divergences.assert_not_awaited()
+        # divergence_level toujours rempli par le fallback déterministe.
+        assert subject.divergence_level is not None
+
+    @pytest.mark.asyncio
+    async def test_divergence_llm_runs_at_configured_threshold(self, mock_dependencies):
+        """Seuil abaissé à 2 ⇒ 2 perspectives déclenchent l'appel LLM (wiring config)."""
+        settings_stub = MagicMock()
+        settings_stub.divergence_llm_min_perspectives = 2
+        with patch(
+            "app.services.editorial.pipeline.get_settings", return_value=settings_stub
+        ):
+            subject = await self._run_with_few_perspectives(mock_dependencies)
+
+        assert subject.perspective_count == 2
+        mock_dependencies["perspective"].analyze_divergences.assert_awaited()
+
     @pytest.mark.asyncio
     async def test_safety_net_counts_cluster_sources_when_all_bias_unknown(
         self, mock_dependencies

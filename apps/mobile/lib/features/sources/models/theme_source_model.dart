@@ -4,12 +4,23 @@ class FollowedTheme {
   final String slug;
   final String name;
 
-  const FollowedTheme({required this.slug, required this.name});
+  /// Nombre de sources suivies par l'utilisateur sur ce thème (renvoyé par le
+  /// backend, `theme OR secondary_themes`). Pilote le CTA de la section thème
+  /// dans la Tournée : « Tout lire » si ≥ [kThemeFewFollowedSources], sinon
+  /// « Ajouter des sources ». Cf. story 22.5.
+  final int followedSourcesCount;
+
+  const FollowedTheme({
+    required this.slug,
+    required this.name,
+    this.followedSourcesCount = 0,
+  });
 
   factory FollowedTheme.fromJson(Map<String, dynamic> json) {
     return FollowedTheme(
       slug: json['slug'] as String,
       name: (json['label'] ?? json['name']) as String,
+      followedSourcesCount: json['followed_sources_count'] as int? ?? 0,
     );
   }
 }

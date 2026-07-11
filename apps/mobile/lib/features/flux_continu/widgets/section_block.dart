@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'essentiel_hi_fi_card.dart';
+import 'etoffer_theme_footer.dart';
 import 'flux_continu_article_card.dart';
 import 'section_banner.dart';
 import 'veille_group_header.dart';
@@ -31,7 +32,7 @@ class SectionBlock extends StatelessWidget {
   /// same position.
   final Set<String> pendingFeedbackIds;
   final void Function(String contentId, FluxFeedbackChip chip)?
-      onSelectFeedbackChip;
+  onSelectFeedbackChip;
   final ValueChanged<String>? onResolveFeedback;
   final ValueChanged<String>? onUndoFeedback;
 
@@ -106,13 +107,16 @@ class SectionBlock extends StatelessWidget {
       );
     }
     final cards = _buildCards();
-    final hiddenCount =
-        (section.totalCount - section.coreVisibleCount).clamp(0, 999);
+    final hiddenCount = (section.totalCount - section.coreVisibleCount).clamp(
+      0,
+      999,
+    );
     // Section source sans article récent (≤72h) mais avec des cartes plus
     // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
     // la blurb du banner. L'empty-state (aucun article même vieux) reste géré
     // par _buildCards et n'affiche pas cette note.
-    final effectiveBlurb = section is FeedThemeSection &&
+    final effectiveBlurb =
+        section is FeedThemeSection &&
             section.kind == SectionKind.source &&
             section.noRecentSource &&
             section.items.isNotEmpty
@@ -130,8 +134,8 @@ class SectionBlock extends StatelessWidget {
           // l'illustration thème.
           logoUrl:
               section is FeedThemeSection && section.kind == SectionKind.source
-                  ? section.sourceLogoUrl
-                  : null,
+              ? section.sourceLogoUrl
+              : null,
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
           onTap: onSeeAll,
@@ -222,25 +226,42 @@ class SectionBlock extends StatelessWidget {
                 onSwipeDismiss: onDismissArticle == null
                     ? null
                     : () => onDismissArticle!(
-                          pickTopicLead(visible[i]).contentId,
-                        ),
+                        pickTopicLead(visible[i]).contentId,
+                      ),
                 enableSwipeHint:
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
                 onSwipeHintComplete:
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex
-                        ? onSwipeHintComplete
-                        : null,
-                nudgeAnchor:
-                    i == firstSwipeableIndex ? firstSwipeableCardAnchor : null,
+                    ? onSwipeHintComplete
+                    : null,
+                nudgeAnchor: i == firstSwipeableIndex
+                    ? firstSwipeableCardAnchor
+                    : null,
                 onSwipeConversion: onSwipeConversion,
                 onLongPressConversion: onLongPressConversion,
               ),
+          // Actus du jour — pas de footer d'ajout de sources → on re-signale
+          // l'ouverture de la section par un « Tout lire › » discret cliquable.
+          if (onSeeAll != null) _seeAllFooter(),
         ];
       case FeedThemeSection(
-          :final items,
-          :final coreVisibleCount,
-          :final underfilled,
-        ):
+        :final items,
+        :final coreVisibleCount,
+        :final underfilled,
+        :final themeSlug,
+        :final label,
+        :final isPlaceholder,
+        :final followedSourceCount,
+      ):
+        // Issue #1 — « squelette stable » : une coquille seed-ée AVANT le
+        // fan-out réserve sa hauteur finale (N cartes squelette) pour que
+        // l'upsert remplace le contenu **sur place**, sans décaler les sections
+        // suivantes (Actus/Bonnes) vers le bas. Court-circuite les empty-states
+        // ci-dessous, réservés aux sections **résolues** vides
+        // (`isPlaceholder == false && items.isEmpty`).
+        if (isPlaceholder) {
+          return sectionSkeletonCards(coreVisibleCount);
+        }
         // Story 23.4 — la section veille reste visible même vide : on rend un
         // placeholder + CTA réglages au lieu de cartes.
         if (items.isEmpty && section.kind == SectionKind.veille) {
@@ -265,12 +286,16 @@ class SectionBlock extends StatelessWidget {
         // CTA « Ajouter des sources » qui ouvre « Composer ma Tournée ». Un
         // thème à 1 article rend sa carte normalement.
         if (items.isEmpty && section.kind == SectionKind.theme) {
+          // Thème favori vide → footer « Étoffer » **déplié** : « rien de neuf »
+          // + sources de qualité à suivre + recherche. Pour un sujet custom
+          // (pas de slug macro-thème), on garde le CTA générique historique.
           return [
-            _FavoriteEmptyState(
-              message: 'Rien de neuf récemment sur ${section.label}.',
-              ctaIcon: Icons.add_rounded,
-              ctaLabel: 'Ajouter des sources',
-              onCta: onAddSources,
+            _themeFooter(
+              themeSlug: themeSlug,
+              label: label,
+              initiallyExpanded: true,
+              headline: 'Rien de neuf récemment sur $label.',
+              fallbackCtaLabel: 'Ajouter des sources',
             ),
           ];
         }
@@ -286,8 +311,8 @@ class SectionBlock extends StatelessWidget {
             for (final row in rows)
               switch (row) {
                 VeilleHeaderRow(:final label) => VeilleGroupHeader(
-                    label: label,
-                  ),
+                  label: label,
+                ),
                 VeilleArticleRow(:final content, :final index) =>
                   pendingFeedbackIds.contains(content.id)
                       ? _feedbackInlineFor(content.id)
@@ -297,9 +322,11 @@ class SectionBlock extends StatelessWidget {
                           onSwipeDismiss: onDismissArticle == null
                               ? null
                               : () => onDismissArticle!(content.id),
-                          enableSwipeHint: enableSwipeHintOnFirstCard &&
+                          enableSwipeHint:
+                              enableSwipeHintOnFirstCard &&
                               index == firstSwipeableIndex,
-                          onSwipeHintComplete: enableSwipeHintOnFirstCard &&
+                          onSwipeHintComplete:
+                              enableSwipeHintOnFirstCard &&
                                   index == firstSwipeableIndex
                               ? onSwipeHintComplete
                               : null,
@@ -335,24 +362,125 @@ class SectionBlock extends StatelessWidget {
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
                 onSwipeHintComplete:
                     enableSwipeHintOnFirstCard && i == firstSwipeableIndex
-                        ? onSwipeHintComplete
-                        : null,
-                nudgeAnchor:
-                    i == firstSwipeableIndex ? firstSwipeableCardAnchor : null,
+                    ? onSwipeHintComplete
+                    : null,
+                nudgeAnchor: i == firstSwipeableIndex
+                    ? firstSwipeableCardAnchor
+                    : null,
                 onSwipeConversion: onSwipeConversion,
                 onLongPressConversion: onLongPressConversion,
               ),
           // Cohérence Tournée — un thème **maigre affiché** (≤1 survivant après
-          // dédup, enrichi par réinjection) porte en pied un CTA pour étoffer la
-          // section. Distinct de l'empty-state (items vides) au-dessus.
+          // dédup, enrichi par réinjection) porte en pied le footer « Étoffer »
+          // **déplié** (sources de qualité + recherche), vrai vecteur d'ajout.
+          // Distinct de l'empty-state (items vides) au-dessus. Sujet custom →
+          // CTA générique historique.
           if (section.kind == SectionKind.theme && underfilled)
-            _FavoriteEmptyState(
-              ctaIcon: Icons.add_rounded,
-              ctaLabel: 'Ajouter plus de sources',
-              onCta: onAddSources,
+            _themeFooter(
+              themeSlug: themeSlug,
+              label: label,
+              initiallyExpanded: true,
+              fallbackCtaLabel: 'Plus de sources',
             ),
+          // Thème **riche** (assez d'articles) — Story 22.5 : le pied dépend du
+          // nombre de sources déjà suivies sur le thème.
+          //  - < kThemeFewFollowedSources sources suivies → footer « Étoffer »
+          //    **replié** (« Ajouter des sources ») : l'user a peu de sources,
+          //    on pousse la découverte.
+          //  - sinon → « Tout lire › » (le thème est déjà bien couvert, on
+          //    signale surtout l'accès à la page complète).
+          // Branches mutuellement exclusives (un seul footer).
+          if (section.kind == SectionKind.theme &&
+              !underfilled &&
+              themeSlug != null &&
+              followedSourceCount < kThemeFewFollowedSources)
+            EtofferThemeFooter(
+              slug: themeSlug,
+              label: label,
+              onSearch: onAddSources,
+            )
+          else if (section.kind == SectionKind.theme &&
+              !underfilled &&
+              onSeeAll != null)
+            _seeAllFooter(),
+          // Section source non vide — pas de footer « Ajouter plus de sources »
+          // (réservé aux thèmes) → « Tout lire › » discret pour re-signaler
+          // l'ouverture de la page source. Exclut la veille (rendue plus haut).
+          if (section.kind == SectionKind.source && onSeeAll != null)
+            _seeAllFooter(),
         ];
     }
+  }
+
+  /// « Tout lire › » — CTA discret de bas de section, re-signalant l'ouverture
+  /// de la page dédiée sur les sections **sans** footer d'ajout de sources
+  /// (Actus du jour, sources non vides ; les thèmes portent déjà « Ajouter plus
+  /// de sources »). Icône *après* le texte (chevron de progression), donc un
+  /// `Row` explicite plutôt que `TextButton.icon`. Rendu seulement si [onSeeAll]
+  /// est câblé. La hauteur réservée par ce footer est anticipée par le fit
+  /// (`kSeeAllFooterHeight`) pour ne pas dérégler le snap.
+  /// Style du CTA « Tout lire › » — figé en `static final` (et non alloué à
+  /// chaque build) : `SectionBlock` se reconstruit par section à chaque frame
+  /// au scroll, un `styleFrom` inline y rebâtirait le `ButtonStyle` inutilement.
+  static final _seeAllFooterStyle = TextButton.styleFrom(
+    foregroundColor: const Color(0xFF5D5B5A),
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    minimumSize: const Size(0, 28),
+    // `shrinkWrap` : sans ça le TextButton réserve un tap-target de 48px de haut
+    // (padded par défaut) → c'est cette hauteur fantôme, pas la marge, qui
+    // éloignait « Tout lire › » de sa section. On la collapse au contenu réel.
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+  );
+
+  Widget _seeAllFooter() {
+    return Container(
+      // Marges resserrées : le CTA colle au bas de la dernière carte (qui porte
+      // déjà 12px de padding bas). `kSeeAllFooterHeight` reflète la hauteur
+      // rendue (tap-target collapsé) pour ne pas dérégler le budget de fit.
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+      alignment: Alignment.center,
+      child: TextButton(
+        onPressed: onSeeAll,
+        style: _seeAllFooterStyle,
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Tout lire'),
+            SizedBox(width: 2),
+            Icon(Icons.chevron_right_rounded, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pied d'une section thématique : footer « Étoffer [thème] » (vrai vecteur
+  /// d'ajout de sources de qualité) quand on a un slug macro-thème, sinon le
+  /// CTA générique historique pour un sujet custom. Décision unique partagée
+  /// par les cas thème vide / maigre.
+  Widget _themeFooter({
+    required String? themeSlug,
+    required String label,
+    required bool initiallyExpanded,
+    required String fallbackCtaLabel,
+    String? headline,
+  }) {
+    if (themeSlug != null) {
+      return EtofferThemeFooter(
+        slug: themeSlug,
+        label: label,
+        headline: headline,
+        initiallyExpanded: initiallyExpanded,
+        onSearch: onAddSources,
+      );
+    }
+    return _FavoriteEmptyState(
+      message: headline,
+      ctaIcon: Icons.add_rounded,
+      ctaLabel: fallbackCtaLabel,
+      onCta: onAddSources,
+    );
   }
 }
 
@@ -469,3 +597,35 @@ class _FavoriteEmptyState extends StatelessWidget {
   }
 }
 
+/// Issue #1 — carte squelette d'une coquille de section (placeholder seed-é
+/// avant le fan-out). Sa géométrie réserve `kRegularCardHeight` (146px : ~134px
+/// de carte + 12px de marge basse) pour que l'arrivée du contenu réel
+/// (`FluxContinuArticleCard`, même réserve) remplace **sur place** sans décaler
+/// les sections suivantes. Calquée visuellement sur `ExploreDiscoverySkeleton`.
+/// Publique pour être réutilisée par le squelette cold-start
+/// (`_FluxContinuSkeleton`) → hauteur stable de bout en bout.
+class SectionSkeletonCard extends StatelessWidget {
+  const SectionSkeletonCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Container(
+        height: 134,
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        ),
+      ),
+    );
+  }
+}
+
+/// Issue #1 — [count] cartes squelette réservant la hauteur finale d'une
+/// section. Partagé par le placeholder de [SectionBlock] et le cold-skeleton
+/// (`_FluxContinuSkeleton`) pour garantir la même géométrie de bout en bout.
+List<Widget> sectionSkeletonCards(int count) => [
+  for (var i = 0; i < count; i++) const SectionSkeletonCard(),
+];

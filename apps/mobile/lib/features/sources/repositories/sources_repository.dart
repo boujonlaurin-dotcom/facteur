@@ -7,6 +7,7 @@ import '../models/source_model.dart';
 import '../models/source_profile.dart';
 import '../models/source_recent_items.dart';
 import '../models/theme_source_model.dart';
+import '../models/theme_suggestions_model.dart';
 
 class SourcesRepository {
   final ApiClient _apiClient;
@@ -359,6 +360,28 @@ class SourcesRepository {
       // ignore: avoid_print
       print('SourcesRepository: [ERROR] getSourcesByTheme: $e');
       rethrow;
+    }
+  }
+
+  /// Footer « Étoffer [thème] » : sources poussées (Tiers 1 & 2) couvrant le
+  /// thème, hors sources déjà suivies. Best-effort : un échec renvoie une
+  /// réponse vide (l'UI bascule sur la seule entrée de recherche), le footer
+  /// ne doit jamais casser le rendu de la Tournée.
+  Future<ThemeSuggestions> suggestSourcesForTheme(String slug) async {
+    try {
+      final response = await _apiClient.dio.get<dynamic>(
+        'sources/suggest-for-theme/$slug',
+      );
+      if (response.statusCode == 200 && response.data is Map) {
+        return ThemeSuggestions.fromJson(
+          response.data as Map<String, dynamic>,
+        );
+      }
+      return ThemeSuggestions(theme: slug, label: '', suggestions: const []);
+    } catch (e) {
+      // ignore: avoid_print
+      print('SourcesRepository: [ERROR] suggestSourcesForTheme: $e');
+      return ThemeSuggestions(theme: slug, label: '', suggestions: const []);
     }
   }
 }

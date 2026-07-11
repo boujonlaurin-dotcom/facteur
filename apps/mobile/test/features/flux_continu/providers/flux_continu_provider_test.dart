@@ -1153,9 +1153,11 @@ void main() {
 
         final state = await settle(container);
         final theme = state.sections.whereType<FeedThemeSection>().single;
-        // Normal sur la référence 640 (banner 54, footer 0, +12 crédit marge
-        // basse) : floor((640-54+12)/146)=4, borné [2,4] ⇒ 4.
-        expect(theme.coreVisibleCount, 4);
+        // Normal sur la référence 640. Thème riche 'tech' → réserve du footer
+        // replié « Ajouter plus de sources » (40) au budget (et donc pas de
+        // crédit marge basse, le footer suivant la dernière carte) :
+        // floor((640-54-40)/146)=3, borné [2,4] ⇒ 3.
+        expect(theme.coreVisibleCount, 3);
       },
     );
 
@@ -1234,9 +1236,10 @@ void main() {
 
       final state = await settle(container);
       final theme = state.sections.whereType<FeedThemeSection>().single;
-      // 500px utiles, banner 54, footer 0, +12 crédit marge basse :
-      // floor((500-54+12)/146)=3, borné [2,4] ⇒ 3.
-      expect(theme.coreVisibleCount, 3);
+      // 500px utiles, banner 54. Thème riche 'tech' → réserve du footer replié
+      // « Ajouter plus de sources » (40), pas de crédit marge basse :
+      // floor((500-54-40)/146)=2, borné [2,4] ⇒ 2.
+      expect(theme.coreVisibleCount, 2);
 
       // Dismissing an item routes through _filterSections → copyWith, which must
       // NOT reset the capped coreVisibleCount.
@@ -1245,7 +1248,7 @@ void main() {
 
       final after = container.read(fluxContinuProvider).requireValue;
       final themeAfter = after.sections.whereType<FeedThemeSection>().single;
-      expect(themeAfter.coreVisibleCount, 3);
+      expect(themeAfter.coreVisibleCount, 2);
       expect(themeAfter.items.map((c) => c.id), isNot(contains('x4')));
     });
   });

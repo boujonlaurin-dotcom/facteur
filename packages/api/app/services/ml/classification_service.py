@@ -315,6 +315,13 @@ CLASSIFICATION_MODEL = "mistral-small-latest"
 
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 
+# Clés de cache de prompt Mistral (LR-1 PR 2). Champ officiel `prompt_cache_key`
+# (PAS `cache_control`) : route les requêtes partageant le même gros préfixe
+# système vers le même cache → tokens de prompt re-facturés moins cher. Une clé
+# par prompt système stable ; bumper le suffixe `-vN` si le prompt change.
+CLASSIFICATION_CACHE_KEY = "facteur-classif-v1"
+ENTITY_CACHE_KEY = "facteur-entities-v1"
+
 ENTITY_SYSTEM_PROMPT = """\
 Tu es un extracteur d'entités nommées expert pour articles de presse francophone.
 Extrais 3 à 5 entités nommées principales de chaque article.
@@ -377,15 +384,23 @@ class ClassificationService:
         return self._client
 
     async def _call_mistral(
-        self, payload: dict, *, max_retries: int = 3
+        self,
+        payload: dict,
+        *,
+        max_retries: int = 3,
+        call_site: str = "classification_pass1",
     ) -> dict | None:
         """Call Mistral API with exponential backoff on 429.
+
+        `call_site` sépare l'observabilité : `classification_pass1` mesure la
+        classification taxonomie seule, `classification_entities` l'extraction
+        d'entités (LR-1 PR 2).
 
         Returns parsed JSON response dict, or None on failure.
         """
         client = self._get_client()
         async with track_api_call(
-            "mistral", "classification_pass1", model=payload.get("model")
+            "mistral", call_site, model=payload.get("model")
         ) as _call:
             for attempt in range(max_retries):
                 try:
@@ -397,11 +412,18 @@ class ClassificationService:
                     usage = data.get("usage", {})
                     max_tokens = payload.get("max_tokens")
                     completion_tokens = usage.get("completion_tokens")
+                    _call.prompt_tokens = usage.get("prompt_tokens")
+                    _call.completion_tokens = completion_tokens
+                    cached_tokens = (usage.get("prompt_tokens_details") or {}).get(
+                        "cached_tokens"
+                    )
+                    _call.cached_prompt_tokens = cached_tokens
                     log.info(
                         "classification.api_usage",
                         model=payload.get("model"),
                         prompt_tokens=usage.get("prompt_tokens"),
                         completion_tokens=completion_tokens,
+                        cached_tokens=cached_tokens,
                     )
                     if max_tokens and completion_tokens == max_tokens:
                         log.warning(
@@ -479,6 +501,7 @@ class ClassificationService:
                 "temperature": 0.0,
                 "max_tokens": 200,
                 "response_format": {"type": "json_object"},
+                "prompt_cache_key": CLASSIFICATION_CACHE_KEY,
             }
         )
         if not data:
@@ -537,6 +560,7 @@ class ClassificationService:
                 "temperature": 0.0,
                 "max_tokens": 200 * len(items),
                 "response_format": {"type": "json_object"},
+                "prompt_cache_key": CLASSIFICATION_CACHE_KEY,
             }
         )
         if not data:
@@ -806,7 +830,9 @@ class ClassificationService:
                 "temperature": 0.0,
                 "max_tokens": 150 * len(items),
                 "response_format": {"type": "json_object"},
-            }
+                "prompt_cache_key": ENTITY_CACHE_KEY,
+            },
+            call_site="classification_entities",
         )
         if not data:
             return empty

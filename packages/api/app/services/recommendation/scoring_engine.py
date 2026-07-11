@@ -25,6 +25,8 @@ class ScoringContext:
         now: datetime.datetime,
         user_subtopics: set[str] = None,
         user_subtopic_weights: dict[str, float] = None,
+        # PR2: learned positive affinity per named entity {entity_canonical: affinity}
+        user_entity_affinity: dict[str, float] = None,
         # Story 4.7: Personalization
         muted_sources: set[UUID] = None,
         muted_themes: set[str] = None,
@@ -60,6 +62,9 @@ class ScoringContext:
         self.now = now
         self.user_subtopics = user_subtopics or set()
         self.user_subtopic_weights = user_subtopic_weights or {}
+
+        # PR2: learned positive affinity per named entity (canonical → weight).
+        self.user_entity_affinity = user_entity_affinity or {}
 
         # Story 4.7: Personalization malus
         self.muted_sources = muted_sources or set()

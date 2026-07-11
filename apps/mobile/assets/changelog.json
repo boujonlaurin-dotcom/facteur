@@ -45,6 +45,94 @@
       "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
     },
     {
+      "tag": "App",
+      "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Des suggestions de sources plus riches par thème, et un accès direct « Tout lire »."
+    },
+    {
+      "tag": "Intérêts",
+      "summary": "Règle le niveau de suivi de chaque thème et sujet d'un simple curseur, comme sur les fiches source."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Les titres de section sont plus lisibles, le « Tout lire » colle à sa section, et « Ton avis compte » est désormais intégré à la carte de fin de tournée."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "La lecture de ta tournée est plus fluide, les sections sont mieux cadrées à l'écran, et tu personnalises ta veille en un geste depuis son titre."
+    },
+    {
+      "tag": "Recherche",
+      "summary": "Trouver une source est plus rapide et mieux ciblé."
+    },
+    {
+      "tag": "Veille",
+      "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
+    },
+    {
+      "tag": "Veille",
+      "summary": "Ton sujet de veille est bien mémorisé, même quand tu le saisis librement, et changer de thème repart d'une base propre sans avoir à tout décocher."
+    },
+    {
+      "tag": "Bonnes nouvelles",
+      "summary": "Les bonnes nouvelles du jour retrouvent leur pertinence, et ta tournée quotidienne propose un peu plus d'articles à découvrir."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Connecter un abonnement est plus clair : une barre d'étapes te situe dans la procédure, et le bouton pour continuer n'apparaît qu'une fois connecté au média."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Tes sources abonnées gardent la couverture médiatique avant d'ouvrir l'article complet, et tu peux connecter ton compte depuis la fiche de n'importe quelle source suivie."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Le navigateur intégré garde ta navigation : un retour arrière remonte les pages visitées au lieu de te renvoyer au feed. Le choix des collections s'ouvre instantanément, et le bouton tournesol indique mieux qu'il partage l'article."
+    },
+    {
+      "tag": "Lettres",
+      "summary": "Le rappel des lettres est plus discret, et ta progression ne recule plus une fois une étape franchie."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Les sources que tu ranges dans ta Tournée y restent : elles ne se perdent plus ni ne réapparaissent ailleurs après un réagencement."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Reconnecte tes abonnements en un geste après une mise à jour, et connecte ton compte à plus de médias, y compris la presse étrangère."
+    },
+    {
+      "tag": "Notifications",
+      "summary": "La notif du matin affiche de nouveau les titres à la une, sans doublon visuel."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Au pied de chaque thème de ta Tournée, des sources de qualité à suivre pour enrichir ton actu, et une recherche pour trouver les tiennes."
+    },
+    {
+      "tag": "Pour toi",
+      "summary": "Le flux récompense désormais les personnalités et sujets que tu lis souvent, avec une raison claire (« Parce que tu lis souvent … »)."
+    },
+    {
+      "tag": "Fiabilité",
+      "summary": "Indice de fiabilité de la source affiché sur les perspectives évaluées."
+    },
+    {
+      "tag": "Tournée",
+      "summary": "Ouverture plus fluide : les sections se remplissent sur place, sans saut ni réorganisation pendant que tu lis."
+    },
+    {
+      "tag": "La Grille",
+      "summary": "Le mot du jour ne se répète plus avant longtemps, et le vocabulaire s'enrichit (pays et régions inclus)."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Les articles lus restent marqués « Lu » de façon fiable, même après un rafraîchissement du flux."
+    },
+    {
       "tag": "Widget",
       "summary": "Le widget se rafraîchit à nouveau, avec un bouton pour forcer la mise à jour."
     },

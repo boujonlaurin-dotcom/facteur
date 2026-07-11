@@ -108,8 +108,18 @@ class Source(Base):
     granular_topics: Mapped[list[str] | None] = mapped_column(
         ARRAY(Text), nullable=True
     )
-    # Thèmes secondaires pour les sources généralistes (Phase 1 diversité feed)
+    # Thèmes secondaires pour les sources généralistes (Phase 1 diversité feed).
+    # Input **précis** du scoring de recommandation (curé). Ne pas confondre avec
+    # `coverage_themes` ci-dessous (découverte, data-driven). Cf. story 22.5.
     secondary_themes: Mapped[list[str] | None] = mapped_column(
+        ARRAY(Text), nullable=True
+    )
+
+    # Couverture éditoriale **data-driven** (top thèmes réellement publiés sur
+    # 90j, hors primaire), recalculée par `recompute_source_coverage_themes`.
+    # Sert la **découverte** (recall : « étoffer un thème », catalogue par
+    # thème) — jamais le scoring. NULL = pas encore dérivée / volume trop faible.
+    coverage_themes: Mapped[list[str] | None] = mapped_column(
         ARRAY(Text), nullable=True
     )
 

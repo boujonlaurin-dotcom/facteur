@@ -10,6 +10,7 @@ import '../../../features/app_update/widgets/ios_update_banner.dart';
 import '../../../features/app_update/widgets/ios_update_gate.dart';
 import '../../../features/feed/widgets/profile_avatar_button.dart';
 import '../../../features/gamification/widgets/streak_indicator.dart';
+import '../../../features/sources/widgets/reconnect_subscriptions_banner.dart';
 import '../../../features/tour/tour_anchors.dart';
 import '../../../features/tour/widgets/guided_tour_bridge.dart';
 import '../../../widgets/design/facteur_logo.dart';
@@ -114,6 +115,10 @@ class MainTabPageScaffold extends ConsumerWidget {
           // Bannière incitative « nouvelle version dispo » (iOS) : non bloquante,
           // app-wide sur les deux onglets. SizedBox.shrink au cas nominal.
           const IosUpdateBanner(),
+          // Bandeau de reconnexion des abonnements (session locale perdue après
+          // une réinstallation). App-wide, auto-clearing, SizedBox.shrink au
+          // cas nominal.
+          const ReconnectSubscriptionsBanner(),
           Expanded(child: child),
         ],
       ),

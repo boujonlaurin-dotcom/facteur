@@ -25,6 +25,7 @@ import '../../feed/repositories/personalization_repository.dart';
 import '../models/user_interests_state.dart';
 import '../providers/user_interests_provider.dart';
 import '../../flux_continu/widgets/tournee_composer_sheet.dart';
+import '../widgets/interest_priority_slider.dart';
 import '../widgets/interest_state_picker_sheet.dart';
 
 const Map<String, String> _apiSlugToMacroLabel = {
@@ -70,35 +71,37 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
     }
   }
 
+  // Le sheet relit l'état courant depuis `userInterestsProvider` (via
+  // `refTarget`) et applique en direct via `onChanged` ; le try/catch +
+  // SnackBar d'erreur restent portés ici.
   Future<void> _pickState({
     required String title,
     required FavoriteRef refTarget,
-    required InterestState currentState,
   }) async {
     final isPinnedTopic = refTarget is CustomTopicFavoriteRef;
-    final selected = await InterestStatePickerSheet.show(
+    await InterestStateSliderSheet.show(
       context,
       title: title,
-      currentState: currentState,
+      refTarget: refTarget,
       favoriteSemantics: isPinnedTopic
           ? FavoriteSemantics.pinnedTopic
           : FavoriteSemantics.theme,
+      onChanged: (selected) async {
+        try {
+          await ref
+              .read(userInterestsProvider.notifier)
+              .setInterestState(refTarget, selected);
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Impossible de mettre à jour cet intérêt.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      },
     );
-    if (selected == null || selected == currentState) return;
-
-    try {
-      await ref
-          .read(userInterestsProvider.notifier)
-          .setInterestState(refTarget, selected);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Impossible de mettre à jour cet intérêt.'),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
   }
 
   @override
@@ -226,7 +229,6 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
               onTapTopic: (id, name) => _pickState(
                 title: name,
                 refTarget: CustomTopicFavoriteRef(id: id),
-                currentState: InterestState.favorite,
               ),
             ),
             // La création / gestion / archivage de la veille vit désormais dans
@@ -242,15 +244,13 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
               themeSlug: themeSlug,
               interests: interests,
               sereinMode: sereinMode,
-              onPickThemeState: (current) => _pickState(
+              onPickThemeState: () => _pickState(
                 title: macroLabel,
                 refTarget: ThemeFavoriteRef(slug: themeSlug),
-                currentState: current,
               ),
-              onPickTopicState: (topicId, name, current) => _pickState(
+              onPickTopicState: (topicId, name) => _pickState(
                 title: name,
                 refTarget: CustomTopicFavoriteRef(id: topicId),
-                currentState: current,
               ),
             );
           }),
@@ -295,7 +295,6 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                             onRestore: () => _pickState(
                               title: entry.displayName,
                               refTarget: entry.refTarget,
-                              currentState: InterestState.hidden,
                             ),
                           ),
                         )
@@ -528,12 +527,8 @@ class _ThemeBlock extends ConsumerWidget {
   final String themeSlug;
   final UserInterestsState interests;
   final bool sereinMode;
-  final Future<void> Function(InterestState current) onPickThemeState;
-  final Future<void> Function(
-    String topicId,
-    String name,
-    InterestState current,
-  ) onPickTopicState;
+  final Future<void> Function() onPickThemeState;
+  final Future<void> Function(String topicId, String name) onPickTopicState;
 
   const _ThemeBlock({
     required this.macroLabel,
@@ -573,7 +568,7 @@ class _ThemeBlock extends ConsumerWidget {
       return _DiscoverHint(
         macroLabel: macroLabel,
         themeSlug: themeSlug,
-        onPickThemeState: () => onPickThemeState(themeState),
+        onPickThemeState: () => onPickThemeState(),
       );
     }
 
@@ -616,7 +611,7 @@ class _ThemeBlock extends ConsumerWidget {
                 if (!sereinMode)
                   _StateChip(
                     state: themeState,
-                    onTap: () => onPickThemeState(themeState),
+                    onTap: () => onPickThemeState(),
                   ),
               ],
             ),
@@ -630,7 +625,6 @@ class _ThemeBlock extends ConsumerWidget {
                     onPickState: () => onPickTopicState(
                       topic.id,
                       topic.topicName,
-                      topic.state,
                     ),
                   ),
                 ),

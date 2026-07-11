@@ -40,14 +40,12 @@ class PremiumConnection {
   bool get isUsable => enabled && loginUrl.isNotEmpty && testUrl.isNotEmpty;
 }
 
-/// Returns the usable premium connection for [source].
-///
-/// Paid sources without curated connection metadata fall back to their home
-/// page so users can still authenticate through the generic WebView flow.
-PremiumConnection? resolvePremiumConnection(Source source) {
+/// Connexion existante si utilisable, sinon flux générique (login=test=home)
+/// dès qu'il y a une URL http(s) valide ; `null` sinon. Cœur partagé par
+/// [resolvePremiumConnection] et [forceGenericConnection].
+PremiumConnection? _genericConnectionFor(Source source) {
   final existing = source.premiumConnection;
   if (existing != null && existing.isUsable) return existing;
-  if (!source.hasPaywall) return null;
 
   final url = source.url?.trim() ?? '';
   if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
@@ -61,6 +59,30 @@ PremiumConnection? resolvePremiumConnection(Source source) {
     isGeneric: true,
   );
 }
+
+/// Returns the usable premium connection for [source].
+///
+/// Paid sources without curated connection metadata fall back to their home
+/// page so users can still authenticate through the generic WebView flow.
+PremiumConnection? resolvePremiumConnection(Source source) {
+  final existing = source.premiumConnection;
+  if (existing != null && existing.isUsable) return existing;
+  if (!source.hasPaywall) return null;
+  return _genericConnectionFor(source);
+}
+
+/// Connexion à associer **intentionnellement** à une source (geste explicite de
+/// l'utilisateur « ce site demande un compte »), sans exiger [Source.hasPaywall].
+///
+/// Superset de [resolvePremiumConnection] : renvoie la connexion existante (curée
+/// ou explicite) si elle est utilisable, sinon synthétise un flux générique dès
+/// qu'il y a une URL http(s) valide. Sert au flux « connecter un login à toute
+/// source suivie » (sources étrangères à login) et à la reconnexion d'un
+/// abonnement même quand le backend n'expose pas de `premium_connection`
+/// (source libre connectée génériquement). [resolvePremiumConnection] reste
+/// réservé au CTA automatique des sources payantes.
+PremiumConnection? forceGenericConnection(Source source) =>
+    _genericConnectionFor(source);
 
 class Source {
   final String id;

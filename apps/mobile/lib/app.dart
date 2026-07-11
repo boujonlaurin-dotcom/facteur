@@ -15,12 +15,17 @@ import 'features/feed/services/read_sync_service.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
+import 'features/app_update/providers/app_update_provider.dart';
 import 'features/app_update/services/playstore_update_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
+import 'package:sentry_flutter/sentry_flutter.dart';
+
 import 'core/api/api_client.dart' show ApiGoneNotifier;
+import 'core/errors/user_facing_error_notifier.dart';
 import 'core/ui/notification_service.dart';
+import 'core/ui/user_facing_error_banner.dart';
 
 const flanerForegroundRefreshThreshold = Duration(minutes: 30);
 
@@ -62,12 +67,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // les 410 et notifie via ApiGoneNotifier (singleton agnostique de
     // BuildContext).
     ApiGoneNotifier.instance.addListener(_onApiGoneEvent);
+    // Bannière « souci côté device » : le notifier (device-only, cooldowné)
+    // publie un évènement, on l'affiche via le ScaffoldMessenger global.
+    UserFacingErrorNotifier.instance.addListener(_onUserFacingError);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     ApiGoneNotifier.instance.removeListener(_onApiGoneEvent);
+    UserFacingErrorNotifier.instance.removeListener(_onUserFacingError);
     super.dispose();
   }
 
@@ -88,6 +97,70 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     ApiGoneNotifier.instance.clear();
   }
 
+  void _onUserFacingError() {
+    final event = UserFacingErrorNotifier.instance.pendingEvent;
+    if (event == null) return;
+    final messenger = NotificationService.messengerKey.currentState;
+    if (messenger == null) {
+      UserFacingErrorNotifier.instance.clear();
+      return;
+    }
+    UserFacingErrorBanner.show(
+      messenger,
+      event,
+      onReport: () => _openUserErrorReportSheet(event),
+    );
+    // Consommé après affichage (évite le re-trigger sur rebuild).
+    UserFacingErrorNotifier.instance.clear();
+  }
+
+  void _openUserErrorReportSheet(UserFacingErrorEvent event) {
+    final context = NotificationService.navigatorKey.currentContext;
+    if (context == null) return;
+    unawaited(
+      UserFacingErrorBanner.showReportSheet(
+        context,
+        onSubmit: (comment) => _submitUserErrorReport(event, comment),
+      ),
+    );
+  }
+
+  Future<void> _submitUserErrorReport(
+    UserFacingErrorEvent event,
+    String comment,
+  ) async {
+    // Signal fort → Sentry, tagué user_reported pour l'alerte ops.
+    await Sentry.captureMessage(
+      'Bug signalé par l\'utilisateur',
+      level: SentryLevel.error,
+      withScope: (scope) {
+        scope.setTag('user_reported', 'true');
+        scope.setTag('source', event.source.tag);
+        scope.setContexts('user_error', {
+          'route': event.route ?? 'unknown',
+          'signature': event.signature,
+          if (event.detail != null) 'detail': event.detail,
+          'comment': comment,
+        });
+      },
+    );
+    // Agrégation funnel côté PostHog.
+    try {
+      await ref.read(posthogServiceProvider).capture(
+        event: 'user_error_reported',
+        properties: {
+          'source': event.source.tag,
+          'has_comment': comment.isNotEmpty,
+        },
+      );
+    } catch (_) {
+      // analytics best-effort
+    }
+    // Arme la fenêtre 24h → prochaines bannières en variante courte.
+    await UserFacingErrorNotifier.instance.markReported();
+    NotificationService.showSuccess('Merci, on regarde ça.');
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState appState) {
     if (appState == AppLifecycleState.paused) {
@@ -101,6 +174,11 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       // playstore : re-check au retour foreground (no-op sur beta/dev ; garde
       // anti-ré-entrance interne au service).
       unawaited(ref.read(playStoreUpdateServiceProvider).checkAndStart());
+      // Android self-update : ré-évalue le point rouge au retour au premier
+      // plan (typiquement juste après l'install de l'APK). Le provider
+      // autoDispose re-fetch /api/app/update ; version installée == dernière
+      // release -> updateAvailable repasse false et le point rouge disparaît.
+      ref.invalidate(appUpdateProvider);
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         final elapsed = _backgroundedAt != null

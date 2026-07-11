@@ -26,8 +26,9 @@ Métriques :
   est la fuite principale.
 - **FP par chemin** (`source_only` / `keyword` / `topic` / `topic+keyword`) :
   attendu en baseline = majorité `source_only` dans le Bloc A.
-- **FN par raison** (`floor_source_only` / `below_threshold` /
-  `diversity_capped` / `not_a_candidate`).
+- **FN par raison** (`floor_source_only` / `floor_weak_keyword` /
+  `gate_pertinence` / `below_threshold` / `diversity_capped` /
+  `not_a_candidate`).
 - **Couverture d'axe** : parmi les articles `relevant`, part qui n'a qu'un axe
   mot-clé (sans topic ML) ou source-seul — quantifie le trou « nba » (topic ML
   mort) et le coût en rappel du gate-all.
@@ -172,7 +173,6 @@ class GoldConfig:
     angles: list[dict]
     global_keywords: list[str]
     sources: list[dict]
-    source_intents: dict[str, str]
     articles: list[GoldArticle]
 
 
@@ -211,11 +211,6 @@ def load_dataset(path: Path) -> list[GoldConfig]:
                 angles=list(c.get("angles") or []),
                 global_keywords=list(c.get("global_keywords") or []),
                 sources=list(c.get("sources") or []),
-                source_intents={
-                    s["source_id"]: s["why"]
-                    for s in (c.get("sources") or [])
-                    if s.get("why")
-                },
                 articles=articles,
             )
         )
@@ -238,11 +233,7 @@ def build_filters_context(config: GoldConfig):
         key: Source(
             id=key_to_uuid[key],
             name=next(
-                (
-                    s.get("name")
-                    for s in config.sources
-                    if s["source_id"] == key
-                ),
+                (s.get("name") for s in config.sources if s["source_id"] == key),
                 key,
             ),
             theme=config.theme_id,
@@ -272,9 +263,6 @@ def build_filters_context(config: GoldConfig):
         )
 
     config_source_uuids = [key_to_uuid[s["source_id"]] for s in config.sources]
-    intents_by_uuid = {
-        key_to_uuid[k]: v for k, v in config.source_intents.items()
-    }
     filters = VeilleFilters(
         theme_id=config.theme_id or None,
         angles=[
@@ -287,7 +275,6 @@ def build_filters_context(config: GoldConfig):
         ],
         source_ids=config_source_uuids,
         global_keywords=list(config.global_keywords),
-        source_intents=intents_by_uuid,
     )
 
     veille_config = VeilleConfig(
@@ -340,14 +327,27 @@ def classify_reject_reason(
     apply_floor: bool,
     apply_threshold: bool,
     floor_active: bool,
+    floor_qualified: bool,
+    gate_active: bool,
+    pertinence: float,
     threshold: float,
+    gate: float,
 ) -> str:
-    if floor_active and "topic" not in axes and "keyword" not in axes:
-        return "floor_source_only"
+    """Attribue la raison de rejet, dans l'ordre réel de la porte
+    (`_score_block`) : floor durci (B) → gate pertinence (A) → seuil composite →
+    cap de diversité. Concorde avec la décision réelle (anti-drift), sans la
+    prendre."""
+    if floor_active and not floor_qualified:
+        # Floor durci (B) : source-seul (aucun axe topic/keyword) OU keyword-only
+        # sous le minimum de hits distincts (unigramme générique isolé).
+        return "floor_weak_keyword" if "keyword" in axes else "floor_source_only"
+    if gate_active and pertinence < gate:
+        # Gate pertinence (A) : composite franchi mais lien au sujet trop faible.
+        return "gate_pertinence"
     if apply_threshold and score < threshold:
         return "below_threshold"
-    # A passé floor + seuil mais n'est pas dans le set gardé → coupé par le cap
-    # de diversité (Bloc A uniquement).
+    # A passé floor + gate + seuil mais n'est pas dans le set gardé → coupé par
+    # le cap de diversité (Bloc A uniquement).
     return "diversity_capped"
 
 
@@ -399,7 +399,9 @@ def evaluate_config(
     source_ids = set(filters.source_ids)
     keywords = filters.all_keywords
     threshold = ScoringWeights.VEILLE_RELEVANCE_THRESHOLD
-    floor_active = apply_floor and bool(topic_slugs or keywords)
+    gate = ScoringWeights.VEILLE_PERTINENCE_GATE
+    has_topic_or_kw = bool(topic_slugs or keywords)
+    floor_active = apply_floor and has_topic_or_kw
 
     # Partition par appartenance à une source configurée (= la requête SQL).
     block_a_articles: list[GoldArticle] = []
@@ -450,13 +452,19 @@ def evaluate_config(
     for a in config.articles:
         content = contents[a.id]
         block = block_of[a.id]
-        axes = _matched_axes(content, topic_slugs, source_ids, keywords)
-        raw = engine.compute_score(content, context).final_score
-        kept = content.id in kept_ids
-        block_floor_active = (
-            floor_active if block == "A" else bool(topic_slugs or keywords)
+        axes, floor_qualified = _matched_axes(
+            content, topic_slugs, source_ids, keywords
         )
+        result = engine.compute_score(content, context)
+        raw = result.final_score
+        pertinence = result.pillar_scores.get("pertinence", 0.0)
+        kept = content.id in kept_ids
+        # Le Bloc B applique toujours floor + gate + seuil ; le Bloc A suit les
+        # flags de politique (passthrough / floor / floor_threshold).
+        block_floor_active = floor_active if block == "A" else has_topic_or_kw
+        block_apply_floor = apply_floor if block == "A" else True
         block_apply_threshold = apply_threshold if block == "A" else True
+        block_gate_active = block_apply_threshold and has_topic_or_kw
         if kept:
             accept_path: str | None = classify_accept_path(axes)
             reject_reason: str | None = None
@@ -468,10 +476,14 @@ def evaluate_config(
                 reject_reason = classify_reject_reason(
                     axes,
                     raw,
-                    apply_floor=(apply_floor if block == "A" else True),
+                    apply_floor=block_apply_floor,
                     apply_threshold=block_apply_threshold,
                     floor_active=block_floor_active,
+                    floor_qualified=floor_qualified,
+                    gate_active=block_gate_active,
+                    pertinence=pertinence,
                     threshold=threshold,
+                    gate=gate,
                 )
         results.append(
             ArticleResult(
@@ -511,9 +523,7 @@ def _f1(precision: float, recall: float) -> float:
     return _safe_div(2 * precision * recall, precision + recall)
 
 
-def aggregate(
-    config_scores: list[ConfigScore], results: list[ArticleResult]
-) -> dict:
+def aggregate(config_scores: list[ConfigScore], results: list[ArticleResult]) -> dict:
     tp = sum(s.tp for s in config_scores)
     fp = sum(s.fp for s in config_scores)
     fn = sum(s.fn for s in config_scores)
@@ -551,8 +561,13 @@ def aggregate(
         "n_configs": len(config_scores),
         "n_articles": sum(s.n_articles for s in config_scores),
         "micro": {
-            "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-            "precision": p, "recall": r, "f1": _f1(p, r),
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "tn": tn,
+            "precision": p,
+            "recall": r,
+            "f1": _f1(p, r),
         },
         "macro": {"precision": macro_p, "recall": macro_r, "f1": macro_f1},
         "fp_by_block": dict(fp_by_block.most_common()),
@@ -570,8 +585,13 @@ def aggregate(
             {
                 "config_key": s.config_key,
                 "n_articles": s.n_articles,
-                "tp": s.tp, "fp": s.fp, "fn": s.fn, "tn": s.tn,
-                "precision": s.precision, "recall": s.recall, "f1": s.f1,
+                "tp": s.tp,
+                "fp": s.fp,
+                "fn": s.fn,
+                "tn": s.tn,
+                "precision": s.precision,
+                "recall": s.recall,
+                "f1": s.f1,
             }
             for s in config_scores
         ],
@@ -761,7 +781,9 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=None)
     parser.add_argument("--sweep", action="store_true")
     parser.add_argument(
-        "--compare", nargs=2, metavar=("BASELINE", "AFTER"),
+        "--compare",
+        nargs=2,
+        metavar=("BASELINE", "AFTER"),
         help="2 JSON produits par ce script",
     )
     parser.add_argument("--out-json", default=None)
@@ -791,9 +813,7 @@ def main() -> None:
     out_json = Path(
         args.out_json or CONTEXT_DIR / f"veille-curation-{args.tag}-{today}.json"
     )
-    out_md = Path(
-        args.out_md or CONTEXT_DIR / f"veille-curation-{args.tag}-{today}.md"
-    )
+    out_md = Path(args.out_md or CONTEXT_DIR / f"veille-curation-{args.tag}-{today}.md")
     out_json.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {

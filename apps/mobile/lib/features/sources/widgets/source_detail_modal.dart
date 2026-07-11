@@ -15,6 +15,7 @@ import '../../flux_continu/utils/theme_color_mapping.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
+import '../../my_interests/widgets/interest_priority_slider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -1616,137 +1617,37 @@ class _FsSettings extends StatelessWidget {
 }
 
 /// Curseur 4 points (Masqué → Neutre → Suivi → Favori) remplaçant la pastille
-/// + modal de priorité. Chaque point porte son icône `InterestState`, et le
-/// statut courant + sa description s'actualisent sous la piste à chaque
-/// déplacement. Le slide persiste l'état via `userSourcesStateProvider`
-/// (optimiste : la position suit le doigt, puis se resynchronise sur le
-/// provider).
-class _SourcePrioritySlider extends ConsumerStatefulWidget {
+/// + modal de priorité. Fin wrapper autour du widget partagé
+/// [InterestPrioritySlider] : lit l'état courant via `userSourcesStateProvider`
+/// et persiste via `setSourceState` (optimiste ; la position se resynchronise
+/// sur le provider, rollback compris). Le libellé source reste « Favori ».
+class _SourcePrioritySlider extends ConsumerWidget {
   final String sourceId;
   const _SourcePrioritySlider({required this.sourceId});
 
   @override
-  ConsumerState<_SourcePrioritySlider> createState() =>
-      _SourcePrioritySliderState();
-}
-
-class _SourcePrioritySliderState
-    extends ConsumerState<_SourcePrioritySlider> {
-  // Ordre gauche → droite du curseur.
-  static const List<InterestState> _order = [
-    InterestState.hidden,
-    InterestState.unfollowed,
-    InterestState.followed,
-    InterestState.favorite,
-  ];
-
-  // Position optimiste pendant le drag (null = on suit le provider).
-  int? _pendingIndex;
-
-  Future<void> _apply(InterestState picked) async {
-    try {
-      await ref
-          .read(userSourcesStateProvider.notifier)
-          .setSourceState(widget.sourceId, picked);
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _pendingIndex = null);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de mettre à jour cette source.'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final textTheme = Theme.of(context).textTheme;
-
+  Widget build(BuildContext context, WidgetRef ref) {
     final providerState = ref.watch(userSourcesStateProvider).valueOrNull;
     final currentState =
-        providerState?.stateOf(widget.sourceId) ?? InterestState.followed;
-    final providerIndex = _order.indexOf(currentState);
-    final index = _pendingIndex ?? providerIndex;
-    final state = _order[index];
-    final accent = state.accent(colors);
+        providerState?.stateOf(sourceId) ?? InterestState.followed;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SliderTheme(
-          data: SliderThemeData(
-            trackHeight: 4,
-            activeTrackColor: accent,
-            inactiveTrackColor: colors.textPrimary.withValues(alpha: 0.12),
-            thumbColor: accent,
-            overlayColor: accent.withValues(alpha: 0.16),
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
-            tickMarkShape: SliderTickMarkShape.noTickMark,
-          ),
-          child: Slider(
-            value: index.toDouble(),
-            min: 0,
-            max: (_order.length - 1).toDouble(),
-            divisions: _order.length - 1,
-            onChanged: (v) => setState(() => _pendingIndex = v.round()),
-            onChangeEnd: (v) {
-              final picked = _order[v.round()];
-              setState(() => _pendingIndex = null);
-              if (picked != currentState) _apply(picked);
-            },
-          ),
-        ),
-        // Icône + libellé court sous chaque point.
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            children: [
-              for (var i = 0; i < _order.length; i++)
-                Expanded(
-                  child: Column(
-                    children: [
-                      Icon(
-                        _order[i].iconData,
-                        size: 15,
-                        color: i == index
-                            ? _order[i].accent(colors)
-                            : colors.textTertiary,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        _order[i].label,
-                        textAlign: TextAlign.center,
-                        style: textTheme.labelSmall?.copyWith(
-                          fontSize: 10.5,
-                          letterSpacing: 0,
-                          color: i == index
-                              ? _order[i].accent(colors)
-                              : colors.textTertiary,
-                          fontWeight:
-                              i == index ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Description du statut courant, mise à jour au slide.
-        Text(
-          state.description,
-          style: textTheme.labelSmall?.copyWith(
-            color: colors.textSecondary,
-            fontSize: 12,
-            height: 1.4,
-            letterSpacing: 0,
-          ),
-        ),
-      ],
+    return InterestPrioritySlider(
+      value: currentState,
+      onChanged: (picked) async {
+        try {
+          await ref
+              .read(userSourcesStateProvider.notifier)
+              .setSourceState(sourceId, picked);
+        } catch (_) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Impossible de mettre à jour cette source.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      },
     );
   }
 }
@@ -1762,11 +1663,18 @@ class _FsManage extends StatelessWidget {
   Widget build(BuildContext context) {
     // Le masquage est désormais porté par le curseur de priorité (palier
     // « Masqué »). Cette section ne subsiste que pour la connexion premium.
-    if (source.premiumConnection == null) return const SizedBox.shrink();
+    // Sources payantes curées (paywall) : bouton visible indépendamment du
+    // suivi (aligné sur `eligibleSubscriptionSourcesProvider`). Nouveau cas
+    // générique (source suivie avec URL http(s) mais sans `premium_connection`
+    // curé, ex. Cerveau & Psycho) : réservé aux sources suivies, aligné sur
+    // `loginConnectableSourcesProvider` de la feuille Réglages.
+    final connection = resolvePremiumConnection(source) ??
+        (source.isTrusted ? forceGenericConnection(source) : null);
+    if (connection == null) return const SizedBox.shrink();
 
     return _FsSection(
       title: 'Gestion de la source',
-      child: _FsPremium(source: source),
+      child: _FsPremium(source: source, connection: connection),
     );
   }
 }
@@ -1775,19 +1683,21 @@ class _FsManage extends StatelessWidget {
 /// propose un, indépendamment du suivi.
 class _FsPremium extends ConsumerWidget {
   final Source source;
-  const _FsPremium({required this.source});
+  final PremiumConnection connection;
+  const _FsPremium({required this.source, required this.connection});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final linked = source.hasSubscription;
+    // Une connexion générique = source sans abonnement payant curé : on parle
+    // de « compte » (connexion login) plutôt que d'« abonnement ».
+    final isGeneric = connection.isGeneric;
 
     final title = linked
-        ? 'Abonnement associé'
-        : (source.premiumConnection!.isGeneric
-              ? 'Associer mon abonnement'
-              : 'Connecter mon abonnement');
+        ? (isGeneric ? 'Compte connecté' : 'Abonnement associé')
+        : (isGeneric ? 'Connecter mon compte' : 'Connecter mon abonnement');
 
     return InkWell(
       borderRadius: BorderRadius.circular(FacteurRadius.large),
@@ -1827,8 +1737,11 @@ class _FsPremium extends ConsumerWidget {
                   ),
                   const SizedBox(height: 1),
                   Text(
-                    'Lis les articles réservés aux abonnés directement dans '
-                    'Facteur.',
+                    isGeneric
+                        ? 'Connecte ton compte pour lire les articles de ce '
+                              'média directement dans Facteur.'
+                        : 'Lis les articles réservés aux abonnés directement '
+                              'dans Facteur.',
                     style: textTheme.labelSmall?.copyWith(
                       color: colors.textTertiary,
                       height: 1.4,
@@ -1877,6 +1790,7 @@ class _FsPremium extends ConsumerWidget {
       MaterialPageRoute(
         builder: (_) => PremiumSourceConnection(
           source: source,
+          connection: connection,
           onConnected: () => ref
               .read(userSourcesProvider.notifier)
               .connectSubscription(source.id),

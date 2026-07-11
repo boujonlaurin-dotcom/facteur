@@ -472,6 +472,94 @@ void main() {
     );
   });
 
+  testWidgets(
+      'réordre avec catalogue partiel ne perd pas une source Essentiel non '
+      'résolue (régression « sources qui se perdent »)', (tester) async {
+    // `source:s2` est favorite + Essentiel (clé dans l'ordre) mais ABSENTE du
+    // catalogue (chargement en cours) → sa tuile n'est pas matérialisée. Un
+    // réordre des tuiles rendues ne doit pas l'élaguer de `tournee_order_v1`.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['source:s1', 'source:s2', 'theme:tech'],
+    });
+    await _openSheet(
+      tester,
+      interests: _interests(favorites: const [ThemeFavoriteRef(slug: 'tech')]),
+      sources: _sources(favorites: const [
+        SourceFavoriteRef(sourceId: 's1', position: 0),
+        SourceFavoriteRef(sourceId: 's2', position: 1),
+      ]),
+      catalog: [_source('s1', 'Le Monde')], // s2 non résolu volontairement.
+    );
+
+    // s1 rendu (Essentiel), s2 sauté faute de catalogue.
+    expect(find.text('Le Monde'), findsOneWidget);
+
+    // Réordre réel : on attrape la 1ʳᵉ poignée de drag et on descend d'environ
+    // deux hauteurs de tuile pour franchir une frontière → déclenche onReorder.
+    final handle = find
+        .byIcon(PhosphorIcons.dotsSixVertical(PhosphorIconsStyle.bold))
+        .first;
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.moveBy(const Offset(0, 120));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Le réordre est non destructif : la source non rendue survit dans l'ordre
+    // (avant le fix, `setOrder(renderedKeys)` l'élaguait → repassait en Flâner).
+    final prefs = await SharedPreferences.getInstance();
+    final order = prefs.getStringList('tournee_order_v1') ?? const <String>[];
+    expect(order, contains('source:s2'));
+  });
+
+  testWidgets(
+      'symétrie Flâner : réordre avec catalogue partiel préserve une source '
+      'Flâner non résolue', (tester) async {
+    // s1 (Flâner, rendu) + t1 (sujet, rendu) + s2 (Flâner, NON résolu) dans
+    // `pinned_tabs_order_v1`. Un réordre des tuiles rendues ne doit pas perdre
+    // `source:s2` (même garde-fou que l'Essentiel, code path partagé).
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'pinned_tabs_order_v1': ['topic:t1', 'source:s1', 'source:s2'],
+    });
+    await _openSheet(
+      tester,
+      interests: _interests(
+        favorites: const [CustomTopicFavoriteRef(id: 't1')],
+        customTopics: [_topic('t1', 'Climat')],
+      ),
+      sources: _sources(favorites: const [
+        SourceFavoriteRef(sourceId: 's1', position: 0),
+        SourceFavoriteRef(sourceId: 's2', position: 1),
+      ]),
+      catalog: [_source('s1', 'Le Monde')], // s2 non résolu.
+      entry: ManageFavoritesEntry.flaner,
+    );
+
+    expect(find.text('Climat'), findsOneWidget);
+    expect(find.text('Le Monde'), findsOneWidget);
+
+    // Réordre de la liste Flâner (Climat + Le Monde rendus). Dernière poignée
+    // (Le Monde) glissée vers le haut pour franchir une frontière.
+    final handles = find
+        .byIcon(PhosphorIcons.dotsSixVertical(PhosphorIconsStyle.bold));
+    final gesture = await tester.startGesture(tester.getCenter(handles.last));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveBy(const Offset(0, -40));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.moveBy(const Offset(0, -120));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    final prefs = await SharedPreferences.getInstance();
+    final order =
+        prefs.getStringList('pinned_tabs_order_v1') ?? const <String>[];
+    expect(order, contains('source:s2'));
+  });
+
   testWidgets('🔭 sur un sujet ouvre la config veille (pop + route)',
       (tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});

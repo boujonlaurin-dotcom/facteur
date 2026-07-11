@@ -70,8 +70,10 @@ const List<ClosingActivity> kOutdoorActivities = [
   ),
 ];
 
-/// Nombre de propositions affichées chaque jour sur la carte de fin.
-const int kClosingActivityCount = 3;
+/// Nombre de propositions affichées chaque jour sur la carte de fin. Une seule
+/// activité, qui **tourne chaque jour** via la rotation déterministe par jour de
+/// l'année (cf. [pickClosingActivities]).
+const int kClosingActivityCount = 1;
 
 /// Choisit les [count] activités du jour. Rotation **déterministe** par jour de
 /// l'année (sélection stable sur la journée, pas de jitter au rebuild) ; la

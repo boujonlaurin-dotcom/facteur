@@ -8,7 +8,14 @@ class PushDevicesApiService {
 
   final ApiClient _apiClient;
 
-  Future<bool> upsert({
+  /// Enregistre l'appareil. Retourne `(ok, statusCode)` :
+  /// - `ok` = succès 2xx ;
+  /// - `statusCode` = code HTTP de la réponse d'erreur (ex. 503 si le push
+  ///   serveur n'est pas configuré côté backend), ou `null` pour une erreur
+  ///   réseau/timeout sans réponse. Surfacé pour le diagnostic de registration
+  ///   (cf. bug-notif-matin-avatar-double-sans-bullets, Part 2 : root cause
+  ///   « 0 device »).
+  Future<({bool ok, int? statusCode})> upsert({
     required String deviceId,
     required String token,
     required String platform,
@@ -26,10 +33,13 @@ class PushDevicesApiService {
           if (appVersion != null) 'app_version': appVersion,
         },
       );
-      return true;
+      return (ok: true, statusCode: null);
     } on DioException catch (e) {
-      debugPrint('PushDevicesApi: PUT failed: ${e.message}');
-      return false;
+      debugPrint(
+        'PushDevicesApi: PUT failed: ${e.message} '
+        '(status ${e.response?.statusCode})',
+      );
+      return (ok: false, statusCode: e.response?.statusCode);
     }
   }
 

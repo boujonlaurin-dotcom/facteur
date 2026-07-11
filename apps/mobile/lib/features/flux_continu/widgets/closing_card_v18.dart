@@ -39,11 +39,18 @@ class ClosingCardV18 extends ConsumerWidget {
   /// (ex. « Tu lis la lettre du … »). Uniquement en lecture seule.
   final String? readOnlyNote;
 
+  /// Sous-carte secondaire rendue à l'intérieur de la carte de clôture, sous
+  /// un divider (ex. « Ton avis compte » = [FeedbackClosingCard] embarquée).
+  /// Fait partie de la même boîte visuelle → mesurée par les ancres de snap
+  /// avec la carte principale.
+  final Widget? secondary;
+
   const ClosingCardV18({
     super.key,
     this.onContinue,
     this.onClose,
     this.closeHint,
+    this.secondary,
   })  : onBackToToday = null,
         readOnlyNote = null;
 
@@ -57,7 +64,8 @@ class ClosingCardV18 extends ConsumerWidget {
   })  : readOnlyNote = note,
         onContinue = null,
         onClose = null,
-        closeHint = null;
+        closeHint = null,
+        secondary = null;
 
   bool get _isReadOnly => onBackToToday != null;
 
@@ -179,6 +187,15 @@ class ClosingCardV18 extends ConsumerWidget {
                   ),
                 ),
               ],
+            ],
+            if (secondary != null) ...[
+              const SizedBox(height: 20),
+              Divider(
+                height: 1,
+                color: colors.textTertiary.withValues(alpha: 0.15),
+              ),
+              const SizedBox(height: 16),
+              secondary!,
             ],
           ],
         ),

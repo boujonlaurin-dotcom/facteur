@@ -412,7 +412,6 @@ class CurationService:
         return ClusterSummary(
             topic_id=cluster.cluster_id,
             label=cluster.label,
-            article_titles=[c.title for c in cluster.contents[:10]],
             source_count=len(cluster.source_domains),
             is_trending=cluster.is_trending,
             theme=cluster.theme,

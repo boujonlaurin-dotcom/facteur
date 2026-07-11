@@ -39,6 +39,7 @@ class PremiumWebView extends StatefulWidget {
     this.enableScrollBridge = false,
     this.detectPaywall = false,
     this.onWebViewCreated,
+    this.onLoadStart,
     this.onLoadStop,
     this.onGestureStart,
     this.onGestureDelta,
@@ -60,6 +61,7 @@ class PremiumWebView extends StatefulWidget {
   final bool detectPaywall;
 
   final ValueChanged<InAppWebViewController>? onWebViewCreated;
+  final ValueChanged<WebUri?>? onLoadStart;
   final ValueChanged<WebUri?>? onLoadStop;
   final VoidCallback? onGestureStart;
   final ValueChanged<double>? onGestureDelta;
@@ -102,6 +104,7 @@ class _PremiumWebViewState extends State<PremiumWebView> {
       initialSettings: settings,
       gestureRecognizers: widget.gestureRecognizers,
       onWebViewCreated: _handleCreated,
+      onLoadStart: (controller, url) => widget.onLoadStart?.call(url),
       onLoadStop: _handleLoadStop,
     );
   }

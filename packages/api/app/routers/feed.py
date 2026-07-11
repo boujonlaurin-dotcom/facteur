@@ -34,6 +34,7 @@ from app.schemas.feed import (
 from app.services.feed_cache import FEED_CACHE
 from app.services.recommendation.french_stopwords import FRENCH_STOP_WORDS
 from app.services.recommendation_service import RecommendationService
+from app.utils.db_retry import retry_db_op
 
 logger = structlog.get_logger()
 
@@ -647,97 +648,104 @@ async def get_tab_counts(
     user_uuid = UUID(current_user_id)
     cutoff = datetime.now(UTC) - timedelta(hours=48)
 
-    followed_stmt = select(UserSource.source_id).where(
-        UserSource.user_id == user_uuid,
-        UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
-    )
-    favorites_stmt = select(UserTopicProfile).where(
-        UserTopicProfile.user_id == user_uuid,
-        UserTopicProfile.priority_multiplier == 2.0,
-    )
+    async def _load_counts() -> TabCountsResponse:
+        # Read pur multi-await (badges au chargement, cold-open) → replay sûr.
+        # Toute la phase de requêtes est enveloppée dans `retry_db_op` pour
+        # qu'un hoquet de pool transitoire (PYTHON-4/14/26/27) rejoue après
+        # rollback au lieu de 500 l'utilisateur. Aucun commit ici.
+        followed_stmt = select(UserSource.source_id).where(
+            UserSource.user_id == user_uuid,
+            UserSource.state.in_((InterestState.FOLLOWED, InterestState.FAVORITE)),
+        )
+        favorites_stmt = select(UserTopicProfile).where(
+            UserTopicProfile.user_id == user_uuid,
+            UserTopicProfile.priority_multiplier == 2.0,
+        )
 
-    followed_result = await db.execute(followed_stmt)
-    followed_source_ids = {row[0] for row in followed_result.all()}
-    favorite_profiles = list((await db.scalars(favorites_stmt)).all())
+        followed_result = await db.execute(followed_stmt)
+        followed_source_ids = {row[0] for row in followed_result.all()}
+        favorite_profiles = list((await db.scalars(favorites_stmt)).all())
 
-    if not followed_source_ids:
-        return TabCountsResponse(total=0)
+        if not followed_source_ids:
+            return TabCountsResponse(total=0)
 
-    # 2. Extract favorite slugs/names to count
-    fav_topic_slugs: set[str] = set()
-    fav_entity_names: set[str] = set()
-    for prof in favorite_profiles:
-        if prof.entity_type is not None:
-            if prof.canonical_name:
-                fav_entity_names.add(prof.canonical_name.lower())
-        else:
-            if prof.slug_parent:
-                fav_topic_slugs.add(prof.slug_parent)
+        # 2. Extract favorite slugs/names to count
+        fav_topic_slugs: set[str] = set()
+        fav_entity_names: set[str] = set()
+        for prof in favorite_profiles:
+            if prof.entity_type is not None:
+                if prof.canonical_name:
+                    fav_entity_names.add(prof.canonical_name.lower())
+            else:
+                if prof.slug_parent:
+                    fav_topic_slugs.add(prof.slug_parent)
 
-    # 3. Lightweight query: only columns needed for counting
-    exclude_stmt = exists().where(
-        UserContentStatus.content_id == Content.id,
-        UserContentStatus.user_id == user_uuid,
-        or_(
-            UserContentStatus.is_hidden,
-            UserContentStatus.status.in_(["seen", "consumed"]),
-        ),
-    )
+        # 3. Lightweight query: only columns needed for counting
+        exclude_stmt = exists().where(
+            UserContentStatus.content_id == Content.id,
+            UserContentStatus.user_id == user_uuid,
+            or_(
+                UserContentStatus.is_hidden,
+                UserContentStatus.status.in_(["seen", "consumed"]),
+            ),
+        )
 
-    stmt = select(Content.id, Content.topics, Content.entities).where(
-        Content.source_id.in_(list(followed_source_ids)),
-        Content.published_at >= cutoff,
-        ~exclude_stmt,
-    )
-    rows = (await db.execute(stmt)).all()
+        stmt = select(Content.id, Content.topics, Content.entities).where(
+            Content.source_id.in_(list(followed_source_ids)),
+            Content.published_at >= cutoff,
+            ~exclude_stmt,
+        )
+        rows = (await db.execute(stmt)).all()
 
-    # 4. Count in Python (single pass over lightweight rows)
-    total = len(rows)
-    topic_counts: dict[str, int] = {}
-    entity_counts: dict[str, int] = {}
-    theme_counts: dict[str, int] = {}
+        # 4. Count in Python (single pass over lightweight rows)
+        total = len(rows)
+        topic_counts: dict[str, int] = {}
+        entity_counts: dict[str, int] = {}
+        theme_counts: dict[str, int] = {}
 
-    for row in rows:
-        topics = row.topics or []
-        entities_raw = row.entities or []
+        for row in rows:
+            topics = row.topics or []
+            entities_raw = row.entities or []
 
-        for slug in fav_topic_slugs:
-            if slug in topics:
-                topic_counts[slug] = topic_counts.get(slug, 0) + 1
+            for slug in fav_topic_slugs:
+                if slug in topics:
+                    topic_counts[slug] = topic_counts.get(slug, 0) + 1
 
-        if fav_entity_names and entities_raw:
-            for raw_entity in entities_raw:
-                try:
-                    parsed = _json.loads(raw_entity)
-                    name = parsed.get("name", "").lower()
-                except (ValueError, AttributeError):
-                    name = raw_entity.lower()
-                if name in fav_entity_names:
-                    entity_counts[name] = entity_counts.get(name, 0) + 1
+            if fav_entity_names and entities_raw:
+                for raw_entity in entities_raw:
+                    try:
+                        parsed = _json.loads(raw_entity)
+                        name = parsed.get("name", "").lower()
+                    except (ValueError, AttributeError):
+                        name = raw_entity.lower()
+                    if name in fav_entity_names:
+                        entity_counts[name] = entity_counts.get(name, 0) + 1
 
-        # Theme: count each article once per theme (not per topic)
-        seen_themes: set[str] = set()
-        for topic_slug in topics:
-            theme_slug = TOPIC_TO_THEME.get(topic_slug)
-            if theme_slug and theme_slug not in seen_themes:
-                seen_themes.add(theme_slug)
-                theme_counts[theme_slug] = theme_counts.get(theme_slug, 0) + 1
+            # Theme: count each article once per theme (not per topic)
+            seen_themes: set[str] = set()
+            for topic_slug in topics:
+                theme_slug = TOPIC_TO_THEME.get(topic_slug)
+                if theme_slug and theme_slug not in seen_themes:
+                    seen_themes.add(theme_slug)
+                    theme_counts[theme_slug] = theme_counts.get(theme_slug, 0) + 1
 
-    logger.info(
-        "tab_counts_served",
-        user_id=current_user_id,
-        total=total,
-        topic_count=len(topic_counts),
-        entity_count=len(entity_counts),
-        theme_count=len(theme_counts),
-    )
+        logger.info(
+            "tab_counts_served",
+            user_id=current_user_id,
+            total=total,
+            topic_count=len(topic_counts),
+            entity_count=len(entity_counts),
+            theme_count=len(theme_counts),
+        )
 
-    return TabCountsResponse(
-        total=total,
-        topics=topic_counts,
-        entities=entity_counts,
-        themes=theme_counts,
-    )
+        return TabCountsResponse(
+            total=total,
+            topics=topic_counts,
+            entities=entity_counts,
+            themes=theme_counts,
+        )
+
+    return await retry_db_op(_load_counts, session=db, op_name="feed.tab_counts")
 
 
 @router.get("/trending-topics", response_model=list[TrendingTopicResponse])

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 import 'package:facteur/config/theme.dart';
@@ -126,6 +127,12 @@ void main() {
     GoogleFonts.config.allowRuntimeFetching = false;
   });
 
+  // ⚠️ setMockInitialValues AVANT tout getInstance (poison sinon,
+  // cf. memory getInstance poison MissingPluginException).
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   testWidgets('hides when no active letter', (tester) async {
     final repo = _MockRepo();
     when(() => repo.getLetters()).thenAnswer((_) async => []);
@@ -180,5 +187,52 @@ void main() {
     await tester.pump();
 
     expect(find.text('Facteur Stagiaire'), findsNothing);
+  });
+
+  testWidgets('throttle : masqué si affiché il y a moins de 7 jours',
+      (tester) async {
+    final recent = DateTime.now().subtract(const Duration(days: 1));
+    SharedPreferences.setMockInitialValues({
+      'lettres_banner_last_shown_v1': recent.millisecondsSinceEpoch,
+    });
+    final repo = _MockRepo();
+    when(() => repo.getLetters()).thenAnswer((_) async => [_activeLetter()]);
+
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Facteur Stagiaire'), findsNothing);
+  });
+
+  testWidgets('throttle : affiché si dernier affichage > 7 jours',
+      (tester) async {
+    final old = DateTime.now().subtract(const Duration(days: 8));
+    SharedPreferences.setMockInitialValues({
+      'lettres_banner_last_shown_v1': old.millisecondsSinceEpoch,
+    });
+    final repo = _MockRepo();
+    when(() => repo.getLetters()).thenAnswer((_) async => [_activeLetter()]);
+
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Facteur Stagiaire'), findsOneWidget);
+  });
+
+  testWidgets('affichage persiste le timestamp (throttle futur)',
+      (tester) async {
+    final repo = _MockRepo();
+    when(() => repo.getLetters()).thenAnswer((_) async => [_activeLetter()]);
+
+    await tester.pumpWidget(_wrap(repo: repo));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('Facteur Stagiaire'), findsOneWidget);
+
+    // L'affichage a écrit lettres_banner_last_shown_v1.
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('lettres_banner_last_shown_v1'), isNotNull);
   });
 }

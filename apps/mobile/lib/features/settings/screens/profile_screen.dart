@@ -62,6 +62,7 @@ class ProfileScreen extends ConsumerWidget {
             _Section(
               title: 'PRÉFÉRENCES',
               children: [
+                const _ConfigProgressTile(),
                 _Tile(
                   icon: Icons.settings_suggest_outlined,
                   title: 'Refaire le questionnaire',
@@ -156,6 +157,74 @@ class ProfileScreen extends ConsumerWidget {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+}
+
+/// CTA fort vers la progression du parcours de configuration — remplace le
+/// message « Config » sorti de la rotation de la Notif du jour (un user en
+/// onboarding est hors feed : le réglage est le seul point d'entrée fiable).
+class _ConfigProgressTile extends ConsumerWidget {
+  const _ConfigProgressTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final progress =
+        ref.watch(onboardingProvider.select((s) => s.progress)).clamp(0.0, 1.0);
+    return InkWell(
+      onTap: () {
+        ref.read(onboardingProvider.notifier).restartOnboarding();
+        ref.read(authStateProvider.notifier).setNeedsOnboarding(true);
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(FacteurSpacing.space4),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.flagBanner(PhosphorIconsStyle.regular),
+              color: colors.primary,
+              size: 24,
+            ),
+            const SizedBox(width: FacteurSpacing.space4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ma configuration',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 4,
+                      backgroundColor: const Color(0x14000000),
+                      valueColor: AlwaysStoppedAnimation(colors.primary),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Reprendre là où tu en étais',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+              color: colors.textTertiary,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

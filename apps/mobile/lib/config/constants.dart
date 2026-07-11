@@ -308,6 +308,19 @@ class SentryConstants {
   static bool get isEnabled => dsn.isNotEmpty;
 }
 
+/// Kill-switch local (dark launch) de la bannière « souci côté device ».
+/// Off par défaut → shipping silencieux ; activation via build define
+/// `USER_ERROR_BANNER_ENABLED=true`. Un vrai remote-flag PostHog viendra en
+/// suivi (cf. plan, choix (b)).
+class UserErrorBannerConstants {
+  UserErrorBannerConstants._();
+
+  static const bool enabled = bool.fromEnvironment(
+    'USER_ERROR_BANNER_ENABLED',
+    defaultValue: false,
+  );
+}
+
 /// Story 22.1 — système d'intérêts unifié 4-états.
 /// Cap dur du nombre de favoris (intérêts ET sources, séparément).
 /// DOIT rester synchronisé avec `packages/api/app/constants.py::FAVORITE_CAP`.
@@ -331,6 +344,11 @@ class ExternalLinks {
   /// Lien d'invitation au groupe WhatsApp "Facteur - Retours & idées"
   static const String whatsappGroupUrl =
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
+
+  /// URL Calendly pour prendre un call qualitatif avec l'équipe (Epic 13).
+  /// TODO(laurin): remplacer par le vrai lien Calendly avant le merge.
+  static const String calendlyUrl =
+      'https://calendly.com/laurin-facteur/feedback';
 }
 
 /// Liens légaux et support — pages statiques servies par le landing facteur.app.

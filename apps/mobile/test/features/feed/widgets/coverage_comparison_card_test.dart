@@ -18,6 +18,7 @@ Perspective _persp({
   String name = 'Libération',
   String bias = 'left',
   String? publishedAt,
+  String reliability = 'unknown',
 }) =>
     Perspective(
       title: 'Trump revendique la mort du chef',
@@ -26,6 +27,7 @@ Perspective _persp({
       sourceDomain: '$name.example.com',
       biasStance: bias,
       publishedAt: publishedAt,
+      reliabilityScore: reliability,
       highlightSpans: const [
         HighlightSpan(start: 6, end: 16, text: 'revendique', bias: 'left'),
       ],
@@ -151,4 +153,33 @@ void main() {
     expect(find.byKey(_marker), findsOneWidget);
     expect(_routed?.url, 'https://example.com/Libération');
   });
+
+  final checkGlyph = PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
+  final warnGlyph = PhosphorIcons.warning(PhosphorIconsStyle.fill);
+
+  testWidgets('fiabilité high → glyphe ✔ (check)', (tester) async {
+    await tester.pumpWidget(_app(_host(_persp(reliability: 'high'))));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byIcon(checkGlyph), findsOneWidget);
+    expect(find.byIcon(warnGlyph), findsNothing);
+  });
+
+  testWidgets('fiabilité low → glyphe ⚠ (warning)', (tester) async {
+    await tester.pumpWidget(_app(_host(_persp(reliability: 'low'))));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byIcon(warnGlyph), findsOneWidget);
+    expect(find.byIcon(checkGlyph), findsNothing);
+  });
+
+  for (final score in ['medium', 'mixed', 'unknown']) {
+    testWidgets('fiabilité $score → aucun glyphe', (tester) async {
+      await tester.pumpWidget(_app(_host(_persp(reliability: score))));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.byIcon(checkGlyph), findsNothing);
+      expect(find.byIcon(warnGlyph), findsNothing);
+    });
+  }
 }

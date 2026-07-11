@@ -298,6 +298,32 @@ class ThemeSourcesResponse(BaseModel):
     total_count: int = 0
 
 
+# Tier de contrôle éditorial d'une source poussée dans le footer
+# « Étoffer [thème] ». `facteur_pick` = pépite curée (branding fort) ;
+# `quality_catalog` = catalogue évalué passant le gate (badge éval visible).
+# Le Tier 3 (« Ta recherche ») n'est jamais sérialisé ici.
+RecommendationTier = Literal["facteur_pick", "quality_catalog"]
+
+
+class ThemeSuggestionItem(BaseModel):
+    """Une source poussée dans le footer « Étoffer [thème] », avec son tier."""
+
+    recommendation_tier: RecommendationTier
+    source: SourceResponse
+
+
+class ThemeSuggestionsResponse(BaseModel):
+    """Réponse du footer « Étoffer [thème] » — tiers POUSSÉS uniquement (1 & 2).
+
+    Vide quand aucune source curée/évaluée ne couvre le thème (l'UI bascule
+    alors sur la seule entrée de recherche, Tier 3).
+    """
+
+    theme: str
+    label: str
+    suggestions: list[ThemeSuggestionItem]
+
+
 class ThemeFollowed(BaseModel):
     """Thème suivi par un utilisateur."""
 

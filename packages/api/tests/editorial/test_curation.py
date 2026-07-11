@@ -53,6 +53,22 @@ def _make_config(**overrides) -> EditorialConfig:
     )
 
 
+class TestClusterToSummary:
+    def test_summary_has_no_article_titles(self):
+        """LR-1 PR 2 : le résumé envoyé au LLM ne porte plus de titres d'articles."""
+        cluster = _make_cluster("c1", "Retraites", 6, "politique")
+        summary = CurationService._cluster_to_summary(cluster)
+        payload = summary.model_dump()
+        assert "article_titles" not in payload
+        assert set(payload.keys()) == {
+            "topic_id",
+            "label",
+            "source_count",
+            "is_trending",
+            "theme",
+        }
+
+
 class TestSelectTopics:
     @pytest.mark.asyncio
     async def test_llm_valid_topics(self):

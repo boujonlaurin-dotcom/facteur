@@ -6,9 +6,12 @@ forme du payload.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 from app.services.ml.good_news_classifier import (
+    GOOD_NEWS_CACHE_KEY,
     GoodNewsClassifier,
     _build_user_prompt,
     _parse_response,
@@ -50,8 +53,16 @@ class TestBuildUserPrompt:
     def test_includes_indices_and_titles(self) -> None:
         prompt = _build_user_prompt(
             [
-                {"title": "Article un", "description": "desc 1", "source_name": "Le Monde"},
-                {"title": "Article deux", "description": "desc 2", "source_name": "Reporterre"},
+                {
+                    "title": "Article un",
+                    "description": "desc 1",
+                    "source_name": "Le Monde",
+                },
+                {
+                    "title": "Article deux",
+                    "description": "desc 2",
+                    "source_name": "Reporterre",
+                },
             ]
         )
         assert "Article un" in prompt
@@ -86,7 +97,9 @@ class TestClassifierBatch:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_unready_returns_none_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_unready_returns_none_list(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         classifier = GoodNewsClassifier()
         classifier._ready = False
         items = [{"title": "a"}, {"title": "b"}]
@@ -100,6 +113,7 @@ class TestClassifierBatch:
 
         async def fake_call(payload: dict, *, max_retries: int = 3) -> dict:
             assert payload["model"] == "mistral-large-latest"
+            assert payload["prompt_cache_key"] == GOOD_NEWS_CACHE_KEY
             return {
                 "choices": [
                     {
@@ -134,3 +148,39 @@ class TestClassifierBatch:
             [{"title": "A"}, {"title": "B"}, {"title": "C"}]
         )
         assert result == [None, None, None]
+
+
+class TestCallTokenCapture:
+    @pytest.mark.asyncio
+    async def test_call_records_token_usage(self) -> None:
+        """`_call` propage les tokens de `usage` Mistral à api_usage_events (LR-1)."""
+        classifier = GoodNewsClassifier()
+        classifier._ready = True
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "[]"}}],
+            "usage": {
+                "prompt_tokens": 800,
+                "completion_tokens": 16,
+                "prompt_tokens_details": {"cached_tokens": 700},
+            },
+        }
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        classifier._client = mock_client
+
+        with patch(
+            "app.services.observability.usage_recorder.record_api_call",
+            new_callable=AsyncMock,
+        ) as rec:
+            data = await classifier._call({"model": "mistral-large-latest"})
+
+        assert data is not None
+        rec.assert_awaited_once()
+        kwargs = rec.await_args.kwargs
+        assert kwargs["prompt_tokens"] == 800
+        assert kwargs["completion_tokens"] == 16
+        assert kwargs["cached_prompt_tokens"] == 700
+        assert kwargs["status"] == "ok"

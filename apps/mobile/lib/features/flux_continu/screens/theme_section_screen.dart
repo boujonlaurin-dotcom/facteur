@@ -213,6 +213,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             accent: section.accent,
             blurb: section.blurb,
             illustrationAsset: section.illustrationAsset,
+            // Bouton réglages (tune) inline aussi sur la page dédiée veille
+            // (ouverte au clic du hero) → même route « ?mode=edit » que la
+            // bannière inline de la Tournée (flux_continu_screen).
+            onTapSettings: section.kind == SectionKind.veille
+                ? () => context.push('${RoutePaths.veilleConfig}?mode=edit')
+                : null,
           ),
         ),
         if (section.kind == SectionKind.veille)
