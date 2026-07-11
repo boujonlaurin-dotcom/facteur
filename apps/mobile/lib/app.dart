@@ -192,11 +192,10 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
         // le widget gèle tant que l'utilisateur n'ouvre pas explicitement
         // Flâner.
         _ensureWidgetFresh(stale: shouldRefreshFlanerOnForeground(elapsed));
+        final tournee = ref.read(tourneeProgressServiceProvider);
         if (isAuthenticated &&
             currentPath == RoutePaths.fluxContinu &&
-            ref
-                .read(tourneeProgressServiceProvider)
-                .isClosingDismissedTodaySync()) {
+            tournee.hasBrowsedEssentielTodaySync()) {
           router.go(RoutePaths.flaner);
           return;
         }
