@@ -26,7 +26,6 @@ void main() {
       final svc = await service({});
       await svc.setMorningRitualShownToday(now: today);
       expect(svc.isMorningRitualShownTodaySync(now: today), isTrue);
-      expect(await svc.loadMorningRitualShownForToday(now: today), isTrue);
     });
 
     test('clé jumelée au dayKey : un autre jour reste non-vu', () async {

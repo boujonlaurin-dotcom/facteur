@@ -1,12 +1,32 @@
 {
   "unreleased": [
     {
-      "tag": "Accueil",
-      "summary": "Sur ta page du matin, glisse entre tes lettres du jour et des jours précédents, et active le mode serein d'un geste."
+      "tag": "Rituel",
+      "summary": "En ouvrant ta lettre du matin, ta flamme grandit et ta série s'incrémente : une petite récompense pour être revenu aujourd'hui."
     },
     {
       "tag": "Lettre du jour",
-      "summary": "En mode « Cette semaine », retrouve tes essentiels jour par jour, plus les bonnes nouvelles de la semaine."
+      "summary": "Les lettres d'hier et de la semaine se lisent comme celle du jour : Actus, Bonnes Nouvelles et citation réunies."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "Ouvre ta tournée d'un geste, ou file droit vers la section qui t'intéresse."
+    },
+    {
+      "tag": "Rituel",
+      "summary": "Ta lettre du matin est plus lisible : manchettes en clair sur deux lignes, repères mieux placés et mode serein à portée de geste."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "La rétro de la semaine reprend l'affichage clair de ta tournée du jour, en mettant d'abord ce que tu n'as pas encore lu."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Ta page du matin affiche les manchettes du jour en clair, avec des repères pour glisser vers les lettres d'hier et de la semaine."
+    },
+    {
+      "tag": "Accueil",
+      "summary": "Sur ta page du matin, glisse entre tes lettres du jour et des jours précédents, et active le mode serein d'un geste."
     },
     {
       "tag": "Lettre du jour",

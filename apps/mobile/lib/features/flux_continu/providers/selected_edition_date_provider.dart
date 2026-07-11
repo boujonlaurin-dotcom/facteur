@@ -61,7 +61,7 @@ class EditionPastDay extends EditionSelection {
 /// seules « Cette semaine », « Aujourd'hui » et « Hier » sont offertes.
 ///
 /// Indépendant de l'agrégat hebdo : « Cette semaine » couvre toujours J-0…J-6 via
-/// sa propre constante `kEditionWeekPastDays` (`edition_essentiel_provider.dart`),
+/// sa propre constante [kEditionWeekPastDays] (ci-dessous),
 /// et le fallback backend (`_HOTPATH_FALLBACK_DAYS` = 7) sert encore cette rétro.
 const int kEditionMaxPastDays = 1;
 
@@ -91,15 +91,23 @@ List<DateTime> editionPastDays(int count, {DateTime? now}) {
   ];
 }
 
+/// Fenêtre de la rétro « Cette semaine » = 7 jours (J-0 inclus). J-0 vient du
+/// flux (0 réseau) ; J-1…J-6 sont chargés par fan-out borné. Source unique
+/// partagée par l'agrégation hebdo (`edition_essentiel_provider.dart`) et le
+/// statut lu/non-lu (`edition_read_status_provider.dart`).
+const int kEditionWeekPastDays = 6;
+
 /// Modèle ordonné des pills du sélecteur, dans l'ordre exact d'affichage :
-/// `[Cette semaine, Aujourd'hui, Hier]` (rewind à 3 options, cf.
-/// [kEditionMaxPastDays]). Helper **pur** ; `now` injectable pour les tests.
+/// `[Cette semaine, Hier, Aujourd'hui]` (rewind à 3 options, cf.
+/// [kEditionMaxPastDays]). Logique temporelle : les lettres vont du plus ancien
+/// (« Cette semaine ») au plus récent (« Aujourd'hui », tout à droite et page par
+/// défaut du carrousel). Helper **pur** ; `now` injectable pour les tests.
 List<EditionSelection> editionPillModel({DateTime? now}) {
   return <EditionSelection>[
     const EditionWeek(),
-    const EditionToday(),
     for (final date in editionPastDays(kEditionMaxPastDays, now: now))
       EditionPastDay(date),
+    const EditionToday(),
   ];
 }
 

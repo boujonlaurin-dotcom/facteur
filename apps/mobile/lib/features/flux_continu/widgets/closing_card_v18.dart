@@ -17,6 +17,11 @@ import 'tournee_cta_buttons.dart';
 /// - Heading "Tu es à jour" Fraunces 700 24px.
 /// - Primary CTA "Continuer à Flâner" (background #D35400) + ghost CTA
 ///   "Refermer pour aujourd'hui" (border 1.5px rgba(0,0,0,0.1)).
+///
+/// Variante lecture seule ([ClosingCardV18.readOnly]) pour une lettre passée
+/// (« Hier » / « Cette semaine ») : coque identique (image, tampon « FIN DE
+/// TOURNÉE », « Tu es à jour », activités météo), seule l'action change —
+/// « Revenir à aujourd'hui » + note de contexte, aucune fermeture d'app.
 class ClosingCardV18 extends ConsumerWidget {
   final VoidCallback? onContinue;
   final VoidCallback? onClose;
@@ -26,12 +31,35 @@ class ClosingCardV18 extends ConsumerWidget {
   /// par l'App Store). Ignorée si [onClose] est fourni (cas Android).
   final String? closeHint;
 
+  /// Action « Revenir à aujourd'hui » de la variante lecture seule (lettre
+  /// passée). Non-null ⇒ mode lecture seule.
+  final VoidCallback? onBackToToday;
+
+  /// Note de contexte affichée sous le bouton « Revenir à aujourd'hui »
+  /// (ex. « Tu lis la lettre du … »). Uniquement en lecture seule.
+  final String? readOnlyNote;
+
   const ClosingCardV18({
     super.key,
     this.onContinue,
     this.onClose,
     this.closeHint,
-  });
+  })  : onBackToToday = null,
+        readOnlyNote = null;
+
+  /// Fin de lettre **passée** (lecture seule) : même coque que la lettre du
+  /// jour, mais l'action primaire ramène à « Aujourd'hui » et une note rappelle
+  /// le contexte. Pas de « Continuer à Flâner » ni de fermeture d'app.
+  const ClosingCardV18.readOnly({
+    super.key,
+    required this.onBackToToday,
+    required String note,
+  })  : readOnlyNote = note,
+        onContinue = null,
+        onClose = null,
+        closeHint = null;
+
+  bool get _isReadOnly => onBackToToday != null;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -104,26 +132,17 @@ class ClosingCardV18 extends ConsumerWidget {
             const SizedBox(height: 18),
             _ActivitySuggestions(activities: activities),
             const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: TourneePrimaryButton(
-                label: 'Continuer à Flâner',
-                onTap: onContinue,
-              ),
-            ),
-            if (onClose != null) ...[
-              const SizedBox(height: 8),
+            if (_isReadOnly) ...[
               SizedBox(
                 width: double.infinity,
-                child: TourneeGhostButton(
-                  label: "Refermer pour aujourd'hui",
-                  onTap: onClose,
+                child: TourneePrimaryButton(
+                  label: 'Revenir à aujourd’hui',
+                  onTap: onBackToToday,
                 ),
               ),
-            ] else if (closeHint != null) ...[
               const SizedBox(height: 14),
               Text(
-                closeHint!,
+                readOnlyNote!,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.dmSans(
                   fontSize: 12,
@@ -131,6 +150,35 @@ class ClosingCardV18 extends ConsumerWidget {
                   color: colors.textTertiary,
                 ),
               ),
+            ] else ...[
+              SizedBox(
+                width: double.infinity,
+                child: TourneePrimaryButton(
+                  label: 'Continuer à Flâner',
+                  onTap: onContinue,
+                ),
+              ),
+              if (onClose != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TourneeGhostButton(
+                    label: "Refermer pour aujourd'hui",
+                    onTap: onClose,
+                  ),
+                ),
+              ] else if (closeHint != null) ...[
+                const SizedBox(height: 14),
+                Text(
+                  closeHint!,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: colors.textTertiary,
+                  ),
+                ),
+              ],
             ],
           ],
         ),

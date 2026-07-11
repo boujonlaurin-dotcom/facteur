@@ -1,47 +1,27 @@
 import 'package:facteur/config/theme.dart';
-import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
+import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/screens/morning_ritual_screen.dart';
-import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
+import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// Faux notifier serein (pas de Supabase/réseau, contrairement au vrai dont le
-/// provider monte `authStateProvider` → `Supabase.instance`) : état contrôlé +
-/// compteur de toggles. L'override par défaut de [_wrap] le pose en
-/// `isLoading:false` (bouton actif).
-class _FakeSereinNotifier extends SereinToggleNotifier {
-  _FakeSereinNotifier(super.ref, {bool enabled = false, bool loading = false}) {
-    state = SereinToggleState(enabled: enabled, isLoading: loading);
-  }
-
-  int toggleCalls = 0;
-
-  @override
-  Future<void> toggle() async {
-    toggleCalls++;
-    state = state.copyWith(enabled: !state.enabled);
-  }
-}
-
-Widget _wrap(
-  Widget child, {
-  _FakeSereinNotifier Function(Ref ref)? serein,
-}) {
-  final create = serein ?? ((Ref ref) => _FakeSereinNotifier(ref));
-  return ProviderScope(
-    overrides: [sereinToggleProvider.overrideWith(create)],
-    child: MaterialApp(
-      theme: ThemeData(extensions: [FacteurPalettes.light]),
-      home: Scaffold(body: child),
-    ),
+/// [MorningRitualContent] est **provider-free** : chaque slide du carrousel se
+/// limite à **l'enveloppe seule** (le titre daté + sous-titre ont migré vers
+/// l'en-tête [_RitualGreeting], l'ouverture passe par le bouton « Ouvrir ta
+/// tournée »). [SectionDeepDiveList] (liste « Ou accède directement à ») est
+/// également provider-free et testée ici via des sections fabriquées.
+Widget _wrap(Widget child) {
+  return MaterialApp(
+    theme: ThemeData(extensions: [FacteurPalettes.light]),
+    home: Scaffold(body: child),
   );
 }
 
-/// Surface verticale généreuse : le rituel a gagné le bloc « rewind » + le CTA
-/// serein → évite un overflow dans la surface test par défaut (800×600).
+/// Surface verticale généreuse : évite un overflow dans la surface test par
+/// défaut (800×600).
 void _useTallSurface(WidgetTester tester) {
   tester.view.physicalSize = const Size(600, 1200);
   tester.view.devicePixelRatio = 1.0;
@@ -49,68 +29,106 @@ void _useTallSurface(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+EssentielArticle _hero(String title) => EssentielArticle(
+      contentId: title,
+      title: title,
+      url: 'https://x/$title',
+      publishedAt: DateTime(2026, 1, 1),
+      sourceName: 'S',
+      sourceLetter: 'S',
+      sectionLabel: 'Tech',
+      rank: 1,
+    );
+
+FeedThemeSection _theme(String slug, String label, int count) => FeedThemeSection(
+      kind: SectionKind.theme,
+      label: label,
+      accent: const Color(0xFF1565C0),
+      coreVisibleCount: 5,
+      themeSlug: slug,
+      items: List.generate(
+        count,
+        (i) => Content(
+          id: '$slug-$i',
+          title: 't$i',
+          url: 'https://x/$slug/$i',
+          contentType: ContentType.article,
+          publishedAt: DateTime(2026, 1, 1),
+          source: Source(id: 's', name: 'S', type: SourceType.article),
+        ),
+      ),
+    );
+
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
   });
 
   group('MorningRitualContent', () {
-    EditionSummaryEntry entry(String label, {bool isVeille = false}) =>
-        EditionSummaryEntry(
-          label: label,
-          accent: const Color(0xFF2C3E50),
-          isVeille: isVeille,
-        );
-
-    testWidgets('greeting + date affichés, sans spinner', (tester) async {
-      _useTallSurface(tester);
-      await tester.pumpWidget(_wrap(
-        MorningRitualContent(
-          dateLabel: 'mercredi 27 mai',
-          entries: const [],
-          reduceMotion: true,
-          onOpen: () {},
-          onPersonalize: () {},
-        ),
-      ));
-
-      expect(find.text('Salut,'), findsOneWidget);
-      expect(
-        find.text('Ton essentiel du mercredi 27 mai t\'attend.'),
-        findsOneWidget,
-      );
-      // Phrase grisée d'intro (remplace l'ancien kicker orange + pointillés).
-      expect(find.text('Tu y trouveras le meilleur de...'), findsOneWidget);
-      expect(find.text('L\'ESSENTIEL DU JOUR'), findsNothing);
-      // Promesse « no loading » : jamais de spinner au repos.
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-    });
-
-    testWidgets('reduceMotion : chips + CTA visibles immédiatement', (
+    testWidgets('slide = enveloppe seule, sans « Salut, » ni sous-titre daté '
+        'ni spinner', (
       tester,
     ) async {
       _useTallSurface(tester);
       await tester.pumpWidget(_wrap(
-        MorningRitualContent(
-          dateLabel: 'mercredi 27 mai',
-          entries: [
-            entry('Technologie'),
-            entry('Actus du jour'),
-            entry('Mot du jour'),
-          ],
+        const MorningRitualContent(
           reduceMotion: true,
-          onOpen: () {},
-          onPersonalize: () {},
+          onOpen: _noop,
         ),
       ));
-      // Un seul pump suffit (pas de stagger en reduceMotion).
+
+      // Le « Salut, » est devenu le titre daté de la page (hors slide).
+      expect(find.text('Salut,'), findsNothing);
+      // Le sous-titre daté par slide a été retiré (slide = enveloppe seule).
+      expect(find.textContaining('Ton essentiel du'), findsNothing);
+      // Le résumé des manchettes a quitté la carte.
+      expect(find.text('À la une ce matin.'), findsNothing);
+      // Promesse « no loading » : jamais de spinner au repos.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      // L'enveloppe (unique SvgPicture du corps) reste présente.
+      expect(find.byType(SvgPicture), findsOneWidget);
+    });
+
+    testWidgets('slide = enveloppe seule, sans indice/Serein/manchettes', (
+      tester,
+    ) async {
+      _useTallSurface(tester);
+      await tester.pumpWidget(_wrap(
+        const MorningRitualContent(
+          reduceMotion: true,
+          onOpen: _noop,
+        ),
+      ));
       await tester.pump();
 
-      expect(find.text('Technologie'), findsOneWidget);
-      expect(find.text('Actus du jour'), findsOneWidget);
-      expect(find.text('Mot du jour'), findsOneWidget);
-      // CTA remplacé par l'indice « glisse vers le haut ».
-      expect(find.text('Glisse vers le haut'), findsOneWidget);
+      // L'ancien indice « glisse vers le haut » a disparu (swipe-up retiré).
+      expect(find.text('Glisse vers le haut'), findsNothing);
+      expect(find.text('Mode Serein'), findsNothing);
+      // L'enveloppe (unique SvgPicture du corps) reste présente.
+      expect(find.byType(SvgPicture), findsOneWidget);
+    });
+
+    testWidgets('tient dans la fente carrousel (390×190) sans overflow', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(_wrap(
+        const Center(
+          child: SizedBox(
+            width: 390,
+            height: 190, // = _EditionCarouselState._kPageHeight
+            child: MorningRitualContent(
+              reduceMotion: true,
+              onOpen: _noop,
+            ),
+          ),
+        ),
+      ));
+      // Un overflow RenderFlex ferait échouer le pump (exception capturée).
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('tap sur l\'enveloppe déclenche l\'ouverture', (tester) async {
@@ -118,141 +136,95 @@ void main() {
       var opened = 0;
       await tester.pumpWidget(_wrap(
         MorningRitualContent(
-          dateLabel: 'mercredi 27 mai',
-          entries: const [],
           reduceMotion: true,
           onOpen: () => opened++,
-          onPersonalize: () {},
         ),
       ));
 
-      // L'enveloppe (unique SvgPicture du corps) est désormais cliquable. Le
-      // GestureDetector est un ancêtre du SvgPicture → warnIfMissed superflu.
+      // Le GestureDetector est un ancêtre du SvgPicture → warnIfMissed superflu.
       await tester.tap(find.byType(SvgPicture), warnIfMissed: false);
       await tester.pump(const Duration(milliseconds: 400)); // laisse le « pop »
       expect(opened, 1);
     });
+  });
 
-    testWidgets('peuplement : chips arrivant en 2 temps finissent visibles', (
+  group('SectionDeepDiveList', () {
+    testWidgets('une ligne par section : label + compteur + emoji + badge', (
       tester,
     ) async {
       _useTallSurface(tester);
-      final notifier = ValueNotifier<List<EditionSummaryEntry>>([
-        entry('Technologie'),
-      ]);
-      addTearDown(notifier.dispose);
-
-      await tester.pumpWidget(_wrap(
-        ValueListenableBuilder<List<EditionSummaryEntry>>(
-          valueListenable: notifier,
-          builder: (context, entries, _) => MorningRitualContent(
-            dateLabel: 'mercredi 27 mai',
-            entries: entries,
-            reduceMotion: false,
-            onOpen: () {},
-            onPersonalize: () {},
-          ),
-        ),
-      ));
-
-      // 1re chip révélée tout de suite (cadence régulière côté pompe). Pas de
-      // `pumpAndSettle` ici : l'indice « glisse vers le haut » boucle son nudge.
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(find.text('Technologie'), findsOneWidget);
-
-      // 2e temps : de nouvelles sections arrivent → elles se peuplent une à une
-      // au rythme de la pompe (~500 ms/chip), pas en salve.
-      notifier.value = [
-        entry('Technologie'),
-        entry('Actus du jour'),
-        entry('Bonnes Nouvelles'),
-      ];
-      await tester.pump(); // applique le didUpdateWidget
-      await tester.pump(const Duration(milliseconds: 600)); // Actus
-      await tester.pump(const Duration(milliseconds: 600)); // Bonnes Nouvelles
-
-      expect(find.text('Technologie'), findsOneWidget);
-      expect(find.text('Actus du jour'), findsOneWidget);
-      expect(find.text('Bonnes Nouvelles'), findsOneWidget);
-
-      // Laisse la pompe révéler l'engrenage et se mettre au repos (aucun timer
-      // en attente à la fin du test).
-      await tester.pump(const Duration(seconds: 1));
-    });
-
-    testWidgets('expose un nudge de swipe horizontal (repli timeline)',
-        (tester) async {
-      _useTallSurface(tester);
-      await tester.pumpWidget(_wrap(
-        MorningRitualContent(
-          dateLabel: 'mercredi 27 mai',
-          entries: const [],
-          reduceMotion: true,
-          onOpen: () {},
-          onPersonalize: () {},
-        ),
-      ));
-
-      // Le nudge discret remplace le bouton « Remonter le temps » et invite au
-      // swipe horizontal du carrousel ; son `onTap` est le repli accessible.
-      expect(
-        find.text('Glisse pour revoir hier ou cette semaine'),
-        findsOneWidget,
+      final essentiel = EssentielSection(
+        articles: List.generate(6, (i) => _hero('h$i')),
       );
-    });
-
-    testWidgets('_SereinCta : switch + libellés + tap → toggle',
-        (tester) async {
-      _useTallSurface(tester);
-      _FakeSereinNotifier? captured;
       await tester.pumpWidget(_wrap(
-        MorningRitualContent(
-          dateLabel: 'mercredi 27 mai',
-          entries: const [],
-          reduceMotion: true,
-          onOpen: () {},
-          onPersonalize: () {},
+        SectionDeepDiveList(
+          sections: [
+            essentiel,
+            _theme('tech', 'Technologie', 4),
+            _theme('science', 'Sciences', 1),
+          ],
+          onOpenSection: (_) {},
+          onTapManage: () {},
         ),
-        serein: (ref) => captured = _FakeSereinNotifier(ref),
       ));
 
-      // Titre + sous-titre du switch (copie sans em-dash, cf. règle PO).
-      expect(find.text('Mode Serein'), findsOneWidget);
-      expect(
-        find.text('Pas d\'humeur pour les news difficiles ?'),
-        findsOneWidget,
-      );
+      // Divider maquette + lien discret « Gérer » (config Essentiel) à droite.
+      expect(find.text('Ou accède directement à'), findsOneWidget);
+      expect(find.text('Gérer'), findsOneWidget);
 
-      final switchFinder = find.byType(Switch);
-      expect(switchFinder, findsOneWidget);
-      expect(tester.widget<Switch>(switchFinder).value, isFalse);
+      // Essentiel : « N titres » (uppercased), emoji éditorial.
+      expect(find.text(essentiel.label), findsOneWidget);
+      expect(find.text('6 TITRES'), findsOneWidget);
+      expect(find.text('📰'), findsOneWidget);
 
-      await tester.tap(switchFinder);
-      await tester.pump(); // exécute le toggle
+      // Thème : « N articles », emoji dédié.
+      expect(find.text('Technologie'), findsOneWidget);
+      expect(find.text('4 ARTICLES'), findsOneWidget);
+      expect(find.text('💻'), findsOneWidget);
 
-      expect(captured, isNotNull);
-      expect(captured!.toggleCalls, 1);
-      expect(captured!.state.enabled, isTrue);
-      expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+      // Section maigre (≤1) → compteur singulier + badge « Peu d'articles ».
+      expect(find.text('Sciences'), findsOneWidget);
+      expect(find.text('1 ARTICLE'), findsOneWidget);
+      expect(find.text('Peu d\'articles'), findsOneWidget);
     });
 
-    testWidgets('_SereinCta : switch désactivé tant que la pref charge',
-        (tester) async {
+    testWidgets('tap sur une ligne → onOpenSection(sectionKey)', (tester) async {
       _useTallSurface(tester);
+      final tech = _theme('tech', 'Technologie', 4);
+      String? tapped;
       await tester.pumpWidget(_wrap(
-        MorningRitualContent(
-          dateLabel: 'mercredi 27 mai',
-          entries: const [],
-          reduceMotion: true,
-          onOpen: () {},
-          onPersonalize: () {},
+        SectionDeepDiveList(
+          sections: [tech],
+          onOpenSection: (key) => tapped = key,
+          onTapManage: () {},
         ),
-        serein: (ref) => _FakeSereinNotifier(ref, loading: true),
       ));
 
-      // Loading → le switch est inerte (onChanged null) pour ne pas écraser la
-      // première synchro serveur.
-      expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
+      await tester.tap(find.text('Technologie'));
+      await tester.pump();
+      expect(tapped, sectionKey(tech));
+      expect(tapped, 'theme:tech');
+    });
+
+    testWidgets('tap sur le lien discret « Gérer » → onTapManage',
+        (tester) async {
+      _useTallSurface(tester);
+      var managed = 0;
+      await tester.pumpWidget(_wrap(
+        SectionDeepDiveList(
+          sections: [_theme('tech', 'Technologie', 4)],
+          onOpenSection: (_) {},
+          onTapManage: () => managed++,
+        ),
+      ));
+
+      await tester.tap(find.text('Gérer'));
+      await tester.pump();
+      expect(managed, 1);
     });
   });
 }
+
+/// Callback inerte `const` pour les cas où l'ouverture n'est pas exercée (permet
+/// d'instancier `MorningRitualContent` en `const`).
+void _noop() {}

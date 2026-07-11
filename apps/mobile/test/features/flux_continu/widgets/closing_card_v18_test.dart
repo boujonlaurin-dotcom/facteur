@@ -106,4 +106,46 @@ void main() {
       }
     });
   });
+
+  group('ClosingCardV18.readOnly (lettre passée)', () {
+    testWidgets(
+        'coque de fin de tournée préservée + « Revenir à aujourd\'hui » + note ; '
+        'aucun CTA du jour', (tester) async {
+      var backToToday = 0;
+      await tester.pumpWidget(_wrap(
+        ClosingCardV18.readOnly(
+          onBackToToday: () => backToToday++,
+          note: 'Tu lis la lettre du 20 juin 2026.',
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      // Même repère de fin de lettre que le jour.
+      expect(find.text('FIN DE TOURNÉE'), findsOneWidget);
+      expect(find.text('Tu es à jour'), findsOneWidget);
+      // Activités météo toujours présentes (coque inchangée).
+      expect(find.text('Et si tu en profitais pour…'), findsOneWidget);
+
+      // Action lecture seule + note de contexte.
+      expect(find.text('Revenir à aujourd’hui'), findsOneWidget);
+      expect(find.text('Tu lis la lettre du 20 juin 2026.'), findsOneWidget);
+
+      // Aucun CTA « lettre du jour » (pas de fermeture d'app ni de Flâner).
+      expect(find.text('Continuer à Flâner'), findsNothing);
+      expect(find.text("Refermer pour aujourd'hui"), findsNothing);
+
+      await tester.tap(find.text('Revenir à aujourd’hui'));
+      expect(backToToday, 1);
+    });
+
+    testWidgets('la lettre du jour garde « Continuer à Flâner »', (tester) async {
+      await tester.pumpWidget(_wrap(
+        ClosingCardV18(onContinue: () {}),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Continuer à Flâner'), findsOneWidget);
+      expect(find.text('Revenir à aujourd’hui'), findsNothing);
+    });
+  });
 }

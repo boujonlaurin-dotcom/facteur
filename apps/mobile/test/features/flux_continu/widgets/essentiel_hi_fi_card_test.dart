@@ -235,10 +235,12 @@ void main() {
     });
 
     testWidgets(
-        'affiche le déclencheur rewind avec le libellé du scope courant '
-        '(défaut = Aujourd\'hui)', (tester) async {
+        'affiche le déclencheur rewind avec un libellé fixe '
+        '(défaut = today → « Rattraper »)', (tester) async {
       // EPIC « Lettre du jour » — refonte timeline overlay : le déclencheur
       // « rewind » vit dans l'en-tête de la carte (sélection par défaut = today).
+      // Le libellé est un verbe d'action fixe (plus la date) : « Rattraper » en
+      // today, « Revenir » sur une lettre passée.
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
@@ -250,7 +252,7 @@ void main() {
       final trigger = tester.widget<EditionRewindTrigger>(
         find.byType(EditionRewindTrigger),
       );
-      expect(trigger.label, 'Aujourd’hui');
+      expect(trigger.label, 'Rattraper');
     });
 
     testWidgets('le déclencheur rewind est présent, sans bouton perso',

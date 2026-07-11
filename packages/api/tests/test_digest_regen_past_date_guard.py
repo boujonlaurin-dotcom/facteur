@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.routers import digest as digest_router
 from app.schemas.digest import DigestResponse
 from app.services import digest_service
 from app.services.digest_service import (
@@ -150,3 +151,30 @@ async def test_read_fallback_past_date_serves_stale_without_regen():
     assert out is rendered
     assert out.is_stale_fallback is True
     create_task_mock.assert_not_called()
+
+
+# ─── Garde sur POST /digest/generate (génération on-demand) ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_generate_endpoint_rejects_past_target_date():
+    """`POST /digest/generate` avec un `target_date` révolu → 400 immédiat,
+    AVANT toute instanciation de service (aucune génération, aucun coût LLM)."""
+    from fastapi import HTTPException
+
+    from app.routers.digest import generate_digest
+
+    past = date.today() - timedelta(days=2)
+
+    with patch.object(digest_router, "DigestService") as service_mock:
+        with pytest.raises(HTTPException) as exc_info:
+            await generate_digest(
+                target_date=past,
+                force=False,
+                serein=False,
+                db=Mock(),
+                current_user_id=str(uuid4()),
+            )
+
+    assert exc_info.value.status_code == 400
+    service_mock.assert_not_called()

@@ -53,18 +53,22 @@ class MyInterestsIntro extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          _ManageButton(onTap: onTapManage, colors: colors),
+          ManageButton(onTap: onTapManage, colors: colors),
         ],
       ),
     );
   }
 }
 
-class _ManageButton extends StatelessWidget {
+/// Pilule « GÉRER » réutilisable (DM Sans 13 w800, `primary`, fond `primary@10%`,
+/// bordure `primary@45%`, caret droit). Point d'entrée des préférences de
+/// Tournée : utilisé par [MyInterestsIntro] (feed) **et** par la liste « Ou
+/// accède directement à » du rituel matinal (DRY).
+class ManageButton extends StatelessWidget {
   final VoidCallback onTap;
   final FacteurColors colors;
 
-  const _ManageButton({required this.onTap, required this.colors});
+  const ManageButton({super.key, required this.onTap, required this.colors});
 
   @override
   Widget build(BuildContext context) {

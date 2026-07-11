@@ -1,85 +1,92 @@
-# QA Handoff — Lettre du jour : timeline overlay + ajustements PO
+# QA Handoff — Lettres passées à parité visuelle avec « Aujourd'hui »
 
-> Input pour `/validate-feature` (Playwright Agent CLI, skill `facteur-qa-web`, viewport 390×844,
-> sémantique activée au boot — build web Flutter = canvas).
+> Input pour /validate-feature (Playwright Agent CLI, skill facteur-qa-web).
+> Viewport mobile 390×844, sémantique activée au boot (canvas Flutter web).
+> ⚠️ **Valider par HOT RESTART** (pas hot reload) : `editionEssentielProvider`
+> garde `state` + `_dayCache` à travers un reload. Sinon pull-to-refresh /
+> changement de sélection.
 
-## Feature développée
-Finalisation de l'EPIC « Lettre du jour » : (1) le strip de pills au-dessus de l'Essentiel devient un
-**bouton « rewind »** dans l'en-tête de la carte, ouvrant une **timeline en feuille du bas** ; (2) 4
-ajustements PO — **rewind réduit à 3 options**, **retrait du bouton « personnaliser »** de la carte
-Essentiel + **« GÉRER » plus grand**, **rewind par swipe horizontal + CTA « mode serein »** ajoutés à
-la page **Lettre du jour** (le rituel matinal).
+## Résumé
+Les lettres passées (« Hier » = jour passé, « Cette semaine » = rétro hebdo) de
+l'écran Essentiel (`FluxContinuScreen`) rendaient une lettre tronquée vs
+« Aujourd'hui ». Elles adoptent maintenant la **même grammaire visuelle** en
+lecture seule. Mobile-only, aucun changement backend.
 
-## PR associée
-<!-- à compléter après /go -->
+Nouvelle composition d'une lettre passée (`_singleDaySlivers`) :
+`héros → · → Actus → · → Bonnes Nouvelles → citation → carte de clôture`, où `·`
+est un point de passage (`_SectionPassageDot`, statique en passé).
+
+Changements clés :
+1. **Bonnes Nouvelles réaffichées** (jour ET semaine) : la donnée serein
+   (`dual.serein.topics`) était déjà fetchée mais jetée ; ré-exposée via
+   `EditionEssentielState.bonnesTopics`.
+2. **Bannières de section à parité** : « Actus » et « Bonnes Nouvelles » portent
+   blurb + illustration comme la lettre du jour.
+3. **Carte de clôture** : `ClosingCardV18.readOnly` (coque météo « FIN DE TOURNÉE »
+   / « Tu es à jour » identique) remplace l'ancien bloc minimal. Action primaire =
+   **« Revenir à aujourd'hui »** + note de contexte. Plus de « Continuer à Flâner »
+   ni « Refermer » sur une lettre passée.
+4. **Points de passage** entre sections (rythme visuel du jour), calmes/statiques
+   en passé (pas de snap — choix délibéré, free-scroll).
+5. **Lecture seule** : aucun swipe/feedback/favori/see-all (chaque `SectionBlock`
+   ne reçoit que `onTapArticle`).
+
+Limite assumée (Option A validée PO) : les sections **tournée personnalisées**
+(thèmes / sources / veille) ne sont **pas** rendues en passé — flux live non
+archivé par date, hors de portée d'un fix mobile.
 
 ## Écrans impactés
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Essentiel (Flux Continu) | `/flux-continu` (onglet Essentiel) | Modifié (strip retiré, rewind ajouté, bouton perso retiré) |
-| Feuille timeline | overlay (showModalBottomSheet) | Modifié (3 lignes : Aujourd'hui, Hier, Cette semaine) |
-| Lettre du jour (rituel matinal) | `/edition` | Modifié (swipe rewind « Hier », trigger « Remonter le temps », CTA serein) |
-| Inline « GÉRER » (MyInterestsIntro) | `/flux-continu` (mode personnalisé) | Modifié (plus visible) |
+- `FluxContinuScreen` → `_buildPastEdition` / `_singleDaySlivers` (lettre passée).
+- `ClosingCardV18` (nouvelle variante `.readOnly`).
+- Provider `editionEssentielProvider` (champ `bonnesTopics`).
 
 ## Scénarios de test
 
-### Scénario 1 : Timeline réduite à 3 options
-**Parcours** : Essentiel → taper le déclencheur ⏪ « Aujourd'hui ».
-**Résultat attendu** : feuille du bas avec titre « Remonter le temps » et **exactement 3 lignes** :
-« Aujourd'hui » (cerclée, sélection courante), « Hier », « Cette semaine ». **Plus de J-2…J-7.** Statut
-lu/non-lu présent si streaks dispo.
+### Happy path — comparer côte à côte
+1. Ouvrir Essentiel → header carte « Ton Essentiel » → rewind (timeline).
+2. Sélectionner **« Hier »** : vérifier la présence, dans l'ordre, de
+   héros Essentiel → point de passage → section **« Actus du jour »** (bannière
+   avec blurb + illustration) → point de passage → section **« Bonnes Nouvelles »**
+   (bannière verte) → **citation** → carte de clôture **« FIN DE TOURNÉE » /
+   « Tu es à jour »** avec bouton **« Revenir à aujourd'hui »** + note
+   « Tu lis la lettre du … ».
+3. Sélectionner **« Cette semaine »** : même grammaire ; label **« Actus de la
+   semaine »** ; **Bonnes Nouvelles** présentes (agrégées) ; **pas de citation** ;
+   même carte de clôture (note « rétro de la semaine »).
+4. Repasser à **« Aujourd'hui »** : la page complète (avec sections tournée)
+   revient normalement.
+5. Comparaison visuelle « Aujourd'hui » vs « Hier » vs « Cette semaine » :
+   cartes de section, espacements, points de passage, carte de clôture cohérents.
 
-### Scénario 2 : Carte Ton Essentiel sans bouton « personnaliser »
-**Parcours** : Essentiel → observer l'en-tête de la carte « Ton Essentiel ».
-**Résultat attendu** : titre non tronqué ; déclencheur ⏪ présent à droite ; **aucun bouton/engrenage
-« personnaliser »** (ni en today, ni sur une lettre passée). La carte s'affiche en entier.
+### Lecture seule (invariant critique)
+6. Sur « Hier » / « Cette semaine », tenter un **swipe** sur une carte → **aucune
+   action** (pas de feedback chips, pas de dismiss). Pas d'étoile favori active,
+   pas de « voir tout ».
+7. Tap sur un article → ouvre le reader normalement (seule interaction permise).
+8. Bouton **« Revenir à aujourd'hui »** de la carte de clôture → resélectionne
+   « Aujourd'hui ».
 
-### Scénario 3 : Inline « GÉRER » plus visible
-**Parcours** : être en mode personnalisé (au moins 1 favori de Tournée) → repérer la ligne
-« TES N FAVORIS DE TOURNÉE … GÉRER ».
-**Résultat attendu** : le bouton « GÉRER » ressort (libellé plus grand, fond accent doux ocre + contour),
-clairement le point d'entrée des préférences ; tap → sheet « Composer ma Tournée ».
-
-### Scénario 4 : Page Lettre du jour — rewind par swipe horizontal
-**Parcours** : ouvrir la page Lettre du jour (`/edition`, rituel matinal) → observer le bord gauche →
-glisser la lettre **vers la droite**.
-**Résultat attendu** : une carte « Hier » crème dépasse du **bord gauche** au repos (liseré ~24 px) ;
-en glissant vers la droite, la lettre suit le doigt et la carte « Hier » se tire en parallax ; au-delà du
-seuil (ou fling), navigation vers le feed en **édition « Hier »** (lecture seule, footer « Revenir à
-aujourd'hui »). Sous le seuil → snap-back élastique. Repli accessible : un lien **« Remonter le temps »**
-ouvre la timeline complète.
-
-### Scénario 5 : Page Lettre du jour — CTA « mode serein »
-**Parcours** : sur la page Lettre du jour, repérer « Pas d'humeur pour les news difficiles ? » → taper
-« Active ton mode serein ».
-**Résultat attendu** : snackbar « Mode serein activé » ; la préférence est persistée (toggle partagé avec
-le feed). Bouton désactivé tant que la préférence charge.
-
-### Scénario 6 : Coexistence des gestes + dégradation gracieuse
-**Parcours** : sur la Lettre du jour, glisser **vers le haut** (doit ouvrir l'édition, inchangé) puis,
-en repartant, glisser **vers la droite** (rewind). Vérifier qu'un seul geste se déclenche à la fois.
-Streaks off → ouvrir la timeline.
-**Résultat attendu** : swipe-up = ouverture, swipe-droite = rewind, jamais les deux ensemble. Timeline
-sans pastille lu/non-lu quand streaks indisponible ; navigation OK quand même.
+### Edge cases
+9. **Jour stale / vide** (édition absente) : rendu = état vide `_BackToTodayBlock`
+   (« Pas d'édition pour … » + « Revenir à aujourd'hui » + « Choisir un autre
+   jour »). Pas de demi-lettre.
+10. **Mode serein activé** puis rewind sur un jour passé : Bonnes Nouvelles
+    toujours cohérentes (bonnesTopics dérivent toujours du digest serein,
+    indépendamment du toggle).
+11. Jour passé **sans Bonnes Nouvelles** (serein vide) : la section Bonnes est
+    simplement absente, pas de bannière vide ni de point de passage orphelin.
 
 ## Critères d'acceptation
-- [ ] Timeline = **3 lignes** (Aujourd'hui, Hier, Cette semaine), ligne active cerclée.
-- [ ] Carte Ton Essentiel : **aucun** bouton « personnaliser » (today ET passé) ; déclencheur ⏪ présent.
-- [ ] « GÉRER » nettement plus visible (libellé 13 px, fond accent).
-- [ ] Page Lettre du jour : carte « Hier » qui dépasse à gauche ; swipe droite → édition « Hier ».
-- [ ] Swipe-up (ouverture) toujours fonctionnel et exclusif du swipe horizontal.
-- [ ] CTA serein : toggle persistant + snackbar « Mode serein activé ».
-- [ ] Lien « Remonter le temps » (repli a11y) ouvre la timeline.
-- [ ] Dark mode : couleurs lisibles (tokens thème). Console sans erreurs ; réseau sans 4xx/5xx inattendus.
+- [ ] « Hier » et « Cette semaine » lues comme « la même lettre, un autre jour ».
+- [ ] Bonnes Nouvelles visibles jour + semaine.
+- [ ] Carte de clôture présente (variante lecture seule, « Revenir à aujourd'hui »).
+- [ ] Aucune mutation possible (swipe/feedback/favori) en passé.
+- [ ] Aucune erreur console, aucun 4xx/5xx inattendu.
 
-## Zones de risque
-- Hauteur de la page Lettre du jour sur petits écrans (rewind trigger + CTA serein ajoutés sous le
-  sommaire) → vérifier l'absence d'overflow visible sur 390×844.
-- Arène de gestes H vs V sur la Lettre du jour (le swipe-up ne doit pas être volé par le swipe horizontal
-  et inversement).
-- `reduceMotion` : la carte « Hier » reste statique (pas de parallax) mais le commit au fling reste possible.
-
-## Dépendances
-- **Aucun** changement back-end (pas d'Alembic/migration).
-- Statut lu/non-lu : `GET /api/streaks/activity` (existant). Mode serein : `sereinToggleProvider`
-  (préférence existante `serein_enabled`).
+## Vérifs déjà faites (dev)
+- `flutter analyze lib test` : 0 erreur/warning sur les fichiers touchés.
+- `flutter test test/features/flux_continu/` : **360 tests verts**, dont :
+  - provider `bonnesTopics` jour (serein / vide / stale) + semaine (agrégation),
+  - widget `ClosingCardV18.readOnly` (coque préservée, CTA, note, tap).
+- Non couvert par les tests unitaires : la **composition d'écran** (c'est l'objet
+  de cette validation Playwright/device).

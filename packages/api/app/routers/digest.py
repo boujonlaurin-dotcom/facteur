@@ -448,6 +448,15 @@ async def generate_digest(
 
     Returns the complete DigestResponse with items (same format as GET endpoint).
     """
+    # EPIC « Lettre du jour » : les éditions passées sont servies en lecture
+    # seule via la chaîne de fallback ; générer un digest daté d'hier depuis le
+    # pool d'articles du jour produirait un contenu faux + un coût LLM inutile.
+    if target_date is not None and target_date < today_paris():
+        raise HTTPException(
+            status_code=400,
+            detail="target_date is in the past; past editions are read-only",
+        )
+
     # Cf. bug-infinite-load-requests.md (P1) — la pipeline éditoriale doit
     # pouvoir ouvrir ses propres sessions courtes hors de la session FastAPI
     # pour libérer la connexion au pool pendant 3-5 min de travail LLM.

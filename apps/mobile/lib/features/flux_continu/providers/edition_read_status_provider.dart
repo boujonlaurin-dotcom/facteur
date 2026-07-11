@@ -85,6 +85,18 @@ class EditionReadStatus {
       : available = false,
         readDayKeys = const <String>{};
 
+  // Égalité par valeur : les providers amont (streaks, set « rattrapé »)
+  // ré-émettent souvent un statut identique ; sans ceci, chaque émission
+  // re-déclencherait l'agrégation hebdo et les watchers de la timeline.
+  @override
+  bool operator ==(Object other) =>
+      other is EditionReadStatus &&
+      other.available == available &&
+      setEquals(other.readDayKeys, readDayKeys);
+
+  @override
+  int get hashCode => Object.hash(available, Object.hashAllUnordered(readDayKeys));
+
   /// L'édition [selection] est-elle « à jour » ? À n'appeler que lorsque
   /// [available] vaut `true`.
   /// - `today` : toujours « à jour » (on est dans l'app) ;
@@ -98,7 +110,7 @@ class EditionReadStatus {
         return readDayKeys.contains(editionDayKey(date));
       case EditionWeek():
         // J-0 (today) est toujours lu ; il reste J-1…J-6 à vérifier.
-        for (final date in editionPastDays(6, now: now)) {
+        for (final date in editionPastDays(kEditionWeekPastDays, now: now)) {
           if (!readDayKeys.contains(editionDayKey(date))) return false;
         }
         return true;

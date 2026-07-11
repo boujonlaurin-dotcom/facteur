@@ -55,12 +55,11 @@ class _EditionTimelineContent extends ConsumerWidget {
     final todayCount =
         sections.whereType<EssentielSection>().expand((s) => s.articles).length;
 
-    // Ordre d'affichage (le modèle reste inchangé) :
-    // Aujourd'hui, Hier, J-2 … J-7, puis « Cette semaine » en dernier.
-    final model = editionPillModel();
+    // Ordre d'affichage : Aujourd'hui, jours passés (Hier seul tant que
+    // `kEditionMaxPastDays` = 1), puis « Cette semaine » en dernier.
     final ordered = <EditionSelection>[
       const EditionToday(),
-      ...model.whereType<EditionPastDay>(),
+      ...editionPastDays(kEditionMaxPastDays).map(EditionPastDay.new),
       const EditionWeek(),
     ];
 

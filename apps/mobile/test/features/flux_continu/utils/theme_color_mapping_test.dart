@@ -1,5 +1,20 @@
+import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/utils/theme_color_mapping.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+FeedThemeSection _feedSection({
+  required SectionKind kind,
+  String? themeSlug,
+}) =>
+    FeedThemeSection(
+      kind: kind,
+      label: 'X',
+      accent: const Color(0xFF000000),
+      coreVisibleCount: 5,
+      themeSlug: themeSlug,
+      items: const [],
+    );
 
 void main() {
   group('visualFor', () {
@@ -41,5 +56,57 @@ void main() {
     expect(themeMap.containsKey(fallbackTheme1), isTrue);
     expect(themeMap.containsKey(fallbackTheme2), isTrue);
     expect(fallbackTheme1, isNot(equals(fallbackTheme2)));
+  });
+
+  group('sectionEmoji', () {
+    test('Essentiel → 📰 (repli éditorial)', () {
+      expect(sectionEmoji(const EssentielSection(articles: [])), '📰');
+    });
+
+    test('Bonnes Nouvelles → 🌱, Actus → 📰', () {
+      expect(
+        sectionEmoji(const DigestTopicSection(
+          kind: SectionKind.bonnes,
+          label: 'Bonnes Nouvelles',
+          accent: Color(0xFF000000),
+          coreVisibleCount: 3,
+          topics: [],
+        )),
+        '🌱',
+      );
+      expect(
+        sectionEmoji(const DigestTopicSection(
+          kind: SectionKind.essentiel,
+          label: 'Actus du jour',
+          accent: Color(0xFF000000),
+          coreVisibleCount: 3,
+          topics: [],
+        )),
+        '📰',
+      );
+    });
+
+    test('Veille → 🔭', () {
+      expect(sectionEmoji(_feedSection(kind: SectionKind.veille)), '🔭');
+    });
+
+    test('thème connu → emoji dédié, thème inconnu → repli 📰', () {
+      expect(
+        sectionEmoji(_feedSection(kind: SectionKind.theme, themeSlug: 'tech')),
+        '💻',
+      );
+      expect(
+        sectionEmoji(
+            _feedSection(kind: SectionKind.theme, themeSlug: 'not-a-theme')),
+        '📰',
+      );
+    });
+
+    test('un emoji est défini pour chacun des 9 thèmes', () {
+      for (final slug in themeMap.keys) {
+        expect(themeEmoji.containsKey(slug), isTrue,
+            reason: 'themeEmoji devrait couvrir "$slug"');
+      }
+    });
   });
 }

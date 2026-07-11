@@ -41,6 +41,7 @@ import '../models/flux_continu_models.dart';
 import '../providers/edition_essentiel_provider.dart';
 import '../providers/edition_read_status_provider.dart';
 import '../providers/flux_continu_provider.dart';
+import '../providers/pending_feed_section_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
@@ -60,7 +61,6 @@ import '../widgets/section_banner.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../widgets/suggestion_reason_sheet.dart';
-import '../widgets/week_recap_block.dart';
 import '../../grille/widgets/grille_cta_card.dart';
 
 /// Scroll offset at which the AppBar is swapped with the sticky tab bar.
@@ -239,6 +239,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// thème & notifications) ne doit se jouer qu'une seule fois par montage,
   /// jamais sur un refetch/scroll/rebuild.
   bool _postOnboardingFlowRan = false;
+
+  /// Garde-fou : un seul cycle de consommation du deep-link « file droit vers
+  /// une section » (cf. [pendingFeedSectionKeyProvider]) est planifié à la fois
+  /// — pas un par rebuild tant que la clé n'est pas résolue.
+  bool _pendingSectionConsumeScheduled = false;
 
   // Pull-to-refresh discoverability pill. Shown briefly when the user
   // scrolls back to the top after having browsed deep enough (>=
@@ -753,6 +758,59 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
   }
 
+  /// Deep-link « file droit vers une section » du rituel matinal : planifie la
+  /// consommation de [pendingFeedSectionKeyProvider] pour le prochain post-frame
+  /// (une seule fois tant qu'elle n'a pas abouti). Le retry borné absorbe le
+  /// délai de mesure des sections (`_stickyEntryKeys` peuplé après layout).
+  void _scheduleConsumePendingSection() {
+    if (_pendingSectionConsumeScheduled) return;
+    _pendingSectionConsumeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tryConsumePendingSection(0);
+    });
+  }
+
+  /// Tente de résoudre + scroller vers la section en attente. Re-tente ~30×
+  /// toutes les 40 ms tant que les sections ne sont pas mesurées (mécanique du
+  /// `scrollToFocus` de la maquette), puis abandonne en remettant le provider à
+  /// `null` (une clé introuvable / un layout absent ne doit jamais boucler).
+  void _tryConsumePendingSection(int attempt) {
+    if (!mounted) {
+      _pendingSectionConsumeScheduled = false;
+      return;
+    }
+    final key = ref.read(pendingFeedSectionKeyProvider);
+    if (key == null) {
+      _pendingSectionConsumeScheduled = false;
+      return;
+    }
+    if (_resolveAndScrollToSectionKey(key) || attempt >= 30) {
+      ref.read(pendingFeedSectionKeyProvider.notifier).state = null;
+      _pendingSectionConsumeScheduled = false;
+      return;
+    }
+    Future.delayed(
+      const Duration(milliseconds: 40),
+      () => _tryConsumePendingSection(attempt + 1),
+    );
+  }
+
+  /// Résout une `sectionKey` vers son entrée sticky et y scrolle. Retourne
+  /// `false` (retry) tant que la section n'est pas montée/mesurée. Mécanique
+  /// identique à [_restoreLastDedicatedSection], mais gardée sur la présence
+  /// effective du `currentContext` (sinon `_scrollToSection` no-op silencieux).
+  bool _resolveAndScrollToSectionKey(String key) {
+    final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+    if (sections == null) return false;
+    final sectionIndex = sections.indexWhere((s) => sectionKey(s) == key);
+    if (sectionIndex < 0 || sectionIndex >= _sectionKeys.length) return false;
+    final stickyIndex = _stickyEntryKeys.indexOf(_sectionKeys[sectionIndex]);
+    if (stickyIndex < 0) return false;
+    if (_stickyEntryKeys[stickyIndex].currentContext == null) return false;
+    unawaited(_scrollToSection(stickyIndex));
+    return true;
+  }
+
   /// Opens an article. ReadSyncService propagates the read state after the
   /// one-second threshold; returning sooner must leave the card unread.
   Future<void> _openArticle(BuildContext context, Object article) async {
@@ -1051,18 +1109,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // EPIC « Lettre du jour » — quand une **édition passée** se charge avec
     // succès (data non stale/vide), on marque son jour « rattrapé » dans le set
     // local (frontend-only) pour que la timeline reflète l'action tout de suite,
-    // sans attendre la prochaine synchro streaks.
+    // sans attendre la prochaine synchro streaks. Restreint aux jours passés :
+    // le statut « Cette semaine » se dérive des dayKeys (jamais de la clé
+    // 'week'), la persister ne ferait que re-déclencher l'agrégation hebdo.
     ref.listen<AsyncValue<EditionEssentielState>>(editionEssentielProvider,
         (_, next) {
       final edition = next.valueOrNull;
-      if (edition == null ||
-          edition.isStaleOrEmpty ||
-          edition.selection is EditionToday) {
-        return;
-      }
-      ref
-          .read(editionCaughtUpProvider.notifier)
-          .markCaughtUp(edition.selection.key);
+      if (edition == null || edition.isStaleOrEmpty) return;
+      final selection = edition.selection;
+      if (selection is! EditionPastDay) return;
+      ref.read(editionCaughtUpProvider.notifier).markCaughtUp(selection.key);
     });
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
@@ -1122,6 +1178,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       // on these content/layout-driven rebuilds — never per scroll frame.
       _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
       _scheduleAnchorRecompute();
+    }
+    // Deep-link « file droit vers une section » posé par le rituel matinal :
+    // consommé une fois les sections live montées (jamais en squelette ni en
+    // édition passée — la tournée live n'y est pas rendue). `ref.watch` rejoue
+    // ce build quand la clé est remise à `null` (fin de consommation).
+    final pendingSectionKey = ref.watch(pendingFeedSectionKeyProvider);
+    if (pendingSectionKey != null && !isSkeleton && !isPastEdition) {
+      _scheduleConsumePendingSection();
     }
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
@@ -1540,28 +1604,66 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     if (edition.isStaleOrEmpty) {
       return <Widget>[_pastEmptySliver(context, edition.selection)];
     }
-    final colors = context.facteurColors;
-    final slivers = <Widget>[];
+    // « Cette semaine » se rend via le **même** chemin single-day : sa valeur
+    // « ce que tu as manqué » est portée par la sélection de contenu (héros =
+    // non-lus de la semaine), pas par une UI dédiée.
+    return _singleDaySlivers(context, edition);
+  }
 
-    if (edition.isWeek) {
-      // Rétro « Cette semaine » : liste plate par jour (maquette), à la place
-      // de la carte héros unique. Lecture seule, tap = reader.
-      if (edition.weekDays.isNotEmpty) {
-        slivers.add(
-          SliverToBoxAdapter(
-            child: WeekRecapBlock(
-              weekDays: edition.weekDays,
-              onTapArticle: (a) => _openArticle(context, a),
-            ),
-          ),
-        );
-      }
-    } else if (edition.heroArticles.isNotEmpty) {
-      // Héros lecture seule (jour unique) : même chemin de rendu que le feed
-      // live (SectionBlock → EssentielHiFiCard). Le bouton « personnaliser » a
-      // été retiré partout (décision PO) ; tap = ouvrir le reader, aucune
-      // mutation (jamais de `digestProvider.applyAction` sur une lettre datée).
-      slivers.add(
+  /// Section de topics en lecture seule (pas d'`onDismissArticle`/feedback ⇒ pas
+  /// de swipe). Réutilise `SectionBlock`. `blurb`/`illustrationAsset` reproduisent
+  /// le `SectionBanner` de la lettre du jour (parité visuelle). `null` si la
+  /// liste est vide (no-op).
+  Widget? _topicSectionSliver(
+    BuildContext context, {
+    required SectionKind kind,
+    required String label,
+    required Color accent,
+    required List<DigestTopic> topics,
+    String? blurb,
+    String? illustrationAsset,
+  }) {
+    if (topics.isEmpty) return null;
+    return SliverToBoxAdapter(
+      child: SectionBlock(
+        section: DigestTopicSection(
+          kind: kind,
+          label: label,
+          accent: accent,
+          coreVisibleCount: topics.length,
+          topics: topics,
+          blurb: blurb,
+          illustrationAsset: illustrationAsset,
+        ),
+        onTapArticle: (a) => _openArticle(context, a),
+      ),
+    );
+  }
+
+  /// Lettre **passée** (jour unique OU « Cette semaine ») rendue à parité visuelle
+  /// avec la lettre du jour : héros → Actus → **Bonnes Nouvelles** → citation →
+  /// carte de clôture (`ClosingCardV18.readOnly`). Mêmes widgets feuilles que le
+  /// feed live (SectionBlock → EssentielHiFiCard / SectionBanner) ; chaque
+  /// `SectionBlock` ne reçoit QUE `onTapArticle` ⇒ **lecture seule** (aucun
+  /// swipe/feedback/favori). Un `_SectionPassageDot` sépare deux sections
+  /// présentes (jamais de point orphelin) ; sur ce chemin les listenables ne sont
+  /// jamais pilotés (pas de listener sur `_editionScroll`, pas de snap) ⇒ point
+  /// calme/statique. En vue hebdo : pas de citation, libellé « Actus de la
+  /// semaine ». Les sections tournée personnalisées ne sont pas archivées par
+  /// date ⇒ délibérément absentes (cf. docstring `editionEssentielProvider`).
+  List<Widget> _singleDaySlivers(
+    BuildContext context,
+    EditionEssentielState edition,
+  ) {
+    final colors = context.facteurColors;
+
+    // Corps de lettre : héros + Actus + Bonnes Nouvelles (chacun optionnel).
+    // Les blurbs/illustrations reproduisent les bannières de la lettre du jour
+    // (cf. flux_continu_provider `_kActusDuJourBlurb` / `_kBonnesBlurb`).
+    final sections = <Widget>[];
+
+    if (edition.heroArticles.isNotEmpty) {
+      sections.add(
         SliverToBoxAdapter(
           child: SectionBlock(
             section: EssentielSection(articles: edition.heroArticles),
@@ -1571,64 +1673,58 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
     }
 
-    // Section de topics en lecture seule (pas d'`onDismissArticle`/feedback ⇒
-    // pas de swipe). Réutilise SectionBlock. No-op si la liste est vide.
-    void addTopicSection({
-      required SectionKind kind,
-      required String label,
-      required Color accent,
-      required List<DigestTopic> topics,
-    }) {
-      if (topics.isEmpty) return;
-      slivers.add(
-        SliverToBoxAdapter(
-          child: SectionBlock(
-            section: DigestTopicSection(
-              kind: kind,
-              label: label,
-              accent: accent,
-              coreVisibleCount: topics.length,
-              topics: topics,
-            ),
-            onTapArticle: (a) => _openArticle(context, a),
-          ),
-        ),
-      );
-    }
-
-    // « Actus du jour » (jour) / « Les temps forts » (semaine).
-    addTopicSection(
+    final actus = _topicSectionSliver(
+      context,
       kind: SectionKind.essentiel,
-      label: edition.isWeek ? 'Les temps forts' : 'Actus du jour',
+      label: edition.isWeek ? 'Actus de la semaine' : 'Actus du jour',
       accent: colors.sectionEssentiel,
       topics: edition.topics,
+      blurb: 'Les sujets les + couverts en France.',
+      illustrationAsset: 'assets/notifications/facteur_avatar.png',
     );
+    if (actus != null) sections.add(actus);
 
-    // « Bonnes Nouvelles » agrégées sur la semaine (décision PO #4) — alimentées
-    // par le digest serein de chaque jour, indépendamment du toggle. Réservé à
-    // la vue hebdo.
-    if (edition.isWeek) {
-      addTopicSection(
-        kind: SectionKind.bonnes,
-        label: 'Bonnes Nouvelles',
-        accent: colors.sectionBonnes,
-        topics: edition.bonnesTopics,
-      );
+    final bonnes = _topicSectionSliver(
+      context,
+      kind: SectionKind.bonnes,
+      label: 'Bonnes Nouvelles',
+      accent: colors.sectionBonnes,
+      topics: edition.bonnesTopics,
+      blurb: 'Un peu de douceur...',
+      illustrationAsset: 'assets/notifications/facteur_goodnews.png',
+    );
+    if (bonnes != null) sections.add(bonnes);
+
+    // Intercale un point de passage entre sections présentes.
+    final slivers = <Widget>[];
+    for (var i = 0; i < sections.length; i++) {
+      if (i > 0) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: _SectionPassageDot(
+              index: i - 1,
+              pulseListenable: _sectionPassagePulse,
+              approachListenable: _boundaryApproach,
+            ),
+          ),
+        );
+      }
+      slivers.add(sections[i]);
     }
 
-    // Citation : clôture éditoriale d'un jour unique (pas de citation unique
-    // pour la rétro hebdo).
-    if (!edition.isWeek && edition.quote != null) {
+    if (edition.quote != null) {
       slivers.add(
         SliverToBoxAdapter(child: CitationDuJourCard(quote: edition.quote!)),
       );
     }
 
+    // Même repère de fin de lettre que le jour, en lecture seule : l'action
+    // primaire ramène à « Aujourd'hui » + note de contexte.
     slivers.add(
       SliverToBoxAdapter(
-        child: _BackToTodayBlock(
-          message: _pastEditionNote(edition.selection),
+        child: ClosingCardV18.readOnly(
           onBackToToday: _backToToday,
+          note: _pastEditionNote(edition.selection),
         ),
       ),
     );
@@ -1694,11 +1790,7 @@ class _BackToTodayBlock extends StatelessWidget {
         FacteurSpacing.space4,
       ),
       padding: const EdgeInsets.all(FacteurSpacing.space4),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        border: Border.all(color: colors.border, width: 0.6),
-      ),
+      decoration: facteurSurfaceCardDecoration(colors, shadow: false),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

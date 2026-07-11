@@ -1,9 +1,6 @@
-import 'package:flutter/material.dart' show Color;
-
 import '../../digest/models/digest_models.dart';
 import '../models/flux_continu_models.dart';
 import '../services/tournee_progress_service.dart';
-import 'theme_color_mapping.dart';
 
 /// Helpers **purs** (pas de provider, pas de réseau) du rituel matinal
 /// (Story 28.1). Testables et déterministes.
@@ -81,32 +78,6 @@ String morningRitualReadinessDebug(
       ' · digest=$digestState(t=$target/n=$todayKey)';
 }
 
-/// Libellé UI exact de La Grille dans le feed (`flux_continu_screen.dart`,
-/// `StickyTab(label: 'Mot du jour')`). Réutilisé tel quel dans le sommaire pour
-/// « reprendre le nom exact des sections » (décision PO 24/06).
-const String kMotDuJourLabel = 'Mot du jour';
-
-/// Accent neutre « loisir » de La Grille (= `_kLeisureTabAccent` du feed), porté
-/// par la chip « Mot du jour » du sommaire (qui n'est pas une [FluxSection] et
-/// n'a donc pas d'`accent` propre).
-const Color kMotDuJourAccent = Color(0xFFB8A898);
-
-/// Une entrée du sommaire « table des matières » de l'édition, rendue comme une
-/// chip colorée dans le rituel matinal : libellé exact de la section + son
-/// `accent` réel (cohérence avec le reste de l'app), et un flag [isVeille] pour
-/// la chip spéciale « Ma veille » (étoile + accent `primary`).
-class EditionSummaryEntry {
-  final String label;
-  final Color accent;
-  final bool isVeille;
-
-  const EditionSummaryEntry({
-    required this.label,
-    required this.accent,
-    this.isVeille = false,
-  });
-}
-
 const List<String> _frenchWeekdays = <String>[
   'lundi',
   'mardi',
@@ -148,66 +119,3 @@ String formatFrenchShortWeekdayDay(DateTime date) {
   return '$short. ${date.day}';
 }
 
-/// Sommaire « table des matières » de l'édition du jour : libellés **exacts** des
-/// sections réellement affichées, dans l'ordre du feed (décision PO 24/06).
-///
-/// - libellé verbatim (`section.label`), aucun relabel ;
-/// - le **héros** [EssentielSection] est exclu (c'est déjà le titre de bloc
-///   « L'Essentiel du jour » au-dessus du sommaire) ;
-/// - « Mot du jour » (La Grille) est inséré à [grilleSlotIndex] — la même
-///   position absolue que le rendu du feed (`FluxContinuState.grilleSlotIndex`),
-///   typiquement juste après « Actus du jour » ;
-/// - les sections suggérées (« Choisie pour vous ») sont **incluses** (elles
-///   s'affichent vraiment), avec leur libellé thème/source.
-List<EditionSummaryEntry> editionSummaryEntries(
-  List<FluxSection> sections, {
-  int? grilleSlotIndex,
-  String motDuJourLabel = kMotDuJourLabel,
-  Color motDuJourAccent = kMotDuJourAccent,
-}) {
-  final entries = <EditionSummaryEntry>[];
-  for (var i = 0; i < sections.length; i++) {
-    if (grilleSlotIndex == i) {
-      entries.add(EditionSummaryEntry(
-        label: motDuJourLabel,
-        accent: motDuJourAccent,
-      ));
-    }
-    final section = sections[i];
-    if (section is EssentielSection) continue; // héros = titre de bloc
-    entries.add(EditionSummaryEntry(
-      label: section.label,
-      accent: section.accent,
-      isVeille: section.kind == SectionKind.veille,
-    ));
-  }
-  // La Grille peut être ancrée tout en bas (après la dernière section).
-  if (grilleSlotIndex == sections.length) {
-    entries.add(EditionSummaryEntry(
-      label: motDuJourLabel,
-      accent: motDuJourAccent,
-    ));
-  }
-  return entries;
-}
-
-/// Sommaire d'une édition **passée / hebdo** dérivé directement des `topics` de
-/// `editionEssentielProvider` (EPIC « Lettre du jour » — carrousel de lettres).
-///
-/// Variante de [editionSummaryEntries] pour les cartes voisines du carrousel,
-/// qui n'ont pas de [FluxSection] live : chaque [DigestTopic] devient une chip,
-/// `label` verbatim, `accent` mappé depuis son `theme` via [themeMap] (fallback
-/// neutre via [themeVisualFor] pour un thème inconnu/absent). Pas de chip veille
-/// ni de « Mot du jour » (propres au feed live d'aujourd'hui).
-List<EditionSummaryEntry> editionSummaryEntriesFromTopics(
-  List<DigestTopic> topics,
-) {
-  return [
-    for (final topic in topics)
-      EditionSummaryEntry(
-        label: topic.label,
-        // `theme` peut être null → fallback neutre « Veille » de [visualFor].
-        accent: visualFor(topic.theme ?? '').accent,
-      ),
-  ];
-}

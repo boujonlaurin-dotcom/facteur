@@ -5,6 +5,7 @@ import 'package:facteur/features/digest/providers/digest_provider.dart';
 import 'package:facteur/features/digest/repositories/digest_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/edition_essentiel_provider.dart';
+import 'package:facteur/features/flux_continu/providers/edition_read_status_provider.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/providers/selected_edition_date_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
@@ -39,23 +40,42 @@ class _StubFluxNotifier extends FluxContinuNotifier {
 
 // ── Helpers de données ────────────────────────────────────────────────────────
 
-EssentielArticle _hero(String id, {int rank = 1}) => EssentielArticle(
+EssentielArticle _hero(
+  String id, {
+  int rank = 1,
+  bool isRead = false,
+  String? theme,
+  DateTime? publishedAt,
+}) =>
+    EssentielArticle(
       contentId: id,
       title: 't$id',
       url: 'https://x/$id',
-      publishedAt: DateTime(2026, 1, 1),
+      publishedAt: publishedAt ?? DateTime(2026, 1, 1),
       sourceName: 'S',
       sourceLetter: 'S',
       sectionLabel: 'Tech',
       rank: rank,
+      isRead: isRead,
+      theme: theme,
     );
 
-DigestTopic _topic(String id, {double score = 1, int rank = 1}) => DigestTopic(
+DigestTopic _topic(
+  String id, {
+  double score = 1,
+  int rank = 1,
+  String? theme,
+  String? leadContentId,
+}) =>
+    DigestTopic(
       topicId: id,
       label: 'L$id',
       topicScore: score,
       rank: rank,
-      articles: [DigestItem(contentId: '$id-a', title: 'a$id')],
+      theme: theme,
+      articles: [
+        DigestItem(contentId: leadContentId ?? '$id-a', title: 'a$id'),
+      ],
     );
 
 DigestResponse _digest({
@@ -76,9 +96,13 @@ DigestResponse _digest({
 DualDigestResponse _dual(DigestResponse normal) =>
     DualDigestResponse(normal: normal, serein: null, sereinEnabled: false);
 
-/// Dual avec normal **et** serein (Bonnes Nouvelles) renseignés.
-DualDigestResponse _dualBoth(DigestResponse normal, DigestResponse serein) =>
-    DualDigestResponse(normal: normal, serein: serein, sereinEnabled: true);
+/// Variante avec digest **serein** (source des « Bonnes Nouvelles »).
+DualDigestResponse _dualS(DigestResponse normal, {DigestResponse? serein}) =>
+    DualDigestResponse(
+      normal: normal,
+      serein: serein,
+      sereinEnabled: serein != null,
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -86,6 +110,10 @@ void main() {
   ProviderContainer makeContainer({
     required Map<String, List<EssentielArticle>?> heroByDay,
     required Map<String, DualDigestResponse?> dualByDay,
+    // Statut lu/non-lu injecté : par défaut indisponible (weekMissedDays = 0).
+    // Override `editionReadStatusProvider` directement → ne construit jamais
+    // `streakActivityProvider` (évite le poison MissingPluginException prefs).
+    EditionReadStatus readStatus = const EditionReadStatus.unavailable(),
   }) {
     final digestRepo = _MockDigestRepository();
     when(() => digestRepo.fetchBothDigests(date: any(named: 'date')))
@@ -104,6 +132,7 @@ void main() {
         authStateProvider
             .overrideWith((ref) => AuthStateNotifier.test(const AuthState())),
         fluxContinuProvider.overrideWith(_StubFluxNotifier.new),
+        editionReadStatusProvider.overrideWithValue(readStatus),
       ],
     );
   }
@@ -181,26 +210,108 @@ void main() {
       final state = await container.read(editionEssentielProvider.future);
       expect(state.isStaleOrEmpty, isTrue);
     });
+
+    test(
+        'Bonnes Nouvelles = topics du digest serein (indépendant du toggle off)',
+        () async {
+      final date = DateTime(2026, 6, 20);
+      final key = editionDayKey(date);
+      final container = makeContainer(
+        heroByDay: {
+          key: [_hero('h1')],
+        },
+        dualByDay: {
+          key: _dualS(
+            _digest(topics: [_topic('t1')]),
+            serein: _digest(topics: [_topic('bn1'), _topic('bn2')]),
+          ),
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          EditionPastDay(date);
+
+      final state = await container.read(editionEssentielProvider.future);
+      // Actus = digest normal ; Bonnes Nouvelles = digest serein, tous deux
+      // captés même toggle serein éteint.
+      expect(state.topics.map((t) => t.topicId), ['t1']);
+      expect(state.bonnesTopics.map((t) => t.topicId), ['bn1', 'bn2']);
+    });
+
+    test('serein absent → bonnesTopics vide', () async {
+      final date = DateTime(2026, 6, 20);
+      final key = editionDayKey(date);
+      final container = makeContainer(
+        heroByDay: {
+          key: [_hero('h1')],
+        },
+        dualByDay: {
+          key: _dual(_digest(topics: [_topic('t1')])), // serein null
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          EditionPastDay(date);
+
+      final state = await container.read(editionEssentielProvider.future);
+      expect(state.topics.map((t) => t.topicId), ['t1']);
+      expect(state.bonnesTopics, isEmpty);
+    });
+
+    test('stale → bonnesTopics vide même si serein présent', () async {
+      final date = DateTime(2026, 6, 20);
+      final key = editionDayKey(date);
+      final container = makeContainer(
+        heroByDay: {
+          key: [_hero('h1')],
+        },
+        dualByDay: {
+          // Le digest **pické** (normal, toggle off) est stale ⇒ jour traité
+          // comme sans lettre : aucune section, Bonnes incluses.
+          key: _dualS(
+            _digest(topics: [_topic('t1')], stale: true),
+            serein: _digest(topics: [_topic('bn1')]),
+          ),
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          EditionPastDay(date);
+
+      final state = await container.read(editionEssentielProvider.future);
+      expect(state.isStaleOrEmpty, isTrue);
+      expect(state.bonnesTopics, isEmpty);
+    });
   });
 
+  // « Cette semaine » se rend via le **même chemin single-day** : sa valeur
+  // « ce que tu as manqué » vit dans la sélection de contenu (héros = non-lus
+  // de la semaine, triés par importance). On asserte donc `heroArticles` +
+  // `topics` + `isWeek`, comme un jour passé.
   group('Cette semaine', () {
-    test('liste par jour (newest-first), Actus agrégées, jours manquants ignorés',
-        () async {
+    test(
+        'héros = non-lus d\'abord, dédup contentId, tri rank asc, cap 5 ; '
+        'jours manquants ignorés', () async {
       final today = editionTodayDate();
       DateTime past(int i) => DateTime(today.year, today.month, today.day - i);
       final k1 = editionDayKey(past(1));
       final k2 = editionDayKey(past(2));
-      // past(3) absent → jour manquant ignoré.
+      final k3 = editionDayKey(past(3));
+      // past(4) absent → jour manquant ignoré (pas de contribution).
       final container = makeContainer(
         heroByDay: {
-          k1: [_hero('a', rank: 1), _hero('b', rank: 2)],
-          k2: [_hero('c', rank: 1)],
+          k1: [
+            _hero('b', rank: 1),
+            _hero('x', rank: 6),
+            _hero('e', rank: 4, isRead: true),
+          ],
+          k2: [_hero('c', rank: 2), _hero('d', rank: 3), _hero('b', rank: 9)],
+          k3: [_hero('f', rank: 5), _hero('z', rank: 8)],
         },
         dualByDay: {
           k1: _dual(_digest(topics: [_topic('t1', score: 1)])),
-          k2: _dual(_digest(
-            topics: [_topic('t2', score: 5), _topic('t1', score: 1)],
-          )), // t1 dupliqué entre jours
+          k2: _dual(_digest(topics: [_topic('t2', score: 5)])),
+          k3: _dual(_digest(topics: [_topic('t3', score: 3)])),
         },
       );
       addTearDown(container.dispose);
@@ -210,30 +321,100 @@ void main() {
       final state = await container.read(editionEssentielProvider.future);
       expect(state.isWeek, isTrue);
       expect(state.isStaleOrEmpty, isFalse);
-      // En semaine, le héros agrégé est remplacé par la liste par jour.
-      expect(state.heroArticles, isEmpty);
-      // Un groupe par jour ayant des héros, newest-first (J-1 puis J-2 ;
-      // J-0 vide via le stub flux et J-3 manquant sont ignorés).
-      expect(state.weekDays.map((g) => editionDayKey(g.date)), [k1, k2]);
-      expect(state.weekDays[0].articles.map((a) => a.contentId), ['a', 'b']);
-      expect(state.weekDays[1].articles.map((a) => a.contentId), ['c']);
-      // Actus = Σ normalTopics, dédup t1 + tri topicScore desc : t2(5), t1(1).
-      expect(state.topics.map((t) => t.topicId), ['t2', 't1']);
+      // 'e' (lu) exclu ; 'b' dédupliqué (1ʳᵉ occurrence rank 1 gardée) ; tri
+      // rank asc ; cap 5 (b1,c2,d3,f5,x6 — z8 hors cap).
+      expect(state.heroArticles.map((a) => a.contentId), ['b', 'c', 'd', 'f', 'x']);
+      // « Actus de la semaine » = Σ topics normaux, tri topicScore desc.
+      expect(state.topics.map((t) => t.topicId), ['t2', 't3', 't1']);
     });
 
-    test('Bonnes Nouvelles agrégées depuis serein ; Actus/Bonnes découplées',
+    test('tout lu → fallback read-agnostic (mêmes tri/cap)', () async {
+      final today = editionTodayDate();
+      final k1 = editionDayKey(DateTime(today.year, today.month, today.day - 1));
+      final container = makeContainer(
+        heroByDay: {
+          k1: [
+            _hero('a', rank: 2, isRead: true),
+            _hero('b', rank: 1, isRead: true),
+          ],
+        },
+        dualByDay: {
+          k1: _dual(_digest(topics: [_topic('t1')])),
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          const EditionWeek();
+
+      final state = await container.read(editionEssentielProvider.future);
+      // Aucun non-lu → héros reconstruit sur tous les articles, tri rank asc.
+      expect(state.heroArticles.map((a) => a.contentId), ['b', 'a']);
+      expect(state.isStaleOrEmpty, isFalse);
+    });
+
+    test('héros d\'un jour plafonnés à kEditionWeekMaxArticlesPerDay avant dédup',
         () async {
       final today = editionTodayDate();
       final k1 = editionDayKey(DateTime(today.year, today.month, today.day - 1));
       final container = makeContainer(
         heroByDay: {
-          k1: [_hero('h1')],
+          // 5 héros un même jour → seuls les 3 premiers (par rank servi)
+          // entrent dans le pool candidat.
+          k1: [
+            _hero('a', rank: 1),
+            _hero('b', rank: 2),
+            _hero('c', rank: 3),
+            _hero('d', rank: 4),
+            _hero('e', rank: 5),
+          ],
         },
         dualByDay: {
-          // normal → Actus ; serein → Bonnes Nouvelles. Aucun chevauchement.
-          k1: _dualBoth(
-            _digest(topics: [_topic('actu1', score: 2)]),
-            _digest(topics: [_topic('bonne1', score: 3)]),
+          k1: _dual(_digest(topics: [_topic('t1')])),
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          const EditionWeek();
+
+      final state = await container.read(editionEssentielProvider.future);
+      expect(state.heroArticles, hasLength(kEditionWeekMaxArticlesPerDay));
+      expect(state.heroArticles.map((a) => a.contentId), ['a', 'b', 'c']);
+    });
+
+    test('tout vide → isStaleOrEmpty ; héros et Actus vides', () async {
+      final container = makeContainer(heroByDay: {}, dualByDay: {});
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          const EditionWeek();
+
+      final state = await container.read(editionEssentielProvider.future);
+      expect(state.isStaleOrEmpty, isTrue);
+      expect(state.heroArticles, isEmpty);
+      expect(state.topics, isEmpty);
+    });
+
+    test(
+        'Bonnes Nouvelles hebdo = Σ topics serein, dédup topicId, tri score desc',
+        () async {
+      final today = editionTodayDate();
+      DateTime past(int i) => DateTime(today.year, today.month, today.day - i);
+      final k1 = editionDayKey(past(1));
+      final k2 = editionDayKey(past(2));
+      final container = makeContainer(
+        heroByDay: {
+          k1: [_hero('a', rank: 1)],
+          k2: [_hero('b', rank: 2)],
+        },
+        dualByDay: {
+          k1: _dualS(
+            _digest(topics: [_topic('t1')]),
+            serein: _digest(topics: [_topic('bn1', score: 1)]),
+          ),
+          k2: _dualS(
+            _digest(topics: [_topic('t2')]),
+            serein: _digest(
+              topics: [_topic('bn2', score: 5), _topic('bn1', score: 1)],
+            ),
           ),
         },
       );
@@ -242,22 +423,8 @@ void main() {
           const EditionWeek();
 
       final state = await container.read(editionEssentielProvider.future);
-      expect(state.isWeek, isTrue);
-      expect(state.topics.map((t) => t.topicId), ['actu1']);
-      expect(state.bonnesTopics.map((t) => t.topicId), ['bonne1']);
-    });
-
-    test('tout vide → isStaleOrEmpty', () async {
-      final container = makeContainer(heroByDay: {}, dualByDay: {});
-      addTearDown(container.dispose);
-      container.read(selectedEditionDateProvider.notifier).state =
-          const EditionWeek();
-
-      final state = await container.read(editionEssentielProvider.future);
-      expect(state.isStaleOrEmpty, isTrue);
-      expect(state.weekDays, isEmpty);
-      expect(state.topics, isEmpty);
-      expect(state.bonnesTopics, isEmpty);
+      // bn1 dédupliqué (1ʳᵉ occurrence gardée) ; tri topicScore desc : bn2, bn1.
+      expect(state.bonnesTopics.map((t) => t.topicId), ['bn2', 'bn1']);
     });
   });
 }

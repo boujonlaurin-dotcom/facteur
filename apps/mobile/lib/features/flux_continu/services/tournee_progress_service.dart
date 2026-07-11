@@ -99,17 +99,6 @@ class TourneeProgressService {
     return prefs.getBool(morningRitualPrefsKey(now ?? DateTime.now())) ?? false;
   }
 
-  Future<bool> loadMorningRitualShownForToday({DateTime? now}) async {
-    try {
-      final prefs = await _prefs();
-      return prefs.getBool(morningRitualPrefsKey(now ?? DateTime.now())) ??
-          false;
-    } catch (e) {
-      debugPrint('TourneeProgress: loadMorningRitualShownForToday failed: $e');
-      return false;
-    }
-  }
-
   Future<void> setMorningRitualShownToday({DateTime? now}) async {
     try {
       final prefs = await _prefs();

@@ -500,7 +500,7 @@ void main() {
       );
     });
 
-    test('10 favorites cap (11th ignored)', () async {
+    test('13 favorites cap (14th ignored)', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(
         () => feedRepo.getFeed(
@@ -512,12 +512,13 @@ void main() {
         ),
       ).thenAnswer((_) async => _feedResponseWith(3));
 
-      // 11 favoris thème (slugs arbitraires — `visualFor` a un fallback) : le cap
-      // [_kMaxFavoriteSections] = 10 garde les 10 premiers, le 11e est ignoré.
+      // 14 favoris thème (slugs arbitraires — `visualFor` a un fallback) : le cap
+      // [_kMaxFavoriteSections] = [kTourneeVisibleCap] = 13 garde les 13 premiers,
+      // le 14e est ignoré.
       final container = makeContainer(
         interests: _interestsState(
           favorites: [
-            for (var i = 0; i < 11; i++) ThemeFavoriteRef(slug: 'theme$i'),
+            for (var i = 0; i < 14; i++) ThemeFavoriteRef(slug: 'theme$i'),
           ],
         ),
       );
@@ -528,7 +529,7 @@ void main() {
           .whereType<FeedThemeSection>()
           .map((s) => s.themeSlug)
           .toList();
-      expect(slugs, [for (var i = 0; i < 10; i++) 'theme$i']);
+      expect(slugs, [for (var i = 0; i < 13; i++) 'theme$i']);
     });
   });
 

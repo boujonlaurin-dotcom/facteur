@@ -29,13 +29,13 @@ void main() {
       expect(pills.length, 3);
     });
 
-    test('ordre : Cette semaine, Aujourd\'hui, Hier (J-1)', () {
+    test('ordre : Cette semaine, Hier (J-1), Aujourd\'hui', () {
       expect(pills[0], isA<EditionWeek>());
-      expect(pills[1], isA<EditionToday>());
-      expect(pills[2], isA<EditionPastDay>());
-      expect((pills[2] as EditionPastDay).date, DateTime(2026, 6, 22)); // J-1
-      // Une seule lettre passée : la dernière = J-1.
-      expect((pills.last as EditionPastDay).date, DateTime(2026, 6, 22));
+      expect(pills[1], isA<EditionPastDay>());
+      expect((pills[1] as EditionPastDay).date, DateTime(2026, 6, 22)); // J-1
+      expect(pills[2], isA<EditionToday>());
+      // Aujourd'hui = la plus récente, donc la plus à droite (page par défaut).
+      expect(pills.last, isA<EditionToday>());
     });
   });
 
