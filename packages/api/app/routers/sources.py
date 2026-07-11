@@ -944,8 +944,10 @@ async def get_source_profile(
     Une seule réponse regroupe : l'identité de la source, sa couverture par
     thèmes sur 30 jours (`theme_distribution` + `articles_30d`), la date du
     plus ancien contenu connu (`oldest_content_at`, hors fenêtre, pour clamper
-    la fréquence côté mobile) et ses 3 articles les plus récents (objets
-    `Content` complets → carte standard cliquable). Placé après `/coverage`,
+    la fréquence côté mobile) et ses 10 articles les plus récents (objets
+    `Content` complets → carte standard cliquable ; la fiche en montre 3 par
+    défaut et déroule jusqu'à 10 via « Lire plus », sans nouvelle requête).
+    Placé après `/coverage`,
     donc après toutes les routes statiques (`/catalog`, `/trending`…).
     """
     source = (
@@ -1003,7 +1005,7 @@ async def get_source_profile(
         .options(selectinload(Content.source))
         .where(Content.source_id == source_id)
         .order_by(Content.published_at.desc())
-        .limit(3)
+        .limit(10)
     )
     recent_articles: list[ContentResponse] = []
     for content in recent_result.scalars().all():

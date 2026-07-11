@@ -1,6 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Sources",
+      "summary": "Sur une source suivie, la priorité dans ton flux et la connexion d'abonnement passent en tête de fiche, et « Lire plus » déroule ses derniers articles."
+    },
+    {
+      "tag": "Feed",
+      "summary": "Les notifs en tête de feed sont moins insistantes : une notif écartée ne revient plus avant un mois, et le sondage « bien informé » s'affiche en entier."
+    },
+    {
       "tag": "Tournée",
       "summary": "Des suggestions de sources plus riches par thème, et un accès direct « Tout lire »."
     },

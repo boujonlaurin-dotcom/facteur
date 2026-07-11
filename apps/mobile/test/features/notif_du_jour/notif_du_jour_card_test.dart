@@ -189,6 +189,25 @@ void main() {
     expect(find.byIcon(PhosphorIcons.arrowRight()), findsNothing);
   });
 
+  testWidgets('sondage bien informé : titre sur 2 lignes (non tronqué)',
+      (tester) async {
+    await tester.pumpWidget(_wrap(queue: const ['well_informed']));
+    await tester.pumpAndSettle();
+    final title = tester.widget<Text>(
+      find.text('Te sens-tu bien informé·e en ce moment ?'),
+    );
+    expect(title.maxLines, 2);
+  });
+
+  testWidgets('message standard : titre sur 1 ligne', (tester) async {
+    await tester.pumpWidget(_wrap(queue: profileQueue));
+    await tester.pumpAndSettle();
+    final title = tester.widget<Text>(
+      find.text('Pas dans le mood pour l\'actu chaude ?'),
+    );
+    expect(title.maxLines, 1);
+  });
+
   testWidgets('cède aux modales de l\'orchestrateur', (tester) async {
     await tester.pumpWidget(
       _wrap(queue: profileQueue, slot: FirstImpressionSlot.notifModal),
