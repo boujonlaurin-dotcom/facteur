@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/api/user_error_interceptor.dart' show kUserFacingExtraKey;
 import '../models/digest_models.dart';
 import '../models/dual_digest_response.dart';
 
@@ -296,6 +297,8 @@ class DigestRepository {
           'reasons': reasons,
           if (comment != null) 'comment': comment,
         },
+        // Tap explicite (pouce) → remonter les 5xx/timeouts à l'utilisateur.
+        options: Options(extra: {kUserFacingExtraKey: true}),
       );
     } catch (e) {
       // Fail silently — feedback should never block the digest flow
@@ -306,7 +309,11 @@ class DigestRepository {
 
   /// Report an article as not serene (misclassified)
   Future<void> reportNotSerene(String contentId) async {
-    await _apiClient.dio.post<dynamic>('contents/$contentId/report-not-serene');
+    await _apiClient.dio.post<dynamic>(
+      'contents/$contentId/report-not-serene',
+      // Tap « Signaler » → l'utilisateur attend un retour ; opt-in bannière.
+      options: Options(extra: {kUserFacingExtraKey: true}),
+    );
   }
 
   /// Update a user preference (key-value)

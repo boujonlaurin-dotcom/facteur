@@ -7,6 +7,8 @@
     {
       "tag": "Feed",
       "summary": "Les notifs en tête de feed sont moins insistantes : une notif écartée ne revient plus avant un mois, et le sondage « bien informé » s'affiche en entier."
+      "tag": "App",
+      "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
     },
     {
       "tag": "Tournée",

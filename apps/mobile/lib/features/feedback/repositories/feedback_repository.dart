@@ -1,4 +1,7 @@
+import 'package:dio/dio.dart';
+
 import '../../../core/api/api_client.dart';
+import '../../../core/api/user_error_interceptor.dart' show kUserFacingExtraKey;
 import '../models/feedback_models.dart';
 
 /// Repository pour le système de feedback utilisateur (Epic 13).
@@ -20,6 +23,8 @@ class FeedbackRepository {
           if (date != null)
             'digest_date': date.toIso8601String().split('T').first,
         },
+        // Tap emoji → l'utilisateur attend un retour ; opt-in bannière souci.
+        options: Options(extra: {kUserFacingExtraKey: true}),
       );
     } catch (e) {
       // ignore: avoid_print
