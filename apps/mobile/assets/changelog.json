@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "L'écran de lecture s'allège : barres flottantes translucides qui laissent transparaître l'article."
+    },
+    {
       "tag": "App",
       "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
     },
