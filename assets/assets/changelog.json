@@ -35,6 +35,10 @@
       "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
     },
     {
+      "tag": "Sources",
+      "summary": "Ajouter une source est plus fiable et plus vivant : les correspondances vérifiées sont clairement signalées et ses premiers articles apparaissent tout de suite."
+    },
+    {
       "tag": "Veille",
       "summary": "Ton sujet de veille est bien mémorisé, même quand tu le saisis librement, et changer de thème repart d'une base propre sans avoir à tout décocher."
     },
