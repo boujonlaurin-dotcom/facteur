@@ -49,4 +49,14 @@ class AnalyseQuotaNotifier extends AsyncNotifier<bool> {
     await prefs.setBool(_todayKey, true);
     state = const AsyncData(true);
   }
+
+  /// Gate d'un lancement frais (state `idle`) : consomme le quota du jour et
+  /// renvoie `true` si autorisé, `false` si le quota free est déjà épuisé.
+  /// Premium → toujours `true` (sans consommer). Centralise l'invariant
+  /// [canLaunch] + [recordUse] partagé par les points d'entrée d'analyse.
+  bool tryConsume() {
+    if (!canLaunch) return false;
+    recordUse();
+    return true;
+  }
 }

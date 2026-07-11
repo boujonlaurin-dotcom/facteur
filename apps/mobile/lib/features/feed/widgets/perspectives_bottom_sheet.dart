@@ -390,13 +390,10 @@ class _PerspectivesBottomSheetState
   Future<void> _requestAnalysis() async {
     // Lancement frais uniquement (le retry après erreur ne re-consomme pas
     // le quota) : gating free 1 analyse/jour.
-    if (_analysisState == PerspectivesAnalysisState.idle) {
-      final quota = ref.read(analyseQuotaProvider.notifier);
-      if (!quota.canLaunch) {
-        PaywallSheet.show(context, PaywallWallVariant.analyses);
-        return;
-      }
-      quota.recordUse();
+    if (_analysisState == PerspectivesAnalysisState.idle &&
+        !ref.read(analyseQuotaProvider.notifier).tryConsume()) {
+      PaywallSheet.show(context, PaywallWallVariant.analyses);
+      return;
     }
     setState(() => _analysisState = PerspectivesAnalysisState.loading);
 
@@ -421,9 +418,9 @@ class _PerspectivesBottomSheetState
   /// Pill premium « Analyses illimitées » / bannière quota épuisé (free).
   /// Null si free avec quota dispo → la zone CTA reste inchangée.
   Widget? _buildQuotaNotice(FacteurColors colors, TextTheme textTheme) {
-    final isPremium = ref.watch(isPremiumProvider);
-    final quotaUsed = ref.watch(analyseQuotaProvider).valueOrNull ?? false;
-    if (isPremium) {
+    // Premium d'abord : évite de réveiller `analyseQuotaProvider` (lecture +
+    // purge SharedPreferences) pour un utilisateur qui n'affiche que la pill.
+    if (ref.watch(isPremiumProvider)) {
       return Center(
         child: Text(
           SoutienCopy.analysesPillPremium,
@@ -431,6 +428,7 @@ class _PerspectivesBottomSheetState
         ),
       );
     }
+    final quotaUsed = ref.watch(analyseQuotaProvider).valueOrNull ?? false;
     if (quotaUsed && _analysisState == PerspectivesAnalysisState.idle) {
       return Center(
         child: Text(

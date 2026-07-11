@@ -22,6 +22,19 @@ class PremiumGate {
       !isPremium && followedSourcesCount >= kFreeSourceCap;
   bool get canCreateVeille => isPremium;
   bool get canCustomizeSerein => isPremium;
+
+  // Égalité par valeur : `premiumGateProvider` se recompose à chaque émission
+  // de `userSourcesProvider` (follow/unfollow/refresh) ; sans ceci, les
+  // watchers de l'objet entier se rebuild même quand rien de pertinent n'a
+  // changé.
+  @override
+  bool operator ==(Object other) =>
+      other is PremiumGate &&
+      other.isPremium == isPremium &&
+      other.followedSourcesCount == followedSourcesCount;
+
+  @override
+  int get hashCode => Object.hash(isPremium, followedSourcesCount);
 }
 
 final premiumGateProvider = Provider<PremiumGate>((ref) {

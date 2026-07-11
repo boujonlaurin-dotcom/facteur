@@ -1857,12 +1857,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
       // Lancement frais (pas d'analyse cachée) → quota free 1/jour. La
       // réouverture d'une analyse déjà chargée (state != idle) reste libre.
-      final quota = ref.read(analyseQuotaProvider.notifier);
-      if (!quota.canLaunch) {
+      if (!ref.read(analyseQuotaProvider.notifier).tryConsume()) {
         PaywallSheet.show(context, PaywallWallVariant.analyses);
         return;
       }
-      quota.recordUse();
       _requestPerspectivesAnalysis();
     }
     showAnalysisBottomSheet(

@@ -30,27 +30,30 @@ class PaywallSheet extends StatelessWidget {
     );
   }
 
-  String get _eyebrow => switch (variant) {
-        PaywallWallVariant.sources => SoutienCopy.sourcesWallEyebrow,
-        PaywallWallVariant.analyses => SoutienCopy.analysesWallEyebrow,
-        PaywallWallVariant.serein => SoutienCopy.sereinWallEyebrow,
-      };
-
-  String get _headline => switch (variant) {
-        PaywallWallVariant.sources => SoutienCopy.sourcesWallHeadline,
-        PaywallWallVariant.analyses => SoutienCopy.analysesWallHeadline,
-        PaywallWallVariant.serein => SoutienCopy.sereinWallHeadline,
-      };
-
-  String get _body => switch (variant) {
-        PaywallWallVariant.sources => SoutienCopy.sourcesWallBody,
-        PaywallWallVariant.analyses => SoutienCopy.analysesWallBody,
-        PaywallWallVariant.serein => SoutienCopy.sereinWallBody,
+  /// Copy de la variante en une passe (un seul `switch` au lieu de trois).
+  ({String eyebrow, String headline, String body}) get _copy =>
+      switch (variant) {
+        PaywallWallVariant.sources => (
+            eyebrow: SoutienCopy.sourcesWallEyebrow,
+            headline: SoutienCopy.sourcesWallHeadline,
+            body: SoutienCopy.sourcesWallBody,
+          ),
+        PaywallWallVariant.analyses => (
+            eyebrow: SoutienCopy.analysesWallEyebrow,
+            headline: SoutienCopy.analysesWallHeadline,
+            body: SoutienCopy.analysesWallBody,
+          ),
+        PaywallWallVariant.serein => (
+            eyebrow: SoutienCopy.sereinWallEyebrow,
+            headline: SoutienCopy.sereinWallHeadline,
+            body: SoutienCopy.sereinWallBody,
+          ),
       };
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final copy = _copy;
     return SafeArea(
       child: Container(
         decoration: BoxDecoration(
@@ -80,7 +83,7 @@ class PaywallSheet extends StatelessWidget {
             ),
             const SizedBox(height: FacteurSpacing.space6),
             Text(
-              _eyebrow.toUpperCase(),
+              copy.eyebrow.toUpperCase(),
               style: GoogleFonts.courierPrime(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -90,7 +93,7 @@ class PaywallSheet extends StatelessWidget {
             ),
             const SizedBox(height: FacteurSpacing.space3),
             Text(
-              _headline,
+              copy.headline,
               style: GoogleFonts.fraunces(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
@@ -101,7 +104,7 @@ class PaywallSheet extends StatelessWidget {
             ),
             const SizedBox(height: FacteurSpacing.space3),
             Text(
-              _body,
+              copy.body,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colors.textSecondary,
                     height: 1.5,
