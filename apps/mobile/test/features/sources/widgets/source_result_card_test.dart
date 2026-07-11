@@ -128,6 +128,79 @@ void main() {
     });
   });
 
+  group('SourceResultCard — correspondance vérifiée (inCatalog + isCurated)',
+      () {
+    const curatedResult = SmartSearchResult(
+      name: 'Le Monde',
+      type: 'article',
+      url: 'https://lemonde.fr',
+      feedUrl: 'https://lemonde.fr/rss/une.xml',
+      description: 'Journal quotidien francais',
+      inCatalog: true,
+      isCurated: true,
+      sourceId: 'test-source-id',
+      recentItems: [
+        SmartSearchRecentItem(title: 'Premier article'),
+        SmartSearchRecentItem(title: 'Deuxieme article'),
+        SmartSearchRecentItem(title: 'Troisieme article'),
+      ],
+    );
+
+    testWidgets('affiche la pastille « Source vérifiée »', (tester) async {
+      await tester.pumpWidget(buildTestWidget(result: curatedResult));
+
+      expect(find.text('Source vérifiée'), findsOneWidget);
+    });
+
+    testWidgets('CTA « Suivre {nom} » au lieu de « Ajouter »', (tester) async {
+      await tester.pumpWidget(buildTestWidget(result: curatedResult));
+
+      expect(find.text('Suivre Le Monde'), findsOneWidget);
+      expect(find.text('Ajouter'), findsNothing);
+    });
+
+    testWidgets('tronque proprement un nom long dans le CTA', (tester) async {
+      const longNameResult = SmartSearchResult(
+        name: 'Un Média Au Nom Vraiment Très Long Et Verbeux',
+        type: 'article',
+        url: 'https://exemple.fr',
+        feedUrl: 'https://exemple.fr/rss.xml',
+        inCatalog: true,
+        isCurated: true,
+        sourceId: 'long-id',
+      );
+      await tester.pumpWidget(buildTestWidget(result: longNameResult));
+
+      // Le CTA commence par « Suivre » et se termine par une ellipse.
+      final ctaFinder = find.textContaining('Suivre Un Média');
+      expect(ctaFinder, findsOneWidget);
+      final ctaText = tester.widget<Text>(ctaFinder).data!;
+      expect(ctaText.endsWith('...'), isTrue);
+    });
+
+    testWidgets('met en avant les derniers articles (bloc riche)',
+        (tester) async {
+      await tester.pumpWidget(buildTestWidget(result: curatedResult));
+
+      // Présentation riche : header « Derniers articles » (sans deux-points)
+      // + les 3 titres re-présentés depuis recentItems (aucun fetch).
+      expect(find.text('Derniers articles'), findsOneWidget);
+      expect(find.text('Derniers articles :'), findsNothing);
+      expect(find.text('Premier article'), findsOneWidget);
+      expect(find.text('Deuxieme article'), findsOneWidget);
+      expect(find.text('Troisieme article'), findsOneWidget);
+    });
+
+    testWidgets('catalogue non curé : garde « Ajouter » et pas de pastille',
+        (tester) async {
+      // sampleResult est inCatalog mais non curé.
+      await tester.pumpWidget(buildTestWidget());
+
+      expect(find.text('Ajouter'), findsOneWidget);
+      expect(find.text('Source vérifiée'), findsNothing);
+    });
+  });
+
   group('SourceResultCard — mode preuve (showProof)', () {
     testWidgets('added + showProof : vue « Connecté » avec les 3 titres',
         (tester) async {

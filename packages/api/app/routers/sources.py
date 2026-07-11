@@ -1,5 +1,6 @@
 """Routes sources."""
 
+import asyncio
 import contextlib
 import time
 from collections import defaultdict
@@ -70,6 +71,11 @@ from app.utils.db_retry import retry_db_op
 
 logger = structlog.get_logger()
 FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
+
+# T1d — budget strict du seed synchrone à l'add. Assez pour fetcher le flux +
+# insérer ~10 contents ; au-delà on retombe en background-only pour ne jamais
+# bloquer l'add.
+SEED_TIMEOUT_S = 5.0
 
 router = APIRouter()
 
@@ -726,9 +732,26 @@ async def add_source(
         FEED_CACHE.invalidate(UUID(user_id))
         SOURCES_CACHE.invalidate(UUID(user_id))
 
-        # Trigger immediate sync in background after request returns (and DB commits)
-        from app.workers.rss_sync import sync_source
+        from app.workers.rss_sync import seed_source, sync_source
 
+        # T1d — sème une tranche synchrone (time-boxée) pour que la tournée ne
+        # soit pas vide les quelques secondes où la task de fond tourne. Sur
+        # timeout/erreur → repli gracieux vers le background-only (filet
+        # `sync_source` conservé ci-dessous pour le backfill complet).
+        try:
+            seeded = await asyncio.wait_for(
+                seed_source(str(source.id)), timeout=SEED_TIMEOUT_S
+            )
+            logger.info("add_source_seed_done", source_id=str(source.id), seeded=seeded)
+        except Exception as seed_exc:
+            logger.info(
+                "add_source_seed_skipped",
+                source_id=str(source.id),
+                error=str(seed_exc),
+                exc_type=type(seed_exc).__name__,
+            )
+
+        # Backfill complet en tâche de fond après le retour de la requête.
         background_tasks.add_task(sync_source, str(source.id))
 
         return source
@@ -804,6 +827,16 @@ async def detect_source(
         else:
             # It's a keyword search
             results = await service.search_sources(url_input, user_id=user_id)
+            # T0.4 — logger les recherches keyword à 0 résultat (jusqu'ici un
+            # retour vide non tracé) pour améliorer l'échantillon rescue.
+            if not results:
+                await _log_failed_source_attempt(
+                    user_id=user_id,
+                    input_text=url_input,
+                    input_type="keyword",
+                    endpoint="detect",
+                    error_message="0 results",
+                )
             return SourceSearchResponse(results=results)
     except ValueError as e:
         await _log_failed_source_attempt(

@@ -17,6 +17,7 @@ from app.jobs.recompute_source_coverage_themes import (
     recompute_source_coverage_themes,
 )
 from app.jobs.recompute_source_language import recompute_source_language
+from app.jobs.rescue_failed_sources_job import run_rescue_failed_sources
 from app.services.observability.cost_budget import log_budget_projection
 from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
 from app.services.recommendation.scoring_config import ScoringWeights
@@ -572,6 +573,21 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Rescue hebdo des sources échouées (Story 12.2) — lundi 04h30 Paris,
+    # créneau nuit cohérent avec storage_cleanup (03h) / purge (04h). Rejoue
+    # collecte + classification et logge les compteurs par catégorie. Le
+    # `no_feed_host_count` est le signal de gating du Palier 2 (scraping).
+    scheduler.add_job(
+        run_rescue_failed_sources,
+        trigger=CronTrigger(day_of_week="mon", hour=4, minute=30, timezone=_PARIS_TZ),
+        id="rescue_failed_sources",
+        name="Weekly rescue of failed source adds",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Zombie session sweeper — kill Supavisor sessions stuck in
     # `idle in transaction` > 5 min (filet de sécurité par-dessus le
     # timeout Postgres + le rollback() en finally de safe_async_session).
@@ -631,6 +647,7 @@ def start_scheduler() -> None:
             "storage_cleanup",
             "purge_deleted_users",
             "recompute_source_language",
+            "rescue_failed_sources",
             "recompute_source_coverage_themes",
             "zombie_session_sweeper",
             "pool_health_probe",
