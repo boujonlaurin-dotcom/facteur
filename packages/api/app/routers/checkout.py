@@ -23,7 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.schemas.checkout import CheckoutStartRequest, CheckoutStartResponse
+from app.dependencies import get_current_user_id
+from app.schemas.checkout import (
+    CheckoutSendLinkRequest,
+    CheckoutSendLinkResponse,
+    CheckoutStartRequest,
+    CheckoutStartResponse,
+)
 from app.services.posthog_client import get_posthog_client
 from app.services.subscription_service import SubscriptionService
 
@@ -169,3 +175,110 @@ async def start_passwordless(
         checkout_url=checkout_url,
         is_new_user=is_new_user,
     )
+
+
+async def _supabase_admin_get_user_email(user_id: str) -> str | None:
+    """Retourne l'email Supabase de ce user_id, ou None s'il est introuvable."""
+    settings = get_settings()
+    if not (settings.supabase_url and settings.supabase_service_role_key):
+        return None
+
+    url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
+    headers = {
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "apikey": settings.supabase_service_role_key,
+    }
+    async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
+        resp = await client.get(url, headers=headers)
+    if resp.status_code != 200:
+        return None
+    return resp.json().get("email") or None
+
+
+async def _supabase_send_magic_link(email: str, redirect_to: str) -> None:
+    """Envoie le magic link Supabase (OTP) qui redirige vers l'URL de checkout.
+
+    Supabase envoie l'email lui-même ; le rate-limit OTP (~1/min par email)
+    remonte en 429 côté client mobile pour le bouton « Renvoyer le lien ».
+    """
+    settings = get_settings()
+    if not (settings.supabase_url and settings.supabase_anon_key):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase auth config missing",
+        )
+
+    url = (
+        f"{settings.supabase_url}/auth/v1/otp?{urlencode({'redirect_to': redirect_to})}"
+    )
+    headers = {
+        "apikey": settings.supabase_anon_key,
+        "Content-Type": "application/json",
+    }
+    body = {"email": email, "create_user": False}
+    async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
+        resp = await client.post(url, headers=headers, json=body)
+
+    if resp.status_code == 429:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Magic link rate-limited, retry in a minute",
+        )
+    if resp.status_code not in (200, 204):
+        logger.warning(
+            "checkout.supabase_send_magic_link_failed",
+            status=resp.status_code,
+            body=resp.text[:500],
+        )
+        sentry_sdk.capture_message(
+            "checkout.supabase_send_magic_link_failed", level="warning"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not send checkout link",
+        )
+
+
+@router.post("/send-link", response_model=CheckoutSendLinkResponse)
+async def send_link(
+    request: CheckoutSendLinkRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> CheckoutSendLinkResponse:
+    """Envoie par email le lien de checkout Web Billing à l'utilisateur courant.
+
+    Le CTA mobile n'ouvre jamais un paiement in-app (règles stores) : on envoie
+    un magic link Supabase dont le redirect_to est l'URL RevenueCat Web Billing
+    pré-remplie avec l'app_user_id.
+    """
+    email = await _supabase_admin_get_user_email(user_id)
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User email not found",
+        )
+
+    checkout_url = _build_checkout_url(request.offering, user_id)
+    await _supabase_send_magic_link(email, checkout_url)
+
+    service = SubscriptionService(db)
+    await service._get_or_create_subscription(user_id)
+    await db.commit()
+
+    get_posthog_client().capture(
+        user_id=user_id,
+        event="checkout_link_sent",
+        properties={
+            "offering": request.offering,
+            "resend": request.resend,
+        },
+    )
+
+    logger.info(
+        "checkout.send_link",
+        user_id=user_id,
+        offering=request.offering,
+        resend=request.resend,
+    )
+
+    return CheckoutSendLinkResponse(sent=True, email=email)
