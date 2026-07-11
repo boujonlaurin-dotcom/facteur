@@ -13,7 +13,6 @@ from app.services.subscription_service import SubscriptionService
 
 router = APIRouter()
 logger = structlog.get_logger()
-settings = get_settings()
 
 
 def verify_revenuecat_signature(
@@ -54,8 +53,13 @@ async def revenuecat_webhook(
     UNCANCELLATION, PRODUCT_CHANGE. Idempotent via `event.id` (rejeu sans effet).
     Retourne 200 systématiquement (sauf signature invalide) pour éviter les
     retries RevenueCat sur des events ignorés/inconnus.
+
+    Auth : dès qu'un secret webhook est configuré, la signature est vérifiée
+    (header `Authorization: Bearer <secret>` ou HMAC `X-RevenueCat-Signature`).
+    En dev/local sans secret, l'auth est désactivée.
     """
-    if settings.is_production and settings.revenuecat_webhook_secret:
+    settings = get_settings()
+    if settings.revenuecat_webhook_secret:
         payload = await request.body()
         signature = x_revenuecat_signature or authorization
 
