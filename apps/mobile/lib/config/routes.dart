@@ -183,7 +183,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final authState = ref.read(authStateProvider);
       String postAuthHomePath() {
         final tournee = ref.read(tourneeProgressServiceProvider);
-        return tournee.isClosingDismissedTodaySync()
+        return tournee.hasBrowsedEssentielTodaySync()
             ? RoutePaths.flaner
             : RoutePaths.fluxContinu;
       }

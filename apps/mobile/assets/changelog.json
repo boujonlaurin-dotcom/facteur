@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "App",
+      "summary": "Une fois ta tournée du jour parcourue, l'app t'ouvre directement sur Flâner."
+    },
+    {
+      "tag": "App",
       "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
     },
     {
