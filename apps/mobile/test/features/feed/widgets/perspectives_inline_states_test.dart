@@ -57,7 +57,7 @@ void main() {
       (tester) async {
     await _pumpInline(tester, status: PerspectivesSectionStatus.loading);
 
-    expect(find.text('Couverture médiatique'), findsOneWidget);
+    expect(find.text('Comparer les angles'), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsOneWidget);
     // Squelette : le carrousel garde sa hauteur (pas un mince filet), sans
     // vraies cartes ni CTA, et sans message « … ».
@@ -124,7 +124,7 @@ void main() {
     await _pumpInline(tester, status: PerspectivesSectionStatus.empty);
 
     // Titre sans count + message explicite, lisibles pendant la pause.
-    expect(find.text('Couverture médiatique'), findsOneWidget);
+    expect(find.text('Comparer les angles'), findsOneWidget);
     expect(find.text("Pas d'autre source trouvée"), findsOneWidget);
     expect(find.byType(CoverageSpectrumBarShimmer), findsNothing);
     expect(
@@ -158,7 +158,7 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.text('Couverture médiatique (2)'), findsOneWidget);
+    expect(find.text('Comparer les angles (2)'), findsOneWidget);
     expect(find.byType(CoverageSpectrumBar), findsOneWidget);
     expect(find.byType(CoverageComparisonCard), findsNWidgets(2));
     expect(
