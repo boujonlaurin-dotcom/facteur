@@ -223,11 +223,37 @@ class SectionBanner extends StatelessWidget {
                             text: title,
                             children: <InlineSpan>[
                               if (tappable) ...[
-                                // Chevron de tappabilité rendu comme simple
-                                // glyphe texte : hérite police/poids/couleur du
-                                // titre (Fraunces) pour un « › » fin et propre,
-                                // plutôt que le triangle plein de l'icône.
-                                const TextSpan(text: ' ›'),
+                                // Chevron de tappabilité : glyphe texte « › »
+                                // dans la police du titre (Fraunces), donc même
+                                // famille que le titre. Le « › » de ponctuation
+                                // est dessiné plus petit/haut que les capitales
+                                // à taille égale → on l'agrandit (~1.3×) pour le
+                                // caler sur la hauteur du titre, on l'épaissit
+                                // d'un cran (w800) et on le centre verticalement
+                                // via WidgetSpan (alignement propre, là où le
+                                // TextSpan brut héritait d'une baseline décalée).
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      left: large ? 5 : 4,
+                                    ),
+                                    child: Text(
+                                      '›',
+                                      style:
+                                          (large
+                                                  ? _titleStyleLarge
+                                                  : _titleStyleInline)
+                                              .copyWith(
+                                                color: colors.textPrimary,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize:
+                                                    (large ? 24 : 17) * 1.3,
+                                                height: 1.0,
+                                              ),
+                                    ),
+                                  ),
+                                ),
                               ],
                               if (onTapFavorite != null) ...[
                                 const TextSpan(text: '  '),
