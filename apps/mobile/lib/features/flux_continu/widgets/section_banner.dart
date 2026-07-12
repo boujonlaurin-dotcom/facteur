@@ -223,23 +223,11 @@ class SectionBanner extends StatelessWidget {
                             text: title,
                             children: <InlineSpan>[
                               if (tappable) ...[
-                                // Chevron de tappabilité rendu comme icône
-                                // centrée verticalement sur le titre (même
-                                // pattern que l'étoile favorite ci-dessous) :
-                                // trait épais et alignement propre, là où le
-                                // glyphe texte « > » héritait d'une baseline
-                                // décalée et d'un trait fin.
-                                const WidgetSpan(child: SizedBox(width: 3)),
-                                WidgetSpan(
-                                  alignment: PlaceholderAlignment.middle,
-                                  child: Icon(
-                                    PhosphorIcons.caretRight(
-                                      PhosphorIconsStyle.fill,
-                                    ),
-                                    size: large ? 24 : 20,
-                                    color: colors.textPrimary,
-                                  ),
-                                ),
+                                // Chevron de tappabilité rendu comme simple
+                                // glyphe texte : hérite police/poids/couleur du
+                                // titre (Fraunces) pour un « › » fin et propre,
+                                // plutôt que le triangle plein de l'icône.
+                                const TextSpan(text: ' ›'),
                               ],
                               if (onTapFavorite != null) ...[
                                 const TextSpan(text: '  '),

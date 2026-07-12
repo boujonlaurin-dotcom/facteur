@@ -488,7 +488,7 @@ class _PerspectivesBottomSheetState
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Couverture médiatique',
+                                  'Comparer les angles',
                                   style: textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.textPrimary,
@@ -606,7 +606,7 @@ class _PerspectivesBottomSheetState
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Couverture médiatique',
+                              'Comparer les angles',
                               style: textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colors.textPrimary,
@@ -1547,6 +1547,9 @@ class _PerspectivesInlineSectionState
   static const double _kCoverageCardWidth = 248;
   static const double _kCoverageCardGap = 13;
   static const double _kCarouselPaddingH = 18;
+  // Largeur de la carte CTA « Analyse Facteur », désormais en TÊTE du carrousel
+  // (avant les cartes sources) : décale l'offset cible du tap-to-scroll.
+  static const double _kAnalysisCtaWidth = 190;
 
   // Pilote le scroll du carrousel pour le tap-to-scroll de la barre de biais.
   final ScrollController _carouselScrollController = ScrollController();
@@ -1629,7 +1632,11 @@ class _PerspectivesInlineSectionState
     }
 
     final maxExtent = _carouselScrollController.position.maxScrollExtent;
-    final target = ((_kCoverageCardWidth + _kCoverageCardGap) * index)
+    // La carte CTA « Analyse Facteur » précède les cartes sources → décalage
+    // fixe (largeur CTA + gap) avant la 1ʳᵉ carte source.
+    final target = (_kAnalysisCtaWidth +
+                _kCoverageCardGap +
+                (_kCoverageCardWidth + _kCoverageCardGap) * index)
         .clamp(0.0, maxExtent);
     HapticFeedback.selectionClick();
     _carouselScrollController.animateTo(
@@ -1704,8 +1711,8 @@ class _PerspectivesInlineSectionState
     final isLoading = widget.status == PerspectivesSectionStatus.loading;
     final shouldShowBand = !isEmpty || _emptyStage != _EmptyStage.collapsed;
     final label = (isLoading || isEmpty)
-        ? 'Couverture médiatique'
-        : 'Couverture médiatique (${_displayedPerspectives.length})';
+        ? 'Comparer les angles'
+        : 'Comparer les angles (${_displayedPerspectives.length})';
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
@@ -1955,6 +1962,13 @@ class _PerspectivesInlineSectionState
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Carte CTA « Analyse Facteur » en tête du carrousel (avant les
+            // cartes sources) : toujours rendue, le tap déclenche un fetch lazy.
+            _AnalysisCtaCard(
+              onTap: widget.onOpenAnalysis,
+              count: _displayedPerspectives.length,
+            ),
+            if (variants.isNotEmpty) const SizedBox(width: _kCoverageCardGap),
             for (var i = 0; i < variants.length; i++) ...[
               if (i > 0) const SizedBox(width: _kCoverageCardGap),
               CoverageComparisonCard(
@@ -1968,11 +1982,6 @@ class _PerspectivesInlineSectionState
                 ),
               ),
             ],
-            if (variants.isNotEmpty) const SizedBox(width: _kCoverageCardGap),
-            _AnalysisCtaCard(
-              onTap: widget.onOpenAnalysis,
-              count: _displayedPerspectives.length,
-            ),
           ],
         ),
       ),
@@ -2289,7 +2298,7 @@ class _PivotWashTitleState extends State<PivotWashTitle>
   }
 }
 
-/// Carte CTA « Analyse Facteur » en fin de carrousel — gabarit gradient ocre.
+/// Carte CTA « Analyse Facteur » en tête de carrousel — gabarit gradient ocre.
 /// Tap → ouvre le bottom sheet d'analyse (`onTap`, géré par l'écran parent).
 class _AnalysisCtaCard extends StatelessWidget {
   final VoidCallback? onTap;
@@ -2301,7 +2310,7 @@ class _AnalysisCtaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     return SizedBox(
-      width: 190,
+      width: _PerspectivesInlineSectionState._kAnalysisCtaWidth,
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,

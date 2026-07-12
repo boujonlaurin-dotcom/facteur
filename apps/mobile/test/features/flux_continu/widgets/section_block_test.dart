@@ -120,12 +120,10 @@ FeedThemeSection _sourceSection({
   );
 }
 
-/// Finder du chevron de navigation, désormais rendu comme **icône** Phosphor
-/// (`caretRight` fill — trait plein, plus épais que bold) en WidgetSpan dans le
-/// titre du banner — le glyphe texte « > » historique héritait d'une baseline
-/// décalée (cf. section_banner.dart).
-Finder _chevron() =>
-    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.fill));
+/// Finder du chevron de navigation, rendu comme simple glyphe texte « › »
+/// (TextSpan) dans le titre du banner : hérite police/poids/couleur du titre
+/// (Fraunces) pour un chevron fin et propre (cf. section_banner.dart).
+Finder _chevron() => find.textContaining('›');
 
 void main() {
   setUpAll(() {
