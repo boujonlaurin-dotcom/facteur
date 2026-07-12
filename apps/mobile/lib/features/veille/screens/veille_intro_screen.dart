@@ -1,23 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-import '../../../config/routes.dart';
 import '../../../config/theme.dart';
-import '../../../widgets/design/facteur_stamp.dart';
-import '../../soutien/providers/premium_gate_provider.dart';
-import '../../soutien/soutien_copy.dart';
 import '../widgets/veille_widgets.dart';
 
 /// Écran d'introduction au flow Veille — affiché au premier accès
 /// (pas de config active, pas de mode édition). Cadre le pitch avant
 /// le wizard en 3 étapes.
-///
-/// La création de veille est réservée aux Fact·eur·isses : pour les free,
-/// le CTA est verrouillé et mène au mur veille (porte 2 du Soutien).
-class VeilleIntroScreen extends ConsumerWidget {
+class VeilleIntroScreen extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onStart;
 
@@ -28,9 +19,7 @@ class VeilleIntroScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final canCreate =
-        ref.watch(premiumGateProvider.select((g) => g.canCreateVeille));
+  Widget build(BuildContext context) {
     return Column(
       children: [
         Padding(
@@ -64,13 +53,6 @@ class VeilleIntroScreen extends ConsumerWidget {
                   color: const Color(0xFF2C3E50),
                 ),
                 const SizedBox(height: 28),
-                if (!canCreate) ...[
-                  const FacteurStamp(
-                    text: SoutienCopy.veilleGateStamp,
-                    isNew: true,
-                  ),
-                  const SizedBox(height: 14),
-                ],
                 const VeilleAiEyebrow('Ta veille personnalisée'),
                 const SizedBox(height: 14),
                 Text(
@@ -110,17 +92,11 @@ class VeilleIntroScreen extends ConsumerWidget {
               top: BorderSide(color: FacteurColors.veilleLineSoft, width: 1),
             ),
           ),
-          child: canCreate
-              ? VeilleCtaButton(
-                  label: "C'est parti",
-                  trailingIcon: PhosphorIcons.arrowRight(),
-                  onPressed: onStart,
-                )
-              : VeilleCtaButton(
-                  label: SoutienCopy.veilleGateCta,
-                  leadingIcon: PhosphorIcons.lockSimple(),
-                  onPressed: () => context.pushNamed(RouteNames.veilleWall),
-                ),
+          child: VeilleCtaButton(
+            label: "C'est parti",
+            trailingIcon: PhosphorIcons.arrowRight(),
+            onPressed: onStart,
+          ),
         ),
       ],
     );

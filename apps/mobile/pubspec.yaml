@@ -154,7 +154,6 @@ flutter:
 
   assets:
     - assets/images/
-    - assets/images/founders/
     - assets/images/weather/
     - assets/icons/
     - assets/loaders/

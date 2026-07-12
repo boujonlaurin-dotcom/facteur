@@ -1,3 +1,4 @@
+# QA Handoff — « Notif du jour » (bandeau agrégateur quotidien)
 # QA Handoff — Header/Footer flottants « liquid glass » (reader)
 
 ## Feature développée
@@ -68,36 +69,56 @@ Le header et le footer de l'écran de lecture (`ContentDetailScreen`) deviennent
 Aucune (changement front-only, zéro backend / migration).
 # QA Handoff — Paywalls Premium « Fact·eur·isse » (PR 2 mobile)
 
-## Contexte
+## Feature développée
+Ligne de notification unique en tête du feed Essentiel : file de messages (profil + nudges absorbés), un seul visible à la fois, max 3/jour (le suivant après tap CTA ou dismiss croix), rotation quotidienne. Remplace les bandeaux renudge / well-informed / géoloc.
 
-Implémentation de la maquette « Paywalls Premium » : écran **Soutien** (porte 1, lettre des fondateurs), **murs de feature** (porte 2 : veille plein écran + sheets sources/analyses/serein), gating client-side (cap 30 sources, veille premium, quota 1 analyse/jour, personnalisation serein), confirmation « lien envoyé ». Le CTA n'ouvre jamais un paiement : il déclenche `POST /api/checkout/send-link` (magic link Supabase par email, PR backend #954).
-
-⚠️ **Web = état free uniquement** : RevenueCat est null sur web (`customerInfoProvider` → null → non-premium). Ne pas tester les états premium en web.
-
-⚠️ Les photos fondateurs sont des **placeholders** (aplats de couleur) en attendant les vraies images.
+## PR associée
+Branche `boujonlaurin-dotcom/notif-du-jour-composant` → PR vers `main` (voir `gh pr view`).
 
 ## Écrans impactés
+| Écran | Route | Modifié / Nouveau |
+|-------|-------|-------------------|
+| Essentiel (feed) | `/feed` | Modifié (carte Notif du jour en tête, sous bandeau Lettres) |
+| Mes abonnements | `/settings/subscriptions?add=1` | Modifié (auto-ouverture feuille d'ajout) |
+| Profil | `/settings/profile` | Modifié (tuile « Ma configuration » + barre de progression) |
 
-- Réglages (bottom sheet) : tuile « Nous soutenir », badge `N/30` sur Mes sources, stamp `PREMIUM` sur Ma veille/Crée ta veille, sous-row « Personnaliser mes bonnes nouvelles » (lock).
-- `/soutien` : écran Soutien complet.
-- `/soutien/veille-wall` : mur veille.
-- `/soutien/lien-envoye` : confirmation.
-- Intro veille : stamp « RÉSERVÉ AUX FACT·EUR·ISSES » + CTA verrouillé.
-- Ajout de source : pill « N / 30 médias suivis ».
-- Perspectives / Analyse Facteur : gate quota 1/jour (bannière quota épuisé sous le CTA en free).
+## Scénarios de test
 
-## Scénarios
+### Scénario 1 : affichage un-à-la-fois (happy path)
+**Parcours** :
+1. Ouvrir le feed Essentiel (compte connecté, onboarding fait).
+2. Observer la zone sous le bandeau Lettres.
+**Résultat attendu** : au plus **une** carte Notif du jour (icône teintée 34px, titre 1 ligne, CTA-lien avec flèche, croix à droite). Jamais deux messages empilés. Pas de flash au chargement.
 
-1. **Happy path Soutien** : Réglages → « Nous soutenir » → écran Soutien (eyebrow, headline, lettre 2 §, carte bonus avec 2 stamps BIENTÔT, 3 réassurances, prix 3 €/mois, CTA « Reçois ton lien pour nous rejoindre », disclaimer stores). Tap CTA → soit confirmation « Ton lien est en route. » (backend avec send-link), soit toast d'erreur propre, jamais de crash.
-2. **Mur veille** : Réglages → « Crée ta veille » (compte free sans veille) → mur veille (3 bénéfices, MissionCard « Notre histoire → » → Soutien, prix, CTA).
-3. **Intro veille gated** : deep-link `/veille/config` en free → redirection mur veille.
-4. **Cap sources** : ajout de source → pill « N / 30 médias suivis » au-dessus de la recherche (absente en mode veille).
-5. **Serein** : Réglages → sous-row « Personnaliser mes bonnes nouvelles » avec cadenas → tap → PaywallSheet variante serein (« Un mode serein à ton image »).
-6. **Lien envoyé** : « Renvoyer le lien » 2× de suite → le second affiche « Patiente une minute avant de renvoyer. » (429) si backend actif.
-7. **Console/réseau** : pas d'erreurs console inattendues, pas de 4xx/5xx hors 429 attendu.
+### Scénario 2 : dismiss → message suivant
+**Parcours** :
+1. Taper la croix de la carte.
+**Résultat attendu** : repli fluide (~300ms, hauteur + fondu), puis le **message suivant** de la file apparaît. Après 3 consommations dans la journée, plus rien ne s'affiche (recharger : toujours rien — persisté).
 
-## Critères d'acceptation
+### Scénario 3 : CTA Serein in-place
+**Parcours** (visible seulement si mode Serein OFF) :
+1. Taper la carte « Pas dans le mood pour l'actu chaude ? ».
+**Résultat attendu** : aucune navigation ; le mode Serein s'active, la carte se replie et le message suivant apparaît.
 
-- Aucune copy avec em-dash « — ».
-- Aucun crash sur images manquantes (fallback monogramme).
-- Navigation retour cohérente (swipe back plein écran).
+### Scénario 4 : CTA navigation directe
+**Parcours** :
+1. Taper « Tes médias préférés manquent à l'appel ? » (si < 3 sources suivies) → panneau d'ajout de média **direct** (pas la liste).
+2. Taper « Abonné à un média ? Ajoute-le ici » (si sources payantes suivies non liées) → Mes abonnements s'ouvre **avec la feuille d'ajout déjà ouverte**.
+**Résultat attendu** : zéro tap intermédiaire.
+
+### Scénario 5 : NPS well-informed inline
+**Parcours** (si le message est dû) :
+1. Carte « Te sens-tu bien informé·e en ce moment ? » : boutons 1..10 à la place du CTA.
+2. Taper un score.
+**Résultat attendu** : soumission (POST well-informed), repli, message suivant. La croix = skip.
+
+### Scénario 6 : profil — Ma configuration
+**Parcours** :
+1. Aller sur `/settings/profile`.
+**Résultat attendu** : tuile « Ma configuration » avec barre de progression, tap → relance le parcours d'onboarding.
+
+## Vérifications transverses
+- Console sans erreurs ; réseau sans 4xx/5xx inattendus.
+- Fidélité hifi : fond crème surface, radius 14, ombre douce, pas de bordure ; tints ocre/vert/steel.
+- Les anciens gros bandeaux renudge/géoloc/well-informed n'apparaissent **plus**.
+- ⚠️ Web : les demandes OS (renudge push, géoloc device) ne se testent pas — on-device Android requis (hors QA web).
