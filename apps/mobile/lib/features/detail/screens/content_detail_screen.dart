@@ -54,6 +54,8 @@ import '../../lettres/providers/letters_provider.dart';
 import '../../lettres/providers/pending_save_nudge_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
+import '../../soutien/providers/analyse_quota_provider.dart';
+import '../../soutien/widgets/paywall_sheet.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 
 @visibleForTesting
@@ -1853,6 +1855,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _openPerspectivesAnalysis() {
     HapticFeedback.mediumImpact();
     if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
+      // Lancement frais (pas d'analyse cachée) → quota free 1/jour. La
+      // réouverture d'une analyse déjà chargée (state != idle) reste libre.
+      if (!ref.read(analyseQuotaProvider.notifier).tryConsume()) {
+        PaywallSheet.show(context, PaywallWallVariant.analyses);
+        return;
+      }
       _requestPerspectivesAnalysis();
     }
     showAnalysisBottomSheet(
