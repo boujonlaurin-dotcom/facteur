@@ -54,6 +54,24 @@ class SourceResultCard extends StatelessWidget {
     }
   }
 
+  /// Correspondance « parfaite » : source du catalogue ET curée. Elle mérite
+  /// l'affordance « Source vérifiée » et un CTA « Suivre {nom} » plutôt que le
+  /// générique « Ajouter » (réservé aux URL custom / résultats non curés).
+  bool get _isCuratedCatalogMatch => result.inCatalog && result.isCurated;
+
+  /// Libellé du CTA d'ajout. Pour une correspondance vérifiée on nomme la
+  /// source (« Suivre Le Monde ») en tronquant proprement les noms longs.
+  String _addCtaLabel() {
+    if (!_isCuratedCatalogMatch) return 'Ajouter';
+    final name = result.name.trim();
+    if (name.isEmpty) return 'Suivre';
+    const maxLen = 22;
+    final shortName = name.length > maxLen
+        ? '${name.substring(0, maxLen).trimRight()}...'
+        : name;
+    return 'Suivre $shortName';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
@@ -168,7 +186,10 @@ class SourceResultCard extends StatelessWidget {
                               color: colors.textTertiary,
                             ),
                       ),
-                      if (result.inCatalog) ...[
+                      if (_isCuratedCatalogMatch) ...[
+                        const SizedBox(width: 8),
+                        _buildVerifiedPill(context, colors),
+                      ] else if (result.inCatalog) ...[
                         const SizedBox(width: 8),
                         Icon(PhosphorIcons.sealCheck(PhosphorIconsStyle.fill),
                             size: 14, color: colors.primary),
@@ -194,34 +215,41 @@ class SourceResultCard extends StatelessWidget {
           ),
         ],
 
-        // Recent items
+        // Recent items — preuve honnête que la source est vivante. Pour une
+        // correspondance vérifiée, on les met en avant avec la présentation
+        // riche (même bloc que la vue « Connecté »). Aucun fetch : on ne fait
+        // que re-présenter `result.recentItems` déjà chargés.
         if (recentTitles.isNotEmpty) ...[
           const SizedBox(height: 12),
-          Text(
-            'Derniers articles :',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-          const SizedBox(height: 6),
-          ...recentTitles.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Row(
-                  children: [
-                    Icon(PhosphorIcons.dotOutline(PhosphorIconsStyle.fill),
-                        size: 14, color: colors.primary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        item.title,
-                        style: Theme.of(context).textTheme.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+          if (_isCuratedCatalogMatch)
+            RecentArticlesList(items: result.recentItems)
+          else ...[
+            Text(
+              'Derniers articles :',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 6),
+            ...recentTitles.map((item) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(
+                    children: [
+                      Icon(PhosphorIcons.dotOutline(PhosphorIconsStyle.fill),
+                          size: 14, color: colors.primary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          item.title,
+                          style: Theme.of(context).textTheme.bodySmall,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              )),
+                    ],
+                  ),
+                )),
+          ],
         ],
 
         // CTAs
@@ -268,12 +296,43 @@ class SourceResultCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: const Text('Ajouter'),
+                      child: Text(
+                        _addCtaLabel(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
             ),
           ],
         ),
       ],
+    );
+  }
+
+  /// Pastille « Source vérifiée » pour une correspondance catalogue curée.
+  /// Distingue visuellement une source vérifiée d'un résultat URL custom.
+  Widget _buildVerifiedPill(BuildContext context, FacteurColors colors) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(PhosphorIcons.sealCheck(PhosphorIconsStyle.fill),
+              size: 13, color: colors.primary),
+          const SizedBox(width: 4),
+          Text(
+            'Source vérifiée',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
     );
   }
 

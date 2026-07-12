@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +8,7 @@ import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/flux_continu/providers/geoloc_prompt_provider.dart';
 import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart';
 import 'package:facteur/features/notif_du_jour/models/notif_du_jour_message.dart';
+import 'package:facteur/features/notif_du_jour/providers/notif_du_jour_dismissal_store.dart';
 import 'package:facteur/features/notif_du_jour/providers/notif_du_jour_provider.dart';
 import 'package:facteur/features/notifications/providers/notification_renudge_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
@@ -177,7 +180,7 @@ void main() {
         NotifDuJourIds.geoloc,
       ]),
     );
-    // relevance 0.9/0.85 : devant serein (0.4) même avec jitter max (0.15).
+    // relevance 0.9/0.85 : devant serein (0.55) même avec jitter max (0.15).
     expect(
       queue.indexOf(NotifDuJourIds.notifRenudge),
       lessThan(queue.indexOf(NotifDuJourIds.serein)),
@@ -188,6 +191,47 @@ void main() {
     expect(quiet, isNot(contains(NotifDuJourIds.notifRenudge)));
     expect(quiet, isNot(contains(NotifDuJourIds.wellInformed)));
     expect(quiet, isNot(contains(NotifDuJourIds.geoloc)));
+  });
+
+  String _today() => DateTime.now().toIso8601String().substring(0, 10);
+
+  test('id dismissé (< 30j) filtré de la file (cooldown)', () async {
+    SharedPreferences.setMockInitialValues({
+      kNotifDuJourDismissalsKey: jsonEncode({NotifDuJourIds.serein: _today()}),
+    });
+    final container = _container(sereinEnabled: false);
+    expect(await _queue(container), isNot(contains(NotifDuJourIds.serein)));
+  });
+
+  test('cooldown expiré (> 30j) → id de nouveau éligible', () async {
+    SharedPreferences.setMockInitialValues({
+      kNotifDuJourDismissalsKey:
+          jsonEncode({NotifDuJourIds.serein: '2020-01-01'}),
+    });
+    final container = _container(sereinEnabled: false);
+    expect(await _queue(container), contains(NotifDuJourIds.serein));
+  });
+
+  test('serein remonte quand les autres messages profil sont en cooldown',
+      () async {
+    final today = _today();
+    SharedPreferences.setMockInitialValues({
+      kNotifDuJourDismissalsKey: jsonEncode({
+        NotifDuJourIds.source: today,
+        NotifDuJourIds.tournee: today,
+        NotifDuJourIds.veille: today,
+      }),
+    });
+    // Profil : source < 3, tournée non customisée, veille absente, serein OFF.
+    final container = _container(sereinEnabled: false, veille: null);
+    final queue = await _queue(container);
+    // Concurrents profil filtrés → serein passe devant le fallback recommencer.
+    expect(queue, contains(NotifDuJourIds.serein));
+    expect(queue, isNot(contains(NotifDuJourIds.source)));
+    expect(
+      queue.indexOf(NotifDuJourIds.serein),
+      lessThan(queue.indexOf(NotifDuJourIds.recommencer)),
+    );
   });
 
   test('catalogue : chaque id de la file a un message affichable', () async {

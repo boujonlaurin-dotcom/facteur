@@ -72,7 +72,7 @@ void main() {
       );
 
       final titleRender = tester.renderObject<RenderParagraph>(
-        find.text('Couverture médiatique (5)'),
+        find.text('Comparer les angles (5)'),
       );
       expect(titleRender.didExceedMaxLines, isFalse);
 

@@ -30,6 +30,8 @@ from scripts.media_eval.schemas import DebunkageBatchArtifact, SignalBatchArtifa
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "media_eval"
 
+pytestmark = pytest.mark.usefixtures("media_eval_run")
+
 
 @pytest.fixture
 async def media_cnews(db_session) -> MediaEvalMedia:
