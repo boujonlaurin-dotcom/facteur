@@ -225,8 +225,8 @@ class SectionBanner extends StatelessWidget {
                               if (tappable) ...[
                                 // Chevron de tappabilité : glyphe « > » dans le
                                 // style exact du titre (Fraunces, même poids),
-                                // nettement agrandi (~1.6×) pour se lire comme
-                                // la continuité actionnable du titre. WidgetSpan
+                                // agrandi (~1.3×) pour se lire comme la
+                                // continuité actionnable du titre. WidgetSpan
                                 // centré verticalement → alignement propre sans
                                 // baseline décalée.
                                 WidgetSpan(
@@ -244,7 +244,7 @@ class SectionBanner extends StatelessWidget {
                                               .copyWith(
                                                 color: colors.textPrimary,
                                                 fontSize:
-                                                    (large ? 24 : 17) * 1.6,
+                                                    (large ? 24 : 17) * 1.3,
                                                 height: 1.0,
                                               ),
                                     ),
