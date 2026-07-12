@@ -120,10 +120,10 @@ FeedThemeSection _sourceSection({
   );
 }
 
-/// Finder du chevron de navigation, rendu comme simple glyphe texte « › »
-/// (TextSpan) dans le titre du banner : hérite police/poids/couleur du titre
-/// (Fraunces) pour un chevron fin et propre (cf. section_banner.dart).
-Finder _chevron() => find.textContaining('›');
+/// Finder du chevron de navigation, rendu comme glyphe texte « > » (WidgetSpan)
+/// dans le style du titre (Fraunces, agrandi) → continuité actionnable du titre
+/// (cf. section_banner.dart).
+Finder _chevron() => find.text('>');
 
 void main() {
   setUpAll(() {
