@@ -5,6 +5,10 @@
       "summary": "Le bouton rafraîchir du widget d'accueil répare désormais l'Essentiel et le Flux d'un coup, même après un blocage."
     },
     {
+      "tag": "Widget",
+      "summary": "Depuis le widget, tu peux ouvrir un article puis en enchaîner un autre sans repasser par l'accueil."
+    },
+    {
       "tag": "Sources",
       "summary": "Sur une source suivie, la priorité dans ton flux et la connexion d'abonnement passent en tête de fiche, et « Lire plus » déroule ses derniers articles."
     },
