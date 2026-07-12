@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../flux_continu/providers/tournee_order_prefs_provider.dart';
-import '../../soutien/providers/premium_gate_provider.dart';
 import '../providers/veille_active_config_provider.dart';
 import '../providers/veille_config_provider.dart';
 import '../repositories/veille_repository.dart';
@@ -40,21 +39,6 @@ class VeilleConfigScreen extends ConsumerWidget {
     final activeConfig = ref.watch(veilleActiveConfigProvider);
 
     final activeCfgValue = activeConfig.valueOrNull;
-    final canCreateVeille =
-        ref.watch(premiumGateProvider.select((g) => g.canCreateVeille));
-    if (!editMode &&
-        !canCreateVeille &&
-        !activeConfig.isLoading &&
-        activeCfgValue == null) {
-      // Garde deep-link : la création de veille est réservée aux
-      // Fact·eur·isses. L'intro affiche le même gate, mais un lien direct
-      // /veille/config doit être couvert aussi → mur veille.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          context.pushReplacementNamed(RouteNames.veilleWall);
-        }
-      });
-    }
     if (!editMode && activeCfgValue != null) {
       // Une config existe déjà → le user n'a rien à reconfigurer ici, on
       // retourne au flux continu (où la veille vit comme slot Tournée).

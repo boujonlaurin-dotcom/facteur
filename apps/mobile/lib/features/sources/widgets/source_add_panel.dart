@@ -10,9 +10,6 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
-import '../../soutien/providers/premium_gate_provider.dart';
-import '../../soutien/soutien_copy.dart';
-import '../../soutien/widgets/paywall_sheet.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -193,12 +190,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   }
 
   Future<void> _addSource(SmartSearchResult result) async {
-    // Cap free à 30 sources suivies (gating client-side « Fact·eur·isse »).
-    // Le mode veille gère ses propres sources → pas concerné.
-    if (!widget.veilleMode && ref.read(premiumGateProvider).sourceCapReached) {
-      PaywallSheet.show(context, PaywallWallVariant.sources);
-      return;
-    }
     try {
       final sourceId = result.sourceId;
       final hasCatalogId =
@@ -383,10 +374,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           _buildSearchIntro(colors),
           const SizedBox(height: FacteurSpacing.space6),
         ],
-        if (!widget.veilleMode) ...[
-          _buildCapPill(colors),
-          const SizedBox(height: FacteurSpacing.space3),
-        ],
         _buildBreathingSearch(colors),
         SizedBox(
           height: _currentQuery.isEmpty
@@ -406,36 +393,6 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     return SingleChildScrollView(
       padding: widget.padding,
       child: content,
-    );
-  }
-
-  /// Pill de plafond : « N / 30 médias suivis » pour les free (couleur
-  /// primaire au cap), « Sources illimitées · Fact·eur·isse » (verte) pour
-  /// les premium.
-  Widget _buildCapPill(FacteurColors colors) {
-    final gate = ref.watch(premiumGateProvider);
-    final isPremium = gate.isPremium;
-    final accent =
-        isPremium ? const Color(0xFF2E7D32) : colors.textSecondary;
-    final color = !isPremium && gate.sourceCapReached ? colors.primary : accent;
-    final label = isPremium
-        ? SoutienCopy.sourcesPillPremium
-        : '${gate.followedSourcesCount} / $kFreeSourceCap '
-            '${SoutienCopy.sourcesPillFree}';
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space3,
-          vertical: 4,
-        ),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Text(label, style: FacteurTypography.stamp(color)),
-      ),
     );
   }
 
