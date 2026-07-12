@@ -1392,10 +1392,6 @@ String _envelopeSvg(String primary) => '''
         fill="#FCF8F0" stroke="rgba(60,40,20,0.28)" stroke-width="1.5"/>
   <path d="M 6 14 L 130 104 L 254 14" fill="none"
         stroke="rgba(60,40,20,0.28)" stroke-width="1.5" stroke-linejoin="miter"/>
-  <path d="M 6 14 L 130 104 L 130 14 Z" fill="rgba(60,40,20,0.04)"/>
-  <line x1="40" y1="134" x2="118" y2="134" stroke="rgba(60,40,20,0.20)" stroke-width="2" stroke-linecap="round"/>
-  <line x1="40" y1="148" x2="152" y2="148" stroke="rgba(60,40,20,0.20)" stroke-width="2" stroke-linecap="round"/>
-  <line x1="40" y1="162" x2="96" y2="162" stroke="rgba(60,40,20,0.20)" stroke-width="2" stroke-linecap="round"/>
   <rect x="200" y="30" width="34" height="28" fill="$primary" stroke="#FCF8F0"
         stroke-width="2" stroke-dasharray="3 3"/>
   <circle cx="217" cy="44" r="5" fill="#FCF8F0" opacity="0.85"/>
