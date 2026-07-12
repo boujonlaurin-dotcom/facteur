@@ -45,6 +45,18 @@
       "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
     },
     {
+      "tag": "Sources",
+      "summary": "Sur une source suivie, la priorité dans ton flux et la connexion d'abonnement passent en tête de fiche, et « Lire plus » déroule ses derniers articles."
+    },
+    {
+      "tag": "Feed",
+      "summary": "Les notifs en tête de feed sont moins insistantes : une notif écartée ne revient plus avant un mois, et le sondage « bien informé » s'affiche en entier."
+    },
+    {
+      "tag": "App",
+      "summary": "Une fois ta tournée du jour parcourue, l'app t'ouvre directement sur Flâner."
+    },
+    {
       "tag": "App",
       "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
     },
@@ -71,6 +83,10 @@
     {
       "tag": "Veille",
       "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Ajouter une source est plus fiable et plus vivant : les correspondances vérifiées sont clairement signalées et ses premiers articles apparaissent tout de suite."
     },
     {
       "tag": "Veille",

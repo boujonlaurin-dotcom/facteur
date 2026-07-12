@@ -196,7 +196,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (allowMorningRitual && !tournee.isMorningRitualShownTodaySync()) {
           return RoutePaths.edition;
         }
-        return tournee.isClosingDismissedTodaySync()
+        return tournee.hasBrowsedEssentielTodaySync()
             ? RoutePaths.flaner
             : RoutePaths.fluxContinu;
       }

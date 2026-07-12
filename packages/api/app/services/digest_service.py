@@ -946,7 +946,6 @@ class DigestService:
                 user_id=user_id,
                 limit=target_size,
                 is_serene=is_serene,
-                sensitive_themes=sensitive_themes,
                 excluded_topics=excluded_topics,
             )
             fallback_time = time.time() - step_start
@@ -1081,7 +1080,6 @@ class DigestService:
         user_id: UUID,
         limit: int = 5,
         is_serene: bool = False,
-        sensitive_themes: list[str] | None = None,
         excluded_topics: list[Any] | None = None,
     ) -> list[Any]:
         """Last resort: get most recent content from user's followed sources first.
@@ -1098,8 +1096,16 @@ class DigestService:
 
         from app.models.content import Content
         from app.models.source import Source
-        from app.services.recommendation.filter_presets import apply_serein_filter
+        from app.services.recommendation.filter_presets import apply_good_news_filter
 
+        # Mode serein = "Bonnes nouvelles du jour" : la promesse (is_good_news=True)
+        # prime sur la quantité. On applique le MÊME hard-filter que le reste du
+        # chemin serein (cf. apply_good_news_filter partout dans digest_selector /
+        # digest_generation_job) au lieu de l'ancien apply_serein_filter (is_serene),
+        # oublié lors de la migration is_serene → is_good_news. Sans ça, quand le
+        # pool good-news est vide (ex. worker de classif à l'arrêt → tout le frais
+        # is_good_news=NULL), le fallback laissait passer du contenu quelconque
+        # non-anxiogène (transactions NBA…) dans « Bonnes nouvelles ».
         MAX_PER_SOURCE = 2  # Same constraint as DigestSelector
         # Fetch more candidates than needed so we can apply diversity
         fetch_limit = limit * 5
@@ -1134,9 +1140,8 @@ class DigestService:
                 .limit(fetch_limit)
             )
             if is_serene:
-                stmt = apply_serein_filter(
+                stmt = apply_good_news_filter(
                     stmt,
-                    sensitive_themes=sensitive_themes,
                     excluded_topics=excluded_topics,
                 )
 
@@ -1162,9 +1167,8 @@ class DigestService:
                     Content.id.notin_(list(existing_ids))
                 )
             if is_serene:
-                curated_query = apply_serein_filter(
+                curated_query = apply_good_news_filter(
                     curated_query,
-                    sensitive_themes=sensitive_themes,
                     excluded_topics=excluded_topics,
                 )
             stmt = curated_query
@@ -1173,8 +1177,11 @@ class DigestService:
             all_contents.extend(result.scalars().all())
 
         # LAST RESORT: If still not enough, query ANY active source with wider window (30 days)
-        # This guarantees new users always get a digest even if curated sources have no recent content
-        if len(all_contents) < limit:
+        # This guarantees new users always get a digest even if curated sources have no recent content.
+        # EXCEPTION serein : on NE fait PAS ce repli élargi. « Bonnes nouvelles du
+        # jour » est fail-closed (comme le batch) — mieux vaut un digest partiel
+        # que d'élargir à toute source active sur 30 j sans garantie is_good_news.
+        if len(all_contents) < limit and not is_serene:
             existing_ids = {c.id for c in all_contents}
             wider_cutoff = datetime.now(UTC) - timedelta(days=30)
             any_source_query = (
@@ -1191,12 +1198,6 @@ class DigestService:
             if existing_ids:
                 any_source_query = any_source_query.where(
                     Content.id.notin_(list(existing_ids))
-                )
-            if is_serene:
-                any_source_query = apply_serein_filter(
-                    any_source_query,
-                    sensitive_themes=sensitive_themes,
-                    excluded_topics=excluded_topics,
                 )
 
             result = await self.session.execute(any_source_query)

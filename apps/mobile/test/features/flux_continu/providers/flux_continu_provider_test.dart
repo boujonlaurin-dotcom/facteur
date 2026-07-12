@@ -13,6 +13,7 @@ import 'package:facteur/features/flux_continu/providers/flux_continu_provider.da
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
 import 'package:facteur/features/flux_continu/services/flux_continu_cache_service.dart';
+import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
 import 'package:facteur/features/grille/repositories/grille_repository.dart';
@@ -101,6 +102,9 @@ String _todayIso() {
 }
 
 String _todayClosingKey() => 'flux_continu_closing_dismissed_${_todayIso()}';
+
+String _todayEssentielViewedKey() =>
+    TourneeProgressService.essentielViewedPrefsKey(DateTime.now());
 
 FeedResponse _feedResponseWith(int items) {
   return FeedResponse(
@@ -275,6 +279,39 @@ void main() {
       final state = await settle(container);
 
       expect(state.closingDismissed, isFalse);
+    });
+
+    test('marks Essentiel viewed today after a successful load', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await settle(container);
+      // Marked via `unawaited` — give the microtask queue a beat.
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(_todayEssentielViewedKey()), isTrue);
+    });
+
+    test('a refetch does not error and keeps essentiel-viewed set', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await settle(container);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      await container.read(fluxContinuProvider.notifier).refresh();
+      await settle(container);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(_todayEssentielViewedKey()), isTrue);
     });
   });
 
@@ -862,7 +899,6 @@ void main() {
         );
       },
     );
-
   });
 
   group('FluxContinuNotifier — dedup inter-sections', () {
@@ -1422,7 +1458,8 @@ void main() {
                   .every((t) => t.items.isEmpty),
         );
         expect(baseIdx, greaterThan(skeletonIdx),
-            reason: 'les en-têtes (haut de page + coquilles favoris) remplacent '
+            reason:
+                'les en-têtes (haut de page + coquilles favoris) remplacent '
                 'le squelette avant le remplissage du fan-out');
 
         // complet : la section thème 'tech' est REMPLIE (items non vides),

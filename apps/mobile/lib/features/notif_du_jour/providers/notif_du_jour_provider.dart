@@ -9,6 +9,7 @@ import '../../veille/providers/veille_active_config_provider.dart';
 import '../../well_informed/providers/well_informed_prompt_provider.dart';
 import '../models/notif_du_jour_message.dart';
 import 'notif_du_jour_day_store.dart';
+import 'notif_du_jour_dismissal_store.dart';
 
 /// Amplitude du jitter quotidien (ε). Assez pour permuter des messages de
 /// pertinence proche jour à jour, trop peu pour faire passer un 0.6 devant
@@ -133,7 +134,11 @@ final notifDuJourQueueProvider = Provider<List<String>>((ref) {
 
   final serein = ref.watch(sereinToggleProvider);
   if (!serein.enabled && !serein.isLoading) {
-    candidates.add(const NotifCandidate(NotifDuJourIds.serein, 0.4));
+    // Relevance au-dessus de `tournee` (0.5), sous les prompts temps-sensibles :
+    // combiné au cooldown de dismiss (30j), « Serein » finit par émerger une
+    // fois les autres messages profil dismissés. Knob calibrable comme
+    // `kRotationJitter`.
+    candidates.add(const NotifCandidate(NotifDuJourIds.serein, 0.55));
   }
 
   // Fallback : garantit une file jamais vide.
@@ -148,5 +153,16 @@ final notifDuJourQueueProvider = Provider<List<String>>((ref) {
   final day = dayKey.isEmpty
       ? DateTime.now()
       : DateTime.parse(dayKey); // 'YYYY-MM-DD' → minuit local du jour clé
-  return rankNotifQueue(candidates, notifEpochDay(day));
+
+  // Cooldown durable : retire les messages dismissés (croix) il y a moins de
+  // 30j. Utilise la même clé jour que le day store pour le `now`, pour que le
+  // cooldown bascule sur la même frontière que le cap/rotation.
+  final cooldown = ref
+      .watch(notifDuJourDismissalStoreProvider)
+      .activeCooldownIds(day);
+  final eligible = cooldown.isEmpty
+      ? candidates
+      : [for (final c in candidates) if (!cooldown.contains(c.id)) c];
+
+  return rankNotifQueue(eligible, notifEpochDay(day));
 });

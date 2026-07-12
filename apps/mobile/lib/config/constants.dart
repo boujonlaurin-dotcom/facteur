@@ -115,26 +115,44 @@ class SupabaseConstants {
 class RevenueCatConstants {
   RevenueCatConstants._();
 
-  /// Clé API iOS
-  static const String iosApiKey = String.fromEnvironment(
+  /// Clé SDK Apple (App Store).
+  /// `REVENUECAT_APPLE_KEY` est le nom canonique ; `REVENUECAT_IOS_KEY` reste
+  /// lu en fallback pour ne pas casser les builds CI déjà configurés.
+  static const String _appleKey = String.fromEnvironment(
+    'REVENUECAT_APPLE_KEY',
+    defaultValue: '',
+  );
+  static const String _iosKeyLegacy = String.fromEnvironment(
     'REVENUECAT_IOS_KEY',
     defaultValue: '',
   );
+  static String get appleApiKey =>
+      _appleKey.isNotEmpty ? _appleKey : _iosKeyLegacy;
 
-  /// Clé API Android
+  /// Clé SDK Google Play.
   static const String androidApiKey = String.fromEnvironment(
     'REVENUECAT_ANDROID_KEY',
     defaultValue: '',
   );
 
-  /// Identifiant de l'entitlement Premium côté RevenueCat.
-  static const String entitlementId = 'premium';
+  /// Alias historique de [appleApiKey] (clé API iOS).
+  static String get iosApiKey => appleApiKey;
+
+  /// Identifiant d'entitlement RevenueCat qui débloque l'accès premium.
+  /// Doit matcher la valeur configurée dans le dashboard RevenueCat.
+  static const String premiumEntitlementId = 'premium';
+
+  /// Alias historique de [premiumEntitlementId].
+  static const String entitlementId = premiumEntitlementId;
 
   /// ID du produit mensuel
   static const String monthlyProductId = 'facteur_premium_monthly';
 
   /// ID du produit annuel
   static const String annualProductId = 'facteur_premium_annual';
+
+  /// Alias historique de [annualProductId].
+  static const String yearlyProductId = annualProductId;
 
   /// ID du produit Founder (tarif fondateur·rice 2,99 €).
   static const String founderProductId = 'facteur_premium_founder';
