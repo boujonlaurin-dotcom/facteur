@@ -1,12 +1,18 @@
 {
   "unreleased": [
     {
+      "tag": "Widget",
+      "summary": "Le bouton rafraîchir du widget d'accueil répare désormais l'Essentiel et le Flux d'un coup, même après un blocage."
+    },
+    {
       "tag": "Sources",
       "summary": "Sur une source suivie, la priorité dans ton flux et la connexion d'abonnement passent en tête de fiche, et « Lire plus » déroule ses derniers articles."
     },
     {
       "tag": "Feed",
       "summary": "Les notifs en tête de feed sont moins insistantes : une notif écartée ne revient plus avant un mois, et le sondage « bien informé » s'affiche en entier."
+    },
+    {
       "tag": "App",
       "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
     },
