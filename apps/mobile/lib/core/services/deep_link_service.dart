@@ -227,7 +227,12 @@ class DeepLinkService {
           position: action.position,
           topicId: action.topicId,
         );
-        router.go(action.route!);
+        // push (not go) so the reader STACKS on top of what's showing — even an
+        // already-open reader. Lets the user chain article reads from the widget
+        // (back returns to the previous article), matching the in-app feed-card
+        // and deep-reco navigation. `go` reused the current content/:id route in
+        // place, so tapping a widget article while already reading was a no-op.
+        router.push(action.route!);
         return;
       case WidgetDeepLinkTarget.digest:
         _analytics?.trackWidgetAppOpened(target: 'digest');

@@ -39,7 +39,6 @@ import '../features/custom_topics/screens/topic_explorer_screen.dart';
 import '../features/soutien/screens/link_sent_screen.dart';
 import '../features/soutien/screens/soutien_screen.dart';
 import '../features/soutien/screens/veille_wall_screen.dart';
-import '../features/subscription/screens/paywall_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
@@ -98,7 +97,6 @@ class RouteNames {
   static const String profile = 'profile';
   static const String progress = 'progress';
   static const String quiz = 'quiz';
-  static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
   static const String resetPassword = 'reset-password';
   static const String myInterests = 'my-interests';
@@ -144,7 +142,6 @@ class RoutePaths {
   static const String topicExplorer = '/topic-explorer';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
-  static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
   static const String resetPassword = '/reset-password';
   static const String veilleConfig = '/veille/config';
@@ -192,7 +189,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final authState = ref.read(authStateProvider);
       String postAuthHomePath() {
         final tournee = ref.read(tourneeProgressServiceProvider);
-        return tournee.isClosingDismissedTodaySync()
+        return tournee.hasBrowsedEssentielTodaySync()
             ? RoutePaths.flaner
             : RoutePaths.fluxContinu;
       }
@@ -742,18 +739,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                 FullSwipeCupertinoPage(child: const LinkSentScreen()),
           ),
         ],
-      ),
-
-      // Paywall (modal)
-      GoRoute(
-        path: RoutePaths.paywall,
-        name: RouteNames.paywall,
-        pageBuilder: (context, state) => CustomTransitionPage(
-          child: const PaywallScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
       ),
     ],
     errorBuilder: (context, state) =>

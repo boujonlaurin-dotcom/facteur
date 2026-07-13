@@ -21,7 +21,11 @@ from app.models.source_search_log import SourceSearchLog
 from app.models.user import UserInterest
 from app.services.observability.cost_budget import is_over_cap, monthly_call_count
 from app.services.observability.usage_recorder import track_api_call
-from app.services.rss_parser import RSSParser
+from app.services.rss_parser import (
+    RSSParser,
+    normalize_input_url,
+    scheme_host_root,
+)
 from app.services.search.cache import (
     normalize_query,
     search_cache_get,
@@ -490,6 +494,10 @@ class SmartSourceSearchService:
             probe_url = query.strip()
             if not probe_url.startswith(("http://", "https://")):
                 probe_url = "https://" + probe_url
+            # Strip tracking params + lowercase host so a polluted paste
+            # resolves like the clean URL (T0.1) and the HostFeedResolution
+            # cache dedupes on the same key.
+            probe_url = normalize_input_url(probe_url)
             probe_host = (urlparse(probe_url).netloc or "").lower()
             if "reddit.com" not in probe_host:
                 detected = await self._detect_with_root_fallback(probe_url)
@@ -782,15 +790,66 @@ class SmartSourceSearchService:
             logger.debug("smart_search.youtube_failed", query=query, error=str(e))
             return []
 
-    async def _search_reddit(self, query: str, user_themes: list[str]) -> list[dict]:
-        """Search Reddit for subreddits."""
-        q = query.strip()
-        if q.lower().startswith("r/"):
-            q = q[2:]
+    async def _resolve_reddit_sub(
+        self, sub: str, user_themes: list[str]
+    ) -> dict | None:
+        """Resolve a specific ``r/<sub>`` directly to its ``.rss`` feed (T0.3).
 
-        results = await self.reddit.search(q)
-        items = []
+        The Reddit JSON search misses exact-name subreddits (``r/ai``,
+        ``artificial_intelligence``…), yet ``/r/<sub>/.rss`` is a real feed
+        that ``detect()`` handles. Bounded by the same detect timeout.
+        """
+        sub = re.sub(r"[^A-Za-z0-9_]", "", sub)
+        if not sub:
+            return None
+        rss_url = f"https://www.reddit.com/r/{sub}/.rss"
+        try:
+            detected = await asyncio.wait_for(
+                self.rss_parser.detect(rss_url), timeout=FEED_DETECT_TIMEOUT_S
+            )
+        except Exception:
+            return None
+        if not detected or not detected.feed_url:
+            return None
+        return {
+            "name": detected.title or f"r/{sub}",
+            "type": "reddit",
+            "url": f"https://www.reddit.com/r/{sub}/",
+            "feed_url": detected.feed_url,
+            "favicon_url": detected.logo_url,
+            "description": detected.description,
+            "in_catalog": False,
+            "is_curated": False,
+            "source_id": None,
+            "recent_items": [
+                {"title": e["title"], "published_at": e.get("published_at", "")}
+                for e in detected.entries[:3]
+            ],
+            "score": _compute_score("reddit", False, False, 0, None, True, False),
+            "source_layer": "reddit",
+        }
+
+    async def _search_reddit(self, query: str, user_themes: list[str]) -> list[dict]:
+        """Search Reddit for subreddits (+ direct ``r/<sub>`` resolution)."""
+        q = query.strip()
+        bare = q[2:] if q.lower().startswith("r/") else q
+
+        items: list[dict] = []
+        seen_feeds: set[str] = set()
+
+        # A specific subreddit name (``r/ai`` or a single bare token) → resolve
+        # its .rss directly, first, so exact matches the search API misses
+        # still surface (T0.3).
+        if re.fullmatch(r"[A-Za-z0-9_]+", bare):
+            direct = await self._resolve_reddit_sub(bare, user_themes)
+            if direct is not None:
+                items.append(direct)
+                seen_feeds.add(direct["feed_url"])
+
+        results = await self.reddit.search(bare)
         for r in results:
+            if r["feed_url"] in seen_feeds:
+                continue
             items.append(
                 {
                     "name": r["name"],
@@ -830,16 +889,7 @@ class SmartSourceSearchService:
         }
     )
 
-    @staticmethod
-    def _root_url(url: str) -> str | None:
-        """Return scheme://host for *url*, or None if unparsable."""
-        try:
-            parsed = urlparse(url)
-        except ValueError:
-            return None
-        if not parsed.scheme or not parsed.netloc:
-            return None
-        return f"{parsed.scheme}://{parsed.netloc}"
+    _root_url = staticmethod(scheme_host_root)
 
     async def detect_feed(self, url: str) -> tuple[str, dict] | None:
         """Public one-off feed detection (root-fallback strategy).

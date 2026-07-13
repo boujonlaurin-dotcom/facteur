@@ -441,25 +441,40 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   /// filter/theme/source/etc. is active — only the canonical, unfiltered Flux
   /// is mirrored to the widget. Debounced + signature-guarded so optimistic
   /// taps and loadMore bursts don't churn SharedPreferences.
-  void _scheduleWidgetPush(List<Content> items) {
-    if (_selectedFilter != null ||
-        _selectedTheme != null ||
-        _selectedTopic != null ||
-        _selectedSourceId != null ||
-        _selectedEntity != null ||
-        _selectedKeyword != null) {
+  ///
+  /// [force] bypasses **both** the filter guard and the signature guard and
+  /// pushes immediately (no debounce). It is reserved to the explicit
+  /// home-screen widget refresh button ([refreshForWidget]): that gesture must
+  /// never be a silent no-op, even when the payload is byte-identical to the
+  /// last push or a Flâner filter is active in-app. Callers on the [force]
+  /// path are responsible for passing the canonical *unfiltered* items.
+  void _scheduleWidgetPush(List<Content> items, {bool force = false}) {
+    if (!force &&
+        (_selectedFilter != null ||
+            _selectedTheme != null ||
+            _selectedTopic != null ||
+            _selectedSourceId != null ||
+            _selectedEntity != null ||
+            _selectedKeyword != null)) {
       return;
     }
     final slice = items.take(_widgetFluxCap).toList(growable: false);
-    final signature = slice.isEmpty
-        ? '0'
-        : '${slice.length}|${slice.first.id}|${slice.last.id}';
-    if (signature == _lastWidgetPushSignature) return;
+    if (slice.isEmpty) return;
+    final signature = '${slice.length}|${slice.first.id}|${slice.last.id}';
+    if (!force && signature == _lastWidgetPushSignature) return;
     _widgetPushDebounce?.cancel();
-    _widgetPushDebounce = Timer(_widgetPushDelay, () {
+    void push() {
       _lastWidgetPushSignature = signature;
       WidgetService.updateWidget(feedItems: slice);
-    });
+    }
+
+    if (force) {
+      // Synchronous push (no Timer) so the widget repaints before the
+      // deep-link handler returns — Timer(Duration.zero) would still defer.
+      push();
+    } else {
+      _widgetPushDebounce = Timer(_widgetPushDelay, push);
+    }
   }
 
   /// Prefetch additional pages purely to feed the widget. Calls the repository
@@ -848,6 +863,66 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     } finally {
       ref.read(feedRefreshingProvider.notifier).state = false;
     }
+  }
+
+  /// Explicit refresh path for the home-screen widget's refresh button
+  /// (`io.supabase.facteur://feed?refresh=1`).
+  ///
+  /// The ambient [refresh] + [_scheduleWidgetPush] chain is deliberately
+  /// conservative: it skips the widget push under an active Flâner filter, when
+  /// the content signature is unchanged, or on network error — which makes the
+  /// button feel like a no-op precisely when the widget is stuck. This method
+  /// guarantees the button always re-pushes the canonical **unfiltered** Flux:
+  ///
+  ///  1. Fetches a fresh unfiltered page 1 (respecting the Serein toggle),
+  ///     without disturbing any in-app filter/scroll state.
+  ///  2. Force-pushes it to the widget, bypassing the filter + signature guards.
+  ///  3. Restores widget depth (up to 80) via [_prefetchForWidget].
+  ///  4. On network failure, still force-pushes the last known unfiltered feed
+  ///     ([_globalItems]) so the widget is never left silently stale.
+  ///
+  /// The Essentiel side is repaired separately by
+  /// `digestProvider.syncWidgetFromRefresh()`, wired in the same deep-link
+  /// handler (`app.dart`).
+  Future<void> refreshForWidget() async {
+    final isSerein = ref.read(sereinToggleProvider).enabled;
+    List<Content> unfiltered = const <Content>[];
+    try {
+      final repository = ref.read(feedRepositoryProvider);
+      final response = await repository.getFeed(
+        page: 1,
+        limit: _limit,
+        serein: isSerein,
+        forceFresh: true,
+      );
+      unfiltered = response.items;
+
+      // When no filter is active in-app, mirror the fresh page into the
+      // on-screen feed and the unfiltered snapshot so the app and the widget
+      // stay consistent. Under an active filter we must NOT touch the visible
+      // (filtered) state — only the widget payload is refreshed.
+      if (_isUnfiltered && unfiltered.isNotEmpty) {
+        final overlaid =
+            _overlayConsumed(unfiltered, state.value?.carousels ?? const []);
+        unfiltered = overlaid.items;
+        _globalItems = overlaid.items;
+        _hasNext = response.pagination.hasNext && response.items.isNotEmpty;
+        state = AsyncData(
+          FeedState(items: overlaid.items, carousels: overlaid.carousels),
+        );
+      }
+    } catch (e) {
+      // Network failure: fall back to the last known unfiltered feed so the
+      // refresh button still repaints the widget instead of leaving it stuck.
+      // ignore: avoid_print
+      print(
+          'FeedNotifier: refreshForWidget fetch failed, using cached feed: $e');
+    }
+
+    final toPush = unfiltered.isNotEmpty ? unfiltered : _globalItems;
+    if (toPush.isEmpty) return;
+    _scheduleWidgetPush(toPush, force: true);
+    unawaited(_prefetchForWidget(toPush));
   }
 
   /// Refresh feed: mark visible articles (cards + carousel items qui sont

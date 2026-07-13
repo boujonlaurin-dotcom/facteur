@@ -158,4 +158,57 @@ void main() {
     // La recherche n'est pas réinitialisée (le champ garde la requête).
     expect(find.widgetWithText(TextField, 'le monde'), findsOneWidget);
   });
+
+  testWidgets(
+      'panneau normal : correspondance vérifiée → carte « Connecté » '
+      'sans modale (E3)', (tester) async {
+    const result = SmartSearchResult(
+      name: 'Le Monde',
+      type: 'article',
+      url: 'https://www.lemonde.fr',
+      feedUrl: 'https://www.lemonde.fr/rss/une.xml',
+      inCatalog: true,
+      isCurated: true,
+      sourceId: 'src-1',
+      recentItems: [
+        SmartSearchRecentItem(title: 'Article un'),
+        SmartSearchRecentItem(title: 'Article deux'),
+      ],
+    );
+    final repo = _FakeSourcesRepository(result);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sourcesRepositoryProvider.overrideWithValue(repo)],
+        child: MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: const Scaffold(
+            body: SourceAddPanel(
+              showIntro: false,
+              showCommunityGems: false,
+              showAddedNudge: false,
+              // Panneau normal : ni veilleMode ni inlineProof.
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField), 'le monde');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    // CTA « Suivre {nom} » pour une correspondance vérifiée.
+    expect(find.text('Suivre Le Monde'), findsOneWidget);
+    await tester.tap(find.text('Suivre Le Monde'));
+    await tester.pumpAndSettle();
+
+    // Ajout catalogue effectué, pas de modale, carte transformée en place.
+    expect(repo.trustCalls, 1);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('Connecté'), findsOneWidget);
+    expect(find.text('Article un'), findsOneWidget);
+    // La recherche reste (la carte n'est pas démontée par un reset).
+    expect(find.widgetWithText(TextField, 'le monde'), findsOneWidget);
+  });
 }

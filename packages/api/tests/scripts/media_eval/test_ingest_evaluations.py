@@ -32,6 +32,8 @@ from scripts.media_eval.schemas import (
 
 RUN_ID = "run-test"
 
+pytestmark = pytest.mark.usefixtures("media_eval_run")
+
 
 @pytest.fixture
 async def media_cnews(db_session) -> MediaEvalMedia:
