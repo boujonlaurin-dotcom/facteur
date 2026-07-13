@@ -6,6 +6,10 @@
     },
     {
       "tag": "Lecture",
+      "summary": "La lecture des longs articles est plus fluide : les barres de progression restent nettes pendant le défilement."
+    },
+    {
+      "tag": "Lecture",
       "summary": "L'écran de lecture s'allège : barres flottantes translucides qui laissent transparaître l'article."
     },
     {
