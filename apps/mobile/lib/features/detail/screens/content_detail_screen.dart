@@ -237,6 +237,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _linkCopiedHeaderTimer;
   late DateTime _startTime;
   WebViewController? _webViewController;
+  // Chargement de l'URL distante séparé de la création du contrôleur : la page
+  // (lourde : pubs/trackers/fonts/JS) n'est chargée qu'au tap CTA / warm-up 40 %
+  // (cf. `_maybeStartWebViewLoad`), jamais en tâche de fond pendant la lecture
+  // de LAYER 1. One-shot → évite un double `loadRequest` (déclencheurs multiples).
+  bool _webViewLoadRequested = false;
   // Chemin premium (source payante connectée) : WebView sur flutter_inappwebview
   // pour réutiliser la session du média (cookies). Distinct du WebView
   // webview_flutter du scroll-to-site des sources gratuites.
@@ -586,7 +591,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // court-circuite avant de toucher `_webViewController` sur ce chemin.
     if (_isConnectedPremiumSource(content)) return;
 
-    _historyTracker.reset(_nowMs());
+    // Contrôleur créé SANS charger l'URL : le chargement de la page distante
+    // (lourde) est différé à `_maybeStartWebViewLoad()` (tap CTA / warm-up 40 %)
+    // pour ne pas concurrencer LAYER 1 sur le thread UI/raster pendant la
+    // lecture. `_historyTracker.reset` est déplacé au load (cf. la méthode) :
+    // amorcé ici, il ferait compter un load différé comme nav utilisateur.
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -602,8 +611,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..addJavaScriptChannel(
         'ScrollBridge',
         onMessageReceived: _onScrollBridgeMessage,
-      )
-      ..loadRequest(Uri.parse(content.url));
+      );
+  }
+
+  /// Démarre (une seule fois) le chargement de l'URL distante dans le WebView
+  /// gratuit `webview_flutter`. Séparé de la création du contrôleur
+  /// ([_initScrollToSiteWebView]) pour ne pas charger la page lourde en tâche de
+  /// fond pendant qu'on lit LAYER 1 — cause la plus probable du jank pré-glass
+  /// sur pages lourdes (Le Grand Continent, The Conversation).
+  ///
+  /// `_historyTracker.reset` est amorcé ICI, au moment du load, et non à la
+  /// création : la garde d'exit 1-tap ([WebViewHistoryTracker]) mesure le repos
+  /// depuis la dernière nav ; un `reset` posé à la création (>1,2 s avant un
+  /// load différé) ferait compter le load comme une nav utilisateur → 2 taps
+  /// pour sortir. Idempotent (déclencheurs : tap CTA, warm-up 40 %, fallback).
+  void _maybeStartWebViewLoad() {
+    if (_webViewLoadRequested) return;
+    final controller = _webViewController;
+    final content = _content;
+    if (controller == null || content == null) return;
+    _webViewLoadRequested = true;
+    _historyTracker.reset(_nowMs());
+    controller.loadRequest(Uri.parse(content.url));
   }
 
   /// Inject JS to drive the reader chrome from finger gestures + track
@@ -2001,6 +2030,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       if (capped > _maxReadingProgress) {
                         _maxReadingProgress = capped;
                       }
+                      // Warm-up : précharge la page distante quand l'utilisateur
+                      // a lu ~40 % du contenu in-app (« prête à l'arrivée »),
+                      // sans jamais la charger dès l'ouverture. Idempotent.
+                      if (useScrollToSite &&
+                          metrics.pixels >= 0.4 * metrics.maxScrollExtent) {
+                        _maybeStartWebViewLoad();
+                      }
                     }
                   }
                   return false;
@@ -2098,6 +2134,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !_showWebView;
     if (isScrollToSite && !_ctaTapped) {
       setState(() => _ctaTapped = true);
+      // Lance le chargement de la page distante MAINTENANT : le CTA anime 500 ms
+      // avant que `_isWebViewActive` ne se verrouille → la page démarre ≥ 500 ms
+      // avant la révélation (même avance qu'avec le chargement eager d'avant).
+      _maybeStartWebViewLoad();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _scrollController.hasClients) {
           _scrollController.animateTo(
@@ -3836,27 +3876,29 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       );
     }
 
-    // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
-    if (_webViewController == null) {
-      _historyTracker.reset(_nowMs());
-      _webViewController = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageStarted: (_) => _historyTracker
-                .onNavStart(_nowMs()),
-            onPageFinished: (_) {
-              _injectScrollBridgeScript();
-              _historyTracker.onNavFinish();
-            },
-          ),
-        )
-        ..addJavaScriptChannel(
-          'ScrollBridge',
-          onMessageReceived: _onScrollBridgeMessage,
-        )
-        ..loadRequest(Uri.parse(content.url));
-    }
+    // Mobile: WebView natif avec ScrollBridge. Le fallback est un chemin
+    // d'AFFICHAGE direct (CTA-fallback via `_showWebView`, ou lien externe) : à
+    // la différence de la couche scroll-to-site (chargement différé), on force
+    // le chargement MAINTENANT via `_maybeStartWebViewLoad()` — sinon un
+    // contrôleur déjà créé par `_initScrollToSiteWebView` mais non chargé
+    // s'afficherait vide. `_historyTracker.reset` + `loadRequest` vivent dans le
+    // helper (idempotent : no-op si déjà chargé).
+    _webViewController ??= WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) => _historyTracker.onNavStart(_nowMs()),
+          onPageFinished: (_) {
+            _injectScrollBridgeScript();
+            _historyTracker.onNavFinish();
+          },
+        ),
+      )
+      ..addJavaScriptChannel(
+        'ScrollBridge',
+        onMessageReceived: _onScrollBridgeMessage,
+      );
+    _maybeStartWebViewLoad();
 
     // CTA discret : source payante non connectée → proposer de lire avec son
     // abonnement (ouvre le flow de connexion).
