@@ -535,6 +535,120 @@ void main() {
 
       expect(find.text('Aucun article récent.'), findsOneWidget);
     });
+
+    testWidgets('« Lire plus » déroule jusqu\'à 10 articles puis « Réduire »', (
+      tester,
+    ) async {
+      final source = Source(
+        id: 'monde',
+        name: 'Le Monde',
+        type: SourceType.article,
+      );
+      final profile = SourceProfile(
+        recentArticles: [
+          for (var i = 0; i < 12; i++) _article('id$i', 'Article $i'),
+        ],
+      );
+
+      await tester.pumpWidget(_wrap(source: source, profile: profile));
+      await tester.pumpAndSettle();
+
+      // Replié : 3 articles visibles, bouton « Lire plus ».
+      expect(find.text('Article 0'), findsOneWidget);
+      expect(find.text('Article 2'), findsOneWidget);
+      expect(find.text('Article 3'), findsNothing);
+      expect(find.text('Lire plus'), findsOneWidget);
+      expect(find.text('Réduire'), findsNothing);
+
+      await tester.ensureVisible(find.text('Lire plus'));
+      await tester.tap(find.text('Lire plus'));
+      await tester.pumpAndSettle();
+
+      // Déplié : 10 articles (0..9), le 11e reste caché, bascule en « Réduire ».
+      expect(find.text('Article 9'), findsOneWidget);
+      expect(find.text('Article 10'), findsNothing);
+      expect(find.text('Réduire'), findsOneWidget);
+      expect(find.text('Lire plus'), findsNothing);
+    });
+
+    testWidgets('≤ 3 articles → pas de bouton « Lire plus »', (tester) async {
+      final source = Source(
+        id: 'monde',
+        name: 'Le Monde',
+        type: SourceType.article,
+      );
+      final profile = SourceProfile(
+        recentArticles: [
+          _article('a', 'Article A'),
+          _article('b', 'Article B'),
+          _article('c', 'Article C'),
+        ],
+      );
+
+      await tester.pumpWidget(_wrap(source: source, profile: profile));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Lire plus'), findsNothing);
+    });
+  });
+
+  group('SourceDetailModal — priorité/abonnement remontés si suivie', () {
+    testWidgets(
+      'followed: Réglages + Gestion sont au-dessus des Derniers articles',
+      (tester) async {
+        final followed = Source(
+          id: 'monde',
+          name: 'Le Monde',
+          type: SourceType.article,
+          isTrusted: true,
+          premiumConnection: const PremiumConnection(
+            loginUrl: 'https://lemonde.fr/login',
+            testUrl: 'https://lemonde.fr/test',
+            isGeneric: true,
+          ),
+        );
+        final profile = SourceProfile(
+          recentArticles: [_article('a', 'Article A')],
+        );
+
+        await tester.pumpWidget(_wrap(source: followed, profile: profile));
+        await tester.pumpAndSettle();
+
+        final settingsY = tester.getTopLeft(find.text('Réglages de suivi')).dy;
+        final manageY = tester.getTopLeft(find.text('Gestion de la source')).dy;
+        final articlesY = tester.getTopLeft(find.text('Derniers articles')).dy;
+        expect(settingsY, lessThan(articlesY));
+        expect(manageY, lessThan(articlesY));
+      },
+    );
+
+    testWidgets(
+      'unfollowed: Gestion (paywall) reste sous les Derniers articles',
+      (tester) async {
+        final notFollowed = Source(
+          id: 'monde',
+          name: 'Le Monde',
+          type: SourceType.article,
+          isTrusted: false,
+          premiumConnection: const PremiumConnection(
+            loginUrl: 'https://lemonde.fr/login',
+            testUrl: 'https://lemonde.fr/test',
+            isGeneric: true,
+          ),
+        );
+        final profile = SourceProfile(
+          recentArticles: [_article('a', 'Article A')],
+        );
+
+        await tester.pumpWidget(_wrap(source: notFollowed, profile: profile));
+        await tester.pumpAndSettle();
+
+        final manageY = tester.getTopLeft(find.text('Gestion de la source')).dy;
+        final articlesY = tester.getTopLeft(find.text('Derniers articles')).dy;
+        expect(manageY, greaterThan(articlesY));
+        expect(find.text('Réglages de suivi'), findsNothing);
+      },
+    );
   });
 
   group('SourceDetailModal — fallback réseau (/profile en erreur)', () {

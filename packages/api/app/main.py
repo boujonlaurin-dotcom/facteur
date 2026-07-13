@@ -88,6 +88,7 @@ from app.routers import (
     grille,
     images,
     internal,
+    internal_feed,
     letters,
     notification_preferences,
     personalization,
@@ -488,6 +489,9 @@ app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(checkout.router, prefix="/api/checkout", tags=["Checkout"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
+# Unauthenticated synthetic feed (Story 12.2, T1b): SyncService fetches these
+# URLs like any external feed, so no admin gate. SSRF-guarded in the router.
+app.include_router(internal_feed.router, prefix="/internal/feed", tags=["InternalFeed"])
 app.include_router(progress.router, prefix="/api/progress", tags=["Progress"])
 app.include_router(
     notification_preferences.router,

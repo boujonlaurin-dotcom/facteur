@@ -11,6 +11,7 @@ import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../models/notif_du_jour_message.dart';
 import '../providers/notif_du_jour_day_store.dart';
+import '../providers/notif_du_jour_dismissal_store.dart';
 import '../providers/notif_du_jour_provider.dart';
 
 /// « Notif du jour » : ligne de notification unique en tête de l'Essentiel.
@@ -74,8 +75,14 @@ class _NotifDuJourCardState extends ConsumerState<NotifDuJourCard> {
     }
 
     final day = ref.watch(notifDuJourDayStoreProvider);
-    // Anti-flash : rien tant que les prefs jour ne sont pas chargées.
-    if (!day.loaded || day.capReached) return const SizedBox.shrink();
+    final dismissalLoaded = ref.watch(
+      notifDuJourDismissalStoreProvider.select((s) => s.loaded),
+    );
+    // Anti-flash : rien tant que les deux stores (jour + cooldown) ne sont pas
+    // chargés — sinon on flasherait un message en cooldown le temps du disque.
+    if (!day.loaded || !dismissalLoaded || day.capReached) {
+      return const SizedBox.shrink();
+    }
 
     final queue = ref.watch(notifDuJourQueueProvider);
     final visibleId = _collapsingId ??
@@ -156,7 +163,10 @@ class _NotifDuJourCardState extends ConsumerState<NotifDuJourCard> {
                 children: [
                   Text(
                     message.title,
-                    maxLines: 1,
+                    // Les prompts à corps custom (sondage NPS « bien informé »)
+                    // portent une vraie question : 2 lignes pour ne pas la
+                    // tronquer. Les autres restent sur 1 ligne.
+                    maxLines: hasCustomBody ? 2 : 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.dmSans(
                       fontSize: 13.5,
@@ -181,11 +191,17 @@ class _NotifDuJourCardState extends ConsumerState<NotifDuJourCard> {
             ),
             const SizedBox(width: 8),
             _CloseButton(
+              // Dismiss (croix) : pose le cooldown durable (~30j) sur ce
+              // message en plus de l'effet éventuel `onDismissed`. Le cooldown
+              // ne se pose qu'au dismiss, jamais au tap (un tap = intérêt).
               onTap: () => _consume(
                 message,
-                sideEffect: message.onDismissed == null
-                    ? null
-                    : () => message.onDismissed!(ref),
+                sideEffect: () async {
+                  await ref
+                      .read(notifDuJourDismissalStoreProvider.notifier)
+                      .recordDismissed(message.id);
+                  await message.onDismissed?.call(ref);
+                },
               ),
             ),
           ],

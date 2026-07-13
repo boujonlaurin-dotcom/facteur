@@ -19,6 +19,7 @@ from app.models.enums import ContentType, SourceType
 from app.models.source import Source, UserSource
 from app.models.veille import VeilleSource
 from app.services.content_quality import compute_content_quality
+from app.services.http_fetch import fetch_with_impersonation, is_antibot_response
 from app.services.ml.language_filter import detect_language
 from app.services.paywall_detector import detect_paywall
 
@@ -153,10 +154,8 @@ class SyncService:
         source_paywall_config = getattr(source, "paywall_config", None)
 
         try:
-            # 1. Fetch feed content (HORS session DB)
-            response = await self.client.get(source_url)
-            response.raise_for_status()
-            content = response.text
+            # 1. Fetch feed content (HORS session DB), avec repli anti-bot.
+            content = await self._fetch_feed_content(source_url)
 
             # 2. Parse feed (HORS session DB ; offloaded to thread pool, CPU-bound)
             loop = asyncio.get_event_loop()
@@ -223,6 +222,45 @@ class SyncService:
         except Exception as e:
             logger.error("Error processing source", source=source_name, error=str(e))
             raise e
+
+    async def seed_recent_content(self, source: Source, *, max_items: int = 10) -> int:
+        """Insert a bounded slice of the freshest entries synchronously.
+
+        Story 12.2 (T1d) : à l'add, la tournée est vide les quelques secondes
+        où le sync de fond tourne. Semer ~10 contents récents rend la source
+        vivante immédiatement. Réutilise le même fetch (anti-bot aware), la
+        dédup (``guid``) et l'enqueue de classif que le sync complet ; la task
+        de fond tourne ensuite pour le backfill complet. Le HEAD paywall par
+        article est **volontairement sauté** pour tenir le budget temps ; le
+        sync de fond raffinera ``is_paid`` (upgrade false→true non destructif).
+        """
+        source_id = source.id
+        source_paywall_config = getattr(source, "paywall_config", None)
+
+        content = await self._fetch_feed_content(source.feed_url)
+        loop = asyncio.get_event_loop()
+        feed = await loop.run_in_executor(None, feedparser.parse, content)
+
+        seeded = 0
+        for entry in feed.entries[:max_items]:
+            content_data = self._parse_entry(entry, source)
+            if not content_data:
+                continue
+            content_data["is_paid"] = detect_paywall(
+                title=content_data.get("title", ""),
+                description=content_data.get("description"),
+                url=content_data.get("url", ""),
+                html_content=content_data.get("html_content"),
+                source_id=str(source_id),
+                paywall_config=source_paywall_config,
+                html_head=None,
+            )
+            try:
+                if await self._save_content(content_data):
+                    seeded += 1
+            except SQLAlchemyError:
+                continue
+        return seeded
 
     def _parse_entry(self, entry, source: Source) -> dict | None:
         """Extrait les données pertinentes selon le type de source."""
@@ -496,6 +534,24 @@ class SyncService:
         # Clean query params?
         base_url = url_lower.split("?")[0]
         return not any(keyword in base_url for keyword in bad_keywords)
+
+    async def _fetch_feed_content(self, source_url: str) -> str:
+        """Fetch a feed body, retrying via curl-cffi on an anti-bot response.
+
+        Story 12.2 (T3) — le seul changement du hot-path sync. Un flux
+        découvert derrière un mur anti-bot à l'add (``detect()`` utilise déjà
+        curl-cffi) mourrait sinon au refresh, car cette voie chaude fetch en
+        httpx nu. Le repli est **scopé** : uniquement sur 403 / marqueurs
+        anti-bot, jamais sur le chemin nominal.
+        """
+        response = await self.client.get(source_url)
+        if is_antibot_response(response.status_code, response.text):
+            logger.info("sync_antibot_detected_retry_curl_cffi", source_url=source_url)
+            impersonated = await fetch_with_impersonation(source_url)
+            if impersonated is not None:
+                return impersonated
+        response.raise_for_status()
+        return response.text
 
     async def _fetch_html_head(self, url: str) -> str | None:
         """Fetch first ~50KB of an article page for paywall detection.

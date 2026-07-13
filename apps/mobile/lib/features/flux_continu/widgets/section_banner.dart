@@ -223,21 +223,31 @@ class SectionBanner extends StatelessWidget {
                             text: title,
                             children: <InlineSpan>[
                               if (tappable) ...[
-                                // Chevron de tappabilité rendu comme icône
-                                // centrée verticalement sur le titre (même
-                                // pattern que l'étoile favorite ci-dessous) :
-                                // trait épais et alignement propre, là où le
-                                // glyphe texte « > » héritait d'une baseline
-                                // décalée et d'un trait fin.
-                                const WidgetSpan(child: SizedBox(width: 3)),
+                                // Chevron de tappabilité : glyphe « > » dans le
+                                // style exact du titre (Fraunces, même poids),
+                                // agrandi (~1.3×) pour se lire comme la
+                                // continuité actionnable du titre. WidgetSpan
+                                // centré verticalement → alignement propre sans
+                                // baseline décalée.
                                 WidgetSpan(
                                   alignment: PlaceholderAlignment.middle,
-                                  child: Icon(
-                                    PhosphorIcons.caretRight(
-                                      PhosphorIconsStyle.fill,
+                                  child: Padding(
+                                    padding: EdgeInsets.only(
+                                      left: large ? 6 : 5,
                                     ),
-                                    size: large ? 24 : 20,
-                                    color: colors.textPrimary,
+                                    child: Text(
+                                      '>',
+                                      style:
+                                          (large
+                                                  ? _titleStyleLarge
+                                                  : _titleStyleInline)
+                                              .copyWith(
+                                                color: colors.textPrimary,
+                                                fontSize:
+                                                    (large ? 24 : 17) * 1.3,
+                                                height: 1.0,
+                                              ),
+                                    ),
                                   ),
                                 ),
                               ],
