@@ -1,6 +1,48 @@
 {
   "unreleased": [
     {
+      "tag": "Rituel",
+      "summary": "En ouvrant ta lettre du matin, ta flamme grandit et ta série s'incrémente : une petite récompense pour être revenu aujourd'hui."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "Les lettres d'hier et de la semaine se lisent comme celle du jour : Actus, Bonnes Nouvelles et citation réunies."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "Ouvre ta tournée d'un geste, ou file droit vers la section qui t'intéresse."
+    },
+    {
+      "tag": "Rituel",
+      "summary": "Ta lettre du matin est plus lisible : manchettes en clair sur deux lignes, repères mieux placés et mode serein à portée de geste."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "La rétro de la semaine reprend l'affichage clair de ta tournée du jour, en mettant d'abord ce que tu n'as pas encore lu."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Ta page du matin affiche les manchettes du jour en clair, avec des repères pour glisser vers les lettres d'hier et de la semaine."
+    },
+    {
+      "tag": "Accueil",
+      "summary": "Sur ta page du matin, glisse entre tes lettres du jour et des jours précédents, et active le mode serein d'un geste."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "Sur ta lettre du matin, glisse vers la droite pour relire hier, et bascule en lecture apaisée d'un geste."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Remonte le temps depuis ta carte Essentiel : choisis un jour, vois ce qu'il te reste à rattraper."
+    },
+    {
+      "tag": "Édition",
+      "summary": "Ton édition du jour se dévoile en douceur le matin et après l'onboarding."
+    },
+    {
+      "tag": "Ouverture",
+      "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
       "tag": "Serein",
       "summary": "Le mode de lecture apaisé reste activé au redémarrage de l'app : plus besoin de le réactiver chaque matin."
     },
