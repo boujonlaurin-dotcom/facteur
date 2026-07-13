@@ -1,5 +1,7 @@
 import 'package:facteur/core/services/deep_link_service.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 void main() {
   group('DeepLinkService.parse', () {
@@ -221,5 +223,108 @@ void main() {
       );
       expect(service.pendingRoute(), isNull);
     });
+  });
+
+  // Regression: a widget article tap must open the reader by STACKING (push),
+  // not replacing (go), so it works even when a reader is already on screen —
+  // letting the user chain article reads from the home-screen widget.
+  group('DeepLinkService article navigation (widget tap → reader stacks)', () {
+    tearDown(DeepLinkService.resetForTest);
+
+    // Minimal router mirroring the two reader paths the widget deep links
+    // resolve to (`/flaner/content/:id`, `/flux-continu/content/:id`). The
+    // placeholder reader just renders its id so we can assert what's on top.
+    GoRouter buildRouter(GlobalKey<NavigatorState> navKey) {
+      Widget reader(BuildContext c, GoRouterState s) =>
+          Scaffold(body: Text('reader-${s.pathParameters['id']}'));
+      return GoRouter(
+        navigatorKey: navKey,
+        initialLocation: '/flaner',
+        routes: [
+          GoRoute(
+            path: '/flaner',
+            builder: (c, s) => const Scaffold(body: Text('flaner-home')),
+          ),
+          GoRoute(path: '/flaner/content/:id', builder: reader),
+          GoRoute(
+            path: '/flux-continu',
+            builder: (c, s) => const Scaffold(body: Text('flux-home')),
+          ),
+          GoRoute(path: '/flux-continu/content/:id', builder: reader),
+        ],
+      );
+    }
+
+    Future<DeepLinkService> boundService(
+      WidgetTester tester,
+      GlobalKey<NavigatorState> navKey,
+    ) async {
+      final router = buildRouter(navKey);
+      await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+      service.bind(router: router);
+      service.setAuthenticated(true);
+      return service;
+    }
+
+    testWidgets(
+      'Flux article: tapping a 2nd widget article while already in a reader '
+      'stacks a new reader (chaining), not a no-op / replace',
+      (tester) async {
+        final navKey = GlobalKey<NavigatorState>();
+        final service = await boundService(tester, navKey);
+
+        // First tap → user is now "in an article".
+        service.handle(Uri.parse('io.supabase.facteur://feed/content/first'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-first'), findsOneWidget);
+
+        // Second tap WHILE inside the reader → opens the second article on top.
+        service.handle(Uri.parse('io.supabase.facteur://feed/content/second'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-second'), findsOneWidget);
+
+        // Proof it STACKED: popping the top reveals the first article. Under the
+        // old `go` (replace) there would be no first reader to pop back to.
+        navKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(find.text('reader-first'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Essentiel (digest) article stacks a reader the same way',
+      (tester) async {
+        final navKey = GlobalKey<NavigatorState>();
+        final service = await boundService(tester, navKey);
+
+        service.handle(Uri.parse('io.supabase.facteur://digest/aaa'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-aaa'), findsOneWidget);
+
+        service.handle(Uri.parse('io.supabase.facteur://digest/bbb'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-bbb'), findsOneWidget);
+
+        navKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(find.text('reader-aaa'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'from the home tab (no reader open) a widget article still opens the '
+      'reader',
+      (tester) async {
+        final navKey = GlobalKey<NavigatorState>();
+        final service = await boundService(tester, navKey);
+        expect(find.text('flaner-home'), findsOneWidget);
+
+        service.handle(Uri.parse('io.supabase.facteur://feed/content/solo'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-solo'), findsOneWidget);
+      },
+    );
   });
 }

@@ -9,6 +9,7 @@ import 'core/auth/auth_state.dart';
 import 'core/providers/analytics_provider.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
+import 'features/digest/providers/digest_provider.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
 import 'features/feed/services/read_sync_service.dart';
@@ -257,9 +258,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     DeepLinkService.instance.bind(
       router: router,
       analytics: analytics,
-      // Widget refresh button → réveille l'app, force un refresh Flâner (qui
-      // re-pushe le widget via le chemin existant).
-      onRefreshRequested: () => ref.read(feedProvider.notifier).refresh(),
+      // Widget refresh button → réveille l'app et répare les DEUX côtés du
+      // widget : l'Essentiel (digest) ET le Flux (feed). Le refresh Flâner
+      // simple ne reconstruisait jamais l'Essentiel et pouvait rester un no-op
+      // silencieux (filtre actif / signature identique / erreur réseau) — d'où
+      // le bouton « sans effet ». On force donc un re-push complet des deux
+      // caches. Fire-and-forget : le handler de deep link est synchrone.
+      onRefreshRequested: () {
+        unawaited(ref.read(digestProvider.notifier).syncWidgetFromRefresh());
+        unawaited(ref.read(feedProvider.notifier).refreshForWidget());
+      },
     );
 
     if (!_deepLinksStarted) {

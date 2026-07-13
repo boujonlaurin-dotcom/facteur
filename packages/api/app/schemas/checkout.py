@@ -21,3 +21,17 @@ class CheckoutStartResponse(BaseModel):
     user_id: str
     checkout_url: str
     is_new_user: bool
+
+
+class CheckoutSendLinkRequest(BaseModel):
+    """Envoi du lien de checkout par email (magic link Supabase)."""
+
+    offering: Literal["default", "founder"] = "default"
+    resend: bool = False
+
+
+class CheckoutSendLinkResponse(BaseModel):
+    """Réponse : confirmation d'envoi + email masquable côté client."""
+
+    sent: bool
+    email: EmailStr

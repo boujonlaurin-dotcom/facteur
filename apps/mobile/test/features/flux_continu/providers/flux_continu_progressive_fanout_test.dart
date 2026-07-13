@@ -130,7 +130,7 @@ void main() {
         userInterestsProvider.overrideWith(
           () => _StubUserInterestsNotifier(interests),
         ),
-        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref, null)),
         displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
       ],
     );

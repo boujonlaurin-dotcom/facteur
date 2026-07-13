@@ -96,7 +96,7 @@ class _FakeGrilleRepository implements GrilleRepository {
 }
 
 class _StubSereinToggleNotifier extends SereinToggleNotifier {
-  _StubSereinToggleNotifier(super.ref, bool enabled) {
+  _StubSereinToggleNotifier(Ref ref, bool enabled) : super(ref, null) {
     state = SereinToggleState(enabled: enabled, isLoading: false);
   }
 }

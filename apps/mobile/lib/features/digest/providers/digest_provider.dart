@@ -205,7 +205,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           final digest = await repository.getDigest(date: date);
           _normalDigest = digest;
           _cachedDate = _todayDateString;
-          ref.read(sereinToggleProvider.notifier).initFromApi(false);
+          // Le fallback single-digest ne porte aucun flag serein : il lève
+          // juste le loading si rien n'est encore connu, sans persister ni
+          // écraser un miroir local ON.
+          ref.read(sereinToggleProvider.notifier).markLoadedFromFallback();
           _maybeScheduleStaleFallbackRefetch();
           return digest;
         } catch (_) {
@@ -288,6 +291,30 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   /// the in-app Serein/"Bonnes Nouvelles" toggle is on.
   void _syncWidget() {
     WidgetService.updateWidget(digest: _normalDigest);
+  }
+
+  /// Re-push the Essentiel side of the widget on explicit demand — the home
+  /// screen widget's refresh button.
+  ///
+  /// The Flux-side `refresh()` never rebuilds the Essentiel cache
+  /// (`articles_json`), so a degenerate/empty Essentiel payload can only be
+  /// repaired here. When the digest isn't in memory yet — precisely the state
+  /// that leaves the widget's Essentiel side empty (`articles_json = []`) — we
+  /// load it first so the refresh actually rebuilds it instead of re-pushing
+  /// `null`. Silent on failure: the Flux side of the refresh still proceeds.
+  Future<void> syncWidgetFromRefresh() async {
+    try {
+      if (_normalDigest == null) {
+        // _loadBothDigests() already re-pushes the widget on success, so no
+        // extra _syncWidget() is needed on the cold-cache path.
+        await _loadBothDigests();
+      } else {
+        _syncWidget();
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('DigestNotifier: syncWidgetFromRefresh failed: $e');
+    }
   }
 
   /// Clear the in-memory cache (forces next load to call API).

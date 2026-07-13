@@ -43,6 +43,24 @@
     {
       "tag": "Ouverture",
       "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
+      "tag": "Serein",
+      "summary": "Le mode de lecture apaisé reste activé au redémarrage de l'app : plus besoin de le réactiver chaque matin."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "La lecture des longs articles est plus fluide : les barres de progression restent nettes pendant le défilement."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "L'écran de lecture s'allège : barres flottantes translucides qui laissent transparaître l'article."
+    },
+    {
+      "tag": "Widget",
+      "summary": "Le bouton rafraîchir du widget d'accueil répare désormais l'Essentiel et le Flux d'un coup, même après un blocage."
+    },
+    {
+      "tag": "Widget",
+      "summary": "Depuis le widget, tu peux ouvrir un article puis en enchaîner un autre sans repasser par l'accueil."
     },
     {
       "tag": "Sources",
@@ -327,6 +345,10 @@
     {
       "tag": "Onboarding",
       "summary": "Choix des sources plus clair et premier feed qui met en avant votre thème préféré."
+    },
+    {
+      "tag": "Soutien",
+      "summary": "Deviens Fact·eur·isse et débloque veille, sources illimitées, analyses et mode serein sur mesure."
     }
   ],
   "released": [

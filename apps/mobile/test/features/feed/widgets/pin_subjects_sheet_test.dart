@@ -68,7 +68,7 @@ class _NoGrille implements GrilleRepository {
 }
 
 class _StubSerein extends SereinToggleNotifier {
-  _StubSerein(super.ref) {
+  _StubSerein(Ref ref) : super(ref, null) {
     state = const SereinToggleState(enabled: false, isLoading: false);
   }
 }
