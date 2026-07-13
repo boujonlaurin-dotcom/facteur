@@ -21,6 +21,10 @@ import '../../digest/widgets/section_divider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
+import '../../soutien/providers/analyse_quota_provider.dart';
+import '../../soutien/soutien_copy.dart';
+import '../../soutien/widgets/paywall_sheet.dart';
+import '../../premium/premium_provider.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
@@ -384,6 +388,13 @@ class _PerspectivesBottomSheetState
   }
 
   Future<void> _requestAnalysis() async {
+    // Lancement frais uniquement (le retry après erreur ne re-consomme pas
+    // le quota) : gating free 1 analyse/jour.
+    if (_analysisState == PerspectivesAnalysisState.idle &&
+        !ref.read(analyseQuotaProvider.notifier).tryConsume()) {
+      PaywallSheet.show(context, PaywallWallVariant.analyses);
+      return;
+    }
     setState(() => _analysisState = PerspectivesAnalysisState.loading);
 
     try {
@@ -402,6 +413,32 @@ class _PerspectivesBottomSheetState
       if (!mounted) return;
       setState(() => _analysisState = PerspectivesAnalysisState.error);
     }
+  }
+
+  /// Pill premium « Analyses illimitées » / bannière quota épuisé (free).
+  /// Null si free avec quota dispo → la zone CTA reste inchangée.
+  Widget? _buildQuotaNotice(FacteurColors colors, TextTheme textTheme) {
+    // Premium d'abord : évite de réveiller `analyseQuotaProvider` (lecture +
+    // purge SharedPreferences) pour un utilisateur qui n'affiche que la pill.
+    if (ref.watch(isPremiumProvider)) {
+      return Center(
+        child: Text(
+          SoutienCopy.analysesPillPremium,
+          style: FacteurTypography.stamp(const Color(0xFF2E7D32)),
+        ),
+      );
+    }
+    final quotaUsed = ref.watch(analyseQuotaProvider).valueOrNull ?? false;
+    if (quotaUsed && _analysisState == PerspectivesAnalysisState.idle) {
+      return Center(
+        child: Text(
+          SoutienCopy.analysesQuotaBanner,
+          textAlign: TextAlign.center,
+          style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+        ),
+      );
+    }
+    return null;
   }
 
   /// Sépare FR (langue null ou `fr`) des couvertures étrangères et insère
@@ -590,6 +627,7 @@ class _PerspectivesBottomSheetState
                         onRequestAnalysis: _requestAnalysis,
                         colors: colors,
                         textTheme: textTheme,
+                        notice: _buildQuotaNotice(colors, textTheme),
                       ),
                     ),
                   ] else ...[
@@ -1189,6 +1227,10 @@ class PerspectivesAnalysisZone extends StatefulWidget {
   final TextTheme textTheme;
   final Key? zoneKey;
 
+  /// Surface de gating optionnelle sous le CTA : pill « Analyses illimitées »
+  /// (premium) ou bannière quota épuisé (free).
+  final Widget? notice;
+
   const PerspectivesAnalysisZone({
     super.key,
     required this.state,
@@ -1197,6 +1239,7 @@ class PerspectivesAnalysisZone extends StatefulWidget {
     required this.colors,
     required this.textTheme,
     this.zoneKey,
+    this.notice,
   });
 
   @override
@@ -1210,7 +1253,14 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
   @override
   Widget build(BuildContext context) {
     if (widget.state == PerspectivesAnalysisState.idle) {
-      return _buildAnalysisCta();
+      if (widget.notice == null) return _buildAnalysisCta();
+      return Column(
+        children: [
+          _buildAnalysisCta(),
+          const SizedBox(height: 8),
+          widget.notice!,
+        ],
+      );
     }
 
     return AnimatedSize(

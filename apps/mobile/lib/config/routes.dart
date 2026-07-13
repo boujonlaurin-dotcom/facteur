@@ -36,7 +36,9 @@ import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
 import '../features/my_interests/screens/my_interests_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
-import '../features/subscription/screens/paywall_screen.dart';
+import '../features/soutien/screens/link_sent_screen.dart';
+import '../features/soutien/screens/soutien_screen.dart';
+import '../features/soutien/screens/veille_wall_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
@@ -95,7 +97,6 @@ class RouteNames {
   static const String profile = 'profile';
   static const String progress = 'progress';
   static const String quiz = 'quiz';
-  static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
   static const String resetPassword = 'reset-password';
   static const String myInterests = 'my-interests';
@@ -107,6 +108,9 @@ class RouteNames {
   static const String grille = 'grille';
   static const String grilleLeaderboard = 'grille-leaderboard';
   static const String grilleShare = 'grille-share';
+  static const String soutien = 'soutien';
+  static const String veilleWall = 'veille-wall';
+  static const String soutienLinkSent = 'soutien-link-sent';
 }
 
 /// Chemins des routes
@@ -138,7 +142,6 @@ class RoutePaths {
   static const String topicExplorer = '/topic-explorer';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
-  static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
   static const String resetPassword = '/reset-password';
   static const String veilleConfig = '/veille/config';
@@ -147,6 +150,9 @@ class RoutePaths {
   static const String grille = '/grille';
   static const String grilleLeaderboard = '/grille/leaderboard';
   static const String grilleShare = '/grille/share';
+  static const String soutien = '/soutien';
+  static const String veilleWall = '/soutien/veille-wall';
+  static const String soutienLinkSent = '/soutien/lien-envoye';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -708,16 +714,31 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
 
-      // Paywall (modal)
+      // Soutien « Fact·eur·isse » (porte 1) + mur veille (porte 2) +
+      // confirmation « lien envoyé ». Root navigator : plein écran au-dessus
+      // du footer.
       GoRoute(
-        path: RoutePaths.paywall,
-        name: RouteNames.paywall,
-        pageBuilder: (context, state) => CustomTransitionPage(
-          child: const PaywallScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
+        path: RoutePaths.soutien,
+        name: RouteNames.soutien,
+        parentNavigatorKey: NotificationService.navigatorKey,
+        pageBuilder: (context, state) =>
+            FullSwipeCupertinoPage(child: const SoutienScreen()),
+        routes: [
+          GoRoute(
+            path: 'veille-wall',
+            name: RouteNames.veilleWall,
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) =>
+                FullSwipeCupertinoPage(child: const VeilleWallScreen()),
+          ),
+          GoRoute(
+            path: 'lien-envoye',
+            name: RouteNames.soutienLinkSent,
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) =>
+                FullSwipeCupertinoPage(child: const LinkSentScreen()),
+          ),
+        ],
       ),
     ],
     errorBuilder: (context, state) =>
