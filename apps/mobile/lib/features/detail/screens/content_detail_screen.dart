@@ -265,6 +265,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
+  // Dernier `maxScrollExtent` pour lequel les offsets d'activation WebView ont
+  // été calculés : évite de rappeler `_computeScrollOffsets()` à chaque frame de
+  // scroll (le recompute n'est utile qu'au changement de hauteur = rendu HTML
+  // tardif). -1 = jamais calculé.
+  double _lastMaxExtentForOffsets = -1;
   // Once the WebView fade-in completes, drop the heavy article subtree from
   // the tree so Flutter no longer rasterizes/composites it on top of the
   // scrolling WebView (eliminates per-frame UI-thread cost).
@@ -298,6 +303,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleEndKey = GlobalKey();
   final GlobalKey _scrollViewKey = GlobalKey();
   double? _articleContentExtent;
+
+  // Blur « au repos » : le BackdropFilter des GlassPill ré-échantillonne à
+  // chaque frame le contenu qui défile derrière lui → coût de re-rasterisation
+  // par frame. On coupe donc le blur pendant le mouvement et on le rétablit
+  // [_kScrollSettleDelay] après le dernier event scroll (dégradation voulue
+  // « pendant le mouvement » uniquement, look glass préservé au repos).
+  final ValueNotifier<bool> _isScrolling = ValueNotifier<bool>(false);
+  Timer? _scrollSettleTimer;
+  static const Duration _kScrollSettleDelay = Duration(milliseconds: 140);
 
   // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
@@ -539,8 +553,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Scroll-to-site: attach scroll listener
     _scrollController.addListener(_onScrollToSite);
 
-    // Reading progress: track scroll depth
-    _scrollController.addListener(_onScrollReadingProgress);
+    // Reading progress + « lire sur le site » nudge : pilotés par l'unique
+    // NotificationListener du build (un seul calcul de progression par frame).
+    // L'ancien 2e listener `_onScrollReadingProgress` faisait double emploi.
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
@@ -770,26 +785,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return isPartialContent(articleText);
   }
 
-  /// Track in-app scroll depth for reading progress.
-  /// For partial content, in-app scroll caps at 25% — WebView fills the rest.
-  void _onScrollReadingProgress() {
-    if (!_scrollController.hasClients) return;
-    final maxExtent = _scrollController.position.maxScrollExtent;
-    if (maxExtent <= 0) return;
-    final pixels = _scrollController.offset;
-    // Use article-only extent so the perspectives section doesn't dilute progress
-    final articleExtent = _articleContentExtent ?? maxExtent;
-    final rawProgress = pixels / articleExtent;
-    final progress = _isPartialContent
-        ? (rawProgress * 0.25).clamp(0.0, 0.25)
-        : rawProgress.clamp(0.0, 1.0);
-    _readingProgress.value = progress;
-    if (progress > _maxReadingProgress) {
-      _maxReadingProgress = progress;
-    }
-    _maybeRequestReadOnSiteNudge(progress);
-  }
-
   void _maybeRequestReadOnSiteNudge(double progress) {
     if (_isPartialContent) return;
     if (_readOnSiteNudgeRequested) return;
@@ -918,6 +913,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _ctaTapped = false;
       _offsetsComputed = false;
       _bridgeEndOffset = 0;
+      _lastMaxExtentForOffsets = -1;
     });
     _footerPermanent.value = false;
     _animateFooterTo(0.0);
@@ -962,8 +958,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onScrollToSite() {
     if (!_ctaTapped || !_offsetsComputed) return;
 
-    // Re-measure on every scroll to handle late HTML rendering
-    _computeScrollOffsets();
+    // Re-mesure UNIQUEMENT quand la hauteur de contenu change (rendu HTML
+    // tardif) : lire `maxScrollExtent` est bon marché, mais rappeler
+    // `_computeScrollOffsets()` à chaque frame de scroll était redondant. Le
+    // latch one-way plus bas et `_bridgeEndOffset` restent inchangés tant que la
+    // hauteur ne bouge pas.
+    if (_scrollController.hasClients) {
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      if (maxExtent != _lastMaxExtentForOffsets) {
+        _lastMaxExtentForOffsets = maxExtent;
+        _computeScrollOffsets();
+      }
+    }
 
     final offset = _scrollController.offset;
     final shouldActivate = offset >= _bridgeEndOffset;
@@ -1018,6 +1024,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// premium) et **lève l'arrival gate** dès que le scroll dépasse le seuil :
   /// le footer peut alors réapparaître normalement au scroll vers le haut.
   void _updateWebScrollY(double y) {
+    _markScrolling();
     _webScrollY = y;
     if (_footerRevealLocked && y >= _kWebViewFooterRevealThreshold) {
       _footerRevealLocked = false;
@@ -1061,9 +1068,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
+  /// Marque un mouvement de scroll en cours : coupe le blur des GlassPill le
+  /// temps du défilement, puis le rétablit [_kScrollSettleDelay] après le
+  /// dernier event scroll. Appelé depuis le scroll natif (NotificationListener),
+  /// les gestes tactiles WebView et l'inertie (`scroll_y` mirroré, throttlé
+  /// 100 ms < 140 ms ⇒ garde le debounce armé pendant un fling).
+  void _markScrolling() {
+    if (!_isScrolling.value) _isScrolling.value = true;
+    _scrollSettleTimer?.cancel();
+    _scrollSettleTimer = Timer(_kScrollSettleDelay, () {
+      if (mounted) _isScrolling.value = false;
+    });
+  }
+
   /// Stop any in-flight footer tween so the live gesture pilots the chrome
   /// without fighting a residual animation.
   void _onGestureStart() {
+    _markScrolling();
     _footerAutoController.stop();
   }
 
@@ -1071,6 +1092,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Header is pinned, so it ignores the gesture entirely.
   void _onGestureDelta(double pageDelta) {
     if (pageDelta == 0) return;
+    _markScrolling();
     if (_showSunflowerNudge) {
       setState(() => _showSunflowerNudge = false);
     }
@@ -1519,6 +1541,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingTimer?.cancel();
     _noteNudgeTimer?.cancel();
     _scrollStopTimer?.cancel();
+    _scrollSettleTimer?.cancel();
     _sunflowerNudgeTimer?.cancel();
     _inactivityTimer?.cancel();
     _articleLayerUnmountTimer?.cancel();
@@ -1533,12 +1556,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _ctaPulseController.dispose();
     _footerPermanent.removeListener(_onFooterPermanentChanged);
     WidgetsBinding.instance.removeObserver(this);
+    _isScrolling.dispose();
     _footerOffset.dispose();
     _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
-    _scrollController.removeListener(_onScrollReadingProgress);
 
     _scrollController.dispose();
     _inAppScrollController.dispose();
@@ -1965,6 +1988,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification is ScrollUpdateNotification) {
+                    // Coupe le blur des GlassPill pendant le scroll natif (in-app
+                    // reader + scroll-to-site), rétabli ~140 ms après l'arrêt.
+                    _markScrolling();
                     final delta = notification.scrollDelta ?? 0.0;
                     final metrics = notification.metrics;
                     if (metrics.pixels <= 0 &&
@@ -2000,6 +2026,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       _readingProgress.value = capped;
                       if (capped > _maxReadingProgress) {
                         _maxReadingProgress = capped;
+                      }
+                      // Nudge « lire sur le site » — auparavant piloté par un 2e
+                      // listener (`_onScrollReadingProgress`) attaché au seul
+                      // `_scrollController` du scroll-to-site. Replié ici pour ne
+                      // calculer la progression qu'une fois par frame ; gardé au
+                      // mode scroll-to-site pour ne rien changer au comportement
+                      // (base d'extent `capped` identique ; gardes internes
+                      // _isPartialContent/_articleOpenCount<4/progress<0.5).
+                      if (useScrollToSite) {
+                        _maybeRequestReadOnSiteNudge(capped);
                       }
                     }
                   }
@@ -2229,13 +2265,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Pill « liquid glass » flottant, détaché des bords (marges + safe area
     // gérées par le Padding du Column parent, plus de SafeArea interne).
-    final footerContent = GlassPill(
-      enableBlur: _glassBlurEnabled,
-      shadowOffset: const Offset(0, -4),
-      borderRadius: const BorderRadius.only(
-        topLeft: Radius.circular(_kFrameRadius),
-        topRight: Radius.circular(_kFrameRadius),
+    final footerContent = ValueListenableBuilder<bool>(
+      valueListenable: _isScrolling,
+      builder: (context, scrolling, child) => GlassPill(
+        // Blur coupé pendant le mouvement (cf. #1) ; réactivé au repos.
+        enableBlur: _glassBlurEnabled && !scrolling,
+        shadowOffset: const Offset(0, -4),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(_kFrameRadius),
+          topRight: Radius.circular(_kFrameRadius),
+        ),
+        child: child!,
       ),
+      // Contenu interne passé en `child` du builder → seul le wrapper GlassPill
+      // (swap du BackdropFilter) se reconstruit au début/fin du scroll ; le Row
+      // interne est réutilisé, aucun relayout par frame.
       child: Padding(
         padding: EdgeInsets.only(
           left: 16,
@@ -2595,13 +2639,20 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // Pill « liquid glass » flottant — la barre de progression est clipée
     // dans le pill (Stack interne, alignée sur son bord bas).
-    final headerContent = GlassPill(
-      enableBlur: _glassBlurEnabled,
-      shadowOffset: const Offset(0, 4),
-      borderRadius: const BorderRadius.only(
-        bottomLeft: Radius.circular(_kFrameRadius),
-        bottomRight: Radius.circular(_kFrameRadius),
+    final headerContent = ValueListenableBuilder<bool>(
+      valueListenable: _isScrolling,
+      builder: (context, scrolling, child) => GlassPill(
+        // Blur coupé pendant le mouvement (cf. #1) ; réactivé au repos.
+        enableBlur: _glassBlurEnabled && !scrolling,
+        shadowOffset: const Offset(0, 4),
+        borderRadius: const BorderRadius.only(
+          bottomLeft: Radius.circular(_kFrameRadius),
+          bottomRight: Radius.circular(_kFrameRadius),
+        ),
+        child: child!,
       ),
+      // Stack interne (barre de progression comprise) passé en `child` → réutilisé
+      // tel quel ; seul le wrapper GlassPill se reconstruit au début/fin du scroll.
       child: Stack(
         children: [
           Container(
@@ -2810,18 +2861,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           clamped,
         )!
             .withValues(alpha: alpha);
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: clamped),
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-          builder: (context, smoothProgress, _) => SizedBox(
-            height: 3.5,
-            child: LinearProgressIndicator(
-              value: smoothProgress,
-              backgroundColor: Colors.transparent,
-              valueColor: AlwaysStoppedAnimation<Color>(barColor),
-              minHeight: 3.5,
-            ),
+        // Alimente la barre directement depuis `clamped` (déjà lissé par frame
+        // par le scroll natif). Le `TweenAnimationBuilder` 300 ms était relancé
+        // à CHAQUE frame de scroll → re-raster inutile. En mode WebView la
+        // progression arrive throttlée (~300 ms) : la barre « step » au lieu
+        // d'interpoler, coût cosmétique négligeable sur 3,5 px semi-transparents.
+        return SizedBox(
+          height: 3.5,
+          child: LinearProgressIndicator(
+            value: clamped,
+            backgroundColor: Colors.transparent,
+            valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            minHeight: 3.5,
           ),
         );
       },

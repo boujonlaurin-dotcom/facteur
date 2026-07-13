@@ -2,7 +2,13 @@
   "unreleased": [
     {
       "tag": "Lecture",
+      "summary": "La lecture des longs articles est plus fluide : les barres de progression restent nettes pendant le défilement."
+    },
+    {
+      "tag": "Lecture",
       "summary": "L'écran de lecture s'allège : barres flottantes translucides qui laissent transparaître l'article."
+    },
+    {
       "tag": "Widget",
       "summary": "Le bouton rafraîchir du widget d'accueil répare désormais l'Essentiel et le Flux d'un coup, même après un blocage."
     },
