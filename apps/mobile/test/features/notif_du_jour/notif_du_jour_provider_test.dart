@@ -72,7 +72,7 @@ ProviderContainer _container({
       if (veilleLoaded)
         veilleActiveConfigProvider.overrideWith(() => _FakeVeille(veille)),
       sereinToggleProvider.overrideWith((ref) {
-        final n = SereinToggleNotifier(ref);
+        final n = SereinToggleNotifier(ref, null);
         if (!sereinLoading) n.initFromApi(sereinEnabled);
         return n;
       }),
