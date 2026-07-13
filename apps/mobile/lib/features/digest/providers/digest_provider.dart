@@ -205,7 +205,10 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
           final digest = await repository.getDigest(date: date);
           _normalDigest = digest;
           _cachedDate = _todayDateString;
-          ref.read(sereinToggleProvider.notifier).initFromApi(false);
+          // Le fallback single-digest ne porte aucun flag serein : il lève
+          // juste le loading si rien n'est encore connu, sans persister ni
+          // écraser un miroir local ON.
+          ref.read(sereinToggleProvider.notifier).markLoadedFromFallback();
           _maybeScheduleStaleFallbackRefetch();
           return digest;
         } catch (_) {

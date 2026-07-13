@@ -190,7 +190,7 @@ void main() {
             .overrideWith(() => _StubUserSourcesNotifier(catalog)),
         // Évite la chaîne authStateProvider → Supabase.instance (non initialisé
         // en test). Notifier réel mais sans le `ref.watch(authStateProvider)`.
-        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref, null)),
         // Le cap de fit lit displayModeSpecProvider (box Hive 'settings' non
         // ouverte en test) ⇒ court-circuit.
         displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),

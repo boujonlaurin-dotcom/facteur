@@ -16,7 +16,7 @@ import 'package:facteur/features/notif_du_jour/providers/notif_du_jour_provider.
 import 'package:facteur/features/notif_du_jour/widgets/notif_du_jour_card.dart';
 
 class _FakeSerein extends SereinToggleNotifier {
-  _FakeSerein(super.ref) {
+  _FakeSerein(Ref ref) : super(ref, null) {
     initFromApi(false);
   }
 
