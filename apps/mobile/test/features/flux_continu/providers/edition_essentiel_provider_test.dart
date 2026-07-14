@@ -258,7 +258,10 @@ void main() {
       expect(state.bonnesTopics, isEmpty);
     });
 
-    test('stale → bonnesTopics vide même si serein présent', () async {
+    test(
+        'normal stale mais serein valide → jour stale, mais bonnes captées '
+        '(Change 4 : alimentent l\'agrégat hebdo ; le rendu single-day reste '
+        'gardé par isStaleOrEmpty)', () async {
       final date = DateTime(2026, 6, 20);
       final key = editionDayKey(date);
       final container = makeContainer(
@@ -266,8 +269,8 @@ void main() {
           key: [_hero('h1')],
         },
         dualByDay: {
-          // Le digest **pické** (normal, toggle off) est stale ⇒ jour traité
-          // comme sans lettre : aucune section, Bonnes incluses.
+          // Le digest **pické** (normal, toggle off) est stale ⇒ jour stale
+          // pour le héros/Actus… mais le serein est valide.
           key: _dualS(
             _digest(topics: [_topic('t1')], stale: true),
             serein: _digest(topics: [_topic('bn1')]),
@@ -279,7 +282,41 @@ void main() {
           EditionPastDay(date);
 
       final state = await container.read(editionEssentielProvider.future);
+      // Le jour reste « sans lettre » pour le rendu single-day (héros + Actus
+      // absents ⇒ empty-state affiché).
       expect(state.isStaleOrEmpty, isTrue);
+      expect(state.heroArticles, isEmpty);
+      expect(state.topics, isEmpty);
+      // Change 4 — les bonnes sereines sont désormais captées même quand le
+      // digest normal est périmé : c'est ce qui permet à un tel jour de
+      // contribuer ses bonnes à « Cette semaine » (avant, elles étaient
+      // perdues).
+      expect(state.bonnesTopics.map((t) => t.topicId), ['bn1']);
+    });
+
+    test('serein aussi stale (fallback cloné) → bonnesTopics vide', () async {
+      final date = DateTime(2026, 6, 20);
+      final key = editionDayKey(date);
+      final container = makeContainer(
+        heroByDay: {
+          key: [_hero('h1')],
+        },
+        dualByDay: {
+          // Digest normal valide mais serein = fallback cloné ⇒ ne jamais
+          // présenter les bonnes d'un autre jour.
+          key: _dualS(
+            _digest(topics: [_topic('t1')]),
+            serein: _digest(topics: [_topic('bn1')], stale: true),
+          ),
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          EditionPastDay(date);
+
+      final state = await container.read(editionEssentielProvider.future);
+      expect(state.isStaleOrEmpty, isFalse);
+      expect(state.topics.map((t) => t.topicId), ['t1']);
       expect(state.bonnesTopics, isEmpty);
     });
   });
@@ -425,6 +462,88 @@ void main() {
       final state = await container.read(editionEssentielProvider.future);
       // bn1 dédupliqué (1ʳᵉ occurrence gardée) ; tri topicScore desc : bn2, bn1.
       expect(state.bonnesTopics.map((t) => t.topicId), ['bn2', 'bn1']);
+    });
+
+    test(
+        'Change 4 — un jour au normal périmé mais serein valide contribue ses '
+        'bonnes à l\'agrégat hebdo (bug « seulement hier »)', () async {
+      final today = editionTodayDate();
+      DateTime past(int i) => DateTime(today.year, today.month, today.day - i);
+      final k1 = editionDayKey(past(1)); // digest normal frais
+      final k2 = editionDayKey(past(2)); // normal périmé, serein valide
+      final container = makeContainer(
+        heroByDay: {
+          k1: [_hero('a', rank: 1)],
+          k2: [_hero('b', rank: 2)],
+        },
+        dualByDay: {
+          k1: _dualS(
+            _digest(topics: [_topic('t1')]),
+            serein: _digest(topics: [_topic('bnFresh', score: 1)]),
+          ),
+          k2: _dualS(
+            _digest(topics: [_topic('t2')], stale: true),
+            serein: _digest(topics: [_topic('bnStaleDay', score: 5)]),
+          ),
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          const EditionWeek();
+
+      final state = await container.read(editionEssentielProvider.future);
+      // k2 (normal périmé) ne contribue PAS au héros ni aux Actus…
+      expect(state.heroArticles.map((a) => a.contentId), ['a']);
+      expect(state.topics.map((t) => t.topicId), ['t1']);
+      // … mais SES bonnes sereines rejoignent bien l'agrégat hebdo. Avant le
+      // correctif, le `continue` sur le jour stale les jetait → « seulement
+      // hier ». Tri score desc : bnStaleDay(5), bnFresh(1).
+      expect(
+        state.bonnesTopics.map((t) => t.topicId),
+        ['bnStaleDay', 'bnFresh'],
+      );
+    });
+
+    test(
+        'Change 3 — agrégats « Tout lire » (topicsAll/bonnesAll) plus larges '
+        'que l\'aperçu inline (cap 6)', () async {
+      final today = editionTodayDate();
+      final k1 = editionDayKey(DateTime(today.year, today.month, today.day - 1));
+      // 8 topics normaux + 8 bonnes sereines distincts (score décroissant pour
+      // un tri déterministe) → l'inline plafonne à 6, « Tout lire » en garde 8.
+      final normalTopics = [
+        for (var i = 0; i < 8; i++) _topic('n$i', score: (8 - i).toDouble()),
+      ];
+      final sereinTopics = [
+        for (var i = 0; i < 8; i++) _topic('s$i', score: (8 - i).toDouble()),
+      ];
+      final container = makeContainer(
+        heroByDay: {
+          k1: [_hero('a', rank: 1)],
+        },
+        dualByDay: {
+          k1: _dualS(
+            _digest(topics: normalTopics),
+            serein: _digest(topics: sereinTopics),
+          ),
+        },
+      );
+      addTearDown(container.dispose);
+      container.read(selectedEditionDateProvider.notifier).state =
+          const EditionWeek();
+
+      final state = await container.read(editionEssentielProvider.future);
+      // Aperçu inline plafonné (kEditionWeekMaxTopics = 6).
+      expect(state.topics, hasLength(kEditionWeekMaxTopics));
+      expect(state.bonnesTopics, hasLength(kEditionWeekMaxTopics));
+      // Agrégat « Tout lire » : les 8 (sous le cap large 20).
+      expect(state.topicsAll, hasLength(8));
+      expect(state.bonnesAll, hasLength(8));
+      // Superset ordonné : l'inline est le préfixe de l'agrégat complet.
+      expect(
+        state.topicsAll.take(kEditionWeekMaxTopics).map((t) => t.topicId),
+        state.topics.map((t) => t.topicId),
+      );
     });
   });
 }

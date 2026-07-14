@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Rattrapage",
+      "summary": "« Cette semaine » : accès Tout lire par section et bonnes nouvelles de toute la semaine."
+    },
+    {
       "tag": "Rituel",
       "summary": "Ta lettre du matin s'affiche même au tout premier lancement de la journée, sans passer directement au flux."
     },

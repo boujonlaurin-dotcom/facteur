@@ -6,6 +6,7 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/constants.dart';
 import 'package:facteur/config/routes.dart';
@@ -830,10 +831,13 @@ class _CarouselNavRow extends StatelessWidget {
   }
 }
 
-/// Affordance « lettre voisine » : chevron + libellé, en petite typo tertiaire.
-/// Borné (`Flexible` + `maxLines: 1` + ellipsis) pour ne jamais crop/overflow sur
-/// 360–390px. [isLeft] pose le chevron à gauche (← plus ancien) ou à droite
-/// (plus récent →).
+/// Affordance « lettre voisine » : reprend le traitement de la double-flèche
+/// « Rattraper » ([EditionRewindTrigger]) — glyphe Phosphor ⏪/⏩ **en couleur
+/// `primary`** + libellé date en `primary` poids fort (au lieu du chevron gris
+/// peu lisible). Borné (`Flexible` + `maxLines: 1` + ellipsis) pour ne jamais
+/// crop/overflow sur 360–390px. [isLeft] = lettre plus **ancienne** (⏪ à
+/// gauche) ; sinon lettre plus **récente** (⏩ à droite). Haptique de sélection
+/// au tap (miroir de [EditionRewindTrigger]).
 class _NeighborCta extends StatelessWidget {
   final String label;
   final bool isLeft;
@@ -848,18 +852,20 @@ class _NeighborCta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final chevron = Icon(
-      isLeft ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-      size: 16,
-      color: colors.textTertiary,
+    final glyph = Icon(
+      isLeft
+          ? PhosphorIcons.rewind(PhosphorIconsStyle.fill)
+          : PhosphorIcons.fastForward(PhosphorIconsStyle.fill),
+      size: 15,
+      color: colors.primary,
     );
     final text = Flexible(
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: FacteurTypography.bodySmall(colors.textTertiary)
-            .copyWith(fontSize: 11.5, fontWeight: FontWeight.w600),
+        style: FacteurTypography.bodySmall(colors.primary)
+            .copyWith(fontSize: 11.5, fontWeight: FontWeight.w700),
       ),
     );
     return Semantics(
@@ -867,14 +873,17 @@ class _NeighborCta extends StatelessWidget {
       label: isLeft ? 'Lettre précédente : $label' : 'Lettre suivante : $label',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: isLeft
-                ? [chevron, const SizedBox(width: 2), text]
-                : [text, const SizedBox(width: 2), chevron],
+                ? [glyph, const SizedBox(width: 4), text]
+                : [text, const SizedBox(width: 4), glyph],
           ),
         ),
       ),
@@ -1105,32 +1114,35 @@ class _SectionRow extends StatelessWidget {
       label: '${section.label}, $meta',
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(15),
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space4,
+            vertical: FacteurSpacing.space3,
+          ),
           decoration: BoxDecoration(
             color: section.accent.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(FacteurRadius.large),
           ),
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 40,
+                height: 40,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: colors.surface,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(FacteurRadius.medium),
                   border: Border.all(
                     color: colors.textTertiary.withValues(alpha: 0.10),
                   ),
                 ),
                 child: Text(
                   sectionEmoji(section),
-                  style: const TextStyle(fontSize: 21),
+                  style: const TextStyle(fontSize: 20),
                 ),
               ),
-              const SizedBox(width: 13),
+              const SizedBox(width: FacteurSpacing.space3),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

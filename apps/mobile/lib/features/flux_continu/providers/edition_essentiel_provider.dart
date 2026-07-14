@@ -39,6 +39,16 @@ class EditionEssentielState {
   /// indépendamment du toggle. Vide si le jour n'a pas de variante sereine.
   final List<DigestTopic> bonnesTopics;
 
+  /// Agrégat hebdo **complet** (non plafonné à l'aperçu inline) des « Actus de
+  /// la semaine », pour la page « Tout lire » (`DigestSectionScreen` épinglé).
+  /// Vide hors vue hebdo (le single-day rend tout inline). Cf.
+  /// [kEditionWeekSeeAllMaxTopics].
+  final List<DigestTopic> topicsAll;
+
+  /// Agrégat hebdo **complet** des « Bonnes Nouvelles », pour la page « Tout
+  /// lire ». Vide hors vue hebdo.
+  final List<DigestTopic> bonnesAll;
+
   final QuoteResponse? quote;
 
   /// Aucune lettre propre à servir pour ce jour : soit le backend n'a servi
@@ -57,6 +67,8 @@ class EditionEssentielState {
     this.heroArticles = const [],
     this.topics = const [],
     this.bonnesTopics = const [],
+    this.topicsAll = const [],
+    this.bonnesAll = const [],
     this.quote,
     this.isStaleOrEmpty = false,
     this.isWeek = false,
@@ -66,8 +78,17 @@ class EditionEssentielState {
 /// Concurrence du fan-out « Cette semaine » (≤ N jours en vol à la fois).
 const int kEditionWeekConcurrency = 3;
 
-/// Plafond de l'agrégation hebdo des topics (« Actus de la semaine »).
+/// Plafond de l'agrégation hebdo des topics (« Actus de la semaine ») — aperçu
+/// inline dans la lettre.
 const int kEditionWeekMaxTopics = 6;
+
+/// Plafond de l'agrégat **complet** « Tout lire » (page section hebdo) — borne
+/// haute anti-emballement, plus large que l'aperçu inline.
+const int kEditionWeekSeeAllMaxTopics = 20;
+
+/// Nombre de sujets montrés **inline** en vue hebdo avant le footer/bandeau
+/// « Tout lire » (aperçu court ; le reste s'ouvre dans la page section).
+const int kEditionWeekInlinePreview = 4;
 
 /// Plafond d'articles **par jour** entrant dans le pool héros hebdo — borne le
 /// candidat-pool avant dédup/tri/cap.
@@ -195,21 +216,35 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
     final hero = results[0] as List<EssentielArticle>?;
     final dual = results[1] as DualDigestResponse?;
 
+    // « Bonnes Nouvelles » (serein) captées **indépendamment** du garde
+    // héros/normal ci-dessous : un jour dont le digest **normal** est vide ou
+    // périmé peut tout de même porter une variante **sereine** valide — on ne
+    // veut pas perdre ses bonnes dans l'agrégat hebdo (bug « seulement hier »).
+    // Un fallback cloné serein reste écarté (jamais présenter les bonnes d'un
+    // autre jour comme celles de ce jour).
+    final sereinDigest = dual?.serein;
+    final bonnesTopics = (sereinDigest != null && !sereinDigest.isStaleFallback)
+        ? _nonEmptyTopics(sereinDigest.topics)
+        : const <DigestTopic>[];
+
     final digest = serein
         ? (dual?.serein ?? dual?.normal)
         : (dual?.normal ?? dual?.serein);
 
     // Mitigation client : ne jamais présenter un fallback cloné (qui peut être
-    // le contenu d'un AUTRE jour) comme la lettre du jour demandé.
+    // le contenu d'un AUTRE jour) comme la lettre du jour demandé. Ce garde ne
+    // court-circuite que le héros + les Actus normales : les bonnes sereines,
+    // elles, sont déjà captées ci-dessus (elles alimentent l'agrégat hebdo ; le
+    // rendu single-day reste, lui, gardé par `isStaleOrEmpty`).
     if (digest == null ||
         digest.isStaleFallback ||
         hero == null ||
         hero.isEmpty) {
-      const data = _DayData(
-        heroArticles: [],
-        topics: [],
-        normalTopics: [],
-        bonnesTopics: [],
+      final data = _DayData(
+        heroArticles: const [],
+        topics: const [],
+        normalTopics: const [],
+        bonnesTopics: bonnesTopics,
         quote: null,
         isStaleOrEmpty: true,
       );
@@ -227,7 +262,7 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
       heroArticles: hero,
       topics: topics,
       normalTopics: _nonEmptyTopics(dual?.normal?.topics),
-      bonnesTopics: _nonEmptyTopics(dual?.serein?.topics),
+      bonnesTopics: bonnesTopics,
       quote: digest.quote,
       isStaleOrEmpty: false,
     );
@@ -286,10 +321,15 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
     ];
     for (var i = 0; i < pastDates.length; i++) {
       final d = dayResults[i];
+      // Bonnes Nouvelles (serein) : agrégées de **chaque** jour dont les bonnes
+      // sont non vides, indépendamment de l'état héros/normal du jour. Un jour
+      // au digest normal périmé mais serein valide contribue quand même ses
+      // bonnes (correctif « seulement hier »). Placé AVANT le `continue`.
+      allBonnes.addAll(d.bonnesTopics);
+      // Pool héros + Actus normales : gardés au digest normal frais du jour.
       if (d.isStaleOrEmpty || d.heroArticles.isEmpty) continue;
       pool.addAll(d.heroArticles.take(kEditionWeekMaxArticlesPerDay));
       allTopics.addAll(d.normalTopics);
-      allBonnes.addAll(d.bonnesTopics);
     }
     final deduped = _dedupArticlesById(pool);
 
@@ -306,14 +346,25 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
       });
     final hero = heroSource.take(kEditionWeekSpineMax).toList(growable: false);
 
-    final topics = _dedupAndRankTopics(allTopics);
-    final bonnes = _dedupAndRankTopics(allBonnes);
+    // Agrégat complet « Tout lire » (cap 20) dédupé/trié **une fois** ; l'aperçu
+    // inline (cap 6) en est simplement le préfixe (même dédup/tri, cap plus
+    // petit) — évite de relancer le tri deux fois par liste.
+    final topicsAll =
+        _dedupAndRankTopics(allTopics, cap: kEditionWeekSeeAllMaxTopics);
+    final bonnesAll =
+        _dedupAndRankTopics(allBonnes, cap: kEditionWeekSeeAllMaxTopics);
+    final topics =
+        topicsAll.take(kEditionWeekMaxTopics).toList(growable: false);
+    final bonnes =
+        bonnesAll.take(kEditionWeekMaxTopics).toList(growable: false);
 
     return EditionEssentielState(
       selection: const EditionWeek(),
       heroArticles: hero,
       topics: topics,
       bonnesTopics: bonnes,
+      topicsAll: topicsAll,
+      bonnesAll: bonnesAll,
       quote: null, // pas de citation unique pour une rétro hebdo
       isStaleOrEmpty: hero.isEmpty && topics.isEmpty,
       isWeek: true,
@@ -351,8 +402,12 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
   }
 
   /// Dédup par `topicId` (fallback `label`) puis re-tri par `topicScore` desc,
-  /// `rank` asc en départage, top N.
-  List<DigestTopic> _dedupAndRankTopics(List<DigestTopic> all) {
+  /// `rank` asc en départage, top [cap] (aperçu inline par défaut,
+  /// [kEditionWeekSeeAllMaxTopics] pour l'agrégat « Tout lire »).
+  List<DigestTopic> _dedupAndRankTopics(
+    List<DigestTopic> all, {
+    int cap = kEditionWeekMaxTopics,
+  }) {
     final seen = <String>{};
     final deduped = <DigestTopic>[];
     for (final t in all) {
@@ -365,7 +420,7 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
       if (byScore != 0) return byScore;
       return a.rank.compareTo(b.rank);
     });
-    return deduped.take(kEditionWeekMaxTopics).toList(growable: false);
+    return deduped.take(cap).toList(growable: false);
   }
 }
 
