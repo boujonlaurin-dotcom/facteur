@@ -19,6 +19,7 @@ import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/morning_ritual_qa_provider.dart';
 import 'package:facteur/features/flux_continu/providers/pending_feed_section_provider.dart';
 import 'package:facteur/features/flux_continu/providers/selected_edition_date_provider.dart';
+import 'package:facteur/features/flux_continu/services/flux_continu_cache_service.dart';
 import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
 import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
 import 'package:facteur/features/flux_continu/utils/theme_color_mapping.dart';
@@ -69,9 +70,13 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
   static const Duration _editorialReveal = Duration(milliseconds: 600);
 
   /// Plafond de résilience : au-delà, repli vers le feed sans marquer « vu ».
-  /// Plus large en sortie d'onboarding (édition calculée à froid).
-  Duration get _maxWaitFor =>
-      widget.fromOnboarding ? const Duration(seconds: 10) : const Duration(seconds: 6);
+  /// Plus large en sortie d'onboarding (édition calculée à froid). Le cas
+  /// cold-boot (aucun snapshot Hive) élargit le plafond à part, via
+  /// [_maybeExtendForColdBoot] (lecture Hive asynchrone, hors du chemin chaud).
+  Duration get _maxWaitFor => resolveMorningRitualMaxWait(
+        fromOnboarding: widget.fromOnboarding,
+        coldBoot: false,
+      );
 
   Timer? _floorTimer;
   Timer? _maxWaitTimer;
@@ -99,6 +104,9 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
       _maybeReveal();
     });
     _maxWaitTimer = Timer(_maxWaitFor, _forwardIfNotReady);
+    // Élargit le plafond aux seuls devices genuinement froids (lecture Hive
+    // asynchrone, non bloquante — le plafond chaud tourne déjà ci-dessus).
+    unawaited(_maybeExtendForColdBoot());
     _exitController = AnimationController(
       vsync: this,
       duration: FacteurDurations.slow,
@@ -122,6 +130,36 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     _maxWaitTimer?.cancel();
     _exitController.dispose();
     super.dispose();
+  }
+
+  /// Sur un device genuinement froid (aucun snapshot Hive jamais écrit), la
+  /// chaîne auth-refresh + 3 appels réseau concurrents peut dépasser le plafond
+  /// chaud de 6 s → le rituel serait silencieusement sauté. On étend alors le
+  /// plafond à 12 s, mesuré depuis le mount (pas depuis la détection, pour ne pas
+  /// cumuler la latence de la lecture Hive). Fail-safe : toute erreur de lecture
+  /// → on garde le plafond actuel (jamais d'extension). Ne touche pas au cas
+  /// onboarding (déjà 10 s).
+  Future<void> _maybeExtendForColdBoot() async {
+    if (widget.fromOnboarding) return;
+    FluxContinuSnapshot? snapshot;
+    try {
+      snapshot = await FluxContinuCacheService().readLatest();
+    } catch (_) {
+      return; // fail-safe → comportement actuel (6 s), jamais fail-extend
+    }
+    if (snapshot != null) return; // cache présent → device chaud, 6 s inchangé
+    if (!mounted || _phase != _Phase.loading) return;
+    final coldMax = resolveMorningRitualMaxWait(
+      fromOnboarding: false,
+      coldBoot: true,
+    );
+    final remaining = coldMax - DateTime.now().difference(_mountedAt);
+    _maxWaitTimer?.cancel();
+    if (remaining <= Duration.zero) {
+      _forwardIfNotReady();
+    } else {
+      _maxWaitTimer = Timer(remaining, _forwardIfNotReady);
+    }
   }
 
   /// Révèle le rituel dès que les deux conditions sont réunies : édition prête

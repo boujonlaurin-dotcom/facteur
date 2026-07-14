@@ -41,6 +41,18 @@ bool isEditionReady(
   return true;
 }
 
+/// Plafond de résilience du loader du rituel matinal avant repli vers le feed.
+/// Onboarding : édition calculée à froid → 10 s (déjà validé). Cold-boot (aucun
+/// snapshot Hive) : chaîne auth-refresh + 3 appels réseau concurrents vers un
+/// backend mono-worker → 12 s. Cas chaud (cache existant) : 6 s, inchangé.
+Duration resolveMorningRitualMaxWait({
+  required bool fromOnboarding,
+  required bool coldBoot,
+}) {
+  if (fromOnboarding) return const Duration(seconds: 10);
+  return coldBoot ? const Duration(seconds: 12) : const Duration(seconds: 6);
+}
+
 /// Jour calendaire (`YYYY-MM-DD`) d'une `targetDate` éditoriale, à partir de ses
 /// composantes brutes (aucune conversion tz : c'est un libellé, pas un instant).
 String editionDayKey(DateTime date) {

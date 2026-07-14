@@ -144,4 +144,33 @@ void main() {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // resolveMorningRitualMaxWait
+  // ---------------------------------------------------------------------------
+  group('resolveMorningRitualMaxWait', () {
+    test('chaud (cache Hive présent) → 6 s', () {
+      expect(
+        resolveMorningRitualMaxWait(fromOnboarding: false, coldBoot: false),
+        const Duration(seconds: 6),
+      );
+    });
+
+    test('froid (aucun cache) → 12 s', () {
+      expect(
+        resolveMorningRitualMaxWait(fromOnboarding: false, coldBoot: true),
+        const Duration(seconds: 12),
+      );
+    });
+
+    test('onboarding → 10 s, quel que soit coldBoot', () {
+      expect(
+        resolveMorningRitualMaxWait(fromOnboarding: true, coldBoot: false),
+        const Duration(seconds: 10),
+      );
+      expect(
+        resolveMorningRitualMaxWait(fromOnboarding: true, coldBoot: true),
+        const Duration(seconds: 10),
+      );
+    });
+  });
 }
