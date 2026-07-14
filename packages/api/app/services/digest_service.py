@@ -2703,27 +2703,7 @@ class DigestService:
         Optimized replacement for calling _get_item_action_state per item.
         Reduces N queries to 1 query for the entire digest.
         """
-        if not content_ids:
-            return {}
-
-        stmt = select(UserContentStatus).where(
-            and_(
-                UserContentStatus.user_id == user_id,
-                UserContentStatus.content_id.in_(content_ids),
-            )
-        )
-        result = await self.session.execute(stmt)
-        statuses = result.scalars().all()
-
-        return {
-            status.content_id: {
-                "is_read": status.status == ContentStatus.CONSUMED,
-                "is_saved": status.is_saved,
-                "is_liked": status.is_liked,
-                "is_dismissed": status.is_hidden,
-            }
-            for status in statuses
-        }
+        return await get_batch_action_states(self.session, user_id, content_ids)
 
     async def _get_cached_digest_contents(
         self,
@@ -2988,3 +2968,35 @@ class DigestService:
         the same editorial format for consistency.
         """
         return "editorial"
+
+
+async def get_batch_action_states(
+    session: AsyncSession, user_id: UUID, content_ids: list[UUID]
+) -> dict[UUID, dict[str, bool]]:
+    """Projection canonique `UserContentStatus` → flags d'article, en 1 SELECT.
+
+    Source de vérité partagée entre le digest (`_get_batch_action_states`) et
+    la lettre Essentiel (`rehydrate_snapshot`) : toute évolution de la
+    sémantique (ex. `is_read`) doit se faire ici, une seule fois.
+    """
+    if not content_ids:
+        return {}
+
+    stmt = select(UserContentStatus).where(
+        and_(
+            UserContentStatus.user_id == user_id,
+            UserContentStatus.content_id.in_(content_ids),
+        )
+    )
+    result = await session.execute(stmt)
+    statuses = result.scalars().all()
+
+    return {
+        status.content_id: {
+            "is_read": status.status == ContentStatus.CONSUMED,
+            "is_saved": status.is_saved,
+            "is_liked": status.is_liked,
+            "is_dismissed": status.is_hidden,
+        }
+        for status in statuses
+    }

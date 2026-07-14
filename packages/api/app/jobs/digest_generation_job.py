@@ -675,15 +675,8 @@ class DigestGenerationJob:
             sentry_sdk.capture_exception(e)
 
     async def _get_active_users(self, session: AsyncSession) -> list[UUID]:
-        """Récupère la liste des utilisateurs actifs (avec profil).
-
-        Pour l'instant, tous les utilisateurs avec un profil sont considérés
-        comme actifs. Dans le futur, on pourrait ajouter une logique de
-        "dernière connexion" ou "utilisateur actif".
-        """
-        stmt = select(UserProfile.user_id).order_by(UserProfile.user_id)
-        result = await session.execute(stmt)
-        return list(result.scalars().all())
+        """Récupère la liste des utilisateurs actifs (avec profil)."""
+        return await get_active_user_ids(session)
 
     async def _process_batch(
         self,
@@ -1302,3 +1295,15 @@ async def generate_digest_for_user(
                 error=str(e),
             )
             return None
+
+
+async def get_active_user_ids(session: AsyncSession) -> list[UUID]:
+    """Population « utilisateurs actifs » (avec profil) — source de vérité.
+
+    Partagée entre le job digest et le job lettre Essentiel : le jour où la
+    définition évolue (dernière connexion, activité récente…), les deux
+    populations restent alignées. Pour l'instant, tous les UserProfile.
+    """
+    stmt = select(UserProfile.user_id).order_by(UserProfile.user_id)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())

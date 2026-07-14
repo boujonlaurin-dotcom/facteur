@@ -12,6 +12,7 @@ from app.jobs.digest_generation_job import (
     compute_digest_coverage,
     run_digest_generation,
 )
+from app.jobs.essentiel_letter_job import run_essentiel_letter_generation
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_coverage_themes import (
     recompute_source_coverage_themes,
@@ -490,6 +491,20 @@ def start_scheduler() -> None:
         ),
         id="entity_affinity_decay",
         name="Entity Affinity Decay",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Lettres Essentiel (08h00 Paris — Story 9.6) : pré-génère la lettre du
+    # jour par user, après le digest cron (07h30) et avant le watchdog (08h15).
+    # Idempotent (skip si ligne existante) → un rattrapage coalescé est sûr.
+    scheduler.add_job(
+        run_essentiel_letter_generation,
+        trigger=CronTrigger(hour=8, minute=0, timezone=_PARIS_TZ),
+        id="essentiel_letter_generation",
+        name="Essentiel Letter Generation",
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,

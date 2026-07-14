@@ -117,6 +117,15 @@ class EssentielUserContext:
     muted_topic_slugs: frozenset[str] = field(default_factory=frozenset)
     muted_source_ids: frozenset[UUID] = field(default_factory=frozenset)
 
+    def followed_themes_by_weight(self) -> list[str]:
+        """Thèmes suivis triés par poids décroissant.
+
+        Ordre canonique passé au générateur de lettre (chapô/footer) — partagé
+        entre le job nocturne et l'on-demand du router pour qu'un même user
+        obtienne la même priorisation des deux côtés.
+        """
+        return sorted(self.topic_weights, key=self.topic_weights.get, reverse=True)
+
 
 async def fetch_user_essentiel_context(
     db: AsyncSession, user_id: UUID

@@ -67,6 +67,11 @@ class EditorialConfig:
             system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
         )
     )
+    essentiel_letter_prompt: PromptConfig = field(
+        default_factory=lambda: PromptConfig(
+            system="", model="mistral-small-latest", temperature=0.35, max_tokens=700
+        )
+    )
 
 
 @lru_cache(maxsize=1)
@@ -86,6 +91,9 @@ def load_editorial_config() -> EditorialConfig:
     )
     bonne_nouvelle_prompt = PromptConfig(
         system="", model="mistral-small-latest", temperature=0.1, max_tokens=200
+    )
+    essentiel_letter_prompt = PromptConfig(
+        system="", model="mistral-small-latest", temperature=0.35, max_tokens=700
     )
 
     # Load pipeline config
@@ -123,6 +131,8 @@ def load_editorial_config() -> EditorialConfig:
                 a_la_une_prompt = PromptConfig(**raw["a_la_une"])
             if raw and "bonne_nouvelle" in raw:
                 bonne_nouvelle_prompt = PromptConfig(**raw["bonne_nouvelle"])
+            if raw and "essentiel_letter" in raw:
+                essentiel_letter_prompt = PromptConfig(**raw["essentiel_letter"])
         except Exception:
             logger.exception("editorial_prompts_load_failed", path=str(prompts_path))
 
@@ -133,6 +143,7 @@ def load_editorial_config() -> EditorialConfig:
         query_expansion_prompt=query_expansion_prompt,
         a_la_une_prompt=a_la_une_prompt,
         bonne_nouvelle_prompt=bonne_nouvelle_prompt,
+        essentiel_letter_prompt=essentiel_letter_prompt,
     )
 
     logger.info(
