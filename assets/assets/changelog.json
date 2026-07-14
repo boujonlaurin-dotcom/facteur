@@ -1,6 +1,8 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "Header et pied de page du lecteur plus légers et fluides."
       "tag": "Abonnements",
       "summary": "Connecter un abonnement est plus clair : titre au nom du média, écran de vérification guidé, et un message d'aide quand une page ne se charge pas."
     },
