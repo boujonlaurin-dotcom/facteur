@@ -610,6 +610,40 @@ async def readiness_check(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
             },
         )
 
+    # 🛡️ MIGRATION DRIFT: pull a drifted container OUT of the load balancer.
+    # Incident 2026-07-14 : la colonne `sources.coverage_themes` (migration cv01)
+    # n'avait jamais été appliquée sur la DB partagée → tout `select(Source)` en
+    # 500, mais /health (liveness) restait 200 et l'ancien /ready (SELECT 1 seul)
+    # aussi → Railway continuait de router du trafic vers un conteneur en drift.
+    # On 503 UNIQUEMENT quand la DB est EN RETARD sur le code (migrations non
+    # appliquées) — jamais quand elle est en avance (fenêtre expand-contract :
+    # prod tourne l'ancien code sur une DB déjà avancée par staging). Fail-open.
+    from app.checks import get_migration_readiness
+
+    migration_status = await get_migration_readiness()
+    if migration_status["behind"]:
+        from fastapi.responses import JSONResponse
+
+        logger.critical(
+            "readiness_migration_drift",
+            head=migration_status["head"],
+            current=migration_status["current"],
+            hint="DB behind code head — pending migrations. Pulling container out of LB.",
+        )
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "version": settings.app_version,
+                "database": db_status,
+                "migrations": "pending",
+                "migration_head": migration_status["head"],
+                "migration_current": migration_status["current"],
+                "environment": settings.environment,
+                "probe": "readiness",
+            },
+        )
+
     return {
         "status": "ready",
         "version": settings.app_version,
