@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 
 import structlog
 from alembic.config import Config
@@ -92,3 +93,63 @@ async def check_migrations_up_to_date():
         raise RuntimeError(error_msg)
 
     logger.info("startup_check_migrations_ok")
+
+
+@lru_cache(maxsize=1)
+def _code_head_and_ancestors() -> tuple[str | None, frozenset[str]]:
+    """Code-side head revision + the full set of its ancestors (incl. head).
+
+    Derived only from the Alembic script files bundled in this image, so it is
+    static per process — memoised. Raises on config error (caller catches).
+    """
+    alembic_cfg = Config(_ALEMBIC_INI_PATH)
+    script_directory = script.ScriptDirectory.from_config(alembic_cfg)
+    heads = script_directory.get_heads()
+    head_rev = heads[0] if heads else None
+    if head_rev is None:
+        return None, frozenset()
+    ancestors = frozenset(
+        rev.revision for rev in script_directory.iterate_revisions(head_rev, "base")
+    )
+    return head_rev, ancestors
+
+
+async def get_migration_readiness() -> dict[str, str | bool | None]:
+    """Direction-aware migration drift status for the readiness probe.
+
+    Returns ``{"behind": bool, "head": str|None, "current": str|None}``.
+
+    ``behind=True`` **only** when the DB current revision is a *strict ancestor*
+    of the code head — i.e. migrations this deployed image expects have not been
+    applied yet (the "pending migrations" failure mode that makes every query on
+    the new schema 500). A drifted container should then be pulled out of the
+    load balancer.
+
+    ``behind=False`` when ``current == head`` (fine) **or** when ``current`` is
+    *ahead of* / unrelated to the code head. The latter is the normal
+    expand-contract window: the prod backend runs last week's code (old head) on
+    a shared DB whose ``current`` has already been advanced by staging — 503-ing
+    prod then would cause an outage, so we must stay ready. Any config/DB error
+    also returns ``behind=False`` (fail-open — never take traffic down because
+    this check itself hiccuped).
+    """
+    try:
+        head_rev, ancestors = _code_head_and_ancestors()
+    except Exception as e:
+        logger.warning("readiness_migration_check_config_error", error=str(e))
+        return {"behind": False, "head": None, "current": None}
+
+    try:
+        async with engine.connect() as conn:
+            current_rev = await conn.run_sync(_get_current_revision_sync)
+    except Exception as e:
+        logger.warning("readiness_migration_check_db_error", error=str(e))
+        return {"behind": False, "head": head_rev, "current": None}
+
+    if head_rev is None or current_rev == head_rev:
+        return {"behind": False, "head": head_rev, "current": current_rev}
+
+    # DB is behind code iff its current revision is a *strict* ancestor of head.
+    # (current ahead of / unrelated to head → not in `ancestors` → stays ready.)
+    behind = current_rev in ancestors and current_rev != head_rev
+    return {"behind": behind, "head": head_rev, "current": current_rev}
