@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "Header et pied de page du lecteur plus légers et fluides."
+    },
+    {
       "tag": "Rituel",
       "summary": "Ta lettre du matin s'affiche même au tout premier lancement de la journée, sans passer directement au flux."
     },
