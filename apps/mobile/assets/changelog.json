@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Abonnements",
+      "summary": "Connecter un abonnement est plus clair : titre au nom du média, écran de vérification guidé, et un message d'aide quand une page ne se charge pas."
+    },
+    {
       "tag": "Rituel",
       "summary": "Ta lettre du matin s'affiche même au tout premier lancement de la journée, sans passer directement au flux."
     },
