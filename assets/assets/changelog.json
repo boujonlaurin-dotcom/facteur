@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Rituel",
+      "summary": "Ta lettre du matin s'affiche même au tout premier lancement de la journée, sans passer directement au flux."
+    },
+    {
+      "tag": "Rituel",
       "summary": "En ouvrant ta lettre du matin, ta flamme grandit et ta série s'incrémente : une petite récompense pour être revenu aujourd'hui."
     },
     {
@@ -43,6 +47,8 @@
     {
       "tag": "Ouverture",
       "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
+    },
+    {
       "tag": "Serein",
       "summary": "Le mode de lecture apaisé reste activé au redémarrage de l'app : plus besoin de le réactiver chaque matin."
     },
