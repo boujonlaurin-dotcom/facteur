@@ -5,6 +5,7 @@ Valide le clustering Jaccard et la détection de sujets tendance.
 """
 
 import uuid
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -262,6 +263,123 @@ class TestDetectTrendingClusters:
         trending = detector.detect_trending_clusters([])
 
         assert trending == set()
+
+
+class TestBuildTopicClustersTimeGap:
+    """Tests pour le filtre temporel de build_topic_clusters."""
+
+    def _create_mock_content(
+        self,
+        title: str,
+        published_at=None,
+        source_id: uuid.UUID = None,
+    ) -> MagicMock:
+        """Helper pour créer un mock Content avec une date de publication."""
+        mock = MagicMock()
+        mock.id = uuid.uuid4()
+        mock.source_id = source_id or uuid.uuid4()
+        mock.title = title
+        mock.guid = str(uuid.uuid4())
+        mock.url = f"https://source-{mock.source_id}.fr/article"
+        mock.published_at = published_at
+        mock.theme = None
+        mock.source = None
+        return mock
+
+    def test_close_in_time_same_cluster(self):
+        """Deux articles proches dans le temps + titres similaires → même cluster."""
+
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+        contents = [
+            self._create_mock_content("Macron annonce réforme fiscale majeure", now),
+            self._create_mock_content(
+                "Macron réforme fiscale annonce Bercy", now + timedelta(days=2)
+            ),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+
+        assert len(clusters) == 1
+        assert len(clusters[0].contents) == 2
+
+    def test_beyond_max_gap_separate_clusters(self):
+        """Deux articles à >30 jours d'écart + titres similaires → clusters séparés."""
+
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+        contents = [
+            self._create_mock_content("Macron annonce réforme fiscale majeure", now),
+            self._create_mock_content(
+                "Macron réforme fiscale annonce Bercy", now + timedelta(days=45)
+            ),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+
+        assert len(clusters) == 2
+        assert all(len(c.contents) == 1 for c in clusters)
+
+    def test_custom_max_time_gap_hours_override(self):
+        """max_time_gap_hours override permet de resserrer/élargir le filtre."""
+
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+        contents = [
+            self._create_mock_content("Macron annonce réforme fiscale majeure", now),
+            self._create_mock_content(
+                "Macron réforme fiscale annonce Bercy", now + timedelta(hours=12)
+            ),
+        ]
+
+        # Fenêtre resserrée à 6h : l'écart de 12h dépasse le seuil.
+        clusters = detector.build_topic_clusters(contents, max_time_gap_hours=6)
+
+        assert len(clusters) == 2
+
+    def test_missing_published_at_fails_open(self):
+        """Contenu sans date exploitable : le filtre temporel ne bloque pas la fusion."""
+
+        detector = ImportanceDetector(similarity_threshold=0.4)
+
+        contents = [
+            self._create_mock_content(
+                "Macron annonce réforme fiscale majeure", published_at=None
+            ),
+            self._create_mock_content(
+                "Macron réforme fiscale annonce Bercy",
+                published_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+            ),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+
+        assert len(clusters) == 1
+        assert len(clusters[0].contents) == 2
+
+    def test_naive_datetime_is_handled(self):
+        """Un published_at naive (sans tzinfo) ne doit pas lever d'exception."""
+
+        detector = ImportanceDetector(similarity_threshold=0.4)
+        now_naive = datetime(2026, 6, 1)
+
+        contents = [
+            self._create_mock_content(
+                "Macron annonce réforme fiscale majeure", now_naive
+            ),
+            self._create_mock_content(
+                "Macron réforme fiscale annonce Bercy",
+                now_naive + timedelta(days=2),
+            ),
+        ]
+
+        clusters = detector.build_topic_clusters(contents)
+
+        assert len(clusters) == 1
+        assert len(clusters[0].contents) == 2
 
 
 class TestIdentifyUneContents:

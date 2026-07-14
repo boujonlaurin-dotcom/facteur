@@ -250,6 +250,14 @@ class ScoringWeights:
     # Maximum de tokens par cluster (évite la dérive par union successive).
     TOPIC_CLUSTER_MAX_TOKENS = 15
 
+    # Écart temporel maximum (en heures) entre un article candidat et la borne
+    # temporelle la plus proche d'un cluster pour autoriser la fusion.
+    # 720h = 30 jours — filtre volontairement large : garde-fou structurel
+    # contre les faux clusters entre sujets récurrents/marronniers éloignés
+    # dans le temps, sans resserrer le comportement actuel (fenêtres amont
+    # déjà ≤ 7j pour le digest, ≤ 48h pour l'éditorial).
+    TOPIC_CLUSTER_MAX_TIME_GAP_HOURS = 720
+
     # --- EXPLICIT FEEDBACK LAYER (Like & Bookmark signals) ---
 
     # Delta applied to user_subtopics.weight when liking/unliking content.

@@ -12,6 +12,7 @@ Architecture: Ce module est DÉCOUPLÉ du ScoringEngine. Il consomme les contenu
 bruts et produit des clusters/flags d'importance utilisés par TopicSelector et Top3Selector.
 """
 
+import datetime
 from collections import Counter
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -137,10 +138,68 @@ class ImportanceDetector:
         """Délègue à `text_similarity.jaccard_similarity` (méthode conservée pour compat)."""
         return _jaccard_similarity(tokens_a, tokens_b)
 
+    @staticmethod
+    def _normalize_published_at(
+        published_at: object,
+    ) -> datetime.datetime | None:
+        """Retourne un datetime tz-aware valide, ou None si non exploitable."""
+        if not isinstance(published_at, datetime.datetime):
+            return None
+        if published_at.tzinfo is None:
+            return published_at.replace(tzinfo=datetime.UTC)
+        return published_at
+
+    def _within_time_gap(
+        self,
+        published_at: datetime.datetime | None,
+        cluster: dict,
+        max_gap_hours: float,
+    ) -> bool:
+        """True si published_at est à ≤ max_gap_hours d'une borne du cluster.
+
+        Fail-open : si l'une des deux dates est inconnue/non exploitable, le
+        filtre temporel ne bloque pas la fusion (comportement historique
+        préservé pour les contenus sans date fiable).
+        """
+        if published_at is None:
+            return True
+
+        cluster_min = cluster["min_published_at"]
+        cluster_max = cluster["max_published_at"]
+        if cluster_min is None or cluster_max is None:
+            return True
+
+        if published_at < cluster_min:
+            gap = cluster_min - published_at
+        elif published_at > cluster_max:
+            gap = published_at - cluster_max
+        else:
+            return True
+
+        return gap.total_seconds() / 3600 <= max_gap_hours
+
+    @staticmethod
+    def _update_cluster_bounds(
+        cluster: dict, published_at: datetime.datetime | None
+    ) -> None:
+        if published_at is None:
+            return
+        if (
+            cluster["min_published_at"] is None
+            or published_at < cluster["min_published_at"]
+        ):
+            cluster["min_published_at"] = published_at
+        if (
+            cluster["max_published_at"] is None
+            or published_at > cluster["max_published_at"]
+        ):
+            cluster["max_published_at"] = published_at
+
     def build_topic_clusters(
         self,
         contents: list[Content],
         similarity_threshold: float | None = None,
+        max_time_gap_hours: float | None = None,
     ) -> list[TopicCluster]:
         """Cluster tous les contenus par similarité de titre.
 
@@ -150,9 +209,17 @@ class ImportanceDetector:
         Algorithme identique à detect_trending_clusters mais retourne
         la structure complète au lieu de filtrer sur le trending.
 
+        Un contenu ne peut rejoindre un cluster existant que si son
+        published_at reste à ≤ max_time_gap_hours de la borne temporelle la
+        plus proche du cluster (garde-fou contre les faux clusters entre
+        sujets récurrents publiés à des dates très éloignées). Les contenus
+        sans date exploitable ne sont pas soumis à ce filtre.
+
         Args:
             contents: Liste des contenus à analyser
             similarity_threshold: Seuil Jaccard override (default: self.similarity_threshold)
+            max_time_gap_hours: Écart temporel max override
+                (default: ScoringWeights.TOPIC_CLUSTER_MAX_TIME_GAP_HOURS)
 
         Returns:
             Liste de TopicCluster triée par taille décroissante
@@ -166,15 +233,25 @@ class ImportanceDetector:
             else self.similarity_threshold
         )
 
+        from app.services.recommendation.scoring_config import ScoringWeights
+
+        max_gap_hours = (
+            max_time_gap_hours
+            if max_time_gap_hours is not None
+            else ScoringWeights.TOPIC_CLUSTER_MAX_TIME_GAP_HOURS
+        )
+
         # Phase 1: Clustering Jaccard (même algo que detect_trending_clusters)
         raw_clusters: list[dict] = []
-
-        from app.services.recommendation.scoring_config import ScoringWeights
 
         for content in contents:
             tokens = self.normalize_title(content.title)
             if not tokens:
                 continue
+
+            published_at = self._normalize_published_at(
+                getattr(content, "published_at", None)
+            )
 
             # Minimum token constraint: very short titles become singletons
             if len(tokens) < ScoringWeights.TOPIC_CLUSTER_MIN_TOKENS:
@@ -182,6 +259,8 @@ class ImportanceDetector:
                     {
                         "tokens": tokens,
                         "contents": [content],
+                        "min_published_at": published_at,
+                        "max_published_at": published_at,
                     }
                 )
                 continue
@@ -190,6 +269,9 @@ class ImportanceDetector:
             best_similarity = 0.0
 
             for cluster in raw_clusters:
+                if not self._within_time_gap(published_at, cluster, max_gap_hours):
+                    continue
+
                 sim = self.jaccard_similarity(tokens, cluster["tokens"])
                 if sim > best_similarity and sim >= threshold:
                     best_similarity = sim
@@ -201,11 +283,14 @@ class ImportanceDetector:
                 merged = matched_cluster["tokens"] | tokens
                 if len(merged) <= ScoringWeights.TOPIC_CLUSTER_MAX_TOKENS:
                     matched_cluster["tokens"] = merged
+                self._update_cluster_bounds(matched_cluster, published_at)
             else:
                 raw_clusters.append(
                     {
                         "tokens": tokens,
                         "contents": [content],
+                        "min_published_at": published_at,
+                        "max_published_at": published_at,
                     }
                 )
 
