@@ -32,8 +32,25 @@ void main() {
 
       expect(connection, isNotNull);
       expect(connection!.isGeneric, isTrue);
-      expect(connection.loginUrl, 'https://example.com');
-      expect(connection.testUrl, 'https://example.com');
+      // Le flux générique est synthétisé sur l'origine du site (slash final).
+      expect(connection.loginUrl, 'https://example.com/');
+      expect(connection.testUrl, 'https://example.com/');
+    });
+
+    test('normalizes a feed URL to the site origin (bug Cerveau & Psycho)', () {
+      final source = Source(
+        id: 'feed',
+        name: 'Cerveau & Psycho',
+        type: SourceType.article,
+        url: 'https://www.cerveauetpsycho.fr/rss.xml',
+        hasPaywall: true,
+      );
+
+      final connection = resolvePremiumConnection(source);
+
+      expect(connection, isNotNull);
+      expect(connection!.loginUrl, 'https://www.cerveauetpsycho.fr/');
+      expect(connection.testUrl, 'https://www.cerveauetpsycho.fr/');
     });
 
     test('rejects free sources and paid sources without a valid URL', () {
@@ -85,8 +102,9 @@ void main() {
 
       expect(connection, isNotNull);
       expect(connection!.isGeneric, isTrue);
-      expect(connection.loginUrl, 'https://nytimes.com');
-      expect(connection.testUrl, 'https://nytimes.com');
+      // Origine du site (slash final), jamais l'URL brute.
+      expect(connection.loginUrl, 'https://nytimes.com/');
+      expect(connection.testUrl, 'https://nytimes.com/');
     });
 
     test('returns null without a valid http(s) url', () {
