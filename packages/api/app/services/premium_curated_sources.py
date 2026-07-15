@@ -47,6 +47,24 @@ def domain_key(url: str | None) -> str:
     return ".".join(labels[-2:])
 
 
+def origin_url(url: str | None) -> str:
+    """Réduit une URL à l'origine du site (``scheme://netloc/``).
+
+    ``https://www.cerveauetpsycho.fr/rss.xml`` → ``https://www.cerveauetpsycho.fr/``.
+    Beaucoup de sources stockent dans ``url`` l'URL de leur **flux** RSS
+    (``/rss.xml``, ``/feed/``…) ; ouverte telle quelle dans la WebView de
+    connexion, elle affiche du XML brut au lieu d'une page. Normaliser vers
+    l'origine répare toutes ces sources d'un coup. Renvoie ``""`` si l'URL n'est
+    pas une URL http(s) exploitable (mêmes garanties que ``domain_key``).
+    """
+    if not isinstance(url, str):
+        return ""
+    parts = urlsplit(url.strip())
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return ""
+    return f"{parts.scheme}://{parts.netloc}/"
+
+
 # Config curée : login_url = page de connexion du média ; test_url = page chargée
 # pour vérifier que la session est active (idéalement un article abonné
 # "evergreen", à défaut la home du média). display_hint = consigne affichée à

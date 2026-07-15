@@ -91,9 +91,12 @@ void main() {
             onConnected: () async {
               connected = true;
             },
-            // Le builder de test bypass PremiumWebView : on expose un bouton qui
-            // déclenche onLoadStop pour simuler une navigation dans la WebView.
-            webViewBuilder: (_, url, onLoadStop) => Column(
+            // Le builder de test bypass PremiumWebView : on expose des boutons
+            // qui déclenchent onLoadStop / onPaywallDetected / onLoadError pour
+            // simuler les événements de la WebView.
+            webViewBuilder: (_, url, onLoadStop,
+                    {onPaywallDetected, onLoadError}) =>
+                Column(
               children: [
                 Text(url),
                 TextButton(
@@ -108,7 +111,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Connecter votre abonnement'), findsOneWidget);
+    expect(find.text('Connecter Premium Source'), findsOneWidget);
 
     await tester.ensureVisible(find.text('Commencer'));
     await tester.tap(find.text('Commencer'));
@@ -141,5 +144,181 @@ void main() {
     expect(await store.hasSession(source), isTrue);
 
     semantics.dispose();
+  });
+
+  testWidgets(
+      'step 2 shows a non-blocking paywall warning on onPaywallDetected '
+      'without disabling the confirm CTA', (tester) async {
+    final jar = _FakeCookieJar();
+    jar.store['example.com'] = [Cookie(name: 'sid', value: 'abc')];
+    final store = PremiumSessionStore(
+      jar: jar,
+      secureStore: _InMemorySecureStore(),
+    );
+    final source = Source(
+      id: 'source-id',
+      name: 'Premium Source',
+      type: SourceType.article,
+      url: 'https://example.com',
+      premiumConnection: const PremiumConnection(
+        loginUrl: 'https://example.com/login',
+        testUrl: 'https://example.com/test',
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [premiumSessionStoreProvider.overrideWithValue(store)],
+        child: MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: PremiumSourceConnection(
+            source: source,
+            onConnected: () async {},
+            webViewBuilder: (_, url, onLoadStop,
+                    {onPaywallDetected, onLoadError}) =>
+                Column(
+              children: [
+                TextButton(
+                  onPressed: () =>
+                      onLoadStop?.call(WebUri('https://example.com/x')),
+                  child: const Text('simulate-navigation'),
+                ),
+                TextButton(
+                  onPressed: () => onPaywallDetected?.call(),
+                  child: const Text('simulate-paywall'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // intro → step 1 → navigation → step 2
+    await tester.tap(find.text('Commencer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('simulate-navigation'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Continuer'));
+    await tester.pumpAndSettle();
+
+    // Consigne de l'étape 2 rendue, pas encore de warning.
+    expect(
+      find.textContaining('Ouvre un article réservé aux abonnés'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('semble encore réservé'), findsNothing);
+
+    // La sonde remonte un paywall → bannière visible, CTA toujours actif.
+    await tester.tap(find.text('simulate-paywall'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('semble encore réservé'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Je suis connecté(e)'));
+    await tester.tap(find.text('Je suis connecté(e)'));
+    await tester.pumpAndSettle();
+    // Le CTA n'était pas bloqué : la connexion aboutit malgré le warning.
+    expect(find.text('Abonnement connecté'), findsOneWidget);
+  });
+
+  testWidgets(
+      'a failed page load surfaces the guidance overlay, and Retry clears it',
+      (tester) async {
+    final store = PremiumSessionStore(
+      jar: _FakeCookieJar(),
+      secureStore: _InMemorySecureStore(),
+    );
+    final source = Source(
+      id: 'source-id',
+      name: 'Premium Source',
+      type: SourceType.article,
+      url: 'https://example.com',
+      premiumConnection: const PremiumConnection(
+        loginUrl: 'https://example.com/login',
+        testUrl: 'https://example.com/test',
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [premiumSessionStoreProvider.overrideWithValue(store)],
+        child: MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: PremiumSourceConnection(
+            source: source,
+            onConnected: () async {},
+            webViewBuilder: (_, url, onLoadStop,
+                    {onPaywallDetected, onLoadError}) =>
+                Column(
+              children: [
+                TextButton(
+                  onPressed: () => onLoadError?.call(404),
+                  child: const Text('simulate-error'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Commencer'));
+    await tester.pumpAndSettle();
+    // Pas d'overlay tant que la page charge.
+    expect(find.text('Réessayer'), findsNothing);
+
+    await tester.tap(find.text('simulate-error'));
+    await tester.pumpAndSettle();
+    expect(find.text('La page ne s’est pas chargée'), findsOneWidget);
+    expect(find.text('Réessayer'), findsOneWidget);
+
+    // « Réessayer » efface l'overlay (et reconstruit la WebView).
+    await tester.tap(find.text('Réessayer'));
+    await tester.pumpAndSettle();
+    expect(find.text('La page ne s’est pas chargée'), findsNothing);
+  });
+
+  group('siteRootFor + generic connection origin normalization', () {
+    test('reduces a feed URL to the site origin', () {
+      expect(
+        siteRootFor('https://www.cerveauetpsycho.fr/rss.xml'),
+        'https://www.cerveauetpsycho.fr/',
+      );
+      expect(siteRootFor('https://example.com/feed/'), 'https://example.com/');
+    });
+
+    test('is idempotent on an already-root URL and adds the trailing slash', () {
+      expect(siteRootFor('https://example.com/'), 'https://example.com/');
+      expect(siteRootFor('https://example.com'), 'https://example.com/');
+    });
+
+    test('preserves scheme and port', () {
+      expect(
+        siteRootFor('http://localhost:8080/x/y'),
+        'http://localhost:8080/',
+      );
+    });
+
+    test('returns null for non-http(s) / hostless / invalid URLs', () {
+      expect(siteRootFor('not a url'), isNull);
+      expect(siteRootFor(''), isNull);
+      expect(siteRootFor('mailto:foo@bar.com'), isNull);
+      // Même contrat http(s)-only que le back-end `origin_url`.
+      expect(siteRootFor('ftp://weird-host/x'), isNull);
+    });
+
+    test('forceGenericConnection normalizes a feed URL to the origin', () {
+      final source = Source(
+        id: 's',
+        name: 'Cerveau & Psycho',
+        type: SourceType.article,
+        url: 'https://www.cerveauetpsycho.fr/rss.xml',
+      );
+      final conn = forceGenericConnection(source);
+      expect(conn, isNotNull);
+      expect(conn!.loginUrl, 'https://www.cerveauetpsycho.fr/');
+      expect(conn.testUrl, 'https://www.cerveauetpsycho.fr/');
+      expect(conn.isGeneric, isTrue);
+    });
   });
 }

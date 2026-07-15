@@ -47,6 +47,7 @@ class PremiumWebView extends StatefulWidget {
     this.onProgress,
     this.onScrollY,
     this.onPaywallDetected,
+    this.onLoadError,
     this.gestureRecognizers,
   });
 
@@ -71,6 +72,11 @@ class PremiumWebView extends StatefulWidget {
   final ValueChanged<double>? onProgress;
   final ValueChanged<double>? onScrollY;
   final VoidCallback? onPaywallDetected;
+
+  /// Échec de chargement de la **frame principale** (page cassée). `int` = code
+  /// HTTP quand connu (>= 400), `null` pour une erreur de transport. Les échecs
+  /// de sous-ressources (favicon, pubs, trackers) sont ignorés.
+  final ValueChanged<int?>? onLoadError;
   final Set<Factory<OneSequenceGestureRecognizer>>? gestureRecognizers;
 
   @override
@@ -106,6 +112,19 @@ class _PremiumWebViewState extends State<PremiumWebView> {
       onWebViewCreated: _handleCreated,
       onLoadStart: (controller, url) => widget.onLoadStart?.call(url),
       onLoadStop: _handleLoadStop,
+      onReceivedError: (controller, request, error) {
+        // Frame principale uniquement : un favicon/tracker qui échoue ne casse
+        // pas la page. Erreur de transport → pas de code HTTP (`null`).
+        if (request.isForMainFrame ?? false) {
+          widget.onLoadError?.call(null);
+        }
+      },
+      onReceivedHttpError: (controller, request, errorResponse) {
+        final status = errorResponse.statusCode ?? 0;
+        if ((request.isForMainFrame ?? false) && status >= 400) {
+          widget.onLoadError?.call(status);
+        }
+      },
     );
   }
 
