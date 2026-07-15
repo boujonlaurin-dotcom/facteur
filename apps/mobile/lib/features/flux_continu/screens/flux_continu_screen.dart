@@ -1537,29 +1537,54 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// de swipe). Réutilise `SectionBlock`. `blurb`/`illustrationAsset` reproduisent
   /// le `SectionBanner` de la lettre du jour (parité visuelle). `null` si la
   /// liste est vide (no-op).
+  ///
+  /// En vue hebdo, [previewCount] borne l'aperçu inline et câble « Tout lire »
+  /// (bandeau + footer) vers la page section épinglée ([_openWeekSection]) dès
+  /// qu'il y a plus de sujets que l'aperçu. Hors hebdo ([previewCount] `null`),
+  /// tous les sujets se rendent inline sans « Tout lire ».
   Widget? _topicSectionSliver(
     BuildContext context, {
     required SectionKind kind,
     required String label,
     required Color accent,
     required List<DigestTopic> topics,
+    int? previewCount,
     String? blurb,
     String? illustrationAsset,
   }) {
     if (topics.isEmpty) return null;
+    final section = DigestTopicSection(
+      kind: kind,
+      label: label,
+      accent: accent,
+      coreVisibleCount: previewCount ?? topics.length,
+      topics: topics,
+      blurb: blurb,
+      illustrationAsset: illustrationAsset,
+    );
+    // « Tout lire » seulement s'il reste des sujets au-delà de l'aperçu (sinon
+    // la page section afficherait exactement le même contenu que l'inline).
+    final onSeeAll = previewCount != null && topics.length > previewCount
+        ? () => _openWeekSection(context, section)
+        : null;
     return SliverToBoxAdapter(
       child: SectionBlock(
-        section: DigestTopicSection(
-          kind: kind,
-          label: label,
-          accent: accent,
-          coreVisibleCount: topics.length,
-          topics: topics,
-          blurb: blurb,
-          illustrationAsset: illustrationAsset,
-        ),
+        section: section,
         onTapArticle: (a) => _openArticle(context, a),
+        onSeeAll: onSeeAll,
       ),
+    );
+  }
+
+  /// Ouvre la page section (`DigestSectionScreen`) **épinglée** sur l'agrégat
+  /// hebdo (query `src=week`) : le contenu affiché est la [section] passée en
+  /// `extra` (la semaine complète), pas le feed du jour. Utilisé par « Tout
+  /// lire » de « Cette semaine ». Push simple (pas de restauration de scroll du
+  /// feed du jour : la vue hebdo a son propre contrôleur, sans snap).
+  void _openWeekSection(BuildContext context, DigestTopicSection section) {
+    context.push(
+      '${RoutePaths.fluxContinu}/section/${sectionKey(section)}?src=week',
+      extra: section,
     );
   }
 
@@ -1595,12 +1620,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       );
     }
 
+    // En vue hebdo : agrégat **complet** (`topicsAll`/`bonnesAll`) + aperçu
+    // borné (`kEditionWeekInlinePreview`) → « Tout lire » ouvre le reste. En
+    // jour unique : liste du jour rendue intégralement inline (pas de préview).
     final actus = _topicSectionSliver(
       context,
       kind: SectionKind.essentiel,
       label: edition.isWeek ? 'Actus de la semaine' : 'Actus du jour',
       accent: colors.sectionEssentiel,
-      topics: edition.topics,
+      topics: edition.isWeek ? edition.topicsAll : edition.topics,
+      previewCount: edition.isWeek ? kEditionWeekInlinePreview : null,
       blurb: 'Les sujets les + couverts en France.',
       illustrationAsset: 'assets/notifications/facteur_avatar.png',
     );
@@ -1611,7 +1640,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       kind: SectionKind.bonnes,
       label: 'Bonnes Nouvelles',
       accent: colors.sectionBonnes,
-      topics: edition.bonnesTopics,
+      topics: edition.isWeek ? edition.bonnesAll : edition.bonnesTopics,
+      previewCount: edition.isWeek ? kEditionWeekInlinePreview : null,
       blurb: 'Un peu de douceur...',
       illustrationAsset: 'assets/notifications/facteur_goodnews.png',
     );

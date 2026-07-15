@@ -429,6 +429,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                     pageBuilder: (context, state) {
                       final key = state.pathParameters['key']!;
                       final section = state.extra as DigestTopicSection?;
+                      // `src=week` → « Tout lire » de la rétro hebdo : la page
+                      // épingle l'agrégat passé en `extra` au lieu de résoudre
+                      // le feed du jour (cf. DigestSectionScreen.pinToInitial).
+                      final pinToInitial =
+                          state.uri.queryParameters['src'] == 'week';
                       return FullSwipeCupertinoPage(
                         key: state.pageKey,
                         transitionDurationOverride:
@@ -437,6 +442,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                         child: DigestSectionScreen(
                           sectionKeyValue: key,
                           initialSection: section,
+                          pinToInitial: pinToInitial,
                         ),
                       );
                     },
