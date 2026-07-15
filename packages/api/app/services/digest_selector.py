@@ -1428,8 +1428,16 @@ class DigestSelector:
                 # --- Ajustements digest-spécifiques (post-pilier) ---
                 # Pas d'équivalent pilier : appliqués après la combinaison.
 
-                # Pénalité Sport (les deux modes).
+                # Sport : pénalité en « pour_vous », EXCLUSION DURE en serein.
+                # « Bonnes nouvelles » ne doit jamais contenir de sport, même si
+                # le classifieur good-news a produit un faux positif (une
+                # altercation/transaction NBA n'est pas « sport-shaped » pour le
+                # LLM et peut passer is_good_news=True). Une simple pénalité (-80)
+                # laisse le sport remonter quand le pool serein est maigre → on
+                # l'écarte du pool au lieu de le pénaliser.
                 if is_sport_content(content):
+                    if mode == "serein":
+                        continue
                     final_score += ScoringWeights.DIGEST_SPORT_PENALTY
                     breakdown.append(
                         DigestScoreBreakdown(

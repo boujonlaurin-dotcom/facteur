@@ -89,3 +89,53 @@ worker à toucher : uniquement les 4 constantes de settings + le commentaire.
 
 - `packages/api/app/config.py` (4 constantes + commentaire)
 - `docs/bugs/bug-bonnes-nouvelles-qualite-regression.md` (ce doc)
+
+---
+
+## Addendum — P3 HARDENING : exclusion dure du sport en serein (worker mort 30/06)
+
+Contexte réévalué (preuves DB prod juillet 2026) : le batching #914 n'était que
+le déclencheur superficiel. La **vraie** cause du sport (NBA/Basket USA) qui
+remonte dans « Bonnes nouvelles » est double :
+
+1. **Worker de classif mort le 30/06** → tout le frais a
+   `is_good_news / is_serene / theme = NULL` (34,5k articles).
+2. En prod, le fallback d'urgence retombe sur du contenu quelconque non-anxiogène
+   et n'applique **aucune** exclusion sport (le `-80` du sélecteur n'est qu'une
+   pénalité de score, pas un filtre).
+
+P1 (ranimer le worker, ops Railway) et P2 (release hebdo #948/#957) restent des
+actions PO. Ce P3 est le volet code — **defense-in-depth** : empêcher le sport
+d'entrer dans « Bonnes nouvelles » **même si** le classifieur good-news produit un
+faux positif (une altercation/transaction NBA n'est pas « sport-shaped » pour le
+LLM et peut passer `is_good_news=True`).
+
+### Changements
+
+1. **`is_sport_content`** (`services/recommendation/filter_presets.py`) : fallback
+   sur `content.source.theme` quand `content.theme` est NULL (article non
+   classifié). Accès non-déclenchant (`__dict__.get("source")`, relation lue
+   seulement si déjà eager-loaded) → pas de lazy-load async involontaire.
+2. **Sélecteur serein** (`services/digest_selector.py::_score_candidates`) : en
+   mode `serein`, un article sport est **écarté du pool** (`continue`) au lieu
+   d'être seulement pénalisé (-80). En `pour_vous`, la pénalité reste inchangée.
+3. **Fallback d'urgence serein** (`services/digest_service.py::_get_emergency_candidates`) :
+   skip dur des articles sport quand `is_serene` (defense-in-depth sur le dernier
+   recours, source eager-loaded).
+
+### Tests
+
+- `tests/test_low_priority_cap.py` — 3 cas fallback `source.theme` d'`is_sport_content`
+  (NULL→source sport flag ; content.theme prime ; source tech ne flag pas).
+- `tests/test_emergency_candidates_serein.py` — sport exclu du fallback serein
+  par mot-clé (NBA, source mal-thémée `tech`) **et** par `source.theme="sport"`
+  (titre neutre + theme article NULL).
+- `tests/test_digest_selector.py` — l'ancien `test_sport_penalty_applies_in_serein_mode`
+  devient `test_sport_hard_excluded_in_serein_mode` (le sport n'est plus scoré en serein).
+
+### Note qualité modèle
+
+`GOOD_NEWS_MODEL = "mistral-large-latest"` est **inchangé depuis #594** (déjà le
+modèle le plus cher). Repasser à un modèle plus coûteux est inutile : le levier,
+si le tri reste laxiste une fois le worker sain, est la strictness du prompt
+pass-2 ou la porte `serene`, pas un swap de modèle.

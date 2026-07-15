@@ -125,3 +125,61 @@ async def test_non_serein_emergency_unaffected(db_session):
     )
 
     assert len(items) == 1
+
+
+@pytest.mark.asyncio
+async def test_serein_emergency_excludes_sport_by_keyword(db_session):
+    """Sport exclu du fallback serein même avec is_good_news=True (faux positif).
+
+    Cas réel : source Basket USA mal thémée (`tech`), altercation NBA classée
+    is_good_news=True par erreur → doit être écartée par exclusion dure sport
+    (mot-clé « NBA » dans le titre)."""
+    source = await _make_source(db_session, theme="tech")
+
+    good = await _make_content(
+        db_session,
+        source,
+        "Une avancée concrète pour l'accès à l'eau",
+        is_good_news=True,
+    )
+    # Altercation NBA marquée is_good_news=True par erreur.
+    await _make_content(
+        db_session,
+        source,
+        "Tyler Herro et Bam Adebayo en viennent aux mains (NBA)",
+        is_good_news=True,
+    )
+
+    service = DigestService(db_session)
+    items = await service._get_emergency_candidates(
+        user_id=uuid4(), limit=5, is_serene=True
+    )
+
+    returned_ids = {item.content.id for item in items}
+    assert returned_ids == {good.id}
+
+
+@pytest.mark.asyncio
+async def test_serein_emergency_excludes_sport_by_source_theme(db_session):
+    """Sport exclu via source.theme quand l'article n'a ni thème ni mot-clé.
+
+    Article non classifié (theme NULL) au titre neutre, mais issu d'une source
+    `theme="sport"` — rattrapé par le fallback source.theme d'is_sport_content
+    même si forcé is_good_news=True."""
+    sport_source = await _make_source(db_session, theme="sport")
+
+    # is_good_news=True mais titre neutre + theme article NULL → seul source.theme
+    # le trahit.
+    await _make_content(
+        db_session,
+        sport_source,
+        "Le résumé de la soirée",
+        is_good_news=True,
+    )
+
+    service = DigestService(db_session)
+    items = await service._get_emergency_candidates(
+        user_id=uuid4(), limit=5, is_serene=True
+    )
+
+    assert items == []
