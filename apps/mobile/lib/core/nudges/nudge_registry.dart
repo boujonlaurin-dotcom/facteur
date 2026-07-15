@@ -114,15 +114,16 @@ class NudgeRegistry {
       frequency: NudgeFrequency.once,
     ),
 
-    // Story 14.3 — well-informed NPS. Cooldown porté à 5j (skip) ; le
-    // provider impose en plus un cooldown 14j après une vraie soumission.
+    // Story 14.3 — well-informed NPS. Cooldown porté à 21j (skip) ; le
+    // provider impose en plus un cooldown 60j après une vraie soumission, et un
+    // tirage aléatoire quotidien (~1 jour sur 7) pour rarefier sans biais.
     const Nudge(
       id: NudgeIds.wellInformedPoll,
       surface: NudgeSurface.digest,
       placement: NudgePlacement.inlineBanner,
       priority: NudgePriority.low,
       frequency: NudgeFrequency.cooldown,
-      cooldown: Duration(days: 5),
+      cooldown: Duration(days: 21),
     ),
 
     // Story web.1 — iOS Safari "Ajouter à l'écran d'accueil". Cooldown 7j
