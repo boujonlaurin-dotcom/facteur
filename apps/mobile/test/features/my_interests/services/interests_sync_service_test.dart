@@ -23,6 +23,7 @@ class _RecorderRepo implements UserInterestsRepository {
     required FavoriteRef ref,
     required InterestState state,
     int? position,
+    bool? essentielMode,
   }) async {
     calls.add((ref, state));
     if (throwOnSet != null) throw throwOnSet!;
@@ -49,6 +50,7 @@ class _RecorderRepo implements UserInterestsRepository {
     required String sourceId,
     required InterestState state,
     int? position,
+    bool? essentielMode,
   }) async =>
       throw UnimplementedError();
 

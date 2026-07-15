@@ -33,6 +33,8 @@ class ThemeInterestResponse(BaseModel):
     interest_slug: str
     weight: float
     state: InterestState
+    # Placement durable : true=Essentiel, false=Flâner, None=jamais placé/legacy.
+    essentiel_mode: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -74,6 +76,9 @@ class SetInterestStateRequest(BaseModel):
     target_id: str
     state: InterestState
     position: int | None = Field(None, ge=0)
+    # Placement Essentiel/Flâner à persister. None = préserver l'existant en DB
+    # (ne jamais écraser un placement connu par un PATCH qui ne le fournit pas).
+    essentiel_mode: bool | None = None
 
 
 class ReorderFavoritesRequest(BaseModel):
@@ -100,6 +105,8 @@ class SourceStateResponse(BaseModel):
     source_id: UUID
     state: InterestState
     priority_multiplier: float
+    # Placement durable : true=Essentiel, false=Flâner, None=jamais placé/legacy.
+    essentiel_mode: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -126,6 +133,9 @@ class SetSourceStateRequest(BaseModel):
     source_id: UUID
     state: InterestState
     position: int | None = Field(None, ge=0)
+    # Placement Essentiel/Flâner à persister. None = préserver l'existant en DB
+    # (ne jamais écraser un placement connu par un PATCH qui ne le fournit pas).
+    essentiel_mode: bool | None = None
 
 
 class ReorderSourceFavoritesRequest(BaseModel):

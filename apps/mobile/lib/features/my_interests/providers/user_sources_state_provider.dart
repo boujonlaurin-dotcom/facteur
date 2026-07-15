@@ -18,7 +18,13 @@ class UserSourcesStateNotifier extends AsyncNotifier<UserSourcesState> {
     return repo.fetchSourcesState();
   }
 
-  Future<void> setSourceState(String sourceId, InterestState newState) async {
+  /// `essentielMode` : placement Essentiel/Flâner à persister en DB. `null` =
+  /// préserver l'existant côté backend (bascule d'état sans déplacement).
+  Future<void> setSourceState(
+    String sourceId,
+    InterestState newState, {
+    bool? essentielMode,
+  }) async {
     final current = state.value;
     if (current == null) return;
 
@@ -28,12 +34,14 @@ class UserSourcesStateNotifier extends AsyncNotifier<UserSourcesState> {
     final sources = [...current.sources];
     final idx = sources.indexWhere((s) => s.sourceId == sourceId);
     if (idx >= 0) {
-      sources[idx] = sources[idx].copyWith(state: newState);
+      sources[idx] =
+          sources[idx].copyWith(state: newState, essentielMode: essentielMode);
     } else {
       sources.add(SourceInterest(
         sourceId: sourceId,
         state: newState,
         priorityMultiplier: 1.0,
+        essentielMode: essentielMode,
       ));
     }
 
@@ -55,8 +63,11 @@ class UserSourcesStateNotifier extends AsyncNotifier<UserSourcesState> {
     ));
 
     try {
-      final updated =
-          await repo.setSourceState(sourceId: sourceId, state: newState);
+      final updated = await repo.setSourceState(
+        sourceId: sourceId,
+        state: newState,
+        essentielMode: essentielMode,
+      );
       state = AsyncValue.data(updated);
     } on FavoriteCapReachedException {
       state = previousState;

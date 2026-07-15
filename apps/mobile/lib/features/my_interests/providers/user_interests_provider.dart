@@ -21,21 +21,24 @@ class UserInterestsNotifier extends AsyncNotifier<UserInterestsState> {
   /// un snackbar « tu as déjà 5 favoris ».
   Future<void> setInterestState(
     FavoriteRef refTarget,
-    InterestState newState,
-  ) async {
+    InterestState newState, {
+    bool? essentielMode,
+  }) async {
     final current = state.value;
     if (current == null) return;
 
     final repo = ref.read(userInterestsRepositoryProvider);
     final previousState = state;
 
-    final optimistic = _applyLocal(current, refTarget, newState);
+    final optimistic =
+        _applyLocal(current, refTarget, newState, essentielMode: essentielMode);
     state = AsyncValue.data(optimistic);
 
     try {
       final updated = await repo.setInterestState(
         ref: refTarget,
         state: newState,
+        essentielMode: essentielMode,
       );
       state = AsyncValue.data(updated);
     } on FavoriteCapReachedException {
@@ -74,8 +77,9 @@ class UserInterestsNotifier extends AsyncNotifier<UserInterestsState> {
   UserInterestsState _applyLocal(
     UserInterestsState current,
     FavoriteRef refTarget,
-    InterestState newState,
-  ) {
+    InterestState newState, {
+    bool? essentielMode,
+  }) {
     final themes = [...current.themes];
     final customTopics = [...current.customTopics];
 
@@ -83,13 +87,15 @@ class UserInterestsNotifier extends AsyncNotifier<UserInterestsState> {
       case ThemeFavoriteRef(:final slug):
         final idx = themes.indexWhere((t) => t.interestSlug == slug);
         if (idx >= 0) {
-          themes[idx] = themes[idx].copyWith(state: newState);
+          themes[idx] =
+              themes[idx].copyWith(state: newState, essentielMode: essentielMode);
         } else {
           themes.add(
             ThemeInterest(
               interestSlug: slug,
               weight: 1.0,
               state: newState,
+              essentielMode: essentielMode,
             ),
           );
         }

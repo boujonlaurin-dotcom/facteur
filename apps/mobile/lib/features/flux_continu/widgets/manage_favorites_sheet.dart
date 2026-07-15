@@ -194,6 +194,8 @@ class _ManageFavoritesContentState
           .setInterestState(
             ThemeFavoriteRef(slug: slug),
             InterestState.favorite,
+            // Ajout depuis « Gérer » = placement Essentiel, persisté en DB.
+            essentielMode: true,
           );
       await _appendTournee(tourneeThemeKey(slug));
     } catch (e) {
@@ -211,7 +213,12 @@ class _ManageFavoritesContentState
     try {
       await ref
           .read(userSourcesStateProvider.notifier)
-          .setSourceState(sourceId, InterestState.favorite);
+          .setSourceState(
+            sourceId,
+            InterestState.favorite,
+            // Persiste le mode de la porte d'entrée (Essentiel vs Flâner) en DB.
+            essentielMode: toEssentiel,
+          );
       if (toEssentiel) {
         await _appendTournee(tourneeSourceKey(sourceId));
       } else {
@@ -242,6 +249,9 @@ class _ManageFavoritesContentState
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     await _removeTournee(tourneeSourceKey(sourceId));
     await _appendTab(tabOrderSourceKey(sourceId));
+    // Persiste le placement Flâner en DB (la source reste favorite, seul le mode
+    // change) — durable au-delà des prefs locales, resync sur chaque device.
+    await _persistSourceMode(sourceId, essentiel: false);
     NotificationService.showSuccess('Déplacé vers Flâner');
   }
 
@@ -249,7 +259,22 @@ class _ManageFavoritesContentState
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     await _removeTab(tabOrderSourceKey(sourceId));
     await _appendTournee(tourneeSourceKey(sourceId));
+    await _persistSourceMode(sourceId, essentiel: true);
     NotificationService.showSuccess('Déplacé vers l\'Essentiel');
+  }
+
+  /// Écrit le mode Essentiel/Flâner d'une source favorite en DB (best-effort :
+  /// l'échec réseau ne doit pas casser le déplacement local déjà appliqué).
+  Future<void> _persistSourceMode(String sourceId,
+      {required bool essentiel}) async {
+    try {
+      await ref
+          .read(userSourcesStateProvider.notifier)
+          .setSourceState(sourceId, InterestState.favorite,
+              essentielMode: essentiel);
+    } catch (e) {
+      NotificationService.showError('Erreur : $e');
+    }
   }
 
   // Thèmes : même modèle exclusif que les sources. La clé `theme:<slug>` est
@@ -260,6 +285,9 @@ class _ManageFavoritesContentState
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     await _removeTournee(tourneeThemeKey(slug));
     await _appendTab(tabOrderThemeKey(slug));
+    // Persiste le placement Flâner en DB (le thème reste favorite, seul le mode
+    // change) — durable au-delà des prefs locales, resync sur chaque device.
+    await _persistThemeMode(slug, essentiel: false);
     NotificationService.showSuccess('Déplacé vers Flâner');
   }
 
@@ -267,7 +295,20 @@ class _ManageFavoritesContentState
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     await _removeTab(tabOrderThemeKey(slug));
     await _appendTournee(tourneeThemeKey(slug));
+    await _persistThemeMode(slug, essentiel: true);
     NotificationService.showSuccess('Déplacé vers l\'Essentiel');
+  }
+
+  /// Écrit le mode Essentiel/Flâner d'un thème favori en DB (best-effort).
+  Future<void> _persistThemeMode(String slug, {required bool essentiel}) async {
+    try {
+      await ref
+          .read(userInterestsProvider.notifier)
+          .setInterestState(ThemeFavoriteRef(slug: slug), InterestState.favorite,
+              essentielMode: essentiel);
+    } catch (e) {
+      NotificationService.showError('Erreur : $e');
+    }
   }
 
   // ── Retraits ────────────────────────────────────────────────────────────

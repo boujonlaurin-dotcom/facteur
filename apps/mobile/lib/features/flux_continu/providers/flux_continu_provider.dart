@@ -35,6 +35,7 @@ import '../repositories/essentiel_repository.dart';
 import '../repositories/flux_continu_repository.dart';
 import '../services/flux_continu_cache_service.dart';
 import '../services/tournee_progress_service.dart';
+import 'essentiel_placement_sync.dart' show reconcileEssentielPlacement;
 import '../utils/notif_teasers.dart';
 import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
@@ -367,6 +368,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // avec un JWT frais. Le squelette/cache est déjà peint, donc cette attente
     // gate la DATA, pas les pixels.
     await _awaitInitialRefresh();
+
+    // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
+    // non-bloquante : elle ne doit pas retarder la DATA. Lancée pendant que
+    // `_bootstrapping` est encore vrai (les listeners prefs sont donc muets) ;
+    // si elle écrit un placement restauré après la fin du bootstrap, les
+    // listeners `tournee_order`/`pinned_tabs` rejoueront le refetch/recompose
+    // qui fait (ré)apparaître la section dans la Tournée. Cf.
+    // [reconcileEssentielPlacement].
+    unawaited(reconcileEssentielPlacement(ref));
 
     try {
       return await _fetchAll();
@@ -2120,14 +2130,18 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     try {
       if (section.kind == SectionKind.source && section.sourceId != null) {
-        await ref
-            .read(userSourcesStateProvider.notifier)
-            .setSourceState(section.sourceId!, InterestState.favorite);
+        await ref.read(userSourcesStateProvider.notifier).setSourceState(
+              section.sourceId!,
+              InterestState.favorite,
+              // Promotion = placement Essentiel : persiste le mode en DB.
+              essentielMode: true,
+            );
         await _appendTourneeOrder(tourneeSourceKey(section.sourceId!));
       } else if (section.themeSlug != null) {
         await ref.read(userInterestsProvider.notifier).setInterestState(
               ThemeFavoriteRef(slug: section.themeSlug!),
               InterestState.favorite,
+              essentielMode: true,
             );
         await _appendTourneeOrder(tourneeThemeKey(section.themeSlug!));
       }

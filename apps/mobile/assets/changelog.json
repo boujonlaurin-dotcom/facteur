@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ma Tournée",
+      "summary": "Tes sources et thèmes rangés dans l'Essentiel y restent : leur place est désormais sauvegardée et retrouvée sur chaque appareil, même après réinstallation."
+    },
+    {
       "tag": "Rattrapage",
       "summary": "« Cette semaine » : accès Tout lire par section et bonnes nouvelles de toute la semaine."
     },

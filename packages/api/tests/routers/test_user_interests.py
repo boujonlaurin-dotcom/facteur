@@ -441,3 +441,108 @@ async def test_reorder_rejects_non_favorite_target(auth_user_with_themes, db_ses
                 },
             )
     assert resp.status_code == 422
+
+
+def _theme_row(body: dict, slug: str) -> dict:
+    return next(t for t in body["themes"] if t["interest_slug"] == slug)
+
+
+@pytest.mark.asyncio
+async def test_patch_theme_persists_essentiel_mode(auth_user, db_session):
+    """Le placement Essentiel/Flâner d'un Thème est persisté en DB et ré-exposé."""
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "theme",
+                    "target_id": "tech",
+                    "state": "favorite",
+                    "essentiel_mode": True,
+                },
+            )
+            get = await ac.get("/api/user/interests")
+    assert resp.status_code == 200, resp.text
+    assert _theme_row(resp.json(), "tech")["essentiel_mode"] is True
+    assert _theme_row(get.json(), "tech")["essentiel_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_theme_essentiel_mode_false_is_persisted(auth_user, db_session):
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "theme",
+                    "target_id": "tech",
+                    "state": "favorite",
+                    "essentiel_mode": False,
+                },
+            )
+    assert resp.status_code == 200, resp.text
+    assert _theme_row(resp.json(), "tech")["essentiel_mode"] is False
+
+
+@pytest.mark.asyncio
+async def test_patch_theme_omitting_essentiel_mode_preserves_existing(
+    auth_user, db_session
+):
+    """Un PATCH d'état sans placement ne doit pas écraser le mode existant
+    (branche row-exists : ne jamais NULL-er un placement connu)."""
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "theme",
+                    "target_id": "tech",
+                    "state": "favorite",
+                    "essentiel_mode": True,
+                },
+            )
+            resp = await ac.patch(
+                "/api/user/interests",
+                json={"kind": "theme", "target_id": "tech", "state": "followed"},
+            )
+    assert resp.status_code == 200, resp.text
+    assert _theme_row(resp.json(), "tech")["essentiel_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_theme_can_flip_essentiel_mode(auth_user, db_session):
+    """Un déplacement Essentiel -> Flâner met bien à jour le placement existant."""
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_interests.get_posthog_client", return_value=MagicMock()
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "theme",
+                    "target_id": "tech",
+                    "state": "favorite",
+                    "essentiel_mode": True,
+                },
+            )
+            resp = await ac.patch(
+                "/api/user/interests",
+                json={
+                    "kind": "theme",
+                    "target_id": "tech",
+                    "state": "favorite",
+                    "essentiel_mode": False,
+                },
+            )
+    assert resp.status_code == 200, resp.text
+    assert _theme_row(resp.json(), "tech")["essentiel_mode"] is False
