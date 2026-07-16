@@ -27,6 +27,7 @@ class _FakeRepo implements UserInterestsRepository {
     required FavoriteRef ref,
     required InterestState state,
     int? position,
+    bool? essentielMode,
   }) async {
     setCalls++;
     if (throwCap) throw const FavoriteCapReachedException(5);
@@ -55,6 +56,7 @@ class _FakeRepo implements UserInterestsRepository {
     required String sourceId,
     required InterestState state,
     int? position,
+    bool? essentielMode,
   }) async =>
       throw UnimplementedError();
 

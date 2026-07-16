@@ -156,10 +156,15 @@ class ThemeInterest {
   final double weight;
   final InterestState state;
 
+  /// Placement Essentiel/Flâner persisté en DB (source de vérité durable).
+  /// true = Essentiel, false = Flâner, null = jamais placé / legacy.
+  final bool? essentielMode;
+
   const ThemeInterest({
     required this.interestSlug,
     required this.weight,
     required this.state,
+    this.essentielMode,
   });
 
   factory ThemeInterest.fromJson(Map<String, dynamic> json) {
@@ -167,17 +172,20 @@ class ThemeInterest {
       interestSlug: json['interest_slug'] as String,
       weight: (json['weight'] as num).toDouble(),
       state: InterestState.fromJson(json['state'] as String),
+      essentielMode: json['essentiel_mode'] as bool?,
     );
   }
 
   ThemeInterest copyWith({
     double? weight,
     InterestState? state,
+    bool? essentielMode,
   }) =>
       ThemeInterest(
         interestSlug: interestSlug,
         weight: weight ?? this.weight,
         state: state ?? this.state,
+        essentielMode: essentielMode ?? this.essentielMode,
       );
 }
 

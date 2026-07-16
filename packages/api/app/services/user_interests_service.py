@@ -140,9 +140,13 @@ class UserInterestsService:
         target_id: str,
         state: InterestState,
         position: int | None = None,
+        essentiel_mode: bool | None = None,
     ) -> InterestState | None:
         """Mute le state d'un Thème ou Sujet. Returns the previous state, or None
-        if the target was created on the fly (theme without prior row)."""
+        if the target was created on the fly (theme without prior row).
+
+        `essentiel_mode` (Thèmes uniquement) : placement Essentiel/Flâner durable.
+        `None` = préserver l'existant (ne jamais écraser un placement connu)."""
         prev_state: InterestState | None = None
 
         if kind == "theme":
@@ -161,18 +165,31 @@ class UserInterestsService:
                 # Upsert atomique : un double-tap concurrent ne lève plus
                 # d'IntegrityError sur user_interests_user_slug_uniq.
                 # prev_state reste None (sémantique "créé à la volée").
+                values: dict = {
+                    "user_id": user_id,
+                    "interest_slug": interest_slug,
+                    "state": state,
+                }
+                conflict_set: dict = {"state": state}
+                # Le placement n'est écrit (insert ET conflit) que s'il est fourni :
+                # un PATCH sans mode ne doit jamais NULL-er un placement existant.
+                if essentiel_mode is not None:
+                    values["essentiel_mode"] = essentiel_mode
+                    conflict_set["essentiel_mode"] = essentiel_mode
                 stmt = (
                     insert(UserInterest)
-                    .values(user_id=user_id, interest_slug=interest_slug, state=state)
+                    .values(**values)
                     .on_conflict_do_update(
                         constraint="user_interests_user_slug_uniq",
-                        set_={"state": state},
+                        set_=conflict_set,
                     )
                 )
                 await self.db.execute(stmt)
             else:
                 prev_state = row.state
                 row.state = state
+                if essentiel_mode is not None:
+                    row.essentiel_mode = essentiel_mode
         elif kind == "custom_topic":
             try:
                 topic_uuid = UUID(target_id)
@@ -431,7 +448,10 @@ class UserSourcesStateService:
         source_id: UUID,
         state: InterestState,
         position: int | None = None,
+        essentiel_mode: bool | None = None,
     ) -> InterestState | None:
+        """`essentiel_mode` : placement Essentiel/Flâner durable. `None` = préserver
+        l'existant (ne jamais écraser un placement connu par un PATCH sans mode)."""
         row = (
             await self.db.execute(
                 select(UserSource).where(
@@ -443,10 +463,12 @@ class UserSourcesStateService:
             # Upsert : un utilisateur peut basculer une source en
             # followed/favorite directement depuis le reader sans avoir de row
             # préexistante. On crée alors l'association avec le state demandé.
+            # essentiel_mode=None ⇒ colonne laissée à NULL (jamais placé).
             row = UserSource(
                 user_id=user_id,
                 source_id=source_id,
                 state=state,
+                essentiel_mode=essentiel_mode,
             )
             self.db.add(row)
             await self.db.flush()  # mirror UserInterest upsert (line ~163)
@@ -454,6 +476,8 @@ class UserSourcesStateService:
         else:
             prev_state = row.state
             row.state = state
+            if essentiel_mode is not None:
+                row.essentiel_mode = essentiel_mode
 
         await self._sync_favorite_source(
             user_id=user_id, source_id=source_id, state=state, position=position

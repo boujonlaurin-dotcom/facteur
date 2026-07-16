@@ -35,7 +35,11 @@ class _FakeUserSourcesStateNotifier extends UserSourcesStateNotifier {
   Future<UserSourcesState> build() async => _initial;
 
   @override
-  Future<void> setSourceState(String sourceId, InterestState newState) async {
+  Future<void> setSourceState(
+    String sourceId,
+    InterestState newState, {
+    bool? essentielMode,
+  }) async {
     setStateCalls++;
     lastSourceId = sourceId;
     lastState = newState;

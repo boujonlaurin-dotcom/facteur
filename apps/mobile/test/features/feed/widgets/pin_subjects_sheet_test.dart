@@ -31,7 +31,11 @@ class _FakeUserInterestsNotifier extends UserInterestsNotifier {
   Future<UserInterestsState> build() async => _initial;
 
   @override
-  Future<void> setInterestState(FavoriteRef ref, InterestState s) async {}
+  Future<void> setInterestState(
+    FavoriteRef ref,
+    InterestState s, {
+    bool? essentielMode,
+  }) async {}
 }
 
 class _StubSources extends UserSourcesStateNotifier {

@@ -168,3 +168,108 @@ async def test_source_accepts_more_than_cap_favorites(auth_user_with_sources):
     assert body["favorite_count"] == 6
     positions = sorted(f["position"] for f in body["favorites"])
     assert positions == [0, 1, 2, 3, 4, 5]
+
+
+def _source_row(body: dict, source_id: str) -> dict:
+    return next(s for s in body["sources"] if s["source_id"] == source_id)
+
+
+@pytest.mark.asyncio
+async def test_patch_persists_essentiel_mode(auth_user_with_sources):
+    """Le placement Essentiel/Flâner envoyé au PATCH est persisté et ré-exposé
+    par le GET (source de vérité DB, resync device — anti perte à la réinstall)."""
+    _, sources = auth_user_with_sources
+    sid = str(sources[0].id)
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_sources_state.get_posthog_client",
+        return_value=MagicMock(),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/sources",
+                json={
+                    "source_id": sid,
+                    "state": "favorite",
+                    "essentiel_mode": True,
+                },
+            )
+            get = await ac.get("/api/user/sources")
+    assert resp.status_code == 200, resp.text
+    assert _source_row(resp.json(), sid)["essentiel_mode"] is True
+    assert _source_row(get.json(), sid)["essentiel_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_essentiel_mode_false_is_persisted(auth_user_with_sources):
+    """`false` (= Flâner) est une valeur distincte de NULL et doit être persistée."""
+    _, sources = auth_user_with_sources
+    sid = str(sources[0].id)
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_sources_state.get_posthog_client",
+        return_value=MagicMock(),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/sources",
+                json={
+                    "source_id": sid,
+                    "state": "favorite",
+                    "essentiel_mode": False,
+                },
+            )
+    assert resp.status_code == 200, resp.text
+    assert _source_row(resp.json(), sid)["essentiel_mode"] is False
+
+
+@pytest.mark.asyncio
+async def test_patch_omitting_essentiel_mode_preserves_existing(
+    auth_user_with_sources,
+):
+    """Un PATCH sans `essentiel_mode` (ex: bascule d'état depuis le reader) ne doit
+    JAMAIS NULL-er un placement déjà connu."""
+    _, sources = auth_user_with_sources
+    sid = str(sources[0].id)
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_sources_state.get_posthog_client",
+        return_value=MagicMock(),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            await ac.patch(
+                "/api/user/sources",
+                json={
+                    "source_id": sid,
+                    "state": "favorite",
+                    "essentiel_mode": True,
+                },
+            )
+            # Second PATCH sans essentiel_mode : le placement doit survivre.
+            resp = await ac.patch(
+                "/api/user/sources",
+                json={"source_id": sid, "state": "followed"},
+            )
+    assert resp.status_code == 200, resp.text
+    assert _source_row(resp.json(), sid)["essentiel_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_defaults_essentiel_mode_null_when_never_provided(
+    auth_user_with_sources,
+):
+    """Sans placement fourni, la colonne reste NULL (legacy / jamais placé)."""
+    _, sources = auth_user_with_sources
+    sid = str(sources[0].id)
+    transport = ASGITransport(app=app)
+    with patch(
+        "app.routers.user_sources_state.get_posthog_client",
+        return_value=MagicMock(),
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.patch(
+                "/api/user/sources",
+                json={"source_id": sid, "state": "favorite"},
+            )
+    assert resp.status_code == 200, resp.text
+    assert _source_row(resp.json(), sid)["essentiel_mode"] is None

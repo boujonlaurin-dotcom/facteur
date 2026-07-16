@@ -63,6 +63,7 @@ async def set_source_state(
             source_id=body.source_id,
             state=body.state,
             position=body.position,
+            essentiel_mode=body.essentiel_mode,
         )
     except FavoriteCapReached as e:
         get_posthog_client().capture(
