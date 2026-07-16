@@ -141,6 +141,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
 
+  /// Active section index captured at the *start* of the current scroll
+  /// gesture. The section haptic is now emitted once, at settle
+  /// (`ScrollEndNotification`), only when the gesture actually changed section
+  /// vs. this snapshot — so a drag-then-snapback (which flips `_activeIndex`
+  /// mid-drag then recadres the origin section) fires **zero** buzz instead of
+  /// two. `null` until the first gesture starts.
+  int? _gestureStartActiveIndex;
+
   final List<GlobalKey> _sectionKeys = [];
 
   // Clés dédiées aux cartes virtuelles qui ont désormais un onglet sticky.
@@ -339,14 +347,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       }
     }
     if (_activeIndex.value != activeAt) {
-      // Strong section haptic when the active tab flips section under the
-      // sticky bar. Gated on visibility so we don't buzz during the initial
-      // layout / top-of-page scroll, before the sticky is even revealed. The
-      // snap's one-step cap (cf. resolveSnapTarget) keeps a fling to a single
-      // boundary crossing, so this fires exactly once per step.
-      if (_stickyVisible.value) {
-        unawaited(_triggerSectionChangeHaptic());
-      }
+      // Visual-only tab tracking here. The section haptic used to fire on this
+      // per-frame flip, which double-buzzed a drag-then-snapback (flip N→N+1
+      // mid-drag, then N+1→N on the pull-back). It now fires once at settle —
+      // see `_onScrollNotification` (`ScrollEndNotification`), gated on a real
+      // change of section across the whole gesture.
       _activeIndex.value = activeAt;
       _alignTabsToActive(activeAt);
     }
@@ -369,6 +374,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   bool _onScrollNotification(ScrollNotification n) {
     if (n is ScrollStartNotification) {
       _scheduleAnchorRecompute();
+      // Snapshot the section we start on. The settle handler compares against
+      // it so a gesture that nets no section change (drag-puis-snapback) stays
+      // silent.
+      _gestureStartActiveIndex = _activeIndex.value;
+    } else if (n is ScrollEndNotification) {
+      // One buzz per gesture, at rest: only when the sticky bar is visible
+      // (skip the initial top-of-page scroll) and the settle landed on a
+      // different section than the gesture started on. Covers both the reader's
+      // fling/snap and programmatic tab nav (which also settles here).
+      if (_stickyVisible.value &&
+          _gestureStartActiveIndex != null &&
+          _activeIndex.value != _gestureStartActiveIndex) {
+        unawaited(_triggerSectionChangeHaptic());
+      }
+      _gestureStartActiveIndex = _activeIndex.value;
     }
     return false;
   }

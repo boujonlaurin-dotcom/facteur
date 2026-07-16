@@ -582,9 +582,22 @@ def is_sport_cluster(cluster: TopicCluster) -> bool:
 
 
 def is_sport_content(content: Content) -> bool:
-    """Article individuel de type Sport (theme, topics ou keywords titre/desc)."""
+    """Article individuel de type Sport (theme, topics ou keywords titre/desc).
+
+    Quand `content.theme` est NULL (article non encore classifié — ex. worker de
+    classif à l'arrêt, tout le frais a `theme=NULL`), on retombe sur le thème de
+    la **source** (`source.theme`) s'il est déjà chargé. Ça rattrape un média
+    100 % sport (`source.theme="sport"`) dont l'article n'a ni thème propre ni
+    mot-clé sport dans le titre. Accès non-déclenchant : on ne lit la relation
+    que si elle est déjà eager-loaded (`selectinload` dans les chemins digest)
+    pour éviter un lazy-load async involontaire.
+    """
     if content.theme and content.theme.lower() in LOW_PRIORITY_SPORT_THEMES:
         return True
+    if not content.theme:
+        source_theme = getattr(content.__dict__.get("source"), "theme", None)
+        if source_theme and source_theme.lower() in LOW_PRIORITY_SPORT_THEMES:
+            return True
     if content.topics and any(
         isinstance(t, str) and t.lower() == "sport" for t in content.topics
     ):

@@ -6,7 +6,6 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
-import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
@@ -16,6 +15,7 @@ import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../../sources/models/source_model.dart';
+import 'long_press_grow.dart';
 
 /// Unified view-model that hides the DigestItem vs Content split from the
 /// rendering layer. Both types carry the fields needed to display a Flux
@@ -173,19 +173,8 @@ class _FluxContinuArticleCardState
               color: colors.surface,
               borderRadius: cardRadius,
               elevation: 0,
-              child: GestureDetector(
-                onLongPressStart: (_) {
-                  widget.onLongPressConversion?.call();
-                  ArticlePreviewOverlay.show(
-                    context,
-                    articleToContent(widget.article),
-                  );
-                },
-                onLongPressMoveUpdate: (details) =>
-                    ArticlePreviewOverlay.updateScroll(
-                  details.localOffsetFromOrigin.dy,
-                ),
-                onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+              child: LongPressGrowNudge(
+                onLongPress: () => widget.onLongPressConversion?.call(),
                 child: InkWell(
                   onTap: widget.onTap,
                   borderRadius: cardRadius,
@@ -385,9 +374,9 @@ class _FluxContinuArticleCardState
       type == ContentType.video || type == ContentType.youtube;
 }
 
-/// Adapter producing a synthetic [Content] suitable for [ArticlePreviewOverlay]
-/// or [TopicChip.showArticleSheet] regardless of the source type. [DigestItem]
-/// carries every field needed by the preview except the rich [Source] object —
+/// Adapter producing a synthetic [Content] suitable for
+/// `TopicChip.showArticleSheet` regardless of the source type. [DigestItem]
+/// carries every field needed by the sheet except the rich [Source] object —
 /// a minimal [Source] is built from its [SourceMini]. Exposed as top-level so
 /// the screen can reuse it when resolving an inline-feedback chip on a digest
 /// lead.

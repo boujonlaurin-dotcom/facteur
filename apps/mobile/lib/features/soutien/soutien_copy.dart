@@ -113,8 +113,9 @@ class SoutienCopy {
   static const sourcesPillFree = 'médias suivis'; // « N / 30 médias suivis »
   static const sourcesPillPremium = 'Sources illimitées · Fact·eur·isse';
   static const analysesQuotaBanner =
-      'Ton analyse offerte du jour a été utilisée. Reviens demain, ou passe '
-      'en illimité.';
+      'Chaque analyse Facteur a un coût réel de génération. On te la laisse '
+      'quand tu en as besoin. Si tu veux nous aider à financer une info sans '
+      'pub ni actionnaire, on te raconte tout.';
   static const analysesPillPremium = 'Analyses illimitées · Fact·eur·isse';
 
   // ─── Confirmation « lien envoyé » ───
