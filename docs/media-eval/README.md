@@ -9,12 +9,28 @@
 1. **Collecte** (3 voies) → produit des **signaux** horodatés, sourcés, avec
    citation et snapshot, dans les tables `media_eval_*` (Supabase). La collecte
    **ne note jamais**.
-   - **Voie A — CODE** : scripts déterministes (`packages/api/scripts/media_eval/collect_*.py`).
-     Écrivent directement en DB.
-   - **Voie B — AGENT** : sous-agents Claude avec accès web. N'écrivent **jamais**
-     en DB : artefacts JSON dans `.context/media_eval/<run_id>/` → validés
-     (Pydantic) puis insérés par `ingest_artifacts.py`.
-   - **Voie C — HUMAIN** : paywall, double évaluation C9/C11, golden set.
+   - **Voie A — CODE** : 6 scripts déterministes déposant leurs signaux en DB via
+     le module commun `collect_common.py` (fetch httpx + repli curl_cffi, dédupe
+     applicative, validation `SignalArtifact` avant insertion, harnais dry-run) :
+     `collect_pages_types` (découverte + détection des pages institutionnelles),
+     `collect_cdjm` (adhésion + avis fondés), `collect_jti` (certification),
+     `collect_cppap` (open data `liste-des-publications-de-presse`),
+     `collect_pappers` (propriété/capital, repli gratuit
+     `recherche-entreprises.api.gouv.fr` sans token),
+     `collect_arcom` (sanctions audiovisuel, auto-désactivé sinon).
+     `page_significative` écarte les soft-404 (page = home) et les pages sans
+     marqueur lexical de leur type. `export_snapshots.py` dump ensuite les
+     snapshots vers `.context/media_eval/<run_id>/snapshots/*.txt`.
+   - **Voie B — AGENT** : sous-agents Claude avec accès web (`.claude/agents/`),
+     découpés par domaine (`gouvernance-transparence` C5+C7,
+     `gouvernance-independance` C8+C9+C11, `debunkages` C1). Ils **lisent les
+     snapshots exportés** (levier anti-403) et n'écrivent **jamais** en DB :
+     artefacts JSON dans `.context/media_eval/<run_id>/` → validés (Pydantic)
+     puis insérés par `ingest_artifacts.py` (WARNING de couverture si un
+     `type_signal` gouvernance reste sans signal).
+   - **Voie C — HUMAIN** : paywall, double évaluation C9/C11, golden set. Un
+     artefact d'agent préfixé `humain:…` est ingéré en `voie=humain` (D6) — pas
+     de nouveau script.
 2. **Évaluation** : 1 sous-agent par critère, **sans accès web**, qui ne lit que
    `eval_inputs/<media>_<critere>.json` (signaux + barème verbatim) et rend un
    JSON structuré citant des `signal_ids`. Le **score faisant foi est dérivé par
@@ -33,16 +49,36 @@
 ## Flow d'un run
 
 ```
+create_run.py ───────────────► media_eval_runs (date_reference = fraîcheur)
 seed_medias.py ──────────────► media_eval_medias
 collect_*.py (voie A) ───────► signaux + snapshots (DB directe)
 agents collecteurs (voie B) ─► .context/media_eval/<run_id>/*.json
 ingest_artifacts.py ─────────► signaux + debunkages (validés Pydantic)
 build_eval_input.py ─────────► eval_inputs/<media>_<critere>.json (+ garde-fous amont)
-agents évaluateurs ──────────► evaluations_<media>_<critere>.json
+🛑 GOLD GATE (D4) ───────────► gold_v0.json noté EN AVEUGLE (avant les évaluateurs)
+agents évaluateurs ──────────► evaluations_<media>_<critere>.json (réponse = JSON brut)
 ingest_evaluations.py ───────► media_eval_evaluations (+ garde-fous aval)
 synthese_fiche.py ───────────► media_eval_fiches + fiche markdown
+export_evaluations.py ───────► evaluations_export.json (schéma GoldenSet)
 evaluate_golden_agreement.py ► rapport d'accord vs golden set humain
+rapport_pilote.py ───────────► docs/media-eval/rapports/<run_id>.{md,html} (verdict V0)
 ```
+
+L'orchestration est décrite pas-à-pas dans la commande **`/media-eval-run`**
+(`.claude/commands/media-eval-run.md`) : pré-vol → run + seed → voie A → voie B →
+ingest → build_eval_input → **GOLD GATE — STOP** → évaluateurs → ingest →
+synthèse → export + accord + rapport. Règle : `.context/` jamais commité, aucun
+agent n'écrit en DB, aucune édition manuelle d'un artefact évaluateur.
+
+**Création du run explicite (D1)** : `create_run.py` (upsert idempotent) fixe la
+`date_reference` qui pilote la fraîcheur ; elle **ne peut pas être mutée**
+silencieusement. Collecteurs et `build_eval_input` appellent `require_run()` qui
+**lève** si le run n'existe pas — pas de création implicite.
+
+**Protocole golden (D4)** : Laurin note depuis les **mêmes** `eval_inputs/*.json`
++ rubriques que les agents, à une étape **GOLD GATE** insérée entre
+`build_eval_input` et le spawn des évaluateurs. `rapport_pilote.py` vérifie
+`gold.note_at` < horodatage des évaluations et émet un WARNING sinon.
 
 ## Périmètre V0 (décisions PO du 07/07/2026)
 
@@ -75,8 +111,11 @@ evaluate_golden_agreement.py ► rapport d'accord vs golden set humain
 | `architecture-v1.2.md` | Architecture collecte/évaluation C1–C11 (import du doc du 07/07/2026) |
 | `rubrics/_common.md` | Contrat évaluateur générique + format JSON de sortie |
 | `rubrics/C{1,5,7,8,9,11}.md` | Barème §4 verbatim + sortie structurée + types de signaux |
-| `golden/gold_v0.json` | Golden set humain (Laurin) — livré en PR 2 |
-| `fiches/*.md` | Fiches générées — livrées en PR 2 |
+| `golden/gold_v0.template.json` | Gabarit du golden (12 entrées, à copier + noter en aveugle) |
+| `golden/gold_v0.json` | Golden set humain (Laurin) — rempli au run pilote |
+| `fiches/*.md` | Fiches générées au run pilote |
+| `rapports/*.md` | Rapport d'accord + rapport pilote ASCII (verdict V0) |
+| `rapports/*.html` | Rapport pilote HTML propre (2 lentilles : propreté data + accord/verdict), autonome single-file |
 
 `version_prompt` d'une évaluation = **sha256 du fichier rubrique** utilisé
 (calculé par `build_eval_input.py`) : toute retouche de rubrique invalide la

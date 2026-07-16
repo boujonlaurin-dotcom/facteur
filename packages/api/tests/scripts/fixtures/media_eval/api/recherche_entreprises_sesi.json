@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "siren": "412916215",
+      "nom_complet": "SESI",
+      "nom_raison_sociale": "SESI",
+      "nature_juridique": "5202",
+      "dirigeants": [
+        {
+          "nom": "VIRET",
+          "prenoms": "Gerald Brice",
+          "qualite": "Gerant",
+          "type_dirigeant": "personne physique"
+        }
+      ],
+      "siege": {"code_postal": "92130", "commune": "ISSY-LES-MOULINEAUX"}
+    }
+  ],
+  "total_results": 1,
+  "page": 1,
+  "per_page": 5
+}

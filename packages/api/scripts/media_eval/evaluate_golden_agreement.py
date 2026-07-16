@@ -165,19 +165,31 @@ def main() -> None:
         required=True,
         help="export évals générées (même schéma)",
     )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=Path(__file__).resolve().parents[4] / ".context",
+        help="dossier de sortie (défaut .context ; docs/media-eval/rapports "
+        "pour un livrable commité)",
+    )
+    parser.add_argument(
+        "--slug",
+        default=None,
+        help="suffixe de fichier (défaut : date du jour, ex. 20260710)",
+    )
     args = parser.parse_args()
 
     gold = GoldenSet.model_validate_json(args.gold.read_text())
     generated = GoldenSet.model_validate_json(args.generated.read_text())
     report = evaluate(gold, generated)
 
-    ts = datetime.now(UTC).strftime("%Y%m%d")
-    ctx = Path(__file__).resolve().parents[4] / ".context"
-    ctx.mkdir(parents=True, exist_ok=True)
-    (ctx / f"media-eval-accord-{ts}.json").write_text(
+    slug = args.slug or datetime.now(UTC).strftime("%Y%m%d")
+    out_dir = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"media-eval-accord-{slug}.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False)
     )
-    (ctx / f"media-eval-accord-{ts}.md").write_text(render_md(report))
+    (out_dir / f"media-eval-accord-{slug}.md").write_text(render_md(report))
     print(render_md(report))
 
 

@@ -1,0 +1,20 @@
+{
+  "version_methodo": "v1.2",
+  "notateur": "humain:laurin",
+  "note_at": null,
+  "_instructions": "GOLD GATE (D4) : copie ce fichier en gold_v0.json, note EN AVEUGLE depuis les mêmes eval_inputs/*.json + rubriques que les agents, AVANT de spawner les évaluateurs. Renseigne note_at (ISO 8601 UTC, maintenant). Pour chaque entrée : statut ∈ evaluee|non_applicable|revue_requise ; si evaluee, score obligatoire ; C9/C11 exigent aussi niveau ∈ 0|1|2. Supprime cette clé _instructions dans gold_v0.json.",
+  "entries": [
+    {"media_domaine": "cnews.fr", "critere": "C1", "statut": "a_noter", "score": null, "commentaire": "0/5/10/15/20"},
+    {"media_domaine": "cnews.fr", "critere": "C5", "statut": "a_noter", "score": null, "commentaire": "0/5/10"},
+    {"media_domaine": "cnews.fr", "critere": "C7", "statut": "a_noter", "score": null, "commentaire": "0/2/4"},
+    {"media_domaine": "cnews.fr", "critere": "C8", "statut": "a_noter", "score": null, "commentaire": "0/2/4"},
+    {"media_domaine": "cnews.fr", "critere": "C9", "statut": "a_noter", "score": null, "niveau": null, "commentaire": "niveau 0/1/2 → score 0/5/10"},
+    {"media_domaine": "cnews.fr", "critere": "C11", "statut": "a_noter", "score": null, "niveau": null, "commentaire": "niveau 0/1/2 → score 0/3/6"},
+    {"media_domaine": "reporterre.net", "critere": "C1", "statut": "a_noter", "score": null, "commentaire": "N/A attendu (< 3 débunkages → fallback)"},
+    {"media_domaine": "reporterre.net", "critere": "C5", "statut": "a_noter", "score": null, "commentaire": "0/5/10"},
+    {"media_domaine": "reporterre.net", "critere": "C7", "statut": "a_noter", "score": null, "commentaire": "0/2/4"},
+    {"media_domaine": "reporterre.net", "critere": "C8", "statut": "a_noter", "score": null, "commentaire": "0/2/4"},
+    {"media_domaine": "reporterre.net", "critere": "C9", "statut": "a_noter", "score": null, "niveau": null, "commentaire": "niveau 0/1/2 → score 0/5/10"},
+    {"media_domaine": "reporterre.net", "critere": "C11", "statut": "a_noter", "score": null, "niveau": null, "commentaire": "niveau 0/1/2 → score 0/3/6"}
+  ]
+}

@@ -28,7 +28,7 @@ import asyncio
 import hashlib
 import json
 import sys
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 from uuid import UUID
 
@@ -42,9 +42,11 @@ from app.models.media_eval import (
     MediaEvalDebunkage,
     MediaEvalEvaluation,
     MediaEvalSignal,
+    MediaEvalSnapshot,
     StatutEvaluation,
 )
 from scripts.cleanup_orphan_sources import _is_test_db
+from scripts.media_eval.collect_common import require_run
 from scripts.media_eval.garde_fous import (
     detecter_jti_valide,
     fallback_c1_requis,
@@ -62,6 +64,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 RUBRICS_DIR = _REPO_ROOT / "docs" / "media-eval" / "rubrics"
 DEFAULT_OUT_ROOT = _REPO_ROOT / ".context" / "media_eval"
 
+# Substance de la page jointe au signal pour que l'évaluateur voie ce que dit
+# la page (pas seulement qu'elle existe) — cf. hand-off « mini-filtre ».
+SNAPSHOT_EXTRAIT_MAX = 4000
+
 
 def rubrique_path(critere: str) -> Path:
     return RUBRICS_DIR / f"{critere}.md"
@@ -72,8 +78,17 @@ def version_prompt(critere: str) -> str:
     return hashlib.sha256(rubrique_path(critere).read_bytes()).hexdigest()
 
 
-def serialiser_signal(signal: MediaEvalSignal) -> dict:
-    return {
+def serialiser_signal(
+    signal: MediaEvalSignal, snapshot: MediaEvalSnapshot | None = None
+) -> dict:
+    """Sérialise un signal ; joint la substance du snapshot si fourni.
+
+    La voie A capture jusqu'à 20 000 caractères par page mais n'expose que
+    ``{url, detection}`` : sans le contenu, l'évaluateur voit qu'une page existe
+    sans savoir ce qu'elle dit. On joint donc un extrait (``snapshot_extrait``)
+    et l'URL (``snapshot_url``) quand le signal porte un ``snapshot_id``.
+    """
+    data = {
         "id": str(signal.id),
         "type_signal": signal.type_signal,
         "statut": signal.statut.value
@@ -86,6 +101,10 @@ def serialiser_signal(signal: MediaEvalSignal) -> dict:
         "voie": signal.voie.value if hasattr(signal.voie, "value") else signal.voie,
         "collecte_at": signal.collecte_at.isoformat() if signal.collecte_at else None,
     }
+    if snapshot is not None and signal.snapshot_id == snapshot.id:
+        data["snapshot_url"] = snapshot.url
+        data["snapshot_extrait"] = (snapshot.contenu or "")[:SNAPSHOT_EXTRAIT_MAX]
+    return data
 
 
 def construire_eval_input(
@@ -94,6 +113,7 @@ def construire_eval_input(
     signaux: list[dict],
     *,
     run_id: str,
+    date_reference: date,
     bareme_verbatim: str,
     contrat_commun: str,
     version_prompt_sha: str,
@@ -104,6 +124,7 @@ def construire_eval_input(
         "media": media,
         "critere": critere,
         "run_id": run_id,
+        "date_reference": date_reference.isoformat(),
         "version_methodo": VERSION_METHODO,
         "version_prompt": version_prompt_sha,
         "score_max": BAREMES[critere],
@@ -125,6 +146,19 @@ async def _signaux_du_critere(session, media_id, run_id: str, critere: str):
         .order_by(MediaEvalSignal.collecte_at)
     )
     return list(rows.scalars())
+
+
+async def _charger_snapshots(
+    session, signaux: list[MediaEvalSignal]
+) -> dict[UUID, MediaEvalSnapshot]:
+    """Snapshots référencés par les signaux (par id), pour joindre la substance."""
+    ids = {s.snapshot_id for s in signaux if s.snapshot_id is not None}
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(MediaEvalSnapshot).where(MediaEvalSnapshot.id.in_(ids))
+    )
+    return {snap.id: snap for snap in rows.scalars()}
 
 
 async def _nb_debunkages_frais(
@@ -183,12 +217,16 @@ async def run(
         print("\nABORT : --apply contre une DB non-test sans --allow-prod (gated PO).")
         return 2
 
-    aujourd_hui = datetime.now(UTC).date()
     contrat_commun = (RUBRICS_DIR / "_common.md").read_text()
     out_dir = out_root / run_id / "eval_inputs"
 
     async with async_session_maker() as session:
         try:
+            # date_reference du run pilote la fraîcheur (jamais now()) : un run
+            # rejoué plus tard produit les mêmes entrées évaluateur.
+            run_row = await require_run(session, run_id)
+            aujourd_hui = run_row.date_reference
+            print(f"date_reference : {aujourd_hui.isoformat()}")
             media = await resoudre_media(session, domaine)
             media_dict = {
                 "nom": media.nom,
@@ -206,7 +244,8 @@ async def run(
 
             for critere in CRITERES_VAGUE_1:
                 rows = await _signaux_du_critere(session, media.id, run_id, critere)
-                signaux = [serialiser_signal(s) for s in rows]
+                snaps = await _charger_snapshots(session, rows)
+                signaux = [serialiser_signal(s, snaps.get(s.snapshot_id)) for s in rows]
                 frais, exclus = filtrer_fraicheur(signaux, aujourd_hui)
                 for s in exclus:
                     print(
@@ -241,6 +280,7 @@ async def run(
                     critere,
                     frais,
                     run_id=run_id,
+                    date_reference=aujourd_hui,
                     bareme_verbatim=rubrique_path(critere).read_text(),
                     contrat_commun=contrat_commun,
                     version_prompt_sha=version_prompt(critere),

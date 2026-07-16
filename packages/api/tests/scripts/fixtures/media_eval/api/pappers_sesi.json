@@ -1,0 +1,12 @@
+{
+  "siren": "501260034",
+  "nom_entreprise": "SOCIETE D'EXPLOITATION D'UN SERVICE D'INFORMATION",
+  "capital": 5537200,
+  "forme_juridique": "SAS, societe par actions simplifiee",
+  "representants": [
+    {"nom_complet": "Groupe Canal Plus", "qualite": "President"}
+  ],
+  "beneficiaires_effectifs": [
+    {"nom_complet": "Vivendi SE", "pourcentage_parts": 100.0}
+  ]
+}

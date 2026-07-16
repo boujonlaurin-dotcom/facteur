@@ -17,7 +17,6 @@ from app.models.media_eval import (
     MediaEvalMedia,
     MediaEvalSignal,
     StatutSignal,
-    TypeMedia,
     VoieCollecte,
 )
 from scripts.media_eval.ingest_artifacts import IngestError
@@ -30,27 +29,7 @@ from scripts.media_eval.schemas import (
     EvaluationOutput,
 )
 
-RUN_ID = "run-test"
-
-
-@pytest.fixture
-async def media_cnews(db_session) -> MediaEvalMedia:
-    media = MediaEvalMedia(
-        nom="CNEWS", domaine="cnews.fr", type_media=TypeMedia.AUDIOVISUEL
-    )
-    db_session.add(media)
-    await db_session.commit()
-    return media
-
-
-@pytest.fixture
-async def media_reporterre(db_session) -> MediaEvalMedia:
-    media = MediaEvalMedia(
-        nom="Reporterre", domaine="reporterre.net", type_media=TypeMedia.PRESSE_EN_LIGNE
-    )
-    db_session.add(media)
-    await db_session.commit()
-    return media
+RUN_ID = "run-test"  # doit matcher conftest.RUN_ID (fixture run_test)
 
 
 async def make_signal(
