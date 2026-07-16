@@ -1,6 +1,14 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "Ouverture des articles plus rapide et défilement de la couverture médiatique plus fluide."
+    },
+    {
+      "tag": "Analyses",
+      "summary": "L'analyse des perspectives se charge toujours quand tu en as besoin ; après la première du jour, on t'explique simplement notre modèle sans pub."
+    },
+    {
       "tag": "Essentiel",
       "summary": "Défilement affiné : une seule vibration à l'arrivée sur une section, un maintien appui qui fait respirer la carte, et un sondage bien plus rare."
     },

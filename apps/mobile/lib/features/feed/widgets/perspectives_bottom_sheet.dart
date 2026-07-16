@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -12,7 +11,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../core/web/web_perf.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
@@ -23,7 +21,6 @@ import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
 import '../../soutien/providers/analyse_quota_provider.dart';
 import '../../soutien/soutien_copy.dart';
-import '../../soutien/widgets/paywall_sheet.dart';
 import '../../premium/premium_provider.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
@@ -388,12 +385,12 @@ class _PerspectivesBottomSheetState
   }
 
   Future<void> _requestAnalysis() async {
-    // Lancement frais uniquement (le retry après erreur ne re-consomme pas
-    // le quota) : gating free 1 analyse/jour.
-    if (_analysisState == PerspectivesAnalysisState.idle &&
-        !ref.read(analyseQuotaProvider.notifier).tryConsume()) {
-      PaywallSheet.show(context, PaywallWallVariant.analyses);
-      return;
+    // L'analyse se charge TOUJOURS (plus de blocage paywall). Sur un lancement
+    // frais (state idle, pas un retry après erreur), on marque l'usage du jour
+    // de façon non-bloquante (no-op premium) : signal de présentation pour le
+    // nudge doux « Notre histoire » de la surface quota.
+    if (_analysisState == PerspectivesAnalysisState.idle) {
+      unawaited(ref.read(analyseQuotaProvider.notifier).recordUse());
     }
     setState(() => _analysisState = PerspectivesAnalysisState.loading);
 
@@ -430,11 +427,35 @@ class _PerspectivesBottomSheetState
     }
     final quotaUsed = ref.watch(analyseQuotaProvider).valueOrNull ?? false;
     if (quotaUsed && _analysisState == PerspectivesAnalysisState.idle) {
+      // Nudge doux, non-bloquant : l'analyse reste libre. Après le 1er usage du
+      // jour, on explique le coût réel et on renvoie vers « Notre histoire »
+      // (écran Soutien), du même geste que le paywall (`context.pushNamed`).
       return Center(
-        child: Text(
-          SoutienCopy.analysesQuotaBanner,
-          textAlign: TextAlign.center,
-          style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+        child: InkWell(
+          onTap: () => context.pushNamed(RouteNames.soutien),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  SoutienCopy.analysesQuotaBanner,
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodySmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  SoutienCopy.missionLinkLabel,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -1832,40 +1853,32 @@ class _PerspectivesInlineSectionState
     required bool isReady,
     required Widget child,
   }) {
-    // Teinte quasi-invisible : à peine ~2 % sous le parchemin de la page. La
-    // zone ne se lit plus comme un panneau ; c'est la hairline qui délimite.
-    // Clair : crème translucide très léger. Sombre : backgroundPrimary discret.
+    // Teinte statique : plus de `BackdropFilter` (re-rasterisé chaque frame, le
+    // pattern retiré du chrome reader par #970). Zéro coût par frame ⇒ scroll du
+    // carrousel fluide. L'alpha est légèrement remonté pour compenser la perte
+    // d'assombrissement du blur (parité visuelle : le rendu web `fallbackColor`
+    // prouvait déjà que la bande tient en statique).
+    // Clair : crème translucide. Sombre : backgroundPrimary discret.
     final tint = isDark
-        ? colors.backgroundPrimary.withValues(alpha: 0.6)
-        : const Color.fromRGBO(232, 222, 203, 0.55);
-    // Web n'a pas de blur (no-op opaque) → teinte composée plus proche du fond.
-    final fallbackColor = isDark
-        ? colors.backgroundPrimary
-        : const Color.fromRGBO(237, 228, 211, 1);
+        ? colors.backgroundPrimary.withValues(alpha: 0.75)
+        : const Color.fromRGBO(232, 222, 203, 0.72);
     // Hairline chaude nette mais fine : c'est la VRAIE séparation (élégante,
     // marquée). Top + bottom, gardée sur isReady.
     final hairlineColor = isDark
         ? Colors.white.withValues(alpha: isReady ? 0.09 : 0)
         : colors.border.withValues(alpha: isReady ? 0.7 : 0);
 
-    return ClipRect(
-      // ClipRect (bords droits) borne le BackdropFilter → vrai effet verre.
-      child: webBlurFallback(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        fallbackColor: fallbackColor,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: tint,
-            border: Border(
-              top: BorderSide(color: hairlineColor, width: 1),
-              bottom: BorderSide(color: hairlineColor, width: 1),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
-            child: child,
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tint,
+        border: Border(
+          top: BorderSide(color: hairlineColor, width: 1),
+          bottom: BorderSide(color: hairlineColor, width: 1),
         ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
+        child: child,
       ),
     );
   }
