@@ -1,58 +1,81 @@
-# PR — 2 fixes UX/UI : carte de source + notifs inlines
+## Lettre du jour — timeline en overlay + ajustements PO (rewind page lettre, mode serein, simplification)
 
-Deux irritants UX signalés par le PO, regroupés en une seule PR (`--base main`).
-Pas de migration, pas de DDL → aucune contrainte expand-contract.
+Finalisation de l'EPIC « Lettre du jour ». Deux blocs :
 
-## Partie 1 — Carte de source (`SourceDetailModal`)
+1. **Refonte timeline en overlay** : le **strip horizontal de pills** (permanent,
+   au-dessus de l'Essentiel, dupliqué live + passé) est remplacé par un **bouton
+   « rewind » compact** dans l'en-tête de la carte Essentiel, qui ouvre une
+   **timeline en feuille du bas** avec un signal **lu / non-lu** honnête (réutilise
+   la feature streaks, zéro back-end).
+2. **4 ajustements PO** (avant ship) : simplification de la feature + rééquilibrage
+   des points d'entrée + extension du rewind et d'un CTA serein à la page **Lettre
+   du jour** (le rituel matinal), jusqu'ici dépourvue de ces affordances.
 
-- **1a — Priorité + Abonnement remontés quand la source est suivie.** Dans
-  `_FsBody._assemble`, quand `display.isTrusted`, `_FsSettings` (priorité dans
-  le flux) **et** `_FsManage` (connexion abonnement) passent juste sous
-  `_FsEval`, avant la couverture / les derniers articles. Source non suivie :
-  `_FsManage` reste le CTA de découverte (paywall) sous le contenu, `_FsSettings`
-  masqué (gate `isTrusted` inchangé).
-- **1b — « Lire plus » sur Derniers articles (3 → 10, sans requête réseau).**
-  - Backend `sources.py:get_source_profile` : `recent_articles` limite `3 → 10`
-    (additif, pas de rupture de contrat ; anciens clients prennent 3 via
-    `.take(3)`). Docstring MAJ.
-  - Mobile `_FsArticlesSection` → `StatefulWidget` : replié = `take(3)`, déplié =
-    `take(10)`, bouton discret « Lire plus » / « Réduire » (idiome
-    `_ExpandableDescription`) si `articles.length > 3`. Aucune requête : les 10
-    articles sont déjà dans le payload profil.
-  - Hors scope (noté) : mode smart-search (`_ArticlesContent`) et
-    `recent_articles_list.dart` restent à 3 (autre chemin de préchargement).
+### Bloc 1 — timeline overlay
 
-## Partie 2 — Notifs inlines (« Notif du jour »)
+- **Nouveau** `widgets/edition_timeline_sheet.dart` : `EditionTimelineSheet.show`
+  (calqué sur `manage_favorites_sheet`, scrim chaud, pas de `useRootNavigator`),
+  `_DayRow` (icône + libellé + méta + pastille), `EditionRewindTrigger`.
+- **Nouveau** `providers/edition_read_status_provider.dart` :
+  `editionReadStatusProvider` (union streaks `opened` ∪ set local) +
+  `editionCaughtUpProvider` (SharedPreferences, additif). Dégradation gracieuse :
+  streaks off/loading/error ⇒ aucun statut affiché.
+- **Modifié** `essentiel_hi_fi_card.dart` : `_Header` reçoit le déclencheur rewind.
+- **Modifié** `flux_continu_screen.dart` : retrait des 2 strips ; `ref.listen`
+  marquant un jour « rattrapé » quand une édition passée se charge ; action
+  « Choisir un autre jour » dans l'état vide (anti-cul-de-sac).
+- **Déplacé** `editionPillLabel` → `selected_edition_date_provider.dart`
+  (co-localisé avec `EditionSelection`/`editionPillModel`).
+- **Supprimé** `widgets/edition_date_strip.dart` (+ son test).
 
-- **2a — Cooldown durable au dismiss (~30j).** Nouveau store
-  `notif_du_jour_dismissal_store.dart` (clé `notif_du_jour_dismissals_v1`, JSON
-  `{ id: 'YYYY-MM-DD' }`, `kNotifDismissCooldownDays = 30`, clock injectable).
-  `notifDuJourQueueProvider` filtre les `activeCooldownIds(now)` (même clé jour
-  que le day store). Le cooldown se pose **au dismiss (croix) uniquement**
-  (`_CloseButton` → `recordDismissed`), jamais au tap. Anti-flash : la carte
-  gate désormais sur `day.loaded` **et** `dismissalStore.loaded`.
-- **2b — « Mode serein » remonte.** Relevance `0.4 → 0.55` (au-dessus de
-  `tournee` 0.5, sous les prompts temps-sensibles). Combiné au cooldown, serein
-  émerge une fois les autres messages profil dismissés.
-- **2c — Sondage « bien informé » non tronqué.** Titre `maxLines: 1 →
-  hasCustomBody ? 2 : 1` (la question s'affiche en entier au-dessus de la
-  rangée NPS ; une ligne, sans impact sur les autres messages).
+### Bloc 2 — ajustements PO
 
-## Tests
+- **Point 1 — rewind réduit à 3 options** : `kEditionMaxPastDays` 7 → **1**
+  (`selected_edition_date_provider.dart`). `editionPillModel()` ⇒
+  `[Cette semaine, Aujourd'hui, Hier]` ; la timeline et le pill se réduisent
+  automatiquement. **« Cette semaine » inchangé** (agrège toujours J-0…J-6 via la
+  constante distincte `kEditionWeekPastDays`). **Aucun rollback back-end** : la
+  garde « édition passée » de `digest_service.py` reste nécessaire (Hier + fan-out
+  hebdo).
+- **Point 2 — retrait du bouton « personnaliser » + grossir « GÉRER »** : le bouton
+  perso de la carte Essentiel est **retiré partout** (today ET lettre passée). Point
+  d'entrée préférences **unique** = l'inline « GÉRER » de `MyInterestsIntro`, rendu
+  plus visible (libellé 11→13 px, fond accent doux au lieu d'un simple contour).
+  Nettoyage : suppression du widget `_PersonalizeButton` + du param `onTapPersonalize`
+  (`essentiel_hi_fi_card.dart`) et du param mort `interactive` (`section_block.dart`,
+  call-site `flux_continu_screen.dart`).
+- **Point 3 — rewind sur la page Lettre du jour (swipe horizontal riche)**
+  (`morning_ritual_screen.dart`) : glisser la lettre du jour vers la **droite**
+  révèle une carte « Hier » décorative parquée hors-écran gauche (liseré ~24 px au
+  repos = nudge) ; commit (seuil 30 % ou fling) → sélectionne `EditionPastDay(hier)`
+  + route vers le feed en lecture seule. Coexiste avec le swipe-up existant (arène de
+  gestes H/V). Repli accessible : trigger « Remonter le temps » (ouvre la timeline).
+  `reduceMotion` → carte statique.
+- **Point 4 — CTA « mode serein »** : `_SereinCta` (ConsumerWidget privé) sous le
+  bloc rewind, copie « Pas d'humeur pour les news difficiles ? » + bouton « Active ton
+  mode serein » → `sereinToggleProvider.toggle()` (persiste + haptique) + snackbar de
+  confirmation ; désactivé tant que `state.isLoading`.
 
-- Backend `test_source_profile.py` : happy path aligné (4 contents ≤ 10) +
-  nouveau `test_profile_recent_articles_capped_at_10` (14 contents → 10).
-  **7 passed** (`DATABASE_URL=postgresql+psycopg://facteur:facteur@localhost:54322/facteur_test`).
-- Mobile : nouveau `notif_du_jour_dismissal_store_test.dart` (record + cooldown
-  30j + expiration + date illisible) ; `notif_du_jour_provider_test.dart` étendu
-  (id en cooldown filtré, cooldown expiré, serein remonte quand les autres sont
-  en cooldown) ; `notif_du_jour_card_test.dart` (titre 2 lignes hasCustomBody,
-  1 ligne standard) ; `source_detail_modal_test.dart` (ordre Priorité/Abonnement
-  au-dessus des articles si suivie / paywall dessous si non suivie ; « Lire plus »
-  déroule à 10 puis « Réduire » ; pas de bouton si ≤ 3). **76 passed.**
-- `flutter analyze` sur les fichiers touchés : **No issues found.**
+### Tests
+- `flutter analyze` : **0 issue** sur les fichiers touchés.
+- MAJ/nouveaux : `selected_edition_date_provider_test` (pills 9→3),
+  `edition_timeline_sheet_test` (3 lignes), `essentiel_hi_fi_card_test` (bouton perso
+  retiré), `morning_ritual_content_test` (ProviderScope + serein CTA + trigger),
+  `edition_read_status_provider_test` (fixtures découplées de `kEditionMaxPastDays`).
+- Suite `test/features/flux_continu/` : **354 verts, 1 échec pré-existant et non lié**
+  (`flux_continu_provider_test` « 10 favorites cap » — cap déjà bumpé à 13 en amont).
 
-## Changelog
+### Validation web (Playwright)
+- QA handoff prêt (`.context/qa-handoff.md`) pour `/validate-feature` (4 scénarios PO :
+  timeline 3 options, carte sans bouton perso + « GÉRER » plus grand, page Lettre du
+  jour rewind, CTA serein). **Le swipe horizontal de la page Lettre du jour est validé
+  par `flutter analyze` + Playwright** (pas de test widget plein-écran : le rituel monte
+  des providers réseau/streak/profil ; le geste reprend le pattern éprouvé du swipe-up,
+  lui-même couvert au niveau `MorningRitualContent` + QA, non par un test d'écran).
 
-2 entrées `unreleased` : « Sources » (réglages en tête + Lire plus) + « Feed »
-(notifs moins insistantes).
+### Risque / migration
+- **Aucun** changement back-end, **aucune** migration Alembic.
+
+### Hors scope (suivi)
+- Audit « santé des streaks » (frontière de jour / sémantique `opened`) :
+  `.context/streaks-health-handoff.md` (read-only, ne bloque pas cette PR).

@@ -46,7 +46,7 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => const [];
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -130,7 +130,7 @@ void main() {
         userInterestsProvider.overrideWith(
           () => _StubUserInterestsNotifier(interests),
         ),
-        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref, null)),
         displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
       ],
     );

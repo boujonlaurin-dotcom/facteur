@@ -996,13 +996,17 @@ class TestScoreCandidatesSportPenalty:
         assert sport_entry.pillar == "penalite"
 
     @pytest.mark.asyncio
-    async def test_sport_penalty_applies_in_serein_mode(self, selector, context):
-        """La pénalité Sport s'applique aussi en mode serein."""
-        from app.services.recommendation.scoring_config import ScoringWeights
+    async def test_sport_hard_excluded_in_serein_mode(self, selector, context):
+        """En serein, le sport est EXCLU du pool (pas seulement pénalisé).
 
+        « Bonnes nouvelles » ne doit jamais contenir de sport, même si le
+        classifieur good-news a produit un faux positif. Un article sport est
+        donc retiré des candidats scorés, tandis qu'un article neutre passe."""
         sport_src = make_source(name="Sport Source", theme="sport")
+        tech_src = make_source(name="Tech Source", theme="tech")
         now = datetime.now(UTC)
         sport_content = make_content(source=sport_src, theme="sport", published_at=now)
+        tech_content = make_content(source=tech_src, theme="tech", published_at=now)
 
         selector.rec_service = Mock()
         selector.rec_service.fetch_impression_data = AsyncMock(return_value={})
@@ -1012,15 +1016,12 @@ class TestScoreCandidatesSportPenalty:
         )
 
         scored = await selector._score_candidates(
-            [sport_content], context, mode="serein"
+            [sport_content, tech_content], context, mode="serein"
         )
 
-        _, _, breakdown, _ = scored[0]
-        sport_entry = next(
-            (b for b in breakdown if b.label == "Sport (priorité réduite)"), None
-        )
-        assert sport_entry is not None
-        assert sport_entry.points == ScoringWeights.DIGEST_SPORT_PENALTY
+        scored_ids = {c.id for c, _, _, _ in scored}
+        assert sport_content.id not in scored_ids
+        assert tech_content.id in scored_ids
 
     @pytest.mark.asyncio
     async def test_sport_detected_via_topics(self, selector, context):

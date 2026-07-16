@@ -221,6 +221,9 @@ class UserSource(Base):
         default=InterestState.FOLLOWED,
         server_default=InterestState.FOLLOWED.value,
     )
+    # Placement Essentiel/Flâner durable (source de vérité DB, resync par device).
+    # true = Essentiel, false = Flâner, NULL = jamais placé / legacy (backfill device).
+    essentiel_mode: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Relations
     source: Mapped["Source"] = relationship(back_populates="user_sources")

@@ -17,6 +17,7 @@ from app.services.premium_curated_sources import (
     PREMIUM_CURATED_MAP,
     domain_key,
     is_paywalled_source,
+    origin_url,
 )
 from app.services.source_service import SourceService
 
@@ -47,6 +48,29 @@ def test_domain_key_handles_multipart_tld_and_invalids():
     assert domain_key(None) == ""
     assert domain_key("   ") == ""
     assert domain_key("https://") == ""
+
+
+# ─── origin_url ───────────────────────────────────────────────────
+
+
+def test_origin_url_reduces_to_site_origin():
+    assert (
+        origin_url("https://www.cerveauetpsycho.fr/rss.xml")
+        == "https://www.cerveauetpsycho.fr/"
+    )
+    assert origin_url("https://example.com/feed/") == "https://example.com/"
+    # Idempotent + ajoute le slash final manquant.
+    assert origin_url("https://example.com/") == "https://example.com/"
+    assert origin_url("https://example.com") == "https://example.com/"
+    # Port préservé.
+    assert origin_url("http://localhost:8080/x/y") == "http://localhost:8080/"
+
+
+def test_origin_url_rejects_non_http_and_invalid():
+    assert origin_url(None) == ""
+    assert origin_url("") == ""
+    assert origin_url("ftp://weird-host/x") == ""
+    assert origin_url("mailto:foo@bar.com") == ""
 
 
 # ─── from_source : priorité config > map > générique > None ────────
@@ -99,7 +123,9 @@ def test_from_source_english_titles_are_curated_not_generic(url, domain):
     assert resp.test_url == MAP[domain]["test_url"]
 
 
-def test_from_source_paywall_config_only_is_generic_using_source_url():
+def test_from_source_paywall_config_only_is_generic_using_site_origin():
+    # L'URL de la source est un article ; le flux générique doit pointer sur
+    # l'origine du site, jamais sur l'URL brute (article ou flux RSS).
     src = _stub(
         url="https://unknown-paper.example/news/x",
         paywall_config={"keywords": ["réservé aux abonnés"]},
@@ -107,8 +133,22 @@ def test_from_source_paywall_config_only_is_generic_using_source_url():
     resp = PremiumConnectionResponse.from_source(src, curated_map=MAP)
     assert resp is not None
     assert resp.is_generic is True
-    assert resp.login_url == "https://unknown-paper.example/news/x"
+    assert resp.login_url == "https://unknown-paper.example/"
     assert resp.test_url == resp.login_url
+
+
+def test_from_source_generic_normalizes_feed_url_to_origin():
+    # Bug « Cerveau & Psycho » : ``url`` = URL du flux RSS. Sans normalisation la
+    # WebView ouvrait du XML brut ; on doit résoudre vers l'origine du site.
+    src = _stub(
+        url="https://www.cerveauetpsycho.fr/rss.xml",
+        paywall_config={"keywords": ["réservé aux abonnés"]},
+    )
+    resp = PremiumConnectionResponse.from_source(src, curated_map=MAP)
+    assert resp is not None
+    assert resp.is_generic is True
+    assert resp.login_url == "https://www.cerveauetpsycho.fr/"
+    assert resp.test_url == "https://www.cerveauetpsycho.fr/"
 
 
 def test_from_source_disabled_config_blocks_curated_and_generic_fallback():

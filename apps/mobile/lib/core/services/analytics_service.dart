@@ -159,6 +159,42 @@ class AnalyticsService {
     await _capturePostHog('digest_session', props);
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Rituel matinal « Ton édition vient d'arriver » (Story 28.1)
+  // ──────────────────────────────────────────────────────────────
+
+  /// L'écran enveloppe `/edition` s'est affiché au premier open du jour.
+  Future<void> trackMorningRitualShown({required String dayKey}) async {
+    final props = {'session_id': _sessionId, 'day_key': dayKey};
+    await _logEvent('morning_ritual_shown', props);
+    await _capturePostHog('morning_ritual_shown', props);
+  }
+
+  /// L'utilisateur a tapé « Ouvrir l'édition ». [waitedMs] = temps écoulé entre
+  /// l'affichage et le tap (utile pour calibrer le délai borné).
+  Future<void> trackMorningRitualOpened({
+    required String dayKey,
+    int? waitedMs,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'day_key': dayKey,
+      if (waitedMs != null) 'waited_ms': waitedMs,
+    };
+    await _logEvent('morning_ritual_opened', props);
+    await _capturePostHog('morning_ritual_opened', props);
+  }
+
+  /// L'édition n'était pas prête après le délai borné → on a filé au feed
+  /// **sans** marquer « vu » (le rituel reviendra au prochain open).
+  Future<void> trackMorningRitualSkippedNotReady({
+    required String dayKey,
+  }) async {
+    final props = {'session_id': _sessionId, 'day_key': dayKey};
+    await _logEvent('morning_ritual_skipped_not_ready', props);
+    await _capturePostHog('morning_ritual_skipped_not_ready', props);
+  }
+
   /// Enregistre une session feed complète.
   Future<void> trackFeedSession({
     required double scrollDepthPercent,

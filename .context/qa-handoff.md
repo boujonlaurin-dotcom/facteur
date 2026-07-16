@@ -1,124 +1,127 @@
-# QA Handoff — « Notif du jour » (bandeau agrégateur quotidien)
-# QA Handoff — Header/Footer flottants « liquid glass » (reader)
+# QA Handoff — Lettres passées à parité visuelle avec « Aujourd'hui »
 
-## Feature développée
-Le header et le footer de l'écran de lecture (`ContentDetailScreen`) deviennent des surfaces « liquid glass » (`GlassPill` : blur conditionnel + fond translucide + hairline + ombre douce), pattern extrait de `MainBottomNav`. Le header est un cadre haut collé aux bords (haut/gauche/droite, sous la status bar) dont seuls les coins bas sont arrondis (rayon 20 px) ; le footer est un pill flottant détaché des bords dont seuls les coins hauts sont arrondis. La barre de progression de lecture vit désormais *dans* le pill du header (clipée par ses coins arrondis). Le fond du header couvre toute la zone status bar (plus de scrim) et garde les icônes système lisibles.
+> Input pour /validate-feature (Playwright Agent CLI, skill facteur-qa-web).
+> Viewport mobile 390×844, sémantique activée au boot (canvas Flutter web).
+> ⚠️ **Valider par HOT RESTART** (pas hot reload) : `editionEssentielProvider`
+> garde `state` + `_dayCache` à travers un reload. Sinon pull-to-refresh /
+> changement de sélection.
 
-## PR associée
-À créer (branche `boujonlaurin-dotcom/floating-webview-header-footer`, base `main`).
+## Résumé
+Les lettres passées (« Hier » = jour passé, « Cette semaine » = rétro hebdo) de
+l'écran Essentiel (`FluxContinuScreen`) rendaient une lettre tronquée vs
+« Aujourd'hui ». Elles adoptent maintenant la **même grammaire visuelle** en
+lecture seule. Mobile-only, aucun changement backend.
+
+Nouvelle composition d'une lettre passée (`_singleDaySlivers`) :
+`héros → · → Actus → · → Bonnes Nouvelles → citation → carte de clôture`, où `·`
+est un point de passage (`_SectionPassageDot`, statique en passé).
+
+Changements clés :
+1. **Bonnes Nouvelles réaffichées** (jour ET semaine) : la donnée serein
+   (`dual.serein.topics`) était déjà fetchée mais jetée ; ré-exposée via
+   `EditionEssentielState.bonnesTopics`.
+2. **Bannières de section à parité** : « Actus » et « Bonnes Nouvelles » portent
+   blurb + illustration comme la lettre du jour.
+3. **Carte de clôture** : `ClosingCardV18.readOnly` (coque météo « FIN DE TOURNÉE »
+   / « Tu es à jour » identique) remplace l'ancien bloc minimal. Action primaire =
+   **« Revenir à aujourd'hui »** + note de contexte. Plus de « Continuer à Flâner »
+   ni « Refermer » sur une lettre passée.
+4. **Points de passage** entre sections (rythme visuel du jour), calmes/statiques
+   en passé (pas de snap — choix délibéré, free-scroll).
+5. **Lecture seule** : aucun swipe/feedback/favori/see-all (chaque `SectionBlock`
+   ne reçoit que `onTapArticle`).
+
+Limite assumée (Option A validée PO) : les sections **tournée personnalisées**
+(thèmes / sources / veille) ne sont **pas** rendues en passé — flux live non
+archivé par date, hors de portée d'un fix mobile.
 
 ## Écrans impactés
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Écran de lecture (reader in-app, scroll-to-site, WebView, vidéo/audio) | `/content/:id` (ContentDetailScreen) | Modifié |
+- `FluxContinuScreen` → `_buildPastEdition` / `_singleDaySlivers` (lettre passée).
+- `ClosingCardV18` (nouvelle variante `.readOnly`).
+- Provider `editionEssentielProvider` (champ `bonnesTopics`).
 
 ## Scénarios de test
 
-### Scénario 1 : Reader in-app — pills flottants (happy path)
-**Parcours** :
-1. Ouvrir un article avec contenu in-app depuis le feed
-2. Observer le header en haut et le footer en bas
-3. Scroller dans l'article
-**Résultat attendu** : header et footer sont des pills à coins arrondis 20 px, détachés des bords (12 px de marge horizontale) ; le contenu de l'article transparaît derrière (fond translucide ; sur le build web le fond est quasi-opaque, sans blur — attendu). Le texte de l'article passe *derrière* les pills en scrollant.
+### Happy path — comparer côte à côte
+1. Ouvrir Essentiel → header carte « Ton Essentiel » → rewind (timeline).
+2. Sélectionner **« Hier »** : vérifier la présence, dans l'ordre, de
+   héros Essentiel → point de passage → section **« Actus du jour »** (bannière
+   avec blurb + illustration) → point de passage → section **« Bonnes Nouvelles »**
+   (bannière verte) → **citation** → carte de clôture **« FIN DE TOURNÉE » /
+   « Tu es à jour »** avec bouton **« Revenir à aujourd'hui »** + note
+   « Tu lis la lettre du … ».
+3. Sélectionner **« Cette semaine »** : même grammaire ; label **« Actus de la
+   semaine »** ; **Bonnes Nouvelles** présentes (agrégées) ; **pas de citation** ;
+   même carte de clôture (note « rétro de la semaine »).
+4. Repasser à **« Aujourd'hui »** : la page complète (avec sections tournée)
+   revient normalement.
+5. Comparaison visuelle « Aujourd'hui » vs « Hier » vs « Cette semaine » :
+   cartes de section, espacements, points de passage, carte de clôture cohérents.
 
-### Scénario 2 : Footer auto-hide
-**Parcours** :
-1. Dans le reader in-app, scroller vers le bas
-2. Puis scroller vers le haut
-3. Atteindre la fin de l'article
-**Résultat attendu** : le footer glisse entièrement hors écran au scroll bas (ombre incluse : aucun liseré résiduel en bas), réapparaît au scroll haut, et devient permanent en fin d'article avec le CTA orange.
+### Lecture seule (invariant critique)
+6. Sur « Hier » / « Cette semaine », tenter un **swipe** sur une carte → **aucune
+   action** (pas de feedback chips, pas de dismiss). Pas d'étoile favori active,
+   pas de « voir tout ».
+7. Tap sur un article → ouvre le reader normalement (seule interaction permise).
+8. Bouton **« Revenir à aujourd'hui »** de la carte de clôture → resélectionne
+   « Aujourd'hui ».
 
-### Scénario 3 : Barre de progression dans le pill
-**Parcours** :
-1. Ouvrir un article in-app, scroller au-delà de 5 %
-2. Observer le bord bas du pill header
-**Résultat attendu** : la barre de progression s'affiche collée au bord bas *intérieur* du pill header, clipée par les coins arrondis (elle ne déborde jamais du pill).
-
-### Scénario 4 : Status bar lisible
-**Parcours** :
-1. Ouvrir un article, scroller pour amener du texte sous la status bar
-**Résultat attendu** : le fond du header couvre toute la zone de la status bar (il s'étend sous elle) ; l'heure et les icônes système restent lisibles quel que soit le contenu qui scrolle derrière ; le bouton back du header reste cliquable.
-
-### Scénario 5 : Light / dark mode
-**Parcours** :
-1. Répéter le scénario 1 en thème clair puis sombre
-**Résultat attendu** : light = fond crème translucide, bordure noire 8 % ; dark = fond backgroundPrimary translucide, bordure blanche 12 %, ombre plus marquée. Pas de pill illisible ni de contraste cassé.
-
-### Scénario 6 (device) : WebView / fallback sans blur
-**Parcours** :
-1. Ouvrir un article scroll-to-site, taper le CTA pour révéler le site (WebView)
-2. Ouvrir un article d'une source premium connectée
-**Résultat attendu** : sur Android en mode WebView, les pills passent en fond quasi-opaque (pas de blur — un BackdropFilter ne peut pas échantillonner une platform view) ; dégradation quasi invisible, aucun artefact graphique. Sur iOS vérifier que le blur au-dessus de WKWebView fonctionne, sinon signaler (extension du fallback à prévoir).
+### Edge cases
+9. **Jour stale / vide** (édition absente) : rendu = état vide `_BackToTodayBlock`
+   (« Pas d'édition pour … » + « Revenir à aujourd'hui » + « Choisir un autre
+   jour »). Pas de demi-lettre.
+10. **Mode serein activé** puis rewind sur un jour passé : Bonnes Nouvelles
+    toujours cohérentes (bonnesTopics dérivent toujours du digest serein,
+    indépendamment du toggle).
+11. Jour passé **sans Bonnes Nouvelles** (serein vide) : la section Bonnes est
+    simplement absente, pas de bannière vide ni de point de passage orphelin.
 
 ## Critères d'acceptation
-- [ ] Header = cadre haut collé aux bords, coins bas arrondis (radius 20), s'étend sous la status bar
-- [ ] Footer = pill flottant détaché des bords, coins hauts arrondis (radius 20), bottom = safe area + 8
-- [ ] Contenu visible derrière les surfaces (translucide / blur natif)
-- [ ] Barre de progression clipée dans le pill header
-- [ ] Footer auto-hide sort entièrement de l'écran (ombre comprise)
-- [ ] Fond du header couvre la status bar (plus de scrim) ; icônes système lisibles
-- [ ] Aucune régression : back, chip source, partage, sauvegarde, tournesol, CTA « Lire sur… »
-- [ ] Console web sans erreurs, réseau sans 4xx/5xx inattendus
+- [ ] « Hier » et « Cette semaine » lues comme « la même lettre, un autre jour ».
+- [ ] Bonnes Nouvelles visibles jour + semaine.
+- [ ] Carte de clôture présente (variante lecture seule, « Revenir à aujourd'hui »).
+- [ ] Aucune mutation possible (swipe/feedback/favori) en passé.
+- [ ] Aucune erreur console, aucun 4xx/5xx inattendu.
 
-## Zones de risque
-- Clearances de contenu : tous les modes (scroll-to-site, in-app, vidéo, audio, WebView fallback) réservent la même hauteur `topInset + _kHeaderContentHeight (59) + _kHeaderContentGap (15)` sous le header, via le getter unique `_headerHeight` — vérifier qu'aucun titre n'est masqué à l'ouverture et, en WebView, que le bandeau du média n'est jamais tronqué par le header.
-- Distance d'auto-hide du footer (`+ marge basse + _kFooterShadowClearance (24)`) — vérifier l'absence de « pill fantôme » en bas.
-- Flutter web = canvas : activer la sémantique au boot avant tout `snapshot` (cf. skill `facteur-qa-web`), viewport 390x844.
-
-## Dépendances
-Aucune (changement front-only, zéro backend / migration).
+## Vérifs déjà faites (dev)
+- `flutter analyze lib test` : 0 erreur/warning sur les fichiers touchés.
+- `flutter test test/features/flux_continu/` : **360 tests verts**, dont :
+  - provider `bonnesTopics` jour (serein / vide / stale) + semaine (agrégation),
+  - widget `ClosingCardV18.readOnly` (coque préservée, CTA, note, tap).
+- Non couvert par les tests unitaires : la **composition d'écran** (c'est l'objet
+  de cette validation Playwright/device).
 # QA Handoff — Paywalls Premium « Fact·eur·isse » (PR 2 mobile)
 
-## Feature développée
-Ligne de notification unique en tête du feed Essentiel : file de messages (profil + nudges absorbés), un seul visible à la fois, max 3/jour (le suivant après tap CTA ou dismiss croix), rotation quotidienne. Remplace les bandeaux renudge / well-informed / géoloc.
+## Contexte
 
-## PR associée
-Branche `boujonlaurin-dotcom/notif-du-jour-composant` → PR vers `main` (voir `gh pr view`).
+Implémentation de la maquette « Paywalls Premium » : écran **Soutien** (porte 1, lettre des fondateurs), **murs de feature** (porte 2 : veille plein écran + sheets sources/analyses/serein), gating client-side (cap 30 sources, veille premium, quota 1 analyse/jour, personnalisation serein), confirmation « lien envoyé ». Le CTA n'ouvre jamais un paiement : il déclenche `POST /api/checkout/send-link` (magic link Supabase par email, PR backend #954).
+
+⚠️ **Web = état free uniquement** : RevenueCat est null sur web (`customerInfoProvider` → null → non-premium). Ne pas tester les états premium en web.
+
+⚠️ Les photos fondateurs sont des **placeholders** (aplats de couleur) en attendant les vraies images.
 
 ## Écrans impactés
-| Écran | Route | Modifié / Nouveau |
-|-------|-------|-------------------|
-| Essentiel (feed) | `/feed` | Modifié (carte Notif du jour en tête, sous bandeau Lettres) |
-| Mes abonnements | `/settings/subscriptions?add=1` | Modifié (auto-ouverture feuille d'ajout) |
-| Profil | `/settings/profile` | Modifié (tuile « Ma configuration » + barre de progression) |
 
-## Scénarios de test
+- Réglages (bottom sheet) : tuile « Nous soutenir », badge `N/30` sur Mes sources, stamp `PREMIUM` sur Ma veille/Crée ta veille, sous-row « Personnaliser mes bonnes nouvelles » (lock).
+- `/soutien` : écran Soutien complet.
+- `/soutien/veille-wall` : mur veille.
+- `/soutien/lien-envoye` : confirmation.
+- Intro veille : stamp « RÉSERVÉ AUX FACT·EUR·ISSES » + CTA verrouillé.
+- Ajout de source : pill « N / 30 médias suivis ».
+- Perspectives / Analyse Facteur : gate quota 1/jour (bannière quota épuisé sous le CTA en free).
 
-### Scénario 1 : affichage un-à-la-fois (happy path)
-**Parcours** :
-1. Ouvrir le feed Essentiel (compte connecté, onboarding fait).
-2. Observer la zone sous le bandeau Lettres.
-**Résultat attendu** : au plus **une** carte Notif du jour (icône teintée 34px, titre 1 ligne, CTA-lien avec flèche, croix à droite). Jamais deux messages empilés. Pas de flash au chargement.
+## Scénarios
 
-### Scénario 2 : dismiss → message suivant
-**Parcours** :
-1. Taper la croix de la carte.
-**Résultat attendu** : repli fluide (~300ms, hauteur + fondu), puis le **message suivant** de la file apparaît. Après 3 consommations dans la journée, plus rien ne s'affiche (recharger : toujours rien — persisté).
+1. **Happy path Soutien** : Réglages → « Nous soutenir » → écran Soutien (eyebrow, headline, lettre 2 §, carte bonus avec 2 stamps BIENTÔT, 3 réassurances, prix 3 €/mois, CTA « Reçois ton lien pour nous rejoindre », disclaimer stores). Tap CTA → soit confirmation « Ton lien est en route. » (backend avec send-link), soit toast d'erreur propre, jamais de crash.
+2. **Mur veille** : Réglages → « Crée ta veille » (compte free sans veille) → mur veille (3 bénéfices, MissionCard « Notre histoire → » → Soutien, prix, CTA).
+3. **Intro veille gated** : deep-link `/veille/config` en free → redirection mur veille.
+4. **Cap sources** : ajout de source → pill « N / 30 médias suivis » au-dessus de la recherche (absente en mode veille).
+5. **Serein** : Réglages → sous-row « Personnaliser mes bonnes nouvelles » avec cadenas → tap → PaywallSheet variante serein (« Un mode serein à ton image »).
+6. **Lien envoyé** : « Renvoyer le lien » 2× de suite → le second affiche « Patiente une minute avant de renvoyer. » (429) si backend actif.
+7. **Console/réseau** : pas d'erreurs console inattendues, pas de 4xx/5xx hors 429 attendu.
 
-### Scénario 3 : CTA Serein in-place
-**Parcours** (visible seulement si mode Serein OFF) :
-1. Taper la carte « Pas dans le mood pour l'actu chaude ? ».
-**Résultat attendu** : aucune navigation ; le mode Serein s'active, la carte se replie et le message suivant apparaît.
+## Critères d'acceptation
 
-### Scénario 4 : CTA navigation directe
-**Parcours** :
-1. Taper « Tes médias préférés manquent à l'appel ? » (si < 3 sources suivies) → panneau d'ajout de média **direct** (pas la liste).
-2. Taper « Abonné à un média ? Ajoute-le ici » (si sources payantes suivies non liées) → Mes abonnements s'ouvre **avec la feuille d'ajout déjà ouverte**.
-**Résultat attendu** : zéro tap intermédiaire.
-
-### Scénario 5 : NPS well-informed inline
-**Parcours** (si le message est dû) :
-1. Carte « Te sens-tu bien informé·e en ce moment ? » : boutons 1..10 à la place du CTA.
-2. Taper un score.
-**Résultat attendu** : soumission (POST well-informed), repli, message suivant. La croix = skip.
-
-### Scénario 6 : profil — Ma configuration
-**Parcours** :
-1. Aller sur `/settings/profile`.
-**Résultat attendu** : tuile « Ma configuration » avec barre de progression, tap → relance le parcours d'onboarding.
-
-## Vérifications transverses
-- Console sans erreurs ; réseau sans 4xx/5xx inattendus.
-- Fidélité hifi : fond crème surface, radius 14, ombre douce, pas de bordure ; tints ocre/vert/steel.
-- Les anciens gros bandeaux renudge/géoloc/well-informed n'apparaissent **plus**.
-- ⚠️ Web : les demandes OS (renudge push, géoloc device) ne se testent pas — on-device Android requis (hors QA web).
+- Aucune copy avec em-dash « — ».
+- Aucun crash sur images manquantes (fallback monogramme).
+- Navigation retour cohérente (swipe back plein écran).

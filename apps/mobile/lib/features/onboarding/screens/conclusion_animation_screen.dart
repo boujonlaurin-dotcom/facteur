@@ -110,8 +110,12 @@ class _ConclusionAnimationScreenState
 
     // context.go() remplace toute la stack pour bloquer le back vers
     // l'onboarding (idempotent avec la redirection router déjà déclenchée).
+    // Effet « wow » : on passe par le rituel matinal `/edition` (loader d'intro
+    // → enveloppe → feed) plutôt que de filer droit au feed. `from=onboarding`
+    // élargit le plafond du loader (édition calculée à froid). Le redirect
+    // router laisse passer `/edition` (utilisateur confirmé, onboarding fini).
     if (mounted) {
-      context.go(RoutePaths.fluxContinu);
+      context.go('${RoutePaths.edition}?from=onboarding');
     }
   }
 }

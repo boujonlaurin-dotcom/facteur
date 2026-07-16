@@ -11,7 +11,9 @@ import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
 import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
+import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
+import 'package:facteur/features/flux_continu/widgets/long_press_grow.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
@@ -32,6 +34,20 @@ Widget _wrap(Widget child, {List<Override> overrides = const []}) {
       home: Scaffold(body: SingleChildScrollView(child: child)),
     ),
   );
+}
+
+/// True si au moins un `LongPressGrowNudge` est en train d'agrandir sa carte
+/// (scale > 1.0). Scopé aux descendants du nudge pour ignorer d'autres
+/// `ScaleTransition` de l'écran (ex. le pulse météo).
+bool _growScaleIsAbove1(WidgetTester tester) {
+  return tester
+      .widgetList<ScaleTransition>(
+        find.descendant(
+          of: find.byType(LongPressGrowNudge),
+          matching: find.byType(ScaleTransition),
+        ),
+      )
+      .any((s) => s.scale.value > 1.0);
 }
 
 class _FakeWeatherNotifier extends WeatherNotifier {
@@ -102,7 +118,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -126,7 +141,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (a) => tapped = a,
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -135,70 +149,65 @@ void main() {
       expect(tapped?.contentId, 'c-1');
     });
 
-    testWidgets(
-        'tap on the personalize button fires the callback and not the '
-        'lead', (tester) async {
-      var personalizeTaps = 0;
-      var articleTaps = 0;
+    testWidgets('le bouton « personnaliser » a été retiré (décision PO)',
+        (tester) async {
+      // Point d'entrée unique des préférences = l'inline « GÉRER » de
+      // MyInterestsIntro ; la carte Essentiel n'expose plus de bouton perso.
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
-          onTapArticle: (_) => articleTaps++,
-          onTapPersonalize: () => personalizeTaps++,
+          onTapArticle: (_) {},
         ),
       ));
 
-      await tester.tap(find.byIcon(Icons.tune_rounded));
-      await tester.pumpAndSettle();
-      expect(personalizeTaps, 1);
-      expect(articleTaps, 0,
-          reason: 'Personalize tap must not bubble to the lead InkWell.');
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
     });
 
     testWidgets(
-        'long-press on the lead opens the article preview overlay',
+        'long-press on the lead grows the card, no floating preview overlay',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
-      // La carte elle-même est text-only (aucune FacteurThumbnail) ; l'aperçu
-      // overlay en rend une → signal propre de présence de l'aperçu.
+      // La carte est text-only : l'ancien overlay rendait une FacteurThumbnail.
+      // Après retrait, aucune ne doit apparaître au long-press.
       expect(find.byType(FacteurThumbnail), findsNothing);
 
       final gesture =
           await tester.startGesture(tester.getCenter(find.text('Titre 1')));
       // Dépasse la deadline long-press (500 ms par défaut du GestureDetector).
       await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80)); // mi-animation grow
 
-      expect(find.byType(FacteurThumbnail), findsOneWidget,
-          reason: 'Long-press should reveal the preview overlay.');
+      expect(find.byType(FacteurThumbnail), findsNothing,
+          reason: 'The floating preview overlay must no longer appear.');
+      expect(_growScaleIsAbove1(tester), isTrue,
+          reason: 'Long-press should scale the card up (nudge grow).');
 
       await gesture.up();
       await tester.pumpAndSettle();
     });
 
-    testWidgets('long-press on a medium tile opens the preview overlay',
+    testWidgets('long-press on a medium tile grows it, no preview overlay',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
       final gesture =
           await tester.startGesture(tester.getCenter(find.text('Titre 2')));
       await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
 
-      expect(find.byType(FacteurThumbnail), findsOneWidget);
+      expect(find.byType(FacteurThumbnail), findsNothing);
+      expect(_growScaleIsAbove1(tester), isTrue);
 
       await gesture.up();
       await tester.pumpAndSettle();
@@ -210,7 +219,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -226,7 +234,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -239,11 +246,46 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
       expect(find.text('Ton Essentiel'), findsOneWidget);
+    });
+
+    testWidgets(
+        'affiche le déclencheur rewind avec un libellé fixe '
+        '(défaut = today → « Rattraper »)', (tester) async {
+      // EPIC « Lettre du jour » — refonte timeline overlay : le déclencheur
+      // « rewind » vit dans l'en-tête de la carte (sélection par défaut = today).
+      // Le libellé est un verbe d'action fixe (plus la date) : « Rattraper » en
+      // today, « Revenir » sur une lettre passée.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.byType(EditionRewindTrigger), findsOneWidget);
+      final trigger = tester.widget<EditionRewindTrigger>(
+        find.byType(EditionRewindTrigger),
+      );
+      expect(trigger.label, 'Rattraper');
+    });
+
+    testWidgets('le déclencheur rewind est présent, sans bouton perso',
+        (tester) async {
+      // Le bouton « personnaliser » a été retiré partout ; le rewind, lui, reste
+      // toujours présent (today ET lettre passée).
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.byType(EditionRewindTrigger), findsOneWidget);
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
     });
 
     testWidgets(
@@ -253,7 +295,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -266,7 +307,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
       expect(find.text('Actu du jour'), findsNothing);
@@ -278,7 +318,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -295,7 +334,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -339,7 +377,6 @@ void main() {
               body: EssentielHiFiCard(
                 articles: [_article(rank: 1)],
                 onTapArticle: (_) {},
-                onTapPersonalize: () {},
               ),
             ),
           ),
@@ -404,7 +441,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isRead: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -426,7 +462,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -446,7 +481,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 

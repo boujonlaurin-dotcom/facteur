@@ -69,6 +69,7 @@ async def set_interest_state(
             target_id=body.target_id,
             state=body.state,
             position=body.position,
+            essentiel_mode=body.essentiel_mode,
         )
     except FavoriteCapReached as e:
         get_posthog_client().capture(

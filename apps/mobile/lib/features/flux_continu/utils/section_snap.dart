@@ -13,7 +13,7 @@ const double kSnapEpsilon = 1.0;
 /// more than this margin past the edge before the section actually switches.
 /// Larger ⇒ harder to switch sections (more « collant » à la carte courante);
 /// smaller ⇒ switches more readily. 0 reverts to the pure edge-triggered feel.
-const double kSectionEdgeMargin = 120.0;
+const double kSectionEdgeMargin = 160.0;
 
 /// px/s. **The only knob for the UP-only fast-rewind exception** — tune it à
 /// l'œil sur device. Snap is now the default *both* ways (a slow upward scroll

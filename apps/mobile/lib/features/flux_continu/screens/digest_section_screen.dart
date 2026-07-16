@@ -28,10 +28,18 @@ class DigestSectionScreen extends ConsumerStatefulWidget {
   /// empty page during the slide-in transition.
   final DigestTopicSection? initialSection;
 
+  /// « Tout lire » de la rétro hebdo (« Cette semaine ») : rend [initialSection]
+  /// **tel quel** (agrégat de la semaine épinglé) au lieu de résoudre le feed
+  /// **du jour** via [fluxContinuProvider]. Sans ce flag, un « Tout lire » hebdo
+  /// afficherait par erreur le contenu d'aujourd'hui (même `sectionKey`
+  /// `essentiel`/`bonnes`). Câblé par le query param `src=week` (cf. routes.dart).
+  final bool pinToInitial;
+
   const DigestSectionScreen({
     super.key,
     required this.sectionKeyValue,
     this.initialSection,
+    this.pinToInitial = false,
   });
 
   @override
@@ -53,6 +61,9 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
   }
 
   DigestTopicSection? _resolveSection() {
+    // Vue hebdo épinglée : on ne résout jamais le feed du jour, l'agrégat de la
+    // semaine passé en `extra` est la seule source de vérité.
+    if (widget.pinToInitial) return widget.initialSection;
     final state = ref.watch(fluxContinuProvider).valueOrNull;
     if (state == null) return widget.initialSection;
     for (final s in state.sections) {
@@ -132,7 +143,9 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
 
   Widget _buildBody(DigestTopicSection section) {
     final state = ref.watch(fluxContinuProvider).valueOrNull;
-    final next = state == null
+    // En vue hebdo épinglée, pas de « Sujet suivant » : il pointerait vers une
+    // section du feed **du jour** (rupture de contexte). Seul « Retour » reste.
+    final next = widget.pinToInitial || state == null
         ? null
         : nextSectionAfter(state.sections, widget.sectionKeyValue);
     return CustomScrollView(

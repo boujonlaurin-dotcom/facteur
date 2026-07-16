@@ -133,11 +133,11 @@ class ConclusionNotifier extends StateNotifier<ConclusionState> {
         await _saveProfileLocally(result.profile!);
         // Pré-règle le mode serein dès l'entrée dans le feed depuis le choix
         // d'onboarding, sans attendre /digest/both. La préférence est déjà
-        // persistée côté serveur (save_onboarding ⇒ serein_enabled='true'), et
-        // initFromApi reste idempotent (sync uniquement au 1er chargement), donc
-        // ce pré-réglage n'est jamais écrasé au scroll / refetch.
+        // persistée côté serveur (save_onboarding ⇒ serein_enabled='true') ;
+        // `commitFromOnboarding` écrit en plus le miroir local Hive pour que le
+        // choix survive au 1er cold start (avant que /digest/both ait répondu).
         if (answers.digestMode == 'serein') {
-          _ref.read(sereinToggleProvider.notifier).setEnabledLocal(true);
+          _ref.read(sereinToggleProvider.notifier).commitFromOnboarding(true);
         }
         await _ref.read(onboardingProvider.notifier).clearSavedData();
         await _invalidatePostOnboardingState();

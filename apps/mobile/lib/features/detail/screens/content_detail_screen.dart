@@ -55,6 +55,7 @@ import '../../lettres/providers/letters_provider.dart';
 import '../../lettres/providers/pending_save_nudge_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
+import '../../soutien/providers/analyse_quota_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 
 @visibleForTesting
@@ -198,10 +199,20 @@ const double _kFooterContentHeight = 82.0;
 const double _kFrameRadius = 20;
 
 /// Respiration entre le bord bas du header (arête intérieure du cadre) et le
-/// début du contenu de l'article — évite que le texte se colle au header à
-/// l'ouverture du reader. Ajouté à `headerHeight` (offset du contenu), sans
+/// début du contenu de l'article — assez faible pour que le contenu remonte
+/// jusqu'à la zone des coins arrondis et « passe » visiblement sous la courbe
+/// (objectif de la forme). Ajouté à `headerHeight` (offset du contenu), sans
 /// toucher la hauteur visuelle du pill.
-const double _kHeaderContentGap = 15;
+const double _kHeaderContentGap = 4;
+
+/// Course de scroll cumulée (px) vers le bas avant de **masquer** le footer en
+/// un seul mouvement animé (« one-shot »). Conservateur mais réactif.
+const double kFooterHideThreshold = 40;
+
+/// Course de scroll cumulée (px) vers le haut avant de **révéler** le footer.
+/// Volontairement plus élevé (conservateur) : on ne re-montre le footer que
+/// pour une intention claire de remonter, jamais au moindre micro-scroll.
+const double kFooterRevealThreshold = 90;
 
 /// Marge entre le bas du pill footer et le bas de l'écran (safe area incluse).
 const double _kFooterBottomMargin = 8;
@@ -270,6 +281,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
+  // Dernier `maxScrollExtent` pour lequel les offsets d'activation WebView ont
+  // été calculés : évite de rappeler `_computeScrollOffsets()` à chaque frame de
+  // scroll (le recompute n'est utile qu'au changement de hauteur = rendu HTML
+  // tardif). -1 = jamais calculé.
+  double _lastMaxExtentForOffsets = -1;
   // Once the WebView fade-in completes, drop the heavy article subtree from
   // the tree so Flutter no longer rasterizes/composites it on top of the
   // scrolling WebView (eliminates per-frame UI-thread cost).
@@ -306,6 +322,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
+  // Course de scroll cumulée dans la direction courante, remise à 0 au
+  // changement de direction. Le footer ne bouge plus pixel-par-pixel : il ne se
+  // masque / révèle que lorsque cet accumulateur franchit un seuil (déclenchement
+  // discret « one-shot »), puis via un tween lissé.
+  double _footerScrollAccum = 0.0;
   // « Arrival gate » WebView : à l'entrée dans une WebView, le footer est caché
   // et toute *révélation* est bloquée tant qu'on n'a pas scrollé d'au moins
   // [_kWebViewFooterRevealThreshold] px — sinon la garde overscroll (scroll à 0)
@@ -474,12 +495,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
 
     _footerAutoController = AnimationController(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 280),
       vsync: this,
     );
     _footerAutoController.addListener(() {
-      _footerOffset.value = _footerAutoStart +
-          (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
+      // Courbe easeOutCubic → départ franc, arrivée douce : le pliage /
+      // dépliage du footer devient un seul mouvement fluide (fini le pilotage
+      // pixel-par-pixel saccadé).
+      final t = Curves.easeOutCubic.transform(_footerAutoController.value);
+      _footerOffset.value =
+          _footerAutoStart + (_footerAutoTarget - _footerAutoStart) * t;
     });
 
     _ctaPulseController = AnimationController(
@@ -544,8 +569,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Scroll-to-site: attach scroll listener
     _scrollController.addListener(_onScrollToSite);
 
-    // Reading progress: track scroll depth
-    _scrollController.addListener(_onScrollReadingProgress);
+    // Reading progress + « lire sur le site » nudge : pilotés par l'unique
+    // NotificationListener du build (un seul calcul de progression par frame).
+    // L'ancien 2e listener `_onScrollReadingProgress` faisait double emploi.
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
@@ -579,17 +605,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// le câblage des callbacks WebView.
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
-  void _initScrollToSiteWebView() {
-    final content = _content;
-    if (content == null || kIsWeb) return;
-    if (content.contentType != ContentType.article) return;
-    if (!content.hasInAppContent) return;
-
+  /// Vrai si le scroll-to-site s'applique à [content] (article in-app, non-web,
+  /// source gratuite). Facteur commun aux gardes de construction et de
+  /// chargement du WebView.
+  bool _eligibleForScrollToSiteWebView(Content? content) {
+    if (content == null || kIsWeb) return false;
+    if (content.contentType != ContentType.article) return false;
+    if (!content.hasInAppContent) return false;
     // Source premium connectée : la couche révélée au scroll rend un
     // `PremiumWebView` (cookies) — inutile (et contre-productif : paywall)
     // de charger le contrôleur gratuit sur l'URL payante. `_buildWebViewLayer`
     // court-circuite avant de toucher `_webViewController` sur ce chemin.
-    if (_isConnectedPremiumSource(content)) return;
+    if (_isConnectedPremiumSource(content)) return false;
+    return true;
+  }
+
+  /// Construit le contrôleur WebView (delegate + channel `ScrollBridge`) sans
+  /// **charger** l'URL externe : le `loadRequest` coûteux est déféré à
+  /// [_maybeStartWebViewLoad], déclenché au 1er signal d'intention.
+  void _initScrollToSiteWebView() {
+    final content = _content;
+    if (!_eligibleForScrollToSiteWebView(content)) return;
 
     // Contrôleur créé SANS charger l'URL : le chargement de la page distante
     // (lourde) est différé à `_maybeStartWebViewLoad()` (tap CTA / warm-up 40 %)
@@ -799,26 +835,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return isPartialContent(articleText);
   }
 
-  /// Track in-app scroll depth for reading progress.
-  /// For partial content, in-app scroll caps at 25% — WebView fills the rest.
-  void _onScrollReadingProgress() {
-    if (!_scrollController.hasClients) return;
-    final maxExtent = _scrollController.position.maxScrollExtent;
-    if (maxExtent <= 0) return;
-    final pixels = _scrollController.offset;
-    // Use article-only extent so the perspectives section doesn't dilute progress
-    final articleExtent = _articleContentExtent ?? maxExtent;
-    final rawProgress = pixels / articleExtent;
-    final progress = _isPartialContent
-        ? (rawProgress * 0.25).clamp(0.0, 0.25)
-        : rawProgress.clamp(0.0, 1.0);
-    _readingProgress.value = progress;
-    if (progress > _maxReadingProgress) {
-      _maxReadingProgress = progress;
-    }
-    _maybeRequestReadOnSiteNudge(progress);
-  }
-
   void _maybeRequestReadOnSiteNudge(double progress) {
     if (_isPartialContent) return;
     if (_readOnSiteNudgeRequested) return;
@@ -947,6 +963,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _ctaTapped = false;
       _offsetsComputed = false;
       _bridgeEndOffset = 0;
+      _lastMaxExtentForOffsets = -1;
     });
     _footerPermanent.value = false;
     _animateFooterTo(0.0);
@@ -991,14 +1008,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onScrollToSite() {
     if (!_ctaTapped || !_offsetsComputed) return;
 
-    // Re-measure on every scroll to handle late HTML rendering
-    _computeScrollOffsets();
+    // Re-mesure UNIQUEMENT quand la hauteur de contenu change (rendu HTML
+    // tardif) : lire `maxScrollExtent` est bon marché, mais rappeler
+    // `_computeScrollOffsets()` à chaque frame de scroll était redondant. Le
+    // latch one-way plus bas et `_bridgeEndOffset` restent inchangés tant que la
+    // hauteur ne bouge pas.
+    if (_scrollController.hasClients) {
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      if (maxExtent != _lastMaxExtentForOffsets) {
+        _lastMaxExtentForOffsets = maxExtent;
+        _computeScrollOffsets();
+      }
+    }
 
     final offset = _scrollController.offset;
     final shouldActivate = offset >= _bridgeEndOffset;
 
     // One-way latch: once WebView is active, never deactivate it.
     if (shouldActivate && !_isWebViewActive) {
+      // La page révélée devient la baseline de l'historique : tant que le
+      // WebView est resté derrière la couche article (chargée en avance), il ne
+      // peut avoir accumulé que du bruit de redirection (consent/CMP tardif,
+      // http→https, AMP…), jamais une vraie navigation utilisateur (l'écran
+      // n'était pas tactile). On repart donc de profondeur 0 → **1 clic suffit**
+      // pour sortir quand l'utilisateur n'a pas navigué dans le site.
+      _historyTracker.reset(_nowMs());
       setState(() {
         _isWebViewActive = true;
       });
@@ -1053,23 +1087,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Apply a page-scroll-equivalent [delta] (positive = page going down)
-  /// to the footer offset. The header is pinned and never reacts to scroll.
+  /// Accumule un [delta] de scroll (positif = page vers le bas) et déclenche un
+  /// **mouvement unique animé** du footer dès qu'un seuil est franchi, plutôt
+  /// que de le piloter pixel-par-pixel (source de saccade). Le header est fixe.
   void _applyChromeOffsetDelta(double delta) {
     if (_footerPermanent.value) return;
     // Arrival gate : tant que verrouillée, on ignore les deltas de *révélation*
     // (delta négatif = scroll vers le haut) pour ne pas découvrir le footer sur
     // le bandeau cookies ; seuls les masquages (delta positif) passent.
     if (_footerRevealLocked && delta < 0) return;
-    final footerHeight =
-        _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
-    // Hide a touch faster than it reveals: bias downward (hide) deltas so the
-    // footer clears the way more readily when the user scrolls into the article.
-    final adjusted = delta > 0 ? delta * 1.4 : delta;
-    _footerOffset.value = (_footerOffset.value + adjusted / footerHeight).clamp(
-      0.0,
-      1.0,
-    );
+
+    // Remise à 0 au changement de direction : une course vers le bas puis vers
+    // le haut ne doit pas se compenser, chaque intention repart de zéro.
+    if ((delta > 0) != (_footerScrollAccum > 0)) {
+      _footerScrollAccum = 0;
+    }
+    _footerScrollAccum += delta;
+
+    final footerVisible = _footerOffset.value < 0.5;
+    if (footerVisible && _footerScrollAccum > kFooterHideThreshold) {
+      _footerScrollAccum = 0;
+      _animateFooterTo(1.0);
+    } else if (!footerVisible &&
+        _footerScrollAccum < -kFooterRevealThreshold) {
+      _footerScrollAccum = 0;
+      _animateFooterTo(0.0);
+    }
   }
 
   /// Update footer offset based on a native scroll delta (in-app reader only).
@@ -1090,14 +1133,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
-  /// Stop any in-flight footer tween so the live gesture pilots the chrome
-  /// without fighting a residual animation.
+  /// Nouveau geste tactile dans le WebView : repart d'une course cumulée nulle
+  /// pour que chaque swipe soit mesuré indépendamment (« one-shot » par geste).
   void _onGestureStart() {
-    _footerAutoController.stop();
+    _footerScrollAccum = 0;
   }
 
-  /// Map a gesture-derived page-scroll-equivalent delta onto the footer offset.
-  /// Header is pinned, so it ignores the gesture entirely.
+  /// Alimente l'accumulateur de course avec un delta dérivé du geste
+  /// (positif = page vers le bas). Le header est fixe, il ignore le geste.
   void _onGestureDelta(double pageDelta) {
     if (pageDelta == 0) return;
     if (_showSunflowerNudge) {
@@ -1107,35 +1150,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _applyChromeOffsetDelta(pageDelta);
   }
 
-  /// At touchend, commit the footer to a clean state.
-  /// - High-velocity flick → snap to that direction's endpoint.
-  /// - Slow lift-off → leave the footer at its current partial offset.
-  /// - At the top of the page → force visible (overscroll guard).
+  /// Au relâché du doigt, seule la garde overscroll reste utile : le
+  /// masquage / révélation est déjà piloté par l'accumulateur discret pendant
+  /// le geste, plus besoin d'un snap par vélocité.
   void _onGestureEnd(double velocityPxPerSec) {
     if (_content?.isVideo ?? false) return;
-    if (_webScrollY <= 0) {
-      // Arrival gate : ne pas re-révéler le footer en haut de page tant que la
-      // garde est armée (sinon masque le bandeau cookies dès le 1er contact).
-      if (!_footerRevealLocked &&
-          !_footerPermanent.value &&
-          _footerOffset.value != 0) {
-        _animateFooterTo(0);
-      }
-      return;
-    }
-    const double kVelocitySnapThreshold = 600.0; // px/s
-    double? target;
-    if (velocityPxPerSec > kVelocitySnapThreshold) {
-      target = 1.0;
-    } else if (velocityPxPerSec < -kVelocitySnapThreshold) {
-      target = 0.0;
-    }
-    // Arrival gate : ignore un flick de révélation (target 0.0) avant le seuil.
-    if (_footerRevealLocked && target == 0.0) return;
-    if (target != null &&
+    // Garde overscroll : en haut de page, on force le footer visible (sauf si
+    // l'arrival gate est armée ou le footer verrouillé permanent).
+    if (_webScrollY <= 0 &&
+        !_footerRevealLocked &&
         !_footerPermanent.value &&
-        _footerOffset.value != target) {
-      _animateFooterTo(target);
+        _footerOffset.value != 0) {
+      _animateFooterTo(0);
     }
   }
 
@@ -1204,6 +1230,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           if (_webViewController == null) {
             _initScrollToSiteWebView();
           }
+          // Fallback idle : couvre « ne scrolle jamais puis tape le CTA ». Le
+          // chargement reste déféré ~1 s après résolution du contenu ; le 1er
+          // scroll ou le tap CTA gagne la course s'il arrive avant. Idempotent.
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) _maybeStartWebViewLoad();
+          });
           // Auto-fetch perspectives if not yet loaded
           if (_perspectivesResponse == null &&
               !_perspectivesLoading &&
@@ -1567,7 +1599,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
-    _scrollController.removeListener(_onScrollReadingProgress);
 
     _scrollController.dispose();
     _inAppScrollController.dispose();
@@ -1899,6 +1930,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _openPerspectivesAnalysis() {
     HapticFeedback.mediumImpact();
     if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
+      // Lancement frais (pas d'analyse cachée). L'analyse se charge TOUJOURS
+      // (plus de blocage paywall) ; on marque juste l'usage du jour de façon
+      // non-bloquante (no-op premium) pour piloter le nudge doux « Notre
+      // histoire » dans la surface quota du carrousel. La réouverture d'une
+      // analyse déjà chargée (state != idle) reste libre et ne marque rien.
+      ref.read(analyseQuotaProvider.notifier).recordUse();
       _requestPerspectivesAnalysis();
     }
     showAnalysisBottomSheet(
@@ -1994,6 +2031,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification is ScrollUpdateNotification) {
+                    // 1er scroll = signal d'intention primaire : préchauffe le
+                    // WebView externe (déféré au montage). Idempotent.
+                    _maybeStartWebViewLoad();
                     final delta = notification.scrollDelta ?? 0.0;
                     final metrics = notification.metrics;
                     if (metrics.pixels <= 0 &&
@@ -2124,6 +2164,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _openOriginalUrl();
       return;
     }
+    // Garantie : le tap CTA lance la révélation (animateTo 500 ms). On préchauffe
+    // le WebView dès maintenant pour lui donner une longueur d'avance. Idempotent.
+    _maybeStartWebViewLoad();
     final content = _content;
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;
@@ -2267,10 +2310,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       shape: WidgetStatePropertyAll(CircleBorder()),
     );
 
-    // Pill « liquid glass » flottant, détaché des bords (marges + safe area
-    // gérées par le Padding du Column parent, plus de SafeArea interne).
+    // Pill « verre » flottant, détaché des bords (marges + safe area gérées par
+    // le Padding du Column parent). Rebord statique (cf. GlassPill) → aucun swap
+    // au scroll, le logo de source ne se re-monte plus (fin de la vibration).
     final footerContent = GlassPill(
-      enableBlur: _glassBlurEnabled,
       shadowOffset: const Offset(0, -4),
       borderRadius: const BorderRadius.only(
         topLeft: Radius.circular(_kFrameRadius),
@@ -2586,16 +2629,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Blur du chrome flottant : coupé sur le web (re-rasterisation par frame
-  /// sous CanvasKit) et au-dessus d'une WebView Android (un BackdropFilter ne
-  /// peut pas échantillonner une platform view). Le pill retombe alors sur un
-  /// fond quasi-opaque (dégradation quasi invisible).
-  bool get _glassBlurEnabled {
-    if (kIsWeb) return false;
-    return !(defaultTargetPlatform == TargetPlatform.android &&
-        (_showWebView || _isWebViewActive));
-  }
-
   /// Offset vertical réservé sous le header flottant pour le début du contenu,
   /// identique sur **tous** les modes de lecture (scroll-to-site, in-app,
   /// vidéo, audio, WebView fallback). Source unique de vérité : garantit que le
@@ -2633,10 +2666,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final subjectCount =
         (content.topics.isNotEmpty ? 1 : 0) + content.entities.length;
 
-    // Pill « liquid glass » flottant — la barre de progression est clipée
-    // dans le pill (Stack interne, alignée sur son bord bas).
+    // Pill « verre » flottant — la barre de progression est clipée dans le pill
+    // (Stack interne, alignée sur son bord bas). Rebord statique (cf. GlassPill)
+    // → plus de swap au scroll, le logo de source ne se re-monte plus.
     final headerContent = GlassPill(
-      enableBlur: _glassBlurEnabled,
       shadowOffset: const Offset(0, 4),
       borderRadius: const BorderRadius.only(
         bottomLeft: Radius.circular(_kFrameRadius),
@@ -2850,18 +2883,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           clamped,
         )!
             .withValues(alpha: alpha);
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: clamped),
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-          builder: (context, smoothProgress, _) => SizedBox(
-            height: 3.5,
-            child: LinearProgressIndicator(
-              value: smoothProgress,
-              backgroundColor: Colors.transparent,
-              valueColor: AlwaysStoppedAnimation<Color>(barColor),
-              minHeight: 3.5,
-            ),
+        // Alimente la barre directement depuis `clamped` (déjà lissé par frame
+        // par le scroll natif). Le `TweenAnimationBuilder` 300 ms était relancé
+        // à CHAQUE frame de scroll → re-raster inutile. En mode WebView la
+        // progression arrive throttlée (~300 ms) : la barre « step » au lieu
+        // d'interpoler, coût cosmétique négligeable sur 3,5 px semi-transparents.
+        return SizedBox(
+          height: 3.5,
+          child: LinearProgressIndicator(
+            value: clamped,
+            backgroundColor: Colors.transparent,
+            valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            minHeight: 3.5,
           ),
         );
       },

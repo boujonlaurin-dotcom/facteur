@@ -40,9 +40,31 @@ class PremiumConnection {
   bool get isUsable => enabled && loginUrl.isNotEmpty && testUrl.isNotEmpty;
 }
 
-/// Connexion existante si utilisable, sinon flux générique (login=test=home)
-/// dès qu'il y a une URL http(s) valide ; `null` sinon. Cœur partagé par
-/// [resolvePremiumConnection] et [forceGenericConnection].
+/// Réduit une URL à l'origine du site (`scheme://host[:port]/`).
+///
+/// Beaucoup de sources stockent dans `source.url` l'URL de leur **flux** RSS
+/// (`/rss.xml`, `/feed/`…) : ouverte telle quelle dans la WebView de connexion,
+/// elle affiche du XML brut au lieu d'une page (bug « Cerveau & Psycho »).
+/// Normaliser vers l'origine répare toutes ces sources d'un coup.
+///
+/// Idempotent (`/rss.xml` → `/`, `/` → `/`), port préservé ; renvoie `null` si
+/// l'URL n'est pas une URL http(s) exploitable (même contrat que le jumeau
+/// back-end `origin_url` — un flux de connexion ne s'ouvre qu'en http(s)).
+String? siteRootFor(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || uri.host.isEmpty) return null;
+  if (uri.scheme != 'http' && uri.scheme != 'https') return null;
+  return Uri(
+    scheme: uri.scheme,
+    host: uri.host,
+    port: uri.hasPort ? uri.port : null,
+    path: '/',
+  ).toString();
+}
+
+/// Connexion existante si utilisable, sinon flux générique (login=test=origine
+/// du site) dès qu'il y a une URL http(s) valide ; `null` sinon. Cœur partagé
+/// par [resolvePremiumConnection] et [forceGenericConnection].
 PremiumConnection? _genericConnectionFor(Source source) {
   final existing = source.premiumConnection;
   if (existing != null && existing.isUsable) return existing;
@@ -50,9 +72,15 @@ PremiumConnection? _genericConnectionFor(Source source) {
   final url = source.url?.trim() ?? '';
   if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
 
+  // On synthétise le flux générique sur l'**origine** du site, jamais sur
+  // l'URL brute (souvent un flux RSS). La branche `existing.isUsable` ci-dessus
+  // n'est pas touchée : les connexions curées/explicites portent de vraies URLs.
+  final origin = siteRootFor(url);
+  if (origin == null) return null;
+
   return PremiumConnection(
-    loginUrl: url,
-    testUrl: url,
+    loginUrl: origin,
+    testUrl: origin,
     displayHint:
         'Connecte-toi à ton compte sur le site du média, puis reviens lire '
         'tes articles.',

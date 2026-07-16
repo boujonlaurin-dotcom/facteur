@@ -104,6 +104,23 @@ def _schedule_background_regen(
     )
 
     now = now_paris()
+    # Garde « édition passée » (EPIC « Lettre du jour ») : ne JAMAIS régénérer
+    # un digest pour un jour révolu. `read_digest_or_fallback` appelle ce
+    # scheduler dès qu'il sert un fallback stale (étapes 3/3b/4) ; or le mobile
+    # peut désormais demander un `target_date` passé (sélecteur de date de
+    # l'Essentiel). Sans cette garde, ouvrir la lettre d'hier fabriquerait +
+    # persisterait un digest passé à partir du **pool d'articles du jour**
+    # (contenu faux + coût LLM). La garde « == today » ci-dessous ne couvre
+    # qu'aujourd'hui. Additive, idempotente, no-op sur les deux backends
+    # (compatible expand-contract).
+    if target_date < now.date():
+        logger.info(
+            "digest_background_regen_skipped_past_date",
+            user_id=str(user_id),
+            target_date=str(target_date),
+            is_serene=is_serene,
+        )
+        return
     if target_date == now.date():
         cron_minutes = DIGEST_CRON_HOUR_PARIS * 60 + DIGEST_CRON_MINUTE_PARIS
         now_minutes = now.hour * 60 + now.minute
@@ -1079,7 +1096,10 @@ class DigestService:
 
         from app.models.content import Content
         from app.models.source import Source
-        from app.services.recommendation.filter_presets import apply_good_news_filter
+        from app.services.recommendation.filter_presets import (
+            apply_good_news_filter,
+            is_sport_content,
+        )
 
         # Mode serein = "Bonnes nouvelles du jour" : la promesse (is_good_news=True)
         # prime sur la quantité. On applique le MÊME hard-filter que le reste du
@@ -1200,6 +1220,13 @@ class DigestService:
         for content in all_contents:
             if len(selected) >= limit:
                 break
+
+            # Exclusion dure sport en serein (defense-in-depth). Même si un
+            # article arrive avec is_good_news=True par erreur, le sport n'entre
+            # jamais dans « Bonnes nouvelles ». `content.source` est eager-loaded
+            # (selectinload ci-dessus) → is_sport_content peut lire source.theme.
+            if is_serene and is_sport_content(content):
+                continue
 
             source_id = content.source_id
             if source_counts[source_id] >= MAX_PER_SOURCE:

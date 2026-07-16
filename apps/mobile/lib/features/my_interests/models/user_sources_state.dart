@@ -11,10 +11,15 @@ class SourceInterest {
   final InterestState state;
   final double priorityMultiplier;
 
+  /// Placement Essentiel/Flâner persisté en DB (source de vérité durable).
+  /// true = Essentiel, false = Flâner, null = jamais placé / legacy.
+  final bool? essentielMode;
+
   const SourceInterest({
     required this.sourceId,
     required this.state,
     required this.priorityMultiplier,
+    this.essentielMode,
   });
 
   factory SourceInterest.fromJson(Map<String, dynamic> json) {
@@ -22,17 +27,20 @@ class SourceInterest {
       sourceId: json['source_id'] as String,
       state: InterestState.fromJson(json['state'] as String),
       priorityMultiplier: (json['priority_multiplier'] as num).toDouble(),
+      essentielMode: json['essentiel_mode'] as bool?,
     );
   }
 
   SourceInterest copyWith({
     InterestState? state,
     double? priorityMultiplier,
+    bool? essentielMode,
   }) =>
       SourceInterest(
         sourceId: sourceId,
         state: state ?? this.state,
         priorityMultiplier: priorityMultiplier ?? this.priorityMultiplier,
+        essentielMode: essentielMode ?? this.essentielMode,
       );
 }
 

@@ -413,6 +413,29 @@ class FacteurRadius {
   static const double full = 999;
 }
 
+/// Chrome partagé des cartes « surface » (carte Essentiel hi-fi, cartes-jour de
+/// la rétro « Cette semaine », …) : fond surface, radius large, bord fin (0.6)
+/// et ombre douce. Source unique pour que ces cartes restent visuellement
+/// alignées (évite de redupliquer la même `BoxDecoration` dans chaque widget).
+BoxDecoration facteurSurfaceCardDecoration(
+  FacteurColors colors, {
+  bool shadow = true,
+}) =>
+    BoxDecoration(
+      color: colors.surface,
+      borderRadius: BorderRadius.circular(FacteurRadius.large),
+      border: Border.all(color: colors.border, width: 0.6),
+      boxShadow: shadow
+          ? const [
+              BoxShadow(
+                color: Color(0x14000000),
+                blurRadius: 14,
+                offset: Offset(0, 4),
+              ),
+            ]
+          : null,
+    );
+
 class FacteurDurations {
   FacteurDurations._();
   static const Duration fast = Duration(milliseconds: 150);
