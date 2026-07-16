@@ -56,7 +56,6 @@ import '../../lettres/providers/pending_save_nudge_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
 import '../../soutien/providers/analyse_quota_provider.dart';
-import '../../soutien/widgets/paywall_sheet.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 
 @visibleForTesting
@@ -249,6 +248,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _linkCopiedHeaderTimer;
   late DateTime _startTime;
   WebViewController? _webViewController;
+  // Le chargement de l'URL externe (site complet : pubs/JS/trackers) est
+  // **déféré** hors du montage — c'est le plus gros coût d'ouverture d'article.
+  // Le contrôleur est construit tôt (bon marché) ; `loadRequest` n'est déclenché
+  // qu'au 1er signal d'intention (scroll, fallback idle, ou tap CTA), via
+  // `_maybeStartWebViewLoad()`. Ce flag rend les déclencheurs suivants no-op.
+  bool _webViewLoadStarted = false;
   // Chemin premium (source payante connectée) : WebView sur flutter_inappwebview
   // pour réutiliser la session du média (cookies). Distinct du WebView
   // webview_flutter du scroll-to-site des sources gratuites.
@@ -601,17 +606,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// le câblage des callbacks WebView.
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
-  void _initScrollToSiteWebView() {
-    final content = _content;
-    if (content == null || kIsWeb) return;
-    if (content.contentType != ContentType.article) return;
-    if (!content.hasInAppContent) return;
-
+  /// Vrai si le scroll-to-site s'applique à [content] (article in-app, non-web,
+  /// source gratuite). Facteur commun aux gardes de construction et de
+  /// chargement du WebView.
+  bool _eligibleForScrollToSiteWebView(Content? content) {
+    if (content == null || kIsWeb) return false;
+    if (content.contentType != ContentType.article) return false;
+    if (!content.hasInAppContent) return false;
     // Source premium connectée : la couche révélée au scroll rend un
     // `PremiumWebView` (cookies) — inutile (et contre-productif : paywall)
     // de charger le contrôleur gratuit sur l'URL payante. `_buildWebViewLayer`
     // court-circuite avant de toucher `_webViewController` sur ce chemin.
-    if (_isConnectedPremiumSource(content)) return;
+    if (_isConnectedPremiumSource(content)) return false;
+    return true;
+  }
+
+  /// Construit le contrôleur WebView (delegate + channel `ScrollBridge`) sans
+  /// **charger** l'URL externe : le `loadRequest` coûteux est déféré à
+  /// [_maybeStartWebViewLoad], déclenché au 1er signal d'intention.
+  void _initScrollToSiteWebView() {
+    final content = _content;
+    if (!_eligibleForScrollToSiteWebView(content)) return;
 
     _historyTracker.reset(_nowMs());
     _webViewController = WebViewController()
@@ -629,8 +644,23 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..addJavaScriptChannel(
         'ScrollBridge',
         onMessageReceived: _onScrollBridgeMessage,
-      )
-      ..loadRequest(Uri.parse(content.url));
+      );
+  }
+
+  /// Déclenche (une seule fois) le chargement de l'URL externe dans le WebView
+  /// du scroll-to-site. Idempotent : le 1er appelant (scroll, fallback idle ou
+  /// tap CTA) préchauffe, les suivants sont no-op. Construit le contrôleur au
+  /// besoin si le montage l'avait court-circuité.
+  void _maybeStartWebViewLoad() {
+    if (_webViewLoadStarted) return;
+    final content = _content;
+    if (!_eligibleForScrollToSiteWebView(content)) return;
+    if (_webViewController == null) {
+      _initScrollToSiteWebView();
+      if (_webViewController == null) return;
+    }
+    _webViewLoadStarted = true;
+    _webViewController!.loadRequest(Uri.parse(content!.url));
   }
 
   /// Inject JS to drive the reader chrome from finger gestures + track
@@ -1192,6 +1222,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           if (_webViewController == null) {
             _initScrollToSiteWebView();
           }
+          // Fallback idle : couvre « ne scrolle jamais puis tape le CTA ». Le
+          // chargement reste déféré ~1 s après résolution du contenu ; le 1er
+          // scroll ou le tap CTA gagne la course s'il arrive avant. Idempotent.
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) _maybeStartWebViewLoad();
+          });
           // Auto-fetch perspectives if not yet loaded
           if (_perspectivesResponse == null &&
               !_perspectivesLoading &&
@@ -1886,12 +1922,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _openPerspectivesAnalysis() {
     HapticFeedback.mediumImpact();
     if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
-      // Lancement frais (pas d'analyse cachée) → quota free 1/jour. La
-      // réouverture d'une analyse déjà chargée (state != idle) reste libre.
-      if (!ref.read(analyseQuotaProvider.notifier).tryConsume()) {
-        PaywallSheet.show(context, PaywallWallVariant.analyses);
-        return;
-      }
+      // Lancement frais (pas d'analyse cachée). L'analyse se charge TOUJOURS
+      // (plus de blocage paywall) ; on marque juste l'usage du jour de façon
+      // non-bloquante (no-op premium) pour piloter le nudge doux « Notre
+      // histoire » dans la surface quota du carrousel. La réouverture d'une
+      // analyse déjà chargée (state != idle) reste libre et ne marque rien.
+      ref.read(analyseQuotaProvider.notifier).recordUse();
       _requestPerspectivesAnalysis();
     }
     showAnalysisBottomSheet(
@@ -1987,6 +2023,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification is ScrollUpdateNotification) {
+                    // 1er scroll = signal d'intention primaire : préchauffe le
+                    // WebView externe (déféré au montage). Idempotent.
+                    _maybeStartWebViewLoad();
                     final delta = notification.scrollDelta ?? 0.0;
                     final metrics = notification.metrics;
                     if (metrics.pixels <= 0 &&
@@ -2120,6 +2159,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _openOriginalUrl();
       return;
     }
+    // Garantie : le tap CTA lance la révélation (animateTo 500 ms). On préchauffe
+    // le WebView dès maintenant pour lui donner une longueur d'avance. Idempotent.
+    _maybeStartWebViewLoad();
     final content = _content;
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;

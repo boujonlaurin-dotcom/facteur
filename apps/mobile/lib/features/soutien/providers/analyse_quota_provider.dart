@@ -41,22 +41,14 @@ class AnalyseQuotaNotifier extends AsyncNotifier<bool> {
     return !(state.valueOrNull ?? false);
   }
 
-  /// À appeler uniquement sur un lancement frais (state `idle`), jamais sur
-  /// la réouverture d'une analyse déjà cachée. No-op pour les premium.
+  /// À appeler sur un lancement frais (state `idle`), jamais sur la réouverture
+  /// d'une analyse déjà cachée. No-op pour les premium. Ne bloque plus rien :
+  /// l'analyse se charge toujours (cf. déblocage #965) ; ce marqueur ne sert
+  /// qu'à piloter le nudge doux « Notre histoire » après le 1er usage du jour.
   Future<void> recordUse() async {
     if (ref.read(isPremiumProvider)) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_todayKey, true);
     state = const AsyncData(true);
-  }
-
-  /// Gate d'un lancement frais (state `idle`) : consomme le quota du jour et
-  /// renvoie `true` si autorisé, `false` si le quota free est déjà épuisé.
-  /// Premium → toujours `true` (sans consommer). Centralise l'invariant
-  /// [canLaunch] + [recordUse] partagé par les points d'entrée d'analyse.
-  bool tryConsume() {
-    if (!canLaunch) return false;
-    recordUse();
-    return true;
   }
 }
