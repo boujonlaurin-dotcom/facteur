@@ -86,6 +86,10 @@
     },
     {
       "tag": "Lecture",
+      "summary": "La version complète d'un article sur son site se charge à l'ouverture, sans ralentir ta lecture in-app auparavant."
+    },
+    {
+      "tag": "Lecture",
       "summary": "L'écran de lecture s'allège : barres flottantes translucides qui laissent transparaître l'article."
     },
     {

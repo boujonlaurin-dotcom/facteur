@@ -78,6 +78,34 @@ void main() {
       expect(t.canClimb, isFalse, reason: 'prochain retour = sortie');
     });
 
+    test('load différé : reset au chargement + rafale de redirects → sortie 1 tap',
+        () {
+      // Garde de non-régression du chargement WebView différé (#2) : le `reset`
+      // est amorcé au MOMENT du load (tap CTA / warm-up 40 %), pas à la création
+      // du contrôleur. La page démarre donc tardivement (ex. 5 s après le
+      // montage) puis enchaîne sa rafale de redirections consent-wall/AMP.
+      final t = WebViewHistoryTracker();
+      t.reset(5000); // load différé → reset ici, pas à la création
+      t.onNavStart(5100);
+      t.onNavFinish();
+      t.onNavStart(5400);
+      t.onNavFinish();
+      t.onNavStart(5900);
+      t.onNavFinish();
+
+      expect(
+        t.canClimb,
+        isFalse,
+        reason: 'sortie 1 clic préservée malgré le load différé',
+      );
+      expect(t.depth, 0);
+
+      // Un lien réellement suivi bien après le settle reste une nav utilisateur.
+      t.onNavStart(16000);
+      t.onNavFinish();
+      expect(t.depth, 1);
+    });
+
     test('reset remet la profondeur à zéro (rechargement page origine)', () {
       final t = WebViewHistoryTracker();
       t.reset(0);
