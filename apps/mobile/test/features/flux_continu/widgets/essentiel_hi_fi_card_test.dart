@@ -13,6 +13,7 @@ import 'package:facteur/features/flux_continu/providers/weather_location_provide
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
+import 'package:facteur/features/flux_continu/widgets/long_press_grow.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
@@ -33,6 +34,20 @@ Widget _wrap(Widget child, {List<Override> overrides = const []}) {
       home: Scaffold(body: SingleChildScrollView(child: child)),
     ),
   );
+}
+
+/// True si au moins un `LongPressGrowNudge` est en train d'agrandir sa carte
+/// (scale > 1.0). Scopé aux descendants du nudge pour ignorer d'autres
+/// `ScaleTransition` de l'écran (ex. le pulse météo).
+bool _growScaleIsAbove1(WidgetTester tester) {
+  return tester
+      .widgetList<ScaleTransition>(
+        find.descendant(
+          of: find.byType(LongPressGrowNudge),
+          matching: find.byType(ScaleTransition),
+        ),
+      )
+      .any((s) => s.scale.value > 1.0);
 }
 
 class _FakeWeatherNotifier extends WeatherNotifier {
@@ -149,7 +164,7 @@ void main() {
     });
 
     testWidgets(
-        'long-press on the lead opens the article preview overlay',
+        'long-press on the lead grows the card, no floating preview overlay',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
@@ -158,24 +173,26 @@ void main() {
         ),
       ));
 
-      // La carte elle-même est text-only (aucune FacteurThumbnail) ; l'aperçu
-      // overlay en rend une → signal propre de présence de l'aperçu.
+      // La carte est text-only : l'ancien overlay rendait une FacteurThumbnail.
+      // Après retrait, aucune ne doit apparaître au long-press.
       expect(find.byType(FacteurThumbnail), findsNothing);
 
       final gesture =
           await tester.startGesture(tester.getCenter(find.text('Titre 1')));
       // Dépasse la deadline long-press (500 ms par défaut du GestureDetector).
       await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80)); // mi-animation grow
 
-      expect(find.byType(FacteurThumbnail), findsOneWidget,
-          reason: 'Long-press should reveal the preview overlay.');
+      expect(find.byType(FacteurThumbnail), findsNothing,
+          reason: 'The floating preview overlay must no longer appear.');
+      expect(_growScaleIsAbove1(tester), isTrue,
+          reason: 'Long-press should scale the card up (nudge grow).');
 
       await gesture.up();
       await tester.pumpAndSettle();
     });
 
-    testWidgets('long-press on a medium tile opens the preview overlay',
+    testWidgets('long-press on a medium tile grows it, no preview overlay',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
@@ -187,9 +204,10 @@ void main() {
       final gesture =
           await tester.startGesture(tester.getCenter(find.text('Titre 2')));
       await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
 
-      expect(find.byType(FacteurThumbnail), findsOneWidget);
+      expect(find.byType(FacteurThumbnail), findsNothing);
+      expect(_growScaleIsAbove1(tester), isTrue);
 
       await gesture.up();
       await tester.pumpAndSettle();

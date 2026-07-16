@@ -92,7 +92,9 @@ final notifDuJourQueueProvider = Provider<List<String>>((ref) {
     candidates.add(const NotifCandidate(NotifDuJourIds.notifRenudge, 0.9));
   }
   if (ref.watch(wellInformedShouldShowProvider).valueOrNull ?? false) {
-    candidates.add(const NotifCandidate(NotifDuJourIds.wellInformed, 0.85));
+    // Relevance abaissée 0.85 → 0.6 : le sondage NPS gagne moins souvent le tri
+    // de la file (rareté non biaisée, cf. WellInformedPromptController).
+    candidates.add(const NotifCandidate(NotifDuJourIds.wellInformed, 0.6));
   }
   if (ref.watch(geolocPromptShouldShowProvider).valueOrNull ?? false) {
     candidates.add(const NotifCandidate(NotifDuJourIds.geoloc, 0.7));
