@@ -26,11 +26,17 @@ from app.services.recommendation.filter_presets import (
 
 
 @dataclass
+class _FakeSource:
+    theme: str | None = None
+
+
+@dataclass
 class _FakeContent:
     title: str | None = None
     description: str | None = None
     theme: str | None = None
     topics: list[str] | None = None
+    source: object | None = None
 
 
 @dataclass
@@ -119,6 +125,34 @@ class TestIsSportContent:
         c = _FakeContent(theme=None, topics=None, title=None, description=None)
         assert not is_sport_content(c)
 
+    def test_source_theme_fallback_when_content_theme_null(self):
+        # Article non classifié (theme NULL, titre sans mot-clé sport) mais issu
+        # d'une source 100 % sport → rattrapé par le fallback source.theme.
+        c = _FakeContent(
+            theme=None,
+            title="Le point sur la soirée",
+            source=_FakeSource(theme="sport"),
+        )
+        assert is_sport_content(c)
+
+    def test_source_theme_ignored_when_content_theme_present(self):
+        # Si l'article a déjà un thème propre non-sport, on ne « surclasse » pas
+        # via la source : content.theme prime (le fallback ne joue qu'en NULL).
+        c = _FakeContent(
+            theme="economy",
+            title="Rapport trimestriel",
+            source=_FakeSource(theme="sport"),
+        )
+        assert not is_sport_content(c)
+
+    def test_non_sport_source_theme_does_not_flag(self):
+        c = _FakeContent(
+            theme=None,
+            title="Actu tech neutre",
+            source=_FakeSource(theme="tech"),
+        )
+        assert not is_sport_content(c)
+
 
 class TestIsFaitsDiversCluster:
     def test_majority_faits_divers(self):
@@ -155,9 +189,7 @@ class TestCapLowPriorityClusters:
         assert economy.cluster_id in ids
 
     def test_multiple_faits_divers_capped_to_one(self):
-        fd_a = _make(
-            titles=["Accident mortel", "Incendie", "Braquage"], source_count=5
-        )
+        fd_a = _make(titles=["Accident mortel", "Incendie", "Braquage"], source_count=5)
         fd_b = _make(titles=["Accident", "Incendie", "Collision"], source_count=4)
         politics = _make(theme="politics", titles=["Réforme"], source_count=3)
 
@@ -189,7 +221,11 @@ class TestCapLowPriorityClusters:
         b = _make(theme="sport", titles=["b"])
         c = _make(theme="economy", titles=["c"])
         kept = cap_low_priority_clusters([a, b, c])
-        assert [k.cluster_id for k in kept] == [a.cluster_id, b.cluster_id, c.cluster_id]
+        assert [k.cluster_id for k in kept] == [
+            a.cluster_id,
+            b.cluster_id,
+            c.cluster_id,
+        ]
 
     def test_custom_caps(self):
         sport_a = _make(theme="sport", titles=["a"])
@@ -323,18 +359,14 @@ class TestIsNewsBulletinTitle:
     def test_l_emission_du_president(self):
         """Régression : la forme « L'émission du <x> » reste matchée par le
         pattern historique `^l['émission`."""
-        assert is_news_bulletin_title(
-            "L'émission du président qu'il faut écouter"
-        )
+        assert is_news_bulletin_title("L'émission du président qu'il faut écouter")
 
     # --- bug-actus-du-jour-ranking.md (Partie B) : séries éditoriales nommées ---
 
     def test_serie_jaenada_art_de_la_contre_enquete(self):
         """« Philippe Jaenada, l'art de la contre-enquête » — série France
         Culture qui peuplait l'Essentiel malgré le fix anti-doublon."""
-        assert is_news_bulletin_title(
-            "Philippe Jaenada, l'art de la contre-enquête"
-        )
+        assert is_news_bulletin_title("Philippe Jaenada, l'art de la contre-enquête")
 
     def test_serie_art_de_typographic_apostrophe(self):
         assert is_news_bulletin_title("Marguerite Duras, l’art du roman")

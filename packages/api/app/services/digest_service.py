@@ -1096,7 +1096,10 @@ class DigestService:
 
         from app.models.content import Content
         from app.models.source import Source
-        from app.services.recommendation.filter_presets import apply_good_news_filter
+        from app.services.recommendation.filter_presets import (
+            apply_good_news_filter,
+            is_sport_content,
+        )
 
         # Mode serein = "Bonnes nouvelles du jour" : la promesse (is_good_news=True)
         # prime sur la quantité. On applique le MÊME hard-filter que le reste du
@@ -1217,6 +1220,13 @@ class DigestService:
         for content in all_contents:
             if len(selected) >= limit:
                 break
+
+            # Exclusion dure sport en serein (defense-in-depth). Même si un
+            # article arrive avec is_good_news=True par erreur, le sport n'entre
+            # jamais dans « Bonnes nouvelles ». `content.source` est eager-loaded
+            # (selectinload ci-dessus) → is_sport_content peut lire source.theme.
+            if is_serene and is_sport_content(content):
+                continue
 
             source_id = content.source_id
             if source_counts[source_id] >= MAX_PER_SOURCE:
