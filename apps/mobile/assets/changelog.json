@@ -3,6 +3,8 @@
     {
       "tag": "Rituel",
       "summary": "Ta lettre du matin est le passage vers l'Essentiel : à l'ouverture de l'app comme depuis une notification, tu la découvres d'abord, puis tu accèdes à ta tournée."
+      "tag": "Essentiel",
+      "summary": "En-tête épuré : « Rattraper » ne s'affiche plus en permanence. Quand tu as manqué l'édition d'hier, un petit point rouge apparaît sur l'icône rewind et l'invite « Rattraper ? » se montre un court instant, une fois par jour."
     },
     {
       "tag": "Ma Tournée",
