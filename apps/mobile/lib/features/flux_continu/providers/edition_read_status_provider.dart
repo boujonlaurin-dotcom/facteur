@@ -116,6 +116,20 @@ class EditionReadStatus {
         return true;
     }
   }
+
+  /// L'utilisateur a-t-il **manqué l'édition d'hier** (J-1 non ouverte) ? Base du
+  /// signal contextuel « Rattraper ? » de l'en-tête Essentiel (point rouge +
+  /// nudge éphémère).
+  ///
+  /// Dégradation gracieuse : renvoie `false` dès que le statut est indisponible
+  /// ([available] == false — streaks en chargement/erreur ou gamification off) →
+  /// aucun faux positif au cold-boot ni pour un nouvel utilisateur sans
+  /// historique. Pur et testable ; `now` injectable.
+  bool missedYesterday({DateTime? now}) {
+    if (!available) return false;
+    final yesterday = editionPastDays(1, now: now).first;
+    return !isEditionRead(EditionPastDay(yesterday), now: now);
+  }
 }
 
 /// Statut lu/non-lu dérivé : union des jours `opened` de streaks et du set local

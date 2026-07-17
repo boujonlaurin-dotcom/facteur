@@ -335,22 +335,98 @@ class _ReadStatusPill extends StatelessWidget {
   }
 }
 
-/// Déclencheur « rewind » de l'en-tête de la carte Essentiel : ⏪ ocre + libellé
-/// du scope courant (sans cadre). Tap → [onTap] (ouvre [EditionTimelineSheet]).
-/// Toujours affiché (today **et** passé).
+/// Déclencheur « rewind » de l'en-tête de la carte Essentiel : ⏪ ocre. Tap →
+/// [onTap] (ouvre [EditionTimelineSheet]). Toujours affiché (today **et** passé).
+///
+/// Trois états (décision PO « header épuré à jour ») :
+/// - à jour ([label] `null`, [ephemeralLabel] `null`) ⇒ **icône seule** ;
+/// - lettre passée ([label] `'Revenir'`) ⇒ icône + libellé **fixe** ;
+/// - en retard (édition d'hier non ouverte) ⇒ un [ephemeralLabel] animé
+///   (« Rattraper ? » qui apparaît en fondu puis disparaît, cf.
+///   `EphemeralRattraperLabel`) + un **point rouge** persistant sur ⏪.
+///
+/// Le point rouge est dérivé de la présence de [ephemeralLabel] : c'est le même
+/// état « en retard » (pas un knob séparé). [ephemeralLabel] prime sur [label]
+/// (mode « en retard ») et gère lui-même son gap de gauche ; [label] porte l'état
+/// de navigation « lettre passée » (« Revenir »).
 class EditionRewindTrigger extends StatelessWidget {
-  final String label;
+  final String? label;
+  final Widget? ephemeralLabel;
   final VoidCallback onTap;
 
   const EditionRewindTrigger({
     super.key,
-    required this.label,
+    this.label,
+    this.ephemeralLabel,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+
+    // Point rouge « pas à jour » = état « en retard », dérivé de la présence du
+    // nudge éphémère (même signal, une seule source de vérité).
+    final showBadge = ephemeralLabel != null;
+
+    // Icône ⏪ dans un slot 24×24 : garantit une cible tactile confortable même
+    // en mode « icône seule » (header épuré à jour).
+    Widget icon = SizedBox(
+      width: 24,
+      height: 24,
+      child: Center(
+        child: Icon(
+          PhosphorIcons.rewind(PhosphorIconsStyle.fill),
+          size: 15,
+          color: colors.primary,
+        ),
+      ),
+    );
+    // Point rouge « pas à jour » empilé sur l'icône (repère calme, persistant).
+    // Pattern repris de `update_button.dart` : disque `colors.error` + fin anneau
+    // `colors.surface` pour détacher le point du fond.
+    if (showBadge) {
+      icon = Stack(
+        clipBehavior: Clip.none,
+        children: [
+          icon,
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: colors.error,
+                shape: BoxShape.circle,
+                border: Border.all(color: colors.surface, width: 1),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Slot droit : l'éphémère (animé) prime ; sinon le libellé fixe ; sinon rien.
+    Widget? trailing;
+    if (ephemeralLabel != null) {
+      trailing = ephemeralLabel;
+    } else if (label != null) {
+      trailing = Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Text(
+          label!,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.dmSans(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: colors.primary,
+          ),
+        ),
+      );
+    }
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -364,22 +440,8 @@ class EditionRewindTrigger extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                PhosphorIcons.rewind(PhosphorIconsStyle.fill),
-                size: 15,
-                color: colors.primary,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.dmSans(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: colors.primary,
-                ),
-              ),
+              icon,
+              if (trailing != null) trailing,
             ],
           ),
         ),

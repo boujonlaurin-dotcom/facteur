@@ -12,10 +12,13 @@ import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
+import '../providers/edition_read_status_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
+import '../services/tournee_progress_service.dart';
 import '../utils/theme_color_mapping.dart';
 import 'edition_timeline_sheet.dart';
+import 'ephemeral_rattraper_label.dart';
 import 'long_press_grow.dart';
 import 'weather_condition_icon.dart';
 import 'weather_detail_sheet.dart';
@@ -52,14 +55,21 @@ class EssentielHiFiCard extends ConsumerWidget {
     // l'unique héros Essentiel rendu dans les deux vues (live + passée), le
     // brancher ici le fait apparaître partout.
     //
-    // Le bouton porte un libellé **fixe** (verbe d'action, pas la date) : le
-    // scope courant (« Aujd »/« Hier »…) prenait trop de place et restait peu
-    // clair. En today → « Rattraper » (invite à remonter le temps) ; sur une
-    // lettre passée → « Revenir » (retour à aujourd'hui). Le titre de la section
-    // porte, lui, la date sélectionnée (« Hier » vs « Ton Essentiel »).
+    // « Rattraper » n'est plus un libellé fixe mais un **signal contextuel**
+    // (décision PO « header épuré à jour ») :
+    // - à jour → icône ⏪ seule (toujours tappable, ouvre la timeline) ;
+    // - édition d'hier non ouverte → **point rouge** persistant sur ⏪ + le nudge
+    //   éphémère « Rattraper ? » (fondu-in ~1 s / tient 2 s / fondu-out, ≤1×/j) ;
+    // - lettre passée → « Revenir » fixe (état de navigation, inchangé).
+    // Le titre de la section porte, lui, la date sélectionnée (« Hier » vs
+    // « Ton Essentiel »).
     final selection = ref.watch(selectedEditionDateProvider);
     final isToday = selection is EditionToday;
-    final rewindLabel = isToday ? 'Rattraper' : 'Revenir';
+    // « En retard » = today ET édition d'hier (J-1) non ouverte. Dégradation
+    // gracieuse : `missedYesterday()` renvoie `false` si les streaks sont
+    // indisponibles → aucun faux positif au cold-boot.
+    final missedYesterday =
+        isToday && ref.watch(editionReadStatusProvider).missedYesterday();
     final headerTitle = isToday ? 'Ton Essentiel' : editionPillLabel(selection);
 
     return KeyedSubtree(
@@ -92,8 +102,17 @@ class EssentielHiFiCard extends ConsumerWidget {
               accent: accent,
               title: headerTitle,
               rewind: EditionRewindTrigger(
-                label: rewindLabel,
                 onTap: () => EditionTimelineSheet.show(context),
+                // today à jour → icône seule ; lettre passée → « Revenir » fixe.
+                label: isToday ? null : 'Revenir',
+                // En retard → nudge éphémère « Rattraper ? » ; le point rouge
+                // persistant est dérivé de sa présence côté trigger.
+                ephemeralLabel: missedYesterday
+                    ? EphemeralRattraperLabel(
+                        dayKey:
+                            TourneeProgressService.dayKey(DateTime.now()),
+                      )
+                    : null,
               ),
             ),
             // Compaction « cartes ≤ écran » (passe 2, validée UX) : gap
