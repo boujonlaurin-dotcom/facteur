@@ -185,16 +185,6 @@ class AnalyticsService {
     await _capturePostHog('morning_ritual_opened', props);
   }
 
-  /// L'édition n'était pas prête après le délai borné → on a filé au feed
-  /// **sans** marquer « vu » (le rituel reviendra au prochain open).
-  Future<void> trackMorningRitualSkippedNotReady({
-    required String dayKey,
-  }) async {
-    final props = {'session_id': _sessionId, 'day_key': dayKey};
-    await _logEvent('morning_ritual_skipped_not_ready', props);
-    await _capturePostHog('morning_ritual_skipped_not_ready', props);
-  }
-
   /// Enregistre une session feed complète.
   Future<void> trackFeedSession({
     required double scrollDepthPercent,

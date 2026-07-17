@@ -4,11 +4,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../config/routes.dart';
+import '../../features/flux_continu/services/tournee_progress_service.dart';
 import '../api/notification_preferences_api_service.dart';
 
 /// Variante de copy de la notification quotidienne.
@@ -620,9 +624,18 @@ class PushNotificationService {
   }
 
   static void openRoute(String route) {
-    final navigator = _navigatorKey?.currentState;
-    if (navigator == null) return;
-    navigator.pushNamedAndRemoveUntil(route, (_) => false);
+    final context = _navigatorKey?.currentContext;
+    if (context == null) return;
+    final tournee = ProviderScope.containerOf(context, listen: false)
+        .read(tourneeProgressServiceProvider);
+    // Navigation via GoRouter (et non le navigator impératif
+    // `pushNamedAndRemoveUntil`, qui contournait le `redirect`) pour que le gate
+    // Rituel s'applique : **toutes** les push (digest, bonnes nouvelles, article
+    // hebdo…) passent par la lettre du jour tant qu'elle n'a pas été vue.
+    final target = tournee.isMorningRitualShownTodaySync()
+        ? route
+        : RoutePaths.edition;
+    GoRouter.of(context).go(target);
   }
 
   // --- Time helpers --------------------------------------------------------

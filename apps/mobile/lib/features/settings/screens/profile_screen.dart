@@ -9,7 +9,6 @@ import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
-import '../../flux_continu/providers/morning_ritual_qa_provider.dart';
 import '../../flux_continu/services/tournee_progress_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../widgets/profile_progression_card.dart';
@@ -133,15 +132,6 @@ class ProfileScreen extends ConsumerWidget {
                       );
                     },
                   ),
-                  _SwitchTile(
-                    icon: Icons.hourglass_empty,
-                    title: 'Forcer « édition pas prête »',
-                    subtitle: 'Valide le repli vers le feed (état B)',
-                    value: ref.watch(debugForceMorningRitualNotReadyProvider),
-                    onChanged: (v) => ref
-                        .read(debugForceMorningRitualNotReadyProvider.notifier)
-                        .state = v,
-                  ),
                 ],
               ),
             ],
@@ -263,63 +253,6 @@ class _Section extends StatelessWidget {
           child: Column(children: children),
         ),
       ],
-    );
-  }
-}
-
-/// Variante de [_Tile] avec un interrupteur (réglages QA on/off).
-class _SwitchTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _SwitchTile({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    return InkWell(
-      onTap: () => onChanged(!value),
-      child: Padding(
-        padding: const EdgeInsets.all(FacteurSpacing.space4),
-        child: Row(
-          children: [
-            Icon(icon, color: colors.primary, size: 24),
-            const SizedBox(width: FacteurSpacing.space4),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w500,
-                        ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.textSecondary,
-                          ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            Switch(value: value, onChanged: onChanged),
-          ],
-        ),
-      ),
     );
   }
 }
