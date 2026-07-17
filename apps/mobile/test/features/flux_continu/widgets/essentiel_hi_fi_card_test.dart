@@ -9,14 +9,19 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
+import 'package:facteur/features/flux_continu/providers/selected_edition_date_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
 import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dart';
+import 'package:facteur/features/flux_continu/widgets/ephemeral_rattraper_label.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
 import 'package:facteur/features/flux_continu/widgets/long_press_grow.dart';
+import 'package:facteur/features/gamification/models/streak_activity_model.dart';
+import 'package:facteur/features/gamification/providers/streak_activity_provider.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Widget _wrap(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
@@ -111,6 +116,10 @@ void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
   });
+
+  // Prefs mockées : le set local « rattrapé » (editionCaughtUpProvider) et le
+  // nudge éphémère lisent SharedPreferences au montage.
+  setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
   group('EssentielHiFiCard', () {
     testWidgets('renders title, subtitle and the lead article', (tester) async {
@@ -253,24 +262,68 @@ void main() {
     });
 
     testWidgets(
-        'affiche le déclencheur rewind avec un libellé fixe '
-        '(défaut = today → « Rattraper »)', (tester) async {
-      // EPIC « Lettre du jour » — refonte timeline overlay : le déclencheur
-      // « rewind » vit dans l'en-tête de la carte (sélection par défaut = today).
-      // Le libellé est un verbe d'action fixe (plus la date) : « Rattraper » en
-      // today, « Revenir » sur une lettre passée.
+        'à jour (today, streaks indispo) → header épuré : icône seule, '
+        'ni libellé, ni point rouge, ni nudge', (tester) async {
+      // EPIC « Lettre du jour » — « Rattraper » est désormais un signal
+      // contextuel : en today, si les streaks sont indisponibles (défaut du
+      // wrap → editionReadStatus « unavailable »), le déclencheur est l'icône ⏪
+      // seule (label null, pas de point, pas de nudge éphémère).
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
         ),
       ));
+      await tester.pumpAndSettle();
 
       expect(find.byType(EditionRewindTrigger), findsOneWidget);
       final trigger = tester.widget<EditionRewindTrigger>(
         find.byType(EditionRewindTrigger),
       );
-      expect(trigger.label, 'Rattraper');
+      expect(trigger.label, isNull);
+      // Pas de nudge → pas de point rouge (le badge est dérivé de sa présence).
+      expect(trigger.ephemeralLabel, isNull);
+      expect(find.byType(EphemeralRattraperLabel), findsNothing);
+    });
+
+    testWidgets(
+        'en retard (today, édition d\'hier non ouverte) → point rouge + '
+        'nudge « Rattraper ? » monté', (tester) async {
+      // Streaks disponibles avec J-1 `opened == false` (et set local vide) ⇒
+      // missedYesterday == true → point rouge persistant + EphemeralRattraperLabel.
+      final today = editionTodayDate();
+      final past = editionPastDays(kEditionMaxPastDays); // J-1 (Hier)
+      final activity = StreakActivityModel(
+        currentStreak: 1,
+        longestStreak: 1,
+        days: [
+          StreakActivityDay(date: today, opened: true),
+          StreakActivityDay(date: past.first, opened: false), // Hier non lu
+        ],
+      );
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          streakActivityProvider.overrideWith((ref) async => activity),
+        ],
+      ));
+      // Laisse le FutureProvider streaks se résoudre → editionReadStatus dispo.
+      await tester.pumpAndSettle();
+
+      final trigger = tester.widget<EditionRewindTrigger>(
+        find.byType(EditionRewindTrigger),
+      );
+      // ephemeralLabel présent → point rouge dérivé + nudge monté.
+      expect(trigger.ephemeralLabel, isNotNull);
+      expect(find.byType(EphemeralRattraperLabel), findsOneWidget);
+
+      // Purge des timers du nudge (fondu-in ~1 s) avant la fin du test.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
     });
 
     testWidgets('le déclencheur rewind est présent, sans bouton perso',

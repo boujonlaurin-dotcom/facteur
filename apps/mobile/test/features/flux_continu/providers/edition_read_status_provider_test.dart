@@ -56,6 +56,37 @@ void main() {
     });
   });
 
+  group('EditionReadStatus.missedYesterday — signal « pas à jour »', () {
+    test('indisponible (available == false) → false (aucun faux positif)', () {
+      const status = EditionReadStatus.unavailable();
+      expect(status.missedYesterday(now: now), isFalse);
+    });
+
+    test('J-1 non lu → true', () {
+      // readDayKeys vide (mais available) → hier n'est pas lu.
+      const status = EditionReadStatus(available: true);
+      expect(status.missedYesterday(now: now), isTrue);
+    });
+
+    test('J-1 lu (opened côté streaks) → false', () {
+      final status = EditionReadStatus(
+        available: true,
+        readDayKeys: {editionDayKey(past[0])}, // J-1 lu
+      );
+      expect(status.missedYesterday(now: now), isFalse);
+    });
+
+    test('J-1 rattrapé localement (∈ readDayKeys) → false', () {
+      // `readDayKeys` = union streaks ∪ set local « rattrapé » : un J-1 rattrapé
+      // à la main compte comme lu.
+      final status = EditionReadStatus(
+        available: true,
+        readDayKeys: {editionDayKey(past[0])},
+      );
+      expect(status.missedYesterday(now: now), isFalse);
+    });
+  });
+
   group('editionReadStatusProvider — dégradation gracieuse', () {
     test('streaks vides (gamification off) → available == false', () async {
       final container = ProviderContainer(overrides: [

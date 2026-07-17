@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Essentiel",
+      "summary": "En-tête épuré : « Rattraper » ne s'affiche plus en permanence. Quand tu as manqué l'édition d'hier, un petit point rouge apparaît sur l'icône rewind et l'invite « Rattraper ? » se montre un court instant, une fois par jour."
+    },
+    {
       "tag": "Ma Tournée",
       "summary": "Tes sources et thèmes rangés dans l'Essentiel y restent : leur place est désormais sauvegardée et retrouvée sur chaque appareil, même après réinstallation."
     },
