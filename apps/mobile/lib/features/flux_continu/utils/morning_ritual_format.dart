@@ -1,57 +1,5 @@
-import '../../digest/models/digest_models.dart';
-import '../models/flux_continu_models.dart';
-import '../services/tournee_progress_service.dart';
-
-/// Helpers **purs** (pas de provider, pas de réseau) du rituel matinal
-/// (Story 28.1). Testables et déterministes.
-
-/// L'édition du jour est-elle **réellement arrivée** ? Gate de révélation du
-/// sommaire+CTA du rituel matinal. `now` injectable pour les tests.
-///
-/// **Source de vérité = le flux** (`fluxContinuProvider`, préchargé dès le boot
-/// via `fluxContinuPreloadProvider`) : du contenu réel (`!isSkeleton`, sections
-/// non vides) signifie l'édition du jour arrivée — son flag `isSkeleton`
-/// garantit déjà « jamais du contenu d'hier » (décision PO #4).
-///
-/// Le `digest` n'est qu'une **corroboration optionnelle** : il est chargé
-/// **séparément** (`digestProvider`, *non* préchargé) et vaut donc `null` les
-/// premières secondes sur `/edition`. On ne bloque **jamais** dessus quand il
-/// est absent (sinon le rituel ne se révèle jamais — bug E2E 24/06). Quand il
-/// est là, il resserre la garantie de fraîcheur : on refuse un `isStaleFallback`
-/// ou un `targetDate` qui ne tombe pas sur le jour-tournée courant.
-bool isEditionReady(
-  FluxContinuState? state,
-  DigestResponse? digest, {
-  DateTime? now,
-}) {
-  if (state == null || state.isSkeleton || state.sections.isEmpty) return false;
-  if (digest != null) {
-    if (digest.isStaleFallback) return false;
-    final today = now ?? DateTime.now();
-    // `targetDate` est une **étiquette éditoriale date-nue** (backend :
-    // `str(today_paris())` → minuit local côté Dart). On compare son jour
-    // **calendaire brut** (Y-M-D) au `dayKey` du jour-tournée — surtout PAS en
-    // la repassant dans `dayKey()`, dont la bascule 7h30 retirerait un jour à
-    // tout minuit (< 07h30) et rendrait le gate perpétuellement faux.
-    if (editionDayKey(digest.targetDate) !=
-        TourneeProgressService.dayKey(today)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/// Plafond de résilience du loader du rituel matinal avant repli vers le feed.
-/// Onboarding : édition calculée à froid → 10 s (déjà validé). Cold-boot (aucun
-/// snapshot Hive) : chaîne auth-refresh + 3 appels réseau concurrents vers un
-/// backend mono-worker → 12 s. Cas chaud (cache existant) : 6 s, inchangé.
-Duration resolveMorningRitualMaxWait({
-  required bool fromOnboarding,
-  required bool coldBoot,
-}) {
-  if (fromOnboarding) return const Duration(seconds: 10);
-  return coldBoot ? const Duration(seconds: 12) : const Duration(seconds: 6);
-}
+// Helpers **purs** (pas de provider, pas de réseau) du rituel matinal
+// (Story 28.1). Testables et déterministes.
 
 /// Jour calendaire (`YYYY-MM-DD`) d'une `targetDate` éditoriale, à partir de ses
 /// composantes brutes (aucune conversion tz : c'est un libellé, pas un instant).
@@ -59,35 +7,6 @@ String editionDayKey(DateTime date) {
   final mm = date.month.toString().padLeft(2, '0');
   final dd = date.day.toString().padLeft(2, '0');
   return '${date.year.toString().padLeft(4, '0')}-$mm-$dd';
-}
-
-/// Diagnostic **QA** (staging/dev) : pourquoi `isEditionReady` vaut ce qu'il
-/// vaut. Listé condition par condition pour identifier d'un coup d'œil sur
-/// l'appareil le maillon qui bloque (squelette ? digest absent ? mauvais jour ?).
-String morningRitualReadinessDebug(
-  FluxContinuState? state,
-  DigestResponse? digest, {
-  DateTime? now,
-}) {
-  final today = now ?? DateTime.now();
-  // Source de vérité = le flux. Le digest est optionnel (« opt » s'il est null).
-  final fluxOk = state != null && !state.isSkeleton && state.sections.isNotEmpty;
-  final target = digest == null ? '∅' : editionDayKey(digest.targetDate);
-  final todayKey = TourneeProgressService.dayKey(today);
-  final String digestState;
-  if (digest == null) {
-    digestState = 'null(opt)';
-  } else if (digest.isStaleFallback) {
-    digestState = 'stale→bloque';
-  } else if (target != todayKey) {
-    digestState = 'jour-ko→bloque';
-  } else {
-    digestState = 'ok';
-  }
-  final ready = isEditionReady(state, digest, now: now);
-  return 'ready=$ready · flux=${fluxOk ? "ok" : "ko"}'
-      '(skel=${state?.isSkeleton}/sec=${state?.sections.length})'
-      ' · digest=$digestState(t=$target/n=$todayKey)';
 }
 
 const List<String> _frenchWeekdays = <String>[
@@ -130,4 +49,3 @@ String formatFrenchShortWeekdayDay(DateTime date) {
   final short = _frenchWeekdays[(date.weekday - 1) % 7].substring(0, 3);
   return '$short. ${date.day}';
 }
-

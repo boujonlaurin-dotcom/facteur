@@ -17,8 +17,8 @@ import 'selected_edition_date_provider.dart';
 /// EPIC « Lettre du jour » — contenu Essentiel **lecture seule** pour une
 /// sélection de date donnée.
 ///
-/// Volontairement séparé de `digestProvider` (widget home, complétion, streak,
-/// gate `isEditionReady`) et de `fluxContinuProvider` (qui recomposerait toute
+/// Volontairement séparé de `digestProvider` (widget home, complétion, streak)
+/// et de `fluxContinuProvider` (qui recomposerait toute
 /// la tournée) : repurposer l'un ou l'autre pour des dates arbitraires
 /// polluerait leurs invariants. Ce provider sert la **lettre Essentiel** en
 /// lecture seule (héros + Actus + Bonnes Nouvelles + citation), jamais les

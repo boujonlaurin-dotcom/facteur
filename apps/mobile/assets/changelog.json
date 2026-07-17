@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Rituel",
+      "summary": "Ta lettre du matin est le passage vers l'Essentiel : à l'ouverture de l'app comme depuis une notification, tu la découvres d'abord, puis tu accèdes à ta tournée."
+    },
+    {
       "tag": "Ma Tournée",
       "summary": "Tes sources et thèmes rangés dans l'Essentiel y restent : leur place est désormais sauvegardée et retrouvée sur chaque appareil, même après réinstallation."
     },

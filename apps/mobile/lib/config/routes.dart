@@ -291,6 +291,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         return postAuthHomePath(allowMorningRitual: false);
       }
 
+      // 6. Gate Rituel : L'Essentiel n'est accessible qu'APRÈS la lettre du
+      // jour. Cold boot, tap onglet (main_shell fait `context.go`), push,
+      // reprise d'app : tout ce qui vise `/flux-continu` passe par `/edition`
+      // tant que la lettre du jour n'a pas été vue. Match EXACT → les
+      // sous-routes `/flux-continu/content/:id` (tap article widget)
+      // s'échappent et ouvrent l'article directement ; `/flaner` (Flâner) n'est
+      // jamais gated → exception widget préservée. Sûr ici : logged-in + email
+      // confirmé + `onboardingStatusKnown` déjà garantis, et le rituel se
+      // marque « vu » à sa révélation (pas de boucle).
+      if (matchedLocation == RoutePaths.fluxContinu &&
+          !authState.needsOnboarding &&
+          !ref
+              .read(tourneeProgressServiceProvider)
+              .isMorningRitualShownTodaySync()) {
+        return RoutePaths.edition;
+      }
+
       return null;
     },
     routes: [
@@ -350,12 +367,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: RouteNames.edition,
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
-          // `from=onboarding` élargit le plafond du loader (édition calculée à
-          // froid juste après le choix des sujets → plus lente qu'un matin).
-          child: MorningRitualScreen(
-            fromOnboarding:
-                state.uri.queryParameters['from'] == 'onboarding',
-          ),
+          // Le rituel se révèle au plancher d'ambiance puis hydrate en direct :
+          // même écran pour l'ouverture quotidienne et la sortie d'onboarding
+          // (`?from=onboarding` n'a plus d'effet — plus de plafond de repli).
+          child: const MorningRitualScreen(),
           transitionsBuilder: (context, animation, secondaryAnimation, child) =>
               FadeTransition(opacity: animation, child: child),
         ),

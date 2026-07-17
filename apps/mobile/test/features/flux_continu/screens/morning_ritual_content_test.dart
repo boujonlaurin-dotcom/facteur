@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
 
 /// [MorningRitualContent] est **provider-free** : chaque slide du carrousel se
 /// limite à **l'enveloppe seule** (le titre daté + sous-titre ont migré vers
@@ -57,6 +58,20 @@ FeedThemeSection _theme(String slug, String label, int count) => FeedThemeSectio
           source: Source(id: 's', name: 'S', type: SourceType.article),
         ),
       ),
+    );
+
+/// Coquille de section (échafaudage du reveal rapide) : `isPlaceholder: true`,
+/// zéro article. [_SectionRow] doit shimmer sa ligne méta.
+FeedThemeSection _placeholderTheme(String slug, String label) =>
+    FeedThemeSection(
+      kind: SectionKind.theme,
+      label: label,
+      accent: const Color(0xFF1565C0),
+      coreVisibleCount: 5,
+      themeSlug: slug,
+      items: const <Content>[],
+      hasMore: false,
+      isPlaceholder: true,
     );
 
 void main() {
@@ -204,6 +219,32 @@ void main() {
       await tester.pump();
       expect(tapped, sectionKey(tech));
       expect(tapped, 'theme:tech');
+    });
+
+    testWidgets(
+        'section placeholder → label + emoji + shimmer, sans compteur ni flèche',
+        (tester) async {
+      _useTallSurface(tester);
+      await tester.pumpWidget(_wrap(
+        SectionDeepDiveList(
+          sections: [_placeholderTheme('tech', 'Technologie')],
+          onOpenSection: (_) {},
+          onTapManage: () {},
+        ),
+      ));
+      // Un seul pump : le shimmer anime en boucle (pas de pumpAndSettle).
+      await tester.pump();
+
+      // Le label + l'emoji restent lisibles (section « de base » de l'édition).
+      expect(find.text('Technologie'), findsOneWidget);
+      expect(find.text('💻'), findsOneWidget);
+      // Pas de compteur trompeur ni de badge tant que la section charge.
+      expect(find.textContaining('ARTICLE'), findsNothing);
+      expect(find.text('Peu d\'articles'), findsNothing);
+      // La flèche est masquée (remplacée par un espace réservé).
+      expect(find.byIcon(Icons.arrow_forward_rounded), findsNothing);
+      // Un shimmer discret remplace la ligne méta « N articles ».
+      expect(find.byType(Shimmer), findsOneWidget);
     });
 
     testWidgets('tap sur le lien discret « Gérer » → onTapManage',

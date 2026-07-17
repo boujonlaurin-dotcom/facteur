@@ -1,26 +1,22 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shimmer/shimmer.dart';
 
-import 'package:facteur/config/constants.dart';
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/config/serein_colors.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/core/providers/analytics_provider.dart';
-import 'package:facteur/features/digest/providers/digest_provider.dart';
 import 'package:facteur/features/digest/providers/serein_toggle_provider.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
-import 'package:facteur/features/flux_continu/providers/morning_ritual_qa_provider.dart';
 import 'package:facteur/features/flux_continu/providers/pending_feed_section_provider.dart';
 import 'package:facteur/features/flux_continu/providers/selected_edition_date_provider.dart';
-import 'package:facteur/features/flux_continu/services/flux_continu_cache_service.dart';
 import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
 import 'package:facteur/features/flux_continu/utils/morning_ritual_format.dart';
 import 'package:facteur/features/flux_continu/utils/theme_color_mapping.dart';
@@ -36,23 +32,18 @@ import 'package:facteur/shared/widgets/loaders/loading_view.dart';
 /// d'onboarding) :
 ///
 /// ```
-/// LOADER (enveloppe + citation, le temps que l'édition se calcule)
-///   → RITUEL (greeting + manchettes du jour en bullets)
-///   → glisse vers le haut → SLIDE HAUT → FEED (déjà préchargé, zéro loader)
+/// LOADER (enveloppe + citation, plancher d'ambiance ~2,2 s)
+///   → RITUEL (greeting + carrousel + sommaire des sections du jour)
+///   → glisse vers le haut → SLIDE HAUT → FEED (L'Essentiel)
 /// ```
 ///
-/// Le loader **précède** le rituel : il achète le temps de calcul de l'édition,
-/// si bien qu'au moment où le rituel s'affiche les manchettes de L'Essentiel
-/// sont prêtes et s'affichent d'un coup. Si l'édition n'est pas prête au plafond
-/// ([_maxWaitFor]), on file au feed **sans** marquer « vu » (décision PO #4 :
-/// le rituel revient au prochain open).
+/// La lettre est le **point d'entrée strict et unique** vers L'Essentiel : elle
+/// se révèle dès la fin du plancher d'ambiance ([_introFloor]) et **jamais** ne
+/// file au feed si le contenu tarde (plus de repli/plafond — décision PO). Le
+/// sommaire des sections rend l'échafaudage des sections « de base » (favoris +
+/// Actus du jour + Bonnes Nouvelles) en shimmer et hydrate en direct.
 class MorningRitualScreen extends ConsumerStatefulWidget {
-  /// Sortie d'onboarding : l'édition est calculée *à froid* (plus lente qu'un
-  /// matin où le flux est préchargé au boot) → plafond du loader élargi pour
-  /// garantir l'affichage du rituel plutôt qu'un skip vers le feed.
-  final bool fromOnboarding;
-
-  const MorningRitualScreen({super.key, this.fromOnboarding = false});
+  const MorningRitualScreen({super.key});
 
   @override
   ConsumerState<MorningRitualScreen> createState() =>
@@ -63,24 +54,14 @@ enum _Phase { loading, ritual, exiting }
 
 class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     with TickerProviderStateMixin {
-  /// Plancher d'ambiance du loader d'intro (le temps que les thèmes se
-  /// calculent et que les chips soient prêtes à cascader vite).
+  /// Plancher d'ambiance du loader d'intro : signature du rituel + laisse le
+  /// squelette des sections s'afficher avant la révélation (valeur ajustable).
   static const Duration _introFloor = Duration(milliseconds: 2200);
 
   /// Délai d'apparition de la citation éditoriale dans le loader.
   static const Duration _editorialReveal = Duration(milliseconds: 600);
 
-  /// Plafond de résilience : au-delà, repli vers le feed sans marquer « vu ».
-  /// Plus large en sortie d'onboarding (édition calculée à froid). Le cas
-  /// cold-boot (aucun snapshot Hive) élargit le plafond à part, via
-  /// [_maybeExtendForColdBoot] (lecture Hive asynchrone, hors du chemin chaud).
-  Duration get _maxWaitFor => resolveMorningRitualMaxWait(
-        fromOnboarding: widget.fromOnboarding,
-        coldBoot: false,
-      );
-
   Timer? _floorTimer;
-  Timer? _maxWaitTimer;
   late final DateTime _mountedAt;
 
   late final AnimationController _exitController;
@@ -88,26 +69,14 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
   late final Animation<double> _fadeOut;
 
   _Phase _phase = _Phase.loading;
-  bool _floorElapsed = false;
-  bool _editionReady = false;
   bool _shownTracked = false;
   bool _navigated = false;
-
-  /// Dernière trace QA du gate émise (dédoublonnage des `debugPrint`).
-  String? _lastReadinessDebug;
 
   @override
   void initState() {
     super.initState();
     _mountedAt = DateTime.now();
-    _floorTimer = Timer(_introFloor, () {
-      _floorElapsed = true;
-      _maybeReveal();
-    });
-    _maxWaitTimer = Timer(_maxWaitFor, _forwardIfNotReady);
-    // Élargit le plafond aux seuls devices genuinement froids (lecture Hive
-    // asynchrone, non bloquante — le plafond chaud tourne déjà ci-dessus).
-    unawaited(_maybeExtendForColdBoot());
+    _floorTimer = Timer(_introFloor, _revealRitual);
     _exitController = AnimationController(
       vsync: this,
       duration: FacteurDurations.slow,
@@ -128,53 +97,16 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
   @override
   void dispose() {
     _floorTimer?.cancel();
-    _maxWaitTimer?.cancel();
     _exitController.dispose();
     super.dispose();
   }
 
-  /// Sur un device genuinement froid (aucun snapshot Hive jamais écrit), la
-  /// chaîne auth-refresh + 3 appels réseau concurrents peut dépasser le plafond
-  /// chaud de 6 s → le rituel serait silencieusement sauté. On étend alors le
-  /// plafond à 12 s, mesuré depuis le mount (pas depuis la détection, pour ne pas
-  /// cumuler la latence de la lecture Hive). Fail-safe : toute erreur de lecture
-  /// → on garde le plafond actuel (jamais d'extension). Ne touche pas au cas
-  /// onboarding (déjà 10 s).
-  Future<void> _maybeExtendForColdBoot() async {
-    if (widget.fromOnboarding) return;
-    FluxContinuSnapshot? snapshot;
-    try {
-      snapshot = await FluxContinuCacheService().readLatest();
-    } catch (_) {
-      return; // fail-safe → comportement actuel (6 s), jamais fail-extend
-    }
-    if (snapshot != null) return; // cache présent → device chaud, 6 s inchangé
-    if (!mounted || _phase != _Phase.loading) return;
-    final coldMax = resolveMorningRitualMaxWait(
-      fromOnboarding: false,
-      coldBoot: true,
-    );
-    final remaining = coldMax - DateTime.now().difference(_mountedAt);
-    _maxWaitTimer?.cancel();
-    if (remaining <= Duration.zero) {
-      _forwardIfNotReady();
-    } else {
-      _maxWaitTimer = Timer(remaining, _forwardIfNotReady);
-    }
-  }
-
-  /// Révèle le rituel dès que les deux conditions sont réunies : édition prête
-  /// **et** plancher d'ambiance écoulé (ou reduceMotion → immédiat).
-  void _maybeReveal({bool reduceMotion = false}) {
-    if (!mounted || _phase != _Phase.loading) return;
-    if (_editionReady && (_floorElapsed || reduceMotion)) {
-      _revealRitual();
-    }
-  }
-
+  /// Révèle le rituel dès la fin du plancher d'ambiance (ou immédiatement en
+  /// reduceMotion). La révélation ne dépend **plus** de l'arrivée du contenu :
+  /// le sommaire s'affiche avec l'échafaudage des sections (shimmer) et hydrate
+  /// en direct — jamais de saut vers le feed.
   void _revealRitual() {
     if (!mounted || _phase != _Phase.loading) return;
-    _maxWaitTimer?.cancel();
     _floorTimer?.cancel();
     if (!_shownTracked) {
       _shownTracked = true;
@@ -183,25 +115,14 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
           ));
       // « Vu » dès la **révélation** (et non au tap CTA) : si l'utilisateur
       // quitte sans ouvrir puis se reconnecte le même jour, l'enveloppe ne
-      // réapparaît pas. (Décision PO #4 préservée : le repli « pas prête »
-      // — `_forwardIfNotReady` — ne marque toujours pas « vu ».)
+      // réapparaît pas — et le gate Rituel (routes.dart) le laisse alors passer
+      // vers L'Essentiel. La révélation étant désormais inconditionnelle, il n'y
+      // a plus de chemin qui ne marque pas « vu » (donc pas de boucle de gate).
       unawaited(
         ref.read(tourneeProgressServiceProvider).setMorningRitualShownToday(),
       );
     }
     setState(() => _phase = _Phase.ritual);
-  }
-
-  /// Plafond atteint sans édition prête : repli vers le feed **sans** marquer
-  /// « vu » (le rituel revient au prochain open — décision PO #4).
-  void _forwardIfNotReady() {
-    if (!mounted || _phase != _Phase.loading) return;
-    unawaited(
-      ref.read(analyticsServiceProvider).trackMorningRitualSkippedNotReady(
-            dayKey: TourneeProgressService.dayKey(DateTime.now()),
-          ),
-    );
-    _go(RoutePaths.fluxContinu);
   }
 
   void _trackOpened() {
@@ -264,75 +185,23 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     context.go(RoutePaths.fluxContinu);
   }
 
-  void _go(String path) {
-    if (_navigated || !mounted) return;
-    _navigated = true;
-    context.go(path);
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
 
-    final fluxState = ref.watch(fluxContinuProvider).valueOrNull;
-    final digest = ref.watch(digestProvider).valueOrNull;
-    // Override QA (staging/dev) : permet de valider l'état « pas prête » à la
-    // demande. Sans effet en prod (le toggle qui le bascule n'y est pas monté).
-    final forceNotReady = ref.watch(debugForceMorningRitualNotReadyProvider);
-    final gateReady = isEditionReady(fluxState, digest);
-    final ready = !forceNotReady && gateReady;
-
-    // « Connu pas-prêt » : on SAIT que le rituel ne se révélera pas — soit le
-    // toggle QA force le repli, soit le flux a chargé du contenu réel
-    // (non-skeleton, sections non vides) mais le gate le refuse (digest périmé /
-    // mauvais jour). Tant que le flux est encore skeleton/null, l'état reste
-    // « inconnu » (vrai chargement) → on n'éteint rien (flux matin nominal).
-    final fluxLoaded =
-        fluxState != null && !fluxState.isSkeleton && fluxState.sections.isNotEmpty;
-    final knownNotReady = forceNotReady || (fluxLoaded && !gateReady);
-
-    // Suit l'état du gate ; déclenche la révélation hors-build (post-frame)
-    // pour ne jamais appeler setState pendant le build.
-    if (_phase == _Phase.loading) {
-      _editionReady = ready;
-      if (ready && (_floorElapsed || reduceMotion)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _maybeReveal(reduceMotion: reduceMotion);
-        });
-      }
-    } else if (_phase == _Phase.ritual && forceNotReady) {
-      // Le rituel est déjà révélé mais le toggle QA « pas prête » est basculé sur
-      // une instance d'écran conservée en mémoire → on file au feed pour que la
-      // QA puisse rejouer le repli sans reload. Restreint à `forceNotReady` (pas
-      // au `knownNotReady` général) : un digest périmé arrivant *après* la
-      // révélation ne doit pas éjecter l'utilisateur d'un rituel déjà ouvert.
-      // Inerte en prod (le toggle n'y est jamais monté).
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _phase == _Phase.ritual) _go(RoutePaths.fluxContinu);
-      });
-    }
-
-    // Diagnostic QA (staging/dev) : détail du gate, affiché en bandeau et tracé
-    // en console. Le build tourne à chaque émission progressive du flux au
-    // démarrage → on ne `debugPrint` que les changements d'état (le bandeau,
-    // lui, suit chaque rebuild).
-    const qaMode = kDebugMode || AppUpdateConstants.updateChannel == 'beta';
-    final readinessDebug =
-        qaMode ? morningRitualReadinessDebug(fluxState, digest) : null;
-    if (readinessDebug != null && readinessDebug != _lastReadinessDebug) {
-      _lastReadinessDebug = readinessDebug;
-      debugPrint('MorningRitual gate · $readinessDebug · force=$forceNotReady');
+    // La révélation ne dépend plus que du temps : le plancher d'ambiance
+    // ([_floorTimer]) la déclenche, ou immédiatement en reduceMotion (le timer
+    // n'aurait pas d'utilité). Post-frame → jamais de setState pendant le build.
+    if (_phase == _Phase.loading && reduceMotion) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealRitual());
     }
 
     Widget body;
     if (_phase == _Phase.loading) {
-      body = _IntroLoader(
-        key: const ValueKey('morning-loader'),
+      body = const _IntroLoader(
+        key: ValueKey('morning-loader'),
         revealEditorialAfter: _editorialReveal,
-        // Dans le flux « connu pas-prêt » (repli vers le feed), on n'affiche pas
-        // l'enveloppe : ce n'est pas un rituel, juste un court loader transitoire.
-        showEnvelope: !knownNotReady,
       );
     } else {
       // Le titre daté est calculé par [_RitualGreeting] (qui écoute la lettre
@@ -354,30 +223,9 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
 
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
-      body: Stack(
-        children: [
-          AnimatedSwitcher(
-            duration: reduceMotion ? Duration.zero : FacteurDurations.medium,
-            child: body,
-          ),
-          if (readinessDebug != null)
-            Positioned(
-              left: 8,
-              right: 8,
-              bottom: 8,
-              child: IgnorePointer(
-                child: Text(
-                  'QA · $readinessDebug${forceNotReady ? " · FORCED-NOT-READY" : ""}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    height: 1.3,
-                    color: Color(0xFF9E9E9E),
-                  ),
-                ),
-              ),
-            ),
-        ],
+      body: AnimatedSwitcher(
+        duration: reduceMotion ? Duration.zero : FacteurDurations.medium,
+        child: body,
       ),
     );
   }
@@ -392,15 +240,9 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
 class _IntroLoader extends StatelessWidget {
   final Duration revealEditorialAfter;
 
-  /// Affiche l'enveloppe en tête du loader (centrepiece cohérent loader ↔
-  /// rituel). Désactivé dans le flux « connu pas-prêt » : pas de rituel à venir,
-  /// donc pas d'enveloppe — juste un court loader avant le repli vers le feed.
-  final bool showEnvelope;
-
   const _IntroLoader({
     super.key,
     required this.revealEditorialAfter,
-    this.showEnvelope = true,
   });
 
   @override
@@ -414,7 +256,7 @@ class _IntroLoader extends StatelessWidget {
             // loader : même bloc que le FacteurLoader + citation.
             child: LoadingView(
               revealEditorialAfter: revealEditorialAfter,
-              leading: showEnvelope ? const _EnvelopeHero() : null,
+              leading: const _EnvelopeHero(),
             ),
           ),
         ],
@@ -565,9 +407,12 @@ String _capitalizeFirst(String s) =>
 
 /// Pont Riverpod : lit les sections de la tournée **du jour**
 /// (`fluxContinuProvider`) et les passe, provider-free, à [SectionDeepDiveList]
-/// (directement testable). Rend un espace vide tant que le flux est squelette /
-/// vide (aucune section à proposer). Fournit aussi le callback « Gérer » (ouvre
-/// la modal de config de l'Essentiel) pour garder la liste provider-free.
+/// (directement testable). Rend l'échafaudage **même en squelette** : les
+/// coquilles portent déjà label/emoji/accent et l'ordre correct (favoris →
+/// Actus → Bonnes), et [_SectionRow] shimmer les sections encore vides — le
+/// contenu hydrate en place. On ne tombe sur `SizedBox.shrink()` que si vraiment
+/// aucune section (compte nul, même en squelette). Fournit aussi le callback
+/// « Gérer » (config de l'Essentiel) pour garder la liste provider-free.
 class _DeepDiveListHost extends ConsumerWidget {
   final void Function(String sectionKey) onOpenSection;
 
@@ -576,9 +421,7 @@ class _DeepDiveListHost extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final flux = ref.watch(fluxContinuProvider).valueOrNull;
-    final sections = (flux == null || flux.isSkeleton)
-        ? const <FluxSection>[]
-        : flux.sections;
+    final sections = flux?.sections ?? const <FluxSection>[];
     if (sections.isEmpty) return const SizedBox.shrink();
     return SectionDeepDiveList(
       sections: sections,
@@ -1091,6 +934,12 @@ class _InlineManageLink extends StatelessWidget {
 /// Une ligne du deep-dive : carré emoji + nom (+ badge « Peu d'articles »
 /// optionnel) + méta compteur (« N titres » / « N articles ») + flèche →. Le
 /// fond porte une teinte discrète de l'accent de la section.
+///
+/// **Échafaudage (reveal rapide)** : quand la section est encore une coquille
+/// (`FeedThemeSection.isPlaceholder`, ou compteur nul — sections éditoriales du
+/// squelette), le label/emoji/accent restent lisibles mais la ligne méta + la
+/// flèche sont remplacées par un **shimmer discret**. Le tap reste actif (le feed
+/// hydrate la section à l'arrivée) et l'ordre est stable.
 class _SectionRow extends StatelessWidget {
   final FluxSection section;
   final VoidCallback onTap;
@@ -1103,15 +952,21 @@ class _SectionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    final count = section.totalCount;
-    final isEssentiel = section is EssentielSection;
-    final meta =
-        isEssentiel ? '$count titre${count > 1 ? 's' : ''}' : '$count article${count > 1 ? 's' : ''}';
-    final thin = count <= _kThinThreshold;
+    final s = section;
+    final placeholder =
+        (s is FeedThemeSection && s.isPlaceholder) || s.totalCount == 0;
+    final count = s.totalCount;
+    final isEssentiel = s is EssentielSection;
+    final meta = isEssentiel
+        ? '$count titre${count > 1 ? 's' : ''}'
+        : '$count article${count > 1 ? 's' : ''}';
+    // En squelette : pas de badge « peu fourni » (le compteur n'est pas encore
+    // réel), et la sémantique annonce « chargement » plutôt qu'un faux compteur.
+    final thin = !placeholder && count <= _kThinThreshold;
 
     return Semantics(
       button: true,
-      label: '${section.label}, $meta',
+      label: placeholder ? '${s.label}, chargement' : '${s.label}, $meta',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.large),
@@ -1121,7 +976,7 @@ class _SectionRow extends StatelessWidget {
             vertical: FacteurSpacing.space3,
           ),
           decoration: BoxDecoration(
-            color: section.accent.withValues(alpha: 0.10),
+            color: s.accent.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(FacteurRadius.large),
           ),
           child: Row(
@@ -1138,7 +993,7 @@ class _SectionRow extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  sectionEmoji(section),
+                  sectionEmoji(s),
                   style: const TextStyle(fontSize: 20),
                 ),
               ),
@@ -1152,7 +1007,7 @@ class _SectionRow extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            section.label,
+                            s.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: FacteurTypography.bodyMedium(
@@ -1168,23 +1023,56 @@ class _SectionRow extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      meta.toUpperCase(),
-                      style: FacteurTypography.labelSmall(colors.textTertiary)
-                          .copyWith(
-                        fontFamily: 'monospace',
-                        fontSize: 10,
-                        letterSpacing: 0.4,
+                    if (placeholder)
+                      const _MetaShimmer()
+                    else
+                      Text(
+                        meta.toUpperCase(),
+                        style:
+                            FacteurTypography.labelSmall(colors.textTertiary)
+                                .copyWith(
+                          fontFamily: 'monospace',
+                          fontSize: 10,
+                          letterSpacing: 0.4,
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
               const SizedBox(width: FacteurSpacing.space2),
-              Icon(Icons.arrow_forward_rounded,
-                  size: 17, color: colors.textTertiary),
+              // Flèche masquée tant que la section charge (largeur réservée pour
+              // ne pas décaler la ligne quand le contenu arrive).
+              placeholder
+                  ? const SizedBox(width: 17)
+                  : Icon(Icons.arrow_forward_rounded,
+                      size: 17, color: colors.textTertiary),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Barre shimmer discrète qui remplace la ligne méta « N articles » d'une
+/// section encore en cours de chargement (échafaudage du reveal rapide). Le
+/// package `shimmer` gère sa propre animation → widget `const` sans état.
+class _MetaShimmer extends StatelessWidget {
+  const _MetaShimmer();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final base = colors.textTertiary.withValues(alpha: 0.20);
+    return Shimmer.fromColors(
+      baseColor: base,
+      highlightColor: colors.textTertiary.withValues(alpha: 0.06),
+      child: Container(
+        width: 64,
+        height: 9,
+        decoration: BoxDecoration(
+          color: base,
+          borderRadius: BorderRadius.circular(4),
         ),
       ),
     );
