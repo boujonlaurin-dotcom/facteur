@@ -342,6 +342,16 @@ class DigestGenerationJob:
                                     mode=mode,
                                     error=str(mode_err),
                                 )
+                                # Une erreur DB/LLM pour UNE variante laisse la
+                                # session batch partagée en PENDING_ROLLBACK → le
+                                # commit final de run_digest_generation plante
+                                # (PYTHON-4R). Même protection que les except
+                                # englobants (PYTHON-5G) : on nettoie la tx et
+                                # re-pousse les SET LOCAL timeouts sur la
+                                # prochaine tx.
+                                with contextlib.suppress(Exception):
+                                    await session.rollback()
+                                    await apply_session_timeouts(session)
                     else:
                         logger.warning(
                             "digest_generation_editorial_no_global_candidates",
