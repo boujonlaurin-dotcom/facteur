@@ -570,7 +570,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: RouteNames.contentExternal,
         parentNavigatorKey: NotificationService.navigatorKey,
         pageBuilder: (context, state) {
-          final p = state.extra as Perspective;
+          final p = state.extra as Perspective?;
+          if (p == null) {
+            // extra perdu (deep-link/notif après kill, ou restauration OS) :
+            // on annule au lieu de planter la construction (FLUTTER-Y).
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final router = GoRouter.of(context);
+              if (router.canPop()) {
+                router.pop();
+              } else {
+                router.go(RoutePaths.feed);
+              }
+            });
+            return const FullSwipeCupertinoPage(child: SizedBox.shrink());
+          }
           return FullSwipeCupertinoPage(
             child: ContentDetailScreen.external(
               url: p.url,
