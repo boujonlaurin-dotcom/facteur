@@ -3,6 +3,8 @@
     {
       "tag": "Rituel",
       "summary": "Ta lettre du matin est le passage vers l'Essentiel : à l'ouverture de l'app comme depuis une notification, tu la découvres d'abord, puis tu accèdes à ta tournée."
+    },
+    {
       "tag": "Essentiel",
       "summary": "En-tête épuré : « Rattraper » ne s'affiche plus en permanence. Quand tu as manqué l'édition d'hier, un petit point rouge apparaît sur l'icône rewind et l'invite « Rattraper ? » se montre un court instant, une fois par jour."
     },
@@ -393,6 +395,10 @@
     {
       "tag": "Soutien",
       "summary": "Deviens Fact·eur·isse et débloque veille, sources illimitées, analyses et mode serein sur mesure."
+    },
+    {
+      "tag": "Sources",
+      "summary": "« Voir la méthodologie » dans la fiche d'une source ouvre désormais la page complète de notre méthode d'évaluation des médias sur facteur.app."
     }
   ],
   "released": [

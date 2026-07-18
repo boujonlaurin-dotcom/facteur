@@ -51,6 +51,8 @@ async def join_waitlist(
         utm_source=request.utm_source,
         utm_medium=request.utm_medium,
         utm_campaign=request.utm_campaign,
+        motivation=request.motivation,
+        methode_complete=request.methode_complete,
     )
     if is_new:
         get_posthog_client().capture(
@@ -61,6 +63,8 @@ async def join_waitlist(
                 "utm_source": request.utm_source,
                 "utm_medium": request.utm_medium,
                 "utm_campaign": request.utm_campaign,
+                "motivation_provided": request.motivation is not None,
+                "methode_complete": request.methode_complete,
             },
         )
     return WaitlistResponse(
