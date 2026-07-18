@@ -247,7 +247,32 @@ class ServerPushService {
   }
 
   void _openMessage(RemoteMessage message) {
-    final route = message.data['route'] as String? ?? '/digest';
+    final data = message.data;
+    final route = data['route'] as String? ?? '/digest';
+    final timeToOpen = timeToOpenSeconds(
+      data['sent_at'] as String?,
+      DateTime.now().toUtc(),
+    );
+    unawaited(
+      PostHogService().capture(
+        event: 'push_opened',
+        properties: {
+          'kind': data['kind'] as String? ?? 'daily_digest',
+          if (timeToOpen != null) 'time_to_open': timeToOpen,
+        },
+      ),
+    );
     PushNotificationService.openRoute(route);
+  }
+
+  /// Délai (secondes) entre l'envoi serveur (`data['sent_at']`, ISO UTC) et
+  /// l'ouverture. Null si absent, illisible, ou incohérent (horloge en avance).
+  @visibleForTesting
+  static int? timeToOpenSeconds(String? sentAtRaw, DateTime nowUtc) {
+    if (sentAtRaw == null || sentAtRaw.isEmpty) return null;
+    final sentAt = DateTime.tryParse(sentAtRaw);
+    if (sentAt == null) return null;
+    final seconds = nowUtc.difference(sentAt.toUtc()).inSeconds;
+    return seconds < 0 ? null : seconds;
   }
 }

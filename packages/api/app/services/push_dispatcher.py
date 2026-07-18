@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import safe_async_session
+from app.models.analytics import AnalyticsEvent
 from app.models.daily_digest import DailyDigest
 from app.models.push_notification import PushDelivery, PushDevice
 from app.models.user_notification_preferences import UserNotificationPreferences
@@ -24,6 +25,9 @@ from app.services.essentiel_service import (
     build_essentiel_response,
     fetch_user_essentiel_context,
 )
+from app.services.posthog_client import get_posthog_client
+from app.services.push_composer import compose_daily_digest
+from app.services.push_governor import check_push_budget
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -176,10 +180,22 @@ async def dispatch_daily_essentiel_pushes(
     """Send due pushes once per device/day, retrying morning gaps until noon."""
     if sender is _send_fcm and not _firebase_configured():
         logger.info("push_dispatch_disabled", reason="firebase_not_configured")
-        return {"sent": 0, "retried": 0, "skipped": 0, "invalid_tokens": 0}
+        return {
+            "sent": 0,
+            "retried": 0,
+            "skipped": 0,
+            "governed": 0,
+            "invalid_tokens": 0,
+        }
 
     utc_now = (now or datetime.now(UTC)).astimezone(UTC)
-    metrics = {"sent": 0, "retried": 0, "skipped": 0, "invalid_tokens": 0}
+    metrics = {
+        "sent": 0,
+        "retried": 0,
+        "skipped": 0,
+        "governed": 0,
+        "invalid_tokens": 0,
+    }
 
     async with safe_async_session() as session:
         rows = (
@@ -243,22 +259,40 @@ async def dispatch_daily_essentiel_pushes(
                     metrics["retried"] += 1
                 continue
 
-            teasers = [article.title for article in essentiel.articles[:2]]
-            body = teasers[0]
+            decision = await check_push_budget(
+                session,
+                user_id=device.user_id,
+                kind=PUSH_KIND,
+                now=utc_now,
+                target_date=target_date,
+            )
+            if not decision.allowed:
+                delivery.status = "skipped"
+                delivery.skipped_at = utc_now
+                delivery.error_code = decision.reason
+                metrics["governed"] += 1
+                logger.info(
+                    "push_governed",
+                    device_id=str(device.device_id),
+                    reason=decision.reason,
+                )
+                get_posthog_client().capture(
+                    device.user_id,
+                    "push_suppressed",
+                    {"kind": PUSH_KIND, "reason": decision.reason},
+                )
+                continue
+
+            composed = compose_daily_digest(essentiel, target_date)
             delivery.attempt_count += 1
             delivery.last_attempt_at = utc_now
             try:
                 await asyncio.to_thread(
                     sender,
                     device.fcm_token,
-                    "Facteur",
-                    body,
-                    {
-                        "route": "/digest",
-                        "target_date": target_date.isoformat(),
-                        "kind": PUSH_KIND,
-                        "teasers": json.dumps(teasers, ensure_ascii=False),
-                    },
+                    composed.title,
+                    composed.body,
+                    {**composed.data, "sent_at": utc_now.isoformat()},
                 )
             except Exception as exc:
                 delivery.status = "failed"
@@ -282,6 +316,24 @@ async def dispatch_daily_essentiel_pushes(
                 delivery.error_code = None
                 delivery.error_message = None
                 metrics["sent"] += 1
+                # Ajout direct (sans AnalyticsService.log_event, qui commit
+                # immédiatement) : un commit mid-loop expirerait les objets ORM
+                # de la boucle. Persisté par le commit final.
+                session.add(
+                    AnalyticsEvent(
+                        user_id=device.user_id,
+                        event_type="push_sent",
+                        event_data={
+                            "kind": PUSH_KIND,
+                            "target_date": target_date.isoformat(),
+                        },
+                    )
+                )
+                get_posthog_client().capture(
+                    device.user_id,
+                    "push_sent",
+                    {"kind": PUSH_KIND, "target_date": target_date.isoformat()},
+                )
 
         await session.commit()
 
