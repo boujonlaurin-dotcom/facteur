@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
@@ -832,17 +834,30 @@ class _FsEvalState extends State<_FsEval> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            'Voir la méthodologie',
-            style: textTheme.labelSmall?.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
+          InkWell(
+            onTap: _openMethodology,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                'Voir la méthodologie',
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                ),
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openMethodology() async {
+    final uri = Uri.parse(LegalLinks.methodology);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Widget _evalRow(BuildContext context, String label, Widget value) {

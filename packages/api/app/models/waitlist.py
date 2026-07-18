@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,9 @@ class WaitlistEntry(Base):
     utm_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
     utm_medium: Mapped[str | None] = mapped_column(String(100), nullable=True)
     utm_campaign: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Champs « comité de revue » (formulaire /methodologie du site)
+    motivation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    methode_complete: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

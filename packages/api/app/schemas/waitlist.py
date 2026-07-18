@@ -11,6 +11,8 @@ class WaitlistRequest(BaseModel):
     utm_source: str | None = None
     utm_medium: str | None = None
     utm_campaign: str | None = None
+    motivation: str | None = None
+    methode_complete: bool = False
 
 
 class WaitlistResponse(BaseModel):

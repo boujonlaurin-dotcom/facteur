@@ -378,6 +378,7 @@ class LegalLinks {
   static const String terms = 'https://facteur.app/conditions-utilisation.html';
   static const String accountDeletion =
       'https://facteur.app/supprimer-mon-compte.html';
+  static const String methodology = 'https://facteur.app/methodologie';
   static const String supportEmail = 'mailto:boujon.laurin@gmail.com';
 }
 
