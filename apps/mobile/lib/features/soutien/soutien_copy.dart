@@ -36,8 +36,6 @@ class SoutienCopy {
   static const bonusVeilleTitle =
       'Ne rate plus rien sur les sujets qui comptent pour toi';
   static const bonusVeilleBody = 'crée autant de veilles que tu veux.';
-  static const bonusSourcesTitle = 'Suis autant de médias que tu veux';
-  static const bonusSourcesBody = 'plus de limite à 30 sources.';
   static const bonusAnalysesTitle =
       'Comprends comment chaque sujet est vraiment couvert';
   static const bonusAnalysesBody = 'analyses de couverture sans compter.';
@@ -86,12 +84,6 @@ class SoutienCopy {
   static const veilleWallPriceNote = 'résiliable en un geste';
 
   // Murs en sheet
-  static const sourcesWallEyebrow = 'Sources · 30/30';
-  static const sourcesWallHeadline = 'Suis autant de médias que tu veux';
-  static const sourcesWallBody =
-      "Tes 30 places sont prises, et ta curiosité n'a aucune raison de "
-      "s'arrêter là. En passant Fact·eur·isse, tu ajoutes des sources sans "
-      'limite.';
   static const analysesWallEyebrow = 'Analyse Facteur · 1/1 aujourd\'hui';
   static const analysesWallHeadline =
       'Comprends comment chaque sujet est vraiment couvert';
@@ -110,8 +102,6 @@ class SoutienCopy {
   // ─── Gates aux touchpoints ───
   static const veilleGateStamp = 'RÉSERVÉ AUX FACT·EUR·ISSES';
   static const veilleGateCta = 'Créer ma première veille';
-  static const sourcesPillFree = 'médias suivis'; // « N / 30 médias suivis »
-  static const sourcesPillPremium = 'Sources illimitées · Fact·eur·isse';
   static const analysesQuotaBanner =
       'Chaque analyse Facteur a un coût réel de génération. On te la laisse '
       'quand tu en as besoin. Si tu veux nous aider à financer une info sans '

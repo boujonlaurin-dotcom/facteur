@@ -150,10 +150,6 @@ class _BonusCard extends StatelessWidget {
             body: SoutienCopy.bonusVeilleBody,
           ),
           const _BonusItem(
-            title: SoutienCopy.bonusSourcesTitle,
-            body: SoutienCopy.bonusSourcesBody,
-          ),
-          const _BonusItem(
             title: SoutienCopy.bonusAnalysesTitle,
             body: SoutienCopy.bonusAnalysesBody,
           ),
