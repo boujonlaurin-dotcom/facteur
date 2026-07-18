@@ -47,6 +47,58 @@ void main() {
     });
   });
 
+  group('frameIndexOfTarget', () {
+    test('a section top maps to that section index', () {
+      expect(frameIndexOfTarget(frames, 0.0), 0);
+      expect(frameIndexOfTarget(frames, 300.0), 1);
+      expect(frameIndexOfTarget(frames, 1200.0), 2);
+    });
+
+    test('a tall section bottom maps to the SAME index as its top', () {
+      // 300 (top) and 600 (bottom) are the same tall section → index 1. So a
+      // top→bottom move inside it reads as "no section change" (no haptic).
+      expect(frameIndexOfTarget(frames, 600.0), 1);
+    });
+
+    test('matches within kSnapEpsilon of an edge', () {
+      expect(frameIndexOfTarget(frames, 300.0 + kSnapEpsilon / 2), 1);
+      expect(frameIndexOfTarget(frames, 600.0 - kSnapEpsilon / 2), 1);
+    });
+
+    test('a short section contributes only its top (bottom == top)', () {
+      // The short section @1200 has bottom == top; the tall bottom 600 belongs
+      // to index 1, never to a short one.
+      expect(frameIndexOfTarget(frames, 1200.0), 2);
+    });
+
+    test('an off-edge / clamped target maps to -1 (no reliable section)', () {
+      expect(frameIndexOfTarget(frames, 150.0), -1);
+      expect(frameIndexOfTarget(frames, 5000.0), -1);
+    });
+
+    test('empty frames map to -1', () {
+      expect(frameIndexOfTarget(const [], 0.0), -1);
+    });
+
+    test('every committed snap target resolves to a valid section index', () {
+      // Anti-regression for the commit-time haptic gate: whatever the fling,
+      // the resolved target must belong to some frame (never -1) so the gate
+      // can compare it against the active section.
+      for (final start in [10.0, 320.0, 650.0, 900.0]) {
+        final target = resolveSnapTarget(
+          currentPixels: start,
+          naturalLanding: start + beyond,
+          velocity: 2000,
+          scrollDirection: 1,
+          frames: frames,
+        );
+        if (target != null) {
+          expect(frameIndexOfTarget(frames, target), isNonNegative);
+        }
+      }
+    });
+  });
+
   group('resolveSnapTarget', () {
     test(
         'free while inside a tall section on descent/idle (it fills the screen)',
