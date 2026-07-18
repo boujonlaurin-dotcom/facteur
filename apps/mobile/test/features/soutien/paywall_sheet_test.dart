@@ -20,16 +20,7 @@ Future<void> _pumpSheet(WidgetTester tester, PaywallWallVariant variant) async {
 }
 
 void main() {
-  testWidgets('variante sources : headline + CTA + mission', (tester) async {
-    await _pumpSheet(tester, PaywallWallVariant.sources);
-
-    expect(find.text(SoutienCopy.sourcesWallHeadline), findsOneWidget);
-    expect(find.text(SoutienCopy.wallCta), findsOneWidget);
-    expect(find.text(SoutienCopy.missionLinkLabel), findsOneWidget);
-    expect(find.text(SoutienCopy.wallDisclaimer), findsOneWidget);
-  });
-
-  testWidgets('variante analyses : copy quota épuisé', (tester) async {
+  testWidgets('variante analyses : headline + CTA + mission', (tester) async {
     await _pumpSheet(tester, PaywallWallVariant.analyses);
 
     expect(find.text(SoutienCopy.analysesWallHeadline), findsOneWidget);
@@ -37,6 +28,9 @@ void main() {
       find.text(SoutienCopy.analysesWallEyebrow.toUpperCase()),
       findsOneWidget,
     );
+    expect(find.text(SoutienCopy.wallCta), findsOneWidget);
+    expect(find.text(SoutienCopy.missionLinkLabel), findsOneWidget);
+    expect(find.text(SoutienCopy.wallDisclaimer), findsOneWidget);
   });
 
   testWidgets('variante serein : headline dédiée', (tester) async {

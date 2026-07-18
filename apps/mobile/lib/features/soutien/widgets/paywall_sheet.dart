@@ -11,7 +11,7 @@ import 'price_row.dart';
 
 /// Les trois murs de feature affichés en bottom sheet (la veille a son écran
 /// dédié : [VeilleWallScreen]).
-enum PaywallWallVariant { sources, analyses, serein }
+enum PaywallWallVariant { analyses, serein }
 
 /// Mur de feature « porte 2 » : eyebrow mono, headline Fraunces, argumentaire,
 /// fil mission vers Soutien, prix, CTA email. Zéro urgence, zéro
@@ -33,11 +33,6 @@ class PaywallSheet extends StatelessWidget {
   /// Copy de la variante en une passe (un seul `switch` au lieu de trois).
   ({String eyebrow, String headline, String body}) get _copy =>
       switch (variant) {
-        PaywallWallVariant.sources => (
-            eyebrow: SoutienCopy.sourcesWallEyebrow,
-            headline: SoutienCopy.sourcesWallHeadline,
-            body: SoutienCopy.sourcesWallBody,
-          ),
         PaywallWallVariant.analyses => (
             eyebrow: SoutienCopy.analysesWallEyebrow,
             headline: SoutienCopy.analysesWallHeadline,

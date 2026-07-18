@@ -43,6 +43,13 @@ logger = structlog.get_logger()
 DEFAULT_WEB_BILLING_BASE_URL = "https://pay.rev.cat/facteur-premium"
 FOUNDER_WEB_BILLING_BASE_URL = "https://pay.rev.cat/facteur-founder"
 
+# Page-pont statique servie par la landing (domaine qu'on contrôle) vers laquelle
+# le magic link Supabase redirige. Supabase n'honore un `redirect_to` que s'il
+# matche l'allow-list « Redirect URLs » : une entrée unique et stable (notre
+# domaine) plutôt que le domaine tiers `pay.rev.cat`. La page-pont forwarde
+# ensuite vers l'URL RevenueCat passée en `next`.
+CHECKOUT_REDIRECT_BASE_URL = "https://facteur.app/checkout-redirect.html"
+
 
 async def _supabase_admin_lookup_user_by_email(email: str) -> str | None:
     """Retourne le user_id Supabase pour cet email, ou None s'il n'existe pas."""
@@ -128,6 +135,16 @@ def _build_checkout_url(offering: str, user_id: str) -> str:
     )
     params = urlencode({"app_user_id": user_id})
     return f"{base}?{params}"
+
+
+def _build_bridge_url(checkout_url: str) -> str:
+    """Enveloppe l'URL RevenueCat dans la page-pont `facteur.app`.
+
+    Le magic link Supabase pointe vers `checkout-redirect.html?next=<url RC>` ;
+    la page-pont forwarde vers `next`. `_build_checkout_url` reste la seule
+    source de vérité de l'URL RevenueCat.
+    """
+    return f"{CHECKOUT_REDIRECT_BASE_URL}?{urlencode({'next': checkout_url})}"
 
 
 @router.post("/start-passwordless", response_model=CheckoutStartResponse)
@@ -259,7 +276,7 @@ async def send_link(
         )
 
     checkout_url = _build_checkout_url(request.offering, user_id)
-    await _supabase_send_magic_link(email, checkout_url)
+    await _supabase_send_magic_link(email, _build_bridge_url(checkout_url))
 
     service = SubscriptionService(db)
     await service._get_or_create_subscription(user_id)
