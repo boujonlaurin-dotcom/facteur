@@ -141,13 +141,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
 
-  /// Active section index captured at the *start* of the current scroll
-  /// gesture. The section haptic is now emitted once, at settle
-  /// (`ScrollEndNotification`), only when the gesture actually changed section
-  /// vs. this snapshot — so a drag-then-snapback (which flips `_activeIndex`
-  /// mid-drag then recadres the origin section) fires **zero** buzz instead of
-  /// two. `null` until the first gesture starts.
-  int? _gestureStartActiveIndex;
+  /// Guards the section haptic to **one buzz per gesture**. The haptic is now
+  /// fired at snap *commit* — the instant the fling engages a spring toward a
+  /// *different* section ([_SectionSnapPhysics.onSnapCommit]) — so it precedes
+  /// the pose animation instead of trailing it at settle («&nbsp;trop tard&nbsp;»).
+  /// Reset on `ScrollStartNotification`. A drag-then-snapback commits back to
+  /// the origin section (target index == active index) → no buzz.
+  bool _snapHapticFiredThisGesture = false;
 
   final List<GlobalKey> _sectionKeys = [];
 
@@ -374,30 +374,41 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   bool _onScrollNotification(ScrollNotification n) {
     if (n is ScrollStartNotification) {
       _scheduleAnchorRecompute();
-      // Snapshot the section we start on. The settle handler compares against
-      // it so a gesture that nets no section change (drag-puis-snapback) stays
-      // silent.
-      _gestureStartActiveIndex = _activeIndex.value;
-    } else if (n is ScrollEndNotification) {
-      // One buzz per gesture, at rest: only when the sticky bar is visible
-      // (skip the initial top-of-page scroll) and the settle landed on a
-      // different section than the gesture started on. Covers both the reader's
-      // fling/snap and programmatic tab nav (which also settles here).
-      if (_stickyVisible.value &&
-          _gestureStartActiveIndex != null &&
-          _activeIndex.value != _gestureStartActiveIndex) {
-        unawaited(_triggerSectionChangeHaptic());
-      }
-      _gestureStartActiveIndex = _activeIndex.value;
+      // New gesture → re-arm the section haptic. It fires at snap commit
+      // (`_onSnapCommit`), not at settle.
+      _snapHapticFiredThisGesture = false;
     }
     return false;
   }
 
+  /// Called by [_SectionSnapPhysics] the instant a fling commits a snap toward
+  /// [committedTarget] (finger lift), *before* the pose animation runs. Fires a
+  /// single crisp haptic when — and only when — the target frames a *different*
+  /// section than the one currently active. This lands the buzz at the moment
+  /// of passage (leads the animation → « réactif ») instead of at settle.
+  ///
+  /// Gated so it stays silent on:
+  /// - the initial top-of-page scroll (sticky bar hidden);
+  /// - a `top → bottom` re-frame inside the same tall section (same index);
+  /// - a deadband pull-back to the origin section (target index == active);
+  /// - repeat `createBallisticSimulation` calls within one gesture
+  ///   ([_snapHapticFiredThisGesture]).
+  void _onSnapCommit(double committedTarget) {
+    if (_snapHapticFiredThisGesture || !_stickyVisible.value) return;
+    final targetIndex = frameIndexOfTarget(_snapAnchors.values, committedTarget);
+    if (targetIndex < 0 || targetIndex == _activeIndex.value) return;
+    _snapHapticFiredThisGesture = true;
+    unawaited(_triggerSectionChangeHaptic());
+  }
+
   Future<void> _triggerSectionChangeHaptic() async {
     try {
-      await Haptics.vibrate(HapticsType.heavy, usage: HapticsUsage.touch);
+      // `rigid` = a sharp, dense single click (Android PRIMITIVE_CLICK ~34ms /
+      // iOS rigid style) — marks the exact moment of passage. `heavy` was a
+      // diffuse THUD that felt weak and « étalée ».
+      await Haptics.vibrate(HapticsType.rigid, usage: HapticsUsage.touch);
     } catch (_) {
-      await HapticFeedback.heavyImpact();
+      await HapticFeedback.mediumImpact();
     }
   }
 
@@ -1261,7 +1272,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // resting position. AlwaysScrollable keeps the page scrollable even
           // when content is short.
           physics: AlwaysScrollableScrollPhysics(
-            parent: _SectionSnapPhysics(anchors: _snapAnchors),
+            parent: _SectionSnapPhysics(
+              anchors: _snapAnchors,
+              onSnapCommit: _onSnapCommit,
+            ),
           ),
           slivers: [
             // NB : le header (logo · streak · réglages) vit dans le scaffold de
@@ -1889,11 +1903,25 @@ class _SnapAnchors {
 class _SectionSnapPhysics extends ScrollPhysics {
   final _SnapAnchors anchors;
 
-  const _SectionSnapPhysics({required this.anchors, super.parent});
+  /// Fired with the committed resting offset the instant a fling resolves a
+  /// snap (finger lift), *before* the spring runs — lets the screen land the
+  /// section haptic at the moment of passage instead of at settle. Preserved
+  /// through [applyTo] so the platform-wrapped physics keeps calling it.
+  final void Function(double committedTarget)? onSnapCommit;
+
+  const _SectionSnapPhysics({
+    required this.anchors,
+    this.onSnapCommit,
+    super.parent,
+  });
 
   @override
   _SectionSnapPhysics applyTo(ScrollPhysics? ancestor) {
-    return _SectionSnapPhysics(anchors: anchors, parent: buildParent(ancestor));
+    return _SectionSnapPhysics(
+      anchors: anchors,
+      onSnapCommit: onSnapCommit,
+      parent: buildParent(ancestor),
+    );
   }
 
   @override
@@ -1904,6 +1932,7 @@ class _SectionSnapPhysics extends ScrollPhysics {
     final natural = super.createBallisticSimulation(position, velocity);
     final target = _resolveTarget(position, velocity, natural);
     if (target == null) return natural;
+    onSnapCommit?.call(target);
     return ScrollSpringSimulation(
       kSnapSpring,
       position.pixels,

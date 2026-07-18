@@ -161,6 +161,29 @@ double? resolveSnapTarget({
   return _commit(prev ?? _nearest(points, currentPixels), currentPixels);
 }
 
+/// Index of the section whose framing offset the snap committed to, or `-1`
+/// when [target] matches no frame edge (e.g. a value clamped to a scroll
+/// extremity). A target equals a section's [top] **or** its [bottom] (for a
+/// tall section) — both belong to the same section index, so a `top → bottom`
+/// move inside one tall section maps to the *same* index and reads as "no
+/// section change".
+///
+/// Used by the screen to decide, **at snap commit** (finger lift), whether the
+/// fling advances to a *different* section than the one currently framed — the
+/// gate for firing exactly one settle-independent haptic at the moment the
+/// passage is engaged. Reuses [kSnapEpsilon] for the edge match. Pure.
+int frameIndexOfTarget(List<SectionFrame> frames, double target) {
+  for (var i = 0; i < frames.length; i++) {
+    final f = frames[i];
+    if ((target - f.top).abs() <= kSnapEpsilon) return i;
+    if (f.bottom > f.top + kSnapEpsilon &&
+        (target - f.bottom).abs() <= kSnapEpsilon) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 /// The snap points of a frame list, sorted ascending: each section [top], plus
 /// the [bottom] of every section taller than the viewport (its last-cards
 /// resting offset). A section shorter than the viewport collapses
