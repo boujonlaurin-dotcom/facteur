@@ -1,81 +1,63 @@
-## Lettre du jour — timeline en overlay + ajustements PO (rewind page lettre, mode serein, simplification)
+# PR1 — Refonte « Ton Essentiel » : lettre du jour (backend) — Story 9.6
 
-Finalisation de l'EPIC « Lettre du jour ». Deux blocs :
+## Quoi
 
-1. **Refonte timeline en overlay** : le **strip horizontal de pills** (permanent,
-   au-dessus de l'Essentiel, dupliqué live + passé) est remplacé par un **bouton
-   « rewind » compact** dans l'en-tête de la carte Essentiel, qui ouvre une
-   **timeline en feuille du bas** avec un signal **lu / non-lu** honnête (réutilise
-   la feature streaks, zéro back-end).
-2. **4 ajustements PO** (avant ship) : simplification de la feature + rééquilibrage
-   des points d'entrée + extension du rewind et d'un CTA serein à la page **Lettre
-   du jour** (le rituel matinal), jusqu'ici dépourvue de ces affordances.
+Remplace (à terme) la carte 5 articles par un **digest rédigé à références
+inline** (maquettes 3a+3b). Cette PR livre tout le backend ; le mobile (PR2)
+rendra la lettre quand `letter != null` et garde la carte actuelle en fallback.
 
-### Bloc 1 — timeline overlay
+- **Plan déterministe serveur** (`build_letter_plan`) : chapô = rank 1 (+2 si
+  ≥4 picks) + picks sans thème ; rubriques = picks restants groupés par thème
+  (max 3 × 1-2 picks, cas mono-thème multi-picks) ; footer = thèmes suivis non
+  couverts (cap 4). Invariant : chaque pick référencé exactement une fois.
+- **LLM** : `mistral-small-latest` (temp 0.35, max_tokens 700) via
+  `EditorialLLMClient.chat_json(call_site="essentiel_letter")` — le LLM ne
+  rédige que la prose avec marqueurs `[[n]]`.
+- **Validation serveur** : comptage des marqueurs par bloc, pas de 1re
+  personne, em-dash auto-réparé silencieusement, caps longueurs
+  (chapô 120-360c, rubrique 60-200c, total ≤1000), pas de
+  markdown/URL/emoji/`!`, pas de nom de source verbatim. 1 retry max avec bloc
+  « CORRECTIONS OBLIGATOIRES », sinon pas de stockage.
+- **Stockage** : table `essentiel_letters` (migration additive `el01`,
+  idempotente, RLS deny-all pattern sec02, `UNIQUE(user_id, target_date,
+  is_serene)`). La lettre stocke son snapshot des 5 picks ; seuls les flags
+  is_read/is_saved/is_liked/is_dismissed sont réhydratés au serve (1 SELECT).
+- **Router `/api/essentiel`** : lettre stockée → **servie en court-circuit**
+  (le rebuild digest/re-rank/suppléments est entièrement sauté sur le chemin
+  nominal post-08h ; 1 seul SELECT de statuts pour réhydrater le snapshot) ;
+  absente et date du jour (hors fallback stale) → génération on-demand bornée
+  8 s (seul l'appel LLM est sous timeout) ; dates passées lecture seule ;
+  serein = variante on-demand cachée `(user, date, true)` ; tout échec →
+  `letter=null`, réponse actuelle inchangée. Pas de feature flag.
+- **Job nocturne 08h00 Paris** (digest 07h30, watchdog 08h15) : population =
+  tous les UserProfile, variante pour_vous only, sessions courtes
+  `safe_async_session`, `Semaphore(4)`, jamais de session ouverte pendant le
+  LLM, purge 30 j, idempotent (skip si ligne existante), log résumé.
 
-- **Nouveau** `widgets/edition_timeline_sheet.dart` : `EditionTimelineSheet.show`
-  (calqué sur `manage_favorites_sheet`, scrim chaud, pas de `useRootNavigator`),
-  `_DayRow` (icône + libellé + méta + pastille), `EditionRewindTrigger`.
-- **Nouveau** `providers/edition_read_status_provider.dart` :
-  `editionReadStatusProvider` (union streaks `opened` ∪ set local) +
-  `editionCaughtUpProvider` (SharedPreferences, additif). Dégradation gracieuse :
-  streaks off/loading/error ⇒ aucun statut affiché.
-- **Modifié** `essentiel_hi_fi_card.dart` : `_Header` reçoit le déclencheur rewind.
-- **Modifié** `flux_continu_screen.dart` : retrait des 2 strips ; `ref.listen`
-  marquant un jour « rattrapé » quand une édition passée se charge ; action
-  « Choisir un autre jour » dans l'état vide (anti-cul-de-sac).
-- **Déplacé** `editionPillLabel` → `selected_edition_date_provider.dart`
-  (co-localisé avec `EditionSelection`/`editionPillModel`).
-- **Supprimé** `widgets/edition_date_strip.dart` (+ son test).
+## Vérifié
 
-### Bloc 2 — ajustements PO
+- `pytest` : suite complète verte (dont 43 nouveaux tests lettre).
+- `alembic upgrade head` sur DB vide : OK, exactement 1 head
+  (`el01_essentiel_letters`), RLS activé vérifié via psql.
+- uvicorn local : OpenAPI expose `EssentielLetter` + `letter` nullable dans
+  `EssentielResponse` ; route protégée (403 sans token).
+- ruff check + format sur tous les fichiers touchés.
+- /simplify passé (4 agents) : court-circuit chemin chaud quand lettre stockée,
+  helpers partagés extraits (`get_batch_action_states` digest↔lettre,
+  `get_active_user_ids` digest↔lettre, `followed_themes_by_weight()` router↔job) ;
+  re-run suite complète après refactor.
 
-- **Point 1 — rewind réduit à 3 options** : `kEditionMaxPastDays` 7 → **1**
-  (`selected_edition_date_provider.dart`). `editionPillModel()` ⇒
-  `[Cette semaine, Aujourd'hui, Hier]` ; la timeline et le pill se réduisent
-  automatiquement. **« Cette semaine » inchangé** (agrège toujours J-0…J-6 via la
-  constante distincte `kEditionWeekPastDays`). **Aucun rollback back-end** : la
-  garde « édition passée » de `digest_service.py` reste nécessaire (Hier + fan-out
-  hebdo).
-- **Point 2 — retrait du bouton « personnaliser » + grossir « GÉRER »** : le bouton
-  perso de la carte Essentiel est **retiré partout** (today ET lettre passée). Point
-  d'entrée préférences **unique** = l'inline « GÉRER » de `MyInterestsIntro`, rendu
-  plus visible (libellé 11→13 px, fond accent doux au lieu d'un simple contour).
-  Nettoyage : suppression du widget `_PersonalizeButton` + du param `onTapPersonalize`
-  (`essentiel_hi_fi_card.dart`) et du param mort `interactive` (`section_block.dart`,
-  call-site `flux_continu_screen.dart`).
-- **Point 3 — rewind sur la page Lettre du jour (swipe horizontal riche)**
-  (`morning_ritual_screen.dart`) : glisser la lettre du jour vers la **droite**
-  révèle une carte « Hier » décorative parquée hors-écran gauche (liseré ~24 px au
-  repos = nudge) ; commit (seuil 30 % ou fling) → sélectionne `EditionPastDay(hier)`
-  + route vers le feed en lecture seule. Coexiste avec le swipe-up existant (arène de
-  gestes H/V). Repli accessible : trigger « Remonter le temps » (ouvre la timeline).
-  `reduceMotion` → carte statique.
-- **Point 4 — CTA « mode serein »** : `_SereinCta` (ConsumerWidget privé) sous le
-  bloc rewind, copie « Pas d'humeur pour les news difficiles ? » + bouton « Active ton
-  mode serein » → `sereinToggleProvider.toggle()` (persiste + haptique) + snackbar de
-  confirmation ; désactivé tant que `state.isLoading`.
+## ⚠️ Gate PO avant merge
 
-### Tests
-- `flutter analyze` : **0 issue** sur les fichiers touchés.
-- MAJ/nouveaux : `selected_edition_date_provider_test` (pills 9→3),
-  `edition_timeline_sheet_test` (3 lignes), `essentiel_hi_fi_card_test` (bouton perso
-  retiré), `morning_ritual_content_test` (ProviderScope + serein CTA + trigger),
-  `edition_read_status_provider_test` (fixtures découplées de `kEditionMaxPastDays`).
-- Suite `test/features/flux_continu/` : **354 verts, 1 échec pré-existant et non lié**
-  (`flux_continu_provider_test` « 10 favorites cap » — cap déjà bumpé à 13 en amont).
+Harnais d'éval : `cd packages/api && python scripts/eval_essentiel_letter.py
+--runs 3` (nécessite `MISTRAL_API_KEY`, absent de ce workspace). Cible ≥95 %
+pass après retry ; sinon escalade `model: mistral-large-latest` = 1 ligne
+YAML. Relecture humaine du ton par Laurin sur les lettres imprimées par le
+harnais.
 
-### Validation web (Playwright)
-- QA handoff prêt (`.context/qa-handoff.md`) pour `/validate-feature` (4 scénarios PO :
-  timeline 3 options, carte sans bouton perso + « GÉRER » plus grand, page Lettre du
-  jour rewind, CTA serein). **Le swipe horizontal de la page Lettre du jour est validé
-  par `flutter analyze` + Playwright** (pas de test widget plein-écran : le rituel monte
-  des providers réseau/streak/profil ; le geste reprend le pattern éprouvé du swipe-up,
-  lui-même couvert au niveau `MorningRitualContent` + QA, non par un test d'écran).
+## Hors scope (PR2 mobile, à suivre)
 
-### Risque / migration
-- **Aucun** changement back-end, **aucune** migration Alembic.
-
-### Hors scope (suivi)
-- Audit « santé des streaks » (frontière de jour / sémantique `opened`) :
-  `.context/streaks-health-handoff.md` (read-only, ne bloque pas cette PR).
+Modèles Dart + `EssentielLetterCard` (_SourcePill logo+↗ reader, _ThemePill
+couleur+↘ scroll section avec garde-fou section absente, skeleton), fallback
+`letter == null` → `EssentielHiFiCard`, changelog.json (l'impact user-visible
+arrive avec PR2).

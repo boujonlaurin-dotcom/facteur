@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.content import SourceMini
+from app.schemas.essentiel_letter import EssentielLetter
 
 
 class EssentielKind(StrEnum):
@@ -81,6 +82,14 @@ class EssentielResponse(BaseModel):
         description=(
             "True quand l'essentiel a été construit depuis le digest d'hier "
             "en attendant que celui d'aujourd'hui soit prêt."
+        ),
+    )
+    letter: EssentielLetter | None = Field(
+        default=None,
+        description=(
+            "Lettre du jour (digest rédigé, Story 9.6). None ⇒ le mobile rend "
+            "la carte 5 articles actuelle (fallback technique). Quand présente, "
+            "`articles` est le snapshot figé de la lettre."
         ),
     )
 
