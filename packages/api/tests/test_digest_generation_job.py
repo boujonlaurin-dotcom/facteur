@@ -669,3 +669,160 @@ class TestAxeCBatchTxRelease:
         mock_session.rollback.assert_awaited_once()
         mock_apply.assert_awaited_once()
         assert mock_apply.await_args.args[0] is mock_session
+
+
+class TestEditorialModeFailureRollback:
+    """Régression PYTHON-4R: si le pré-calcul éditorial d'une variante échoue
+    (`compute_global_context` lève), l'except INTERNE de la boucle
+    `for mode in (...)` doit rollback + re-pousser les timeouts, sinon la
+    session batch partagée reste PENDING_ROLLBACK et le commit final de
+    `run_digest_generation` plante.
+    """
+
+    def _fake_trending_ctx(self):
+        from app.jobs.digest_generation_job import GlobalTrendingContext
+
+        return GlobalTrendingContext(
+            trending_content_ids=set(),
+            une_content_ids=set(),
+            computed_at=datetime.datetime.now(datetime.UTC),
+        )
+
+    @pytest.mark.asyncio
+    async def test_mode_failure_rolls_back_shared_batch_session(self, mock_session):
+        from contextlib import asynccontextmanager
+
+        import app.jobs.digest_generation_job as job_mod
+        from app.jobs.digest_generation_job import DigestGenerationJob
+
+        job = DigestGenerationJob(batch_size=10)
+        # Non-empty user list → on entre dans le corps du pré-calcul éditorial
+        # (qui exige `user_ids`). Les étapes lourdes sont stubbées pour isoler
+        # le chemin d'erreur de la variante.
+        job._get_active_users = AsyncMock(return_value=[uuid4()])
+        job._prune_old_highlights = AsyncMock()
+        job._match_grille_featured_article = AsyncMock()
+        job._process_batch = AsyncMock()
+        job._get_batch_followed_source_ids = AsyncMock(return_value=set())
+        job._get_global_candidates = AsyncMock(return_value=[object()])
+
+        cov_session = AsyncMock()
+        cov_session.scalar = AsyncMock(return_value=0)
+
+        @asynccontextmanager
+        async def fake_cov_sm():
+            yield cov_session
+
+        mock_session.rollback = AsyncMock()
+
+        with (
+            patch.object(job_mod, "DigestSelector") as mock_sel_cls,
+            patch.object(
+                job_mod, "state_mark_pending", new_callable=AsyncMock
+            ),
+            patch.object(
+                job_mod, "apply_session_timeouts", new_callable=AsyncMock
+            ) as mock_apply,
+            patch(
+                "app.services.editorial.pipeline.EditorialPipelineService"
+            ) as mock_pipe_cls,
+            patch.object(
+                job_mod, "safe_async_session", side_effect=lambda: fake_cov_sm()
+            ),
+        ):
+            mock_sel = MagicMock()
+            mock_sel._build_global_trending_context = AsyncMock(
+                return_value=self._fake_trending_ctx()
+            )
+            mock_sel_cls.return_value = mock_sel
+
+            mock_pipe = MagicMock()
+            mock_pipe.llm.is_ready = True
+            mock_pipe.close = AsyncMock()
+            # La variante échoue au pré-calcul éditorial → except `mode_err`.
+            mock_pipe.compute_global_context = AsyncMock(
+                side_effect=RuntimeError("mode boom")
+            )
+            mock_pipe_cls.return_value = mock_pipe
+
+            # Ne doit PAS lever : l'erreur de variante est absorbée + nettoyée.
+            await job.run(mock_session, datetime.date.today())
+
+        # Discriminant : sur ce chemin (succès trending), un SEUL rollback+timeouts
+        # « Axe C » fire toujours (release de tx avant le LLM). L'except interne
+        # AJOUTE un rollback+timeouts par variante échouée (2 ici) → sans le fix
+        # PYTHON-4R on resterait à 1. `>= 2` prouve donc que l'except interne a
+        # bien nettoyé la session batch partagée.
+        assert mock_session.rollback.await_count >= 2
+        assert mock_apply.await_count >= 2
+        # Les timeouts sont re-poussés sur la session batch (pas une autre).
+        assert all(
+            call.args and call.args[0] is mock_session
+            for call in mock_apply.await_args_list
+        )
+
+    @pytest.mark.asyncio
+    async def test_final_commit_succeeds_despite_mode_failure(self, mock_session):
+        """Bout en bout : `run_digest_generation()` commit sans PendingRollbackError
+        même quand une variante du pré-calcul éditorial échoue."""
+        from contextlib import asynccontextmanager
+
+        import app.jobs.digest_generation_job as job_mod
+        from app.jobs.digest_generation_job import (
+            DigestGenerationJob,
+            run_digest_generation,
+        )
+
+        job = DigestGenerationJob(batch_size=10)
+        job._get_active_users = AsyncMock(return_value=[uuid4()])
+        job._prune_old_highlights = AsyncMock()
+        job._match_grille_featured_article = AsyncMock()
+        job._process_batch = AsyncMock()
+        job._get_batch_followed_source_ids = AsyncMock(return_value=set())
+        job._get_global_candidates = AsyncMock(return_value=[object()])
+
+        mock_session.rollback = AsyncMock()
+
+        @asynccontextmanager
+        async def fake_sm():
+            yield mock_session
+
+        with (
+            patch(
+                "app.services.generation_state.is_generation_running",
+                return_value=False,
+            ),
+            patch("app.services.generation_state.mark_generation_started"),
+            patch("app.services.generation_state.mark_generation_finished"),
+            patch.object(job_mod, "DigestGenerationJob", return_value=job),
+            patch.object(job_mod, "safe_async_session", side_effect=lambda: fake_sm()),
+            patch.object(job_mod, "DigestSelector") as mock_sel_cls,
+            patch.object(job_mod, "state_mark_pending", new_callable=AsyncMock),
+            patch.object(job_mod, "apply_session_timeouts", new_callable=AsyncMock),
+            patch(
+                "app.services.editorial.pipeline.EditorialPipelineService"
+            ) as mock_pipe_cls,
+        ):
+            mock_sel = MagicMock()
+            mock_sel._build_global_trending_context = AsyncMock(
+                return_value=self._fake_trending_ctx()
+            )
+            mock_sel_cls.return_value = mock_sel
+
+            mock_pipe = MagicMock()
+            mock_pipe.llm.is_ready = True
+            mock_pipe.close = AsyncMock()
+            mock_pipe.compute_global_context = AsyncMock(
+                side_effect=RuntimeError("mode boom")
+            )
+            mock_pipe_cls.return_value = mock_pipe
+
+            result = await run_digest_generation(target_date=datetime.date.today())
+
+        # Le run va au bout et retourne des stats (pas de skip, pas de raise).
+        assert result is not None
+        assert not result.get("skipped")
+        # La variante a bien été nettoyée par l'except interne (>= 2 : Axe C + mode).
+        assert mock_session.rollback.await_count >= 2
+        # ...et le commit final de run_digest_generation a réussi.
+        mock_session.commit.assert_awaited()
