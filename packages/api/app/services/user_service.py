@@ -66,14 +66,28 @@ class UserService:
         return result.scalar_one_or_none()
 
     async def create_profile(self, user_id: str) -> UserProfile:
-        """Crée un nouveau profil utilisateur."""
-        profile = UserProfile(
-            id=uuid4(),
-            user_id=UUID(user_id),
-            onboarding_completed=False,
-        )
-        self.db.add(profile)
-        await self.db.flush()
+        """Crée un nouveau profil utilisateur, en gérant les race conditions.
+
+        Uses a savepoint so that an IntegrityError (a concurrent request already
+        inserted the profile) only rolls back the INSERT, not the entire
+        transaction. On conflict, re-reads and returns the row created by the
+        winning request. (Sentry PYTHON-5R — user_profiles_user_id_key)
+        """
+        try:
+            async with self.db.begin_nested():
+                profile = UserProfile(
+                    id=uuid4(),
+                    user_id=UUID(user_id),
+                    onboarding_completed=False,
+                )
+                self.db.add(profile)
+                await self.db.flush()
+        except IntegrityError:
+            # Another concurrent request won the race; re-read its row.
+            logger.info(
+                f"Profile already exists for user {user_id} (race condition handled)"
+            )
+            profile = await self.get_profile(user_id)
 
         await self._ensure_streak_exists(user_id)
 
