@@ -64,6 +64,8 @@
     [data-signals]{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:14px;line-height:1.45}
     [data-signals] li{display:flex;align-items:flex-start;gap:8px}
     [data-signals] li i{font-size:13px;color:var(--acc-ink);flex:none;margin-top:3px}
+    .pillar-bar--sub{width:64%}
+    @media (max-width:480px){.pillar-bar--sub{width:100%}}
     </style>
 </head>
 
@@ -99,23 +101,23 @@
             <span style="font-weight:700;font-size:16.5px;line-height:1.25">Rigueur informationnelle</span>
             <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.5px;color:#5D5B5A">5 critères · C1–C5</span>
           </span>
-          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap">60<span style="font-size:12px;font-weight:700"> pts</span></span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap;flex:none">60<span style="font-size:12px;font-weight:700"> pts</span></span>
         </div>
-        <div style="width:64%;background:color-mix(in srgb,var(--acc) 10%,white);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px">
+        <div class="pillar-bar--sub" style="background:color-mix(in srgb,var(--acc) 10%,white);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px">
           <span aria-hidden="true" style="width:46px;height:46px;border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;flex:none"><i class="ph ph-eye" style="font-size:26px;color:var(--acc-ink)"></i></span>
           <span style="flex:1;min-width:0;display:grid;gap:2px">
             <span style="font-weight:700;font-size:16.5px;line-height:1.25">Transparence</span>
             <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.5px;color:#5D5B5A">3 critères · C6–C8</span>
           </span>
-          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap">20<span style="font-size:12px;font-weight:700"> pts</span></span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap;flex:none">20<span style="font-size:12px;font-weight:700"> pts</span></span>
         </div>
-        <div style="width:64%;background:color-mix(in srgb,var(--acc) 6%,white);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px">
+        <div class="pillar-bar--sub" style="background:color-mix(in srgb,var(--acc) 6%,white);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px">
           <span aria-hidden="true" style="width:46px;height:46px;border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;flex:none"><i class="ph ph-scales" style="font-size:26px;color:var(--acc-ink)"></i></span>
           <span style="flex:1;min-width:0;display:grid;gap:2px">
             <span style="font-weight:700;font-size:16.5px;line-height:1.25">Indépendance et engagements</span>
             <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.5px;color:#5D5B5A">2 critères · C9–C10</span>
           </span>
-          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap">20<span style="font-size:12px;font-weight:700"> pts</span></span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap;flex:none">20<span style="font-size:12px;font-weight:700"> pts</span></span>
         </div>
       </div>
       <div aria-hidden="true" style="display:flex;align-items:center"><i class="ph-bold ph-arrow-right" style="font-size:22px;color:#c9b797"></i></div>
@@ -646,7 +648,7 @@
   </div>
 </footer>
 
-<script src="js/methodologie.js?v=1"></script>
+<script src="js/methodologie.js?v=2"></script>
 </body>
 
 </html>
