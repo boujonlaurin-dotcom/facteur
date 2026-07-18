@@ -7,6 +7,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../widgets/article_preview_modal.dart';
+import '../../detail/content_preview_mapper.dart';
 import '../../tour/tour_anchors.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
@@ -17,9 +19,9 @@ import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/theme_color_mapping.dart';
+import 'auto_grow_candidate.dart';
 import 'edition_timeline_sheet.dart';
 import 'ephemeral_rattraper_label.dart';
-import 'long_press_grow.dart';
 import 'weather_condition_icon.dart';
 import 'weather_detail_sheet.dart';
 
@@ -553,8 +555,13 @@ class _LeadTile extends StatelessWidget {
     final chipAccent = _accentFor(article, accent);
     return Material(
       color: Colors.transparent,
-      child: LongPressGrowNudge(
-        child: InkWell(
+      child: AutoGrowCandidate(
+        contentId: article.contentId,
+        isRead: article.isRead,
+        keyPrefix: 'ess',
+        child: ArticlePreviewGesture(
+          contentBuilder: () => article.toPreviewContent(),
+          child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),
         // Lu : grise la tuile (0.6) + coche verte, comme les autres sections
@@ -613,6 +620,7 @@ class _LeadTile extends StatelessWidget {
             ],
           ),
         ),
+          ),
         ),
       ),
     );
@@ -635,8 +643,13 @@ class _MediumTile extends StatelessWidget {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     return Material(
       color: Colors.transparent,
-      child: LongPressGrowNudge(
-        child: InkWell(
+      child: AutoGrowCandidate(
+        contentId: article.contentId,
+        isRead: article.isRead,
+        keyPrefix: 'ess',
+        child: ArticlePreviewGesture(
+          contentBuilder: () => article.toPreviewContent(),
+          child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
         // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
@@ -691,6 +704,7 @@ class _MediumTile extends StatelessWidget {
             ],
           ),
         ),
+          ),
         ),
       ),
     );

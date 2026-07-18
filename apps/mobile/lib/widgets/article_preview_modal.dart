@@ -58,6 +58,45 @@ class ArticlePreviewOverlay {
   }
 }
 
+/// Long-press → aperçu flottant ([ArticlePreviewOverlay]), partagé par les
+/// cartes Flux et Essentiel. Le [Content] de l'aperçu est construit
+/// paresseusement à l'appui (le mapping diffère par carte). [onLongPressStart]
+/// permet à l'appelant de brancher un effet de bord additionnel (ex. hook de
+/// conversion du nudge) — appelé avant l'ouverture de l'aperçu.
+///
+/// Pas de swipe ni d'haptique (cohérence PO) : les cartes vivent dans un scroll
+/// vertical, le long-press gagne l'arène de gestes de façon fiable.
+class ArticlePreviewGesture extends StatelessWidget {
+  const ArticlePreviewGesture({
+    super.key,
+    required this.contentBuilder,
+    required this.child,
+    this.onLongPressStart,
+  });
+
+  /// Construit paresseusement le contenu de l'aperçu (mapping propre à la carte).
+  final Content Function() contentBuilder;
+
+  /// Effet de bord optionnel joué au début du long-press, avant l'aperçu.
+  final VoidCallback? onLongPressStart;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: (_) {
+        onLongPressStart?.call();
+        ArticlePreviewOverlay.show(context, contentBuilder());
+      },
+      onLongPressMoveUpdate: (d) =>
+          ArticlePreviewOverlay.updateScroll(d.localOffsetFromOrigin.dy),
+      onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
+      child: child,
+    );
+  }
+}
+
 class _ArticlePreviewWidget extends StatefulWidget {
   final Content content;
   final ValueChanged<_ArticlePreviewWidgetState> onStateReady;
