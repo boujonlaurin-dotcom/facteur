@@ -6,7 +6,13 @@
     var API_URL = 'https://facteur-production.up.railway.app';
 
     // ─── Scroll FX ───────────────────────────────────────────────────────
-    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Désactivé sur écrans tactiles (mobile/tablette) : la fenêtre de focus
+    // scroll-lié y est trop étroite et le collapse de l'accordéon provoque un
+    // saut de page. Filet de sécurité déjà présent dans le CSS : sans
+    // data-scrollfx, les critères s'affichent statiquement, tous dépliés.
+    var wantsScrollFx = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        && window.matchMedia('(pointer: fine)').matches;
+    if (wantsScrollFx) {
         document.documentElement.setAttribute('data-scrollfx', '1');
 
         var pinned = null;
