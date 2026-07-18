@@ -16,6 +16,7 @@ from uuid import UUID
 
 import structlog
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import AnalyticsEvent
@@ -309,22 +310,36 @@ async def _get_rows(user_id: UUID, db: AsyncSession) -> dict[str, UserLetterProg
 
 
 async def _init_progress(user_id: UUID, db: AsyncSession) -> None:
-    """Crée toutes les rows initiales pour un nouveau user."""
+    """Crée toutes les rows initiales pour un nouveau user (race-safe).
+
+    Deux GET /api/letters concurrents pour un user neuf voient tous deux
+    « aucune row » et tentent l'init : la perdante viole
+    pk_user_letter_progress. On encapsule les INSERT dans un savepoint pour
+    qu'un IntegrityError ne rollback QUE ces inserts (pas la transaction
+    entière) ; l'appelant `_ensure_rows` relira l'état complet écrit par la
+    requête gagnante. (Sentry PYTHON-3K)
+    """
     from app.services.user_service import UserService
 
     await UserService(db).get_or_create_profile(str(user_id))
     now = datetime.now(UTC)
-    for catalog in LETTERS_ORDER:
-        default_status = catalog["default_status"]
-        row = UserLetterProgress(
-            user_id=user_id,
-            letter_id=catalog["id"],
-            status=default_status,
-            completed_actions=[],
-            started_at=now if default_status == "active" else None,
-            archived_at=now if default_status == "archived" else None,
-        )
-        db.add(row)
+    try:
+        async with db.begin_nested():
+            for catalog in LETTERS_ORDER:
+                default_status = catalog["default_status"]
+                row = UserLetterProgress(
+                    user_id=user_id,
+                    letter_id=catalog["id"],
+                    status=default_status,
+                    completed_actions=[],
+                    started_at=now if default_status == "active" else None,
+                    archived_at=now if default_status == "archived" else None,
+                )
+                db.add(row)
+            await db.flush()
+    except IntegrityError:
+        # Another concurrent request won the race and inserted the rows first.
+        logger.info("letter_progress_already_exists", user_id=str(user_id))
     await db.commit()
 
 
