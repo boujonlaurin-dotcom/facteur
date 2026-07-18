@@ -6,6 +6,7 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
@@ -15,7 +16,7 @@ import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../../sources/models/source_model.dart';
-import 'long_press_grow.dart';
+import 'auto_grow_candidate.dart';
 
 /// Unified view-model that hides the DigestItem vs Content split from the
 /// rendering layer. Both types carry the fields needed to display a Flux
@@ -173,9 +174,13 @@ class _FluxContinuArticleCardState
               color: colors.surface,
               borderRadius: cardRadius,
               elevation: 0,
-              child: LongPressGrowNudge(
-                onLongPress: () => widget.onLongPressConversion?.call(),
-                child: InkWell(
+              child: AutoGrowCandidate(
+                contentId: vm.contentId,
+                isRead: hasBeenRead,
+                child: ArticlePreviewGesture(
+                  contentBuilder: () => articleToContent(widget.article),
+                  onLongPressStart: () => widget.onLongPressConversion?.call(),
+                  child: InkWell(
                   onTap: widget.onTap,
                   borderRadius: cardRadius,
                   child: Ink(
@@ -194,6 +199,7 @@ class _FluxContinuArticleCardState
                         ? _buildImageOnTopBody(vm, spec, colors)
                         : _buildRowBody(vm, spec, colors, hasThumb),
                   ),
+                ),
                 ),
               ),
             ),

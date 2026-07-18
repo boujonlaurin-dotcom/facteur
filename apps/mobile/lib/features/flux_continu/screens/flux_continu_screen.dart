@@ -39,6 +39,7 @@ import '../../tour/providers/guided_tour_controller.dart';
 import '../../tour/tour_anchors.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
+import '../providers/auto_grow_nudge_provider.dart';
 import '../providers/edition_essentiel_provider.dart';
 import '../providers/edition_read_status_provider.dart';
 import '../providers/flux_continu_provider.dart';
@@ -47,6 +48,7 @@ import '../providers/personalisation_cta_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
+import '../services/auto_grow_nudge_scheduler.dart';
 import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
 import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
@@ -229,6 +231,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
 
+  // Nudge auto-grow « découvre l'aperçu au long-press » : un pulse discret sur
+  // une carte visible + non lue, quelques fois par jour, tant que l'utilisateur
+  // n'a pas fait un vrai long-press (cf. auto_grow_nudge_scheduler.dart).
+  Timer? _autoGrowTimer;
+  int _autoGrowNonce = 0;
+  final math.Random _autoGrowRng = math.Random();
+
   /// Premier paint : on force le squelette (cartes vides à en-têtes réels) pour
   /// la toute première frame, **même si les données sont déjà prêtes**. À
   /// l'arrivée depuis le rituel matinal, l'édition est préchargée → l'écran
@@ -254,6 +263,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _firstPaintDone = true);
     });
+    // Tick régulier du nudge auto-grow. Léger : ne fait rien tant qu'aucune
+    // carte n'est visible ou que le scheduler refuse (budget/espacement/déjà
+    // découvert).
+    _autoGrowTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => unawaited(_maybeTriggerAutoGrow()),
+    );
   }
 
   @override
@@ -266,7 +282,27 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     _activeIndex.dispose();
     _tallSections.dispose();
     _pullHintTimer?.cancel();
+    _autoGrowTimer?.cancel();
     super.dispose();
+  }
+
+  /// Déclenche au plus un pulse auto-grow : tire une carte visible + non lue au
+  /// hasard si le scheduler l'autorise. Sans candidat visible (écran masqué en
+  /// IndexedStack, ou tout est lu) → no-op.
+  Future<void> _maybeTriggerAutoGrow() async {
+    if (!mounted) return;
+    if (ref.read(visibleFluxContentIdsProvider).isEmpty) return;
+    final scheduler = ref.read(autoGrowNudgeSchedulerProvider);
+    if (!await scheduler.canTriggerNow()) return;
+    if (!mounted) return;
+    // Re-lit après l'await : le set visible a pu changer entre-temps.
+    final candidates = ref.read(visibleFluxContentIdsProvider).toList();
+    if (candidates.isEmpty) return;
+    final pick = candidates[_autoGrowRng.nextInt(candidates.length)];
+    _autoGrowNonce++;
+    ref.read(autoGrowNudgeSignalProvider.notifier).state =
+        AutoGrowSignal(contentId: pick, nonce: _autoGrowNonce);
+    await scheduler.recordTriggered();
   }
 
   void _onScroll() {
@@ -810,11 +846,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       if (!mounted) return;
       if (swipe == NudgeIds.feedSwipeHint) {
         setState(() => _showSwipeHint = true);
-        return;
       }
-      if (coordinator.activeId == null) {
-        await coordinator.request(NudgeIds.feedPreviewLongpress);
-      }
+      // L'ancien tooltip « aperçu au long-press » (NudgeIds.feedPreviewLongpress)
+      // n'est plus déclenché ici : sur Essentiel/Flux il est remplacé par le
+      // nudge auto-grow (cf. _maybeTriggerAutoGrow). Flâner garde son tooltip.
     });
   }
 
@@ -838,11 +873,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   void _recordLongPressConversion() {
-    unawaited(
-      ref
-          .read(nudgeCoordinatorProvider)
-          .recordConversion(NudgeIds.feedPreviewLongpress),
-    );
+    // Un vrai long-press = l'aperçu est découvert → coupe le nudge auto-grow
+    // définitivement pour cet utilisateur.
+    unawaited(ref.read(autoGrowNudgeSchedulerProvider).markDiscovered());
   }
 
   void _resolveFeedback(String contentId) {
