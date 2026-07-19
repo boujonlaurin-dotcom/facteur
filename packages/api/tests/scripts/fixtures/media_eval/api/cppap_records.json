@@ -1,0 +1,16 @@
+{
+  "nhits": 1,
+  "parameters": {"dataset": "presse-cppap", "q": "CNEWS", "rows": 50},
+  "records": [
+    {
+      "datasetid": "presse-cppap",
+      "recordid": "abc123",
+      "fields": {
+        "titre": "CNEWS",
+        "numero_cppap": "0426 W 92142",
+        "editeur": "Societe d'Exploitation d'un Service d'Information",
+        "categorie": "Information politique et generale"
+      }
+    }
+  ]
+}

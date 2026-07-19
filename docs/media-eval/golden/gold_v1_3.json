@@ -1,0 +1,255 @@
+{
+  "version_methodo": "v1.3",
+  "notateur": "humain:laurin",
+  "note_at": "2026-07-18T00:00:00Z",
+  "remap_depuis": "gold_v0.json",
+  "remap_note": "Re-mapping du gold batch 1 (v1.2 → v1.3, Annexe B) + décisions PO (STOP validation n°2, 2026-07-18). Les déterminations v1.2 sont conservées ; les 3 entrées revue_requise CNEWS (C6/C8/C9) ont été tranchées par Laurin (voir champ decision_po). Les entrées reporterre.net restent a_noter (à noter en aveugle avant tout run). gold_v0.json reste la référence figée du batch 1 v1.2.",
+  "entries": [
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C1",
+      "version_methodo": "v1.3",
+      "score": null,
+      "niveau": null,
+      "origine_v12": [
+        {
+          "critere": "C1",
+          "statut": "non_applicable",
+          "score": null,
+          "niveau": null,
+          "commentaire": "Fallback correct sur les artefacts du run (2 débunkages < 3, et les 2 items = la même affaire Zemmour/Obono). Recall du collecteur voie B insuffisant : C1 attendu instruit (et défavorable) en V1 après élargissement des requêtes (sanctions Arcom, fact-checks AFP/Libé/Les Surligneurs) + dédup par affaire."
+        }
+      ],
+      "statut": "non_applicable",
+      "regle_remap": "na_conserve",
+      "commentaire": "[v1.2 C1 — véracité et exactitude] Fallback correct sur les artefacts du run (2 débunkages < 3, et les 2 items = la même affaire Zemmour/Obono). Recall du collecteur voie B insuffisant : C1 attendu instruit (et défavorable) en V1 après élargissement des requêtes (sanctions Arcom, fact-checks AFP/Libé/Les Surligneurs) + dédup par affaire."
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C6",
+      "version_methodo": "v1.3",
+      "score": 4.0,
+      "niveau": 2,
+      "origine_v12": [
+        {
+          "critere": "C5",
+          "statut": "evaluee",
+          "score": 5,
+          "niveau": null,
+          "commentaire": "Mixtes : mentions légales complètes (SESI SNC, RCS 412 916 215) + propriétaire immédiat corroboré, mais chaîne capitalistique jusqu'à Bolloré non divulguée sur le site et financement non décrit. Le repli Pappers gratuit n'aurait enrichi que la justification, pas le palier."
+        }
+      ],
+      "statut": "evaluee",
+      "candidats_niveau": [
+        2,
+        3
+      ],
+      "candidats_score": [
+        4,
+        7
+      ],
+      "regle_remap": "continue_vers_niveaux_revue+decision_po",
+      "commentaire": "[Décision PO 2026-07-18 — niveau 2 (4)] Financement non décrit + chaîne capitalistique jusqu'à Bolloré non divulguée sur le site → échoue « revenus décrits + actionnariat » du niveau 3 ; mentions légales complètes + groupe identifiable = niveau 2. Score v1.2 5 sans équivalent exact sur l'échelle v1.3 (0/1/4/7/10) : à trancher entre niveau 2 (4) et niveau 3 (7). [v1.2 C5 — transparence propriété / financement] Mixtes : mentions légales complètes (SESI SNC, RCS 412 916 215) + propriétaire immédiat corroboré, mais chaîne capitalistique jusqu'à Bolloré non divulguée sur le site et financement non décrit. Le repli Pappers gratuit n'aurait enrichi que la justification, pas le palier.",
+      "decision_po": {
+        "note_at": "2026-07-18",
+        "niveau": 2,
+        "score": 4.0,
+        "motif": "Financement non décrit + chaîne capitalistique jusqu'à Bolloré non divulguée sur le site → échoue « revenus décrits + actionnariat » du niveau 3 ; mentions légales complètes + groupe identifiable = niveau 2."
+      }
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C8",
+      "version_methodo": "v1.3",
+      "score": 3.0,
+      "niveau": 2,
+      "origine_v12": [
+        {
+          "critere": "C7",
+          "statut": "evaluee",
+          "score": 2,
+          "niveau": null,
+          "commentaire": "Mixtes : marquage « Contenus sponsorisés » attesté en home + régie identifiable (Canal+ Brand Solutions), mais aucune politique publicitaire publiée. Vérifs complémentaires possibles (CGU, marquage au niveau article) sans bascule plausible vers 4."
+        }
+      ],
+      "statut": "evaluee",
+      "candidats_niveau": [
+        1,
+        2
+      ],
+      "candidats_score": [
+        1,
+        3
+      ],
+      "regle_remap": "continue_vers_niveaux_revue+decision_po",
+      "commentaire": "[Décision PO 2026-07-18 — niveau 2 (3)] Marquage « Contenus sponsorisés » attesté + régie identifiable (Canal+ Brand Solutions), sans politique publicitaire publiée. Garde-fou C8 : l'absence de politique publiée ne peut à elle seule faire descendre sous le niveau 2 ; aucun label discret/irrégulier ni native advertising observé → niveau 2. Score v1.2 2 sans équivalent exact sur l'échelle v1.3 (0/1/3/4) : à trancher entre niveau 1 (1) et niveau 2 (3). [v1.2 C7 — séparation contenu / publicité] Mixtes : marquage « Contenus sponsorisés » attesté en home + régie identifiable (Canal+ Brand Solutions), mais aucune politique publicitaire publiée. Vérifs complémentaires possibles (CGU, marquage au niveau article) sans bascule plausible vers 4.",
+      "decision_po": {
+        "note_at": "2026-07-18",
+        "niveau": 2,
+        "score": 3.0,
+        "motif": "Marquage « Contenus sponsorisés » attesté + régie identifiable (Canal+ Brand Solutions), sans politique publicitaire publiée. Garde-fou C8 : l'absence de politique publiée ne peut à elle seule faire descendre sous le niveau 2 ; aucun label discret/irrégulier ni native advertising observé → niveau 2."
+      }
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C9",
+      "version_methodo": "v1.3",
+      "score": 0.0,
+      "niveau": 0,
+      "origine_v12": [
+        {
+          "critere": "C8",
+          "statut": "evaluee",
+          "score": 0,
+          "niveau": null,
+          "commentaire": "Désaccord avec l'agent (2/4). Décision PO : une charte loi-Bloche attestée mais non publiée, jugée non contraignante (autorise la couverture des activités de l'actionnaire), sans CDJM, sans JTI, sans processus de réclamation ni politique de correction, n'est pas un engagement vérifiable par le public → négatifs, 0/4. Même principe que C9 : des garanties formelles contredites par la pratique ne sont pas des garanties. Rubrique C8 à préciser sur ce cas (charte attestée mais non publiée)."
+        },
+        {
+          "critere": "C11",
+          "statut": "evaluee",
+          "score": 3,
+          "niveau": 1,
+          "commentaire": "Accord : positionnement jamais auto-explicité (exclut niveau 2) mais rubriques opinion/débat structurellement identifiables (exclut 0). La documentation massive par des tiers (Arcom, études) ne compte pas : le critère mesure l'auto-explicitation."
+        }
+      ],
+      "regle_remap": "fusion_c8_c11+decision_po",
+      "statut": "evaluee",
+      "candidats_niveau": [
+        0,
+        1
+      ],
+      "candidats_score": [
+        0,
+        5
+      ],
+      "commentaire": "[Décision PO 2026-07-18 — niveau 0 (0)] Ligne jamais auto-explicitée (ex-C11) ET aucun engagement formalisé public — charte loi-Bloche attestée mais non publiée, jugée non contraignante (ex-C8 négatifs) → Absent, niveau 0. Fusion ex-C8 (engagement déontologique) + ex-C11 (transparence du positionnement) → C9 v1.3 (3 niveaux 0/5/10). À trancher entre Absent (niveau 0 = 0) et Partiel (niveau 1 = 5). [v1.2 C8 — engagement déontologique] Désaccord avec l'agent (2/4). Décision PO : une charte loi-Bloche attestée mais non publiée, jugée non contraignante (autorise la couverture des activités de l'actionnaire), sans CDJM, sans JTI, sans processus de réclamation ni politique de correction, n'est pas un engagement vérifiable par le public → négatifs, 0/4. Même principe que C9 : des garanties formelles contredites par la pratique ne sont pas des garanties. Rubrique C8 à préciser sur ce cas (charte attestée mais non publiée). [v1.2 C11 — transparence du positionnement] Accord : positionnement jamais auto-explicité (exclut niveau 2) mais rubriques opinion/débat structurellement identifiables (exclut 0). La documentation massive par des tiers (Arcom, études) ne compte pas : le critère mesure l'auto-explicitation.",
+      "decision_po": {
+        "note_at": "2026-07-18",
+        "niveau": 0,
+        "score": 0.0,
+        "motif": "Ligne jamais auto-explicitée (ex-C11) ET aucun engagement formalisé public — charte loi-Bloche attestée mais non publiée, jugée non contraignante (ex-C8 négatifs) → Absent, niveau 0."
+      }
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C10",
+      "version_methodo": "v1.3",
+      "score": 0.0,
+      "niveau": 0,
+      "origine_v12": [
+        {
+          "critere": "C9",
+          "statut": "evaluee",
+          "score": 0,
+          "niveau": 0,
+          "commentaire": "Accord avec l'agent, flag revue_humaine_requise levé par la présente revue : le doute 0 vs 1 se tranche à 0 car le niveau 1 supposerait des garanties formelles crédibles — ici documentées comme factices (final cut actionnarial revendiqué, RSF « Système B », SDJ reformée à la main de la direction, capital concentré non protecteur)."
+        }
+      ],
+      "statut": "evaluee",
+      "regle_remap": "niveaux_identiques",
+      "commentaire": "Échelle 3 niveaux identique (0/5/10) : niveau 0 conservé. [v1.2 C9 — indépendance éditoriale] Accord avec l'agent, flag revue_humaine_requise levé par la présente revue : le doute 0 vs 1 se tranche à 0 car le niveau 1 supposerait des garanties formelles crédibles — ici documentées comme factices (final cut actionnarial revendiqué, RSF « Système B », SDJ reformée à la main de la direction, capital concentré non protecteur)."
+    },
+    {
+      "media_domaine": "reporterre.net",
+      "critere": "C1",
+      "version_methodo": "v1.3",
+      "score": null,
+      "niveau": null,
+      "origine_v12": [
+        {
+          "critere": "C1",
+          "statut": "a_noter",
+          "score": null,
+          "niveau": null,
+          "commentaire": "N/A attendu (< 3 débunkages → fallback). À noter EN AVEUGLE avant le run évaluateurs."
+        }
+      ],
+      "statut": "a_noter",
+      "regle_remap": "a_noter",
+      "commentaire": "[v1.2 C1 — véracité et exactitude] N/A attendu (< 3 débunkages → fallback). À noter EN AVEUGLE avant le run évaluateurs."
+    },
+    {
+      "media_domaine": "reporterre.net",
+      "critere": "C6",
+      "version_methodo": "v1.3",
+      "score": null,
+      "niveau": null,
+      "origine_v12": [
+        {
+          "critere": "C5",
+          "statut": "a_noter",
+          "score": null,
+          "niveau": null,
+          "commentaire": "0/5/10"
+        }
+      ],
+      "statut": "a_noter",
+      "regle_remap": "a_noter",
+      "commentaire": "[v1.2 C5 — transparence propriété / financement] 0/5/10"
+    },
+    {
+      "media_domaine": "reporterre.net",
+      "critere": "C8",
+      "version_methodo": "v1.3",
+      "score": null,
+      "niveau": null,
+      "origine_v12": [
+        {
+          "critere": "C7",
+          "statut": "a_noter",
+          "score": null,
+          "niveau": null,
+          "commentaire": "0/2/4"
+        }
+      ],
+      "statut": "a_noter",
+      "regle_remap": "a_noter",
+      "commentaire": "[v1.2 C7 — séparation contenu / publicité] 0/2/4"
+    },
+    {
+      "media_domaine": "reporterre.net",
+      "critere": "C9",
+      "version_methodo": "v1.3",
+      "score": null,
+      "niveau": null,
+      "origine_v12": [
+        {
+          "critere": "C8",
+          "statut": "a_noter",
+          "score": null,
+          "niveau": null,
+          "commentaire": "0/2/4"
+        },
+        {
+          "critere": "C11",
+          "statut": "a_noter",
+          "score": null,
+          "niveau": null,
+          "commentaire": "niveau 0/1/2 → score 0/3/6"
+        }
+      ],
+      "regle_remap": "fusion_c8_c11_a_noter",
+      "statut": "a_noter",
+      "commentaire": "Fusion ex-C8 + ex-C11 → C9 (3 niveaux 0/5/10). À noter EN AVEUGLE. [v1.2 C8 — engagement déontologique] 0/2/4 [v1.2 C11 — transparence du positionnement] niveau 0/1/2 → score 0/3/6"
+    },
+    {
+      "media_domaine": "reporterre.net",
+      "critere": "C10",
+      "version_methodo": "v1.3",
+      "score": null,
+      "niveau": null,
+      "origine_v12": [
+        {
+          "critere": "C9",
+          "statut": "a_noter",
+          "score": null,
+          "niveau": null,
+          "commentaire": "niveau 0/1/2 → score 0/5/10"
+        }
+      ],
+      "statut": "a_noter",
+      "regle_remap": "a_noter",
+      "commentaire": "[v1.2 C9 — indépendance éditoriale] niveau 0/1/2 → score 0/5/10"
+    }
+  ]
+}

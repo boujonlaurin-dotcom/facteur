@@ -28,7 +28,7 @@ import asyncio
 import hashlib
 import json
 import sys
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 from uuid import UUID
 
@@ -42,9 +42,11 @@ from app.models.media_eval import (
     MediaEvalDebunkage,
     MediaEvalEvaluation,
     MediaEvalSignal,
+    MediaEvalSnapshot,
     StatutEvaluation,
 )
 from scripts.cleanup_orphan_sources import _is_test_db
+from scripts.media_eval.collect_common import require_run
 from scripts.media_eval.garde_fous import (
     detecter_jti_valide,
     fallback_c1_requis,
@@ -52,28 +54,45 @@ from scripts.media_eval.garde_fous import (
 )
 from scripts.media_eval.ingest_artifacts import IngestError, resoudre_media
 from scripts.media_eval.schemas import (
-    BAREMES,
-    CRITERES_VAGUE_1,
     FLAG_FALLBACK_C1,
     VERSION_METHODO,
+    grille,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 RUBRICS_DIR = _REPO_ROOT / "docs" / "media-eval" / "rubrics"
 DEFAULT_OUT_ROOT = _REPO_ROOT / ".context" / "media_eval"
 
+# Substance de la page jointe au signal pour que l'évaluateur voie ce que dit
+# la page (pas seulement qu'elle existe) — cf. hand-off « mini-filtre ».
+SNAPSHOT_EXTRAIT_MAX = 4000
 
-def rubrique_path(critere: str) -> Path:
-    return RUBRICS_DIR / f"{critere}.md"
+
+def rubrics_dir(version: str) -> Path:
+    """Répertoire des rubriques d'une version (v1.2 : plat ; v1.3 : sous-dossier)."""
+    return RUBRICS_DIR / "v1.3" if version == "v1.3" else RUBRICS_DIR
 
 
-def version_prompt(critere: str) -> str:
+def rubrique_path(critere: str, version: str = VERSION_METHODO) -> Path:
+    return rubrics_dir(version) / f"{critere}.md"
+
+
+def version_prompt(critere: str, version: str = VERSION_METHODO) -> str:
     """sha256 du fichier rubrique — toute retouche invalide la comparabilité."""
-    return hashlib.sha256(rubrique_path(critere).read_bytes()).hexdigest()
+    return hashlib.sha256(rubrique_path(critere, version).read_bytes()).hexdigest()
 
 
-def serialiser_signal(signal: MediaEvalSignal) -> dict:
-    return {
+def serialiser_signal(
+    signal: MediaEvalSignal, snapshot: MediaEvalSnapshot | None = None
+) -> dict:
+    """Sérialise un signal ; joint la substance du snapshot si fourni.
+
+    La voie A capture jusqu'à 20 000 caractères par page mais n'expose que
+    ``{url, detection}`` : sans le contenu, l'évaluateur voit qu'une page existe
+    sans savoir ce qu'elle dit. On joint donc un extrait (``snapshot_extrait``)
+    et l'URL (``snapshot_url``) quand le signal porte un ``snapshot_id``.
+    """
+    data = {
         "id": str(signal.id),
         "type_signal": signal.type_signal,
         "statut": signal.statut.value
@@ -86,6 +105,10 @@ def serialiser_signal(signal: MediaEvalSignal) -> dict:
         "voie": signal.voie.value if hasattr(signal.voie, "value") else signal.voie,
         "collecte_at": signal.collecte_at.isoformat() if signal.collecte_at else None,
     }
+    if snapshot is not None and signal.snapshot_id == snapshot.id:
+        data["snapshot_url"] = snapshot.url
+        data["snapshot_extrait"] = (snapshot.contenu or "")[:SNAPSHOT_EXTRAIT_MAX]
+    return data
 
 
 def construire_eval_input(
@@ -94,6 +117,8 @@ def construire_eval_input(
     signaux: list[dict],
     *,
     run_id: str,
+    date_reference: date,
+    version_methodo: str,
     bareme_verbatim: str,
     contrat_commun: str,
     version_prompt_sha: str,
@@ -104,9 +129,10 @@ def construire_eval_input(
         "media": media,
         "critere": critere,
         "run_id": run_id,
-        "version_methodo": VERSION_METHODO,
+        "date_reference": date_reference.isoformat(),
+        "version_methodo": version_methodo,
         "version_prompt": version_prompt_sha,
-        "score_max": BAREMES[critere],
+        "score_max": grille(version_methodo).baremes[critere],
         "contrat_commun": contrat_commun,
         "bareme_verbatim": bareme_verbatim,
         "pre_flags": pre_flags,
@@ -127,9 +153,23 @@ async def _signaux_du_critere(session, media_id, run_id: str, critere: str):
     return list(rows.scalars())
 
 
+async def _charger_snapshots(
+    session, signaux: list[MediaEvalSignal]
+) -> dict[UUID, MediaEvalSnapshot]:
+    """Snapshots référencés par les signaux (par id), pour joindre la substance."""
+    ids = {s.snapshot_id for s in signaux if s.snapshot_id is not None}
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(MediaEvalSnapshot).where(MediaEvalSnapshot.id.in_(ids))
+    )
+    return {snap.id: snap for snap in rows.scalars()}
+
+
 async def _nb_debunkages_frais(
-    session, media_id, run_id: str, aujourd_hui: date
+    session, media_id, run_id: str, aujourd_hui: date, version: str
 ) -> int:
+    fenetre = grille(version).fraicheur_max_jours
     rows = await session.execute(
         select(MediaEvalDebunkage.publie_at)
         .join(MediaEvalSignal, MediaEvalSignal.id == MediaEvalDebunkage.signal_id)
@@ -138,18 +178,19 @@ async def _nb_debunkages_frais(
             MediaEvalSignal.run_id == run_id,
         )
     )
-    return sum(1 for (publie_at,) in rows if (aujourd_hui - publie_at).days <= 730)
+    return sum(1 for (publie_at,) in rows if (aujourd_hui - publie_at).days <= fenetre)
 
 
 async def ecrire_eval_jti(
-    session, media_id, run_id: str, signal_jti: dict
+    session, media_id, run_id: str, signal_jti: dict, version: str = VERSION_METHODO
 ) -> MediaEvalEvaluation:
-    """Raccourci JTI : éval C8 pleine écrite par code, sans agent."""
+    """Raccourci JTI : éval C8 pleine écrite par code, sans agent (v1.2 seul)."""
+    plein = float(grille(version).baremes["C8"])
     evaluation = MediaEvalEvaluation(
         media_id=media_id,
         critere="C8",
-        score=float(BAREMES["C8"]),
-        score_max=float(BAREMES["C8"]),
+        score=plein,
+        score_max=plein,
         statut=StatutEvaluation.EVALUEE,
         justification=(
             "Certification JTI en cours de validité (raccourci automatique "
@@ -158,8 +199,8 @@ async def ecrire_eval_jti(
         signal_ids=[UUID(signal_jti["id"])],
         flags=[],
         evaluateur="code:jti_shortcut",
-        version_methodo=VERSION_METHODO,
-        version_prompt=version_prompt("C8"),
+        version_methodo=version,
+        version_prompt=version_prompt("C8", version),
         run_id=run_id,
     )
     session.add(evaluation)
@@ -183,12 +224,18 @@ async def run(
         print("\nABORT : --apply contre une DB non-test sans --allow-prod (gated PO).")
         return 2
 
-    aujourd_hui = datetime.now(UTC).date()
-    contrat_commun = (RUBRICS_DIR / "_common.md").read_text()
     out_dir = out_root / run_id / "eval_inputs"
 
     async with async_session_maker() as session:
         try:
+            # date_reference du run pilote la fraîcheur (jamais now()) : un run
+            # rejoué plus tard produit les mêmes entrées évaluateur.
+            run_row = await require_run(session, run_id)
+            aujourd_hui = run_row.date_reference
+            version = run_row.version_methodo
+            grille_run = grille(version)  # lève si version inconnue
+            contrat_commun = (rubrics_dir(version) / "_common.md").read_text()
+            print(f"date_reference : {aujourd_hui.isoformat()} · methodo {version}")
             media = await resoudre_media(session, domaine)
             media_dict = {
                 "nom": media.nom,
@@ -199,22 +246,26 @@ async def run(
             }
 
             nb_debunkages = await _nb_debunkages_frais(
-                session, media.id, run_id, aujourd_hui
+                session, media.id, run_id, aujourd_hui, version
             )
             ecrits: list[Path] = []
             jti_applique = False
 
-            for critere in CRITERES_VAGUE_1:
+            for critere in grille_run.criteres_vague_1:
                 rows = await _signaux_du_critere(session, media.id, run_id, critere)
-                signaux = [serialiser_signal(s) for s in rows]
-                frais, exclus = filtrer_fraicheur(signaux, aujourd_hui)
+                snaps = await _charger_snapshots(session, rows)
+                signaux = [serialiser_signal(s, snaps.get(s.snapshot_id)) for s in rows]
+                frais, exclus = filtrer_fraicheur(signaux, aujourd_hui, version)
                 for s in exclus:
                     print(
                         f"  ! {critere}: signal {s['type_signal']} exclu "
-                        f"(fraîcheur > 730 j ou date manquante)"
+                        f"(fraîcheur > {grille_run.fraicheur_max_jours} j "
+                        "ou date manquante)"
                     )
 
-                if critere == "C8":
+                # Raccourci JTI = v1.2 uniquement (C8 = engagement déontologique).
+                # En v1.3, JTI est un signal du C9 fusionné (pas de raccourci).
+                if version == "v1.2" and critere == "C8":
                     signal_jti = detecter_jti_valide(frais)
                     if signal_jti is not None:
                         print(
@@ -222,7 +273,9 @@ async def run(
                             "code:jti_shortcut (pas d'agent)"
                         )
                         if apply:
-                            await ecrire_eval_jti(session, media.id, run_id, signal_jti)
+                            await ecrire_eval_jti(
+                                session, media.id, run_id, signal_jti, version
+                            )
                             jti_applique = True
                         else:
                             print("    (dry-run — éval C8 non écrite)")
@@ -241,9 +294,11 @@ async def run(
                     critere,
                     frais,
                     run_id=run_id,
-                    bareme_verbatim=rubrique_path(critere).read_text(),
+                    date_reference=aujourd_hui,
+                    version_methodo=version,
+                    bareme_verbatim=rubrique_path(critere, version).read_text(),
                     contrat_commun=contrat_commun,
-                    version_prompt_sha=version_prompt(critere),
+                    version_prompt_sha=version_prompt(critere, version),
                     pre_flags=pre_flags,
                 )
                 out_dir.mkdir(parents=True, exist_ok=True)

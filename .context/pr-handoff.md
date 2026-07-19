@@ -1,81 +1,85 @@
-## Lettre du jour — timeline en overlay + ajustements PO (rewind page lettre, mode serein, simplification)
+# feat(media-eval): collecte vague 1 + orchestration + rapport (PR 2)
 
-Finalisation de l'EPIC « Lettre du jour ». Deux blocs :
+Complète la pipeline media-eval de bout en bout par-dessus les fondations
+PR 1 (#944) : **6 collecteurs voie A** (code → DB), **3 sous-agents** (2
+collecteurs web voie B + 1 évaluateur sans web), **1 commande d'orchestration**
+(`/media-eval-run`), et l'outillage de **run pilote** (golden gate, export,
+rapport avec verdict V0). Le run pilote `pilote-2026-07` lui-même est en
+hand-off (accès réseau réel + `PAPPERS_API_TOKEN` + notation humaine en aveugle
++ `--allow-prod`).
 
-1. **Refonte timeline en overlay** : le **strip horizontal de pills** (permanent,
-   au-dessus de l'Essentiel, dupliqué live + passé) est remplacé par un **bouton
-   « rewind » compact** dans l'en-tête de la carte Essentiel, qui ouvre une
-   **timeline en feuille du bas** avec un signal **lu / non-lu** honnête (réutilise
-   la feature streaks, zéro back-end).
-2. **4 ajustements PO** (avant ship) : simplification de la feature + rééquilibrage
-   des points d'entrée + extension du rewind et d'un CTA serein à la page **Lettre
-   du jour** (le rituel matinal), jusqu'ici dépourvue de ces affordances.
+## Bug latent PR 1 réparé
+La FK `media_eval_signaux.run_id → media_eval_runs.run_id` n'était jamais
+satisfaite (aucun run créé) ; les tests PR 1 passaient sur un conteneur test
+« sale ». Réparé par le fixture `run_test` (conftest mutualisé) + `create_run.py`.
+`build_eval_input` calait aussi la fraîcheur sur `now()` au lieu de
+`MediaEvalRun.date_reference` (rejouabilité cassée) — corrigé via `require_run()`.
 
-### Bloc 1 — timeline overlay
+## Contenu
+- **`collect_common.py`** : fetch httpx + repli curl_cffi (ne lève jamais),
+  `require_run`, `Collecteur` (dédupe applicative + validation Pydantic), dédupe
+  voie A préfixée `code|` (D2), harnais CLI `run_cli`.
+- **6 collecteurs** : `collect_{pages_types,cdjm,jti,cppap,pappers,arcom}.py`
+  (fonctions `parse_*` pures + `collecter` async, fixtures figées, zéro réseau
+  en test). ARCOM auto-désactivé hors audiovisuel ; Pappers dégrade en 3
+  `bloque_acces` si token absent (exit 0).
+- **`create_run.py`** (D1), patchs moteur : `ingest_artifacts` (D6 voie
+  `humain:`, `collecte_at`, `version_prompt_collecteur`),
+  `evaluate_golden_agreement --out-dir`, `build_eval_input` (date_reference),
+  `.gitignore` (`.context/`).
+- **`export_evaluations.py`** + **`rapport_pilote.py`** (D7) : unique collecte DB
+  (`collecter_donnees_rapport`) → **deux rendus** — `.md` ASCII git-diffable +
+  **`.html` propre autonome** (lentille propreté data `evaluer_proprete_donnees`
+  : trou d'accès vs absence confirmée ; `render_html` single-file CSS inline
+  calqué sur le design system media-eval ; verdict V0).
+- **`.claude/agents/media-eval-{collecteur-debunkages,evaluateur}.md`** +
+  agents gouvernance (voir PR 2b) + **`.claude/commands/media-eval-run.md`** +
+  `golden/gold_v0.template.json`.
 
-- **Nouveau** `widgets/edition_timeline_sheet.dart` : `EditionTimelineSheet.show`
-  (calqué sur `manage_favorites_sheet`, scrim chaud, pas de `useRootNavigator`),
-  `_DayRow` (icône + libellé + méta + pastille), `EditionRewindTrigger`.
-- **Nouveau** `providers/edition_read_status_provider.dart` :
-  `editionReadStatusProvider` (union streaks `opened` ∪ set local) +
-  `editionCaughtUpProvider` (SharedPreferences, additif). Dégradation gracieuse :
-  streaks off/loading/error ⇒ aucun statut affiché.
-- **Modifié** `essentiel_hi_fi_card.dart` : `_Header` reçoit le déclencheur rewind.
-- **Modifié** `flux_continu_screen.dart` : retrait des 2 strips ; `ref.listen`
-  marquant un jour « rattrapé » quand une édition passée se charge ; action
-  « Choisir un autre jour » dans l'état vide (anti-cul-de-sac).
-- **Déplacé** `editionPillLabel` → `selected_edition_date_provider.dart`
-  (co-localisé avec `EditionSelection`/`editionPillModel`).
-- **Supprimé** `widgets/edition_date_strip.dart` (+ son test).
+## PR 2b — corrections collecte (diagnostic du run pilote initial)
 
-### Bloc 2 — ajustements PO
+Le run pilote cnews.fr a révélé des **faux positifs voie A** et une substance
+capturée mais jamais exposée. Corrections incluses dans cette PR :
 
-- **Point 1 — rewind réduit à 3 options** : `kEditionMaxPastDays` 7 → **1**
-  (`selected_edition_date_provider.dart`). `editionPillModel()` ⇒
-  `[Cette semaine, Aujourd'hui, Hier]` ; la timeline et le pill se réduisent
-  automatiquement. **« Cette semaine » inchangé** (agrège toujours J-0…J-6 via la
-  constante distincte `kEditionWeekPastDays`). **Aucun rollback back-end** : la
-  garde « édition passée » de `digest_service.py` reste nécessaire (Hier + fan-out
-  hebdo).
-- **Point 2 — retrait du bouton « personnaliser » + grossir « GÉRER »** : le bouton
-  perso de la carte Essentiel est **retiré partout** (today ET lettre passée). Point
-  d'entrée préférences **unique** = l'inline « GÉRER » de `MyInterestsIntro`, rendu
-  plus visible (libellé 11→13 px, fond accent doux au lieu d'un simple contour).
-  Nettoyage : suppression du widget `_PersonalizeButton` + du param `onTapPersonalize`
-  (`essentiel_hi_fi_card.dart`) et du param mort `interactive` (`section_block.dart`,
-  call-site `flux_continu_screen.dart`).
-- **Point 3 — rewind sur la page Lettre du jour (swipe horizontal riche)**
-  (`morning_ritual_screen.dart`) : glisser la lettre du jour vers la **droite**
-  révèle une carte « Hier » décorative parquée hors-écran gauche (liseré ~24 px au
-  repos = nudge) ; commit (seuil 30 % ou fling) → sélectionne `EditionPastDay(hier)`
-  + route vers le feed en lecture seule. Coexiste avec le swipe-up existant (arène de
-  gestes H/V). Repli accessible : trigger « Remonter le temps » (ouvre la timeline).
-  `reduceMotion` → carte statique.
-- **Point 4 — CTA « mode serein »** : `_SereinCta` (ConsumerWidget privé) sous le
-  bloc rewind, copie « Pas d'humeur pour les news difficiles ? » + bouton « Active ton
-  mode serein » → `sereinToggleProvider.toggle()` (persiste + haptique) + snackbar de
-  confirmation ; désactivé tant que `state.isLoading`.
+- **Anti soft-404 + filtre lexical** (`collect_pages_types.py`) : `present`
+  seulement si le texte ≠ home (hash/similarité) **et** porte les marqueurs
+  lexicaux du type ; pénalité anti-flux (dons/régie servis en fils d'articles).
+  ⇒ les faux `present` C8/charte, C11/ligne-éditoriale, C7/régie,
+  C5/transparence deviennent `absent_verifie` (test de non-régression cnews).
+- **Substance exposée** (`build_eval_input.py`) : `serialiser_signal` joint
+  `snapshot_extrait` (~4 000 c) + `snapshot_url` quand le signal a un `snapshot_id`.
+- **`export_snapshots.py`** (nouveau) : dump des snapshots vers
+  `.context/media_eval/<run_id>/snapshots/*.txt`, lus par la voie B (anti-403).
+- **Pappers** : SIREN cnews.fr corrigé (SESI SNC **412 916 215**, éditeur du
+  site) + **repli gratuit** `recherche-entreprises.api.gouv.fr` sans token
+  (identification `present`, actionnariat `partiel`) au lieu de 3 `bloque_acces` ;
+  pré-vol token dans le healthcheck + `/media-eval-run` §0.
+- **CPPAP** : dataset réel confirmé (`liste-des-publications-de-presse`, Explore
+  v2.1, champs `titre`/`ndeg_cppap`) + repli voie C documenté.
+- **Couverture** (`ingest_artifacts.py`) : WARNING listant les `type_signal`
+  gouvernance sans signal (anti-passivité).
+- **Agents gouvernance découpés en 2** (`gouvernance-transparence` C5+C7,
+  `gouvernance-independance` C8+C9+C11) : lisent les snapshots exportés, couvrent
+  tout leur registre ; politique de mort d'agent + support antenne/site portés
+  dans la commande et les prompts.
 
-### Tests
-- `flutter analyze` : **0 issue** sur les fichiers touchés.
-- MAJ/nouveaux : `selected_edition_date_provider_test` (pills 9→3),
-  `edition_timeline_sheet_test` (3 lignes), `essentiel_hi_fi_card_test` (bouton perso
-  retiré), `morning_ritual_content_test` (ProviderScope + serein CTA + trigger),
-  `edition_read_status_provider_test` (fixtures découplées de `kEditionMaxPastDays`).
-- Suite `test/features/flux_continu/` : **354 verts, 1 échec pré-existant et non lié**
-  (`flux_continu_provider_test` « 10 favorites cap » — cap déjà bumpé à 13 en amont).
+> **Non inclus** (attend le re-run corrigé `pilote-2026-07b` + GOLD GATE) :
+> `docs/media-eval/fiches/cnews_fr_pilote-2026-07.md` (fiche du run buggé, à
+> régénérer) et les artefacts `.context/` du run.
 
-### Validation web (Playwright)
-- QA handoff prêt (`.context/qa-handoff.md`) pour `/validate-feature` (4 scénarios PO :
-  timeline 3 options, carte sans bouton perso + « GÉRER » plus grand, page Lettre du
-  jour rewind, CTA serein). **Le swipe horizontal de la page Lettre du jour est validé
-  par `flutter analyze` + Playwright** (pas de test widget plein-écran : le rituel monte
-  des providers réseau/streak/profil ; le geste reprend le pattern éprouvé du swipe-up,
-  lui-même couvert au niveau `MorningRitualContent` + QA, non par un test d'écran).
+## Décisions de design D1–D7
+D1 création de run explicite (refus mutation `date_reference`) · D2 dédupe voie
+A préfixée `code|` (coexiste avec la voie B) · D3 évaluateur Read-only (réponse
+= JSON) · D4 GOLD GATE anti-contamination + preuve horodatage · D5 CPPAP open
+data (jamais le form POST) · D6 voie dérivée du préfixe `humain:` · D7 rapport
+généré par script (chiffres auditables).
 
-### Risque / migration
-- **Aucun** changement back-end, **aucune** migration Alembic.
+## Tests
+- **191 tests** `tests/scripts/media_eval` verts sur DB propre (dont
+  non-régression cnews soft-404/flux, repli Pappers gratuit, snapshot_extrait,
+  couverture voie B), ruff clean (check + format).
+- Smoke offline validé (create_run → seed → ingest → build_eval_input →
+  ingest_evaluations → synthese → export → rapport).
+- Pas de nouvelle migration (dédupe snapshots applicative) — `alembic heads` = 1.
 
-### Hors scope (suivi)
-- Audit « santé des streaks » (frontière de jour / sémantique `opened`) :
-  `.context/streaks-health-handoff.md` (read-only, ne bloque pas cette PR).
+Pas d'entrée changelog (outillage interne).
