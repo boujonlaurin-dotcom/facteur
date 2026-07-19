@@ -27,14 +27,24 @@ class WaitlistService:
         utm_source: str | None = None,
         utm_medium: str | None = None,
         utm_campaign: str | None = None,
+        motivation: str | None = None,
+        methode_complete: bool | None = None,
     ) -> bool:
-        """Register email. Returns True if new, False if already exists."""
+        """Register email. Returns True if new, False if already exists.
+
+        Sur doublon, si des champs « comité de revue » sont fournis, ils sont
+        mis à jour sur la ligne existante : un inscrit waitlist peut rejoindre
+        le comité plus tard sans créer de doublon.
+        """
+        normalized = email.lower().strip()
         entry = WaitlistEntry(
-            email=email.lower().strip(),
+            email=normalized,
             source=source,
             utm_source=utm_source,
             utm_medium=utm_medium,
             utm_campaign=utm_campaign,
+            motivation=motivation,
+            methode_complete=methode_complete,
         )
         try:
             self.db.add(entry)
@@ -46,10 +56,27 @@ class WaitlistService:
                 utm_source=utm_source,
                 utm_medium=utm_medium,
                 utm_campaign=utm_campaign,
+                methode_complete=methode_complete,
             )
             return True
         except IntegrityError:
             await self.db.rollback()
+            if motivation is not None or methode_complete:
+                result = await self.db.execute(
+                    select(WaitlistEntry).where(WaitlistEntry.email == normalized)
+                )
+                existing = result.scalar_one_or_none()
+                if existing:
+                    if motivation is not None:
+                        existing.motivation = motivation
+                    if methode_complete:
+                        existing.methode_complete = True
+                    await self.db.commit()
+                    logger.info(
+                        "waitlist_comite_updated",
+                        email=email,
+                        methode_complete=methode_complete,
+                    )
             logger.info("waitlist_duplicate", email=email)
             return False
 

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/models/digest_models.dart';
@@ -120,16 +121,17 @@ FeedThemeSection _sourceSection({
   );
 }
 
-/// Finder du chevron de navigation, désormais rendu comme **icône** Phosphor
-/// (`caretRight` fill — trait plein, plus épais que bold) en WidgetSpan dans le
-/// titre du banner — le glyphe texte « > » historique héritait d'une baseline
-/// décalée (cf. section_banner.dart).
-Finder _chevron() =>
-    find.byIcon(PhosphorIcons.caretRight(PhosphorIconsStyle.fill));
+/// Finder du chevron de navigation, rendu comme glyphe texte « > » (WidgetSpan)
+/// dans le style du titre (Fraunces, agrandi) → continuité actionnable du titre
+/// (cf. section_banner.dart).
+Finder _chevron() => find.text('>');
 
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
+    // Les cartes sont enveloppées d'un VisibilityDetector (nudge auto-grow) —
+    // sans intervalle nul, son timer interne reste pendant au teardown du test.
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });
 
   group('SectionBlock — section source (PR Sources dans la Tournée)', () {

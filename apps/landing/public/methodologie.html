@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facteur · Méthodologie d'évaluation des médias</title>
+    <meta name="description"
+        content="Comment Facteur évalue la fiabilité des médias : 3 axes, 10 critères, 100 points, une note de A à E. Une méthode ouverte, reproductible et critiquable, publiée sous licence libre.">
+    <meta property="og:title" content="Facteur · Méthodologie d'évaluation des médias">
+    <meta property="og:description"
+        content="3 axes, 10 critères, 100 points, une note de A à E. Une méthode ouverte, reproductible et critiquable, publiée sous licence libre.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://facteur.app/methodologie">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://facteur.app/methodologie">
+
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=DM+Sans:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+
+    <style>
+    :root{
+      --font-serif:'Fraunces',Georgia,serif;
+      --font-sans:'DM Sans',system-ui,-apple-system,sans-serif;
+      --font-mono:'Courier Prime','Courier New',monospace;
+      --acc:#d4652a;
+      --acc-ink:color-mix(in srgb,var(--acc) 78%,black)
+    }
+    html{scroll-behavior:smooth;overflow-x:clip}
+    body{margin:0;background:#faf8f5;color:#2C2A29;font-family:var(--font-sans);-webkit-font-smoothing:antialiased}
+    a{color:var(--acc-ink)}a:hover{color:color-mix(in srgb,var(--acc) 60%,black)}
+    a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+    ::selection{background:color-mix(in srgb,var(--acc) 22%,transparent)}
+    .btn-outline:hover{background:color-mix(in srgb,var(--acc) 10%,transparent)}
+    .field:focus{border-color:var(--acc);outline:none;background:#fff}
+    .btn-submit:hover{opacity:0.92}
+    .btn-submit:disabled{opacity:0.6;cursor:default}
+    [hidden]{display:none!important}
+    [data-body]{overflow:hidden}
+    [data-crit]{margin-bottom:14px}
+    [data-crit][data-last]{margin-bottom:0}
+    html[data-scrollfx] [data-axis]{opacity:0.6;transition:opacity 760ms cubic-bezier(0.33,0.05,0.2,1)}
+    html[data-scrollfx] [data-axis][data-active]{opacity:1}
+    html[data-scrollfx] [data-crit]{opacity:0;transform:translateY(20px) scale(0.992);transform-origin:center top;transition:opacity 820ms cubic-bezier(0.33,0.05,0.2,1),transform 820ms cubic-bezier(0.33,0.05,0.2,1),box-shadow 620ms ease;margin-bottom:12vh}
+    html[data-scrollfx] [data-crit][data-last]{margin-bottom:4vh}
+    html[data-scrollfx] [data-crit][data-in]{opacity:0.66;transform:translateY(0) scale(0.992)}
+    html[data-scrollfx] [data-crit][data-in][data-focus]{opacity:1;transform:translateY(0) scale(1.012);box-shadow:0 18px 46px rgba(44,42,41,0.13)}
+    html[data-scrollfx] [data-body]{max-height:0;opacity:0;padding-top:0!important;padding-bottom:0!important;border-top-color:transparent!important;transition:max-height 780ms cubic-bezier(0.33,0.05,0.2,1),opacity 520ms ease,padding 620ms ease,border-top-color 500ms ease}
+    html[data-scrollfx] [data-crit][data-focus] [data-body]{max-height:900px;opacity:1;padding-top:14px!important;padding-bottom:18px!important;border-top-color:#eadfce!important;transition:max-height 820ms cubic-bezier(0.33,0.05,0.2,1) 120ms,opacity 620ms ease 220ms,padding 640ms ease 120ms,border-top-color 460ms ease 120ms}
+    [data-hl]{font-weight:400;color:#6f6a67;transition:font-weight 400ms ease,color 620ms cubic-bezier(0.33,0.05,0.2,1)}
+    html:not([data-scrollfx]) [data-hl]{font-weight:700;color:#2C2A29}
+    html[data-scrollfx] [data-crit][data-focus] [data-hl]{font-weight:700;color:#2C2A29}
+    html[data-scrollfx] [data-crit][data-focus] [data-hl]:nth-of-type(2){transition-delay:200ms}
+    html[data-scrollfx] [data-crit][data-focus] [data-hl]:nth-of-type(3){transition-delay:400ms}
+    html[data-scrollfx] [data-step]{opacity:0.32;transform:translateY(16px);transition:opacity 820ms cubic-bezier(0.33,0.05,0.2,1),transform 820ms cubic-bezier(0.33,0.05,0.2,1)}
+    html[data-scrollfx] [data-step][data-in]{opacity:0.55;transform:translateY(0)}
+    html[data-scrollfx] [data-step][data-in][data-focus]{opacity:1}
+    @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}html[data-scrollfx] [data-axis],html[data-scrollfx] [data-crit],html[data-scrollfx] [data-step]{opacity:1;transform:none;margin-bottom:14px}}
+    [data-signals]{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:14px;line-height:1.45}
+    [data-signals] li{display:flex;align-items:flex-start;gap:8px}
+    [data-signals] li i{font-size:13px;color:var(--acc-ink);flex:none;margin-top:3px}
+    .pillar-bar--sub{width:64%}
+    @media (max-width:480px){.pillar-bar--sub{width:100%}}
+    </style>
+</head>
+
+<body>
+
+<nav style="position:sticky;top:0;z-index:50;background:rgba(250,248,245,0.96);border-bottom:1px solid #eadfce">
+  <div style="max-width:1080px;margin:0 auto;padding:11px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <a href="/" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:#2C2A29">
+      <span aria-hidden="true" style="color:var(--acc-ink);font-size:17px;line-height:1">←</span>
+      <img src="favicon.png" alt="Logo Facteur" style="width:26px;height:26px;border-radius:7px;display:block">
+      <span style="font-family:var(--font-serif);font-weight:700;letter-spacing:-0.5px;font-size:19px">Facteur</span>
+    </a>
+    <a href="#comite" class="btn-outline" style="display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-weight:600;font-size:13.5px;color:var(--acc-ink);border:1.5px solid var(--acc);border-radius:100px;padding:7px 14px;transition:background 150ms">Rejoindre le comité</a>
+  </div>
+</nav>
+
+<header id="hero" style="max-width:1080px;margin:0 auto;padding:clamp(48px,7vw,84px) 20px 8px">
+  <div style="max-width:760px;margin:0 auto;text-align:center;display:grid;gap:16px;justify-items:center">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px 12px">
+      <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 60%,transparent);border-radius:4px;padding:4px 10px;transform:rotate(-2deg)">Méthodologie · v1.3</span>
+      <span style="display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:#fff;background:var(--acc-ink);border-radius:4px;padding:4px 10px;transform:rotate(2deg)"><i class="ph ph-copyleft" aria-hidden="true" style="font-size:15px"></i>Licence libre</span>
+    </div>
+    <h1 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(30px,5.2vw,46px);line-height:1.12;letter-spacing:-1px">Comment nous évaluons la fiabilité des médias</h1>
+    <p style="margin:0;font-size:clamp(16px,2.2vw,18.5px);line-height:1.55;color:#5D5B5A;max-width:560px">Une méthode ouverte, reproductible et critiquable, publiée sous licence libre.</p>
+  </div>
+
+  <div style="margin:clamp(32px,5vw,52px) auto 0;background:#fff;border-radius:20px;box-shadow:0 2px 4px rgba(0,0,0,0.08);padding:clamp(20px,4vw,40px)">
+    <div style="display:flex;flex-wrap:wrap;gap:clamp(16px,3vw,30px);align-items:center;justify-content:center">
+      <div style="flex:1 1 340px;max-width:470px;display:flex;flex-direction:column;gap:12px">
+        <div style="width:100%;background:color-mix(in srgb,var(--acc) 16%,white);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px">
+          <span aria-hidden="true" style="width:46px;height:46px;border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;flex:none"><i class="ph ph-seal-check" style="font-size:26px;color:var(--acc-ink)"></i></span>
+          <span style="flex:1;min-width:0;display:grid;gap:2px">
+            <span style="font-weight:700;font-size:16.5px;line-height:1.25">Rigueur informationnelle</span>
+            <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.5px;color:#5D5B5A">5 critères · C1–C5</span>
+          </span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap;flex:none">60<span style="font-size:12px;font-weight:700"> pts</span></span>
+        </div>
+        <div class="pillar-bar--sub" style="background:color-mix(in srgb,var(--acc) 10%,white);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px">
+          <span aria-hidden="true" style="width:46px;height:46px;border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;flex:none"><i class="ph ph-eye" style="font-size:26px;color:var(--acc-ink)"></i></span>
+          <span style="flex:1;min-width:0;display:grid;gap:2px">
+            <span style="font-weight:700;font-size:16.5px;line-height:1.25">Transparence</span>
+            <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.5px;color:#5D5B5A">3 critères · C6–C8</span>
+          </span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap;flex:none">20<span style="font-size:12px;font-weight:700"> pts</span></span>
+        </div>
+        <div class="pillar-bar--sub" style="background:color-mix(in srgb,var(--acc) 6%,white);border-radius:14px;padding:16px 18px;display:flex;align-items:center;gap:14px">
+          <span aria-hidden="true" style="width:46px;height:46px;border-radius:12px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;flex:none"><i class="ph ph-scales" style="font-size:26px;color:var(--acc-ink)"></i></span>
+          <span style="flex:1;min-width:0;display:grid;gap:2px">
+            <span style="font-weight:700;font-size:16.5px;line-height:1.25">Indépendance et engagements</span>
+            <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.5px;color:#5D5B5A">2 critères · C9–C10</span>
+          </span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:21px;color:var(--acc-ink);white-space:nowrap;flex:none">20<span style="font-size:12px;font-weight:700"> pts</span></span>
+        </div>
+      </div>
+      <div aria-hidden="true" style="display:flex;align-items:center"><i class="ph-bold ph-arrow-right" style="font-size:22px;color:#c9b797"></i></div>
+      <div style="width:132px;height:132px;border:2px solid var(--acc);border-radius:999px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transform:rotate(-6deg);flex:none">
+        <span style="font-family:var(--font-mono);font-weight:700;font-size:38px;line-height:1;color:var(--acc-ink)">100</span>
+        <span style="font-family:var(--font-mono);font-weight:700;font-size:11px;letter-spacing:3px;color:var(--acc-ink)">POINTS</span>
+      </div>
+      <div aria-hidden="true" style="display:flex;align-items:center"><i class="ph-bold ph-arrow-right" style="font-size:22px;color:#c9b797"></i></div>
+      <div style="display:flex;flex-direction:column;gap:6px;flex:none">
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:16px;background:var(--acc-ink);color:#fff">A</span><span style="font-family:var(--font-mono);font-size:12px;color:#5D5B5A">80 à 100</span></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:16px;background:var(--acc);color:#fff">B</span><span style="font-family:var(--font-mono);font-size:12px;color:#5D5B5A">60 à 79</span></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:16px;background:color-mix(in srgb,var(--acc) 50%,white);color:#2C2A29">C</span><span style="font-family:var(--font-mono);font-size:12px;color:#5D5B5A">40 à 59</span></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:16px;background:color-mix(in srgb,var(--acc) 28%,white);color:#2C2A29">D</span><span style="font-family:var(--font-mono);font-size:12px;color:#5D5B5A">20 à 39</span></div>
+        <div style="display:flex;align-items:center;gap:10px"><span style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:16px;background:color-mix(in srgb,var(--acc) 13%,white);color:#2C2A29">E</span><span style="font-family:var(--font-mono);font-size:12px;color:#5D5B5A">0 à 19</span></div>
+      </div>
+    </div>
+    <p style="margin:22px 0 0;text-align:center;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#959392">3 axes · 10 critères · 100 points · une note de A à E</p>
+  </div>
+
+  <p style="margin:20px auto 0;text-align:center;font-size:13px;line-height:1.6;color:#959392">Fenêtre d'observation de 90 jours&nbsp;· droit de réponse de 21 jours&nbsp;· méthode sous licence libre</p>
+</header>
+
+<section id="grille" style="max-width:1080px;margin:0 auto;padding:clamp(88px,11vw,128px) 20px 0;scroll-margin-top:96px">
+  <div style="max-width:700px;display:grid;gap:12px">
+    <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)">La grille</span>
+    <h2 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(26px,4vw,36px);line-height:1.15;letter-spacing:-0.5px">Ce qu'on regarde, chez un média</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#5D5B5A">Trois axes, pondérés selon leur poids dans la fiabilité&nbsp;: rigueur (60 pts), transparence (20 points) et indépendance (20 points).</p>
+  </div>
+
+  <div data-axis="1" style="margin-top:56px;padding-top:24px;border-top:2px solid var(--acc);display:grid;gap:13px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:9px;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)"><i class="ph ph-seal-check" aria-hidden="true" style="font-size:19px"></i>Axe 1 / 3</span>
+      <span style="display:inline-flex;align-items:baseline;gap:7px"><span style="font-family:var(--font-mono);font-weight:700;font-size:clamp(24px,3.5vw,30px);line-height:1;color:var(--acc-ink)">60</span><span style="font-family:var(--font-mono);font-weight:700;font-size:11.5px;letter-spacing:1.5px;text-transform:uppercase;color:#959392">points · C1–C5</span></span>
+    </div>
+    <h3 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(28px,4.6vw,42px);line-height:1.08;letter-spacing:-0.6px">Rigueur informationnelle</h3>
+    <p style="margin:0;max-width:660px;font-size:16px;line-height:1.55;color:#5D5B5A">Le média fabrique-t-il une information exacte, sourcée, corrigée dès qu'il se trompe, et ouverte à d'autres voix&nbsp;?</p>
+  </div>
+  <div style="margin-top:26px;max-width:780px;display:grid">
+    <div data-crit style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C1</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Garantir l'exactitude</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">20 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">Le média publie-t-il des informations fausses de manière répétée&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Véracité et exactitude</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Mesure la <span data-hl>rareté des manquements avérés</span>, établie à partir de vérifications produites par des <span data-hl>tiers indépendants</span> et lue à l'aune de la <span data-hl>visibilité réelle</span> du média.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">Fact-checkers, ou 5 articles</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Débunkages IFCN</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Condamnations judiciaires définitives</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Avis défavorables du CDJM</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div data-crit style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C2</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Citer ses sources</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">15 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">D'où vient l'info, et peut-on le vérifier&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Sourçage et vérification</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Le média <span data-hl>cite ses sources</span> régulièrement, les croise, et distingue <span data-hl>faits établis et allégations</span>.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">20–40 articles</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Sources nommées et cliquables</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>≥ 2 sources indépendantes par article</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Formulations prudentes si non confirmé</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div data-crit style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C3</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Corriger ses erreurs</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">10 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">Que se passe-t-il quand le média se trompe&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Correction des erreurs</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Existence d'un <span data-hl>processus identifiable</span> pour corriger les erreurs de façon <span data-hl>visible et rapide</span>.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">Pages corrections du site</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Page corrections / errata accessible</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Mentions «&nbsp;Correction&nbsp;» datées</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Canal public de signalement d'erreur</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div data-crit style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C4</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Séparer faits et opinions</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">5 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">Sait-on quand on lit un fait et quand on lit un avis&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Distinction information / opinion d'auteur</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Le <span data-hl>contenu factuel</span> est clairement distingué du contenu d'opinion d'auteur (<span data-hl>tribunes, éditos, chroniques</span>).</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">15–25 articles mixtes</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Labels «&nbsp;Tribune&nbsp;», «&nbsp;Édito&nbsp;»...</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Pas de jugement non attribué</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Titres sans dramatisation</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div data-crit data-last style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C5</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Recouper les angles</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">10 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">Sur les sujets qui divisent, entend-on plusieurs points de vue&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Diversité des perspectives</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Sur les sujets de controverse ou d'importance publique, le média présente plusieurs <span data-hl>points de vue significatifs</span> et les traite <span data-hl>avec équité</span>.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">10–20 articles controversés</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Contradicteurs sollicités</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Espace et ton équitables entre perspectives</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Sujets contrariant la ligne éditoriale</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div data-axis="2" style="margin-top:18px;padding-top:24px;border-top:2px solid var(--acc);display:grid;gap:13px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:9px;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)"><i class="ph ph-eye" aria-hidden="true" style="font-size:19px"></i>Axe 2 / 3</span>
+      <span style="display:inline-flex;align-items:baseline;gap:7px"><span style="font-family:var(--font-mono);font-weight:700;font-size:clamp(24px,3.5vw,30px);line-height:1;color:var(--acc-ink)">20</span><span style="font-family:var(--font-mono);font-weight:700;font-size:11.5px;letter-spacing:1.5px;text-transform:uppercase;color:#959392">points · C6–C8</span></span>
+    </div>
+    <h3 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(28px,4.6vw,42px);line-height:1.08;letter-spacing:-0.6px">Transparence</h3>
+    <p style="margin:0;max-width:660px;font-size:16px;line-height:1.55;color:#5D5B5A">Sait-on qui informe, qui possède le média et le finance&nbsp;?</p>
+  </div>
+  <div style="margin-top:26px;max-width:780px;display:grid">
+    <div data-crit style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C6</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Dire qui possède et finance</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">10 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">Sait-on qui est derrière le média et d'où vient l'argent&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Transparence de la propriété et du financement</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Le média indique clairement qui <span data-hl>le possède, le finance</span>, ses éventuels conflits d'intérêts et son <span data-hl>modèle de revenus</span>.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">Site + rapports financiers</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Page «&nbsp;Qui sommes-nous&nbsp;»</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Sources de financement décrites</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Déclaration de conflits d'intérêts</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div data-crit style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C7</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Signer ses articles</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">6 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">Qui écrit, et peut-on savoir qui c'est&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Identification des auteurs</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Les articles sont signés par des <span data-hl>auteurs identifiables</span>, avec un <span data-hl>profil accessible</span>.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">Articles de C2</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Signatures systématiques (nom complet)</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Pages biographiques des journalistes</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Statut indiqué (permanent, pigiste...)</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div data-crit data-last style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C8</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Distinguer pub et contenu</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">4 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">La publicité peut-elle se faire passer pour un article&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Séparation contenu / publicité</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Tout <span data-hl>contenu sponsorisé</span> ou commandité est <span data-hl>clairement identifié</span> et séparé de l'éditorial.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">Navigation du site</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Labels «&nbsp;Sponsorisé&nbsp;» explicites</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Pas de native advertising déguisé</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Politique publicitaire publiée</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div data-axis="3" style="margin-top:18px;padding-top:24px;border-top:2px solid var(--acc);display:grid;gap:13px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+      <span style="display:inline-flex;align-items:center;gap:9px;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)"><i class="ph ph-scales" aria-hidden="true" style="font-size:19px"></i>Axe 3 / 3</span>
+      <span style="display:inline-flex;align-items:baseline;gap:7px"><span style="font-family:var(--font-mono);font-weight:700;font-size:clamp(24px,3.5vw,30px);line-height:1;color:var(--acc-ink)">20</span><span style="font-family:var(--font-mono);font-weight:700;font-size:11.5px;letter-spacing:1.5px;text-transform:uppercase;color:#959392">points · C9–C10</span></span>
+    </div>
+    <h3 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(28px,4.6vw,42px);line-height:1.08;letter-spacing:-0.6px">Indépendance et engagements</h3>
+    <p style="margin:0;max-width:660px;font-size:16px;line-height:1.55;color:#5D5B5A">La rédaction est-elle à l'abri des pressions, et affiche-t-elle ses engagements déontologiques&nbsp;?</p>
+  </div>
+  <div style="margin-top:26px;max-width:780px;display:grid">
+    <div data-crit style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C9</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Afficher ses engagements</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">10 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">Le média dit-il depuis quelle grille de lecture il informe&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Engagement déontologique et transparence éditoriale</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55">Adhésion à des <span data-hl>instances de régulation</span> et/ou <span data-hl>charte éditoriale publique</span> explicitant les engagements et la ligne. Le critère mesure la formalisation publique du positionnement, <span data-hl>jamais son contenu</span> (gauche, droite...).</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">Chartes et registres</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Charte éditoriale ou déontologique publique</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Adhésion CDJM ou certification JTI</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Médiateur ou comité d'éthique</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div data-crit data-last style="background:#fff;border-radius:16px;box-shadow:0 2px 4px rgba(0,0,0,0.07)">
+      <div style="padding:22px 24px;display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 55%,transparent);border-radius:6px;padding:2px 6px;flex:none">C10</span>
+          <span style="font-family:var(--font-serif);font-weight:600;font-size:clamp(25px,3.9vw,34px);letter-spacing:-0.5px;line-height:1.12;flex:1;min-width:0">Résister aux pressions</span>
+          <span style="font-family:var(--font-mono);font-weight:700;font-size:20px;color:var(--acc-ink);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 16px;border-radius:100px;white-space:nowrap;flex:none">10 pts</span>
+        </div>
+        <span style="font-size:15px;line-height:1.5;color:#5D5B5A">La rédaction est-elle protégée de son propriétaire et des annonceurs&nbsp;?</span>
+      </div>
+      <div data-body style="border-top:1px dashed #eadfce;padding:14px 24px 18px;display:grid;gap:12px">
+        <p style="margin:0;font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;color:#959392">Indépendance éditoriale</p>
+        <p style="margin:0;font-size:14.5px;line-height:1.55"><span data-hl>Garanties formelles et vérifiables</span> d'indépendance de la rédaction <span data-hl>vis-à-vis du propriétaire</span>, des annonceurs et de tout intérêt extérieur.</p>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Échantillon requis</p>
+          <p style="margin:0;font-size:14px;line-height:1.5">Site + rapports syndicaux</p>
+        </div>
+        <div>
+          <p style="margin:0 0 6px;font-size:11.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#5D5B5A">Signaux observables</p>
+          <ul data-signals>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Charte d'indépendance avec clauses contraignantes</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Société de journalistes avec droit de veto</span></li>
+            <li><i class="ph ph-magnifying-glass" aria-hidden="true"></i><span>Sujets touchant les intérêts du propriétaire</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div style="max-width:1080px;margin:0 auto;padding:44px 20px 0">
+  <div style="max-width:760px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px;background:#fff;border:1px dashed #d8c9ae;border-radius:14px;padding:18px 22px">
+    <p style="margin:0;font-size:15.5px;line-height:1.5;flex:1 1 280px">Un critère vous semble discutable&nbsp;? La méthode est ouverte à la critique.</p>
+    <a href="#comite" class="btn-outline" style="display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-weight:600;font-size:14px;color:var(--acc-ink);border:1.5px solid var(--acc);border-radius:100px;padding:8px 15px;transition:background 150ms">Rejoindre le comité de revue <i class="ph ph-arrow-right" style="font-size:15px"></i></a>
+  </div>
+</div>
+
+<section id="garde-fous" style="margin-top:clamp(48px,6vw,64px);background:#F2E8D5;scroll-margin-top:80px">
+  <div style="max-width:1080px;margin:0 auto;padding:clamp(48px,7vw,72px) 20px">
+    <div style="max-width:700px;display:grid;gap:12px">
+      <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)">Engagements</span>
+      <h2 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(22px,3vw,28px);line-height:1.18;letter-spacing:-0.4px">Nos garde-fous et engagements</h2>
+    </div>
+    <div style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px">
+      <div style="background:#FDFBF7;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:10px;align-content:start">
+        <i class="ph ph-crosshair-simple" aria-hidden="true" style="font-size:24px;color:var(--acc-ink)"></i>
+        <p style="margin:0;font-weight:700;font-size:15px;line-height:1.35">Jamais de notation «&nbsp;au sentiment&nbsp;»</p>
+        <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Chaque point attribué s'appuie sur un signal observable, sourcé et daté.</p>
+      </div>
+      <div style="background:#FDFBF7;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:10px;align-content:start">
+        <i class="ph ph-checks" aria-hidden="true" style="font-size:24px;color:var(--acc-ink)"></i>
+        <p style="margin:0;font-weight:700;font-size:15px;line-height:1.35">Corroboration obligatoire</p>
+        <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Aucun critère fondé sur une seule source externe&nbsp;: au moins 2 sources indépendantes.</p>
+      </div>
+      <div style="background:#FDFBF7;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:10px;align-content:start">
+        <i class="ph ph-circle-dashed" aria-hidden="true" style="font-size:24px;color:var(--acc-ink)"></i>
+        <p style="margin:0;font-weight:700;font-size:15px;line-height:1.35">Données insuffisantes = N/A</p>
+        <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Jamais de pénalité par défaut&nbsp;: un critère non documenté sort du calcul.</p>
+      </div>
+      <div style="background:#FDFBF7;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:10px;align-content:start">
+        <i class="ph ph-users" aria-hidden="true" style="font-size:24px;color:var(--acc-ink)"></i>
+        <p style="margin:0;font-weight:700;font-size:15px;line-height:1.35">Double évaluation</p>
+        <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Les critères les plus interprétatifs (indépendance, pluralisme) sont évalués par deux personnes.</p>
+      </div>
+      <div style="background:#FDFBF7;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:10px;align-content:start">
+        <i class="ph ph-book-open" aria-hidden="true" style="font-size:24px;color:var(--acc-ink)"></i>
+        <p style="margin:0;font-weight:700;font-size:15px;line-height:1.35">Fiche intégralement publiée</p>
+        <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Tout tiers peut reproduire ou contester la notation, signal par signal.</p>
+      </div>
+    </div>
+    <div style="margin:36px auto 0;max-width:720px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px;background:#FDFBF7;border:1px dashed #d8c9ae;border-radius:14px;padding:18px 22px">
+      <p style="margin:0;font-size:15.5px;line-height:1.5;flex:1 1 280px">Un garde-fou manque à l'appel&nbsp;? C'est pour ça que nous construisons la méthode en open-source.</p>
+      <a href="#comite" class="btn-outline" style="display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-weight:600;font-size:14px;color:var(--acc-ink);border:1.5px solid var(--acc);border-radius:100px;padding:8px 15px;transition:background 150ms">Rejoindre le comité de revue <i class="ph ph-arrow-right" style="font-size:15px"></i></a>
+    </div>
+  </div>
+</section>
+
+<section id="donnees" style="max-width:1080px;margin:0 auto;padding:clamp(44px,5vw,58px) 20px 0;scroll-margin-top:80px">
+  <div style="max-width:700px;display:grid;gap:12px">
+    <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)">Les données</span>
+    <h2 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(22px,3vw,28px);line-height:1.18;letter-spacing:-0.4px">Sur quoi s'appuient les évaluations</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#5D5B5A">Quatre familles de sources autorisées, hiérarchisées par niveau de confiance.</p>
+  </div>
+  <div style="margin-top:22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px">
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:9px;align-content:start">
+      <i class="ph ph-newspaper" aria-hidden="true" style="font-size:26px;color:var(--acc-ink)"></i>
+      <p style="margin:0;font-weight:700;font-size:15.5px">Le site du média lui-même</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Pages «&nbsp;À propos&nbsp;», mentions légales, chartes, pages corrections, page publicité.</p>
+    </div>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:9px;align-content:start">
+      <i class="ph ph-bank" aria-hidden="true" style="font-size:26px;color:var(--acc-ink)"></i>
+      <p style="margin:0;font-weight:700;font-size:15.5px">Registres institutionnels</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">CDJM, JTI, CPPAP, Pappers / Societe.com, BODACC, CNCCFP.</p>
+    </div>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:9px;align-content:start">
+      <i class="ph ph-seal-check" aria-hidden="true" style="font-size:26px;color:var(--acc-ink)"></i>
+      <p style="margin:0;font-weight:700;font-size:15.5px">Fact-checkers accrédités IFCN</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">AFP Factuel, Les Décodeurs, CheckNews, Factuel France Info, 20 Minutes Fake Off.</p>
+    </div>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:9px;align-content:start">
+      <i class="ph ph-graduation-cap" aria-hidden="true" style="font-size:26px;color:var(--acc-ink)"></i>
+      <p style="margin:0;font-weight:700;font-size:15.5px">Travaux académiques</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">HAL, Cairn, rapports RSF.</p>
+    </div>
+  </div>
+
+  <div style="margin-top:40px;max-width:820px;display:grid;gap:14px">
+    <p style="margin:0;font-size:11.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#5D5B5A">Hiérarchie de confiance</p>
+    <div style="display:grid;gap:12px">
+      <div style="display:grid;gap:5px">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:13.5px"><span style="font-weight:700">Sources primaires <span style="font-weight:400;color:#5D5B5A">· justice, CDJM, ARCOM, fact-checkers IFCN</span></span><span style="font-family:var(--font-mono);font-weight:700;color:var(--acc-ink)">coef. 1,0</span></div>
+        <div style="height:14px;border-radius:100px;background:#eee4d2;overflow:hidden"><div style="height:100%;width:100%;background:var(--acc);border-radius:100px"></div></div>
+      </div>
+      <div style="display:grid;gap:5px">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:13.5px"><span style="font-weight:700">Sources secondaires <span style="font-weight:400;color:#5D5B5A">· observatoires critiques au positionnement revendiqué</span></span><span style="font-family:var(--font-mono);font-weight:700;color:var(--acc-ink)">env. 0,5</span></div>
+        <div style="height:14px;border-radius:100px;background:#eee4d2;overflow:hidden"><div style="height:100%;width:50%;background:color-mix(in srgb,var(--acc) 55%,white);border-radius:100px"></div></div>
+        <p style="margin:0;font-size:12.5px;color:#959392">Éléments factuels seulement, mobilisés symétriquement gauche / droite.</p>
+      </div>
+      <div style="display:grid;gap:5px">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;font-size:13.5px"><span style="font-weight:700">Sources tertiaires <span style="font-weight:400;color:#5D5B5A">· reprises, réseaux</span></span><span style="font-family:var(--font-mono);font-weight:700;color:#959392">corroboration seule</span></div>
+        <div style="height:14px;border-radius:100px;background:#eee4d2;overflow:hidden"><div style="height:100%;width:18%;background:color-mix(in srgb,var(--acc) 25%,white);border-radius:100px"></div></div>
+        <p style="margin:0;font-size:12.5px;color:#959392">Jamais notées seules.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="processus" style="max-width:1080px;margin:0 auto;padding:clamp(44px,5vw,58px) 20px 0;scroll-margin-top:80px">
+  <div style="max-width:700px;display:grid;gap:12px">
+    <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)">Le processus</span>
+    <h2 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(22px,3vw,28px);line-height:1.18;letter-spacing:-0.4px">Comment se déroule une évaluation</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#5D5B5A">De l'échantillon à la publication, chaque étape est traçable, contrôlée et opposable, et laisse au média le dernier mot avant parution.</p>
+  </div>
+  <ol style="list-style:none;margin:26px 0 0;padding:0;max-width:760px">
+    <li data-step style="display:grid;grid-template-columns:44px 1fr;gap:16px">
+      <span style="display:flex;flex-direction:column;align-items:center;gap:6px"><span style="width:38px;height:38px;border-radius:999px;border:1.5px solid var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:15px;color:var(--acc-ink);flex:none">1</span><span style="flex:1;border-left:2px dashed #d8c9ae"></span></span>
+      <span style="display:grid;gap:6px;padding:6px 0 clamp(48px,7vh,88px)"><span style="font-weight:700;font-size:17px">Cadrage et échantillonnage</span><span style="font-size:14.5px;line-height:1.6;color:#5D5B5A">Fenêtre de 90 jours glissants. Les articles sont tirés de façon stratifiée, par rubrique et par mois, pour éviter les angles morts.</span></span>
+    </li>
+    <li data-step style="display:grid;grid-template-columns:44px 1fr;gap:16px">
+      <span style="display:flex;flex-direction:column;align-items:center;gap:6px"><span style="width:38px;height:38px;border-radius:999px;border:1.5px solid var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:15px;color:var(--acc-ink);flex:none">2</span><span style="flex:1;border-left:2px dashed #d8c9ae"></span></span>
+      <span style="display:grid;gap:6px;padding:6px 0 clamp(48px,7vh,88px)"><span style="font-weight:700;font-size:17px">Collecte des signaux</span><span style="font-size:14.5px;line-height:1.6;color:#5D5B5A">Chaque signal est enregistré avec sa source, son URL et sa date. Rien n'entre dans l'évaluation sans trace vérifiable et rejouable par un tiers.</span></span>
+    </li>
+    <li data-step style="display:grid;grid-template-columns:44px 1fr;gap:16px">
+      <span style="display:flex;flex-direction:column;align-items:center;gap:6px"><span style="width:38px;height:38px;border-radius:999px;border:1.5px solid var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:15px;color:var(--acc-ink);flex:none">3</span><span style="flex:1;border-left:2px dashed #d8c9ae"></span></span>
+      <span style="display:grid;gap:6px;padding:6px 0 clamp(48px,7vh,88px)"><span style="font-weight:700;font-size:17px">Corroboration</span><span style="font-size:14.5px;line-height:1.6;color:#5D5B5A">Aucun signal n'est retenu seul&nbsp;: au moins deux sources indépendantes doivent se recouper avant d'être pris en compte.</span></span>
+    </li>
+    <li data-step style="display:grid;grid-template-columns:44px 1fr;gap:16px">
+      <span style="display:flex;flex-direction:column;align-items:center;gap:6px"><span style="width:38px;height:38px;border-radius:999px;border:1.5px solid var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:15px;color:var(--acc-ink);flex:none">4</span><span style="flex:1;border-left:2px dashed #d8c9ae"></span></span>
+      <span style="display:grid;gap:6px;padding:6px 0 clamp(48px,7vh,88px)"><span style="font-weight:700;font-size:17px">Notation critère par critère</span><span style="font-size:14.5px;line-height:1.6;color:#5D5B5A">Le score est justifié palier par palier. Si les données manquent, le critère passe en N/A&nbsp;: jamais de pénalité par défaut.</span></span>
+    </li>
+    <li data-step style="display:grid;grid-template-columns:44px 1fr;gap:16px">
+      <span style="display:flex;flex-direction:column;align-items:center;gap:6px"><span style="width:38px;height:38px;border-radius:999px;border:1.5px solid var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:15px;color:var(--acc-ink);flex:none">5</span><span style="flex:1;border-left:2px dashed #d8c9ae"></span></span>
+      <span style="display:grid;gap:6px;padding:6px 0 clamp(48px,7vh,88px)"><span style="font-weight:700;font-size:17px">Double évaluation</span><span style="font-size:14.5px;line-height:1.6;color:#5D5B5A">Les critères les plus interprétatifs (indépendance, pluralisme) sont notés par deux personnes, puis réconciliés en cas d'écart.</span></span>
+    </li>
+    <li data-step style="display:grid;grid-template-columns:44px 1fr;gap:16px">
+      <span style="display:flex;flex-direction:column;align-items:center;gap:6px"><span style="width:38px;height:38px;border-radius:999px;background:var(--acc-ink);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:15px;color:#fff;flex:none">6</span><span style="flex:1;border-left:2px dashed #d8c9ae"></span></span>
+      <span style="display:grid;gap:7px;padding:0 0 clamp(48px,7vh,88px)"><span style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:16px 18px;display:grid;gap:7px">
+        <span style="display:flex;flex-wrap:wrap;align-items:center;gap:10px"><span style="font-weight:700;font-size:17px">Processus contradictoire</span><span style="font-family:var(--font-mono);font-weight:700;font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 60%,transparent);border-radius:4px;padding:2px 7px;transform:rotate(-2deg)">Pilier de crédibilité</span></span>
+        <span style="font-size:14.5px;line-height:1.6;color:#5D5B5A">La fiche complète est envoyée au média avant toute publication&nbsp;: 21 jours pour répondre, droit de réponse intégré, procédure d'appel possible.</span>
+      </span></span>
+    </li>
+    <li data-step style="display:grid;grid-template-columns:44px 1fr;gap:16px">
+      <span style="display:flex;flex-direction:column;align-items:center"><span style="width:38px;height:38px;border-radius:999px;border:1.5px solid var(--acc);display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:15px;color:var(--acc-ink);flex:none">7</span></span>
+      <span style="display:grid;gap:6px;padding:6px 0 0"><span style="font-weight:700;font-size:17px">Publication</span><span style="font-size:14.5px;line-height:1.6;color:#5D5B5A">Publication de la fiche détaillée, signal par signal, et d'une carte d'évaluation grand public. La méthode et son numéro de version restent publics.</span></span>
+    </li>
+  </ol>
+</section>
+
+<section id="annexes" style="max-width:1080px;margin:0 auto;padding:clamp(44px,5vw,58px) 20px 0;scroll-margin-top:80px">
+  <div style="max-width:700px;display:grid;gap:12px">
+    <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)">À venir</span>
+    <h2 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(22px,3vw,28px);line-height:1.18;letter-spacing:-0.4px">Bientôt, en complément de la note</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#5D5B5A">Des briques que nous préparons pour éclairer le contexte autour de la note, sans jamais peser sur le score de fiabilité.</p>
+  </div>
+  <div style="margin-top:30px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:14px">
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:9px;align-content:start">
+      <i class="ph ph-tree-structure" aria-hidden="true" style="font-size:26px;color:var(--acc-ink)"></i>
+      <p style="margin:0;font-weight:700;font-size:15.5px">Cartographie de propriété</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Qui détient le média, jusqu'aux personnes physiques.</p>
+      <span style="justify-self:start;font-family:var(--font-mono);font-weight:700;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#959392;border:1.5px solid #cfc4ae;border-radius:4px;padding:2px 7px;transform:rotate(-2deg)">À venir</span>
+    </div>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:9px;align-content:start">
+      <i class="ph ph-compass" aria-hidden="true" style="font-size:26px;color:var(--acc-ink)"></i>
+      <p style="margin:0;font-weight:700;font-size:15.5px">Positionnement éditorial observé</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Bord politique documenté à titre descriptif.</p>
+      <span style="justify-self:start;font-family:var(--font-mono);font-weight:700;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#959392;border:1.5px solid #cfc4ae;border-radius:4px;padding:2px 7px;transform:rotate(-2deg)">À venir</span>
+    </div>
+    <div style="background:#fff;border-radius:14px;box-shadow:0 2px 4px rgba(0,0,0,0.07);padding:20px 18px;display:grid;gap:9px;align-content:start">
+      <i class="ph ph-chart-bar" aria-hidden="true" style="font-size:26px;color:var(--acc-ink)"></i>
+      <p style="margin:0;font-weight:700;font-size:15.5px">Statistiques annexes</p>
+      <p style="margin:0;font-size:13.5px;line-height:1.55;color:#5D5B5A">Indicateurs complémentaires, publiés pour information.</p>
+      <span style="justify-self:start;font-family:var(--font-mono);font-weight:700;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#959392;border:1.5px solid #cfc4ae;border-radius:4px;padding:2px 7px;transform:rotate(-2deg)">À venir</span>
+    </div>
+  </div>
+  <p style="margin:20px 0 0;max-width:760px;font-size:14px;line-height:1.6;color:#5D5B5A">Le positionnement politique est documenté séparément et n'a <strong style="color:#2C2A29">aucun effet sur le score de fiabilité</strong>.</p>
+</section>
+
+<section id="comite" style="max-width:1080px;margin:0 auto;padding:clamp(56px,8vw,88px) 20px;scroll-margin-top:80px">
+  <div style="max-width:620px;margin:0 auto;text-align:center;display:grid;gap:12px;justify-items:center">
+    <span style="font-family:var(--font-mono);font-weight:700;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--acc-ink);border:1.5px solid color-mix(in srgb,var(--acc) 60%,transparent);border-radius:4px;padding:3px 9px;transform:rotate(-2deg)">Comité de revue</span>
+    <h2 style="margin:0;font-family:var(--font-serif);font-weight:600;font-size:clamp(26px,4vw,36px);line-height:1.15;letter-spacing:-0.5px">Contribuer, rejoindre le comité de revue</h2>
+    <p style="margin:0;font-size:16px;line-height:1.6;color:#5D5B5A">La méthode est ouverte&nbsp;: elle a besoin de regards exigeants. Chercheuses et chercheurs, journalistes, citoyennes et citoyens rigoureux, votre relecture compte.</p>
+  </div>
+  <div style="max-width:560px;margin:30px auto 0;background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,0.09);padding:clamp(22px,4vw,32px)">
+    <div id="comite-success" hidden style="display:grid;gap:10px;justify-items:center;text-align:center;padding:14px 4px">
+      <i class="ph ph-envelope-open" aria-hidden="true" style="font-size:40px;color:#27AE60"></i>
+      <p style="margin:0;font-weight:700;font-size:18px">Merci, votre demande est bien arrivée&nbsp;!</p>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#5D5B5A">Nous vous écrivons d'ici quelques jours pour la suite. En attendant, la méthode reste ouverte à vos remarques.</p>
+    </div>
+    <form id="comite-form" style="display:grid;gap:16px">
+      <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Email
+        <input id="comite-email" class="field" type="email" name="email" required autocomplete="email" placeholder="vous@exemple.fr" style="font-family:var(--font-sans);font-size:15px;color:#2C2A29;background:#faf8f5;border:1.5px solid transparent;border-radius:10px;padding:12px 14px;transition:border-color 150ms">
+      </label>
+      <label style="display:grid;gap:6px;font-weight:600;font-size:14px">Motivation <span style="font-weight:400;color:#959392;font-size:13px">(optionnel)</span>
+        <textarea id="comite-motivation" class="field" name="motivation" rows="3" placeholder="En un mot, pourquoi ça vous intéresse ?" style="font-family:var(--font-sans);font-size:15px;color:#2C2A29;background:#faf8f5;border:1.5px solid transparent;border-radius:10px;padding:12px 14px;resize:vertical;transition:border-color 150ms"></textarea>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.45;cursor:pointer">
+        <input id="comite-methode" type="checkbox" name="methode_complete" style="width:18px;height:18px;margin-top:1px;accent-color:var(--acc);flex:none">
+        Je veux recevoir la méthode complète
+      </label>
+      <p id="comite-error" role="alert" hidden style="margin:0;font-size:13.5px;line-height:1.5;color:#C0392B;background:color-mix(in srgb,#C0392B 8%,white);border-radius:10px;padding:10px 14px"></p>
+      <button id="comite-submit" class="btn-submit" type="submit" style="font-family:var(--font-sans);font-weight:700;font-size:15px;color:#fff;background:var(--acc-ink);border:none;border-radius:12px;padding:14px 22px;cursor:pointer;transition:opacity 150ms">Rejoindre le comité de revue</button>
+    </form>
+  </div>
+  <p style="max-width:560px;margin:14px auto 0;text-align:center;font-size:13px;line-height:1.5;color:#959392">Vos réponses sont traitées manuellement par une petite équipe, comptez quelques jours.</p>
+</section>
+
+<footer style="border-top:1px solid #eadfce;background:#faf8f5">
+  <div style="max-width:1080px;margin:0 auto;padding:26px 20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px">
+    <a href="/" style="display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:#2C2A29">
+      <img src="favicon.png" alt="" style="width:22px;height:22px;border-radius:6px;display:block">
+      <span style="font-family:var(--font-serif);font-weight:700;letter-spacing:-0.5px;font-size:17px">Facteur</span>
+    </a>
+    <p style="margin:0;font-family:var(--font-mono);font-size:12px;color:#959392">Méthodologie v1.3 · licence libre · <a href="/" style="color:#959392">facteur.app</a></p>
+  </div>
+</footer>
+
+<script src="js/methodologie.js?v=2"></script>
+</body>
+
+</html>

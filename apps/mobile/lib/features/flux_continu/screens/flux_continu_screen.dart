@@ -39,14 +39,22 @@ import '../../tour/providers/guided_tour_controller.dart';
 import '../../tour/tour_anchors.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../models/flux_continu_models.dart';
+import '../providers/auto_grow_nudge_provider.dart';
+import '../providers/edition_essentiel_provider.dart';
+import '../providers/edition_read_status_provider.dart';
 import '../providers/flux_continu_provider.dart';
+import '../providers/pending_feed_section_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
+import '../providers/selected_edition_date_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
+import '../services/auto_grow_nudge_scheduler.dart';
+import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
 import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
+import '../widgets/edition_timeline_sheet.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
@@ -125,9 +133,23 @@ class FluxContinuScreen extends ConsumerStatefulWidget {
 
 class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   final ScrollController _scroll = ScrollController();
+
+  /// Contrôleur dédié au mode « édition passée » (sélecteur de date). Séparé du
+  /// `_scroll` live (snap + sticky) : leurs CustomScrollView s'excluent, et un
+  /// contrôleur dédié évite tout conflit d'attachement et préserve la position
+  /// du feed live quand on revient à « Aujourd'hui ».
+  final ScrollController _editionScroll = ScrollController();
   final ScrollController _tabsScroll = ScrollController();
   final ValueNotifier<bool> _stickyVisible = ValueNotifier(false);
   final ValueNotifier<int> _activeIndex = ValueNotifier(0);
+
+  /// Guards the section haptic to **one buzz per gesture**. The haptic is now
+  /// fired at snap *commit* — the instant the fling engages a spring toward a
+  /// *different* section ([_SectionSnapPhysics.onSnapCommit]) — so it precedes
+  /// the pose animation instead of trailing it at settle («&nbsp;trop tard&nbsp;»).
+  /// Reset on `ScrollStartNotification`. A drag-then-snapback commits back to
+  /// the origin section (target index == active index) → no buzz.
+  bool _snapHapticFiredThisGesture = false;
 
   final List<GlobalKey> _sectionKeys = [];
 
@@ -195,6 +217,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   /// jamais sur un refetch/scroll/rebuild.
   bool _postOnboardingFlowRan = false;
 
+  /// Garde-fou : un seul cycle de consommation du deep-link « file droit vers
+  /// une section » (cf. [pendingFeedSectionKeyProvider]) est planifié à la fois
+  /// — pas un par rebuild tant que la clé n'est pas résolue.
+  bool _pendingSectionConsumeScheduled = false;
+
   // Pull-to-refresh discoverability pill. Shown briefly when the user
   // scrolls back to the top after having browsed deep enough (>=
   // [_kPullHintMinDepthPx]) so the gesture is signalled without being
@@ -204,6 +231,25 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
 
+  // Nudge auto-grow « découvre l'aperçu au long-press » : un pulse discret sur
+  // une carte visible + non lue, quelques fois par jour, tant que l'utilisateur
+  // n'a pas fait un vrai long-press (cf. auto_grow_nudge_scheduler.dart).
+  Timer? _autoGrowTimer;
+  int _autoGrowNonce = 0;
+  final math.Random _autoGrowRng = math.Random();
+
+  /// Premier paint : on force le squelette (cartes vides à en-têtes réels) pour
+  /// la toute première frame, **même si les données sont déjà prêtes**. À
+  /// l'arrivée depuis le rituel matinal, l'édition est préchargée → l'écran
+  /// ferait sinon directement le premier paint *lourd* de `_buildContent`, qui
+  /// bloque ~1 s sur le web : on verrait une page blanche (la frame précédente).
+  /// En peignant d'abord le squelette (cheap), la frame lourde se construit
+  /// *derrière* tandis que le squelette reste à l'écran — zéro blanc. La branche
+  /// Essentiel vit dans un `StatefulShellBranch` gardé en vie : cet écran n'est
+  /// monté qu'une fois par session, donc aucun flash de squelette sur les
+  /// bascules d'onglet ultérieures.
+  bool _firstPaintDone = false;
+
   @override
   void initState() {
     super.initState();
@@ -212,18 +258,51 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // de demande de géoloc (déclenchée après 5 ouvertures, cf.
     // geoloc_prompt_provider). Best-effort, n'impacte pas le rendu.
     unawaited(NudgeCounters.increment(NudgeCounters.feedOpenCount));
+    // Bascule vers le vrai contenu après la 1ʳᵉ frame (squelette peint → la
+    // frame lourde se construit ensuite, squelette toujours visible).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _firstPaintDone = true);
+    });
+    // Tick régulier du nudge auto-grow. Léger : ne fait rien tant qu'aucune
+    // carte n'est visible ou que le scheduler refuse (budget/espacement/déjà
+    // découvert).
+    _autoGrowTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => unawaited(_maybeTriggerAutoGrow()),
+    );
   }
 
   @override
   void dispose() {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
+    _editionScroll.dispose();
     _tabsScroll.dispose();
     _stickyVisible.dispose();
     _activeIndex.dispose();
     _tallSections.dispose();
     _pullHintTimer?.cancel();
+    _autoGrowTimer?.cancel();
     super.dispose();
+  }
+
+  /// Déclenche au plus un pulse auto-grow : tire une carte visible + non lue au
+  /// hasard si le scheduler l'autorise. Sans candidat visible (écran masqué en
+  /// IndexedStack, ou tout est lu) → no-op.
+  Future<void> _maybeTriggerAutoGrow() async {
+    if (!mounted) return;
+    if (ref.read(visibleFluxContentIdsProvider).isEmpty) return;
+    final scheduler = ref.read(autoGrowNudgeSchedulerProvider);
+    if (!await scheduler.canTriggerNow()) return;
+    if (!mounted) return;
+    // Re-lit après l'await : le set visible a pu changer entre-temps.
+    final candidates = ref.read(visibleFluxContentIdsProvider).toList();
+    if (candidates.isEmpty) return;
+    final pick = candidates[_autoGrowRng.nextInt(candidates.length)];
+    _autoGrowNonce++;
+    ref.read(autoGrowNudgeSignalProvider.notifier).state =
+        AutoGrowSignal(contentId: pick, nonce: _autoGrowNonce);
+    await scheduler.recordTriggered();
   }
 
   void _onScroll() {
@@ -304,14 +383,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       }
     }
     if (_activeIndex.value != activeAt) {
-      // Strong section haptic when the active tab flips section under the
-      // sticky bar. Gated on visibility so we don't buzz during the initial
-      // layout / top-of-page scroll, before the sticky is even revealed. The
-      // snap's one-step cap (cf. resolveSnapTarget) keeps a fling to a single
-      // boundary crossing, so this fires exactly once per step.
-      if (_stickyVisible.value) {
-        unawaited(_triggerSectionChangeHaptic());
-      }
+      // Visual-only tab tracking here. The section haptic used to fire on this
+      // per-frame flip, which double-buzzed a drag-then-snapback (flip N→N+1
+      // mid-drag, then N+1→N on the pull-back). It now fires once at settle —
+      // see `_onScrollNotification` (`ScrollEndNotification`), gated on a real
+      // change of section across the whole gesture.
       _activeIndex.value = activeAt;
       _alignTabsToActive(activeAt);
     }
@@ -334,15 +410,41 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   bool _onScrollNotification(ScrollNotification n) {
     if (n is ScrollStartNotification) {
       _scheduleAnchorRecompute();
+      // New gesture → re-arm the section haptic. It fires at snap commit
+      // (`_onSnapCommit`), not at settle.
+      _snapHapticFiredThisGesture = false;
     }
     return false;
   }
 
+  /// Called by [_SectionSnapPhysics] the instant a fling commits a snap toward
+  /// [committedTarget] (finger lift), *before* the pose animation runs. Fires a
+  /// single crisp haptic when — and only when — the target frames a *different*
+  /// section than the one currently active. This lands the buzz at the moment
+  /// of passage (leads the animation → « réactif ») instead of at settle.
+  ///
+  /// Gated so it stays silent on:
+  /// - the initial top-of-page scroll (sticky bar hidden);
+  /// - a `top → bottom` re-frame inside the same tall section (same index);
+  /// - a deadband pull-back to the origin section (target index == active);
+  /// - repeat `createBallisticSimulation` calls within one gesture
+  ///   ([_snapHapticFiredThisGesture]).
+  void _onSnapCommit(double committedTarget) {
+    if (_snapHapticFiredThisGesture || !_stickyVisible.value) return;
+    final targetIndex = frameIndexOfTarget(_snapAnchors.values, committedTarget);
+    if (targetIndex < 0 || targetIndex == _activeIndex.value) return;
+    _snapHapticFiredThisGesture = true;
+    unawaited(_triggerSectionChangeHaptic());
+  }
+
   Future<void> _triggerSectionChangeHaptic() async {
     try {
-      await Haptics.vibrate(HapticsType.heavy, usage: HapticsUsage.touch);
+      // `rigid` = a sharp, dense single click (Android PRIMITIVE_CLICK ~34ms /
+      // iOS rigid style) — marks the exact moment of passage. `heavy` was a
+      // diffuse THUD that felt weak and « étalée ».
+      await Haptics.vibrate(HapticsType.rigid, usage: HapticsUsage.touch);
     } catch (_) {
-      await HapticFeedback.heavyImpact();
+      await HapticFeedback.mediumImpact();
     }
   }
 
@@ -639,6 +741,59 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
   }
 
+  /// Deep-link « file droit vers une section » du rituel matinal : planifie la
+  /// consommation de [pendingFeedSectionKeyProvider] pour le prochain post-frame
+  /// (une seule fois tant qu'elle n'a pas abouti). Le retry borné absorbe le
+  /// délai de mesure des sections (`_stickyEntryKeys` peuplé après layout).
+  void _scheduleConsumePendingSection() {
+    if (_pendingSectionConsumeScheduled) return;
+    _pendingSectionConsumeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tryConsumePendingSection(0);
+    });
+  }
+
+  /// Tente de résoudre + scroller vers la section en attente. Re-tente ~30×
+  /// toutes les 40 ms tant que les sections ne sont pas mesurées (mécanique du
+  /// `scrollToFocus` de la maquette), puis abandonne en remettant le provider à
+  /// `null` (une clé introuvable / un layout absent ne doit jamais boucler).
+  void _tryConsumePendingSection(int attempt) {
+    if (!mounted) {
+      _pendingSectionConsumeScheduled = false;
+      return;
+    }
+    final key = ref.read(pendingFeedSectionKeyProvider);
+    if (key == null) {
+      _pendingSectionConsumeScheduled = false;
+      return;
+    }
+    if (_resolveAndScrollToSectionKey(key) || attempt >= 30) {
+      ref.read(pendingFeedSectionKeyProvider.notifier).state = null;
+      _pendingSectionConsumeScheduled = false;
+      return;
+    }
+    Future.delayed(
+      const Duration(milliseconds: 40),
+      () => _tryConsumePendingSection(attempt + 1),
+    );
+  }
+
+  /// Résout une `sectionKey` vers son entrée sticky et y scrolle. Retourne
+  /// `false` (retry) tant que la section n'est pas montée/mesurée. Mécanique
+  /// identique à [_restoreLastDedicatedSection], mais gardée sur la présence
+  /// effective du `currentContext` (sinon `_scrollToSection` no-op silencieux).
+  bool _resolveAndScrollToSectionKey(String key) {
+    final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+    if (sections == null) return false;
+    final sectionIndex = sections.indexWhere((s) => sectionKey(s) == key);
+    if (sectionIndex < 0 || sectionIndex >= _sectionKeys.length) return false;
+    final stickyIndex = _stickyEntryKeys.indexOf(_sectionKeys[sectionIndex]);
+    if (stickyIndex < 0) return false;
+    if (_stickyEntryKeys[stickyIndex].currentContext == null) return false;
+    unawaited(_scrollToSection(stickyIndex));
+    return true;
+  }
+
   /// Opens an article. ReadSyncService propagates the read state after the
   /// one-second threshold; returning sooner must leave the card unread.
   Future<void> _openArticle(BuildContext context, Object article) async {
@@ -691,11 +846,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       if (!mounted) return;
       if (swipe == NudgeIds.feedSwipeHint) {
         setState(() => _showSwipeHint = true);
-        return;
       }
-      if (coordinator.activeId == null) {
-        await coordinator.request(NudgeIds.feedPreviewLongpress);
-      }
+      // L'ancien tooltip « aperçu au long-press » (NudgeIds.feedPreviewLongpress)
+      // n'est plus déclenché ici : sur Essentiel/Flux il est remplacé par le
+      // nudge auto-grow (cf. _maybeTriggerAutoGrow). Flâner garde son tooltip.
     });
   }
 
@@ -719,11 +873,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   }
 
   void _recordLongPressConversion() {
-    unawaited(
-      ref
-          .read(nudgeCoordinatorProvider)
-          .recordConversion(NudgeIds.feedPreviewLongpress),
-    );
+    // Un vrai long-press = l'aperçu est découvert → coupe le nudge auto-grow
+    // définitivement pour cet utilisateur.
+    unawaited(ref.read(autoGrowNudgeSchedulerProvider).markDiscovered());
   }
 
   void _resolveFeedback(String contentId) {
@@ -912,11 +1064,43 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(fluxContinuProvider);
     final data = state.valueOrNull;
+    // EPIC « Lettre du jour » — sélection de date du bloc Essentiel. Hors
+    // « Aujourd'hui », on rend une lettre passée autonome (lecture seule) et on
+    // masque la tournée live + son sticky/snap (incohérent avec une édition
+    // passée).
+    final selection = ref.watch(selectedEditionDateProvider);
+    final isPastEdition = selection is! EditionToday;
     // Squelette : fenêtre de loading initiale (avant 1ère peinture) OU état
     // squelette explicite émis par le provider (cache d'hier invalidé / cold
     // start). On rend alors un scaffold placeholder, jamais le spinner plein
     // écran ni le vrai `_buildContent`.
-    final isSkeleton = state is AsyncLoading || (data?.isSkeleton ?? false);
+    final isSkeleton = !_firstPaintDone ||
+        state is AsyncLoading ||
+        (data?.isSkeleton ?? false);
+    // Changer d'édition remet la lettre passée en haut (le feed live garde sa
+    // position via son contrôleur dédié).
+    ref.listen(selectedEditionDateProvider, (_, next) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (next is! EditionToday && _editionScroll.hasClients) {
+          _editionScroll.jumpTo(0);
+        }
+      });
+    });
+    // EPIC « Lettre du jour » — quand une **édition passée** se charge avec
+    // succès (data non stale/vide), on marque son jour « rattrapé » dans le set
+    // local (frontend-only) pour que la timeline reflète l'action tout de suite,
+    // sans attendre la prochaine synchro streaks. Restreint aux jours passés :
+    // le statut « Cette semaine » se dérive des dayKeys (jamais de la clé
+    // 'week'), la persister ne ferait que re-déclencher l'agrégation hebdo.
+    ref.listen<AsyncValue<EditionEssentielState>>(editionEssentielProvider,
+        (_, next) {
+      final edition = next.valueOrNull;
+      if (edition == null || edition.isStaleOrEmpty) return;
+      final selection = edition.selection;
+      if (selection is! EditionPastDay) return;
+      ref.read(editionCaughtUpProvider.notifier).markCaughtUp(selection.key);
+    });
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(essentielScrollTriggerProvider, (_, __) => _scrollToTop());
     ref.listen(tourneeLastDedicatedSectionProvider, (_, __) {
@@ -964,13 +1148,25 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     // et dérive les descripteurs d'onglets (label+accent), dans le même ordre.
     // Hors squelette uniquement : le scaffold placeholder n'attache pas les
     // GlobalKeys de section ni la physics de snap.
-    final stickyTabs =
-        isSkeleton ? const <StickyTab>[] : _syncStickyEntries(data);
-    if (!isSkeleton) {
+    // En mode édition passée, le sticky/snap de la tournée live est masqué : on
+    // ne synchronise ni les onglets ni les ancres (le contenu rendu n'est pas
+    // celui du provider live).
+    final stickyTabs = (isSkeleton || isPastEdition)
+        ? const <StickyTab>[]
+        : _syncStickyEntries(data);
+    if (!isSkeleton && !isPastEdition) {
       // Sections don't resize mid-session, so we refresh the snap anchors only
       // on these content/layout-driven rebuilds — never per scroll frame.
       _safeAreaBottom = MediaQuery.paddingOf(context).bottom;
       _scheduleAnchorRecompute();
+    }
+    // Deep-link « file droit vers une section » posé par le rituel matinal :
+    // consommé une fois les sections live montées (jamais en squelette ni en
+    // édition passée — la tournée live n'y est pas rendue). `ref.watch` rejoue
+    // ce build quand la clé est remise à `null` (fin de consommation).
+    final pendingSectionKey = ref.watch(pendingFeedSectionKeyProvider);
+    if (pendingSectionKey != null && !isSkeleton && !isPastEdition) {
+      _scheduleConsumePendingSection();
     }
     return Scaffold(
       backgroundColor: context.facteurColors.backgroundPrimary,
@@ -982,7 +1178,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         bottom: false,
         child: Stack(
           children: [
-            if (isSkeleton)
+            if (isPastEdition)
+              _buildPastEdition(context, selection)
+            else if (isSkeleton)
               _FluxContinuSkeleton(sections: data?.sections ?? const [])
             else
               state.when(
@@ -994,7 +1192,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 ),
                 data: (data) => _buildContent(context, data),
               ),
-            if (!isSkeleton)
+            if (!isSkeleton && !isPastEdition)
               _StickyHostOverlay(
                 stickyVisible: _stickyVisible,
                 activeIndex: _activeIndex,
@@ -1107,12 +1305,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
           // resting position. AlwaysScrollable keeps the page scrollable even
           // when content is short.
           physics: AlwaysScrollableScrollPhysics(
-            parent: _SectionSnapPhysics(anchors: _snapAnchors),
+            parent: _SectionSnapPhysics(
+              anchors: _snapAnchors,
+              onSnapCommit: _onSnapCommit,
+            ),
           ),
           slivers: [
             // NB : le header (logo · streak · réglages) vit dans le scaffold de
             // page partagé — fixe, hors du scroll.
             const SliverToBoxAdapter(child: LettresNotificationBanner()),
+            // EPIC « Lettre du jour » — plus de strip permanent : la navigation
+            // temporelle vit désormais dans le déclencheur « rewind » de l'en-tête
+            // de la carte Essentiel (EditionRewindTrigger → EditionTimelineSheet).
             // « Notif du jour » : file unique agrégeant les anciens nudges
             // inline (renudge / well-informed / géoloc) + messages profil.
             // Se gate elle-même sur les modales restantes et le bandeau
@@ -1347,6 +1551,286 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     }
     return slivers;
   }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // EPIC « Lettre du jour » — rendu d'une édition passée (lecture seule)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  void _backToToday() {
+    ref.read(selectedEditionDateProvider.notifier).state = const EditionToday();
+  }
+
+  /// Rendu autonome d'une lettre passée / rétro « Cette semaine » : le bloc
+  /// Essentiel est rendu en lecture seule (le déclencheur « rewind » vit dans son
+  /// en-tête), et la tournée live est masquée (remplacée par une note +
+  /// « Revenir à aujourd'hui »). Contrôleur + physique dédiés (pas de snap).
+  Widget _buildPastEdition(BuildContext context, EditionSelection selection) {
+    final colors = context.facteurColors;
+    final asyncEdition = ref.watch(editionEssentielProvider);
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(editionEssentielProvider),
+      color: colors.primary,
+      child: CustomScrollView(
+        controller: _editionScroll,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          ...asyncEdition.when(
+            loading: () => const <Widget>[
+              SliverToBoxAdapter(child: _HeroSkeleton()),
+            ],
+            error: (_, __) => <Widget>[_pastEmptySliver(context, selection)],
+            data: (edition) => _pastDataSlivers(context, edition),
+          ),
+          const SliverToBoxAdapter(child: SizedBox(height: 92)),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _pastDataSlivers(
+    BuildContext context,
+    EditionEssentielState edition,
+  ) {
+    if (edition.isStaleOrEmpty) {
+      return <Widget>[_pastEmptySliver(context, edition.selection)];
+    }
+    // « Cette semaine » se rend via le **même** chemin single-day : sa valeur
+    // « ce que tu as manqué » est portée par la sélection de contenu (héros =
+    // non-lus de la semaine), pas par une UI dédiée.
+    return _singleDaySlivers(context, edition);
+  }
+
+  /// Section de topics en lecture seule (pas d'`onDismissArticle`/feedback ⇒ pas
+  /// de swipe). Réutilise `SectionBlock`. `blurb`/`illustrationAsset` reproduisent
+  /// le `SectionBanner` de la lettre du jour (parité visuelle). `null` si la
+  /// liste est vide (no-op).
+  ///
+  /// En vue hebdo, [previewCount] borne l'aperçu inline et câble « Tout lire »
+  /// (bandeau + footer) vers la page section épinglée ([_openWeekSection]) dès
+  /// qu'il y a plus de sujets que l'aperçu. Hors hebdo ([previewCount] `null`),
+  /// tous les sujets se rendent inline sans « Tout lire ».
+  Widget? _topicSectionSliver(
+    BuildContext context, {
+    required SectionKind kind,
+    required String label,
+    required Color accent,
+    required List<DigestTopic> topics,
+    int? previewCount,
+    String? blurb,
+    String? illustrationAsset,
+  }) {
+    if (topics.isEmpty) return null;
+    final section = DigestTopicSection(
+      kind: kind,
+      label: label,
+      accent: accent,
+      coreVisibleCount: previewCount ?? topics.length,
+      topics: topics,
+      blurb: blurb,
+      illustrationAsset: illustrationAsset,
+    );
+    // « Tout lire » seulement s'il reste des sujets au-delà de l'aperçu (sinon
+    // la page section afficherait exactement le même contenu que l'inline).
+    final onSeeAll = previewCount != null && topics.length > previewCount
+        ? () => _openWeekSection(context, section)
+        : null;
+    return SliverToBoxAdapter(
+      child: SectionBlock(
+        section: section,
+        onTapArticle: (a) => _openArticle(context, a),
+        onSeeAll: onSeeAll,
+      ),
+    );
+  }
+
+  /// Ouvre la page section (`DigestSectionScreen`) **épinglée** sur l'agrégat
+  /// hebdo (query `src=week`) : le contenu affiché est la [section] passée en
+  /// `extra` (la semaine complète), pas le feed du jour. Utilisé par « Tout
+  /// lire » de « Cette semaine ». Push simple (pas de restauration de scroll du
+  /// feed du jour : la vue hebdo a son propre contrôleur, sans snap).
+  void _openWeekSection(BuildContext context, DigestTopicSection section) {
+    context.push(
+      '${RoutePaths.fluxContinu}/section/${sectionKey(section)}?src=week',
+      extra: section,
+    );
+  }
+
+  /// Lettre **passée** (jour unique OU « Cette semaine ») rendue à parité visuelle
+  /// avec la lettre du jour : héros → Actus → **Bonnes Nouvelles** → citation →
+  /// carte de clôture (`ClosingCardV18.readOnly`). Mêmes widgets feuilles que le
+  /// feed live (SectionBlock → EssentielHiFiCard / SectionBanner) ; chaque
+  /// `SectionBlock` ne reçoit QUE `onTapArticle` ⇒ **lecture seule** (aucun
+  /// swipe/feedback/favori). Sur ce chemin il n'y a ni snap ni feedforward
+  /// (pas de listener sur `_editionScroll`) : les sections se suivent
+  /// simplement. En vue hebdo : pas de citation, libellé « Actus de la
+  /// semaine ». Les sections tournée personnalisées ne sont pas archivées par
+  /// date ⇒ délibérément absentes (cf. docstring `editionEssentielProvider`).
+  List<Widget> _singleDaySlivers(
+    BuildContext context,
+    EditionEssentielState edition,
+  ) {
+    final colors = context.facteurColors;
+
+    // Corps de lettre : héros + Actus + Bonnes Nouvelles (chacun optionnel).
+    // Les blurbs/illustrations reproduisent les bannières de la lettre du jour
+    // (cf. flux_continu_provider `_kActusDuJourBlurb` / `_kBonnesBlurb`).
+    final sections = <Widget>[];
+
+    if (edition.heroArticles.isNotEmpty) {
+      sections.add(
+        SliverToBoxAdapter(
+          child: SectionBlock(
+            section: EssentielSection(articles: edition.heroArticles),
+            onTapArticle: (a) => _openArticle(context, a),
+          ),
+        ),
+      );
+    }
+
+    // En vue hebdo : agrégat **complet** (`topicsAll`/`bonnesAll`) + aperçu
+    // borné (`kEditionWeekInlinePreview`) → « Tout lire » ouvre le reste. En
+    // jour unique : liste du jour rendue intégralement inline (pas de préview).
+    final actus = _topicSectionSliver(
+      context,
+      kind: SectionKind.essentiel,
+      label: edition.isWeek ? 'Actus de la semaine' : 'Actus du jour',
+      accent: colors.sectionEssentiel,
+      topics: edition.isWeek ? edition.topicsAll : edition.topics,
+      previewCount: edition.isWeek ? kEditionWeekInlinePreview : null,
+      blurb: 'Les sujets les + couverts en France.',
+      illustrationAsset: 'assets/notifications/facteur_avatar.png',
+    );
+    if (actus != null) sections.add(actus);
+
+    final bonnes = _topicSectionSliver(
+      context,
+      kind: SectionKind.bonnes,
+      label: 'Bonnes Nouvelles',
+      accent: colors.sectionBonnes,
+      topics: edition.isWeek ? edition.bonnesAll : edition.bonnesTopics,
+      previewCount: edition.isWeek ? kEditionWeekInlinePreview : null,
+      blurb: 'Un peu de douceur...',
+      illustrationAsset: 'assets/notifications/facteur_goodnews.png',
+    );
+    if (bonnes != null) sections.add(bonnes);
+
+    final slivers = <Widget>[...sections];
+
+    if (edition.quote != null) {
+      slivers.add(
+        SliverToBoxAdapter(child: CitationDuJourCard(quote: edition.quote!)),
+      );
+    }
+
+    // Même repère de fin de lettre que le jour, en lecture seule : l'action
+    // primaire ramène à « Aujourd'hui » + note de contexte.
+    slivers.add(
+      SliverToBoxAdapter(
+        child: ClosingCardV18.readOnly(
+          onBackToToday: _backToToday,
+          note: _pastEditionNote(edition.selection),
+        ),
+      ),
+    );
+    return slivers;
+  }
+
+  Widget _pastEmptySliver(BuildContext context, EditionSelection selection) {
+    final message = switch (selection) {
+      EditionWeek() => 'La semaine se prépare...',
+      EditionPastDay(:final date) =>
+        'Pas d\'édition pour ${formatFrenchLongDate(date)}.',
+      EditionToday() => 'Pas d\'édition disponible.',
+    };
+    return SliverToBoxAdapter(
+      child: _BackToTodayBlock(
+        message: message,
+        onBackToToday: _backToToday,
+        onChooseAnotherDay: () => EditionTimelineSheet.show(context),
+      ),
+    );
+  }
+
+  String _pastEditionNote(EditionSelection selection) => switch (selection) {
+        EditionWeek() =>
+          'Tu consultes la rétro de la semaine. Tes recommandations du jour '
+              'reviennent en sélectionnant « Aujourd’hui ».',
+        EditionPastDay(:final date) =>
+          'Tu lis la lettre du ${formatFrenchLongDate(date)}. Tes '
+              'recommandations du jour reviennent en sélectionnant '
+              '« Aujourd’hui ».',
+        EditionToday() => 'Tes recommandations du jour reviennent en '
+            'sélectionnant « Aujourd’hui ».',
+      };
+}
+
+/// EPIC « Lettre du jour » — note discrète + bouton « Revenir à aujourd'hui »
+/// affiché sous une lettre passée (footer) ou à la place du contenu quand aucune
+/// édition n'est disponible (état vide).
+class _BackToTodayBlock extends StatelessWidget {
+  final String message;
+  final VoidCallback onBackToToday;
+
+  /// Action secondaire « Choisir un autre jour » (ouvre la timeline). Fournie
+  /// dans l'état vide d'une lettre passée pour éviter le cul-de-sac « jour vide »
+  /// sans forcer un passage par « Aujourd'hui ».
+  final VoidCallback? onChooseAnotherDay;
+
+  const _BackToTodayBlock({
+    required this.message,
+    required this.onBackToToday,
+    this.onChooseAnotherDay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+        FacteurSpacing.space4,
+        FacteurSpacing.space4,
+      ),
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      decoration: facteurSurfaceCardDecoration(colors, shadow: false),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: FacteurSpacing.space3),
+          Wrap(
+            spacing: FacteurSpacing.space3,
+            runSpacing: FacteurSpacing.space2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: onBackToToday,
+                icon: const Icon(Icons.today_rounded, size: 18),
+                label: const Text('Revenir à aujourd’hui'),
+              ),
+              if (onChooseAnotherDay != null)
+                TextButton.icon(
+                  onPressed: onChooseAnotherDay,
+                  icon: Icon(
+                    PhosphorIcons.rewind(PhosphorIconsStyle.fill),
+                    size: 16,
+                  ),
+                  label: const Text('Choisir un autre jour'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Scaffold squelette du démarrage matinal : en-têtes de sections **réels**
@@ -1452,11 +1936,25 @@ class _SnapAnchors {
 class _SectionSnapPhysics extends ScrollPhysics {
   final _SnapAnchors anchors;
 
-  const _SectionSnapPhysics({required this.anchors, super.parent});
+  /// Fired with the committed resting offset the instant a fling resolves a
+  /// snap (finger lift), *before* the spring runs — lets the screen land the
+  /// section haptic at the moment of passage instead of at settle. Preserved
+  /// through [applyTo] so the platform-wrapped physics keeps calling it.
+  final void Function(double committedTarget)? onSnapCommit;
+
+  const _SectionSnapPhysics({
+    required this.anchors,
+    this.onSnapCommit,
+    super.parent,
+  });
 
   @override
   _SectionSnapPhysics applyTo(ScrollPhysics? ancestor) {
-    return _SectionSnapPhysics(anchors: anchors, parent: buildParent(ancestor));
+    return _SectionSnapPhysics(
+      anchors: anchors,
+      onSnapCommit: onSnapCommit,
+      parent: buildParent(ancestor),
+    );
   }
 
   @override
@@ -1467,6 +1965,7 @@ class _SectionSnapPhysics extends ScrollPhysics {
     final natural = super.createBallisticSimulation(position, velocity);
     final target = _resolveTarget(position, velocity, natural);
     if (target == null) return natural;
+    onSnapCommit?.call(target);
     return ScrollSpringSimulation(
       kSnapSpring,
       position.pixels,

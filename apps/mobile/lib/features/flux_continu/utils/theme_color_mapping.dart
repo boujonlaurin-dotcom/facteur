@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../models/flux_continu_models.dart';
+
 /// Visual mapping for the 9 broad Facteur themes (cf.
 /// `packages/api/app/services/ml/topic_theme_mapper.py` — VALID_THEMES).
 ///
@@ -39,6 +41,42 @@ const String fallbackTheme2 = 'environment';
 ThemeVisual visualFor(String slug) =>
     themeMap[slug] ??
     const ThemeVisual(accent: Color(0xFF5D5B5A), label: 'Veille');
+
+/// Emoji par slug de thème (alignés maquette « Lettre du jour ») — carré emoji
+/// des lignes de section du rituel (deep-dive « file droit vers une section »).
+/// Les slugs absents retombent sur [_kSectionEmojiFallback].
+const Map<String, String> themeEmoji = {
+  'tech': '💻',
+  'environment': '🌿',
+  'science': '🔬',
+  'society': '👥',
+  'culture': '🎭',
+  'economy': '📈',
+  'politics': '🏛️',
+  'international': '🌍',
+  'sport': '⚽',
+};
+
+/// Emoji éditorial de repli (Essentiel/Actus, source sans thème, thème inconnu).
+const String _kSectionEmojiFallback = '📰';
+
+/// Emoji d'une section de la Tournée du jour pour le deep-dive du rituel.
+/// Couvre l'éditorial (Essentiel/Actus → 📰, Bonnes Nouvelles → 🌱, Veille →
+/// 🔭) **et** les sections thématiques/sujets (via le slug, [themeEmoji]).
+String sectionEmoji(FluxSection section) {
+  switch (section) {
+    case EssentielSection():
+      return _kSectionEmojiFallback;
+    case DigestTopicSection():
+      return section.kind == SectionKind.bonnes
+          ? '🌱'
+          : _kSectionEmojiFallback;
+    case FeedThemeSection(:final kind, :final themeSlug):
+      if (kind == SectionKind.veille) return '🔭';
+      if (kind == SectionKind.bonnes) return '🌱';
+      return themeEmoji[themeSlug] ?? _kSectionEmojiFallback;
+  }
+}
 
 /// Accent pour les sections sources quand aucune couleur de logo n'est
 /// disponible. Bleu-gris neutre intentionnellement distinct de tous les thèmes.

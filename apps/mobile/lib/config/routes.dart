@@ -16,6 +16,7 @@ import '../features/feed/widgets/perspectives_bottom_sheet.dart'
     show Perspective;
 import '../features/flux_continu/screens/digest_section_screen.dart';
 import '../features/flux_continu/screens/flux_continu_screen.dart';
+import '../features/flux_continu/screens/morning_ritual_screen.dart';
 import '../features/flux_continu/screens/source_section_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
@@ -36,7 +37,9 @@ import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
 import '../features/my_interests/screens/my_interests_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
-import '../features/subscription/screens/paywall_screen.dart';
+import '../features/soutien/screens/link_sent_screen.dart';
+import '../features/soutien/screens/soutien_screen.dart';
+import '../features/soutien/screens/veille_wall_screen.dart';
 import '../features/veille/screens/veille_config_screen.dart';
 import '../features/lettres/screens/courrier_screen.dart';
 import '../features/lettres/screens/open_letter_screen.dart';
@@ -78,6 +81,7 @@ class RouteNames {
   static const String feed = 'feed';
   static const String flaner = 'flaner';
   static const String fluxContinu = 'flux-continu';
+  static const String edition = 'edition';
   static const String contentDetail = 'content-detail';
   static const String contentExternal = 'content-external';
   static const String saved = 'saved';
@@ -95,7 +99,6 @@ class RouteNames {
   static const String profile = 'profile';
   static const String progress = 'progress';
   static const String quiz = 'quiz';
-  static const String paywall = 'paywall';
   static const String emailConfirmation = 'email-confirmation';
   static const String resetPassword = 'reset-password';
   static const String myInterests = 'my-interests';
@@ -107,6 +110,9 @@ class RouteNames {
   static const String grille = 'grille';
   static const String grilleLeaderboard = 'grille-leaderboard';
   static const String grilleShare = 'grille-share';
+  static const String soutien = 'soutien';
+  static const String veilleWall = 'veille-wall';
+  static const String soutienLinkSent = 'soutien-link-sent';
 }
 
 /// Chemins des routes
@@ -121,6 +127,7 @@ class RoutePaths {
   static const String feed = '/feed';
   static const String flaner = '/flaner';
   static const String fluxContinu = '/flux-continu';
+  static const String edition = '/edition';
   static const String contentDetail = '/content/:id';
   static const String contentExternal = '/content-external';
   static const String saved = '/saved';
@@ -138,7 +145,6 @@ class RoutePaths {
   static const String topicExplorer = '/topic-explorer';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
-  static const String paywall = '/paywall';
   static const String emailConfirmation = '/email-confirmation';
   static const String resetPassword = '/reset-password';
   static const String veilleConfig = '/veille/config';
@@ -147,6 +153,9 @@ class RoutePaths {
   static const String grille = '/grille';
   static const String grilleLeaderboard = '/grille/leaderboard';
   static const String grilleShare = '/grille/share';
+  static const String soutien = '/soutien';
+  static const String veilleWall = '/soutien/veille-wall';
+  static const String soutienLinkSent = '/soutien/lien-envoye';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -181,9 +190,19 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final authState = ref.read(authStateProvider);
-      String postAuthHomePath() {
+      String postAuthHomePath({bool allowMorningRitual = true}) {
         final tournee = ref.read(tourneeProgressServiceProvider);
-        return tournee.isClosingDismissedTodaySync()
+        // Rituel matinal (Story 28.1) : au premier open du jour, on présente
+        // l'écran enveloppe `/edition` AVANT le feed. Lecture **synchrone**
+        // (pas d'await → pas de flicker, comme la closing card) ; la résolution
+        // « édition prête » est faite dans l'écran, qui file au feed sans
+        // marquer « vu » si rien n'est prêt (décision PO #4). Exclu juste après
+        // l'onboarding (`allowMorningRitual: false`) : le nouvel utilisateur
+        // file droit à son feed, le rituel l'accueillera au prochain cold-open.
+        if (allowMorningRitual && !tournee.isMorningRitualShownTodaySync()) {
+          return RoutePaths.edition;
+        }
+        return tournee.hasBrowsedEssentielTodaySync()
             ? RoutePaths.flaner
             : RoutePaths.fluxContinu;
       }
@@ -264,9 +283,29 @@ final routerProvider = Provider<GoRouter>((ref) {
         return RoutePaths.onboarding;
       }
 
-      // 5. Onboarding : empêcher d'y retourner si fini → atterrissage flux continu
+      // 5. Onboarding fini mais on retombe sur /onboarding (ex: back) → renvoi au
+      // feed sans rejouer le rituel (allowMorningRitual: false). La sortie
+      // d'onboarding « normale » passe, elle, délibérément par /edition
+      // (cf. conclusion_animation_screen → /edition?from=onboarding).
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return postAuthHomePath();
+        return postAuthHomePath(allowMorningRitual: false);
+      }
+
+      // 6. Gate Rituel : L'Essentiel n'est accessible qu'APRÈS la lettre du
+      // jour. Cold boot, tap onglet (main_shell fait `context.go`), push,
+      // reprise d'app : tout ce qui vise `/flux-continu` passe par `/edition`
+      // tant que la lettre du jour n'a pas été vue. Match EXACT → les
+      // sous-routes `/flux-continu/content/:id` (tap article widget)
+      // s'échappent et ouvrent l'article directement ; `/flaner` (Flâner) n'est
+      // jamais gated → exception widget préservée. Sûr ici : logged-in + email
+      // confirmé + `onboardingStatusKnown` déjà garantis, et le rituel se
+      // marque « vu » à sa révélation (pas de boucle).
+      if (matchedLocation == RoutePaths.fluxContinu &&
+          !authState.needsOnboarding &&
+          !ref
+              .read(tourneeProgressServiceProvider)
+              .isMorningRitualShownTodaySync()) {
+        return RoutePaths.edition;
       }
 
       return null;
@@ -318,6 +357,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.onboardingConclusion,
         name: RouteNames.onboardingConclusion,
         builder: (context, state) => const ConclusionAnimationScreen(),
+      ),
+
+      // Rituel matinal « Ton édition vient d'arriver » (Story 28.1). Route
+      // top-level (hors shell, sibling de splash) en fondu doux pour la
+      // continuité d'ouverture vers l'Essentiel.
+      GoRoute(
+        path: RoutePaths.edition,
+        name: RouteNames.edition,
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          // Le rituel se révèle au plancher d'ambiance puis hydrate en direct :
+          // même écran pour l'ouverture quotidienne et la sortie d'onboarding
+          // (`?from=onboarding` n'a plus d'effet — plus de plafond de repli).
+          child: const MorningRitualScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+              FadeTransition(opacity: animation, child: child),
+        ),
       ),
 
       // Shell principal des deux onglets (Essentiel / Flâner). MainShell ne
@@ -388,6 +444,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                     pageBuilder: (context, state) {
                       final key = state.pathParameters['key']!;
                       final section = state.extra as DigestTopicSection?;
+                      // `src=week` → « Tout lire » de la rétro hebdo : la page
+                      // épingle l'agrégat passé en `extra` au lieu de résoudre
+                      // le feed du jour (cf. DigestSectionScreen.pinToInitial).
+                      final pinToInitial =
+                          state.uri.queryParameters['src'] == 'week';
                       return FullSwipeCupertinoPage(
                         key: state.pageKey,
                         transitionDurationOverride:
@@ -396,6 +457,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                         child: DigestSectionScreen(
                           sectionKeyValue: key,
                           initialSection: section,
+                          pinToInitial: pinToInitial,
                         ),
                       );
                     },
@@ -508,7 +570,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: RouteNames.contentExternal,
         parentNavigatorKey: NotificationService.navigatorKey,
         pageBuilder: (context, state) {
-          final p = state.extra as Perspective;
+          final p = state.extra as Perspective?;
+          if (p == null) {
+            // extra perdu (deep-link/notif après kill, ou restauration OS) :
+            // on annule au lieu de planter la construction (FLUTTER-Y).
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final router = GoRouter.of(context);
+              if (router.canPop()) {
+                router.pop();
+              } else {
+                router.go(RoutePaths.feed);
+              }
+            });
+            return const FullSwipeCupertinoPage(child: SizedBox.shrink());
+          }
           return FullSwipeCupertinoPage(
             child: ContentDetailScreen.external(
               url: p.url,
@@ -708,16 +783,31 @@ final routerProvider = Provider<GoRouter>((ref) {
         },
       ),
 
-      // Paywall (modal)
+      // Soutien « Fact·eur·isse » (porte 1) + mur veille (porte 2) +
+      // confirmation « lien envoyé ». Root navigator : plein écran au-dessus
+      // du footer.
       GoRoute(
-        path: RoutePaths.paywall,
-        name: RouteNames.paywall,
-        pageBuilder: (context, state) => CustomTransitionPage(
-          child: const PaywallScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            return FadeTransition(opacity: animation, child: child);
-          },
-        ),
+        path: RoutePaths.soutien,
+        name: RouteNames.soutien,
+        parentNavigatorKey: NotificationService.navigatorKey,
+        pageBuilder: (context, state) =>
+            FullSwipeCupertinoPage(child: const SoutienScreen()),
+        routes: [
+          GoRoute(
+            path: 'veille-wall',
+            name: RouteNames.veilleWall,
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) =>
+                FullSwipeCupertinoPage(child: const VeilleWallScreen()),
+          ),
+          GoRoute(
+            path: 'lien-envoye',
+            name: RouteNames.soutienLinkSent,
+            parentNavigatorKey: NotificationService.navigatorKey,
+            pageBuilder: (context, state) =>
+                FullSwipeCupertinoPage(child: const LinkSentScreen()),
+          ),
+        ],
       ),
     ],
     errorBuilder: (context, state) =>

@@ -23,7 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
-from app.schemas.checkout import CheckoutStartRequest, CheckoutStartResponse
+from app.dependencies import get_current_user_id
+from app.schemas.checkout import (
+    CheckoutSendLinkRequest,
+    CheckoutSendLinkResponse,
+    CheckoutStartRequest,
+    CheckoutStartResponse,
+)
 from app.services.posthog_client import get_posthog_client
 from app.services.subscription_service import SubscriptionService
 
@@ -36,6 +42,13 @@ logger = structlog.get_logger()
 # selon l'offering pour aiguiller `default` vs `founder` (offerings RC distincts).
 DEFAULT_WEB_BILLING_BASE_URL = "https://pay.rev.cat/facteur-premium"
 FOUNDER_WEB_BILLING_BASE_URL = "https://pay.rev.cat/facteur-founder"
+
+# Page-pont statique servie par la landing (domaine qu'on contrôle) vers laquelle
+# le magic link Supabase redirige. Supabase n'honore un `redirect_to` que s'il
+# matche l'allow-list « Redirect URLs » : une entrée unique et stable (notre
+# domaine) plutôt que le domaine tiers `pay.rev.cat`. La page-pont forwarde
+# ensuite vers l'URL RevenueCat passée en `next`.
+CHECKOUT_REDIRECT_BASE_URL = "https://facteur.app/checkout-redirect.html"
 
 
 async def _supabase_admin_lookup_user_by_email(email: str) -> str | None:
@@ -124,6 +137,16 @@ def _build_checkout_url(offering: str, user_id: str) -> str:
     return f"{base}?{params}"
 
 
+def _build_bridge_url(checkout_url: str) -> str:
+    """Enveloppe l'URL RevenueCat dans la page-pont `facteur.app`.
+
+    Le magic link Supabase pointe vers `checkout-redirect.html?next=<url RC>` ;
+    la page-pont forwarde vers `next`. `_build_checkout_url` reste la seule
+    source de vérité de l'URL RevenueCat.
+    """
+    return f"{CHECKOUT_REDIRECT_BASE_URL}?{urlencode({'next': checkout_url})}"
+
+
 @router.post("/start-passwordless", response_model=CheckoutStartResponse)
 async def start_passwordless(
     request: CheckoutStartRequest,
@@ -169,3 +192,110 @@ async def start_passwordless(
         checkout_url=checkout_url,
         is_new_user=is_new_user,
     )
+
+
+async def _supabase_admin_get_user_email(user_id: str) -> str | None:
+    """Retourne l'email Supabase de ce user_id, ou None s'il est introuvable."""
+    settings = get_settings()
+    if not (settings.supabase_url and settings.supabase_service_role_key):
+        return None
+
+    url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
+    headers = {
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "apikey": settings.supabase_service_role_key,
+    }
+    async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
+        resp = await client.get(url, headers=headers)
+    if resp.status_code != 200:
+        return None
+    return resp.json().get("email") or None
+
+
+async def _supabase_send_magic_link(email: str, redirect_to: str) -> None:
+    """Envoie le magic link Supabase (OTP) qui redirige vers l'URL de checkout.
+
+    Supabase envoie l'email lui-même ; le rate-limit OTP (~1/min par email)
+    remonte en 429 côté client mobile pour le bouton « Renvoyer le lien ».
+    """
+    settings = get_settings()
+    if not (settings.supabase_url and settings.supabase_anon_key):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase auth config missing",
+        )
+
+    url = (
+        f"{settings.supabase_url}/auth/v1/otp?{urlencode({'redirect_to': redirect_to})}"
+    )
+    headers = {
+        "apikey": settings.supabase_anon_key,
+        "Content-Type": "application/json",
+    }
+    body = {"email": email, "create_user": False}
+    async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
+        resp = await client.post(url, headers=headers, json=body)
+
+    if resp.status_code == 429:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Magic link rate-limited, retry in a minute",
+        )
+    if resp.status_code not in (200, 204):
+        logger.warning(
+            "checkout.supabase_send_magic_link_failed",
+            status=resp.status_code,
+            body=resp.text[:500],
+        )
+        sentry_sdk.capture_message(
+            "checkout.supabase_send_magic_link_failed", level="warning"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not send checkout link",
+        )
+
+
+@router.post("/send-link", response_model=CheckoutSendLinkResponse)
+async def send_link(
+    request: CheckoutSendLinkRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> CheckoutSendLinkResponse:
+    """Envoie par email le lien de checkout Web Billing à l'utilisateur courant.
+
+    Le CTA mobile n'ouvre jamais un paiement in-app (règles stores) : on envoie
+    un magic link Supabase dont le redirect_to est l'URL RevenueCat Web Billing
+    pré-remplie avec l'app_user_id.
+    """
+    email = await _supabase_admin_get_user_email(user_id)
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User email not found",
+        )
+
+    checkout_url = _build_checkout_url(request.offering, user_id)
+    await _supabase_send_magic_link(email, _build_bridge_url(checkout_url))
+
+    service = SubscriptionService(db)
+    await service._get_or_create_subscription(user_id)
+    await db.commit()
+
+    get_posthog_client().capture(
+        user_id=user_id,
+        event="checkout_link_sent",
+        properties={
+            "offering": request.offering,
+            "resend": request.resend,
+        },
+    )
+
+    logger.info(
+        "checkout.send_link",
+        user_id=user_id,
+        offering=request.offering,
+        resend=request.resend,
+    )
+
+    return CheckoutSendLinkResponse(sent=True, email=email)

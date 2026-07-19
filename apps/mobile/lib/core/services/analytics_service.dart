@@ -159,6 +159,32 @@ class AnalyticsService {
     await _capturePostHog('digest_session', props);
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // Rituel matinal « Ton édition vient d'arriver » (Story 28.1)
+  // ──────────────────────────────────────────────────────────────
+
+  /// L'écran enveloppe `/edition` s'est affiché au premier open du jour.
+  Future<void> trackMorningRitualShown({required String dayKey}) async {
+    final props = {'session_id': _sessionId, 'day_key': dayKey};
+    await _logEvent('morning_ritual_shown', props);
+    await _capturePostHog('morning_ritual_shown', props);
+  }
+
+  /// L'utilisateur a tapé « Ouvrir l'édition ». [waitedMs] = temps écoulé entre
+  /// l'affichage et le tap (utile pour calibrer le délai borné).
+  Future<void> trackMorningRitualOpened({
+    required String dayKey,
+    int? waitedMs,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'day_key': dayKey,
+      if (waitedMs != null) 'waited_ms': waitedMs,
+    };
+    await _logEvent('morning_ritual_opened', props);
+    await _capturePostHog('morning_ritual_opened', props);
+  }
+
   /// Enregistre une session feed complète.
   Future<void> trackFeedSession({
     required double scrollDepthPercent,
@@ -489,6 +515,26 @@ class AnalyticsService {
 
   Future<void> trackAddSourceExpand(String query) async {
     await _logEvent('add_source_expand', {'query': query});
+  }
+
+  /// Ajout réussi d'une source depuis le panneau de recherche (catalogue ou
+  /// URL custom). Mesure l'effet des affordances « source vérifiée » / preuve
+  /// inline en regard de `search_abandoned` (émis au dispose sans ajout).
+  /// `sourceId` est vide pour un ajout custom (pas d'entrée catalogue).
+  Future<void> trackSourceAdded({
+    String? sourceId,
+    required String sourceType,
+    required bool inCatalog,
+    required bool isCurated,
+    required String sourceLayer,
+  }) async {
+    await _logEvent('source_added', {
+      'source_id': sourceId ?? '',
+      'source_type': sourceType,
+      'in_catalog': inCatalog,
+      'is_curated': isCurated,
+      'source_layer': sourceLayer,
+    });
   }
 
   // ──────────────────────────────────────────────────────────────

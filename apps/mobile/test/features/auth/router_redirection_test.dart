@@ -3,16 +3,47 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:facteur/config/routes.dart';
 import 'package:facteur/core/auth/auth_state.dart';
 import 'package:facteur/features/auth/screens/email_confirmation_screen.dart';
+import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
 import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 // For debugPrint
 
 // Simple stub for AuthStateNotifier to control state in tests
 class FakeAuthStateNotifier extends AuthStateNotifier {
   FakeAuthStateNotifier(AuthState initialState) : super.test(initialState);
+}
+
+/// Utilisateur social confirmé + onboardé (pas d'email confirmation, pas
+/// d'onboarding) — l'état d'entrée du gate Rituel.
+User _confirmedSocialUser() => User(
+      id: '123',
+      appMetadata: const {
+        'provider': 'google',
+        'providers': ['google'],
+      },
+      userMetadata: const {},
+      aud: 'authenticated',
+      createdAt: DateTime.now().toIso8601String(),
+    );
+
+/// Chemin actuellement matché par [router] (après résolution des redirects).
+String _currentPath(GoRouter router) =>
+    router.routerDelegate.currentConfiguration.uri.path;
+
+/// Surface haute (téléphone) : `/edition` monte le loader du rituel dont la
+/// citation éditoriale se révèle à 600 ms — dans la fenêtre de test 600 px par
+/// défaut, la colonne déborde de ~23 px et fait échouer le test par intermittence.
+/// Une hauteur réaliste supprime ce faux négatif (le test ne juge que le chemin).
+void _useTallSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(600, 1200);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
 }
 
 void main() {
@@ -138,5 +169,103 @@ void main() {
     expect(find.byType(EmailConfirmationScreen), findsNothing);
     debugPrint(
         '✅ SUCCESS: Confirmed user was not redirected to confirmation screen');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Gate Rituel matinal (Chg 1) : L'Essentiel n'est atteignable qu'après la
+  // lettre du jour — tout atterrissage exact sur /flux-continu passe par
+  // /edition tant que le rituel n'a pas été vu.
+  // ---------------------------------------------------------------------------
+  testWidgets(
+      'Gate: tap onglet L\'Essentiel (rituel pas vu) redirige /flux-continu → /edition',
+      (WidgetTester tester) async {
+    _useTallSurface(tester);
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final prefs = await SharedPreferences.getInstance();
+
+    final container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => FakeAuthStateNotifier(
+            AuthState(
+              user: _confirmedSocialUser(),
+              isLoading: false,
+              needsOnboarding: false,
+              onboardingStatusKnown: true,
+            ),
+          ),
+        ),
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final router = container.read(routerProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Atterrissage post-auth : rituel pas vu → /edition (via postAuthHomePath).
+    expect(_currentPath(router), RoutePaths.edition);
+
+    // Tap onglet « L'Essentiel » (main_shell fait `context.go(/flux-continu)`).
+    router.go(RoutePaths.fluxContinu);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Le gate re-route vers la lettre du jour.
+    expect(_currentPath(router), RoutePaths.edition);
+  });
+
+  testWidgets(
+      'Gate: rituel déjà vu → /flux-continu passe (L\'Essentiel accessible)',
+      (WidgetTester tester) async {
+    _useTallSurface(tester);
+    // Marque le rituel « vu aujourd'hui » (clé jour-tournée courante).
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      TourneeProgressService.morningRitualPrefsKey(DateTime.now()): true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+
+    final container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => FakeAuthStateNotifier(
+            AuthState(
+              user: _confirmedSocialUser(),
+              isLoading: false,
+              needsOnboarding: false,
+              onboardingStatusKnown: true,
+            ),
+          ),
+        ),
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final router = container.read(routerProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Rituel vu → le gate ne s'applique plus : L'Essentiel est accessible.
+    router.go(RoutePaths.fluxContinu);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(_currentPath(router), RoutePaths.fluxContinu);
   });
 }

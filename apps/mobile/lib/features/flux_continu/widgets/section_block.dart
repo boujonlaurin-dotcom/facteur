@@ -6,7 +6,6 @@ import 'essentiel_hi_fi_card.dart';
 import 'etoffer_theme_footer.dart';
 import 'flux_continu_article_card.dart';
 import 'section_banner.dart';
-import 'tournee_composer_sheet.dart';
 import 'veille_group_header.dart';
 
 /// Identifies which chip the user picked on a [FeedbackInline] banner.
@@ -95,10 +94,12 @@ class SectionBlock extends StatelessWidget {
         builder: (context) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Bouton « personnaliser » retiré (décision PO) : point d'entrée
+            // unique = l'inline « GÉRER » de MyInterestsIntro. Le déclencheur
+            // « rewind » de l'en-tête de la carte subsiste, lui.
             EssentielHiFiCard(
               articles: section.articles,
               onTapArticle: (a) => onTapArticle(a),
-              onTapPersonalize: () => showTourneeComposerSheet(context),
             ),
             const SizedBox(height: 16),
           ],

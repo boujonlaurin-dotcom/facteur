@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Redirection · Facteur</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="stylesheet" href="/css/style.css?v=5">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        .redirect {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 24px;
+        }
+
+        .redirect__inner {
+            max-width: 420px;
+        }
+
+        .redirect__title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0 0 12px;
+        }
+
+        .redirect__text {
+            color: #555;
+            line-height: 1.6;
+            margin: 0 0 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="redirect">
+        <div class="redirect__inner">
+            <p class="redirect__title" id="title">Redirection en cours&hellip;</p>
+            <p class="redirect__text" id="text">
+                On t'emm&egrave;ne vers la page pour finaliser ton soutien &agrave; Facteur.
+            </p>
+            <p class="redirect__fallback" id="fallback" hidden>
+                <a href="/premium.html">Revenir sur Facteur &rarr;</a>
+            </p>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            // Garde anti open-redirect : on ne forwarde que vers les liens de
+            // paiement RevenueCat. Toute autre valeur (ou absence) affiche un
+            // fallback plutôt que de rediriger vers un domaine arbitraire.
+            var ALLOWED_PREFIX = 'https://pay.rev.cat/';
+            var next = new URLSearchParams(window.location.search).get('next');
+
+            if (next && next.indexOf(ALLOWED_PREFIX) === 0) {
+                // Supabase appose un fragment #access_token=… au retour du magic
+                // link : RevenueCat n'en a pas besoin (l'entitlement est lié à
+                // app_user_id), on forwarde l'URL telle quelle.
+                window.location.replace(next);
+                return;
+            }
+
+            document.getElementById('title').textContent = 'Lien invalide';
+            document.getElementById('text').textContent =
+                "Ce lien de redirection n'est pas valide. Reviens sur Facteur pour réessayer.";
+            document.getElementById('fallback').hidden = false;
+        })();
+    </script>
+</body>
+
+</html>

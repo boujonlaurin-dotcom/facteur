@@ -14,8 +14,14 @@ import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
+import '../providers/edition_read_status_provider.dart';
+import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
+import '../services/tournee_progress_service.dart';
 import '../utils/theme_color_mapping.dart';
+import 'auto_grow_candidate.dart';
+import 'edition_timeline_sheet.dart';
+import 'ephemeral_rattraper_label.dart';
 import 'weather_condition_icon.dart';
 import 'weather_detail_sheet.dart';
 
@@ -28,13 +34,11 @@ import 'weather_detail_sheet.dart';
 class EssentielHiFiCard extends ConsumerWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
-  final VoidCallback onTapPersonalize;
 
   const EssentielHiFiCard({
     super.key,
     required this.articles,
     required this.onTapArticle,
-    required this.onTapPersonalize,
   });
 
   @override
@@ -48,6 +52,28 @@ class EssentielHiFiCard extends ConsumerWidget {
         ? articles.sublist(1, articles.length > 5 ? 5 : articles.length)
         : const <EssentielArticle>[];
 
+    // EPIC « Lettre du jour » — déclencheur « rewind » dans l'en-tête. Toujours
+    // affiché (today ET passé) ; ouvre la timeline en overlay. La carte étant
+    // l'unique héros Essentiel rendu dans les deux vues (live + passée), le
+    // brancher ici le fait apparaître partout.
+    //
+    // « Rattraper » n'est plus un libellé fixe mais un **signal contextuel**
+    // (décision PO « header épuré à jour ») :
+    // - à jour → icône ⏪ seule (toujours tappable, ouvre la timeline) ;
+    // - édition d'hier non ouverte → **point rouge** persistant sur ⏪ + le nudge
+    //   éphémère « Rattraper ? » (fondu-in ~1 s / tient 2 s / fondu-out, ≤1×/j) ;
+    // - lettre passée → « Revenir » fixe (état de navigation, inchangé).
+    // Le titre de la section porte, lui, la date sélectionnée (« Hier » vs
+    // « Ton Essentiel »).
+    final selection = ref.watch(selectedEditionDateProvider);
+    final isToday = selection is EditionToday;
+    // « En retard » = today ET édition d'hier (J-1) non ouverte. Dégradation
+    // gracieuse : `missedYesterday()` renvoie `false` si les streaks sont
+    // indisponibles → aucun faux positif au cold-boot.
+    final missedYesterday =
+        isToday && ref.watch(editionReadStatusProvider).missedYesterday();
+    final headerTitle = isToday ? 'Ton Essentiel' : editionPillLabel(selection);
+
     return KeyedSubtree(
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
       key: tourEssentielHeroKey,
@@ -58,18 +84,8 @@ class EssentielHiFiCard extends ConsumerWidget {
         FacteurSpacing.space3,
         FacteurSpacing.space4,
       ),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        border: Border.all(color: colors.border, width: 0.6),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 14,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
+      // Chrome partagé avec les cartes-jour de la rétro hebdo (theme.dart).
+      decoration: facteurSurfaceCardDecoration(colors),
       child: Padding(
         // Compaction « cartes ≤ écran » : top resserré space4→space3 pour
         // gagner ~4px sans toucher la pastille date/météo (choix PO).
@@ -82,7 +98,25 @@ class EssentielHiFiCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Header(accent: accent, onTapPersonalize: onTapPersonalize),
+            // En-tête « Ton Essentiel » (ou date sélectionnée) + pastille
+            // date/météo + rewind.
+            _Header(
+              accent: accent,
+              title: headerTitle,
+              rewind: EditionRewindTrigger(
+                onTap: () => EditionTimelineSheet.show(context),
+                // today à jour → icône seule ; lettre passée → « Revenir » fixe.
+                label: isToday ? null : 'Revenir',
+                // En retard → nudge éphémère « Rattraper ? » ; le point rouge
+                // persistant est dérivé de sa présence côté trigger.
+                ephemeralLabel: missedYesterday
+                    ? EphemeralRattraperLabel(
+                        dayKey:
+                            TourneeProgressService.dayKey(DateTime.now()),
+                      )
+                    : null,
+              ),
+            ),
             // Compaction « cartes ≤ écran » (passe 2, validée UX) : gap
             // header→lead 8→6 (le fond teinté du lead rétablit la séparation).
             const SizedBox(height: 6),
@@ -109,11 +143,26 @@ class EssentielHiFiCard extends ConsumerWidget {
   }
 }
 
+/// Titre Fraunces de l'en-tête standard ([_Header]).
+TextStyle _headerTitleStyle(FacteurColors colors) => GoogleFonts.fraunces(
+      fontSize: 18,
+      fontWeight: FontWeight.w700,
+      height: 1.15,
+      color: colors.textPrimary,
+    );
+
 class _Header extends StatelessWidget {
   final Color accent;
-  final VoidCallback onTapPersonalize;
 
-  const _Header({required this.accent, required this.onTapPersonalize});
+  /// Titre de la section : « Ton Essentiel » en today, sinon le libellé de la
+  /// lettre sélectionnée (« Hier », « Cette semaine », « mar. 24 »).
+  final String title;
+
+  /// Déclencheur « rewind » (timeline overlay), posé à droite du titre. Toujours
+  /// fourni par la carte (today ET lettre passée).
+  final Widget? rewind;
+
+  const _Header({required this.accent, required this.title, this.rewind});
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +172,7 @@ class _Header extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _HeaderBadge(accent: accent),
-        const SizedBox(width: FacteurSpacing.space3),
+        const SizedBox(width: FacteurSpacing.space2),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,19 +184,19 @@ class _Header extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      'Ton Essentiel',
-                      style: GoogleFonts.fraunces(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        height: 1.15,
-                        color: colors.textPrimary,
-                      ),
-                      maxLines: 2,
+                      title,
+                      style: _headerTitleStyle(colors),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(width: FacteurSpacing.space2),
-                  _PersonalizeButton(onTap: onTapPersonalize),
+                  // Ordre : titre … rewind. Le bouton « personnaliser » a été
+                  // retiré (décision PO) : point d'entrée unique des préférences
+                  // = l'inline « GÉRER » de MyInterestsIntro.
+                  if (rewind != null) ...[
+                    const SizedBox(width: FacteurSpacing.space2),
+                    rewind!,
+                  ],
                 ],
               ),
               const SizedBox(height: 4),
@@ -258,8 +307,10 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
     }
 
     // Fixed slot: the header never reflows when flipping between date/weather.
+    // Slot resserré (110 → 96) : l'icône météo (88) et la pastille date (cercle
+    // 68) restent centrées, mais sans le vide latéral d'avant (décision PO).
     return SizedBox(
-      width: 110,
+      width: 96,
       height: 140,
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
@@ -485,39 +536,6 @@ class _DateStamp extends StatelessWidget {
   }
 }
 
-class _PersonalizeButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _PersonalizeButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).extension<FacteurColors>()!;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FacteurRadius.full),
-        child: Container(
-          width: 26,
-          height: 26,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: colors.border, width: 0.8),
-          ),
-          child: Icon(
-            Icons.tune_rounded,
-            size: 13,
-            color: colors.textSecondary,
-            semanticLabel: 'Personnaliser ton Essentiel',
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _LeadTile extends StatelessWidget {
   final EssentielArticle article;
   final Color accent;
@@ -537,9 +555,13 @@ class _LeadTile extends StatelessWidget {
     final chipAccent = _accentFor(article, accent);
     return Material(
       color: Colors.transparent,
-      child: _ArticlePreviewGesture(
-        article: article,
-        child: InkWell(
+      child: AutoGrowCandidate(
+        contentId: article.contentId,
+        isRead: article.isRead,
+        keyPrefix: 'ess',
+        child: ArticlePreviewGesture(
+          contentBuilder: () => article.toPreviewContent(),
+          child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),
         // Lu : grise la tuile (0.6) + coche verte, comme les autres sections
@@ -598,6 +620,7 @@ class _LeadTile extends StatelessWidget {
             ],
           ),
         ),
+          ),
         ),
       ),
     );
@@ -620,9 +643,13 @@ class _MediumTile extends StatelessWidget {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     return Material(
       color: Colors.transparent,
-      child: _ArticlePreviewGesture(
-        article: article,
-        child: InkWell(
+      child: AutoGrowCandidate(
+        contentId: article.contentId,
+        isRead: article.isRead,
+        keyPrefix: 'ess',
+        child: ArticlePreviewGesture(
+          contentBuilder: () => article.toPreviewContent(),
+          child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
         // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
@@ -677,31 +704,9 @@ class _MediumTile extends StatelessWidget {
             ],
           ),
         ),
+          ),
         ),
       ),
-    );
-  }
-}
-
-/// Aperçu au long-press, partagé par [_LeadTile] et [_MediumTile] (cf.
-/// flux_continu_article_card.dart). Pas de swipe (choix PO) ni d'haptique
-/// (cohérence FluxContinuArticleCard). Les tuiles vivent dans un scroll
-/// vertical → pas de conflit d'arène, le long-press gagne de façon fiable.
-class _ArticlePreviewGesture extends StatelessWidget {
-  final EssentielArticle article;
-  final Widget child;
-
-  const _ArticlePreviewGesture({required this.article, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPressStart: (_) =>
-          ArticlePreviewOverlay.show(context, article.toPreviewContent()),
-      onLongPressMoveUpdate: (d) =>
-          ArticlePreviewOverlay.updateScroll(d.localOffsetFromOrigin.dy),
-      onLongPressEnd: (_) => ArticlePreviewOverlay.dismiss(),
-      child: child,
     );
   }
 }

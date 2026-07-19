@@ -5,6 +5,10 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    location = /methodologie {
+        try_files /methodologie.html =404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

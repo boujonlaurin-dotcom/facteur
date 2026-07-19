@@ -112,6 +112,7 @@ class PremiumConnectionResponse(BaseModel):
         from app.services.premium_curated_sources import (
             domain_key,
             is_paywalled_source,
+            origin_url,
         )
 
         config = getattr(source, "premium_connection_config", None)
@@ -142,12 +143,16 @@ class PremiumConnectionResponse(BaseModel):
                 )
 
         if is_paywalled_source(source, curated_map=curated_map):
-            clean_url = url.strip() if isinstance(url, str) else ""
-            if clean_url.startswith(("http://", "https://")):
+            # On synthétise le flux générique sur l'**origine** du site, jamais
+            # sur l'URL brute (souvent un flux RSS : `/rss.xml`, `/feed/`…) qui
+            # ouvrirait du XML dans la WebView. `origin_url` renvoie "" pour tout
+            # ce qui n'est pas http(s) exploitable (subsume l'ancienne garde).
+            origin = origin_url(url)
+            if origin:
                 return cls(
                     enabled=True,
-                    login_url=clean_url,
-                    test_url=clean_url,
+                    login_url=origin,
+                    test_url=origin,
                     display_hint=(
                         "Connecte-toi à ton compte sur le site du média, "
                         "puis reviens lire tes articles."

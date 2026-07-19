@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,8 +9,14 @@ import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../flux_continu/services/tournee_progress_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../widgets/profile_progression_card.dart';
+
+/// Le bloc QA (rituel matinal) n'est monté qu'en staging/dev : build debug
+/// **ou** canal beta (flavor staging). Jamais en prod (canal stable).
+bool get _showQaTools =>
+    kDebugMode || AppUpdateConstants.updateChannel == 'beta';
 
 /// Page « Profil » regroupant les réglages applicatifs accessibles depuis
 /// la sheet Réglages : compte, notifications, questionnaire, présentation
@@ -102,6 +108,33 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ],
             ),
+            if (_showQaTools) ...[
+              const SizedBox(height: FacteurSpacing.space6),
+              _Section(
+                title: 'RITUEL MATINAL (QA)',
+                children: [
+                  _Tile(
+                    icon: Icons.replay,
+                    title: 'Rejouer le rituel matinal',
+                    subtitle: 'Réaffiche « Ton édition vient d\'arriver » au '
+                        'prochain redémarrage',
+                    onTap: () async {
+                      await ref
+                          .read(tourneeProgressServiceProvider)
+                          .resetMorningRitualShown();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Rituel réarmé — relance l\'app pour le revoir.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: FacteurSpacing.space8),
           ],
         ),

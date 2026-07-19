@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -12,7 +11,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../core/web/web_perf.dart';
 import '../../../widgets/design/facteur_card.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
@@ -21,6 +19,9 @@ import '../../digest/widgets/section_divider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_detail_modal.dart';
+import '../../soutien/providers/analyse_quota_provider.dart';
+import '../../soutien/soutien_copy.dart';
+import '../../premium/premium_provider.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
 import '../repositories/feed_repository.dart' show HighlightSpan, TokenSpan;
@@ -384,6 +385,13 @@ class _PerspectivesBottomSheetState
   }
 
   Future<void> _requestAnalysis() async {
+    // L'analyse se charge TOUJOURS (plus de blocage paywall). Sur un lancement
+    // frais (state idle, pas un retry après erreur), on marque l'usage du jour
+    // de façon non-bloquante (no-op premium) : signal de présentation pour le
+    // nudge doux « Notre histoire » de la surface quota.
+    if (_analysisState == PerspectivesAnalysisState.idle) {
+      unawaited(ref.read(analyseQuotaProvider.notifier).recordUse());
+    }
     setState(() => _analysisState = PerspectivesAnalysisState.loading);
 
     try {
@@ -402,6 +410,56 @@ class _PerspectivesBottomSheetState
       if (!mounted) return;
       setState(() => _analysisState = PerspectivesAnalysisState.error);
     }
+  }
+
+  /// Pill premium « Analyses illimitées » / bannière quota épuisé (free).
+  /// Null si free avec quota dispo → la zone CTA reste inchangée.
+  Widget? _buildQuotaNotice(FacteurColors colors, TextTheme textTheme) {
+    // Premium d'abord : évite de réveiller `analyseQuotaProvider` (lecture +
+    // purge SharedPreferences) pour un utilisateur qui n'affiche que la pill.
+    if (ref.watch(isPremiumProvider)) {
+      return Center(
+        child: Text(
+          SoutienCopy.analysesPillPremium,
+          style: FacteurTypography.stamp(const Color(0xFF2E7D32)),
+        ),
+      );
+    }
+    final quotaUsed = ref.watch(analyseQuotaProvider).valueOrNull ?? false;
+    if (quotaUsed && _analysisState == PerspectivesAnalysisState.idle) {
+      // Nudge doux, non-bloquant : l'analyse reste libre. Après le 1er usage du
+      // jour, on explique le coût réel et on renvoie vers « Notre histoire »
+      // (écran Soutien), du même geste que le paywall (`context.pushNamed`).
+      return Center(
+        child: InkWell(
+          onTap: () => context.pushNamed(RouteNames.soutien),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  SoutienCopy.analysesQuotaBanner,
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodySmall
+                      ?.copyWith(color: colors.textSecondary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  SoutienCopy.missionLinkLabel,
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return null;
   }
 
   /// Sépare FR (langue null ou `fr`) des couvertures étrangères et insère
@@ -488,7 +546,7 @@ class _PerspectivesBottomSheetState
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Couverture médiatique',
+                                  'Comparer les angles',
                                   style: textTheme.titleMedium?.copyWith(
                                     fontWeight: FontWeight.bold,
                                     color: colors.textPrimary,
@@ -590,6 +648,7 @@ class _PerspectivesBottomSheetState
                         onRequestAnalysis: _requestAnalysis,
                         colors: colors,
                         textTheme: textTheme,
+                        notice: _buildQuotaNotice(colors, textTheme),
                       ),
                     ),
                   ] else ...[
@@ -606,7 +665,7 @@ class _PerspectivesBottomSheetState
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Couverture médiatique',
+                              'Comparer les angles',
                               style: textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: colors.textPrimary,
@@ -1189,6 +1248,10 @@ class PerspectivesAnalysisZone extends StatefulWidget {
   final TextTheme textTheme;
   final Key? zoneKey;
 
+  /// Surface de gating optionnelle sous le CTA : pill « Analyses illimitées »
+  /// (premium) ou bannière quota épuisé (free).
+  final Widget? notice;
+
   const PerspectivesAnalysisZone({
     super.key,
     required this.state,
@@ -1197,6 +1260,7 @@ class PerspectivesAnalysisZone extends StatefulWidget {
     required this.colors,
     required this.textTheme,
     this.zoneKey,
+    this.notice,
   });
 
   @override
@@ -1210,7 +1274,14 @@ class PerspectivesAnalysisZoneState extends State<PerspectivesAnalysisZone> {
   @override
   Widget build(BuildContext context) {
     if (widget.state == PerspectivesAnalysisState.idle) {
-      return _buildAnalysisCta();
+      if (widget.notice == null) return _buildAnalysisCta();
+      return Column(
+        children: [
+          _buildAnalysisCta(),
+          const SizedBox(height: 8),
+          widget.notice!,
+        ],
+      );
     }
 
     return AnimatedSize(
@@ -1547,6 +1618,9 @@ class _PerspectivesInlineSectionState
   static const double _kCoverageCardWidth = 248;
   static const double _kCoverageCardGap = 13;
   static const double _kCarouselPaddingH = 18;
+  // Largeur de la carte CTA « Analyse Facteur », désormais en TÊTE du carrousel
+  // (avant les cartes sources) : décale l'offset cible du tap-to-scroll.
+  static const double _kAnalysisCtaWidth = 190;
 
   // Pilote le scroll du carrousel pour le tap-to-scroll de la barre de biais.
   final ScrollController _carouselScrollController = ScrollController();
@@ -1629,7 +1703,11 @@ class _PerspectivesInlineSectionState
     }
 
     final maxExtent = _carouselScrollController.position.maxScrollExtent;
-    final target = ((_kCoverageCardWidth + _kCoverageCardGap) * index)
+    // La carte CTA « Analyse Facteur » précède les cartes sources → décalage
+    // fixe (largeur CTA + gap) avant la 1ʳᵉ carte source.
+    final target = (_kAnalysisCtaWidth +
+                _kCoverageCardGap +
+                (_kCoverageCardWidth + _kCoverageCardGap) * index)
         .clamp(0.0, maxExtent);
     HapticFeedback.selectionClick();
     _carouselScrollController.animateTo(
@@ -1704,8 +1782,8 @@ class _PerspectivesInlineSectionState
     final isLoading = widget.status == PerspectivesSectionStatus.loading;
     final shouldShowBand = !isEmpty || _emptyStage != _EmptyStage.collapsed;
     final label = (isLoading || isEmpty)
-        ? 'Couverture médiatique'
-        : 'Couverture médiatique (${_displayedPerspectives.length})';
+        ? 'Comparer les angles'
+        : 'Comparer les angles (${_displayedPerspectives.length})';
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
@@ -1775,40 +1853,32 @@ class _PerspectivesInlineSectionState
     required bool isReady,
     required Widget child,
   }) {
-    // Teinte quasi-invisible : à peine ~2 % sous le parchemin de la page. La
-    // zone ne se lit plus comme un panneau ; c'est la hairline qui délimite.
-    // Clair : crème translucide très léger. Sombre : backgroundPrimary discret.
+    // Teinte statique : plus de `BackdropFilter` (re-rasterisé chaque frame, le
+    // pattern retiré du chrome reader par #970). Zéro coût par frame ⇒ scroll du
+    // carrousel fluide. L'alpha est légèrement remonté pour compenser la perte
+    // d'assombrissement du blur (parité visuelle : le rendu web `fallbackColor`
+    // prouvait déjà que la bande tient en statique).
+    // Clair : crème translucide. Sombre : backgroundPrimary discret.
     final tint = isDark
-        ? colors.backgroundPrimary.withValues(alpha: 0.6)
-        : const Color.fromRGBO(232, 222, 203, 0.55);
-    // Web n'a pas de blur (no-op opaque) → teinte composée plus proche du fond.
-    final fallbackColor = isDark
-        ? colors.backgroundPrimary
-        : const Color.fromRGBO(237, 228, 211, 1);
+        ? colors.backgroundPrimary.withValues(alpha: 0.75)
+        : const Color.fromRGBO(232, 222, 203, 0.72);
     // Hairline chaude nette mais fine : c'est la VRAIE séparation (élégante,
     // marquée). Top + bottom, gardée sur isReady.
     final hairlineColor = isDark
         ? Colors.white.withValues(alpha: isReady ? 0.09 : 0)
         : colors.border.withValues(alpha: isReady ? 0.7 : 0);
 
-    return ClipRect(
-      // ClipRect (bords droits) borne le BackdropFilter → vrai effet verre.
-      child: webBlurFallback(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        fallbackColor: fallbackColor,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: tint,
-            border: Border(
-              top: BorderSide(color: hairlineColor, width: 1),
-              bottom: BorderSide(color: hairlineColor, width: 1),
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
-            child: child,
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: tint,
+        border: Border(
+          top: BorderSide(color: hairlineColor, width: 1),
+          bottom: BorderSide(color: hairlineColor, width: 1),
         ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
+        child: child,
       ),
     );
   }
@@ -1955,6 +2025,13 @@ class _PerspectivesInlineSectionState
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Carte CTA « Analyse Facteur » en tête du carrousel (avant les
+            // cartes sources) : toujours rendue, le tap déclenche un fetch lazy.
+            _AnalysisCtaCard(
+              onTap: widget.onOpenAnalysis,
+              count: _displayedPerspectives.length,
+            ),
+            if (variants.isNotEmpty) const SizedBox(width: _kCoverageCardGap),
             for (var i = 0; i < variants.length; i++) ...[
               if (i > 0) const SizedBox(width: _kCoverageCardGap),
               CoverageComparisonCard(
@@ -1968,11 +2045,6 @@ class _PerspectivesInlineSectionState
                 ),
               ),
             ],
-            if (variants.isNotEmpty) const SizedBox(width: _kCoverageCardGap),
-            _AnalysisCtaCard(
-              onTap: widget.onOpenAnalysis,
-              count: _displayedPerspectives.length,
-            ),
           ],
         ),
       ),
@@ -2289,7 +2361,7 @@ class _PivotWashTitleState extends State<PivotWashTitle>
   }
 }
 
-/// Carte CTA « Analyse Facteur » en fin de carrousel — gabarit gradient ocre.
+/// Carte CTA « Analyse Facteur » en tête de carrousel — gabarit gradient ocre.
 /// Tap → ouvre le bottom sheet d'analyse (`onTap`, géré par l'écran parent).
 class _AnalysisCtaCard extends StatelessWidget {
   final VoidCallback? onTap;
@@ -2301,7 +2373,7 @@ class _AnalysisCtaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     return SizedBox(
-      width: 190,
+      width: _PerspectivesInlineSectionState._kAnalysisCtaWidth,
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,

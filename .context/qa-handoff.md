@@ -1,55 +1,79 @@
-# QA Handoff — « Notif du jour » (bandeau agrégateur quotidien)
+# QA Handoff — « Rattraper » : nudge éphémère + point rouge « pas à jour »
+
+> Rempli par l'agent dev. Input de /validate-feature. Story : `docs/stories/core/9.7.essentiel-rattraper-signal.md`.
+> (Handoff précédent « Lettres passées à parité visuelle » archivé dans
+> `.context/qa-handoff-lettres-parite.md`.)
 
 ## Feature développée
-Ligne de notification unique en tête du feed Essentiel : file de messages (profil + nudges absorbés), un seul visible à la fois, max 3/jour (le suivant après tap CTA ou dismiss croix), rotation quotidienne. Remplace les bandeaux renudge / well-informed / géoloc.
+
+L'en-tête de la carte « Ton Essentiel » n'affiche plus « Rattraper » en
+permanence. En today à jour → icône ⏪ seule. Si l'édition d'hier (J-1) n'a pas
+été ouverte → point rouge persistant sur ⏪ + le texte « Rattraper ? » qui
+apparaît en fondu (~1 s), tient 2 s, disparaît en fondu, au plus 1×/jour. Sur
+une lettre passée → « Revenir » fixe (inchangé).
 
 ## PR associée
-Branche `boujonlaurin-dotcom/notif-du-jour-composant` → PR vers `main` (voir `gh pr view`).
+
+_(à compléter à l'ouverture de la PR)_
 
 ## Écrans impactés
+
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Essentiel (feed) | `/feed` | Modifié (carte Notif du jour en tête, sous bandeau Lettres) |
-| Mes abonnements | `/settings/subscriptions?add=1` | Modifié (auto-ouverture feuille d'ajout) |
-| Profil | `/settings/profile` | Modifié (tuile « Ma configuration » + barre de progression) |
+| Flux Continu — carte « Ton Essentiel » (en-tête, déclencheur rewind) | onglet Essentiel | Modifié |
 
 ## Scénarios de test
 
-### Scénario 1 : affichage un-à-la-fois (happy path)
+> ⚠️ L'état « en retard » dépend des streaks (J-1 `opened == false`), difficile
+> à forcer sur le build web sans backend/streaks peuplés. **La preuve principale
+> = les widget tests** (`essentiel_hi_fi_card_test.dart`,
+> `ephemeral_rattraper_label_test.dart`, `edition_read_status_provider_test.dart`).
+> Playwright couvre surtout le rendu « à jour » et le tap ⏪ → timeline.
+
+### Scénario 1 : à jour (happy path) — header épuré
 **Parcours** :
-1. Ouvrir le feed Essentiel (compte connecté, onboarding fait).
-2. Observer la zone sous le bandeau Lettres.
-**Résultat attendu** : au plus **une** carte Notif du jour (icône teintée 34px, titre 1 ligne, CTA-lien avec flèche, croix à droite). Jamais deux messages empilés. Pas de flash au chargement.
+1. Ouvrir l'app, onglet Essentiel (today), utilisateur à jour.
+2. Observer l'en-tête à droite du titre « Ton Essentiel ».
+**Résultat attendu** : icône ⏪ **seule**, aucun texte « Rattraper », aucun point
+rouge. Tap sur ⏪ → la timeline « Remonter le temps » s'ouvre.
 
-### Scénario 2 : dismiss → message suivant
+### Scénario 2 : en retard — point rouge + nudge éphémère
 **Parcours** :
-1. Taper la croix de la carte.
-**Résultat attendu** : repli fluide (~300ms, hauteur + fondu), puis le **message suivant** de la file apparaît. Après 3 consommations dans la journée, plus rien ne s'affiche (recharger : toujours rien — persisté).
+1. Utilisateur ayant manqué l'édition d'hier (J-1 non ouverte).
+2. Ouvrir l'onglet Essentiel (today).
+**Résultat attendu** : **point rouge** vif sur ⏪ (persistant) ; **~1 s** après,
+« Rattraper ? » apparaît en fondu, **tient 2 s**, disparaît en fondu. Ne se
+rejoue **pas** dans la journée (gate 1×/jour). Le point rouge, lui, reste.
 
-### Scénario 3 : CTA Serein in-place
-**Parcours** (visible seulement si mode Serein OFF) :
-1. Taper la carte « Pas dans le mood pour l'actu chaude ? ».
-**Résultat attendu** : aucune navigation ; le mode Serein s'active, la carte se replie et le message suivant apparaît.
-
-### Scénario 4 : CTA navigation directe
+### Scénario 3 : lettre passée — « Revenir » fixe
 **Parcours** :
-1. Taper « Tes médias préférés manquent à l'appel ? » (si < 3 sources suivies) → panneau d'ajout de média **direct** (pas la liste).
-2. Taper « Abonné à un média ? Ajoute-le ici » (si sources payantes suivies non liées) → Mes abonnements s'ouvre **avec la feuille d'ajout déjà ouverte**.
-**Résultat attendu** : zéro tap intermédiaire.
+1. Ouvrir la timeline, sélectionner « Hier ».
+**Résultat attendu** : l'en-tête montre « Revenir » **fixe** (sans point rouge,
+sans animation).
 
-### Scénario 5 : NPS well-informed inline
-**Parcours** (si le message est dû) :
-1. Carte « Te sens-tu bien informé·e en ce moment ? » : boutons 1..10 à la place du CTA.
-2. Taper un score.
-**Résultat attendu** : soumission (POST well-informed), repli, message suivant. La croix = skip.
-
-### Scénario 6 : profil — Ma configuration
+### Scénario 4 : reduce-motion / accessibilité
 **Parcours** :
-1. Aller sur `/settings/profile`.
-**Résultat attendu** : tuile « Ma configuration » avec barre de progression, tap → relance le parcours d'onboarding.
+1. Activer « Réduire les animations » (OS), état « en retard ».
+**Résultat attendu** : le point rouge reste (signal immobile) ; le texte animé
+« Rattraper ? » **n'est pas joué**.
 
-## Vérifications transverses
-- Console sans erreurs ; réseau sans 4xx/5xx inattendus.
-- Fidélité hifi : fond crème surface, radius 14, ombre douce, pas de bordure ; tints ocre/vert/steel.
-- Les anciens gros bandeaux renudge/géoloc/well-informed n'apparaissent **plus**.
-- ⚠️ Web : les demandes OS (renudge push, géoloc device) ne se testent pas — on-device Android requis (hors QA web).
+## Critères d'acceptation
+
+- [ ] À jour → icône ⏪ seule (ni libellé fixe, ni point, ni nudge).
+- [ ] En retard → point rouge persistant + « Rattraper ? » fondu-in ~1 s / tient
+  2 s / fondu-out, au plus 1×/jour.
+- [ ] Lettre passée → « Revenir » fixe, sans point.
+- [ ] ⏪ toujours tappable (ouvre la timeline) dans tous les états ; cible ≥ 24 px.
+- [ ] Reduce-motion → pas d'animation de texte.
+- [ ] Aucun faux positif au cold-boot / nouvel utilisateur (streaks indispo).
+
+## Zones de risque
+
+- Frontière de jour 07h30 Paris vs off-by-one streaks (déjà assumé par la
+  timeline existante ; cf. `.context/streaks-health-handoff.md`).
+- Gate 1×/jour persisté au moment du fondu-in (prefs
+  `essentiel_rattraper_nudge_last_shown_v1`).
+
+## Dépendances
+
+- Aucun endpoint / migration. Réutilise `editionReadStatusProvider` (streaks).

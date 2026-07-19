@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:facteur/core/auth/auth_state.dart' as app_auth;
 import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/digest/models/dual_digest_response.dart';
 import 'package:facteur/features/digest/providers/digest_provider.dart';
@@ -13,6 +14,7 @@ import 'package:facteur/features/flux_continu/providers/flux_continu_provider.da
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
 import 'package:facteur/features/flux_continu/services/flux_continu_cache_service.dart';
+import 'package:facteur/features/flux_continu/services/tournee_progress_service.dart';
 import 'package:facteur/features/grille/models/grille_models.dart';
 import 'package:facteur/features/grille/providers/grille_provider.dart';
 import 'package:facteur/features/grille/repositories/grille_repository.dart';
@@ -27,6 +29,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 import 'flux_continu_settle.dart';
 
@@ -37,9 +40,32 @@ class _MockFeedRepository extends Mock implements FeedRepository {}
 class _MockFluxContinuRepository extends Mock
     implements FluxContinuRepository {}
 
+class _MockEssentielRepository extends Mock implements EssentielRepository {}
+
+/// Minimal auth notifier that reports a fixed signed-in user id, so the real
+/// [sereinToggleProvider] keys its Hive mirror by that id.
+class _FakeAuthNotifier extends StateNotifier<app_auth.AuthState>
+    implements app_auth.AuthStateNotifier {
+  _FakeAuthNotifier(String userId)
+      : super(
+          app_auth.AuthState(
+            user: supabase.User(
+              id: userId,
+              appMetadata: const {},
+              userMetadata: const {},
+              aud: 'authenticated',
+              createdAt: '2023-01-01',
+            ),
+          ),
+        );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => const [];
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => const [];
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -101,6 +127,9 @@ String _todayIso() {
 }
 
 String _todayClosingKey() => 'flux_continu_closing_dismissed_${_todayIso()}';
+
+String _todayEssentielViewedKey() =>
+    TourneeProgressService.essentielViewedPrefsKey(DateTime.now());
 
 FeedResponse _feedResponseWith(int items) {
   return FeedResponse(
@@ -173,7 +202,7 @@ void main() {
         ),
         grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
         userInterestsProvider.overrideWith(() => userInterestsNotifier),
-        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+        sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref, null)),
         // Le cap de fit lit displayModeSpecProvider même sans mesure (fallback
         // référence) ⇒ il faut court-circuiter la box Hive 'settings' (non
         // ouverte ici), comme makeFitContainer.
@@ -275,6 +304,39 @@ void main() {
       final state = await settle(container);
 
       expect(state.closingDismissed, isFalse);
+    });
+
+    test('marks Essentiel viewed today after a successful load', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await settle(container);
+      // Marked via `unawaited` — give the microtask queue a beat.
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(_todayEssentielViewedKey()), isTrue);
+    });
+
+    test('a refetch does not error and keeps essentiel-viewed set', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+
+      final container = makeContainer();
+      addTearDown(container.dispose);
+
+      await settle(container);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      await container.read(fluxContinuProvider.notifier).refresh();
+      await settle(container);
+      await Future<void>.delayed(Duration.zero);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool(_todayEssentielViewedKey()), isTrue);
     });
   });
 
@@ -830,7 +892,7 @@ void main() {
               () => _StubUserInterestsNotifier(_interestsState()),
             ),
             sereinToggleProvider.overrideWith(
-              (ref) => SereinToggleNotifier(ref),
+              (ref) => SereinToggleNotifier(ref, null),
             ),
             displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
           ],
@@ -862,7 +924,6 @@ void main() {
         );
       },
     );
-
   });
 
   group('FluxContinuNotifier — dedup inter-sections', () {
@@ -908,7 +969,7 @@ void main() {
           // The real serein toggle watches authStateProvider → Supabase.instance
           // (uninitialized in unit tests). Override with a notifier that skips
           // the auth watch so the provider build doesn't blow up.
-          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref, null)),
           // Le cap de fit lit displayModeSpecProvider (box Hive 'settings' non
           // ouverte ici) ⇒ court-circuit.
           displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
@@ -1076,7 +1137,7 @@ void main() {
                   favorites: const [ThemeFavoriteRef(slug: 'tech')]),
             ),
           ),
-          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref)),
+          sereinToggleProvider.overrideWith((ref) => SereinToggleNotifier(ref, null)),
           // La box Hive 'settings' n'est pas ouverte ici ⇒ on court-circuite le
           // spec (lu par le cap dynamique) plutôt que de la faire planter.
           displayModeSpecProvider.overrideWithValue(spec),
@@ -1422,7 +1483,8 @@ void main() {
                   .every((t) => t.items.isEmpty),
         );
         expect(baseIdx, greaterThan(skeletonIdx),
-            reason: 'les en-têtes (haut de page + coquilles favoris) remplacent '
+            reason:
+                'les en-têtes (haut de page + coquilles favoris) remplacent '
                 'le squelette avant le remplissage du fan-out');
 
         // complet : la section thème 'tech' est REMPLIE (items non vides),
@@ -1438,6 +1500,55 @@ void main() {
           finalState.sections.whereType<FeedThemeSection>(),
           isNotEmpty,
         );
+      },
+    );
+  });
+
+  group('FluxContinuNotifier — persistance serein au cold start', () {
+    test(
+      'un miroir Hive serein ON pilote isSerene=true et fetch(serein:true) '
+      'sans passer par digestProvider',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+
+        // Miroir local serein ON pré-écrit (comme après un toggle / restart),
+        // keyé par l'utilisateur signé.
+        const uid = 'user-serene-1';
+        final settings = Hive.isBoxOpen('settings')
+            ? Hive.box<dynamic>('settings')
+            : await Hive.openBox<dynamic>('settings');
+        await settings.put('serein_enabled:$uid', true);
+        addTearDown(() => settings.delete('serein_enabled:$uid'));
+
+        final essentielRepo = _MockEssentielRepository();
+        when(() => essentielRepo.fetch(serein: any(named: 'serein')))
+            .thenAnswer((_) async => const <EssentielArticle>[]);
+
+        final container = ProviderContainer(
+          overrides: [
+            app_auth.authStateProvider
+                .overrideWith((ref) => _FakeAuthNotifier(uid)),
+            digestRepositoryProvider.overrideWithValue(digestRepo),
+            feedRepositoryProvider.overrideWithValue(feedRepo),
+            fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+            essentielRepositoryProvider.overrideWithValue(essentielRepo),
+            grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
+            userInterestsProvider.overrideWith(
+              () => _StubUserInterestsNotifier(_interestsState()),
+            ),
+            displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        // La préférence persistée est lue en synchrone, sans /digest/both.
+        expect(container.read(sereinToggleProvider).enabled, isTrue);
+
+        final state = await settle(container);
+
+        expect(state.isSerene, isTrue);
+        verify(() => essentielRepo.fetch(serein: true)).called(1);
+        verifyNever(() => essentielRepo.fetch(serein: false));
       },
     );
   });
@@ -1477,7 +1588,7 @@ class _OneArticleEssentielRepository implements EssentielRepository {
   final EssentielArticle _article;
 
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => [
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => [
         _article,
         EssentielArticle(
           contentId: '${_article.contentId}-filler-1',
@@ -1508,5 +1619,5 @@ class _FixedEssentielRepository implements EssentielRepository {
   final List<EssentielArticle> _articles;
 
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein}) async => _articles;
+  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => _articles;
 }

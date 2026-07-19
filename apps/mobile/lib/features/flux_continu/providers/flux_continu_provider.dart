@@ -35,6 +35,7 @@ import '../repositories/essentiel_repository.dart';
 import '../repositories/flux_continu_repository.dart';
 import '../services/flux_continu_cache_service.dart';
 import '../services/tournee_progress_service.dart';
+import 'essentiel_placement_sync.dart' show reconcileEssentielPlacement;
 import '../utils/notif_teasers.dart';
 import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
@@ -165,6 +166,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   final Set<String> _dismissedIds = <String>{};
 
   bool _closingPersistQueued = false;
+  bool _essentielViewedMarked = false;
 
   /// `sectionKey` des sections favorites (thème/source/veille) dont le fetch du
   /// fan-out a **résolu** ce cycle (réponse arrivée, vide ou non). La
@@ -367,6 +369,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // gate la DATA, pas les pixels.
     await _awaitInitialRefresh();
 
+    // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
+    // non-bloquante : elle ne doit pas retarder la DATA. Lancée pendant que
+    // `_bootstrapping` est encore vrai (les listeners prefs sont donc muets) ;
+    // si elle écrit un placement restauré après la fin du bootstrap, les
+    // listeners `tournee_order`/`pinned_tabs` rejoueront le refetch/recompose
+    // qui fait (ré)apparaître la section dans la Tournée. Cf.
+    // [reconcileEssentielPlacement].
+    unawaited(reconcileEssentielPlacement(ref));
+
     try {
       return await _fetchAll();
     } finally {
@@ -521,7 +532,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Issue #1 — seed des coquilles « Choisie pour vous » AVANT le fan-out
     // (mêmes clés que le rendu réel) : elles sont ordonnées dès la Phase 1 et se
     // remplissent sur place au lieu d'apparaître en net-new (le « pop » ressenti).
-    final suggestions = [for (final t in topThemes) if (t.isSuggested) t];
+    final suggestions = [
+      for (final t in topThemes)
+        if (t.isSuggested) t
+    ];
     _suggested = _shellSuggestedSections(_usableSuggestions(suggestions));
     // Reseed complet ⇒ les coquilles ne sont pas encore résolues : on repart
     // d'une classification vierge (aucune section maigre tant que le fan-out /
@@ -529,6 +543,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     _resolvedSectionKeys.clear();
     _closingDismissed = await _loadClosingDismissedForToday();
     unawaited(_purgeOldPrefsKeys());
+    unawaited(_markEssentielViewedIfNeeded());
 
     if (!fetchThemes) {
       // Chemin cache in-day : pas de fan-out réseau, on compose directement.
@@ -1226,7 +1241,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           // son plancher (kind=essentiel) → on réapplique le seuil pour éviter
           // un bandeau réduit à une carte isolée. Les autres DigestTopicSection
           // (Bonnes Nouvelles) ne sont retirées que si totalement vidées.
-          final minKept = s.kind == SectionKind.essentiel ? _kActusMinTopics : 1;
+          final minKept =
+              s.kind == SectionKind.essentiel ? _kActusMinTopics : 1;
           if (kept.length < minKept) continue;
           result.add(
             DigestTopicSection(
@@ -1462,6 +1478,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     await ref.read(tourneeProgressServiceProvider).purgeOldPrefsKeys();
   }
 
+  /// Marks that the user has actually loaded Essentiel content today, so the
+  /// app can default to Flâner on the next cold start / resume. Write-once
+  /// per notifier instance to avoid redundant prefs writes on refetches.
+  Future<void> _markEssentielViewedIfNeeded() async {
+    if (_essentielViewedMarked) return;
+    _essentielViewedMarked = true;
+    await ref.read(tourneeProgressServiceProvider).markEssentielViewedToday();
+  }
+
   /// Pull-to-refresh: refetch all upstream calls from scratch.
   ///
   /// Crucially we do NOT bounce through [AsyncLoading] — doing so would
@@ -1635,7 +1660,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         // suggérées du même payload transitent par le fan-out progressif
         // (`_fanOutSectionsProgressive` → `_buildSuggestedSection`).
         final valid = topFallback
-            .where((t) => !t.isSuggested && themeMap.containsKey(t.interestSlug))
+            .where(
+                (t) => !t.isSuggested && themeMap.containsKey(t.interestSlug))
             .map<FavoriteRef>((t) => ThemeFavoriteRef(slug: t.interestSlug))
             .toList();
         themeRefs = valid.take(_kMaxFavoriteSections).toList(growable: false);
@@ -1858,10 +1884,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   // ---------------------------------------------------------------------------
 
   /// Clé `sectionKey`-compatible d'une suggestion backend (`theme:`/`source:`).
-  String _suggestionKey(TopTheme s) =>
-      s.kind == 'source' && s.sourceId != null
-          ? tourneeSourceKey(s.sourceId!)
-          : tourneeThemeKey(s.interestSlug);
+  String _suggestionKey(TopTheme s) => s.kind == 'source' && s.sourceId != null
+      ? tourneeSourceKey(s.sourceId!)
+      : tourneeThemeKey(s.interestSlug);
 
   /// Suggestions « Choisie pour vous » réellement fetchables : filtre amont
   /// celles déjà masquées (dismiss) ou vivant en onglet Flâner — évite des
@@ -2048,8 +2073,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   /// Retire de [list] la section de `sectionKey` == [key]. Issue #1 — une
   /// suggestion seedée mais résolue sans contenu disparaît après le fan-out.
-  List<FeedThemeSection> _removeByKey(List<FeedThemeSection> list, String key) =>
-      [for (final s in list) if (sectionKey(s) != key) s];
+  List<FeedThemeSection> _removeByKey(
+          List<FeedThemeSection> list, String key) =>
+      [
+        for (final s in list)
+          if (sectionKey(s) != key) s
+      ];
 
   /// `true` ssi [list] contient déjà une section de même `sectionKey` que
   /// [section]. Sert aux chemins de refetch à n'upserter qu'une coquille encore
@@ -2101,16 +2130,18 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     try {
       if (section.kind == SectionKind.source && section.sourceId != null) {
-        await ref
-            .read(userSourcesStateProvider.notifier)
-            .setSourceState(section.sourceId!, InterestState.favorite);
+        await ref.read(userSourcesStateProvider.notifier).setSourceState(
+              section.sourceId!,
+              InterestState.favorite,
+              // Promotion = placement Essentiel : persiste le mode en DB.
+              essentielMode: true,
+            );
         await _appendTourneeOrder(tourneeSourceKey(section.sourceId!));
       } else if (section.themeSlug != null) {
-        await ref
-            .read(userInterestsProvider.notifier)
-            .setInterestState(
+        await ref.read(userInterestsProvider.notifier).setInterestState(
               ThemeFavoriteRef(slug: section.themeSlug!),
               InterestState.favorite,
+              essentielMode: true,
             );
         await _appendTourneeOrder(tourneeThemeKey(section.themeSlug!));
       }

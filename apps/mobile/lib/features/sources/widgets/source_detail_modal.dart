@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
@@ -265,9 +267,16 @@ class _FsBody extends ConsumerWidget {
       children: [
         _FsHeader(source: display, frequencyLabel: frequencyLabel),
         _FsEval(source: display),
+        // Source suivie : les réglages les plus utiles (priorité dans le flux +
+        // connexion abonnement) remontent juste sous l'évaluation, avant la
+        // couverture / les derniers articles. Non suivie : `_FsManage` reste le
+        // CTA de découverte (paywall) sous le contenu, et `_FsSettings` masqué.
+        if (display.isTrusted) ...[
+          _FsSettings(source: display),
+          _FsManage(source: display),
+        ],
         ...middle,
-        if (display.isTrusted) _FsSettings(source: display),
-        _FsManage(source: display),
+        if (!display.isTrusted) _FsManage(source: display),
       ],
     );
   }
@@ -825,17 +834,30 @@ class _FsEvalState extends State<_FsEval> {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            'Voir la méthodologie',
-            style: textTheme.labelSmall?.copyWith(
-              color: colors.primary,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0,
+          InkWell(
+            onTap: _openMethodology,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                'Voir la méthodologie',
+                style: textTheme.labelSmall?.copyWith(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                ),
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openMethodology() async {
+    final uri = Uri.parse(LegalLinks.methodology);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Widget _evalRow(BuildContext context, String label, Widget value) {
@@ -1208,15 +1230,33 @@ class _CoverageSkeleton extends StatelessWidget {
 /// Mode normal : articles récents en carte standard [FluxContinuArticleCard]
 /// (tap → reader, read-sync, preview en appui long — gérés par la carte). Les
 /// `Content` viennent complets du profil unifié.
-class _FsArticlesSection extends StatelessWidget {
+class _FsArticlesSection extends StatefulWidget {
   final List<Content> articles;
   final SourceArticleOpener? articleOpener;
 
   const _FsArticlesSection({required this.articles, this.articleOpener});
 
   @override
+  State<_FsArticlesSection> createState() => _FsArticlesSectionState();
+}
+
+class _FsArticlesSectionState extends State<_FsArticlesSection> {
+  /// Articles affichés replié / déplié. Les 10 articles sont déjà dans le
+  /// payload profil (`recentArticles`) : « Lire plus » ne déclenche aucune
+  /// requête réseau, il déroule simplement la liste locale.
+  static const int _collapsedCount = 3;
+  static const int _expandedCount = 10;
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final visible = articles.take(3).toList();
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final articles = widget.articles;
+    final visible = articles
+        .take(_expanded ? _expandedCount : _collapsedCount)
+        .toList();
+    final canExpand = articles.length > _collapsedCount;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1230,7 +1270,7 @@ class _FsArticlesSection extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: _ArticlesEmptyCard(message: 'Aucun article récent.'),
           )
-        else
+        else ...[
           // FluxContinuArticleCard porte 12px de padding horizontal interne ;
           // +4px ici aligne les cartes sur les 16px du reste de la fiche.
           Padding(
@@ -1245,12 +1285,38 @@ class _FsArticlesSection extends StatelessWidget {
               ],
             ),
           ),
+          // Bouton discret « Lire plus » / « Réduire » (idiome de
+          // `_ExpandableDescription`) : n'apparaît que si la source a plus de 3
+          // articles dans le payload.
+          if (canExpand)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InkWell(
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      _expanded ? 'Réduire' : 'Lire plus',
+                      style: textTheme.labelSmall?.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }
 
   void _openArticle(BuildContext context, Content article) {
-    final opener = articleOpener;
+    final opener = widget.articleOpener;
     if (opener != null) {
       opener(context, article);
       return;

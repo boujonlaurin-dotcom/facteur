@@ -1,12 +1,14 @@
 """Tests de l'endpoint `/sources/{id}/profile` (fiche source v3).
 
 Endpoint unifié : identité source + couverture par thèmes (30 j) +
-`articles_30d` + `oldest_content_at` (hors fenêtre) + 3 articles récents
-(objets `Content` complets, cliquables côté mobile).
+`articles_30d` + `oldest_content_at` (hors fenêtre) + 10 articles récents
+(objets `Content` complets, cliquables côté mobile ; la fiche en montre 3 par
+défaut et déroule jusqu'à 10 via « Lire plus »).
 
 Couvre :
-- happy path : source + ≥4 contents → recent_articles ≤3 (source imbriquée),
+- happy path : source + 4 contents → recent_articles (source imbriquée),
   theme_distribution cohérent (counts/parts), articles_30d correct ;
+- cap : ≥10 contents → recent_articles plafonné à 10 ;
 - fenêtre 30 j : un content à 40 j exclu du volume/distribution mais reflété
   par `oldest_content_at` ;
 - 404 source inconnue ;
@@ -107,19 +109,39 @@ async def test_profile_happy_path(profile_client):
     assert dist[1]["share"] == pytest.approx(0.25)
     assert sum(d["count"] for d in dist) == body["articles_30d"]
 
-    # Articles récents : max 3, triés desc, source imbriquée complète.
+    # Articles récents : max 10, triés desc, source imbriquée complète.
+    # Ici 4 contents (< 10) → les 4 remontent.
     recent = body["recent_articles"]
-    assert len(recent) == 3
+    assert len(recent) == 4
     first = recent[0]
     assert first["source"]["id"] == str(source.id)
     assert first["source"]["name"] == "Profile Source"
     assert first["source"]["logo_url"] == "https://profile.example.com/logo.png"
-    # Tri chronologique décroissant (days_ago 0 → 1 → 2).
+    # Tri chronologique décroissant (days_ago 0 → 1 → 2 → 5).
     titles = [r["title"] for r in recent]
-    assert titles == ["Pol 0", "Pol 1", "Pol 2"]
+    assert titles == ["Pol 0", "Pol 1", "Pol 2", "Tech"]
 
     # oldest_content_at = le plus ancien (tech, 5 j).
     assert body["oldest_content_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_profile_recent_articles_capped_at_10(profile_client):
+    """≥10 contents → recent_articles plafonné à 10 (les 10 plus récents)."""
+    ac, source, db = profile_client
+    # 14 contents, tous < 30 j, days_ago croissant → titres 0..13.
+    for i in range(14):
+        db.add(_content(source.id, theme="politics", days_ago=i, title=f"A{i}"))
+    await db.commit()
+
+    resp = await ac.get(f"/api/sources/{source.id}/profile")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    recent = body["recent_articles"]
+    assert len(recent) == 10
+    # Les 10 plus récents (days_ago 0..9), triés desc.
+    assert [r["title"] for r in recent] == [f"A{i}" for i in range(10)]
 
 
 @pytest.mark.asyncio

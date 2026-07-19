@@ -35,6 +35,7 @@ class UserInterestsRepository {
     required FavoriteRef ref,
     required InterestState state,
     int? position,
+    bool? essentielMode,
   }) async {
     try {
       final data = await _client.dio.patch<dynamic>(
@@ -44,6 +45,9 @@ class UserInterestsRepository {
           'target_id': ref.targetId,
           'state': state.toJson(),
           if (position != null) 'position': position,
+          // Placement Essentiel/Flâner persisté en DB. Omis quand null pour ne
+          // jamais écraser un placement existant côté backend.
+          if (essentielMode != null) 'essentiel_mode': essentielMode,
         },
       );
       return UserInterestsState.fromJson(data.data as Map<String, dynamic>);
@@ -76,6 +80,7 @@ class UserInterestsRepository {
     required String sourceId,
     required InterestState state,
     int? position,
+    bool? essentielMode,
   }) async {
     try {
       final data = await _client.dio.patch<dynamic>(
@@ -84,6 +89,9 @@ class UserInterestsRepository {
           'source_id': sourceId,
           'state': state.toJson(),
           if (position != null) 'position': position,
+          // Placement Essentiel/Flâner persisté en DB. Omis quand null pour ne
+          // jamais écraser un placement existant côté backend.
+          if (essentielMode != null) 'essentiel_mode': essentielMode,
         },
       );
       return UserSourcesState.fromJson(data.data as Map<String, dynamic>);

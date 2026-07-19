@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -172,6 +174,21 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     ref.read(analyticsServiceProvider).trackAddSourceExpand(_currentQuery);
   }
 
+  /// Correspondance « parfaite » : source catalogue ET curée. Ces ajouts
+  /// basculent en preuve inline « Connecté » (E3) au lieu d'ouvrir la modale.
+  bool _isCuratedCatalogMatch(SmartSearchResult result) =>
+      result.inCatalog && result.isCurated;
+
+  void _trackSourceAdded(SmartSearchResult result, {required bool inCatalog}) {
+    ref.read(analyticsServiceProvider).trackSourceAdded(
+          sourceId: result.sourceId,
+          sourceType: result.type,
+          inCatalog: inCatalog,
+          isCurated: result.isCurated,
+          sourceLayer: result.sourceLayer,
+        );
+  }
+
   Future<void> _addSource(SmartSearchResult result) async {
     try {
       final sourceId = result.sourceId;
@@ -184,6 +201,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           _sourceAdded = true;
           _lastAddedName = result.name;
         });
+        _trackSourceAdded(result, inCatalog: hasCatalogId);
         _resetForNextAdd();
         widget.onSourceAdded?.call(result);
         return;
@@ -211,6 +229,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       }
 
       if (!mounted) return;
+      _trackSourceAdded(result, inCatalog: hasCatalogId);
       ref.invalidate(userSourcesProvider);
 
       if (hasCatalogId) {
@@ -219,15 +238,18 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             .setSourceState(sourceId, InterestState.favorite);
         if (!mounted) return;
 
-        if (widget.inlineProof) {
-          // Preuve inline : la carte transformée (« Connecté » + derniers
-          // articles) reste visible dans la liste — pas de modale, pas de
-          // reset de la recherche (qui démonterait la carte).
-          HapticFeedback.mediumImpact();
+        // E3 — preuve inline « Connecté » sans modale pour l'onboarding
+        // (inlineProof) ET pour une correspondance vérifiée dans le panneau
+        // normal : la carte transformée reste visible, pas de reset de la
+        // recherche (qui la démonterait), on minimise le pas parasite.
+        if (widget.inlineProof || _isCuratedCatalogMatch(result)) {
+          unawaited(HapticFeedback.mediumImpact());
           widget.onSourceAdded?.call(result);
           return;
         }
 
+        // Sources catalogue non curées : on garde la modale détail (aperçu
+        // du contenu utile).
         final source = Source(
           id: sourceId,
           name: result.name,
@@ -626,10 +648,16 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           final isAdded =
               _addedSourceIds.contains(id) ||
               (id != null && followedIds.contains(id));
+          // E3 — la carte bascule en preuve « Connecté » à l'ajout pour
+          // l'onboarding (inlineProof) et pour une correspondance vérifiée
+          // dans le panneau normal. Jamais en veilleMode : le sheet Veille
+          // remonte la source au hôte et vide la recherche.
+          final showProof = !widget.veilleMode &&
+              (widget.inlineProof || _isCuratedCatalogMatch(result));
           return SourceResultCard(
             result: result,
             isAdded: isAdded,
-            showProof: widget.inlineProof,
+            showProof: showProof,
             onAdd: () => _addSource(result),
             onPreview: () => _previewSource(result),
           );

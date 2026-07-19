@@ -13,7 +13,7 @@ const double kSnapEpsilon = 1.0;
 /// more than this margin past the edge before the section actually switches.
 /// Larger ⇒ harder to switch sections (more « collant » à la carte courante);
 /// smaller ⇒ switches more readily. 0 reverts to the pure edge-triggered feel.
-const double kSectionEdgeMargin = 120.0;
+const double kSectionEdgeMargin = 160.0;
 
 /// px/s. **The only knob for the UP-only fast-rewind exception** — tune it à
 /// l'œil sur device. Snap is now the default *both* ways (a slow upward scroll
@@ -159,6 +159,29 @@ double? resolveSnapTarget({
   }
   final prev = _lastStrictlyBefore(points, currentPixels);
   return _commit(prev ?? _nearest(points, currentPixels), currentPixels);
+}
+
+/// Index of the section whose framing offset the snap committed to, or `-1`
+/// when [target] matches no frame edge (e.g. a value clamped to a scroll
+/// extremity). A target equals a section's [top] **or** its [bottom] (for a
+/// tall section) — both belong to the same section index, so a `top → bottom`
+/// move inside one tall section maps to the *same* index and reads as "no
+/// section change".
+///
+/// Used by the screen to decide, **at snap commit** (finger lift), whether the
+/// fling advances to a *different* section than the one currently framed — the
+/// gate for firing exactly one settle-independent haptic at the moment the
+/// passage is engaged. Reuses [kSnapEpsilon] for the edge match. Pure.
+int frameIndexOfTarget(List<SectionFrame> frames, double target) {
+  for (var i = 0; i < frames.length; i++) {
+    final f = frames[i];
+    if ((target - f.top).abs() <= kSnapEpsilon) return i;
+    if (f.bottom > f.top + kSnapEpsilon &&
+        (target - f.bottom).abs() <= kSnapEpsilon) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 /// The snap points of a frame list, sorted ascending: each section [top], plus

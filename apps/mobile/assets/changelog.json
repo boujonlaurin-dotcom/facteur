@@ -1,6 +1,130 @@
 {
   "unreleased": [
     {
+      "tag": "Rituel",
+      "summary": "Ta lettre du matin est le passage vers l'Essentiel : à l'ouverture de l'app comme depuis une notification, tu la découvres d'abord, puis tu accèdes à ta tournée."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "En-tête épuré : « Rattraper » ne s'affiche plus en permanence. Quand tu as manqué l'édition d'hier, un petit point rouge apparaît sur l'icône rewind et l'invite « Rattraper ? » se montre un court instant, une fois par jour."
+    },
+    {
+      "tag": "Ma Tournée",
+      "summary": "Tes sources et thèmes rangés dans l'Essentiel y restent : leur place est désormais sauvegardée et retrouvée sur chaque appareil, même après réinstallation."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Ouverture des articles plus rapide et défilement de la couverture médiatique plus fluide."
+    },
+    {
+      "tag": "Analyses",
+      "summary": "L'analyse des perspectives se charge toujours quand tu en as besoin ; après la première du jour, on t'explique simplement notre modèle sans pub."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Défilement affiné : une seule vibration à l'arrivée sur une section, un maintien appui qui fait respirer la carte, et un sondage bien plus rare."
+    },
+    {
+      "tag": "Rattrapage",
+      "summary": "« Cette semaine » : accès Tout lire par section et bonnes nouvelles de toute la semaine."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "Header et pied de page du lecteur plus légers et fluides."
+    },
+    {
+      "tag": "Abonnements",
+      "summary": "Connecter un abonnement est plus clair : titre au nom du média, écran de vérification guidé, et un message d'aide quand une page ne se charge pas."
+    },
+    {
+      "tag": "Rituel",
+      "summary": "Ta lettre du matin s'affiche même au tout premier lancement de la journée, sans passer directement au flux."
+    },
+    {
+      "tag": "Rituel",
+      "summary": "En ouvrant ta lettre du matin, ta flamme grandit et ta série s'incrémente : une petite récompense pour être revenu aujourd'hui."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "Les lettres d'hier et de la semaine se lisent comme celle du jour : Actus, Bonnes Nouvelles et citation réunies."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "Ouvre ta tournée d'un geste, ou file droit vers la section qui t'intéresse."
+    },
+    {
+      "tag": "Rituel",
+      "summary": "Ta lettre du matin est plus lisible : manchettes en clair sur deux lignes, repères mieux placés et mode serein à portée de geste."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "La rétro de la semaine reprend l'affichage clair de ta tournée du jour, en mettant d'abord ce que tu n'as pas encore lu."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Ta page du matin affiche les manchettes du jour en clair, avec des repères pour glisser vers les lettres d'hier et de la semaine."
+    },
+    {
+      "tag": "Accueil",
+      "summary": "Sur ta page du matin, glisse entre tes lettres du jour et des jours précédents, et active le mode serein d'un geste."
+    },
+    {
+      "tag": "Lettre du jour",
+      "summary": "Sur ta lettre du matin, glisse vers la droite pour relire hier, et bascule en lecture apaisée d'un geste."
+    },
+    {
+      "tag": "Essentiel",
+      "summary": "Remonte le temps depuis ta carte Essentiel : choisis un jour, vois ce qu'il te reste à rattraper."
+    },
+    {
+      "tag": "Édition",
+      "summary": "Ton édition du jour se dévoile en douceur le matin et après l'onboarding."
+    },
+    {
+      "tag": "Ouverture",
+      "summary": "Chaque matin, ton édition du jour t'accueille comme une enveloppe cachetée : un bonjour, la date, et l'aperçu coloré des sections qui t'attendent, à personnaliser d'un geste."
+    },
+    {
+      "tag": "Serein",
+      "summary": "Le mode de lecture apaisé reste activé au redémarrage de l'app : plus besoin de le réactiver chaque matin."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "La lecture des longs articles est plus fluide : les barres de progression restent nettes pendant le défilement."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "La version complète d'un article sur son site se charge à l'ouverture, sans ralentir ta lecture in-app auparavant."
+    },
+    {
+      "tag": "Lecture",
+      "summary": "L'écran de lecture s'allège : barres flottantes translucides qui laissent transparaître l'article."
+    },
+    {
+      "tag": "Widget",
+      "summary": "Le bouton rafraîchir du widget d'accueil répare désormais l'Essentiel et le Flux d'un coup, même après un blocage."
+    },
+    {
+      "tag": "Widget",
+      "summary": "Depuis le widget, tu peux ouvrir un article puis en enchaîner un autre sans repasser par l'accueil."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Sur une source suivie, la priorité dans ton flux et la connexion d'abonnement passent en tête de fiche, et « Lire plus » déroule ses derniers articles."
+    },
+    {
+      "tag": "Feed",
+      "summary": "Les notifs en tête de feed sont moins insistantes : une notif écartée ne revient plus avant un mois, et le sondage « bien informé » s'affiche en entier."
+    },
+    {
+      "tag": "App",
+      "summary": "Une fois ta tournée du jour parcourue, l'app t'ouvre directement sur Flâner."
+    },
+    {
+      "tag": "App",
+      "summary": "Un petit signal quand un bug survient : dis-nous ce qui s'est passé et on saura."
+    },
+    {
       "tag": "Tournée",
       "summary": "Des suggestions de sources plus riches par thème, et un accès direct « Tout lire »."
     },
@@ -23,6 +147,10 @@
     {
       "tag": "Veille",
       "summary": "La veille ne montre plus que des articles vraiment liés à ton sujet."
+    },
+    {
+      "tag": "Sources",
+      "summary": "Ajouter une source est plus fiable et plus vivant : les correspondances vérifiées sont clairement signalées et ses premiers articles apparaissent tout de suite."
     },
     {
       "tag": "Veille",
@@ -263,6 +391,14 @@
     {
       "tag": "Onboarding",
       "summary": "Choix des sources plus clair et premier feed qui met en avant votre thème préféré."
+    },
+    {
+      "tag": "Soutien",
+      "summary": "Deviens Fact·eur·isse et débloque veille, sources illimitées, analyses et mode serein sur mesure."
+    },
+    {
+      "tag": "Sources",
+      "summary": "« Voir la méthodologie » dans la fiche d'une source ouvre désormais la page complète de notre méthode d'évaluation des médias sur facteur.app."
     }
   ],
   "released": [

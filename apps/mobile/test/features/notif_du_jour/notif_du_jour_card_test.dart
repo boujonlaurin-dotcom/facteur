@@ -16,7 +16,7 @@ import 'package:facteur/features/notif_du_jour/providers/notif_du_jour_provider.
 import 'package:facteur/features/notif_du_jour/widgets/notif_du_jour_card.dart';
 
 class _FakeSerein extends SereinToggleNotifier {
-  _FakeSerein(super.ref) {
+  _FakeSerein(Ref ref) : super(ref, null) {
     initFromApi(false);
   }
 
@@ -187,6 +187,25 @@ void main() {
       expect(find.text('$i'), findsOneWidget);
     }
     expect(find.byIcon(PhosphorIcons.arrowRight()), findsNothing);
+  });
+
+  testWidgets('sondage bien informé : titre sur 2 lignes (non tronqué)',
+      (tester) async {
+    await tester.pumpWidget(_wrap(queue: const ['well_informed']));
+    await tester.pumpAndSettle();
+    final title = tester.widget<Text>(
+      find.text('Te sens-tu bien informé·e en ce moment ?'),
+    );
+    expect(title.maxLines, 2);
+  });
+
+  testWidgets('message standard : titre sur 1 ligne', (tester) async {
+    await tester.pumpWidget(_wrap(queue: profileQueue));
+    await tester.pumpAndSettle();
+    final title = tester.widget<Text>(
+      find.text('Pas dans le mood pour l\'actu chaude ?'),
+    );
+    expect(title.maxLines, 1);
   });
 
   testWidgets('cède aux modales de l\'orchestrateur', (tester) async {

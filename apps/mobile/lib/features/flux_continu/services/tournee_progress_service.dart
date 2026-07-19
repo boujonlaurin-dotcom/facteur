@@ -15,6 +15,13 @@ final tourneeProgressServiceProvider = Provider<TourneeProgressService>((ref) {
 });
 
 const String kClosingPrefsKeyPrefix = 'flux_continu_closing_dismissed_';
+const String kEssentielViewedPrefsKeyPrefix = 'flux_continu_essentiel_viewed_';
+
+/// Préfixe de la clé jumelle du rituel matinal (« moment d'ouverture »,
+/// symétrique de la closing card). `morning_ritual_shown_${dayKey}` mémorise
+/// que l'écran enveloppe a été ouvert pour la journée tournée courante, pour
+/// ne le montrer qu'une fois par jour (cf. Story 28.1).
+const String kMorningRitualPrefsKeyPrefix = 'morning_ritual_shown_';
 
 /// Boundary hour (Paris time) at which the "tournée day" flips.
 const int kTourneeDayBoundaryHour = 7;
@@ -33,7 +40,7 @@ class TourneeProgressService {
   final SharedPreferences? _prefsOverride;
 
   const TourneeProgressService({SharedPreferences? prefs})
-    : _prefsOverride = prefs;
+      : _prefsOverride = prefs;
 
   Future<SharedPreferences> _prefs() async =>
       _prefsOverride ?? await SharedPreferences.getInstance();
@@ -42,8 +49,7 @@ class TourneeProgressService {
   /// using a 07:30 Europe/Paris boundary instead of midnight.
   static String dayKey(DateTime now) {
     final paris = tz.TZDateTime.from(now, _parisTz());
-    final shifted =
-        (paris.hour < kTourneeDayBoundaryHour ||
+    final shifted = (paris.hour < kTourneeDayBoundaryHour ||
             (paris.hour == kTourneeDayBoundaryHour &&
                 paris.minute < kTourneeDayBoundaryMinute))
         ? paris.subtract(const Duration(days: 1))
@@ -53,6 +59,9 @@ class TourneeProgressService {
 
   static String closingPrefsKey(DateTime day) =>
       '$kClosingPrefsKeyPrefix${dayKey(day)}';
+
+  static String essentielViewedPrefsKey(DateTime day) =>
+      '$kEssentielViewedPrefsKeyPrefix${dayKey(day)}';
 
   bool isClosingDismissedTodaySync({DateTime? now}) {
     final prefs = _prefsOverride;
@@ -79,17 +88,88 @@ class TourneeProgressService {
     }
   }
 
+  static String morningRitualPrefsKey(DateTime day) =>
+      '$kMorningRitualPrefsKeyPrefix${dayKey(day)}';
+
+  /// Lecture **synchrone** (sans await) de l'état « rituel matinal vu
+  /// aujourd'hui ». Utilisée par la redirection GoRouter (`postAuthHomePath`)
+  /// pour décider d'envoyer ou non vers `/edition` sans flicker. Renvoie
+  /// `false` tant que l'instance prefs n'est pas injectée (cf.
+  /// [isClosingDismissedTodaySync]).
+  bool isMorningRitualShownTodaySync({DateTime? now}) {
+    final prefs = _prefsOverride;
+    if (prefs == null) return false;
+    return prefs.getBool(morningRitualPrefsKey(now ?? DateTime.now())) ?? false;
+  }
+
+  Future<void> setMorningRitualShownToday({DateTime? now}) async {
+    try {
+      final prefs = await _prefs();
+      await prefs.setBool(morningRitualPrefsKey(now ?? DateTime.now()), true);
+    } catch (e) {
+      debugPrint('TourneeProgress: setMorningRitualShownToday failed: $e');
+    }
+  }
+
+  /// QA : oublie **toutes** les clés « rituel matinal vu » (jour courant inclus)
+  /// pour rejouer le rituel au prochain cold-open. Cf. bloc QA `profile_screen`.
+  Future<void> resetMorningRitualShown() async {
+    try {
+      final prefs = await _prefs();
+      final keys = prefs
+          .getKeys()
+          .where((k) => k.startsWith(kMorningRitualPrefsKeyPrefix))
+          .toList();
+      await Future.wait(keys.map(prefs.remove));
+    } catch (e) {
+      debugPrint('TourneeProgress: resetMorningRitualShown failed: $e');
+    }
+  }
+
+  bool isEssentielViewedTodaySync({DateTime? now}) {
+    final prefs = _prefsOverride;
+    if (prefs == null) return false;
+    return prefs.getBool(essentielViewedPrefsKey(now ?? DateTime.now())) ??
+        false;
+  }
+
+  /// `true` ssi l'utilisateur a déjà « parcouru » l'Essentiel aujourd'hui —
+  /// soit en fermant explicitement le bandeau, soit en ayant chargé son
+  /// contenu. Sert à router vers Flâner par défaut (cold start / resume).
+  bool hasBrowsedEssentielTodaySync({DateTime? now}) =>
+      isClosingDismissedTodaySync(now: now) ||
+      isEssentielViewedTodaySync(now: now);
+
+  Future<void> markEssentielViewedToday({DateTime? now}) async {
+    try {
+      final prefs = await _prefs();
+      await prefs.setBool(essentielViewedPrefsKey(now ?? DateTime.now()), true);
+    } catch (e) {
+      debugPrint('TourneeProgress: markEssentielViewedToday failed: $e');
+    }
+  }
+
   Future<void> purgeOldPrefsKeys({DateTime? now}) async {
     try {
       final prefs = await _prefs();
       final today = now ?? DateTime.now();
       final closingToday = closingPrefsKey(today);
-      // Purge stale closing-dismissed keys (previous days) **and** any leftover
-      // `flux_continu_folded_*` blobs from before the fold mechanic was removed
-      // (2026-06), so they don't linger in SharedPreferences forever.
+      final morningToday = morningRitualPrefsKey(today);
+      final essentielViewedToday = essentielViewedPrefsKey(today);
+      // Purge stale closing-dismissed/morning-ritual/essentiel-viewed keys
+      // (previous days) **and** any leftover `flux_continu_folded_*` blobs
+      // from before the fold mechanic was removed (2026-06), so they don't
+      // linger in SharedPreferences forever.
       final stale = prefs.getKeys().where((k) {
         if (k.startsWith('flux_continu_folded_')) return true;
         if (k.startsWith(kClosingPrefsKeyPrefix) && k != closingToday) {
+          return true;
+        }
+        if (k.startsWith(kMorningRitualPrefsKeyPrefix) && k != morningToday) {
+          return true;
+        }
+        if (k.startsWith(kEssentielViewedPrefsKeyPrefix) &&
+            k != essentielViewedToday) {
           return true;
         }
         return false;

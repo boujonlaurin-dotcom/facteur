@@ -53,32 +53,42 @@ class MyInterestsIntro extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          _ManageButton(onTap: onTapManage, colors: colors),
+          ManageButton(onTap: onTapManage, colors: colors),
         ],
       ),
     );
   }
 }
 
-class _ManageButton extends StatelessWidget {
+/// Pilule « GÉRER » réutilisable (DM Sans 13 w800, `primary`, fond `primary@10%`,
+/// bordure `primary@45%`, caret droit). Point d'entrée des préférences de
+/// Tournée : utilisé par [MyInterestsIntro] (feed) **et** par la liste « Ou
+/// accède directement à » du rituel matinal (DRY).
+class ManageButton extends StatelessWidget {
   final VoidCallback onTap;
   final FacteurColors colors;
 
-  const _ManageButton({required this.onTap, required this.colors});
+  const ManageButton({super.key, required this.onTap, required this.colors});
 
   @override
   Widget build(BuildContext context) {
+    // Point d'entrée **unique** des préférences de Tournée (le bouton perso de
+    // la carte Essentiel a été retiré) → on le fait ressortir : libellé plus
+    // grand (13px) et fond accent doux plutôt qu'un simple contour gris.
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 5, 10, 5),
+          padding: const EdgeInsets.fromLTRB(14, 7, 12, 7),
           decoration: BoxDecoration(
-            color: Colors.transparent,
+            color: colors.primary.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: colors.border, width: 1),
+            border: Border.all(
+              color: colors.primary.withValues(alpha: 0.45),
+              width: 1,
+            ),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -86,17 +96,17 @@ class _ManageButton extends StatelessWidget {
               Text(
                 'GÉRER',
                 style: GoogleFonts.dmSans(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: 0.6,
-                  color: colors.textPrimary,
+                  color: colors.primary,
                 ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 5),
               Icon(
                 PhosphorIcons.caretRight(),
-                size: 11,
-                color: colors.textPrimary.withValues(alpha: 0.7),
+                size: 13,
+                color: colors.primary,
               ),
             ],
           ),

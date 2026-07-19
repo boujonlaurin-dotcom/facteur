@@ -9,12 +9,19 @@ import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
+import 'package:facteur/features/flux_continu/providers/selected_edition_date_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
+import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dart';
+import 'package:facteur/features/flux_continu/widgets/ephemeral_rattraper_label.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
+import 'package:facteur/features/gamification/models/streak_activity_model.dart';
+import 'package:facteur/features/gamification/providers/streak_activity_provider.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 Widget _wrap(Widget child, {List<Override> overrides = const []}) {
   return ProviderScope(
@@ -94,7 +101,14 @@ EssentielArticle _article({
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
+    // Le nudge auto-grow enveloppe chaque tuile d'un VisibilityDetector — sans
+    // ça, son timer d'update (500 ms) reste pendant au teardown.
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });
+
+  // Prefs mockées : le set local « rattrapé » (editionCaughtUpProvider) et le
+  // nudge éphémère lisent SharedPreferences au montage.
+  setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
   group('EssentielHiFiCard', () {
     testWidgets('renders title, subtitle and the lead article', (tester) async {
@@ -102,7 +116,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -126,7 +139,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (a) => tapped = a,
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -135,73 +147,71 @@ void main() {
       expect(tapped?.contentId, 'c-1');
     });
 
-    testWidgets(
-        'tap on the personalize button fires the callback and not the '
-        'lead', (tester) async {
-      var personalizeTaps = 0;
-      var articleTaps = 0;
+    testWidgets('le bouton « personnaliser » a été retiré (décision PO)',
+        (tester) async {
+      // Point d'entrée unique des préférences = l'inline « GÉRER » de
+      // MyInterestsIntro ; la carte Essentiel n'expose plus de bouton perso.
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
-          onTapArticle: (_) => articleTaps++,
-          onTapPersonalize: () => personalizeTaps++,
+          onTapArticle: (_) {},
         ),
       ));
 
-      await tester.tap(find.byIcon(Icons.tune_rounded));
-      await tester.pumpAndSettle();
-      expect(personalizeTaps, 1);
-      expect(articleTaps, 0,
-          reason: 'Personalize tap must not bubble to the lead InkWell.');
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
     });
 
     testWidgets(
-        'long-press on the lead opens the article preview overlay',
-        (tester) async {
+        'long-press on the lead reopens the floating preview overlay '
+        '(régression #973)', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
-      // La carte elle-même est text-only (aucune FacteurThumbnail) ; l'aperçu
-      // overlay en rend une → signal propre de présence de l'aperçu.
+      // Au repos : pas d'aperçu (l'overlay rend une FacteurThumbnail).
       expect(find.byType(FacteurThumbnail), findsNothing);
 
       final gesture =
           await tester.startGesture(tester.getCenter(find.text('Titre 1')));
       // Dépasse la deadline long-press (500 ms par défaut du GestureDetector).
       await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200)); // anim overlay
 
+      // Le vrai aperçu flottant est de nouveau monté (PR #973 l'avait remplacé
+      // par un « grow nudge » cosmétique).
       expect(find.byType(FacteurThumbnail), findsOneWidget,
-          reason: 'Long-press should reveal the preview overlay.');
+          reason: 'Long-press must reopen the floating preview overlay.');
 
+      // Nettoyage : l'overlay est un OverlayEntry à état statique — le relâcher
+      // et laisser l'anim de sortie se terminer évite toute fuite entre tests.
       await gesture.up();
       await tester.pumpAndSettle();
+      expect(find.byType(FacteurThumbnail), findsNothing);
     });
 
-    testWidgets('long-press on a medium tile opens the preview overlay',
+    testWidgets(
+        'long-press on a medium tile reopens the preview overlay',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
       final gesture =
           await tester.startGesture(tester.getCenter(find.text('Titre 2')));
       await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
 
       expect(find.byType(FacteurThumbnail), findsOneWidget);
 
       await gesture.up();
       await tester.pumpAndSettle();
+      expect(find.byType(FacteurThumbnail), findsNothing);
     });
 
     testWidgets('renders up to 5 articles (lead + 2 mediums + 2 lights)',
@@ -210,7 +220,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -226,7 +235,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -239,11 +247,90 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
       expect(find.text('Ton Essentiel'), findsOneWidget);
+    });
+
+    testWidgets(
+        'à jour (today, streaks indispo) → header épuré : icône seule, '
+        'ni libellé, ni point rouge, ni nudge', (tester) async {
+      // EPIC « Lettre du jour » — « Rattraper » est désormais un signal
+      // contextuel : en today, si les streaks sont indisponibles (défaut du
+      // wrap → editionReadStatus « unavailable »), le déclencheur est l'icône ⏪
+      // seule (label null, pas de point, pas de nudge éphémère).
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EditionRewindTrigger), findsOneWidget);
+      final trigger = tester.widget<EditionRewindTrigger>(
+        find.byType(EditionRewindTrigger),
+      );
+      expect(trigger.label, isNull);
+      // Pas de nudge → pas de point rouge (le badge est dérivé de sa présence).
+      expect(trigger.ephemeralLabel, isNull);
+      expect(find.byType(EphemeralRattraperLabel), findsNothing);
+    });
+
+    testWidgets(
+        'en retard (today, édition d\'hier non ouverte) → point rouge + '
+        'nudge « Rattraper ? » monté', (tester) async {
+      // Streaks disponibles avec J-1 `opened == false` (et set local vide) ⇒
+      // missedYesterday == true → point rouge persistant + EphemeralRattraperLabel.
+      final today = editionTodayDate();
+      final past = editionPastDays(kEditionMaxPastDays); // J-1 (Hier)
+      final activity = StreakActivityModel(
+        currentStreak: 1,
+        longestStreak: 1,
+        days: [
+          StreakActivityDay(date: today, opened: true),
+          StreakActivityDay(date: past.first, opened: false), // Hier non lu
+        ],
+      );
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          streakActivityProvider.overrideWith((ref) async => activity),
+        ],
+      ));
+      // Laisse le FutureProvider streaks se résoudre → editionReadStatus dispo.
+      await tester.pumpAndSettle();
+
+      final trigger = tester.widget<EditionRewindTrigger>(
+        find.byType(EditionRewindTrigger),
+      );
+      // ephemeralLabel présent → point rouge dérivé + nudge monté.
+      expect(trigger.ephemeralLabel, isNotNull);
+      expect(find.byType(EphemeralRattraperLabel), findsOneWidget);
+
+      // Purge des timers du nudge (fondu-in ~1 s) avant la fin du test.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('le déclencheur rewind est présent, sans bouton perso',
+        (tester) async {
+      // Le bouton « personnaliser » a été retiré partout ; le rewind, lui, reste
+      // toujours présent (today ET lettre passée).
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.byType(EditionRewindTrigger), findsOneWidget);
+      expect(find.byIcon(Icons.tune_rounded), findsNothing);
     });
 
     testWidgets(
@@ -253,7 +340,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -266,7 +352,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
       expect(find.text('Actu du jour'), findsNothing);
@@ -278,7 +363,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isActuDuJour: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -295,7 +379,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -339,7 +422,6 @@ void main() {
               body: EssentielHiFiCard(
                 articles: [_article(rank: 1)],
                 onTapArticle: (_) {},
-                onTapPersonalize: () {},
               ),
             ),
           ),
@@ -404,7 +486,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1, isRead: true)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -426,7 +507,6 @@ void main() {
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 
@@ -446,7 +526,6 @@ void main() {
         EssentielHiFiCard(
           articles: List.generate(5, (i) => _article(rank: i + 1)),
           onTapArticle: (_) {},
-          onTapPersonalize: () {},
         ),
       ));
 

@@ -51,7 +51,7 @@ class PerspectivesLoadingSheet extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Couverture médiatique',
+                    'Comparer les angles',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: colors.textPrimary,

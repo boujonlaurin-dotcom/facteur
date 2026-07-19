@@ -31,7 +31,11 @@ class _FakeUserInterestsNotifier extends UserInterestsNotifier {
   Future<UserInterestsState> build() async => _initial;
 
   @override
-  Future<void> setInterestState(FavoriteRef ref, InterestState s) async {}
+  Future<void> setInterestState(
+    FavoriteRef ref,
+    InterestState s, {
+    bool? essentielMode,
+  }) async {}
 }
 
 class _StubSources extends UserSourcesStateNotifier {
@@ -68,7 +72,7 @@ class _NoGrille implements GrilleRepository {
 }
 
 class _StubSerein extends SereinToggleNotifier {
-  _StubSerein(super.ref) {
+  _StubSerein(Ref ref) : super(ref, null) {
     state = const SereinToggleState(enabled: false, isLoading: false);
   }
 }

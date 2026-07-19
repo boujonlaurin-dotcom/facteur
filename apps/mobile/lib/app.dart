@@ -9,6 +9,7 @@ import 'core/auth/auth_state.dart';
 import 'core/providers/analytics_provider.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
+import 'features/digest/providers/digest_provider.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
 import 'features/feed/services/read_sync_service.dart';
@@ -20,8 +21,12 @@ import 'features/app_update/services/playstore_update_service.dart';
 import 'features/onboarding/providers/onboarding_sync_provider.dart';
 import 'features/settings/providers/theme_provider.dart';
 
+import 'package:sentry_flutter/sentry_flutter.dart';
+
 import 'core/api/api_client.dart' show ApiGoneNotifier;
+import 'core/errors/user_facing_error_notifier.dart';
 import 'core/ui/notification_service.dart';
+import 'core/ui/user_facing_error_banner.dart';
 
 const flanerForegroundRefreshThreshold = Duration(minutes: 30);
 
@@ -63,12 +68,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // les 410 et notifie via ApiGoneNotifier (singleton agnostique de
     // BuildContext).
     ApiGoneNotifier.instance.addListener(_onApiGoneEvent);
+    // Bannière « souci côté device » : le notifier (device-only, cooldowné)
+    // publie un évènement, on l'affiche via le ScaffoldMessenger global.
+    UserFacingErrorNotifier.instance.addListener(_onUserFacingError);
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     ApiGoneNotifier.instance.removeListener(_onApiGoneEvent);
+    UserFacingErrorNotifier.instance.removeListener(_onUserFacingError);
     super.dispose();
   }
 
@@ -87,6 +96,70 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // Idempotent : on consomme l'event après affichage pour éviter le
     // re-trigger sur rebuild.
     ApiGoneNotifier.instance.clear();
+  }
+
+  void _onUserFacingError() {
+    final event = UserFacingErrorNotifier.instance.pendingEvent;
+    if (event == null) return;
+    final messenger = NotificationService.messengerKey.currentState;
+    if (messenger == null) {
+      UserFacingErrorNotifier.instance.clear();
+      return;
+    }
+    UserFacingErrorBanner.show(
+      messenger,
+      event,
+      onReport: () => _openUserErrorReportSheet(event),
+    );
+    // Consommé après affichage (évite le re-trigger sur rebuild).
+    UserFacingErrorNotifier.instance.clear();
+  }
+
+  void _openUserErrorReportSheet(UserFacingErrorEvent event) {
+    final context = NotificationService.navigatorKey.currentContext;
+    if (context == null) return;
+    unawaited(
+      UserFacingErrorBanner.showReportSheet(
+        context,
+        onSubmit: (comment) => _submitUserErrorReport(event, comment),
+      ),
+    );
+  }
+
+  Future<void> _submitUserErrorReport(
+    UserFacingErrorEvent event,
+    String comment,
+  ) async {
+    // Signal fort → Sentry, tagué user_reported pour l'alerte ops.
+    await Sentry.captureMessage(
+      'Bug signalé par l\'utilisateur',
+      level: SentryLevel.error,
+      withScope: (scope) {
+        scope.setTag('user_reported', 'true');
+        scope.setTag('source', event.source.tag);
+        scope.setContexts('user_error', {
+          'route': event.route ?? 'unknown',
+          'signature': event.signature,
+          if (event.detail != null) 'detail': event.detail,
+          'comment': comment,
+        });
+      },
+    );
+    // Agrégation funnel côté PostHog.
+    try {
+      await ref.read(posthogServiceProvider).capture(
+        event: 'user_error_reported',
+        properties: {
+          'source': event.source.tag,
+          'has_comment': comment.isNotEmpty,
+        },
+      );
+    } catch (_) {
+      // analytics best-effort
+    }
+    // Arme la fenêtre 24h → prochaines bannières en variante courte.
+    await UserFacingErrorNotifier.instance.markReported();
+    NotificationService.showSuccess('Merci, on regarde ça.');
   }
 
   @override
@@ -120,11 +193,10 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
         // le widget gèle tant que l'utilisateur n'ouvre pas explicitement
         // Flâner.
         _ensureWidgetFresh(stale: shouldRefreshFlanerOnForeground(elapsed));
+        final tournee = ref.read(tourneeProgressServiceProvider);
         if (isAuthenticated &&
             currentPath == RoutePaths.fluxContinu &&
-            ref
-                .read(tourneeProgressServiceProvider)
-                .isClosingDismissedTodaySync()) {
+            tournee.hasBrowsedEssentielTodaySync()) {
           router.go(RoutePaths.flaner);
           return;
         }
@@ -186,9 +258,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     DeepLinkService.instance.bind(
       router: router,
       analytics: analytics,
-      // Widget refresh button → réveille l'app, force un refresh Flâner (qui
-      // re-pushe le widget via le chemin existant).
-      onRefreshRequested: () => ref.read(feedProvider.notifier).refresh(),
+      // Widget refresh button → réveille l'app et répare les DEUX côtés du
+      // widget : l'Essentiel (digest) ET le Flux (feed). Le refresh Flâner
+      // simple ne reconstruisait jamais l'Essentiel et pouvait rester un no-op
+      // silencieux (filtre actif / signature identique / erreur réseau) — d'où
+      // le bouton « sans effet ». On force donc un re-push complet des deux
+      // caches. Fire-and-forget : le handler de deep link est synchrone.
+      onRefreshRequested: () {
+        unawaited(ref.read(digestProvider.notifier).syncWidgetFromRefresh());
+        unawaited(ref.read(feedProvider.notifier).refreshForWidget());
+      },
     );
 
     if (!_deepLinksStarted) {

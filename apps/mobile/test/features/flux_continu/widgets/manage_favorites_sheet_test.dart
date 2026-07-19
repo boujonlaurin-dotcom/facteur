@@ -29,13 +29,19 @@ class _SpyInterestsNotifier extends UserInterestsNotifier {
   _SpyInterestsNotifier(this._initial);
   final UserInterestsState _initial;
   final List<(FavoriteRef, InterestState)> stateCalls = [];
+  final List<bool?> modeCalls = [];
 
   @override
   Future<UserInterestsState> build() async => _initial;
 
   @override
-  Future<void> setInterestState(FavoriteRef ref, InterestState s) async {
+  Future<void> setInterestState(
+    FavoriteRef ref,
+    InterestState s, {
+    bool? essentielMode,
+  }) async {
     stateCalls.add((ref, s));
+    modeCalls.add(essentielMode);
   }
 
   @override
@@ -46,13 +52,19 @@ class _SpySourcesNotifier extends UserSourcesStateNotifier {
   _SpySourcesNotifier(this._initial);
   final UserSourcesState _initial;
   final List<(String, InterestState)> stateCalls = [];
+  final List<bool?> modeCalls = [];
 
   @override
   Future<UserSourcesState> build() async => _initial;
 
   @override
-  Future<void> setSourceState(String sourceId, InterestState s) async {
+  Future<void> setSourceState(
+    String sourceId,
+    InterestState s, {
+    bool? essentielMode,
+  }) async {
     stateCalls.add((sourceId, s));
+    modeCalls.add(essentielMode);
   }
 
   @override
@@ -96,7 +108,7 @@ class _FakeGrilleRepository implements GrilleRepository {
 }
 
 class _StubSereinToggleNotifier extends SereinToggleNotifier {
-  _StubSereinToggleNotifier(super.ref, bool enabled) {
+  _StubSereinToggleNotifier(Ref ref, bool enabled) : super(ref, null) {
     state = SereinToggleState(enabled: enabled, isLoading: false);
   }
 }

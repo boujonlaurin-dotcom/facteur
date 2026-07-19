@@ -18,8 +18,15 @@ import '../../lettres/models/facteur_grade.dart';
 import '../../lettres/providers/letters_provider.dart';
 import '../../lettres/widgets/ring_avatar.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
+import '../../premium/premium_provider.dart';
+import '../../soutien/providers/premium_gate_provider.dart';
+import '../../soutien/soutien_copy.dart';
+import '../../soutien/widgets/founder_photos.dart';
+import '../../soutien/widgets/paywall_sheet.dart';
 import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_repository_provider.dart';
+import '../../../core/ui/notification_service.dart';
+import '../../../widgets/design/facteur_stamp.dart';
 import '../providers/user_profile_provider.dart';
 import 'feedback_modal.dart';
 
@@ -90,6 +97,8 @@ class SettingsSheet extends ConsumerWidget {
                     children: [
                       _ProfileBlock(),
                       SizedBox(height: FacteurSpacing.space4),
+                      _SoutienTile(),
+                      SizedBox(height: FacteurSpacing.space4),
                       _UpdateAvailableTile(),
                       _SereinSwitchTile(),
                       SizedBox(height: FacteurSpacing.space4),
@@ -118,6 +127,8 @@ class _ProfileBlock extends ConsumerWidget {
     final serein = ref.watch(sereinToggleProvider.select((s) => s.enabled));
     final lettersState = ref.watch(lettersProvider).valueOrNull;
     final grade = lettersState?.grade;
+    final isPremium = ref.watch(isPremiumProvider);
+    final premiumSince = ref.watch(premiumSinceProvider);
     final shown = (displayName == null || displayName.isEmpty)
         ? 'Mon profil'
         : displayName;
@@ -147,8 +158,110 @@ class _ProfileBlock extends ConsumerWidget {
                         ),
                   ),
                   const SizedBox(height: 2),
+                  // Marqueur d'appartenance : mention sobre sous le nom.
+                  // Premium → tampon Fact·eur·isse (+ ancienneté si RevenueCat
+                  // fournit la date) ; free → grade Facteur habituel.
+                  if (isPremium)
+                    Wrap(
+                      spacing: FacteurSpacing.space2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        const FacteurStamp(
+                          text: SoutienCopy.premiumStamp,
+                          isNew: true,
+                        ),
+                        if (premiumSince != null)
+                          Text(
+                            '${SoutienCopy.premiumSincePrefix} '
+                            '${_frMonthYear(premiumSince)}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: colors.textSecondary),
+                          ),
+                      ],
+                    )
+                  else
+                    Text(
+                      grade?.title ?? facteurLadder.first.title,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                          ),
+                    ),
+                ],
+              ),
+            ),
+            Icon(
+              PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+              color: colors.textTertiary,
+              size: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// « depuis juillet 2026 » sans dépendre de l'init de locale intl.
+String _frMonthYear(DateTime date) {
+  const months = [
+    'janvier',
+    'février',
+    'mars',
+    'avril',
+    'mai',
+    'juin',
+    'juillet',
+    'août',
+    'septembre',
+    'octobre',
+    'novembre',
+    'décembre',
+  ];
+  return '${months[date.month - 1]} ${date.year}';
+}
+
+/// Entrée Soutien « Fact·eur·isse » : porte 1 du système de monétisation.
+/// Free → invite à rejoindre (écran Soutien) ; premium → remerciement +
+/// gestion de l'abonnement.
+class _SoutienTile extends ConsumerWidget {
+  const _SoutienTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final isPremium = ref.watch(isPremiumProvider);
+    return _SheetCard(
+      onTap: () => isPremium
+          ? context.pushNamed(RouteNames.subscriptions)
+          : context.pushNamed(RouteNames.soutien),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space4,
+          vertical: FacteurSpacing.space4,
+        ),
+        child: Row(
+          children: [
+            const FounderMiniDuo(),
+            const SizedBox(width: FacteurSpacing.space3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    grade?.title ?? facteurLadder.first.title,
+                    isPremium
+                        ? SoutienCopy.soutienTilePremiumTitle
+                        : SoutienCopy.soutienTileFreeTitle,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isPremium
+                        ? SoutienCopy.soutienTilePremiumSubtitle
+                        : SoutienCopy.soutienTileFreeSubtitle,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colors.textSecondary,
                         ),
@@ -246,15 +359,20 @@ class _SereinSwitchTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
     final enabled = ref.watch(sereinToggleProvider).enabled;
+    final canCustomize =
+        ref.watch(premiumGateProvider.select((g) => g.canCustomizeSerein));
 
     return _SheetCard(
-      onTap: () => ref.read(sereinToggleProvider.notifier).toggle(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: FacteurSpacing.space4,
-          vertical: FacteurSpacing.space3,
-        ),
-        child: Row(
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => ref.read(sereinToggleProvider.notifier).toggle(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space4,
+                vertical: FacteurSpacing.space3,
+              ),
+              child: Row(
           children: [
             Container(
               width: 36,
@@ -298,7 +416,48 @@ class _SereinSwitchTile extends ConsumerWidget {
                   ref.read(sereinToggleProvider.notifier).toggle(),
             ),
           ],
-        ),
+              ),
+            ),
+          ),
+          const _Divider(),
+          // Personnalisation des bonnes nouvelles : feature premium (l'écran
+          // de personnalisation lui-même est hors scope → toast pour les
+          // Fact·eur·isses, mur serein pour les free).
+          InkWell(
+            onTap: () => canCustomize
+                ? NotificationService.showInfo(
+                    SoutienCopy.sereinCustomizeComingSoon,
+                  )
+                : PaywallSheet.show(context, PaywallWallVariant.serein),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space4,
+                vertical: FacteurSpacing.space3,
+              ),
+              child: Row(
+                children: [
+                  const SizedBox(width: 36 + FacteurSpacing.space3),
+                  Expanded(
+                    child: Text(
+                      SoutienCopy.sereinCustomizeLabel,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: colors.textSecondary,
+                            fontWeight: FontWeight.w500,
+                          ),
+                    ),
+                  ),
+                  Icon(
+                    canCustomize
+                        ? PhosphorIcons.caretRight(PhosphorIconsStyle.regular)
+                        : PhosphorIcons.lockSimple(PhosphorIconsStyle.regular),
+                    color: colors.textTertiary,
+                    size: 16,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -313,6 +472,7 @@ class _ContentShortcuts extends ConsumerWidget {
     // commit dbb6aa20). État adaptatif : veille active → « Ma veille » (édition) ;
     // sinon → libellé incitatif vers la création.
     final hasVeille = ref.watch(veilleActiveConfigProvider).valueOrNull != null;
+    final gate = ref.watch(premiumGateProvider);
     return _SheetCard(
       child: Column(
         children: [
@@ -331,11 +491,17 @@ class _ContentShortcuts extends ConsumerWidget {
           _ShortcutTile(
             icon: PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
             label: hasVeille ? 'Ma veille' : 'Crée ta veille',
+            trailing: gate.canCreateVeille
+                ? null
+                : const FacteurStamp(text: SoutienCopy.veillePremiumStamp),
             // Même destination que l'ancien « Gérer ma veille » de Mes intérêts :
-            // veille active → menu modifier/archiver ; sinon → flow de création.
+            // veille active → menu modifier/archiver ; sinon → flow de création
+            // (mur veille pour les free, la création est premium).
             onTap: () => hasVeille
                 ? _showVeilleManageMenu(context, ref)
-                : context.pushNamed(RouteNames.veilleConfig),
+                : gate.canCreateVeille
+                    ? context.pushNamed(RouteNames.veilleConfig)
+                    : context.pushNamed(RouteNames.veilleWall),
           ),
           const _Divider(),
           _ShortcutTile(
@@ -491,11 +657,13 @@ class _ShortcutTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Widget? trailing;
 
   const _ShortcutTile({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.trailing,
   });
 
   @override
@@ -520,6 +688,10 @@ class _ShortcutTile extends StatelessWidget {
                 ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
               ),
             ),
+            if (trailing != null) ...[
+              trailing!,
+              const SizedBox(width: FacteurSpacing.space2),
+            ],
             Icon(
               PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
               color: colors.textTertiary,

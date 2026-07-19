@@ -21,6 +21,7 @@ import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../shared/widgets/fab_nudge_bubble.dart';
+import '../../../shared/widgets/glass_pill.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
 import '../../sources/models/source_model.dart';
@@ -54,6 +55,7 @@ import '../../lettres/providers/letters_provider.dart';
 import '../../lettres/providers/pending_save_nudge_provider.dart';
 import '../../saved/widgets/collection_picker_sheet.dart';
 import '../../saved/providers/collections_provider.dart';
+import '../../soutien/providers/analyse_quota_provider.dart';
 import '../../../widgets/design/facteur_thumbnail.dart';
 
 @visibleForTesting
@@ -182,17 +184,43 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
       _ContentDetailScreenState();
 }
 
-/// Height of the header content area (below the status bar).
+/// Height of the header pill content (below the status bar), i.e. the button
+/// row block *excluding* topInset — le pill est collé à `top: 0` et pousse la
+/// ligne de boutons sous la status bar via son padding interne.
 /// = top padding (12) + icon row (~39) + bottom padding (8) + 2px safety margin.
 const double _kHeaderContentHeight = 59;
 
-/// Visual bottom of the header for overlay anchoring (progress bar, sticky headers).
-/// Slightly less than the true bottom to guarantee 1px overlap and eliminate rounding gaps.
-const double _kHeaderVisualBottom = 56;
-
-/// Height of the footer content area (above the safe-area bottom inset).
+/// Height of the footer pill content (above the safe-area bottom inset).
 /// = vertical padding (12+12) + button row height (44).
 const double _kFooterContentHeight = 82.0;
+
+/// Rayon des coins intérieurs du cadre header/footer (arêtes orientées vers
+/// l'article ; les arêtes collées aux bords de l'écran restent carrées).
+const double _kFrameRadius = 20;
+
+/// Respiration entre le bord bas du header (arête intérieure du cadre) et le
+/// début du contenu de l'article — assez faible pour que le contenu remonte
+/// jusqu'à la zone des coins arrondis et « passe » visiblement sous la courbe
+/// (objectif de la forme). Ajouté à `headerHeight` (offset du contenu), sans
+/// toucher la hauteur visuelle du pill.
+const double _kHeaderContentGap = 4;
+
+/// Course de scroll cumulée (px) vers le bas avant de **masquer** le footer en
+/// un seul mouvement animé (« one-shot »). Conservateur mais réactif.
+const double kFooterHideThreshold = 40;
+
+/// Course de scroll cumulée (px) vers le haut avant de **révéler** le footer.
+/// Volontairement plus élevé (conservateur) : on ne re-montre le footer que
+/// pour une intention claire de remonter, jamais au moindre micro-scroll.
+const double kFooterRevealThreshold = 90;
+
+/// Marge entre le bas du pill footer et le bas de l'écran (safe area incluse).
+const double _kFooterBottomMargin = 8;
+
+/// Distance supplémentaire pour évacuer entièrement l'ombre douce du pill footer
+/// hors de l'écran quand il glisse en auto-hide (couvre `blurRadius` 18 + offset
+/// de l'ombre). Sans elle, un liseré fantôme resterait visible en bas.
+const double _kFooterShadowClearance = 24;
 
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
@@ -220,6 +248,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Timer? _linkCopiedHeaderTimer;
   late DateTime _startTime;
   WebViewController? _webViewController;
+  // Chargement de l'URL distante séparé de la création du contrôleur : la page
+  // (lourde : pubs/trackers/fonts/JS) n'est chargée qu'au tap CTA / warm-up 40 %
+  // (cf. `_maybeStartWebViewLoad`), jamais en tâche de fond pendant la lecture
+  // de LAYER 1. One-shot → évite un double `loadRequest` (déclencheurs multiples).
+  bool _webViewLoadRequested = false;
   // Chemin premium (source payante connectée) : WebView sur flutter_inappwebview
   // pour réutiliser la session du média (cookies). Distinct du WebView
   // webview_flutter du scroll-to-site des sources gratuites.
@@ -248,6 +281,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
   bool _offsetsComputed = false;
+  // Dernier `maxScrollExtent` pour lequel les offsets d'activation WebView ont
+  // été calculés : évite de rappeler `_computeScrollOffsets()` à chaque frame de
+  // scroll (le recompute n'est utile qu'au changement de hauteur = rendu HTML
+  // tardif). -1 = jamais calculé.
+  double _lastMaxExtentForOffsets = -1;
   // Once the WebView fade-in completes, drop the heavy article subtree from
   // the tree so Flutter no longer rasterizes/composites it on top of the
   // scrolling WebView (eliminates per-frame UI-thread cost).
@@ -284,6 +322,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   // Footer slide offset: 0.0 = fully visible, 1.0 = fully hidden.
   final ValueNotifier<double> _footerOffset = ValueNotifier<double>(0.0);
+  // Course de scroll cumulée dans la direction courante, remise à 0 au
+  // changement de direction. Le footer ne bouge plus pixel-par-pixel : il ne se
+  // masque / révèle que lorsque cet accumulateur franchit un seuil (déclenchement
+  // discret « one-shot »), puis via un tween lissé.
+  double _footerScrollAccum = 0.0;
   // « Arrival gate » WebView : à l'entrée dans une WebView, le footer est caché
   // et toute *révélation* est bloquée tant qu'on n'a pas scrollé d'au moins
   // [_kWebViewFooterRevealThreshold] px — sinon la garde overscroll (scroll à 0)
@@ -452,12 +495,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
 
     _footerAutoController = AnimationController(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 280),
       vsync: this,
     );
     _footerAutoController.addListener(() {
-      _footerOffset.value = _footerAutoStart +
-          (_footerAutoTarget - _footerAutoStart) * _footerAutoController.value;
+      // Courbe easeOutCubic → départ franc, arrivée douce : le pliage /
+      // dépliage du footer devient un seul mouvement fluide (fini le pilotage
+      // pixel-par-pixel saccadé).
+      final t = Curves.easeOutCubic.transform(_footerAutoController.value);
+      _footerOffset.value =
+          _footerAutoStart + (_footerAutoTarget - _footerAutoStart) * t;
     });
 
     _ctaPulseController = AnimationController(
@@ -522,8 +569,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Scroll-to-site: attach scroll listener
     _scrollController.addListener(_onScrollToSite);
 
-    // Reading progress: track scroll depth
-    _scrollController.addListener(_onScrollReadingProgress);
+    // Reading progress + « lire sur le site » nudge : pilotés par l'unique
+    // NotificationListener du build (un seul calcul de progression par frame).
+    // L'ancien 2e listener `_onScrollReadingProgress` faisait double emploi.
 
     // End-of-article nudge: show contextual action when progress >= 90%
     _readingProgress.addListener(_onReadingProgressNudge);
@@ -557,19 +605,33 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// le câblage des callbacks WebView.
   int _nowMs() => DateTime.now().millisecondsSinceEpoch;
 
-  void _initScrollToSiteWebView() {
-    final content = _content;
-    if (content == null || kIsWeb) return;
-    if (content.contentType != ContentType.article) return;
-    if (!content.hasInAppContent) return;
-
+  /// Vrai si le scroll-to-site s'applique à [content] (article in-app, non-web,
+  /// source gratuite). Facteur commun aux gardes de construction et de
+  /// chargement du WebView.
+  bool _eligibleForScrollToSiteWebView(Content? content) {
+    if (content == null || kIsWeb) return false;
+    if (content.contentType != ContentType.article) return false;
+    if (!content.hasInAppContent) return false;
     // Source premium connectée : la couche révélée au scroll rend un
     // `PremiumWebView` (cookies) — inutile (et contre-productif : paywall)
     // de charger le contrôleur gratuit sur l'URL payante. `_buildWebViewLayer`
     // court-circuite avant de toucher `_webViewController` sur ce chemin.
-    if (_isConnectedPremiumSource(content)) return;
+    if (_isConnectedPremiumSource(content)) return false;
+    return true;
+  }
 
-    _historyTracker.reset(_nowMs());
+  /// Construit le contrôleur WebView (delegate + channel `ScrollBridge`) sans
+  /// **charger** l'URL externe : le `loadRequest` coûteux est déféré à
+  /// [_maybeStartWebViewLoad], déclenché au 1er signal d'intention.
+  void _initScrollToSiteWebView() {
+    final content = _content;
+    if (!_eligibleForScrollToSiteWebView(content)) return;
+
+    // Contrôleur créé SANS charger l'URL : le chargement de la page distante
+    // (lourde) est différé à `_maybeStartWebViewLoad()` (tap CTA / warm-up 40 %)
+    // pour ne pas concurrencer LAYER 1 sur le thread UI/raster pendant la
+    // lecture. `_historyTracker.reset` est déplacé au load (cf. la méthode) :
+    // amorcé ici, il ferait compter un load différé comme nav utilisateur.
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -585,8 +647,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ..addJavaScriptChannel(
         'ScrollBridge',
         onMessageReceived: _onScrollBridgeMessage,
-      )
-      ..loadRequest(Uri.parse(content.url));
+      );
+  }
+
+  /// Démarre (une seule fois) le chargement de l'URL distante dans le WebView
+  /// gratuit `webview_flutter`. Séparé de la création du contrôleur
+  /// ([_initScrollToSiteWebView]) pour ne pas charger la page lourde en tâche de
+  /// fond pendant qu'on lit LAYER 1 — cause la plus probable du jank pré-glass
+  /// sur pages lourdes (Le Grand Continent, The Conversation).
+  ///
+  /// `_historyTracker.reset` est amorcé ICI, au moment du load, et non à la
+  /// création : la garde d'exit 1-tap ([WebViewHistoryTracker]) mesure le repos
+  /// depuis la dernière nav ; un `reset` posé à la création (>1,2 s avant un
+  /// load différé) ferait compter le load comme une nav utilisateur → 2 taps
+  /// pour sortir. Idempotent (déclencheurs : tap CTA, warm-up 40 %, fallback).
+  void _maybeStartWebViewLoad() {
+    if (_webViewLoadRequested) return;
+    final controller = _webViewController;
+    final content = _content;
+    if (controller == null || content == null) return;
+    _webViewLoadRequested = true;
+    _historyTracker.reset(_nowMs());
+    controller.loadRequest(Uri.parse(content.url));
   }
 
   /// Inject JS to drive the reader chrome from finger gestures + track
@@ -753,26 +835,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return isPartialContent(articleText);
   }
 
-  /// Track in-app scroll depth for reading progress.
-  /// For partial content, in-app scroll caps at 25% — WebView fills the rest.
-  void _onScrollReadingProgress() {
-    if (!_scrollController.hasClients) return;
-    final maxExtent = _scrollController.position.maxScrollExtent;
-    if (maxExtent <= 0) return;
-    final pixels = _scrollController.offset;
-    // Use article-only extent so the perspectives section doesn't dilute progress
-    final articleExtent = _articleContentExtent ?? maxExtent;
-    final rawProgress = pixels / articleExtent;
-    final progress = _isPartialContent
-        ? (rawProgress * 0.25).clamp(0.0, 0.25)
-        : rawProgress.clamp(0.0, 1.0);
-    _readingProgress.value = progress;
-    if (progress > _maxReadingProgress) {
-      _maxReadingProgress = progress;
-    }
-    _maybeRequestReadOnSiteNudge(progress);
-  }
-
   void _maybeRequestReadOnSiteNudge(double progress) {
     if (_isPartialContent) return;
     if (_readOnSiteNudgeRequested) return;
@@ -901,6 +963,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _ctaTapped = false;
       _offsetsComputed = false;
       _bridgeEndOffset = 0;
+      _lastMaxExtentForOffsets = -1;
     });
     _footerPermanent.value = false;
     _animateFooterTo(0.0);
@@ -945,14 +1008,31 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onScrollToSite() {
     if (!_ctaTapped || !_offsetsComputed) return;
 
-    // Re-measure on every scroll to handle late HTML rendering
-    _computeScrollOffsets();
+    // Re-mesure UNIQUEMENT quand la hauteur de contenu change (rendu HTML
+    // tardif) : lire `maxScrollExtent` est bon marché, mais rappeler
+    // `_computeScrollOffsets()` à chaque frame de scroll était redondant. Le
+    // latch one-way plus bas et `_bridgeEndOffset` restent inchangés tant que la
+    // hauteur ne bouge pas.
+    if (_scrollController.hasClients) {
+      final maxExtent = _scrollController.position.maxScrollExtent;
+      if (maxExtent != _lastMaxExtentForOffsets) {
+        _lastMaxExtentForOffsets = maxExtent;
+        _computeScrollOffsets();
+      }
+    }
 
     final offset = _scrollController.offset;
     final shouldActivate = offset >= _bridgeEndOffset;
 
     // One-way latch: once WebView is active, never deactivate it.
     if (shouldActivate && !_isWebViewActive) {
+      // La page révélée devient la baseline de l'historique : tant que le
+      // WebView est resté derrière la couche article (chargée en avance), il ne
+      // peut avoir accumulé que du bruit de redirection (consent/CMP tardif,
+      // http→https, AMP…), jamais une vraie navigation utilisateur (l'écran
+      // n'était pas tactile). On repart donc de profondeur 0 → **1 clic suffit**
+      // pour sortir quand l'utilisateur n'a pas navigué dans le site.
+      _historyTracker.reset(_nowMs());
       setState(() {
         _isWebViewActive = true;
       });
@@ -1007,23 +1087,32 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
   }
 
-  /// Apply a page-scroll-equivalent [delta] (positive = page going down)
-  /// to the footer offset. The header is pinned and never reacts to scroll.
+  /// Accumule un [delta] de scroll (positif = page vers le bas) et déclenche un
+  /// **mouvement unique animé** du footer dès qu'un seuil est franchi, plutôt
+  /// que de le piloter pixel-par-pixel (source de saccade). Le header est fixe.
   void _applyChromeOffsetDelta(double delta) {
     if (_footerPermanent.value) return;
     // Arrival gate : tant que verrouillée, on ignore les deltas de *révélation*
     // (delta négatif = scroll vers le haut) pour ne pas découvrir le footer sur
     // le bandeau cookies ; seuls les masquages (delta positif) passent.
     if (_footerRevealLocked && delta < 0) return;
-    final footerHeight =
-        _kFooterContentHeight + MediaQuery.of(context).viewPadding.bottom;
-    // Hide a touch faster than it reveals: bias downward (hide) deltas so the
-    // footer clears the way more readily when the user scrolls into the article.
-    final adjusted = delta > 0 ? delta * 1.4 : delta;
-    _footerOffset.value = (_footerOffset.value + adjusted / footerHeight).clamp(
-      0.0,
-      1.0,
-    );
+
+    // Remise à 0 au changement de direction : une course vers le bas puis vers
+    // le haut ne doit pas se compenser, chaque intention repart de zéro.
+    if ((delta > 0) != (_footerScrollAccum > 0)) {
+      _footerScrollAccum = 0;
+    }
+    _footerScrollAccum += delta;
+
+    final footerVisible = _footerOffset.value < 0.5;
+    if (footerVisible && _footerScrollAccum > kFooterHideThreshold) {
+      _footerScrollAccum = 0;
+      _animateFooterTo(1.0);
+    } else if (!footerVisible &&
+        _footerScrollAccum < -kFooterRevealThreshold) {
+      _footerScrollAccum = 0;
+      _animateFooterTo(0.0);
+    }
   }
 
   /// Update footer offset based on a native scroll delta (in-app reader only).
@@ -1044,14 +1133,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     });
   }
 
-  /// Stop any in-flight footer tween so the live gesture pilots the chrome
-  /// without fighting a residual animation.
+  /// Nouveau geste tactile dans le WebView : repart d'une course cumulée nulle
+  /// pour que chaque swipe soit mesuré indépendamment (« one-shot » par geste).
   void _onGestureStart() {
-    _footerAutoController.stop();
+    _footerScrollAccum = 0;
   }
 
-  /// Map a gesture-derived page-scroll-equivalent delta onto the footer offset.
-  /// Header is pinned, so it ignores the gesture entirely.
+  /// Alimente l'accumulateur de course avec un delta dérivé du geste
+  /// (positif = page vers le bas). Le header est fixe, il ignore le geste.
   void _onGestureDelta(double pageDelta) {
     if (pageDelta == 0) return;
     if (_showSunflowerNudge) {
@@ -1061,35 +1150,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _applyChromeOffsetDelta(pageDelta);
   }
 
-  /// At touchend, commit the footer to a clean state.
-  /// - High-velocity flick → snap to that direction's endpoint.
-  /// - Slow lift-off → leave the footer at its current partial offset.
-  /// - At the top of the page → force visible (overscroll guard).
+  /// Au relâché du doigt, seule la garde overscroll reste utile : le
+  /// masquage / révélation est déjà piloté par l'accumulateur discret pendant
+  /// le geste, plus besoin d'un snap par vélocité.
   void _onGestureEnd(double velocityPxPerSec) {
     if (_content?.isVideo ?? false) return;
-    if (_webScrollY <= 0) {
-      // Arrival gate : ne pas re-révéler le footer en haut de page tant que la
-      // garde est armée (sinon masque le bandeau cookies dès le 1er contact).
-      if (!_footerRevealLocked &&
-          !_footerPermanent.value &&
-          _footerOffset.value != 0) {
-        _animateFooterTo(0);
-      }
-      return;
-    }
-    const double kVelocitySnapThreshold = 600.0; // px/s
-    double? target;
-    if (velocityPxPerSec > kVelocitySnapThreshold) {
-      target = 1.0;
-    } else if (velocityPxPerSec < -kVelocitySnapThreshold) {
-      target = 0.0;
-    }
-    // Arrival gate : ignore un flick de révélation (target 0.0) avant le seuil.
-    if (_footerRevealLocked && target == 0.0) return;
-    if (target != null &&
+    // Garde overscroll : en haut de page, on force le footer visible (sauf si
+    // l'arrival gate est armée ou le footer verrouillé permanent).
+    if (_webScrollY <= 0 &&
+        !_footerRevealLocked &&
         !_footerPermanent.value &&
-        _footerOffset.value != target) {
-      _animateFooterTo(target);
+        _footerOffset.value != 0) {
+      _animateFooterTo(0);
     }
   }
 
@@ -1158,6 +1230,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           if (_webViewController == null) {
             _initScrollToSiteWebView();
           }
+          // Fallback idle : couvre « ne scrolle jamais puis tape le CTA ». Le
+          // chargement reste déféré ~1 s après résolution du contenu ; le 1er
+          // scroll ou le tap CTA gagne la course s'il arrive avant. Idempotent.
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) _maybeStartWebViewLoad();
+          });
           // Auto-fetch perspectives if not yet loaded
           if (_perspectivesResponse == null &&
               !_perspectivesLoading &&
@@ -1521,7 +1599,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.dispose();
     _scrollController.removeListener(_onScrollToSite);
-    _scrollController.removeListener(_onScrollReadingProgress);
 
     _scrollController.dispose();
     _inAppScrollController.dispose();
@@ -1853,6 +1930,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _openPerspectivesAnalysis() {
     HapticFeedback.mediumImpact();
     if (_analysisSheetData.value.state == PerspectivesAnalysisState.idle) {
+      // Lancement frais (pas d'analyse cachée). L'analyse se charge TOUJOURS
+      // (plus de blocage paywall) ; on marque juste l'usage du jour de façon
+      // non-bloquante (no-op premium) pour piloter le nudge doux « Notre
+      // histoire » dans la surface quota du carrousel. La réouverture d'une
+      // analyse déjà chargée (state != idle) reste libre et ne marque rien.
+      ref.read(analyseQuotaProvider.notifier).recordUse();
       _requestPerspectivesAnalysis();
     }
     showAnalysisBottomSheet(
@@ -1948,6 +2031,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
               NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
                   if (notification is ScrollUpdateNotification) {
+                    // 1er scroll = signal d'intention primaire : préchauffe le
+                    // WebView externe (déféré au montage). Idempotent.
+                    _maybeStartWebViewLoad();
                     final delta = notification.scrollDelta ?? 0.0;
                     final metrics = notification.metrics;
                     if (metrics.pixels <= 0 &&
@@ -1984,6 +2070,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       if (capped > _maxReadingProgress) {
                         _maxReadingProgress = capped;
                       }
+                      // Warm-up : précharge la page distante quand l'utilisateur
+                      // a lu ~40 % du contenu in-app (« prête à l'arrivée »),
+                      // sans jamais la charger dès l'ouverture. Idempotent.
+                      if (useScrollToSite &&
+                          metrics.pixels >= 0.4 * metrics.maxScrollExtent) {
+                        _maybeStartWebViewLoad();
+                      }
                     }
                   }
                   return false;
@@ -2002,29 +2095,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 ),
                 ),
               ),
-              // Header — pinned at the top of the screen; no scroll-driven
-              // translation. Earlier iterations slid the header up/down on
-              // scroll but the result felt unstable in the WebView, so the
-              // header is now permanently visible.
+              // Header — cadre haut « encapsulant » collé aux bords haut +
+              // gauche + droite (s'étend sous la status bar) ; seuls les coins
+              // bas (orientés vers l'article) sont arrondis. Pas de translation
+              // au scroll : le header reste visible en permanence. La barre de
+              // progression vit dans le pill (clipée par ses coins arrondis).
+              // Plus de scrim : le fond du header couvre toute la zone status
+              // bar et garde les icônes système lisibles.
               Positioned(
                 top: 0,
                 left: 0,
                 right: 0,
-                child: RepaintBoundary(child: _buildHeader(context, content)),
-              ),
-              // Reading progress bar — pinned right below the header.
-              if (content.hasInAppContent ||
-                  _isWebViewActive ||
-                  isVideoContent ||
-                  (!useScrollToSite && !useInAppReading))
-                Positioned(
-                  top:
-                      MediaQuery.of(context).padding.top + _kHeaderVisualBottom,
-                  left: 0,
-                  right: 0,
-                  child:
-                      RepaintBoundary(child: _buildReadingProgressBar(colors)),
+                child: RepaintBoundary(
+                  child: _buildHeader(
+                    context,
+                    content,
+                    showProgressBar: content.hasInAppContent ||
+                        _isWebViewActive ||
+                        isVideoContent ||
+                        (!useScrollToSite && !useInAppReading),
+                  ),
                 ),
+              ),
               // Exit animation overlay — fade-to-white + scale-down
               if (_isExitAnimating)
                 AnimatedBuilder(
@@ -2072,6 +2164,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _openOriginalUrl();
       return;
     }
+    // Garantie : le tap CTA lance la révélation (animateTo 500 ms). On préchauffe
+    // le WebView dès maintenant pour lui donner une longueur d'avance. Idempotent.
+    _maybeStartWebViewLoad();
     final content = _content;
     if (content == null) return;
     final articleText = content.htmlContent ?? content.description;
@@ -2082,6 +2177,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !_showWebView;
     if (isScrollToSite && !_ctaTapped) {
       setState(() => _ctaTapped = true);
+      // Lance le chargement de la page distante MAINTENANT : le CTA anime 500 ms
+      // avant que `_isWebViewActive` ne se verrouille → la page démarre ≥ 500 ms
+      // avant la révélation (même avance qu'avec le chargement eager d'avant).
+      _maybeStartWebViewLoad();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _scrollController.hasClients) {
           _scrollController.animateTo(
@@ -2211,256 +2310,250 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       shape: WidgetStatePropertyAll(CircleBorder()),
     );
 
-    final footerContent = DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.backgroundPrimary,
-        border: Border(
-          top: BorderSide(
-            color: colors.border.withValues(alpha: 0.5),
-            width: 0.5,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, -2),
-          ),
-        ],
+    // Pill « verre » flottant, détaché des bords (marges + safe area gérées par
+    // le Padding du Column parent). Rebord statique (cf. GlassPill) → aucun swap
+    // au scroll, le logo de source ne se re-monte plus (fin de la vibration).
+    final footerContent = GlassPill(
+      shadowOffset: const Offset(0, -4),
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(_kFrameRadius),
+        topRight: Radius.circular(_kFrameRadius),
       ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              // CTA — sized to content for articles (laisse de la place aux 3
-              // boutons icônes à droite); fills width pour video/audio.
-              // Article: dynamic "Article complet" / "Lire via Navigateur"
-              // with permanent-orange logic. Video/audio: simple external CTA.
-              Expanded(
-                child: SizedBox(
-                  height: 53,
-                  child: isArticle
-                      ? ValueListenableBuilder<bool>(
-                          valueListenable: _footerPermanent,
-                          builder: (context, permanent, _) {
-                            final isWebViewMode =
-                                _ctaTapped || _isWebViewActive;
-                            // Primary orange ONLY when the user has reached the
-                            // bottom of the article (footer locked permanent) AND
-                            // the WebView hasn't been revealed yet.
-                            final usePrimary = permanent && !isWebViewMode;
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 12,
+          bottom: 12 + bottomInset + _kFooterBottomMargin,
+        ),
+        child: Row(
+          children: [
+            // CTA — sized to content for articles (laisse de la place aux 3
+            // boutons icônes à droite); fills width pour video/audio.
+            // Article: dynamic "Article complet" / "Lire via Navigateur"
+            // with permanent-orange logic. Video/audio: simple external CTA.
+            Expanded(
+              child: SizedBox(
+                height: 53,
+                child: isArticle
+                    ? ValueListenableBuilder<bool>(
+                        valueListenable: _footerPermanent,
+                        builder: (context, permanent, _) {
+                          final isWebViewMode =
+                              _ctaTapped || _isWebViewActive;
+                          // Primary orange ONLY when the user has reached the
+                          // bottom of the article (footer locked permanent) AND
+                          // the WebView hasn't been revealed yet.
+                          final usePrimary = permanent && !isWebViewMode;
 
-                            final label = isWebViewMode
-                                ? 'Lire via Navigateur'
-                                : 'Lire sur ${content.source.name}';
-                            final showLogo = !isWebViewMode;
-                            final iconData = isWebViewMode
-                                ? PhosphorIcons.arrowUpRight(
-                                    PhosphorIconsStyle.regular,
-                                  )
-                                : PhosphorIcons.arrowDown(
-                                    PhosphorIconsStyle.regular,
-                                  );
+                          final label = isWebViewMode
+                              ? 'Lire via Navigateur'
+                              : 'Lire sur ${content.source.name}';
+                          final showLogo = !isWebViewMode;
+                          final iconData = isWebViewMode
+                              ? PhosphorIcons.arrowUpRight(
+                                  PhosphorIconsStyle.regular,
+                                )
+                              : PhosphorIcons.arrowDown(
+                                  PhosphorIconsStyle.regular,
+                                );
 
-                            final children = <Widget>[
-                              if (showLogo) ...[
-                                SourceLogoAvatar(
-                                  source: content.source,
-                                  size: 28,
-                                  radius: 8,
-                                ),
-                                const SizedBox(width: 6),
-                              ],
-                              Flexible(
-                                child: Text(
-                                  label,
-                                  style: textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                    color: usePrimary
-                                        ? Colors.white
-                                        : colors.textPrimary,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.left,
-                                ),
+                          final children = <Widget>[
+                            if (showLogo) ...[
+                              SourceLogoAvatar(
+                                source: content.source,
+                                size: 28,
+                                radius: 8,
                               ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                iconData,
-                                size: 16,
-                                color: usePrimary
-                                    ? Colors.white.withValues(alpha: 0.8)
-                                    : colors.textSecondary,
+                              const SizedBox(width: 6),
+                            ],
+                            Flexible(
+                              child: Text(
+                                label,
+                                style: textTheme.labelMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: usePrimary
+                                      ? Colors.white
+                                      : colors.textPrimary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.left,
                               ),
-                            ];
-
-                            if (usePrimary) {
-                              return AnimatedBuilder(
-                                animation: _ctaPulseController,
-                                builder: (context, child) {
-                                  // Subtle pop: 1.0 → 1.04 → 1.0 over 280ms.
-                                  final t = _ctaPulseController.value;
-                                  final scale =
-                                      1.0 + 0.04 * math.sin(t * math.pi);
-                                  return Transform.scale(
-                                    scale: scale,
-                                    child: child,
-                                  );
-                                },
-                                child: FilledButton(
-                                  onPressed: _onReadOnSiteTap,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: colors.primary,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: children,
-                                  ),
-                                ),
-                              );
-                            }
-
-                            return OutlinedButton(
-                              onPressed: _onReadOnSiteTap,
-                              style: OutlinedButton.styleFrom(
-                                backgroundColor: Colors.white.withValues(
-                                  alpha: 0.5,
-                                ),
-                                foregroundColor: colors.textPrimary,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                side: BorderSide(
-                                  color: colors.border.withValues(alpha: 0.5),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
-                              ),
-                              child: Row(children: children),
-                            );
-                          },
-                        )
-                      : _buildExternalCtaButton(context, content),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Sauvegarder (long-press → collection picker)
-                  Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      GestureDetector(
-                        onLongPress: () {
-                          HapticFeedback.mediumImpact();
-                          CollectionPickerSheet.show(
-                            context,
-                            content.id,
-                            onAddNote: () => _openNoteSheet(),
-                          );
-                        },
-                        child: ScaleTransition(
-                          scale: _bookmarkScaleAnimation,
-                          child: IconButton(
-                            style: iconButtonStyle.copyWith(
-                              backgroundColor: content.isSaved
-                                  ? WidgetStatePropertyAll(colors.primary)
-                                  : null,
                             ),
-                            onPressed: _toggleBookmark,
-                            icon: Icon(
-                              content.isSaved
-                                  ? PhosphorIcons.bookmarkSimple(
-                                      PhosphorIconsStyle.fill,
-                                    )
-                                  : PhosphorIcons.bookmarkSimple(
-                                      PhosphorIconsStyle.regular,
-                                    ),
-                              size: 28,
-                              color: content.isSaved
-                                  ? Colors.white
+                            const SizedBox(width: 4),
+                            Icon(
+                              iconData,
+                              size: 16,
+                              color: usePrimary
+                                  ? Colors.white.withValues(alpha: 0.8)
                                   : colors.textSecondary,
                             ),
-                            tooltip: 'Sauvegarder',
-                          ),
-                        ),
-                      ),
-                      if (_showSaveNudge)
-                        const Positioned(
-                          bottom: 50,
-                          right: 0,
-                          child: FabNudgeBubble(
-                            text: 'Sauvegarde cet article pour valider '
-                                'ton étape.',
-                          ),
-                        ),
-                    ],
-                  ),
+                          ];
 
-                  // 🌻 Recommander
-                  Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      ScaleTransition(
-                        scale: _likeScaleAnimation,
+                          if (usePrimary) {
+                            return AnimatedBuilder(
+                              animation: _ctaPulseController,
+                              builder: (context, child) {
+                                // Subtle pop: 1.0 → 1.04 → 1.0 over 280ms.
+                                final t = _ctaPulseController.value;
+                                final scale =
+                                    1.0 + 0.04 * math.sin(t * math.pi);
+                                return Transform.scale(
+                                  scale: scale,
+                                  child: child,
+                                );
+                              },
+                              child: FilledButton(
+                                onPressed: _onReadOnSiteTap,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: colors.primary,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: children,
+                                ),
+                              ),
+                            );
+                          }
+
+                          return OutlinedButton(
+                            onPressed: _onReadOnSiteTap,
+                            style: OutlinedButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.5,
+                              ),
+                              foregroundColor: colors.textPrimary,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              side: BorderSide(
+                                color: colors.border.withValues(alpha: 0.5),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                            ),
+                            child: Row(children: children),
+                          );
+                        },
+                      )
+                    : _buildExternalCtaButton(context, content),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Sauvegarder (long-press → collection picker)
+                Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    GestureDetector(
+                      onLongPress: () {
+                        HapticFeedback.mediumImpact();
+                        CollectionPickerSheet.show(
+                          context,
+                          content.id,
+                          onAddNote: () => _openNoteSheet(),
+                        );
+                      },
+                      child: ScaleTransition(
+                        scale: _bookmarkScaleAnimation,
                         child: IconButton(
                           style: iconButtonStyle.copyWith(
-                            backgroundColor: content.isLiked
+                            backgroundColor: content.isSaved
                                 ? WidgetStatePropertyAll(colors.primary)
                                 : null,
                           ),
-                          onPressed: _toggleLike,
-                          icon: SunflowerIcon(
-                            isActive: content.isLiked,
-                            size: 26,
-                            inactiveColor: colors.textSecondary,
+                          onPressed: _toggleBookmark,
+                          icon: Icon(
+                            content.isSaved
+                                ? PhosphorIcons.bookmarkSimple(
+                                    PhosphorIconsStyle.fill,
+                                  )
+                                : PhosphorIcons.bookmarkSimple(
+                                    PhosphorIconsStyle.regular,
+                                  ),
+                            size: 28,
+                            color: content.isSaved
+                                ? Colors.white
+                                : colors.textSecondary,
                           ),
-                          tooltip: 'Recommander',
+                          tooltip: 'Sauvegarder',
                         ),
                       ),
-                      // Petit glyphe « republier » (style retweet) pour signifier
-                      // que le tournesol partage l'article aux autres lecteurs.
-                      // Purement décoratif, toujours visible, ne capte pas le tap.
-                      Positioned(
-                        right: 2,
-                        bottom: 2,
-                        child: IgnorePointer(
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: content.isLiked
-                                  ? colors.primary
-                                  : colors.backgroundSecondary,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              PhosphorIcons.repeat(PhosphorIconsStyle.bold),
-                              size: 11,
-                              color: content.isLiked
-                                  ? Colors.white
-                                  : colors.textSecondary,
-                            ),
+                    ),
+                    if (_showSaveNudge)
+                      const Positioned(
+                        bottom: 50,
+                        right: 0,
+                        child: FabNudgeBubble(
+                          text: 'Sauvegarde cet article pour valider '
+                              'ton étape.',
+                        ),
+                      ),
+                  ],
+                ),
+
+                // 🌻 Recommander
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ScaleTransition(
+                      scale: _likeScaleAnimation,
+                      child: IconButton(
+                        style: iconButtonStyle.copyWith(
+                          backgroundColor: content.isLiked
+                              ? WidgetStatePropertyAll(colors.primary)
+                              : null,
+                        ),
+                        onPressed: _toggleLike,
+                        icon: SunflowerIcon(
+                          isActive: content.isLiked,
+                          size: 26,
+                          inactiveColor: colors.textSecondary,
+                        ),
+                        tooltip: 'Recommander',
+                      ),
+                    ),
+                    // Petit glyphe « republier » (style retweet) pour signifier
+                    // que le tournesol partage l'article aux autres lecteurs.
+                    // Purement décoratif, toujours visible, ne capte pas le tap.
+                    Positioned(
+                      right: 2,
+                      bottom: 2,
+                      child: IgnorePointer(
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: content.isLiked
+                                ? colors.primary
+                                : colors.backgroundSecondary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            PhosphorIcons.repeat(PhosphorIconsStyle.bold),
+                            size: 11,
+                            color: content.isLiked
+                                ? Colors.white
+                                : colors.textSecondary,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -2468,8 +2561,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return ValueListenableBuilder<double>(
       valueListenable: _footerOffset,
       builder: (context, offset, child) => Transform.translate(
-        // Extra 8px to slide the top border shadow fully off-screen.
-        offset: Offset(0, offset * (_kFooterContentHeight + bottomInset + 8)),
+        // Marge basse + clearance d'ombre pour évacuer le pill entièrement.
+        offset: Offset(
+          0,
+          offset *
+              (_kFooterContentHeight +
+                  bottomInset +
+                  _kFooterBottomMargin +
+                  _kFooterShadowClearance),
+        ),
         // RepaintBoundary isolates the footer subtree from per-pixel
         // _footerOffset updates — the translation only recomposites this
         // layer, the article body is not invalidated.
@@ -2529,9 +2629,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  Widget _buildHeader(BuildContext context, Content content) {
+  /// Offset vertical réservé sous le header flottant pour le début du contenu,
+  /// identique sur **tous** les modes de lecture (scroll-to-site, in-app,
+  /// vidéo, audio, WebView fallback). Source unique de vérité : garantit que le
+  /// bandeau du média dans la WebView n'est jamais tronqué par le header et que
+  /// les chemins ne peuvent pas diverger.
+  double get _headerHeight =>
+      MediaQuery.of(context).padding.top +
+      _kHeaderContentHeight +
+      _kHeaderContentGap;
+
+  Widget _buildHeader(
+    BuildContext context,
+    Content content, {
+    required bool showProgressBar,
+  }) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final topInset = MediaQuery.of(context).padding.top;
 
     // Live follow state — relies on the unified 4-state interests provider so
     // the action reflects an optimistic toggle from anywhere in the app.
@@ -2551,173 +2666,187 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final subjectCount =
         (content.topics.isNotEmpty ? 1 : 0) + content.entities.length;
 
-    // ColoredBox fills the status bar area; SafeArea pushes content below it
-    final headerContent = ColoredBox(
-      color: colors.backgroundPrimary,
-      child: SafeArea(
-        bottom: false,
-        child: Container(
-          padding: const EdgeInsets.only(
-            top: FacteurSpacing.space3,
-            bottom: FacteurSpacing.space2,
-            left: FacteurSpacing.space2,
-            right: FacteurSpacing.space2,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space2,
+    // Pill « verre » flottant — la barre de progression est clipée dans le pill
+    // (Stack interne, alignée sur son bord bas). Rebord statique (cf. GlassPill)
+    // → plus de swap au scroll, le logo de source ne se re-monte plus.
+    final headerContent = GlassPill(
+      shadowOffset: const Offset(0, 4),
+      borderRadius: const BorderRadius.only(
+        bottomLeft: Radius.circular(_kFrameRadius),
+        bottomRight: Radius.circular(_kFrameRadius),
+      ),
+      child: Stack(
+        children: [
+          Container(
+            padding: EdgeInsets.only(
+              top: topInset + FacteurSpacing.space3,
+              bottom: FacteurSpacing.space2,
+              left: FacteurSpacing.space2,
+              right: FacteurSpacing.space2,
             ),
-            child: Row(
-              children: [
-                // Discreet Back Button (reduced icon, maintained hitbox)
-                IconButton(
-                  padding: const EdgeInsets.all(8),
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
-                    size: 16,
-                    color: colors.textSecondary,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: FacteurSpacing.space2,
+              ),
+              child: Row(
+                children: [
+                  // Discreet Back Button (reduced icon, maintained hitbox)
+                  IconButton(
+                    padding: const EdgeInsets.all(8),
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(
+                      PhosphorIcons.arrowLeft(PhosphorIconsStyle.regular),
+                      size: 16,
+                      color: colors.textSecondary,
+                    ),
+                    onPressed: _handleReaderBack,
                   ),
-                  onPressed: _handleReaderBack,
-                ),
-                const SizedBox(width: 4),
+                  const SizedBox(width: 4),
 
-                // CTA source unique : logo + nom + étoile (indicateur) + heure,
-                // le tout tappable → ouvre directement la modal source (plus de
-                // roue dentée, plus de filtre feed ; le suivi / favori se font
-                // dans la modal). Balise « X sujets » séparée à droite.
-                Expanded(
-                  child: _SourceBadgeNudge(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Material(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(16),
-                              child: InkWell(
+                  // CTA source unique : logo + nom + étoile (indicateur) + heure,
+                  // le tout tappable → ouvre directement la modal source (plus de
+                  // roue dentée, plus de filtre feed ; le suivi / favori se font
+                  // dans la modal). Balise « X sujets » séparée à droite.
+                  Expanded(
+                    child: _SourceBadgeNudge(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Material(
+                                color: Colors.transparent,
                                 borderRadius: BorderRadius.circular(16),
-                                onTap: () => TopicChip.showArticleSheet(
-                                  context,
-                                  content,
-                                  initialSection: ArticleSheetSection.source,
-                                ),
-                                child: Ink(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 5,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: () => TopicChip.showArticleSheet(
+                                    context,
+                                    content,
+                                    initialSection: ArticleSheetSection.source,
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: colors.backgroundSecondary,
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color:
-                                          colors.border.withValues(alpha: 0.6),
-                                      width: 0.8,
+                                  child: Ink(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
                                     ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SourceLogoAvatar(
-                                        source: content.source,
-                                        size: 26,
-                                        radius: 9,
+                                    decoration: BoxDecoration(
+                                      color: colors.backgroundSecondary,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color:
+                                            colors.border.withValues(alpha: 0.6),
+                                        width: 0.8,
                                       ),
-                                      const SizedBox(width: 8),
-                                      Flexible(
-                                        child: Text(
-                                          content.source.name,
-                                          style:
-                                              textTheme.labelMedium?.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                            color: colors.textPrimary,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SourceLogoAvatar(
+                                          source: content.source,
+                                          size: 26,
+                                          radius: 9,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Flexible(
+                                          child: Text(
+                                            content.source.name,
+                                            style:
+                                                textTheme.labelMedium?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              color: colors.textPrimary,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                      ),
-                                      if (effectiveState ==
-                                              InterestState.favorite ||
-                                          effectiveState ==
-                                              InterestState.followed) ...[
-                                        const SizedBox(width: 6),
+                                        if (effectiveState ==
+                                                InterestState.favorite ||
+                                            effectiveState ==
+                                                InterestState.followed) ...[
+                                          const SizedBox(width: 6),
+                                          Icon(
+                                            effectiveState ==
+                                                    InterestState.favorite
+                                                ? PhosphorIcons.star(
+                                                    PhosphorIconsStyle.fill,
+                                                  )
+                                                : PhosphorIcons.star(
+                                                    PhosphorIconsStyle.regular,
+                                                  ),
+                                            size: 14,
+                                            color: effectiveState ==
+                                                    InterestState.favorite
+                                                ? colors.primary
+                                                : colors.textTertiary,
+                                          ),
+                                        ],
+                                        if (content.editorialBadge != null) ...[
+                                          const SizedBox(width: 6),
+                                          EditorialBadge.chip(
+                                                content.editorialBadge,
+                                                context: context,
+                                              ) ??
+                                              const SizedBox.shrink(),
+                                        ],
+                                        const SizedBox(width: 5),
                                         Icon(
-                                          effectiveState ==
-                                                  InterestState.favorite
-                                              ? PhosphorIcons.star(
-                                                  PhosphorIconsStyle.fill,
-                                                )
-                                              : PhosphorIcons.star(
-                                                  PhosphorIconsStyle.regular,
-                                                ),
-                                          size: 14,
-                                          color: effectiveState ==
-                                                  InterestState.favorite
-                                              ? colors.primary
-                                              : colors.textTertiary,
+                                          PhosphorIcons.caretRight(
+                                            PhosphorIconsStyle.regular,
+                                          ),
+                                          size: 13,
+                                          color: colors.textTertiary,
                                         ),
                                       ],
-                                      if (content.editorialBadge != null) ...[
-                                        const SizedBox(width: 6),
-                                        EditorialBadge.chip(
-                                              content.editorialBadge,
-                                              context: context,
-                                            ) ??
-                                            const SizedBox.shrink(),
-                                      ],
-                                      const SizedBox(width: 5),
-                                      Icon(
-                                        PhosphorIcons.caretRight(
-                                          PhosphorIconsStyle.regular,
-                                        ),
-                                        size: 13,
-                                        color: colors.textTertiary,
-                                      ),
-                                    ],
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                        // B1 : tous les sujets regroupés en une balise compacte,
-                        // après le CTA source unique (logo + nom + étoile).
-                        if (subjectCount > 0) ...[
-                          const SizedBox(width: 6),
-                          _SubjectsCountChip(
-                            count: subjectCount,
-                            onTap: () =>
-                                TopicChip.showArticleSheet(context, content),
-                          ),
+                          // B1 : tous les sujets regroupés en une balise compacte,
+                          // après le CTA source unique (logo + nom + étoile).
+                          if (subjectCount > 0) ...[
+                            const SizedBox(width: 6),
+                            _SubjectsCountChip(
+                              count: subjectCount,
+                              onTap: () =>
+                                  TopicChip.showArticleSheet(context, content),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
 
-                // Share button — copie le lien dans le presse-papier
-                IconButton(
-                  padding: const EdgeInsets.all(8),
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(),
-                  style: IconButton.styleFrom(
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    minimumSize: const Size(38, 38),
-                    shape: const CircleBorder(),
+                  // Share button — copie le lien dans le presse-papier
+                  IconButton(
+                    padding: const EdgeInsets.all(8),
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(),
+                    style: IconButton.styleFrom(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      minimumSize: const Size(38, 38),
+                      shape: const CircleBorder(),
+                    ),
+                    onPressed: _shareArticle,
+                    icon: Icon(
+                      PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
+                      size: 22,
+                      color: colors.textSecondary,
+                    ),
                   ),
-                  onPressed: _shareArticle,
-                  icon: Icon(
-                    PhosphorIcons.shareNetwork(PhosphorIconsStyle.regular),
-                    size: 22,
-                    color: colors.textSecondary,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
+          if (showProgressBar)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: RepaintBoundary(child: _buildReadingProgressBar(colors)),
+            ),
+        ],
       ),
     );
 
@@ -2754,18 +2883,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           clamped,
         )!
             .withValues(alpha: alpha);
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(end: clamped),
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-          builder: (context, smoothProgress, _) => SizedBox(
-            height: 3.5,
-            child: LinearProgressIndicator(
-              value: smoothProgress,
-              backgroundColor: Colors.transparent,
-              valueColor: AlwaysStoppedAnimation<Color>(barColor),
-              minHeight: 3.5,
-            ),
+        // Alimente la barre directement depuis `clamped` (déjà lissé par frame
+        // par le scroll natif). Le `TweenAnimationBuilder` 300 ms était relancé
+        // à CHAQUE frame de scroll → re-raster inutile. En mode WebView la
+        // progression arrive throttlée (~300 ms) : la barre « step » au lieu
+        // d'interpoler, coût cosmétique négligeable sur 3,5 px semi-transparents.
+        return SizedBox(
+          height: 3.5,
+          child: LinearProgressIndicator(
+            value: clamped,
+            backgroundColor: Colors.transparent,
+            valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            minHeight: 3.5,
           ),
         );
       },
@@ -2862,8 +2991,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final viewportHeight = MediaQuery.of(context).size.height;
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + _kHeaderContentHeight;
+    final headerHeight = _headerHeight;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final availableHeight = viewportHeight - headerHeight;
 
@@ -3159,8 +3287,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
     final screenWidth = MediaQuery.of(context).size.width;
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + _kHeaderContentHeight;
+    final headerHeight = _headerHeight;
     final isShort = content.isShort;
 
     // Description text: prefer htmlContent (stripped), fallback to description
@@ -3506,8 +3633,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       // but Footer CTA is removed per User Story 8 Refactor.
     }
 
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + _kHeaderContentHeight;
+    final headerHeight = _headerHeight;
 
     switch (content.contentType) {
       case ContentType.article:
@@ -3743,8 +3869,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       return Center(child: CircularProgressIndicator(color: colors.primary));
     }
 
-    final topInset = MediaQuery.of(context).padding.top;
-    final headerHeight = topInset + _kHeaderContentHeight;
+    final headerHeight = _headerHeight;
 
     // Chemin premium (source payante connectée) : flutter_inappwebview pour
     // réutiliser la session du média + détecter l'expiration. Les sources
@@ -3784,27 +3909,29 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       );
     }
 
-    // Mobile: Use native WebView with ScrollBridge for progress + auto-hide
-    if (_webViewController == null) {
-      _historyTracker.reset(_nowMs());
-      _webViewController = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageStarted: (_) => _historyTracker
-                .onNavStart(_nowMs()),
-            onPageFinished: (_) {
-              _injectScrollBridgeScript();
-              _historyTracker.onNavFinish();
-            },
-          ),
-        )
-        ..addJavaScriptChannel(
-          'ScrollBridge',
-          onMessageReceived: _onScrollBridgeMessage,
-        )
-        ..loadRequest(Uri.parse(content.url));
-    }
+    // Mobile: WebView natif avec ScrollBridge. Le fallback est un chemin
+    // d'AFFICHAGE direct (CTA-fallback via `_showWebView`, ou lien externe) : à
+    // la différence de la couche scroll-to-site (chargement différé), on force
+    // le chargement MAINTENANT via `_maybeStartWebViewLoad()` — sinon un
+    // contrôleur déjà créé par `_initScrollToSiteWebView` mais non chargé
+    // s'afficherait vide. `_historyTracker.reset` + `loadRequest` vivent dans le
+    // helper (idempotent : no-op si déjà chargé).
+    _webViewController ??= WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (_) => _historyTracker.onNavStart(_nowMs()),
+          onPageFinished: (_) {
+            _injectScrollBridgeScript();
+            _historyTracker.onNavFinish();
+          },
+        ),
+      )
+      ..addJavaScriptChannel(
+        'ScrollBridge',
+        onMessageReceived: _onScrollBridgeMessage,
+      );
+    _maybeStartWebViewLoad();
 
     // CTA discret : source payante non connectée → proposer de lire avec son
     // abonnement (ouvre le flow de connexion).
