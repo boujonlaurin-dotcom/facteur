@@ -684,10 +684,15 @@ class PushNotificationService {
     return scheduled;
   }
 
-  /// Seam de test : remplace l'émetteur d'analytics au tap d'une notif locale
-  /// (défaut = PostHog `notif_opened`).
+  /// Émetteur d'analytics au tap d'une notif locale — seam de test
+  /// (réassignable), défaut = PostHog `notif_opened`.
   @visibleForTesting
-  static void Function(String route)? notifOpenedTracker;
+  static void Function(String route) notifOpenedTracker = (route) => unawaited(
+        PostHogService().capture(
+          event: 'notif_opened',
+          properties: {'type': 'local', 'route': route},
+        ),
+      );
 
   static void _onNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
@@ -696,18 +701,8 @@ class PushNotificationService {
     );
 
     final route = _routeFromPayload(payload);
-    final track = notifOpenedTracker ?? _trackNotifOpened;
-    track(route);
+    notifOpenedTracker(route);
     openRoute(route);
-  }
-
-  static void _trackNotifOpened(String route) {
-    unawaited(
-      PostHogService().capture(
-        event: 'notif_opened',
-        properties: {'type': 'local', 'route': route},
-      ),
-    );
   }
 
   static String _routeFromPayload(String? payload) {

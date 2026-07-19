@@ -178,17 +178,6 @@ async def dispatch_daily_essentiel_pushes(
     sender: PushSender = _send_fcm,
 ) -> dict[str, int]:
     """Send due pushes once per device/day, retrying morning gaps until noon."""
-    if sender is _send_fcm and not _firebase_configured():
-        logger.info("push_dispatch_disabled", reason="firebase_not_configured")
-        return {
-            "sent": 0,
-            "retried": 0,
-            "skipped": 0,
-            "governed": 0,
-            "invalid_tokens": 0,
-        }
-
-    utc_now = (now or datetime.now(UTC)).astimezone(UTC)
     metrics = {
         "sent": 0,
         "retried": 0,
@@ -196,6 +185,11 @@ async def dispatch_daily_essentiel_pushes(
         "governed": 0,
         "invalid_tokens": 0,
     }
+    if sender is _send_fcm and not _firebase_configured():
+        logger.info("push_dispatch_disabled", reason="firebase_not_configured")
+        return metrics
+
+    utc_now = (now or datetime.now(UTC)).astimezone(UTC)
 
     async with safe_async_session() as session:
         rows = (
@@ -214,6 +208,8 @@ async def dispatch_daily_essentiel_pushes(
         ).all()
 
         digest_cache: dict[tuple[Any, date], Any] = {}
+        governor_cache: dict[tuple[Any, date], Any] = {}
+        composed_cache: dict[tuple[Any, date], Any] = {}
         for device, prefs in rows:
             try:
                 local_now = utc_now.astimezone(ZoneInfo(prefs.timezone))
@@ -259,13 +255,18 @@ async def dispatch_daily_essentiel_pushes(
                     metrics["retried"] += 1
                 continue
 
-            decision = await check_push_budget(
-                session,
-                user_id=device.user_id,
-                kind=PUSH_KIND,
-                now=utc_now,
-                target_date=target_date,
-            )
+            # Décision et composition stables par (user, target_date) dans un
+            # run : mutualisées entre les devices d'un même utilisateur (le
+            # gouverneur exclut déjà le push logique courant de ses budgets).
+            if cache_key not in governor_cache:
+                governor_cache[cache_key] = await check_push_budget(
+                    session,
+                    user_id=device.user_id,
+                    kind=PUSH_KIND,
+                    now=utc_now,
+                    target_date=target_date,
+                )
+            decision = governor_cache[cache_key]
             if not decision.allowed:
                 delivery.status = "skipped"
                 delivery.skipped_at = utc_now
@@ -283,7 +284,11 @@ async def dispatch_daily_essentiel_pushes(
                 )
                 continue
 
-            composed = compose_daily_digest(essentiel, target_date)
+            if cache_key not in composed_cache:
+                composed_cache[cache_key] = compose_daily_digest(
+                    essentiel, target_date
+                )
+            composed = composed_cache[cache_key]
             delivery.attempt_count += 1
             delivery.last_attempt_at = utc_now
             try:
