@@ -13,11 +13,15 @@ from pydantic import ValidationError
 from scripts.media_eval.schemas import (
     BAREMES,
     CRITERES_VAGUE_1,
+    GRILLES,
     DebunkageArtifact,
+    EvaluationBatchArtifact,
     EvaluationOutput,
+    GoldenEntry,
     SignalArtifact,
     derive_poids_emetteur,
     derive_score,
+    grille,
     palier_inferieur,
 )
 
@@ -184,6 +188,139 @@ class TestSignalArtifact:
             )
         )
         assert ok.statut == "absent_verifie"
+
+
+_UUID = "3f0a5b1e-0000-0000-0000-000000000001"
+
+
+class TestGrilleV13:
+    """Grille v1.3 : 10 critères tous à niveaux, axes 60/20/20, fenêtre 36 mois."""
+
+    def test_registre_deux_grilles(self):
+        assert set(GRILLES) == {"v1.2", "v1.3"}
+        g = grille("v1.3")
+        assert sum(g.baremes.values()) == 100
+        assert g.criteres_vague_1 == ("C1", "C6", "C8", "C9", "C10")
+        assert g.fraicheur_max_jours == 1095
+        assert g.criteres_double_eval == ("C5", "C9", "C10")
+
+    def test_version_inconnue_leve(self):
+        with pytest.raises(ValueError, match="version methodo inconnue"):
+            grille("v9.9")
+
+    @pytest.mark.parametrize(
+        ("critere", "niveau", "attendu"),
+        [
+            ("C1", 4, (20.0, 4)),
+            ("C1", 0, (0.0, 0)),
+            ("C2", 3, (11.0, 3)),
+            ("C3", 2, (4.0, 2)),
+            ("C4", 3, (5.0, 3)),
+            ("C5", 2, (10.0, 2)),
+            ("C6", 2, (4.0, 2)),
+            ("C7", 3, (6.0, 3)),
+            ("C8", 1, (1.0, 1)),
+            ("C9", 1, (5.0, 1)),
+            ("C10", 2, (10.0, 2)),
+        ],
+    )
+    def test_derive_score_v13(self, critere, niveau, attendu):
+        assert derive_score(critere, {"niveau": niveau}, "v1.3") == attendu
+
+    def test_derive_score_v13_niveau_hors_bornes(self):
+        # C4 est à 4 niveaux (0-3) : niveau 4 n'existe pas.
+        with pytest.raises(ValueError, match="niveau invalide"):
+            derive_score("C4", {"niveau": 4}, "v1.3")
+
+    def test_evaluation_output_v13(self):
+        ev = EvaluationOutput.model_validate(
+            {
+                "media_domaine": "cnews.fr",
+                "critere": "C1",
+                "version_methodo": "v1.3",
+                "determinations": {"niveau": 3},
+                "justification": "Signaux faibles corrigés [signal:a].",
+                "signal_ids_cites": [_UUID],
+            }
+        )
+        assert ev.score_derive() == (15.0, 3)
+
+    def test_evaluation_output_v13_hors_vague_1(self):
+        # C2 (sourçage) est sur corpus : hors vague 1 v1.3 (batch 2).
+        with pytest.raises(ValidationError, match="hors vague 1"):
+            EvaluationOutput.model_validate(
+                {
+                    "media_domaine": "cnews.fr",
+                    "critere": "C2",
+                    "version_methodo": "v1.3",
+                    "determinations": {"niveau": 2},
+                    "justification": "x [signal:a].",
+                    "signal_ids_cites": [_UUID],
+                }
+            )
+
+    def test_signal_artifact_v13_fusion_c9(self):
+        # Le C9 fusionné hérite des signaux ex-C8 (engagement) ET ex-C11 (position).
+        sig = SignalArtifact.model_validate(
+            {
+                "media_domaine": "cnews.fr",
+                "critere": "C9",
+                "version_methodo": "v1.3",
+                "type_signal": "manifeste_positionnement",
+                "statut": "present",
+                "source_urls": ["https://cnews.fr/charte"],
+            }
+        )
+        assert sig.critere == "C9"
+
+    def test_signal_artifact_v13_type_hors_registre(self):
+        # certification_jti appartient à C9 en v1.3, pas à C6.
+        with pytest.raises(ValidationError, match="hors registre"):
+            SignalArtifact.model_validate(
+                {
+                    "media_domaine": "cnews.fr",
+                    "critere": "C6",
+                    "version_methodo": "v1.3",
+                    "type_signal": "certification_jti",
+                    "statut": "present",
+                    "source_urls": ["https://cnews.fr/x"],
+                }
+            )
+
+    def test_batch_stampe_version_dans_items(self):
+        batch = EvaluationBatchArtifact.model_validate(
+            {
+                "run_id": "r",
+                "agent": "agent:media-eval-evaluateur@v1-a",
+                "genere_at": "2026-07-18T00:00:00Z",
+                "version_methodo": "v1.3",
+                "items": [
+                    {
+                        "media_domaine": "cnews.fr",
+                        "critere": "C10",
+                        "determinations": {"niveau": 2},
+                        "justification": "Gouvernance incluant la rédaction [signal:a].",
+                        "signal_ids_cites": [_UUID],
+                    }
+                ],
+            }
+        )
+        assert batch.items[0].version_methodo == "v1.3"
+        assert batch.items[0].score_derive() == (10.0, 2)
+
+    def test_golden_entry_v13_niveau_hors_bornes(self):
+        # C9 v1.3 = 3 niveaux (0-2) : niveau 3 rejeté dans le gold.
+        with pytest.raises(ValidationError, match="niveau attendu"):
+            GoldenEntry.model_validate(
+                {
+                    "media_domaine": "cnews.fr",
+                    "critere": "C9",
+                    "version_methodo": "v1.3",
+                    "statut": "evaluee",
+                    "score": 5.0,
+                    "niveau": 3,
+                }
+            )
 
 
 class TestDebunkageArtifact:

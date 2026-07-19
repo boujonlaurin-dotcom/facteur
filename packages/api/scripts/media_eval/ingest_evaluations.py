@@ -39,6 +39,7 @@ from app.config import get_settings
 from app.database import async_session_maker, engine
 from app.models.media_eval import (
     MediaEvalEvaluation,
+    MediaEvalRun,
     MediaEvalSignal,
     StatutEvaluation,
 )
@@ -50,10 +51,10 @@ from scripts.media_eval.garde_fous import (
 )
 from scripts.media_eval.ingest_artifacts import IngestError, resoudre_media
 from scripts.media_eval.schemas import (
-    BAREMES,
     VERSION_METHODO,
     EvaluationBatchArtifact,
     EvaluationOutput,
+    grille,
 )
 
 
@@ -68,7 +69,9 @@ class EvaluationPreparee:
 
 
 def preparer_evaluation(
-    item: EvaluationOutput, signaux_cites: list[dict]
+    item: EvaluationOutput,
+    signaux_cites: list[dict],
+    version: str = VERSION_METHODO,
 ) -> EvaluationPreparee:
     """Applique les garde-fous aval à une sortie évaluateur validée."""
     statut = statut_evaluation(item.flags, signaux_cites)
@@ -78,7 +81,9 @@ def preparer_evaluation(
             statut=statut, score=None, niveau=None, flags=list(item.flags)
         )
     score, niveau = item.score_derive()
-    score, flags_corro = appliquer_corroboration(item.critere, score, signaux_cites)
+    score, flags_corro = appliquer_corroboration(
+        item.critere, score, signaux_cites, version
+    )
     return EvaluationPreparee(
         statut=statut,
         score=score,
@@ -118,12 +123,36 @@ async def _signaux_cites(session, item: EvaluationOutput, media_id) -> list[dict
 async def ingester_evaluations(
     session, batch: EvaluationBatchArtifact
 ) -> tuple[int, int]:
-    """Valide TOUT le batch puis insère. Retourne (insérées, ignorées)."""
+    """Valide TOUT le batch puis insère. Retourne (insérées, ignorées).
+
+    La grille est celle du **run** (``media_eval_runs.version_methodo``) : le
+    batch doit la déclarer à l'identique, sinon rejet (garantit que l'évaluateur
+    a bien lu la rubrique de la bonne version).
+    """
+    run = (
+        await session.execute(
+            select(MediaEvalRun).where(MediaEvalRun.run_id == batch.run_id)
+        )
+    ).scalar_one_or_none()
+    if run is None:
+        raise IngestError(
+            f"run inconnu : {batch.run_id!r} — le créer d'abord (create_run.py)."
+        )
+    version = run.version_methodo
+    if batch.version_methodo != version:
+        raise IngestError(
+            f"batch {batch.run_id}: version_methodo artefact "
+            f"{batch.version_methodo!r} ≠ run {version!r}"
+        )
+    g = grille(version)
+
     preparees: list[tuple[EvaluationOutput, EvaluationPreparee, UUID]] = []
     for item in batch.items:
         media = await resoudre_media(session, item.media_domaine)
         signaux_cites = await _signaux_cites(session, item, media.id)
-        preparees.append((item, preparer_evaluation(item, signaux_cites), media.id))
+        preparees.append(
+            (item, preparer_evaluation(item, signaux_cites, version), media.id)
+        )
 
     inserees, ignorees = 0, 0
     for item, prep, media_id in preparees:
@@ -145,14 +174,14 @@ async def ingester_evaluations(
                 media_id=media_id,
                 critere=item.critere,
                 score=prep.score,
-                score_max=float(BAREMES[item.critere]),
+                score_max=float(g.baremes[item.critere]),
                 niveau=prep.niveau,
                 statut=StatutEvaluation(prep.statut),
                 justification=item.justification,
                 signal_ids=[UUID(s) for s in item.signal_ids_cites],
                 flags=prep.flags,
                 evaluateur=batch.agent,
-                version_methodo=VERSION_METHODO,
+                version_methodo=version,
                 version_prompt=batch.version_prompt or "",
                 run_id=batch.run_id,
             )

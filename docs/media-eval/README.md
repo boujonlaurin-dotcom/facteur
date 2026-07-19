@@ -1,8 +1,15 @@
-# Évaluation des médias C1–C11 — pipeline V0
+# Évaluation des médias — pipeline (méthodologie Facteur)
 
 > Pipeline d'évaluation de la fiabilité des médias (méthodologie ouverte Facteur,
-> 100 pts, 11 critères). Ce dossier est la **source de vérité PO** des barèmes et
-> contrats donnés aux agents. V0 = 6 critères (vague 1), 2 médias pilotes.
+> 100 pts). Ce dossier est la **source de vérité PO** des barèmes et contrats donnés
+> aux agents.
+>
+> **Grille active : v1.3** (`methodologie-v1.3.md`, 18/07/2026 — **10 critères**,
+> axes 60/20/20, barèmes à niveaux, fenêtre 36 mois). Rubriques verbatim :
+> `rubrics/v1.3/`. La **v1.2** (11 critères) reste la référence du run pilote batch 1
+> (`pilote-2026-07b`) : la version est portée **par run**
+> (`media_eval_runs.version_methodo`) — voir la table de correspondance en Annexe B
+> de la v1.3. V0 = 6 critères (vague 1), 2 médias pilotes.
 
 ## Principe fondateur : collecte ≠ évaluation
 
@@ -106,11 +113,12 @@ silencieusement. Collecteurs et `build_eval_input` appellent `require_run()` qui
 
 | Fichier | Rôle |
 |---|---|
-| `methodologie-v1.1.1.md` | Méthodologie publiée (import du PDF du 02/04/2026) |
-| `methodologie-v1.2-amendements.md` | Amendements v1.2 actés (JTI, pondération débunkages, temporalité…) |
+| `methodologie-v1.3.md` | **Grille active** (10 critères, 60/20/20) + sections transverses consolidées + Annexe B (correspondance v1.2↔v1.3) + Annexe C (décisions PO) |
+| `methodologie-v1.1.1.md` | Méthodologie publiée (import du PDF du 02/04/2026) — supersédée, source des sections transverses |
+| `methodologie-v1.2-amendements.md` | Amendements v1.2 actés (JTI, pondération débunkages, temporalité…) — partiellement révisés en v1.3 |
 | `architecture-v1.2.md` | Architecture collecte/évaluation C1–C11 (import du doc du 07/07/2026) |
-| `rubrics/_common.md` | Contrat évaluateur générique + format JSON de sortie |
-| `rubrics/C{1,5,7,8,9,11}.md` | Barème §4 verbatim + sortie structurée + types de signaux |
+| `rubrics/v1.3/_common.md` + `rubrics/v1.3/C{1..10}.md` | **Rubriques v1.3** : barème §4 verbatim + sortie structurée (niveau) + types de signaux |
+| `rubrics/_common.md` + `rubrics/C{1,5,7,8,9,11}.md` | Rubriques **v1.2 legacy** (numérotation à 11 critères), lues par `build_eval_input` pour les runs v1.2 — restent à plat tant que le code ne résout pas la rubrique par version ; seront déplacées dans `rubrics/v1.2/` avec ce changement de code (PR code) |
 | `golden/gold_v0.template.json` | Gabarit du golden (12 entrées, à copier + noter en aveugle) |
 | `golden/gold_v0.json` | Golden set humain (Laurin) — rempli au run pilote |
 | `fiches/*.md` | Fiches générées au run pilote |

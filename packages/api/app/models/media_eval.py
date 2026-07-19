@@ -391,8 +391,11 @@ class MediaEvalEvaluation(Base):
     __tablename__ = "media_eval_evaluations"
     __table_args__ = (
         CheckConstraint(_CRITERE_CHECK, name="ck_media_eval_evaluations_critere"),
+        # v1.2 : niveaux 0-2 (C9/C11 à 3 niveaux). v1.3 : jusqu'à 5 niveaux
+        # (C1..C3, C6 → niveau 4). Élargi 0-2 → 0-4 par la migration me02
+        # (expand additive : l'ancien code n'écrit que 0-2, toujours valide).
         CheckConstraint(
-            "niveau IS NULL OR (niveau >= 0 AND niveau <= 2)",
+            "niveau IS NULL OR (niveau >= 0 AND niveau <= 4)",
             name="ck_media_eval_evaluations_niveau",
         ),
         UniqueConstraint(
@@ -416,7 +419,9 @@ class MediaEvalEvaluation(Base):
     # NULL si non_applicable / revue_requise (jamais 0 par défaut).
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     score_max: Mapped[float] = mapped_column(Float, nullable=False)
-    # Niveau 0-2 pour les critères à 3 niveaux (C9, C11), NULL sinon.
+    # Niveau du barème discret : v1.2 → 0-2 (C9/C11) ; v1.3 → 0-4 selon le
+    # critère (tous à niveaux). NULL pour un critère continu v1.2. C11 = legacy
+    # v1.2 (fusionné dans C9 en v1.3) ; désambiguïsation par run.version_methodo.
     niveau: Mapped[int | None] = mapped_column(Integer, nullable=True)
     statut: Mapped[StatutEvaluation] = mapped_column(
         _str_enum(StatutEvaluation), nullable=False

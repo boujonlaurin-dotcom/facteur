@@ -1,5 +1,11 @@
 # Méthodologie d'évaluation de la fiabilité des médias d'information francophones
 
+> 🗂️ **Supersédé par la v1.3** (`methodologie-v1.3.md`, 18/07/2026 : 10 critères,
+> axes 60/20/20, barèmes à niveaux, fenêtre 36 mois). Ce document reste la
+> **référence des runs v1.2** (numérotation à 11 critères) et la **source des
+> sections transverses** consolidées en v1.3. Correspondance des codes : Annexe B de
+> la v1.3.
+
 > **Import** : conversion markdown du PDF `methodologie_evaluation_medias_v1.1.1.pdf`
 > (2 avril 2026). Le texte des sections normatives (§4 grille, §5 protocole) est
 > repris **verbatim** — c'est la référence des rubriques `rubrics/`. Les

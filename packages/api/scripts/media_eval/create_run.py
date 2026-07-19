@@ -36,7 +36,7 @@ from app.config import get_settings
 from app.database import async_session_maker, engine
 from app.models.media_eval import MediaEvalRun
 from scripts.cleanup_orphan_sources import _is_test_db
-from scripts.media_eval.schemas import CRITERES_VAGUE_1, VERSION_METHODO
+from scripts.media_eval.schemas import GRILLES, VERSION_METHODO_COURANTE, grille
 
 
 class RunConflit(Exception):
@@ -51,11 +51,13 @@ async def upsert_run(
     libelle: str | None,
     medias: list[str],
     criteres: list[str],
+    version_methodo: str = VERSION_METHODO_COURANTE,
 ) -> tuple[str, MediaEvalRun]:
     """Insert/maj idempotent. Retourne (action, run) — sans commit.
 
     ``action`` ∈ {"cree", "maj", "inchange"}. Lève ``RunConflit`` si le run
     existe avec une autre ``date_reference`` (jamais de changement silencieux).
+    ``version_methodo`` est figée à la création (jamais mutée ensuite).
     """
     existant = (
         await session.execute(select(MediaEvalRun).where(MediaEvalRun.run_id == run_id))
@@ -67,7 +69,7 @@ async def upsert_run(
             MediaEvalRun(
                 run_id=run_id,
                 libelle=libelle,
-                version_methodo=VERSION_METHODO,
+                version_methodo=version_methodo,
                 date_reference=date_reference,
                 perimetre=perimetre,
             )
@@ -98,6 +100,7 @@ async def run(
     libelle: str | None,
     medias: list[str],
     criteres: list[str],
+    version_methodo: str,
     apply: bool,
     allow_prod: bool,
 ) -> int:
@@ -108,6 +111,7 @@ async def run(
         f"DB cible : {db_url.split('@')[-1] if '@' in db_url else db_url}  (test={is_test})"
     )
     print(f"date_reference (pilote la fraîcheur) : {date_reference.isoformat()}")
+    print(f"version_methodo : {version_methodo}")
     if apply and not is_test and not allow_prod:
         print("\nABORT : --apply contre une DB non-test sans --allow-prod (gated PO).")
         return 2
@@ -121,6 +125,7 @@ async def run(
                 libelle=libelle,
                 medias=medias,
                 criteres=criteres,
+                version_methodo=version_methodo,
             )
             print(f"Run {run_id} : {action} (médias={medias}, critères={criteres})")
             if not apply:
@@ -154,10 +159,16 @@ def main() -> None:
         "--medias", nargs="*", default=[], help="domaines du périmètre (mémo)"
     )
     parser.add_argument(
+        "--version-methodo",
+        default=VERSION_METHODO_COURANTE,
+        choices=sorted(GRILLES),
+        help=f"grille de méthodo du run (défaut : {VERSION_METHODO_COURANTE})",
+    )
+    parser.add_argument(
         "--criteres",
         nargs="*",
-        default=list(CRITERES_VAGUE_1),
-        help=f"critères du périmètre (défaut : {' '.join(CRITERES_VAGUE_1)})",
+        default=None,
+        help="critères du périmètre (défaut : vague 1 de la version choisie)",
     )
     parser.add_argument(
         "--apply", action="store_true", help="exécute (défaut: dry-run)"
@@ -166,6 +177,11 @@ def main() -> None:
         "--allow-prod", action="store_true", help="autorise --apply en prod"
     )
     args = parser.parse_args()
+    criteres = (
+        args.criteres
+        if args.criteres is not None
+        else list(grille(args.version_methodo).criteres_vague_1)
+    )
     sys.exit(
         asyncio.run(
             run(
@@ -173,7 +189,8 @@ def main() -> None:
                 date_reference=date.fromisoformat(args.date_reference),
                 libelle=args.libelle,
                 medias=args.medias,
-                criteres=args.criteres,
+                criteres=criteres,
+                version_methodo=args.version_methodo,
                 apply=args.apply,
                 allow_prod=args.allow_prod,
             )
