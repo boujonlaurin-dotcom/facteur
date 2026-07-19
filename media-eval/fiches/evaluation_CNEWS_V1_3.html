@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Évaluation média : CNEWS (cnews.fr) · V1.3</title>
+<style>
+  :root {
+    --ink: #1a1d23;
+    --ink-soft: #4b5160;
+    --ink-faint: #8a90a0;
+    --paper: #fafaf8;
+    --card: #ffffff;
+    --line: #e6e6e0;
+    --accent: #1f4e79;
+    --good: #2e7d4f;
+    --mid: #b07a1e;
+    --bad: #b3402e;
+    --na: #6b7280;
+    --pending-bg: #f4f4f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+    padding: 48px 20px 80px;
+  }
+  .page { max-width: 880px; margin: 0 auto; }
+
+  /* ---------- Header ---------- */
+  header { border-bottom: 3px solid var(--ink); padding-bottom: 28px; margin-bottom: 32px; }
+  .kicker {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin-bottom: 10px;
+  }
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.01em; }
+  h1 .domain { color: var(--ink-faint); font-weight: 400; font-size: 22px; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; font-size: 13px; color: var(--ink-soft); }
+  .meta-row b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- Score band ---------- */
+  .score-band {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;
+    margin-bottom: 36px;
+  }
+  .score-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .score-card .label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
+  .score-card .value { font-size: 30px; font-weight: 700; margin-top: 4px; }
+  .score-card .sub { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
+  .value.pending { color: var(--ink-faint); font-size: 22px; }
+
+  /* ---------- Sections ---------- */
+  h2 {
+    font-size: 15px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink); font-weight: 700;
+    margin: 44px 0 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+  }
+  .section-note { font-size: 13.5px; color: var(--ink-soft); margin-bottom: 18px; }
+
+  /* ---------- Summary table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); background: #f7f7f4; }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  tr.pending td { color: var(--ink-faint); background: var(--pending-bg); }
+
+  .pill {
+    display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    padding: 2px 9px; border-radius: 99px; white-space: nowrap;
+  }
+  .pill.good { background: #e4f2ea; color: var(--good); }
+  .pill.mid  { background: #f7ecd8; color: var(--mid); }
+  .pill.bad  { background: #f8e4e0; color: var(--bad); }
+  .pill.na   { background: #ececef; color: var(--na); }
+  .pill.pending { background: #ececef; color: var(--ink-faint); border: 1px dashed #c9c9cf; }
+
+  /* ---------- Criterion cards ---------- */
+  .crit {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 24px 26px; margin-bottom: 20px;
+    border-left: 5px solid var(--line);
+  }
+  .crit.good { border-left-color: var(--good); }
+  .crit.mid  { border-left-color: var(--mid); }
+  .crit.bad  { border-left-color: var(--bad); }
+  .crit.na   { border-left-color: var(--na); }
+  .crit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .crit-head h3 { font-size: 17px; font-weight: 700; }
+  .crit-head h3 .code { color: var(--accent); margin-right: 8px; }
+  .crit-score { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .crit-score small { font-size: 13px; color: var(--ink-faint); font-weight: 500; }
+  .crit-det { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+  .crit p { font-size: 14px; color: var(--ink-soft); margin-top: 12px; }
+  .crit p b { color: var(--ink); }
+  .crit .block-label {
+    font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 700; margin-top: 16px;
+  }
+  .crit ul { margin: 8px 0 0 18px; font-size: 14px; color: var(--ink-soft); }
+  .crit li { margin-bottom: 5px; }
+  .gold-note {
+    margin-top: 14px; padding: 12px 16px; border-radius: 8px;
+    background: #f2f6fa; border: 1px solid #d8e2ec; font-size: 13.5px; color: var(--ink-soft);
+  }
+  .gold-note b { color: var(--accent); }
+  .gold-note.disagree { background: #fdf3ef; border-color: #eed5cc; }
+  .gold-note.disagree b { color: var(--bad); }
+
+  /* ---------- Pending block ---------- */
+  .pending-block {
+    border: 1px dashed #c9c9cf; border-radius: 12px; background: var(--pending-bg);
+    padding: 22px 26px; margin-bottom: 20px; color: var(--ink-faint);
+  }
+  .pending-block h3 { font-size: 15px; color: var(--ink-soft); }
+  .pending-block p { font-size: 13.5px; margin-top: 8px; }
+
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-faint); }
+  footer p { margin-bottom: 4px; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em; background: #efefe9; padding: 1px 5px; border-radius: 4px; }
+
+  @media print {
+    body { padding: 0; background: #fff; }
+    .crit, .score-card, table { break-inside: avoid; }
+  }
+  @media (max-width: 640px) {
+    .score-band { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <div class="kicker">Facteur · Évaluation de la fiabilité des médias · Méthodologie v1.2</div>
+  <h1>CNEWS <span class="domain">cnews.fr</span></h1>
+  <div class="meta-row">
+    <span>Run : <b>pilote-2026-07b</b></span>
+    <span>Gold figé le : <b>18 juillet 2026</b></span>
+    <span>Notateur gold : <b>humain (PO)</b></span>
+    <span>Statut : <b>partiel, batch 1/2 (6 critères sur 11)</b></span>
+  </div>
+</header>
+
+<div class="score-band">
+  <div class="score-card">
+    <div class="label">Score gold (batch 1)</div>
+    <div class="value">10 <small style="font-size:16px;color:var(--ink-faint)">/ 34</small></div>
+    <div class="sub">5 critères notés + C1 non applicable</div>
+  </div>
+  <div class="score-card">
+    <div class="label">Accord agents vs gold</div>
+    <div class="value">5 <small style="font-size:16px;color:var(--ink-faint)">/ 6</small></div>
+    <div class="sub">1 désaccord : C8 (agent 2/4, gold 0/4)</div>
+  </div>
+  <div class="score-card">
+    <div class="label">Score final /100</div>
+    <div class="value pending">En attente batch 2</div>
+    <div class="sub">C2, C3, C4, C6, C10 restants (46 pts)</div>
+  </div>
+</div>
+
+<h2>Vue d'ensemble</h2>
+<p class="section-note">Notes gold (revue humaine) par critère. Le batch 2 couvrira les critères fondés sur l'analyse d'échantillons d'articles.</p>
+<table>
+  <thead><tr><th>Critère</th><th>Intitulé</th><th>Poids</th><th>Note gold</th><th>Détermination</th><th>Accord agent</th></tr></thead>
+  <tbody>
+    <tr><td class="num">C1</td><td>Véracité et exactitude</td><td class="num">20</td><td class="num">N/A</td><td><span class="pill na">Données insuffisantes</span></td><td><span class="pill good">Accord</span></td></tr>
+    <tr class="pending"><td class="num">C2</td><td>Sourçage et vérification</td><td class="num">15</td><td class="num">·</td><td><span class="pill pending">Batch 2</span></td><td>·</td></tr>
+    <tr class="pending"><td class="num">C3</td><td>Correction des erreurs</td><td class="num">10</td><td class="num">·</td><td><span class="pill pending">Batch 2</span></td><td>·</td></tr>
+    <tr class="pending"><td class="num">C4</td><td>Distinction information / opinion</td><td class="num">5</td><td class="num">·</td><td><span class="pill pending">Batch 2</span></td><td>·</td></tr>
+    <tr><td class="num">C5</td><td>Transparence propriété et financement</td><td class="num">10</td><td class="num">5 / 10</td><td><span class="pill mid">Signaux mixtes</span></td><td><span class="pill good">Accord</span></td></tr>
+    <tr class="pending"><td class="num">C6</td><td>Identification des auteurs</td><td class="num">6</td><td class="num">·</td><td><span class="pill pending">Batch 2</span></td><td>·</td></tr>
+    <tr><td class="num">C7</td><td>Séparation contenu / publicité</td><td class="num">4</td><td class="num">2 / 4</td><td><span class="pill mid">Signaux mixtes</span></td><td><span class="pill good">Accord</span></td></tr>
+    <tr><td class="num">C8</td><td>Engagement déontologique formel</td><td class="num">4</td><td class="num">0 / 4</td><td><span class="pill bad">Signaux négatifs</span></td><td><span class="pill bad">Désaccord</span></td></tr>
+    <tr><td class="num">C9</td><td>Indépendance éditoriale</td><td class="num">10</td><td class="num">0 / 10</td><td><span class="pill bad">Niveau 0</span></td><td><span class="pill good">Accord</span></td></tr>
+    <tr class="pending"><td class="num">C10</td><td>Diversité des perspectives</td><td class="num">10</td><td class="num">·</td><td><span class="pill pending">Batch 2</span></td><td>·</td></tr>
+    <tr><td class="num">C11</td><td>Transparence du positionnement</td><td class="num">6</td><td class="num">3 / 6</td><td><span class="pill mid">Niveau 1 (partiel)</span></td><td><span class="pill good">Accord</span></td></tr>
+  </tbody>
+</table>
+
+<h2>Détail par critère</h2>
+<p class="section-note">Pour chaque critère : les constats des collecteurs (voies A « site du média » et B « web ouvert »), le jugement de l'évaluateur, et la décision gold issue de la revue humaine.</p>
+
+<!-- C1 -->
+<article class="crit na">
+  <div class="crit-head">
+    <h3><span class="code">C1</span>Véracité et exactitude</h3>
+    <div><div class="crit-score">N/A <small>/ 20</small></div><div class="crit-det">donnees_insuffisantes</div></div>
+  </div>
+  <div class="block-label">Constats</div>
+  <ul>
+    <li>2 débunkages recensés par la collecte, sous le seuil de 3 requis pour instruire le critère.</li>
+    <li>Les 2 items correspondent en réalité à la même affaire : condamnation définitive de CNews (Cour de cassation, 27 janvier 2026) pour les propos diffamatoires d'Éric Zemmour visant la députée Danièle Obono.</li>
+  </ul>
+  <div class="block-label">Jugement évaluateur</div>
+  <p>Fallback appliqué conformément au barème : la vérification manuelle de 5 articles n'est pas instruite en V0, la détermination est <b>donnees_insuffisantes</b>, sans présomption positive ni négative.</p>
+  <div class="gold-note"><b>Gold : N/A confirmé, avec réserve.</b> Le fallback est mécaniquement correct sur les artefacts du run, mais le rappel du collecteur est jugé insuffisant : CNews est l'un des médias français les plus fact-checkés et sanctionnés (Arcom, fact-checks AFP, Libération, Les Surligneurs). Un run V1 avec requêtes élargies et déduplication par affaire devrait instruire C1, vraisemblablement défavorablement.</div>
+</article>
+
+<!-- C5 -->
+<article class="crit mid">
+  <div class="crit-head">
+    <h3><span class="code">C5</span>Transparence propriété et financement</h3>
+    <div><div class="crit-score">5 <small>/ 10</small></div><div class="crit-det">Signaux mixtes</div></div>
+  </div>
+  <div class="block-label">Constats</div>
+  <ul>
+    <li>Mentions légales présentes et complètes : éditeur SESI SNC, capital 7 500 €, RCS Nanterre 412 916 215, TVA intracommunautaire, ISSN, directeur de publication Gérald-Brice Viret.</li>
+    <li>Propriétaire immédiat corroboré par deux sources indépendantes (registre API gouv, Pappers) : rattachement de SESI SNC au groupe Canal+ (Canal+ Finance, Canal+ FTA Holding).</li>
+    <li>La chaîne capitalistique complète jusqu'à Canal+ S.A. et au contrôle Bolloré n'est pas divulguée sur le site ; elle n'est reconstituable que via des registres externes.</li>
+    <li>Aucune description des sources de financement, aucun rapport financier, aucune déclaration de conflits d'intérêts ; pas d'enregistrement CPPAP retrouvé.</li>
+  </ul>
+  <div class="block-label">Jugement évaluateur</div>
+  <p>Profil <b>mixte</b> : formalités légales irréprochables, mais opacité côté média sur l'actionnariat réel et silence complet sur le financement.</p>
+  <div class="gold-note"><b>Gold : 5/10 confirmé.</b> Le critère mesure la divulgation par le média sur son propre site ; le fait que la chaîne Canal+ / Bolloré soit publiquement reconstituable par ailleurs (Canal+ S.A. cotée) ne change pas le palier. Un enrichissement Pappers (crédits API) améliorerait la justification, pas la note.</div>
+</article>
+
+<!-- C7 -->
+<article class="crit mid">
+  <div class="crit-head">
+    <h3><span class="code">C7</span>Séparation contenu / publicité</h3>
+    <div><div class="crit-score">2 <small>/ 4</small></div><div class="crit-det">Signaux mixtes</div></div>
+  </div>
+  <div class="block-label">Constats</div>
+  <ul>
+    <li>La page d'accueil marque explicitement ses blocs commerciaux (« Nos guides d'achat », « Le corner partenaires ») par la mention « Contenus sponsorisés », distincts des rubriques éditoriales.</li>
+    <li>Régie publicitaire identifiable via des sources indépendantes : Canal+ Brand Solutions, filiale du groupe, commercialise l'inventaire de CNEWS.</li>
+    <li>Aucune politique ou charte publicitaire publiée ; aucune page « régie / publicité / annonceurs » sur le site (absences vérifiées).</li>
+  </ul>
+  <div class="block-label">Jugement évaluateur</div>
+  <p>Profil <b>mixte</b> : le marquage du contenu sponsorisé existe, la politique publicitaire publiée est absente.</p>
+  <div class="gold-note"><b>Gold : 2/4 confirmé.</b> Deux vérifications complémentaires restaient possibles (clause publicitaire dans les CGU, marquage au niveau des articles sponsorisés eux-mêmes), sans bascule plausible vers 4/4.</div>
+</article>
+
+<!-- C8 -->
+<article class="crit bad">
+  <div class="crit-head">
+    <h3><span class="code">C8</span>Engagement déontologique formel</h3>
+    <div><div class="crit-score">0 <small>/ 4</small></div><div class="crit-det">Signaux négatifs · désaccord gold vs agent</div></div>
+  </div>
+  <div class="block-label">Constats</div>
+  <ul>
+    <li>Une charte de déontologie a été adoptée fin 2017 en application de la loi Bloche, mais son texte n'est ni publié ni accessible sur cnews.fr.</li>
+    <li>Son contenu est contesté : jugé peu contraignant, autorisant la couverture des activités économiques du groupe et de son actionnaire.</li>
+    <li>Aucune référence à une charte externe (Munich, SNJ), aucun processus de réclamation identifiable, aucune politique de correction.</li>
+    <li>Pas d'adhésion au CDJM, pas de certification JTI (absences vérifiées, registres directs partiellement inaccessibles).</li>
+  </ul>
+  <div class="block-label">Jugement évaluateur</div>
+  <p>L'agent a retenu <b>mixtes (2/4)</b> : l'existence formelle de la charte constituait à ses yeux une « trace d'engagement » excluant le profil négatif.</p>
+  <div class="gold-note disagree"><b>Gold : 0/4 (désaccord assumé, décision PO).</b> Une charte attestée mais non publiée, non contraignante et sans aucune instance ni processus n'est pas un engagement vérifiable par le public. Le même principe que C9 s'applique : des garanties formelles contredites par la pratique ne sont pas des garanties. Action harness : préciser la rubrique C8 sur le cas « charte attestée mais non publiée » pour stabiliser les futurs runs.</div>
+</article>
+
+<!-- C9 -->
+<article class="crit bad">
+  <div class="crit-head">
+    <h3><span class="code">C9</span>Indépendance éditoriale</h3>
+    <div><div class="crit-score">0 <small>/ 10</small></div><div class="crit-det">Niveau 0 · revue humaine effectuée</div></div>
+  </div>
+  <div class="block-label">Constats</div>
+  <ul>
+    <li>Charte loi-Bloche existante mais non publiée, jugée peu contraignante (autorisant les « ménages »), rédigée par une société des journalistes décrite comme « reformée à la main de la direction ».</li>
+    <li>La SDJ invoquée ne présente aucun statut public ; son indépendance vis-à-vis de la direction est contestée par la presse professionnelle.</li>
+    <li>Aucun statut ni gouvernance rédactionnelle formalisée ; capital concentré et non protecteur (SESI SNC, Groupe Canal+, contrôle Vincent Bolloré).</li>
+    <li>Intervention de l'actionnaire dans la ligne éditoriale documentée et corroborée par trois sources : validation quasi quotidienne de la une, « final cut » revendiqué, document RSF « Système B ».</li>
+  </ul>
+  <div class="block-label">Jugement évaluateur</div>
+  <p><b>Niveau 0</b>, avec flag <b>revue_humaine_requise</b> : doute résiduel entre 0 et 1 du fait de l'existence formelle d'une charte.</p>
+  <div class="gold-note"><b>Gold : niveau 0, 0/10 confirmé, flag levé.</b> La revue humaine tranche le doute à 0 : le niveau 1 supposerait des garanties formelles crédibles ; ici elles sont documentées comme factices. Le principe du barème (« des garanties formelles contredites par la pratique ne sont pas des garanties ») est correctement appliqué.</div>
+</article>
+
+<!-- C11 -->
+<article class="crit mid">
+  <div class="crit-head">
+    <h3><span class="code">C11</span>Transparence du positionnement éditorial</h3>
+    <div><div class="crit-score">3 <small>/ 6</small></div><div class="crit-det">Niveau 1 (partiel)</div></div>
+  </div>
+  <div class="block-label">Constats</div>
+  <ul>
+    <li>Aucun manifeste, page « Notre projet », ligne éditoriale formalisée (charte, ours, À propos) ni auto-description publique de l'orientation, après consultation de l'accueil, des mentions légales et recherches dédiées.</li>
+    <li>Des rubriques d'opinion et de débat sont clairement identifiables et publiées : « La question du jour », « Punchline du jour », replays de programmes de débat.</li>
+  </ul>
+  <div class="block-label">Jugement évaluateur</div>
+  <p><b>Niveau 1 (partiel)</b> : positionnement jamais explicité par le média lui-même (exclut Transparent), mais implicitement identifiable via la structure du site.</p>
+  <div class="gold-note"><b>Gold : niveau 1, 3/6 confirmé.</b> L'orientation de CNews est massivement documentée par des tiers (Arcom, études), mais le critère mesure l'auto-explicitation par le média : ces sources externes n'entrent pas en compte. Le niveau 1 tient.</div>
+</article>
+
+<h2>Batch 2 : critères en attente</h2>
+<div class="pending-block">
+  <h3>C2 Sourçage (15) · C3 Correction des erreurs (10) · C4 Info / opinion (5) · C6 Identification des auteurs (6) · C10 Diversité des perspectives (10)</h3>
+  <p>Ces critères reposent sur l'analyse d'échantillons d'articles (20 à 40 articles informatifs pour C2/C6, 15 à 25 articles mixtes pour C4, 10 à 20 articles controversés pour C10, pages corrections/errata pour C3). Ils seront instruits lors du deuxième batch de tests, puis cette fiche sera complétée avec le score final sur 100 et la lettre associée.</p>
+</div>
+
+<h2>Enseignements du pilote (améliorations harness)</h2>
+<table>
+  <thead><tr><th>#</th><th>Constat</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>Rappel insuffisant du collecteur de débunkages (C1) : 2 items pour la même affaire, sanctions Arcom non couvertes.</td><td>Élargir les requêtes (sanctions Arcom, fact-checkers), dédupliquer par affaire, statuer dans la rubrique C1 sur le statut des sanctions Arcom comme vérifications négatives.</td></tr>
+    <tr><td class="num">2</td><td>Rubrique C8 ambiguë sur le cas « charte attestée mais non publiée » (source du désaccord agent 2/4 vs gold 0/4).</td><td>Préciser la rubrique : sans publication ni substance, une charte ne vaut pas trace d'engagement.</td></tr>
+    <tr><td class="num">3</td><td>Un seul évaluateur spawné sur C9 et C11, critères pourtant à double évaluation.</td><td>Corriger l'orchestration <code>/media-eval-run</code> pour spawner systématiquement le second évaluateur.</td></tr>
+    <tr><td class="num">4</td><td>Repli Pappers gratuit (0 crédit) : actionnariat profond partiel sur C5/C9 (sans impact sur les paliers ici).</td><td>Recharger des crédits + <code>collect_pappers --apply</code> idempotent avant le batch 2.</td></tr>
+    <tr><td class="num">5</td><td>Gate D4 (gold noté en aveugle avant les évaluateurs) non respecté sur cnews.fr.</td><td>Assumé pour le pilote (revue informée post-run, documentée dans <code>gold_v0.json</code>) ; notation aveugle obligatoire dès reporterre.net.</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  <p>Fiche V1.3 · Facteur media-eval · Méthodologie v1.2 · Run <code>pilote-2026-07b</code> · Gold : <code>docs/media-eval/golden/gold_v0.json</code></p>
+  <p>Artefacts sources : <code>.context/media_eval/pilote-2026-07b/</code> (évaluations, signaux, débunkages, eval_inputs, snapshots). Document interne, non destiné à la publication.</p>
+</footer>
+
+</div>
+</body>
+</html>

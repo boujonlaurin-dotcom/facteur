@@ -1,0 +1,21 @@
+{
+  "version_methodo": "v1.2",
+  "notateur": "humain:laurin",
+  "note_at": "2026-07-18T00:00:00Z",
+  "mode": "revue_informee_post_run",
+  "note_mode": "Gate D4 (notation aveugle pré-évaluateurs) non respecté pour cnews.fr : gold établi lors d'une revue humaine approfondie post-run des jugements pilote-2026-07b, assumée pour le pilote V0. La notation aveugle s'appliquera à reporterre.net et aux runs suivants.",
+  "entries": [
+    {"media_domaine": "cnews.fr", "critere": "C1", "statut": "non_applicable", "score": null, "commentaire": "Fallback correct sur les artefacts du run (2 débunkages < 3, et les 2 items = la même affaire Zemmour/Obono). Recall du collecteur voie B insuffisant : C1 attendu instruit (et défavorable) en V1 après élargissement des requêtes (sanctions Arcom, fact-checks AFP/Libé/Les Surligneurs) + dédup par affaire."},
+    {"media_domaine": "cnews.fr", "critere": "C5", "statut": "evaluee", "score": 5, "commentaire": "Mixtes : mentions légales complètes (SESI SNC, RCS 412 916 215) + propriétaire immédiat corroboré, mais chaîne capitalistique jusqu'à Bolloré non divulguée sur le site et financement non décrit. Le repli Pappers gratuit n'aurait enrichi que la justification, pas le palier."},
+    {"media_domaine": "cnews.fr", "critere": "C7", "statut": "evaluee", "score": 2, "commentaire": "Mixtes : marquage « Contenus sponsorisés » attesté en home + régie identifiable (Canal+ Brand Solutions), mais aucune politique publicitaire publiée. Vérifs complémentaires possibles (CGU, marquage au niveau article) sans bascule plausible vers 4."},
+    {"media_domaine": "cnews.fr", "critere": "C8", "statut": "evaluee", "score": 0, "commentaire": "Désaccord avec l'agent (2/4). Décision PO : une charte loi-Bloche attestée mais non publiée, jugée non contraignante (autorise la couverture des activités de l'actionnaire), sans CDJM, sans JTI, sans processus de réclamation ni politique de correction, n'est pas un engagement vérifiable par le public → négatifs, 0/4. Même principe que C9 : des garanties formelles contredites par la pratique ne sont pas des garanties. Rubrique C8 à préciser sur ce cas (charte attestée mais non publiée)."},
+    {"media_domaine": "cnews.fr", "critere": "C9", "statut": "evaluee", "score": 0, "niveau": 0, "commentaire": "Accord avec l'agent, flag revue_humaine_requise levé par la présente revue : le doute 0 vs 1 se tranche à 0 car le niveau 1 supposerait des garanties formelles crédibles — ici documentées comme factices (final cut actionnarial revendiqué, RSF « Système B », SDJ reformée à la main de la direction, capital concentré non protecteur)."},
+    {"media_domaine": "cnews.fr", "critere": "C11", "statut": "evaluee", "score": 3, "niveau": 1, "commentaire": "Accord : positionnement jamais auto-explicité (exclut niveau 2) mais rubriques opinion/débat structurellement identifiables (exclut 0). La documentation massive par des tiers (Arcom, études) ne compte pas : le critère mesure l'auto-explicitation."},
+    {"media_domaine": "reporterre.net", "critere": "C1", "statut": "a_noter", "score": null, "commentaire": "N/A attendu (< 3 débunkages → fallback). À noter EN AVEUGLE avant le run évaluateurs."},
+    {"media_domaine": "reporterre.net", "critere": "C5", "statut": "a_noter", "score": null, "commentaire": "0/5/10"},
+    {"media_domaine": "reporterre.net", "critere": "C7", "statut": "a_noter", "score": null, "commentaire": "0/2/4"},
+    {"media_domaine": "reporterre.net", "critere": "C8", "statut": "a_noter", "score": null, "commentaire": "0/2/4"},
+    {"media_domaine": "reporterre.net", "critere": "C9", "statut": "a_noter", "score": null, "niveau": null, "commentaire": "niveau 0/1/2 → score 0/5/10"},
+    {"media_domaine": "reporterre.net", "critere": "C11", "statut": "a_noter", "score": null, "niveau": null, "commentaire": "niveau 0/1/2 → score 0/3/6"}
+  ]
+}
