@@ -202,9 +202,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (allowMorningRitual && !tournee.isMorningRitualShownTodaySync()) {
           return RoutePaths.edition;
         }
-        return tournee.hasBrowsedEssentielTodaySync()
-            ? RoutePaths.flaner
-            : RoutePaths.fluxContinu;
+        // Story 9.8 « L'Essentiel dynamique au retour » : on inverse le modèle
+        // de fermeture. L'utilisateur revient **toujours** sur L'Essentiel — qui
+        // devient une surface vivante se rafraîchissant à chaque retour (cf.
+        // FluxContinuScreen, cooldown + gate « en haut du feed ») — au lieu
+        // d'être renvoyé vers Flâner une fois parcouru. Flâner reste un onglet
+        // manuel. Le flag `hasBrowsedEssentielTodaySync` est **conservé** (widget,
+        // closing card) : seul l'enforcement du redirect est retiré ici.
+        return RoutePaths.fluxContinu;
       }
 
       // Attendre que l'auth state soit initialisé

@@ -55,6 +55,7 @@ from app.services.recommendation.filter_presets import (
 from app.services.recommendation.helpers import compute_coverage_score
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.text_similarity import jaccard_similarity, normalize_title
+from app.utils.time import PARIS_TZ
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,11 @@ ESSENTIEL_MIN_ARTICLES = 3
 # Taille du pool de candidats frais piochés dans les sources suivies pour la
 # complétion — borne le SELECT, on ne garde au plus que les slots manquants.
 ESSENTIEL_SUPPLEMENT_CANDIDATE_CAP = 30
+
+# Plafond d'affichage du delta « N nouveaux depuis ce matin » sur le héros
+# mobile (au-delà, le client affiche « 9+ »). Borne aussi le comptage pour ne
+# jamais suggérer un feed infini.
+_ESSENTIEL_DELTA_CAP = 9
 
 # Fenêtre de fraîcheur commune aux deux tiers de sélection. Les sources
 # suivies sont prioritaires, puis le pool éditorial global frais complète.
@@ -732,7 +738,35 @@ def _content_to_essentiel_article(
     )
 
 
-async def _fetch_followed_source_supplements(
+def _morning_anchor(now: datetime | None) -> datetime:
+    """Début de journée Paris (minuit) en UTC — ancre « depuis ce matin ».
+
+    Robuste au `is_stale_fallback` (où `digest.generated_at` = hier) : on borne
+    toujours au minuit Paris courant, jamais à la génération du digest.
+    """
+    ref = (now or datetime.now(UTC)).astimezone(PARIS_TZ)
+    midnight_paris = datetime.combine(ref.date(), datetime.min.time(), tzinfo=PARIS_TZ)
+    return midnight_paris.astimezone(UTC)
+
+
+def _score_live_candidate(content: Content, ctx: EssentielUserContext) -> float:
+    """Scoring composite léger d'un candidat frais (recall live).
+
+    Réutilise les poids en place — bonus source suivie (×priority_multiplier),
+    bonus thème apprécié (×topic_weight). Pas de read-penalty : le `WHERE`
+    exclut déjà les lus. Sert uniquement à ordonner les candidats pour rester
+    cohérent avec le reste du feed, jamais comme gate de découverte.
+    """
+    score = 0.0
+    if content.source_id in ctx.followed_source_ids:
+        multiplier = ctx.source_priority_multipliers.get(content.source_id, 1.0)
+        score += _W_FOLLOWED_SOURCE * multiplier
+    if content.theme and content.theme in ctx.topic_weights:
+        score += _W_TOPIC_WEIGHT * ctx.topic_weights[content.theme]
+    return score
+
+
+async def _fetch_live_supplements(
     db: AsyncSession,
     user_id: UUID,
     ctx: EssentielUserContext,
@@ -740,25 +774,42 @@ async def _fetch_followed_source_supplements(
     is_serene: bool,
     existing: list[EssentielArticle],
     limit: int,
+    digest_content_ids: set[UUID],
+    morning_anchor: datetime,
     now: datetime | None = None,
-) -> list[EssentielArticle]:
-    """Complète l'Essentiel avec des articles frais des sources suivies/favorites.
+) -> tuple[list[EssentielArticle], int]:
+    """Pool live frais pour le blend « toujours actif » de l'Essentiel.
 
-    Déclenché quand le digest produit moins de `ESSENTIEL_MIN_ARTICLES`. Pour
-    borner la surface éditoriale, on ne pioche que dans les sources explicitement
-    suivies/favorites (`followed_source_ids`), fenêtre de fraîcheur commune
-    (`ESSENTIEL_TOURNEE_WINDOW`), en excluant :
+    Sources candidates = sources **suivies/favorites** (`followed_source_ids`)
+    ∪ sources **riches sur un thème apprécié** (`Source.coverage_themes`
+    recoupant `topic_weights` — couverture data-driven 90 j, jamais un input de
+    scoring), moins les sources mutées. `coverage_themes = NULL` (volume
+    insuffisant) exclut naturellement la source ⇒ gate « thème riche en
+    contenu ». Fenêtre de fraîcheur commune (`ESSENTIEL_TOURNEE_WINDOW`), en
+    excluant :
     - contenus lus (`status == CONSUMED`) ou masqués (`is_hidden`),
     - sources mutées et sujets mutés (`muted_topic_slugs`),
     - doublons de contenu/source (cap 2/source)/sujet déjà présents,
     - en mode serein, tout `Content.is_serene != True`,
     - podcasts/vidéos/Reddit/bulletins (mêmes critères que le digest).
+
+    Retourne `(supplements, new_since_morning)` : les articles frais retenus
+    (au plus `limit`, scorés desc) et le compte de candidats frais publiés
+    depuis `morning_anchor` et absents du digest (borné plus haut au cap).
     """
-    if limit <= 0:
-        return []
-    candidate_source_ids = list(ctx.followed_source_ids - ctx.muted_source_ids)
-    if not candidate_source_ids:
-        return []
+    # Sources candidates = suivies ∪ riches-sur-thème-apprécié, poussées dans le
+    # JOIN pour éviter un aller-retour séparé (le blend tourne à chaque requête).
+    # `coverage_themes` recoupant les thèmes appréciés découvre les sources
+    # riches ; NULL n'overlap jamais ⇒ gate « thème riche en contenu ».
+    followed = ctx.followed_source_ids
+    liked_slugs = set(ctx.topic_weights)
+    source_predicates = []
+    if followed:
+        source_predicates.append(Source.id.in_(list(followed)))
+    if liked_slugs:
+        source_predicates.append(Source.coverage_themes.overlap(list(liked_slugs)))
+    if not source_predicates:
+        return [], 0
 
     cutoff = (now or datetime.now(UTC)) - ESSENTIEL_TOURNEE_WINDOW
     already_read_or_hidden = exists().where(
@@ -774,7 +825,7 @@ async def _fetch_followed_source_supplements(
         select(Content)
         .join(Content.source)
         .options(selectinload(Content.source))
-        .where(Content.source_id.in_(candidate_source_ids))
+        .where(or_(*source_predicates))
         .where(Content.published_at >= cutoff)
         .where(Content.content_type == ContentType.ARTICLE)
         .where(~already_read_or_hidden)
@@ -782,15 +833,36 @@ async def _fetch_followed_source_supplements(
         .order_by(Content.published_at.desc())
         .limit(ESSENTIEL_SUPPLEMENT_CANDIDATE_CAP)
     )
+    if ctx.muted_source_ids:
+        query = query.where(Source.id.notin_(list(ctx.muted_source_ids)))
     if is_serene:
         query = query.where(Content.is_serene.is_(True))
 
-    candidates = (await db.execute(query)).scalars().all()
+    candidates = list((await db.execute(query)).scalars().all())
     if not candidates:
-        return []
+        return [], 0
 
-    # Dédup contre les articles déjà retenus (digest) : content_id, cap source,
-    # similarité de titre — mêmes garde-fous que `_pick_transversal_articles`.
+    # Delta « N nouveaux depuis ce matin » : candidats frais (publiés depuis le
+    # minuit Paris) et absents du digest du jour. Indépendant de l'ordre → calculé
+    # avant le tri, qui n'est utile que pour la sélection des slots.
+    new_since_morning = sum(
+        1
+        for c in candidates
+        if c.published_at >= morning_anchor and c.id not in digest_content_ids
+    )
+
+    if limit <= 0:
+        return [], new_since_morning
+
+    # Scoring léger : ordonne les candidats par composite (source suivie / thème
+    # apprécié), tie-break `published_at` desc — cohérent avec le reste du feed.
+    candidates.sort(
+        key=lambda c: (_score_live_candidate(c, ctx), c.published_at),
+        reverse=True,
+    )
+
+    # Dédup contre les articles déjà retenus (ancre non-lus) : content_id, cap
+    # source, similarité de titre — mêmes garde-fous que `_pick_transversal_articles`.
     seen_content_ids = {a.content_id for a in existing}
     source_count: dict[UUID, int] = {}
     for article in existing:
@@ -828,7 +900,7 @@ async def _fetch_followed_source_supplements(
         picked_title_tokens.append(tokens)
         rank += 1
 
-    return supplements
+    return supplements, new_since_morning
 
 
 async def build_essentiel_response_with_supplements(
@@ -840,34 +912,68 @@ async def build_essentiel_response_with_supplements(
     is_serene: bool,
     now: datetime | None = None,
 ) -> EssentielResponse:
-    """Construit l'Essentiel depuis le digest, puis complète si < 3 articles.
+    """Construit l'Essentiel « vivant » : ancre éditoriale + blend live.
 
-    1. Projection digest → jusqu'à 5 articles transversaux (logique historique).
-    2. Si le résultat est < `ESSENTIEL_MIN_ARTICLES`, complète jusqu'à
-       `ESSENTIEL_MAX_ARTICLES` avec des articles frais des sources suivies.
-    3. Le router décide ensuite du 202 ``preparing`` si le total reste < 3.
+    Contrairement à l'ancien comportement (complétion seulement si < 3), le
+    blend est **toujours actif** pour livrer une surface dynamique au fil de la
+    journée, tout en préservant l'ancre éditoriale et le cap 5 :
+
+    1. Projection digest → jusqu'à 5 articles rankés + read-pénalisés.
+    2. Partition en **non-lus** (ancre stable, ordre digest) et **lus**
+       (évictables).
+    3. Pool live frais (sources suivies ∪ thèmes appréciés riches), scoré, pour
+       remplir les slots libérés à mesure que l'utilisateur lit.
+    4. Ordre final ≤ 5 : non-lus → live (score desc) → lus en dernier recours.
+    5. Delta « N nouveaux depuis ce matin » borné (`_ESSENTIEL_DELTA_CAP`).
+
+    Le router décide ensuite du 202 ``preparing`` si le total reste < 3.
     """
     response = build_essentiel_response(digest, user_context=user_context, now=now)
-    if len(response.articles) >= ESSENTIEL_MIN_ARTICLES:
-        return response
 
-    supplements = await _fetch_followed_source_supplements(
+    non_read = [a for a in response.articles if not a.is_read]
+    read = [a for a in response.articles if a.is_read]
+    digest_content_ids = {a.content_id for a in response.articles}
+    morning_anchor = _morning_anchor(now)
+
+    live, new_since_morning = await _fetch_live_supplements(
         db,
         user_id,
         user_context,
         is_serene=is_serene,
-        existing=response.articles,
-        limit=ESSENTIEL_MAX_ARTICLES - len(response.articles),
+        existing=non_read,
+        limit=ESSENTIEL_MAX_ARTICLES - len(non_read),
+        digest_content_ids=digest_content_ids,
+        morning_anchor=morning_anchor,
         now=now,
     )
-    if not supplements:
-        return response
 
-    merged = list(response.articles) + supplements
-    logger.info(
-        "essentiel_supplemented digest_count=%d supplements=%d final_count=%d",
-        len(response.articles),
-        len(supplements),
-        len(merged),
+    # Ordre final : ancre non-lus (ordre digest) → frais (score desc) → lus du
+    # digest en dernier recours si on n'atteint pas encore le cap.
+    merged: list[EssentielArticle] = list(non_read) + list(live)
+    if len(merged) < ESSENTIEL_MAX_ARTICLES:
+        seen = {a.content_id for a in merged}
+        for article in read:
+            if len(merged) >= ESSENTIEL_MAX_ARTICLES:
+                break
+            if article.content_id in seen:
+                continue
+            merged.append(article)
+            seen.add(article.content_id)
+    merged = merged[:ESSENTIEL_MAX_ARTICLES]
+    reranked = [
+        article.model_copy(update={"rank": i + 1}) for i, article in enumerate(merged)
+    ]
+
+    delta = min(_ESSENTIEL_DELTA_CAP, new_since_morning)
+    if live:
+        logger.info(
+            "essentiel_supplemented digest_count=%d live=%d final_count=%d "
+            "new_since_morning=%d",
+            len(response.articles),
+            len(live),
+            len(reranked),
+            delta,
+        )
+    return response.model_copy(
+        update={"articles": reranked, "new_since_this_morning": delta}
     )
-    return response.model_copy(update={"articles": merged})

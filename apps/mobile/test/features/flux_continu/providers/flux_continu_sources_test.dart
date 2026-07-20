@@ -40,7 +40,8 @@ class _MockFluxContinuRepository extends Mock
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => const [];
+  Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
+      (articles: const <EssentielArticle>[], newSinceMorning: 0);
 }
 
 class _StubUserInterestsNotifier extends UserInterestsNotifier {

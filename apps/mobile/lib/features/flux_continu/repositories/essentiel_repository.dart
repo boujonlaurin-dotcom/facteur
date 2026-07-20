@@ -5,6 +5,14 @@ import '../../../core/api/api_client.dart';
 import '../../../core/api/providers.dart';
 import '../models/flux_continu_models.dart';
 
+/// Résultat de `GET /api/essentiel` : les articles transversaux + le delta
+/// « N nouveaux depuis ce matin » (`new_since_this_morning`, borné côté
+/// backend). `newSinceMorning == 0` ⇒ pas de pastille sur le héros.
+typedef EssentielFetchResult = ({
+  List<EssentielArticle> articles,
+  int newSinceMorning,
+});
+
 /// `GET /api/essentiel` — Story 9.1/9.2.
 ///
 /// Renvoie jusqu'à 5 articles transversaux cross-topic pour alimenter la
@@ -30,7 +38,7 @@ class EssentielRepository {
   /// sélecteur de date de l'Essentiel (EPIC « Lettre du jour »). Absent ⇒
   /// aujourd'hui (l'appel historique du flux reste valide). Même format que
   /// `DigestRepository.getDigest`/`fetchBothDigests`.
-  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async {
+  Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async {
     try {
       final response = await _apiClient.dio.get<dynamic>(
         'essentiel',
@@ -47,10 +55,14 @@ class EssentielRepository {
       }
       final data = response.data as Map<String, dynamic>;
       final raw = (data['articles'] as List?) ?? const [];
-      return raw
+      final articles = raw
           .whereType<Map<String, dynamic>>()
           .map(EssentielArticle.fromJson)
           .toList(growable: false);
+      return (
+        articles: articles,
+        newSinceMorning: (data['new_since_this_morning'] as int?) ?? 0,
+      );
     } on DioException catch (e) {
       // ignore: avoid_print
       print('EssentielRepository: fetch failed: ${e.message}');

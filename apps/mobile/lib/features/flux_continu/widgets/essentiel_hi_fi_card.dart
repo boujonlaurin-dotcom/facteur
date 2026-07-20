@@ -35,10 +35,16 @@ class EssentielHiFiCard extends ConsumerWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
 
+  /// Nb d'articles frais publiés depuis ce matin (`new_since_this_morning`).
+  /// `> 0` ⇒ pastille « N nouveaux depuis ce matin » près du titre du héros,
+  /// masquée à `0`. Alimente « L'Essentiel vivant » (surface dynamique).
+  final int newSinceMorning;
+
   const EssentielHiFiCard({
     super.key,
     required this.articles,
     required this.onTapArticle,
+    this.newSinceMorning = 0,
   });
 
   @override
@@ -103,6 +109,9 @@ class EssentielHiFiCard extends ConsumerWidget {
             _Header(
               accent: accent,
               title: headerTitle,
+              // « L'Essentiel vivant » : la pastille du delta n'a de sens que
+              // sur l'édition du jour (une édition passée est figée).
+              newSinceMorning: isToday ? newSinceMorning : 0,
               rewind: EditionRewindTrigger(
                 onTap: () => EditionTimelineSheet.show(context),
                 // today à jour → icône seule ; lettre passée → « Revenir » fixe.
@@ -162,7 +171,16 @@ class _Header extends StatelessWidget {
   /// fourni par la carte (today ET lettre passée).
   final Widget? rewind;
 
-  const _Header({required this.accent, required this.title, this.rewind});
+  /// Nb d'articles frais depuis ce matin (borné backend). `> 0` ⇒ pastille
+  /// « N nouveaux depuis ce matin » au-dessus du sous-titre, masquée à `0`.
+  final int newSinceMorning;
+
+  const _Header({
+    required this.accent,
+    required this.title,
+    this.rewind,
+    this.newSinceMorning = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -199,6 +217,10 @@ class _Header extends StatelessWidget {
                   ],
                 ],
               ),
+              if (newSinceMorning > 0) ...[
+                const SizedBox(height: 6),
+                _NewSinceMorningPill(accent: accent, count: newSinceMorning),
+              ],
               const SizedBox(height: 4),
               Text(
                 '5 articles du jour, basé sur tes intérêts',
@@ -229,6 +251,55 @@ class _HeaderAccentDash extends StatelessWidget {
           color: accent.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(999),
         ),
+      ),
+    );
+  }
+}
+
+/// Pastille « N nouveaux depuis ce matin » (« L'Essentiel vivant »). Rendue
+/// près du titre du héros quand du contenu frais est arrivé depuis le digest
+/// du matin ; masquée à `0`. Réutilise le traitement arrondi/accent du
+/// [_HeaderAccentDash] et les chiffres `courierPrime` des tampons de date.
+/// `count` est déjà borné backend (cap 9) → « 9+ » quand il atteint le plafond.
+class _NewSinceMorningPill extends StatelessWidget {
+  final Color accent;
+  final int count;
+
+  const _NewSinceMorningPill({required this.accent, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final numberLabel = count >= 9 ? '9+' : '$count';
+    final noun = count == 1 ? 'nouveau' : 'nouveaux';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            numberLabel,
+            style: GoogleFonts.courierPrime(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              height: 1.0,
+              color: accent,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$noun depuis ce matin',
+            style: FacteurTypography.bodySmall(accent).copyWith(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              height: 1.0,
+            ),
+          ),
+        ],
       ),
     );
   }

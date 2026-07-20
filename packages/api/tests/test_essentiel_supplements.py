@@ -39,14 +39,15 @@ def _empty_digest() -> DigestResponse:
 
 @pytest_asyncio.fixture
 async def make_source(db_session):
-    async def _make(name: str) -> Source:
+    async def _make(name: str, *, coverage_themes=None, theme: str = "politics") -> Source:
         source = Source(
             id=uuid4(),
             name=name,
             url=f"https://{name.lower()}.example.com",
             feed_url=f"https://{name.lower()}.example.com/feed-{uuid4()}.xml",
             type=SourceType.ARTICLE,
-            theme="politics",
+            theme=theme,
+            coverage_themes=coverage_themes,
             is_active=True,
             is_curated=False,
         )
@@ -65,13 +66,14 @@ async def _add_content(
     is_serene=None,
     minutes_ago: int = 30,
     content_type: ContentType = ContentType.ARTICLE,
+    published_at: datetime | None = None,
 ) -> Content:
     content = Content(
         id=uuid4(),
         source_id=source.id,
         title=title,
         url=f"https://example.com/{uuid4()}",
-        published_at=datetime.now(UTC) - timedelta(minutes=minutes_ago),
+        published_at=published_at or (datetime.now(UTC) - timedelta(minutes=minutes_ago)),
         content_type=content_type,
         guid=str(uuid4()),
         is_serene=is_serene,
@@ -238,15 +240,44 @@ async def test_max_two_articles_per_source(db_session, make_source):
 
 
 @pytest.mark.asyncio
-async def test_rich_digest_skips_supplement_query(db_session, make_source):
-    """Digest déjà ≥3 articles → pas de complétion (les sources suivies ignorées)."""
+async def test_muted_source_excluded_from_live_blend(db_session, make_source):
+    """Une source suivie mais mutée ne contribue jamais au blend live."""
+    user_id = uuid4()
+    kept = await make_source("Gardee")
+    muted = await make_source("Mutee")
+    kept_article = await _add_content(db_session, kept, title="Article garde")
+    muted_article = await _add_content(db_session, muted, title="Article mute")
+
+    ctx = EssentielUserContext(
+        followed_source_ids=frozenset({kept.id, muted.id}),
+        muted_source_ids=frozenset({muted.id}),
+    )
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        _empty_digest(),
+        user_context=ctx,
+        is_serene=False,
+    )
+
+    ids = {a.content_id for a in response.articles}
+    assert kept_article.id in ids
+    assert muted_article.id not in ids, "une source mutée ne doit pas alimenter"
+
+
+@pytest.mark.asyncio
+async def test_rich_digest_still_blends_live_supplement(db_session, make_source):
+    """Blend toujours actif : un digest ≥3 non-lus se complète des slots libres.
+
+    Le nouveau modèle « L'Essentiel vivant » n'attend plus de tomber sous le
+    plancher : tant qu'il reste des slots (cap 5), le pool frais des sources
+    suivies remplit — ici 3 articles digest non-lus + 1 frais = 4.
+    """
     user_id = uuid4()
     source = await make_source("Mediapart")
-    supplement = await _add_content(db_session, source, title="Ne doit pas apparaitre")
+    supplement = await _add_content(db_session, source, title="Frais du jour")
 
-    # Digest "riche" simulé via 3 articles supplémentaires injectés ? Ici on
-    # vérifie surtout que si le digest fournit >= 3 articles, le contenu DB des
-    # sources suivies n'est pas pioché. On construit un digest à 3 topics.
     from app.schemas.content import SourceMini
     from app.schemas.digest import DigestTopic, DigestTopicArticle
 
@@ -298,5 +329,97 @@ async def test_rich_digest_skips_supplement_query(db_session, make_source):
         is_serene=False,
     )
 
-    assert len(response.articles) == 3
-    assert supplement.id not in {a.content_id for a in response.articles}
+    # 3 non-lus (ancre) + 1 frais = 4 ; ranks séquentiels 1..4.
+    assert len(response.articles) == 4
+    assert supplement.id in {a.content_id for a in response.articles}
+    assert [a.rank for a in response.articles] == [1, 2, 3, 4]
+
+
+@pytest.mark.asyncio
+async def test_new_since_morning_counts_fresh_live_pool(db_session, make_source):
+    """Delta = candidats frais (publiés depuis minuit Paris) hors digest."""
+    user_id = uuid4()
+    now = datetime(2026, 7, 18, 14, 0, tzinfo=UTC)  # après-midi Paris
+    this_morning = datetime(2026, 7, 18, 9, 0, tzinfo=UTC)  # 11h Paris
+    sources = [await make_source(f"Live{i}") for i in range(3)]
+    for src in sources:
+        await _add_content(
+            db_session, src, title=f"Frais {src.name}", published_at=this_morning
+        )
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset(s.id for s in sources))
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        _empty_digest(),
+        user_context=ctx,
+        is_serene=False,
+        now=now,
+    )
+
+    assert response.new_since_this_morning == 3
+
+
+@pytest.mark.asyncio
+async def test_new_since_morning_capped_at_nine(db_session, make_source):
+    """Delta borné à 9 même si le pool live compte davantage d'articles frais."""
+    user_id = uuid4()
+    now = datetime(2026, 7, 18, 14, 0, tzinfo=UTC)
+    this_morning = datetime(2026, 7, 18, 9, 0, tzinfo=UTC)
+    sources = [await make_source(f"Prolific{i}") for i in range(6)]
+    # 12 articles frais (2/source) → compte 12, borné à 9.
+    for i, src in enumerate(sources):
+        for j in range(2):
+            await _add_content(
+                db_session,
+                src,
+                title=f"Article {i}-{j}",
+                published_at=this_morning,
+            )
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset(s.id for s in sources))
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        _empty_digest(),
+        user_context=ctx,
+        is_serene=False,
+        now=now,
+    )
+
+    assert response.new_since_this_morning == 9
+
+
+@pytest.mark.asyncio
+async def test_rich_theme_source_contributes_without_being_followed(
+    db_session, make_source
+):
+    """Une source non suivie mais riche sur un thème apprécié alimente le blend.
+
+    Recall « thème riche en contenu » via `Source.coverage_themes` recoupant
+    `topic_weights`. `coverage_themes = NULL` (source à faible volume) est
+    naturellement exclue — c'est le gate voulu.
+    """
+    user_id = uuid4()
+    rich = await make_source("RicheClimat", coverage_themes=["climate"], theme="misc")
+    thin = await make_source("PauvreClimat", coverage_themes=None, theme="misc")
+    rich_article = await _add_content(db_session, rich, title="Analyse climat inedite")
+    thin_article = await _add_content(db_session, thin, title="Breve climat")
+
+    # Aucune source suivie ; seul un thème apprécié (climate) → recall par
+    # coverage_themes.
+    ctx = EssentielUserContext(topic_weights={"climate": 1.0})
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        _empty_digest(),
+        user_context=ctx,
+        is_serene=False,
+    )
+
+    ids = {a.content_id for a in response.articles}
+    assert rich_article.id in ids, "source riche sur thème apprécié doit alimenter"
+    assert thin_article.id not in ids, "coverage_themes NULL exclut la source"

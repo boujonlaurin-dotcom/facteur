@@ -270,8 +270,14 @@ class EssentielArticle {
 class EssentielSection extends FluxSection {
   final List<EssentielArticle> articles;
 
+  /// Nb d'articles frais publiés depuis ce matin (`new_since_this_morning`,
+  /// borné backend). Rendu en pastille près du titre du héros quand `> 0`,
+  /// masqué à `0`. Alimente « L'Essentiel vivant » (surface dynamique au retour).
+  final int newSinceMorning;
+
   const EssentielSection({
     required this.articles,
+    this.newSinceMorning = 0,
     super.label = 'L’Essentiel du jour',
     super.accent = const Color(0xFFB0470A),
     super.blurb,

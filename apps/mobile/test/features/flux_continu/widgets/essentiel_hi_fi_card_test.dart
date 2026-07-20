@@ -534,5 +534,56 @@ void main() {
         expect(find.text('Titre $i'), findsOneWidget);
       }
     });
+
+    testWidgets('pastille « N nouveaux depuis ce matin » rendue quand > 0',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          newSinceMorning: 3,
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.text('3'), findsOneWidget);
+      expect(find.textContaining('nouveaux depuis ce matin'), findsOneWidget);
+    });
+
+    testWidgets('1 nouveau → libellé singulier', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          newSinceMorning: 1,
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.text('1'), findsOneWidget);
+      expect(find.textContaining('nouveau depuis ce matin'), findsOneWidget);
+    });
+
+    testWidgets('pastille masquée quand delta == 0', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.textContaining('depuis ce matin'), findsNothing);
+    });
+
+    testWidgets('delta au plafond (9) affiche « 9+ »', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1)],
+          newSinceMorning: 9,
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.text('9+'), findsOneWidget);
+      expect(find.textContaining('nouveaux depuis ce matin'), findsOneWidget);
+    });
   });
 }

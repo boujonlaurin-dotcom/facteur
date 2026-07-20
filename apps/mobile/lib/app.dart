@@ -14,7 +14,6 @@ import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
 import 'features/feed/services/read_sync_service.dart';
 import 'features/flux_continu/providers/flux_continu_preload_provider.dart';
-import 'features/flux_continu/services/tournee_progress_service.dart';
 import 'features/my_interests/services/interests_sync_service.dart';
 import 'features/app_update/providers/app_update_provider.dart';
 import 'features/app_update/services/playstore_update_service.dart';
@@ -185,21 +184,15 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
         final elapsed = _backgroundedAt != null
             ? DateTime.now().difference(_backgroundedAt!)
             : null;
-        final router = ref.read(routerProvider);
-        final currentPath = router.routeInformationProvider.value.uri.path;
-        final isAuthenticated = ref.read(authStateProvider).isAuthenticated;
         // Re-amorce le widget à chaque reprise, quel que soit l'onglet courant
         // (re-push immédiat + refresh réseau si le flux est périmé) — sans ça,
         // le widget gèle tant que l'utilisateur n'ouvre pas explicitement
         // Flâner.
         _ensureWidgetFresh(stale: shouldRefreshFlanerOnForeground(elapsed));
-        final tournee = ref.read(tourneeProgressServiceProvider);
-        if (isAuthenticated &&
-            currentPath == RoutePaths.fluxContinu &&
-            tournee.hasBrowsedEssentielTodaySync()) {
-          router.go(RoutePaths.flaner);
-          return;
-        }
+        // Story 9.8 : l'auto-redirect « déjà parcouru → Flâner » a été retiré.
+        // L'utilisateur revient toujours sur L'Essentiel, qui se rafraîchit
+        // lui-même au foreground (cooldown + gate « en haut du feed ») —
+        // cf. FluxContinuScreen.didChangeAppLifecycleState.
       }
     }
   }

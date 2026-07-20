@@ -83,6 +83,14 @@ class EssentielResponse(BaseModel):
             "en attendant que celui d'aujourd'hui soit prêt."
         ),
     )
+    new_since_this_morning: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Nb d'articles frais (sources suivies + thèmes appréciés riches) "
+            "publiés depuis la génération du digest du jour, borné pour l'affichage."
+        ),
+    )
 
     class Config:
         from_attributes = True

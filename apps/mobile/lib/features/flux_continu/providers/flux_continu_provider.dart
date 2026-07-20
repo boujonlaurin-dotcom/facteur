@@ -414,19 +414,23 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         'getTopThemes',
         fallback: const <TopTheme>[],
       ),
-      _safe<List<EssentielArticle>>(
+      _safe<EssentielFetchResult>(
         // Passe le mode explicitement : `isSerene` est posé en synchrone avant
         // l'`invalidateSelf` du listener serein, donc à jour ici — pas de
         // dépendance à la persistance DB de la préférence au moment du refetch.
-        () async => (await _essentielRepo.fetch(serein: isSerene)) ?? const [],
+        () async =>
+            (await _essentielRepo.fetch(serein: isSerene)) ??
+            (articles: const <EssentielArticle>[], newSinceMorning: 0),
         'fetchEssentiel',
-        fallback: const <EssentielArticle>[],
+        fallback: (articles: const <EssentielArticle>[], newSinceMorning: 0),
       ),
     ]);
     final dual = results[0] as DualDigestResponse?;
     final topThemes = (results[1] as List<TopTheme>?) ?? const <TopTheme>[];
+    final essentielResult = results[2] as EssentielFetchResult?;
     final essentielArticles =
-        (results[2] as List<EssentielArticle>?) ?? const <EssentielArticle>[];
+        essentielResult?.articles ?? const <EssentielArticle>[];
+    final newSinceMorning = essentielResult?.newSinceMorning ?? 0;
 
     final next = await _buildStateFromPayload(
       dual: dual,
@@ -434,6 +438,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       essentielArticles: essentielArticles,
       isSerene: isSerene,
       fetchThemes: true,
+      newSinceMorning: newSinceMorning,
     );
     if (dual != null) {
       unawaited(
@@ -474,13 +479,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required List<EssentielArticle> essentielArticles,
     required bool isSerene,
     required bool fetchThemes,
+    int newSinceMorning = 0,
   }) async {
     // PR2 — la section "Essentiel" du haut du feed est désormais alimentée
     // par GET /api/essentiel (5 articles transversaux). Si l'endpoint n'a
     // rien servi (preparing/erreur), on ne rend pas la section : le digest
     // legacy reste affiché juste en dessous sous le nom "Actus du jour",
     // et Bonnes Nouvelles n'est pas affectée.
-    _essentiel = _buildEssentielSection(essentielArticles);
+    _essentiel = _buildEssentielSection(
+      essentielArticles,
+      newSinceMorning: newSinceMorning,
+    );
     // Hotfix Story 9.2 — "Actus du jour" : DigestTopicSection legacy,
     // alimentée par `dual.normal` (digest classique), avec le label
     // historique "Actus du jour" (anciennement "L'Essentiel du jour" avant
@@ -1166,6 +1175,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               articles: articles
                   .where((a) => !_dismissedIds.contains(a.contentId))
                   .toList(growable: false),
+              newSinceMorning: s.newSinceMorning,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1229,6 +1239,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               articles: articles
                   .where((a) => seen.add(a.contentId))
                   .toList(growable: false),
+              newSinceMorning: s.newSinceMorning,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1311,6 +1322,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   else
                     a,
               ],
+              newSinceMorning: s.newSinceMorning,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1503,10 +1515,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// returned by `GET /api/essentiel`. Returns `null` when the endpoint hasn't
   /// produced anything yet (202 preparing or transient failure) so the screen
   /// degrades gracefully — Bonnes Nouvelles + thèmes restent visibles.
-  FluxSection? _buildEssentielSection(List<EssentielArticle> articles) {
+  FluxSection? _buildEssentielSection(
+    List<EssentielArticle> articles, {
+    int newSinceMorning = 0,
+  }) {
     if (articles.isEmpty) return null;
     return EssentielSection(
       articles: articles,
+      newSinceMorning: newSinceMorning,
       illustrationAsset: _kEssentielIllustration,
       blurb: _kEssentielBlurb,
     );

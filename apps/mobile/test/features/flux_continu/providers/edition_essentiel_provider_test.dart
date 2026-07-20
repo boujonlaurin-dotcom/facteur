@@ -25,9 +25,11 @@ class _FakeEssentielRepository implements EssentielRepository {
   final Map<String, List<EssentielArticle>?> byDay;
 
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async {
+  Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async {
     final key = date == null ? 'today' : editionDayKey(date);
-    return byDay[key];
+    final articles = byDay[key];
+    if (articles == null) return null;
+    return (articles: articles, newSinceMorning: 0);
   }
 }
 
