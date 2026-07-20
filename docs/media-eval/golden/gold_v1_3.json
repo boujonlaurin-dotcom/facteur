@@ -1,16 +1,31 @@
 {
   "version_methodo": "v1.3",
   "notateur": "humain:laurin",
-  "note_at": "2026-07-18T00:00:00Z",
+  "note_at": "2026-07-20T15:11:33Z",
   "remap_depuis": "gold_v0.json",
   "remap_note": "Re-mapping du gold batch 1 (v1.2 → v1.3, Annexe B) + décisions PO (STOP validation n°2, 2026-07-18). Les déterminations v1.2 sont conservées ; les 3 entrées revue_requise CNEWS (C6/C8/C9) ont été tranchées par Laurin (voir champ decision_po). Les entrées reporterre.net restent a_noter (à noter en aveugle avant tout run). gold_v0.json reste la référence figée du batch 1 v1.2.",
+  "gel_d4_note": "GOLD GATE D4 (run pilote-2026-08, cnews.fr, 2026-07-20T15:11:33Z) : notation À L'AVEUGLE des critères corpus batch 2 (C2/C3/C4/C5/C7) + re-notation C1 depuis les 8 affaires qualifiées du batch 2 (fenêtre 36 mois). Notation continue guidée par les niveaux (Annexe C-10). Aucune évaluation d'agent lue avant le gel. Détail du raisonnement : .context/media_eval/pilote-2026-08/gold_gate_d4_notes.md. note_at ci-dessus = horodatage du gel (précède tout evalue_at des évaluateurs — preuve D4).",
   "entries": [
     {
       "media_domaine": "cnews.fr",
       "critere": "C1",
       "version_methodo": "v1.3",
-      "score": null,
-      "niveau": null,
+      "statut": "evaluee",
+      "score": 3.0,
+      "niveau": 1,
+      "gel_d4": {
+        "note_at": "2026-07-20T15:11:33Z",
+        "notateur": "humain:laurin",
+        "eval_input": "eval_inputs/cnews_fr_C1.json",
+        "paliers": {
+          "0": 0,
+          "1": 5,
+          "2": 10,
+          "3": 15,
+          "4": 20
+        },
+        "motif": "7 affaires distinctes (dédup cle_affaire), toutes émetteurs forts : CDJM fondé ×3 (stats INSEE immigration, images actes antichrétiens, drapeau palestinien), Conseil d'État confirmant la sanction Arcom climato-Herlin, sanction Arcom 100 k€ IVG (En quête d'esprit), mise en demeure pluralisme 2026, mise en garde canicule Praud. 2 graves (climato + IVG), aucune corrigée (suite inconnue/contestation/aucune). Exposition élevée → seuls graves/non corrigés pèsent : ici ils dominent. Schéma récurrent d'informations trompeuses non corrigées = niveau 1. Les 2 graves non corrigées tirent vers niveau 0 → score continu 3.0. Pas de « condamnation judiciaire définitive » (diffamation/fausses nouvelles) au sens strict : sanctions Arcom = administratif → pas de bascule 0 automatique."
+      },
       "origine_v12": [
         {
           "critere": "C1",
@@ -20,9 +35,121 @@
           "commentaire": "Fallback correct sur les artefacts du run (2 débunkages < 3, et les 2 items = la même affaire Zemmour/Obono). Recall du collecteur voie B insuffisant : C1 attendu instruit (et défavorable) en V1 après élargissement des requêtes (sanctions Arcom, fact-checks AFP/Libé/Les Surligneurs) + dédup par affaire."
         }
       ],
-      "statut": "non_applicable",
-      "regle_remap": "na_conserve",
-      "commentaire": "[v1.2 C1 — véracité et exactitude] Fallback correct sur les artefacts du run (2 débunkages < 3, et les 2 items = la même affaire Zemmour/Obono). Recall du collecteur voie B insuffisant : C1 attendu instruit (et défavorable) en V1 après élargissement des requêtes (sanctions Arcom, fact-checks AFP/Libé/Les Surligneurs) + dédup par affaire."
+      "regle_remap": "re_notation_batch2_d4",
+      "commentaire": "[Gel D4 pilote-2026-08 — niveau 1, score continu 3.0] Re-notation du non_applicable batch 1 : recall corrigé, 7 affaires qualifiées 36 mois dont 2 graves non corrigées. Noté à l'aveugle sur cnews_fr_C1.json. Restauré depuis gold_gate_d4_notes.md après écrasement accidentel par la contre-notation agent."
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C2",
+      "version_methodo": "v1.3",
+      "statut": "evaluee",
+      "score": 8.0,
+      "niveau": 2,
+      "gel_d4": {
+        "note_at": "2026-07-20T15:11:33Z",
+        "notateur": "humain:laurin",
+        "eval_input": "eval_inputs/cnews_fr_C2.json",
+        "paliers": {
+          "0": 0,
+          "1": 3,
+          "2": 7,
+          "3": 11,
+          "4": 15
+        },
+        "motif": "Corpus 27 articles informatifs. Taux sources nommées 0,74 (large majorité, tire vers niv 3) MAIS liens cliquables « rares » (niv 2 explicite), moyenne 1,3 source indépendante / article — mono-source = norme (<2 objectif), prudence « irrégulières » (échoue le « prudence majoritaire » du niv 3), sources génériques fréquentes (« source policière » anonyme, « les spécialistes rappellent »), confusion occasionnelle fait/allégation (« 4 logements sur 10 », « 14 % population mondiale » non sourcés). Profil dominant niveau 2 ; nudge +1 pour le taux nommées 74 % → 8.0."
+      },
+      "regle_remap": "note_batch2_d4",
+      "commentaire": "[Gel D4 pilote-2026-08 — niveau 2 (8.0)] Critère corpus nouveau en batch 2 (pas d'origine v1.2). Sourçage irrégulier : 74 % nommées mais liens rares, mono-source la norme (1,3 indép.), prudence irrégulière, sources génériques fréquentes, confusion occasionnelle fait/allégation. Noté à l'aveugle sur cnews_fr_C2.json."
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C3",
+      "version_methodo": "v1.3",
+      "statut": "evaluee",
+      "score": 4.0,
+      "niveau": 2,
+      "gel_d4": {
+        "note_at": "2026-07-20T15:11:33Z",
+        "notateur": "humain:laurin",
+        "eval_input": "eval_inputs/cnews_fr_C3.json",
+        "paliers": {
+          "0": 0,
+          "1": 1,
+          "2": 4,
+          "3": 7,
+          "4": 10
+        },
+        "motif": "Corpus 45 articles (signal partiel). 0 mention « Correction/Erratum » ; modifications silencieuses (double horodatage « Mis à jour » 45/45, ex. UE/réseaux modifié 2 jours après, migraine 1 h après, sans note décrivant la modif). Ni page corrections/errata, ni canal de signalement (seul un mail générique aux mentions légales). « Corrections silencieuses (modif sans mention) » + « aucun canal identifiable » = niveau 2. Les contestations Arcom/CDJM ne sont PAS re-comptées ici (elles modulent le litige au sein de C1 — note anti-double-comptage du barème)."
+      },
+      "regle_remap": "note_batch2_d4",
+      "commentaire": "[Gel D4 pilote-2026-08 — niveau 2 (4.0)] Critère mixte structurel+corpus, nouveau en batch 2. Modifications silencieuses sans mention datée + aucun canal de signalement public → niveau 2. Noté à l'aveugle sur cnews_fr_C3.json."
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C4",
+      "version_methodo": "v1.3",
+      "statut": "evaluee",
+      "score": 2.5,
+      "niveau": 2,
+      "gel_d4": {
+        "note_at": "2026-07-20T15:11:33Z",
+        "notateur": "humain:laurin",
+        "eval_input": "eval_inputs/cnews_fr_C4.json",
+        "paliers": {
+          "0": 0,
+          "1": 1,
+          "2": 3,
+          "3": 5
+        },
+        "motif": "Corpus 16 articles mixtes. Labellisation opinion 0,33 (2/6 : édito Deval + question du jour) = présente mais irrégulière ; distinction graphique « faible » ; jugements non attribués dans l'informatif « rares » (mieux que le « fréquents » du niv 1). MAIS famille de brèves « temps fort » reprenant des citations très chargées en titre sans label opinion ni contrepoint (« coup d'État juridique », « dictature algérienne », « vilipendée en tant qu'artiste juive » — distinction reposant uniquement sur les guillemets), + 1 label « chronique » incohérent (trompeur) sur un article santé informatif. Niveau 2 discounté vers niv 1 pour les brèves chargées + le label trompeur → score continu 2.5."
+      },
+      "regle_remap": "note_batch2_d4",
+      "commentaire": "[Gel D4 pilote-2026-08 — niveau 2 (2.5)] Critère corpus nouveau en batch 2. Labellisation irrégulière (33 %) + distinction graphique faible + brèves à citations chargées non labellisées → niveau 2, tiré vers niv 1. Noté à l'aveugle sur cnews_fr_C4.json."
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C5",
+      "version_methodo": "v1.3",
+      "statut": "evaluee",
+      "score": 4.0,
+      "niveau": 1,
+      "gel_d4": {
+        "note_at": "2026-07-20T15:11:33Z",
+        "notateur": "humain:laurin",
+        "eval_input": "eval_inputs/cnews_fr_C5.json",
+        "paliers": {
+          "0": 0,
+          "1": 5,
+          "2": 10
+        },
+        "double_evaluation": true,
+        "confiance": "basse",
+        "motif": "Corpus 9 articles, 4 controverses (signal partiel, corpus d'un seul jour, brèves « temps fort » <600 car.). 2/9 articles avec contradicteurs. Barbara Butch juxtapose réellement les deux camps (citations directes LFI/Bompard vs critiques) mais espace/ton nettement à charge (7 voix critiques vs 1 défenseur, édito + brèves du jour à charge, aucune voix propalestinienne interrogée). 3/4 controverses unilatérales : nomination Conseil d'État (« coup d'État juridique » sans contradicteur), Algérie (RN seul), régulation UE (aucune voix critique). Sujets = controverses politiques légitimes (pas de faits établis → aucune fausse-balance à écarter). Présence occasionnelle de contradicteurs + traitement inégal = niveau 1. Corpus mince + critère double-évaluation → confiance basse, hésitation 0/1 consignée ; nudge -1 (3/4 unilatéral) → score continu 4.0."
+      },
+      "regle_remap": "note_batch2_d4",
+      "commentaire": "[Gel D4 pilote-2026-08 — niveau 1 (4.0), double éval / confiance basse] Critère corpus contradicteurs (ex-C10 déplacé en Axe 1), nouveau en batch 2. Contradicteurs occasionnels (2/9), 3/4 controverses unilatérales, traitement inégal → niveau 1. Corpus mince (9 art., 1 jour). Noté à l'aveugle sur cnews_fr_C5.json."
+    },
+    {
+      "media_domaine": "cnews.fr",
+      "critere": "C7",
+      "version_methodo": "v1.3",
+      "statut": "evaluee",
+      "score": 2.0,
+      "niveau": 1,
+      "gel_d4": {
+        "note_at": "2026-07-20T15:11:33Z",
+        "notateur": "humain:laurin",
+        "eval_input": "eval_inputs/cnews_fr_C7.json",
+        "paliers": {
+          "0": 0,
+          "1": 2,
+          "2": 4,
+          "3": 6
+        },
+        "motif": "Corpus 27 articles informatifs (même échantillon que C2). Signatures nominatives 0,19 (5/27 : Rajehi, Verniol, Willinger ×2, Danet) ; 0,67 « Par CNEWS » (label générique de rédaction = équivalent « La Rédaction ») ; 0,11 « Par CNEWS avec AFP ». Aucune page biographique observée ; aucun statut d'auteur. Recours dominant au label générique de rédaction = plafonne niveau 1 (barème) ; articles bylinés génériquement (≠ « majoritairement non signés ») → pas niveau 0. → score 2.0."
+      },
+      "regle_remap": "note_batch2_d4",
+      "commentaire": "[Gel D4 pilote-2026-08 — niveau 1 (2.0)] Critère corpus (ex-C6, échelle continue → 4 niveaux), nouveau en batch 2. 19 % signatures nominatives, 67 % « Par CNEWS » générique, aucune bio → recours fréquent au label de rédaction plafonne niveau 1. Noté à l'aveugle sur cnews_fr_C7.json."
     },
     {
       "media_domaine": "cnews.fr",
@@ -251,5 +378,37 @@
       "regle_remap": "a_noter",
       "commentaire": "[v1.2 C9 — indépendance éditoriale] niveau 0/1/2 → score 0/5/10"
     }
-  ]
+  ],
+  "controle_inter_notateur_batch2": {
+    "notateur": "agent:claude (délégation PO « tranches toi-même », 2026-07-20)",
+    "note_at": "2026-07-20T15:21:14Z",
+    "aveugle": true,
+    "note": "Contre-notation indépendante des 6 mêmes eval_inputs (C1, C2, C3, C4, C5, C7), à l'aveugle du gel PO de 15:11 (découvert après coup, non commité). Le gel PO fait foi (primauté humaine + antériorité). Accord : niveaux identiques partout (C4 continu), scores à ±1 point max — C1 3.0/5.0, C2 8.0/7.0, C3 4.0/4.0, C4 2.5/2.0, C5 4.0/3.0, C7 2.0/2.0 (PO/agent).",
+    "scores_agent": {
+      "C1": {
+        "score": 5.0,
+        "niveau": 1
+      },
+      "C2": {
+        "score": 7.0,
+        "niveau": 2
+      },
+      "C3": {
+        "score": 4.0,
+        "niveau": 2
+      },
+      "C4": {
+        "score": 2.0,
+        "niveau": null
+      },
+      "C5": {
+        "score": 3.0,
+        "niveau": null
+      },
+      "C7": {
+        "score": 2.0,
+        "niveau": 1
+      }
+    }
+  }
 }
