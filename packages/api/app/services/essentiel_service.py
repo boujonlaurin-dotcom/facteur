@@ -961,8 +961,7 @@ async def build_essentiel_response_with_supplements(
             seen.add(article.content_id)
     merged = merged[:ESSENTIEL_MAX_ARTICLES]
     reranked = [
-        article.model_copy(update={"rank": i + 1})
-        for i, article in enumerate(merged)
+        article.model_copy(update={"rank": i + 1}) for i, article in enumerate(merged)
     ]
 
     delta = min(_ESSENTIEL_DELTA_CAP, new_since_morning)
