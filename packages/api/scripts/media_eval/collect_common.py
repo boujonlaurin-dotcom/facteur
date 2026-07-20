@@ -150,6 +150,13 @@ async def fetch_http(url: str, *, timeout: float = _TIMEOUT) -> FetchResult:
     return FetchResult(url, curl.status, curl.text, curl.mode_acces, curl.erreur)
 
 
+def meme_domaine(netloc_a: str, netloc_b: str) -> bool:
+    """Même domaine à un préfixe ``www.`` près (cnews.fr ≡ www.cnews.fr)."""
+    return netloc_a.lower().removeprefix("www.") == netloc_b.lower().removeprefix(
+        "www."
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Résolution du run — jamais implicite.
 # --------------------------------------------------------------------------- #
@@ -369,6 +376,7 @@ async def _run(
     run_id: str,
     apply: bool,
     allow_prod: bool,
+    libelle: str = "signaux",
 ) -> int:
     settings = get_settings()
     db_url = settings.database_url or ""
@@ -399,7 +407,8 @@ async def _run(
                 return 0
             await session.commit()
             print(
-                f"[{nom}] APPLIQUÉ : {stats.inseres} signaux, {stats.snapshots} snapshots."
+                f"[{nom}] APPLIQUÉ : {stats.inseres} {libelle}, "
+                f"{stats.snapshots} snapshots."
             )
             return 0
         except (CollecteError, IngestError) as exc:

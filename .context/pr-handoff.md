@@ -1,85 +1,67 @@
-# feat(media-eval): collecte vague 1 + orchestration + rapport (PR 2)
+# feat(media-eval): harness batch 2 — critères sur corpus + double évaluation + recall C1 (Phase 4)
 
-Complète la pipeline media-eval de bout en bout par-dessus les fondations
-PR 1 (#944) : **6 collecteurs voie A** (code → DB), **3 sous-agents** (2
-collecteurs web voie B + 1 évaluateur sans web), **1 commande d'orchestration**
-(`/media-eval-run`), et l'outillage de **run pilote** (golden gate, export,
-rapport avec verdict V0). Le run pilote `pilote-2026-07` lui-même est en
-hand-off (accès réseau réel + `PAPPERS_API_TOKEN` + notation humaine en aveugle
-+ `--allow-prod`).
+**PR C** de la trajectoire media-eval (base `main`). Outillage du batch 2 CNEWS,
+**avant** toute collecte. Aucune migration (additif / expand-safe, 1 head).
 
-## Bug latent PR 1 réparé
-La FK `media_eval_signaux.run_id → media_eval_runs.run_id` n'était jamais
-satisfaite (aucun run créé) ; les tests PR 1 passaient sur un conteneur test
-« sale ». Réparé par le fixture `run_test` (conftest mutualisé) + `create_run.py`.
-`build_eval_input` calait aussi la fraîcheur sur `now()` au lieu de
-`MediaEvalRun.date_reference` (rejouabilité cassée) — corrigé via `require_run()`.
+## Ce que ça livre
 
-## Contenu
-- **`collect_common.py`** : fetch httpx + repli curl_cffi (ne lève jamais),
-  `require_run`, `Collecteur` (dédupe applicative + validation Pydantic), dédupe
-  voie A préfixée `code|` (D2), harnais CLI `run_cli`.
-- **6 collecteurs** : `collect_{pages_types,cdjm,jti,cppap,pappers,arcom}.py`
-  (fonctions `parse_*` pures + `collecter` async, fixtures figées, zéro réseau
-  en test). ARCOM auto-désactivé hors audiovisuel ; Pappers dégrade en 3
-  `bloque_acces` si token absent (exit 0).
-- **`create_run.py`** (D1), patchs moteur : `ingest_artifacts` (D6 voie
-  `humain:`, `collecte_at`, `version_prompt_collecteur`),
-  `evaluate_golden_agreement --out-dir`, `build_eval_input` (date_reference),
-  `.gitignore` (`.context/`).
-- **`export_evaluations.py`** + **`rapport_pilote.py`** (D7) : unique collecte DB
-  (`collecter_donnees_rapport`) → **deux rendus** — `.md` ASCII git-diffable +
-  **`.html` propre autonome** (lentille propreté data `evaluer_proprete_donnees`
-  : trou d'accès vs absence confirmée ; `render_html` single-file CSS inline
-  calqué sur le design system media-eval ; verdict V0).
-- **`.claude/agents/media-eval-{collecteur-debunkages,evaluateur}.md`** +
-  agents gouvernance (voir PR 2b) + **`.claude/commands/media-eval-run.md`** +
-  `golden/gold_v0.template.json`.
+**1. Corpus d'articles (C2/C3/C4/C5/C7)**
+- `schemas.py` : vague-1 v1.3 étendue aux **10 critères** ; registre `articles`
+  (+ structurels C3 `page_corrections`/`canal_signalement`/`reponse_evaluation_externe`) ;
+  `Grille.criteres_corpus` (v1.3 = C2/C3/C4/C5/C7 ; v1.2 = ∅).
+- **`collect_corpus_articles.py`** (nouveau, voie A) : échantillonne + snapshote
+  des articles récents (home + sitemap) dans `media_eval_corpus_articles` +
+  pré-métriques mécaniques (signature ? label d'opinion ? liens sortants ?).
+  N'émet **aucun signal** (la qualification est voie B). Idempotent.
+- `build_eval_input.py` : joint un bloc `corpus_articles` (contexte non citable,
+  borné) aux eval_inputs des critères sur corpus.
+- Agent **`media-eval-collecteur-corpus`** (nouveau, voie B) : qualifie le corpus
+  → un signal `articles` agrégé par critère.
 
-## PR 2b — corrections collecte (diagnostic du run pilote initial)
+**2. Double évaluation C5/C9/C10 (décision PO 18/07)**
+- `export_evaluations.py` : le `raise` sur doublon (média, critère) devient un
+  **consensus** — accord conservé ; désaccord → `revue_requise` documenté (jamais
+  moyenné). Rendu **version-aware** (chaque entrée porte `version_methodo`).
+  Héberge aussi la métrique **accord inter-évaluateurs** (même règle d'accord).
+- `evaluate_golden_agreement.py` : `_paire_accord` compare C2..C7 à niveaux en
+  v1.3 (pas en tolérance continue), grille résolue depuis la version du gold.
+- `/media-eval-run` §6 : deux évaluateurs indépendants `…@v1-a` / `…@v1-b`.
 
-Le run pilote cnews.fr a révélé des **faux positifs voie A** et une substance
-capturée mais jamais exposée. Corrections incluses dans cette PR :
+**3. Débunkages C1 — recall + dédup par affaire**
+- `DebunkageArtifact.cle_affaire` → écrit dans le `valeur` du signal C1 (repli
+  sur l'URL) ; `_nb_debunkages_frais` compte des **affaires distinctes** (fallback
+  C1 correct : un événement très couvert = un litige).
+- Agent débunkages : requêtes élargies (Les Surligneurs, ARCOM, CDJM), fenêtre
+  **36 mois** (v1.3), `cle_affaire` par litige.
 
-- **Anti soft-404 + filtre lexical** (`collect_pages_types.py`) : `present`
-  seulement si le texte ≠ home (hash/similarité) **et** porte les marqueurs
-  lexicaux du type ; pénalité anti-flux (dons/régie servis en fils d'articles).
-  ⇒ les faux `present` C8/charte, C11/ligne-éditoriale, C7/régie,
-  C5/transparence deviennent `absent_verifie` (test de non-régression cnews).
-- **Substance exposée** (`build_eval_input.py`) : `serialiser_signal` joint
-  `snapshot_extrait` (~4 000 c) + `snapshot_url` quand le signal a un `snapshot_id`.
-- **`export_snapshots.py`** (nouveau) : dump des snapshots vers
-  `.context/media_eval/<run_id>/snapshots/*.txt`, lus par la voie B (anti-403).
-- **Pappers** : SIREN cnews.fr corrigé (SESI SNC **412 916 215**, éditeur du
-  site) + **repli gratuit** `recherche-entreprises.api.gouv.fr` sans token
-  (identification `present`, actionnariat `partiel`) au lieu de 3 `bloque_acces` ;
-  pré-vol token dans le healthcheck + `/media-eval-run` §0.
-- **CPPAP** : dataset réel confirmé (`liste-des-publications-de-presse`, Explore
-  v2.1, champs `titre`/`ndeg_cppap`) + repli voie C documenté.
-- **Couverture** (`ingest_artifacts.py`) : WARNING listant les `type_signal`
-  gouvernance sans signal (anti-passivité).
-- **Agents gouvernance découpés en 2** (`gouvernance-transparence` C5+C7,
-  `gouvernance-independance` C8+C9+C11) : lisent les snapshots exportés, couvrent
-  tout leur registre ; politique de mort d'agent + support antenne/site portés
-  dans la commande et les prompts.
+**4. Pappers** : inchangé (repli gratuit). Recharger les crédits = action Laurin.
 
-> **Non inclus** (attend le re-run corrigé `pilote-2026-07b` + GOLD GATE) :
-> `docs/media-eval/fiches/cnews_fr_pilote-2026-07.md` (fiche du run buggé, à
-> régénérer) et les artefacts `.context/` du run.
+## Hors périmètre (suivi séparé)
+- Threading de la synthèse sur la version (`synthese_fiche`/`rapport_pilote`/
+  `ingest_artifacts.rapport_couverture`) — **Phase 6**, avant la fiche publiable.
+- Re-mapping des codes de critère **voie A** pour un run v1.3 (les collecteurs
+  structurels posent encore C5/C7/C8/C11 v1.2) — signalé WARNING dans
+  `/media-eval-run` §3, à traiter avant la collecte batch 2 hors CNEWS.
 
-## Décisions de design D1–D7
-D1 création de run explicite (refus mutation `date_reference`) · D2 dédupe voie
-A préfixée `code|` (coexiste avec la voie B) · D3 évaluateur Read-only (réponse
-= JSON) · D4 GOLD GATE anti-contamination + preuve horodatage · D5 CPPAP open
-data (jamais le form POST) · D6 voie dérivée du préfixe `humain:` · D7 rapport
-généré par script (chiffres auditables).
+## Correctifs de revue (harness)
+`collect_corpus_articles.py` : filtre same-domain tolérant `www.` (appliqué aussi
+aux URLs sitemap — sinon corpus quasi vide pour un site canonique `www.` comme
+CNEWS) ; `liens_sortants` ne compte que les liens vers un **autre** domaine
+(pré-métrique C2 sinon gonflée par les liens internes absolus) ;
+`date_depuis_url` lit le format `/AAAA-MM-JJ/` (pattern CNEWS).
+
+## Simplify
+`accord_inter_evaluateurs` déplacé dans `export_evaluations.py` (supprime le
+cycle d'import différé + `_verdict` dupliqué) ; `collect_corpus_articles` porté
+sur le harnais CLI commun `collect_common._run` (garde `--apply`, dry-run,
+rollback — plus de copie) + helpers partagés (`meme_domaine`, `_RE_HREF_ARTICLE`,
+`FetchResult` en test) ; `cle_affaire_signal` rangé dans `schemas.py` à côté du
+contrat d'écriture ; paramètre mort `version_methodo` retiré de
+`evaluations_to_goldenset`.
 
 ## Tests
-- **191 tests** `tests/scripts/media_eval` verts sur DB propre (dont
-  non-régression cnews soft-404/flux, repli Pappers gratuit, snapshot_extrait,
-  couverture voie B), ruff clean (check + format).
-- Smoke offline validé (create_run → seed → ingest → build_eval_input →
-  ingest_evaluations → synthese → export → rapport).
-- Pas de nouvelle migration (dédupe snapshots applicative) — `alembic heads` = 1.
+`tests/scripts/media_eval/` : **260 passent** (en série ; fixture `create_tables`
+DROP le schéma). 1 head Alembic. `ruff check` OK. Aucune migration.
 
+Doc : `docs/maintenance/maintenance-media-eval-harness-batch2.md`.
 Pas d'entrée changelog (outillage interne).

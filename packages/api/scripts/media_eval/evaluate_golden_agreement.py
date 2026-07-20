@@ -30,18 +30,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.media_eval.schemas import (
-    BAREMES,
-    CRITERES_NIVEAUX,
     GoldenEntry,
     GoldenSet,
+    grille,
 )
 
 TOLERANCE_CONTINUE = 0.20  # |Δ| ≤ 20 % du barème (critère de succès V0)
 
 
 def _paire_accord(gold: GoldenEntry, gen: GoldenEntry) -> dict:
-    """Compare une paire (média, critère). Pur, testable."""
+    """Compare une paire (média, critère). Pur, testable.
+
+    La grille (critères à niveaux, barèmes) est résolue depuis la version du
+    gold : un run v1.3 se compare avec les paliers v1.3 (C2..C7 à niveaux).
+    """
     critere = gold.critere
+    g = grille(gold.version_methodo)
     resultat: dict = {
         "media": gold.media_domaine,
         "critere": critere,
@@ -64,7 +68,7 @@ def _paire_accord(gold: GoldenEntry, gen: GoldenEntry) -> dict:
             "delta": None,
         }
         return resultat
-    if critere in CRITERES_NIVEAUX:
+    if critere in g.criteres_niveaux:
         accord = gold.niveau == gen.niveau
         resultat |= {
             "accord": accord,
@@ -73,7 +77,7 @@ def _paire_accord(gold: GoldenEntry, gen: GoldenEntry) -> dict:
         }
         return resultat
     delta = abs((gold.score or 0) - (gen.score or 0))
-    accord = delta <= TOLERANCE_CONTINUE * BAREMES[critere]
+    accord = delta <= TOLERANCE_CONTINUE * g.baremes[critere]
     resultat |= {
         "accord": accord,
         "type_desaccord": None if accord else "score",

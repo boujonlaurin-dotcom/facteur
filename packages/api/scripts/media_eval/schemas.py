@@ -112,10 +112,14 @@ _BAREMES_V13: dict[str, int] = {
     "C1": 20, "C2": 15, "C3": 10, "C4": 5, "C5": 10,
     "C6": 10, "C7": 6, "C8": 4, "C9": 10, "C10": 10,
 }  # total 100 (axes 60/20/20)
-# Vague 1 v1.3 = critères évaluables hors corpus d'articles (= re-mapping du
-# batch 1). Les critères sur corpus (C2/C3/C4/C5 diversité/C7) arrivent au
-# batch 2 (collecte d'échantillons §5.4) avec leur registre TYPE_SIGNAUX.
-_CRITERES_VAGUE_1_V13 = ("C1", "C6", "C8", "C9", "C10")
+# Vague 1 v1.3 = les 10 critères de la grille. Le batch 1 (#989) n'avait remappé
+# que les critères hors corpus (C1/C6/C8/C9/C10) ; le batch 2 (harness corpus,
+# §5.4) active les critères sur corpus d'articles (C2/C3/C4/C5/C7) avec leur
+# registre TYPE_SIGNAUX.
+_CRITERES_VAGUE_1_V13 = ("C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10")
+# Critères dont l'évaluation repose sur un échantillon d'articles (§5.4) : un
+# bloc `corpus_articles` leur est joint dans l'eval_input (build_eval_input).
+_CRITERES_CORPUS_V13 = ("C2", "C3", "C4", "C5", "C7")
 _CRITERES_NIVEAUX_V13 = (
     "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10",
 )
@@ -134,10 +138,23 @@ _NIVEAU_SCORES_V13: dict[str, dict[int, int]] = {
 _PALIERS_V13: dict[str, tuple[int, ...]] = {
     c: tuple(sorted(set(scores.values()))) for c, scores in _NIVEAU_SCORES_V13.items()
 }
-# Registre des signaux : batch 1 v1.3 (structurels + tierces). Le C9 fusionné
-# hérite des signaux ex-C8 (engagement déontologique) ET ex-C11 (positionnement).
+# Registre des signaux v1.3. Batch 1 : structurels + tierces (C1/C6/C8/C9/C10).
+# Batch 2 (harness corpus §5.4) : critères sur échantillon d'articles
+# (C2/C4/C5/C7 = un bloc `articles` agrégé ; C3 = signaux structurels correction
+# + bloc `articles`). Le C9 fusionné hérite des signaux ex-C8 (engagement
+# déontologique) ET ex-C11 (positionnement).
 _TYPE_SIGNAUX_V13: dict[str, tuple[str, ...]] = {
     "C1": ("debunkage", "sanction_arcom", "condamnation_justice", "avis_cdjm"),
+    "C2": ("articles",),
+    "C3": (
+        "page_corrections",
+        "canal_signalement",
+        "reponse_evaluation_externe",
+        "articles",
+    ),
+    "C4": ("articles",),
+    "C5": ("articles",),
+    "C7": ("articles",),
     "C6": (
         "mentions_legales",
         "identification_proprietaire",
@@ -194,6 +211,7 @@ class Grille:
     fraicheur_max_jours: int
     axes: dict[str, tuple[str, ...]]
     criteres_double_eval: tuple[str, ...]
+    criteres_corpus: tuple[str, ...]
     lettres: list[tuple[int, str]]
 
     @property
@@ -214,6 +232,7 @@ GRILLES: dict[str, Grille] = {
         fraicheur_max_jours=_FRAICHEUR_V12,
         axes=_AXES_V12,
         criteres_double_eval=_DOUBLE_EVAL_V12,
+        criteres_corpus=(),  # v1.2 : pas de collecte de corpus instrumentée
         lettres=LETTRES,
     ),
     "v1.3": Grille(
@@ -227,6 +246,7 @@ GRILLES: dict[str, Grille] = {
         fraicheur_max_jours=_FRAICHEUR_V13,
         axes=_AXES_V13,
         criteres_double_eval=_DOUBLE_EVAL_V13,
+        criteres_corpus=_CRITERES_CORPUS_V13,
         lettres=LETTRES,
     ),
 }
@@ -431,6 +451,10 @@ class DebunkageArtifact(BaseModel):
     publie_at: date
     resume: str | None = None
     citation: str | None = None
+    # Clé d'affaire (§5.2.1 v1.3) : plusieurs débunkages d'un même événement
+    # partagent la même clé → un seul litige. Sert la dédup par affaire du
+    # comptage fallback C1 (build_eval_input) et la lecture de l'évaluateur.
+    cle_affaire: str | None = None
     source_urls: list[str] = Field(min_length=1)
     sources_consultees: list[str] = Field(default_factory=list)
 
@@ -457,6 +481,16 @@ class DebunkageArtifact(BaseModel):
 
     def poids_emetteur(self) -> str:
         return derive_poids_emetteur(self.emetteur)
+
+
+def cle_affaire_signal(valeur: dict | None) -> str | None:
+    """Clé d'affaire d'un signal débunkage (dédup §5.2.1), repli sur l'URL.
+
+    Côté lecture du contrat ``cle_affaire`` ci-dessus : le repli URL couvre les
+    signaux ingérés avant le batch 2 (1 débunkage = 1 litige).
+    """
+    valeur = valeur or {}
+    return valeur.get("cle_affaire") or valeur.get("url")
 
 
 # --------------------------------------------------------------------------- #

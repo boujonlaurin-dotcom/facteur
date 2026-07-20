@@ -39,6 +39,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import async_session_maker, engine
 from app.models.media_eval import (
+    MediaEvalCorpusArticle,
     MediaEvalDebunkage,
     MediaEvalEvaluation,
     MediaEvalSignal,
@@ -56,6 +57,7 @@ from scripts.media_eval.ingest_artifacts import IngestError, resoudre_media
 from scripts.media_eval.schemas import (
     FLAG_FALLBACK_C1,
     VERSION_METHODO,
+    cle_affaire_signal,
     grille,
 )
 
@@ -66,6 +68,12 @@ DEFAULT_OUT_ROOT = _REPO_ROOT / ".context" / "media_eval"
 # Substance de la page jointe au signal pour que l'évaluateur voie ce que dit
 # la page (pas seulement qu'elle existe) — cf. hand-off « mini-filtre ».
 SNAPSHOT_EXTRAIT_MAX = 4000
+
+# Bloc corpus (§5.4) joint aux critères sur échantillon (C2/C3/C4/C5/C7) : les
+# articles instrumentés par collect_corpus_articles sont un **contexte** que
+# l'évaluateur vérifie ; l'ancre citable reste le signal `articles` (voie B).
+CORPUS_EXTRAIT_MAX = 2000  # extrait par article (l'agent voie B a le texte plein)
+CORPUS_ARTICLES_MAX = 40  # plafond §5.4 (20-40 articles informatifs)
 
 
 def rubrics_dir(version: str) -> Path:
@@ -123,9 +131,16 @@ def construire_eval_input(
     contrat_commun: str,
     version_prompt_sha: str,
     pre_flags: list[str],
+    corpus_articles: list[dict] | None = None,
 ) -> dict:
-    """Payload lu par l'agent évaluateur — pur, testable sans DB."""
-    return {
+    """Payload lu par l'agent évaluateur — pur, testable sans DB.
+
+    ``corpus_articles`` (critères sur corpus §5.4) est un **contexte** non
+    citable : l'évaluateur note d'après le signal ``articles`` (métriques
+    agrégées) et vérifie ses affirmations sur cet échantillon. Absent pour les
+    critères hors corpus.
+    """
+    payload = {
         "media": media,
         "critere": critere,
         "run_id": run_id,
@@ -138,6 +153,9 @@ def construire_eval_input(
         "pre_flags": pre_flags,
         "signaux": signaux,
     }
+    if corpus_articles is not None:
+        payload["corpus_articles"] = corpus_articles
+    return payload
 
 
 async def _signaux_du_critere(session, media_id, run_id: str, critere: str):
@@ -169,16 +187,54 @@ async def _charger_snapshots(
 async def _nb_debunkages_frais(
     session, media_id, run_id: str, aujourd_hui: date, version: str
 ) -> int:
+    """Nombre d'**affaires** distinctes débunkées dans la fenêtre (fallback C1).
+
+    Dédup par clé d'affaire (§5.2.1) : plusieurs débunkages d'un même événement
+    comptent pour un seul litige. Sans clé d'affaire qualifiée, le repli sur
+    l'URL préserve le comptage un-par-débunkage.
+    """
     fenetre = grille(version).fraicheur_max_jours
     rows = await session.execute(
-        select(MediaEvalDebunkage.publie_at)
+        select(MediaEvalDebunkage.publie_at, MediaEvalSignal.valeur)
         .join(MediaEvalSignal, MediaEvalSignal.id == MediaEvalDebunkage.signal_id)
         .where(
             MediaEvalDebunkage.media_id == media_id,
             MediaEvalSignal.run_id == run_id,
         )
     )
-    return sum(1 for (publie_at,) in rows if (aujourd_hui - publie_at).days <= fenetre)
+    affaires: set[str] = set()
+    for publie_at, valeur in rows:
+        if (aujourd_hui - publie_at).days > fenetre:
+            continue
+        affaires.add(cle_affaire_signal(valeur) or str(publie_at))
+    return len(affaires)
+
+
+async def _charger_corpus_articles(
+    session, media_id, run_id: str
+) -> list[dict]:
+    """Échantillon d'articles instrumenté (§5.4), joint comme contexte corpus."""
+    rows = await session.execute(
+        select(MediaEvalCorpusArticle)
+        .where(
+            MediaEvalCorpusArticle.media_id == media_id,
+            MediaEvalCorpusArticle.run_id == run_id,
+        )
+        .order_by(MediaEvalCorpusArticle.date_pub.desc().nullslast())
+        .limit(CORPUS_ARTICLES_MAX)
+    )
+    return [
+        {
+            "url": a.url,
+            "titre": a.titre,
+            "date_pub": a.date_pub.isoformat() if a.date_pub else None,
+            "rubrique": a.rubrique,
+            "mode_acquisition": a.mode_acquisition,
+            "pre_metriques": a.pre_metriques,
+            "extrait": (a.texte or "")[:CORPUS_EXTRAIT_MAX],
+        }
+        for a in rows.scalars()
+    ]
 
 
 async def ecrire_eval_jti(
@@ -248,6 +304,15 @@ async def run(
             nb_debunkages = await _nb_debunkages_frais(
                 session, media.id, run_id, aujourd_hui, version
             )
+            corpus_articles = None
+            if grille_run.criteres_corpus:
+                corpus_articles = await _charger_corpus_articles(
+                    session, media.id, run_id
+                )
+                print(
+                    f"corpus §5.4 : {len(corpus_articles)} article(s) instrumenté(s) "
+                    f"joints aux critères {', '.join(grille_run.criteres_corpus)}"
+                )
             ecrits: list[Path] = []
             jti_applique = False
 
@@ -300,6 +365,11 @@ async def run(
                     contrat_commun=contrat_commun,
                     version_prompt_sha=version_prompt(critere, version),
                     pre_flags=pre_flags,
+                    corpus_articles=(
+                        corpus_articles
+                        if critere in grille_run.criteres_corpus
+                        else None
+                    ),
                 )
                 out_dir.mkdir(parents=True, exist_ok=True)
                 out_path = out_dir / f"{media.domaine.replace('.', '_')}_{critere}.json"
