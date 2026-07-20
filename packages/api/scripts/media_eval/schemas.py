@@ -106,6 +106,9 @@ _AXES_V12: dict[str, tuple[str, ...]] = {
     "axe3_independance": ("C9", "C10", "C11"),
 }
 _DOUBLE_EVAL_V12 = ("C9", "C11")
+# Couverture attendue de la voie B gouvernance (rapport_couverture) : le
+# silence est interdit, chaque type de signal doit être adressé.
+_GOUVERNANCE_V12 = ("C5", "C7", "C8", "C9", "C11")
 
 # ---- v1.3 : 10 critères, axes 60/20/20, tous à niveaux ---------------------- #
 _BAREMES_V13: dict[str, int] = {
@@ -192,6 +195,10 @@ _AXES_V13: dict[str, tuple[str, ...]] = {
     "axe3_independance": ("C9", "C10"),  # 20
 }
 _DOUBLE_EVAL_V13 = ("C5", "C9", "C10")  # critères à 3 niveaux (décision PO)
+# Gouvernance v1.3 = les critères structurels de la voie B (hors corpus et hors
+# C1/débunkages). Les signaux structurels de C3 (page_corrections…) viennent du
+# collecteur corpus, pas de la voie B gouvernance : C3 exclu du contrôle.
+_GOUVERNANCE_V13 = ("C6", "C8", "C9", "C10")
 
 # Lettres A–E sur le score renormalisé /100 (méthodo §4.4.1) — communes.
 LETTRES: list[tuple[int, str]] = [(85, "A"), (70, "B"), (55, "C"), (40, "D"), (0, "E")]
@@ -212,6 +219,7 @@ class Grille:
     axes: dict[str, tuple[str, ...]]
     criteres_double_eval: tuple[str, ...]
     criteres_corpus: tuple[str, ...]
+    criteres_gouvernance: tuple[str, ...]
     lettres: list[tuple[int, str]]
 
     @property
@@ -233,6 +241,7 @@ GRILLES: dict[str, Grille] = {
         axes=_AXES_V12,
         criteres_double_eval=_DOUBLE_EVAL_V12,
         criteres_corpus=(),  # v1.2 : pas de collecte de corpus instrumentée
+        criteres_gouvernance=_GOUVERNANCE_V12,
         lettres=LETTRES,
     ),
     "v1.3": Grille(
@@ -247,6 +256,7 @@ GRILLES: dict[str, Grille] = {
         axes=_AXES_V13,
         criteres_double_eval=_DOUBLE_EVAL_V13,
         criteres_corpus=_CRITERES_CORPUS_V13,
+        criteres_gouvernance=_GOUVERNANCE_V13,
         lettres=LETTRES,
     ),
 }

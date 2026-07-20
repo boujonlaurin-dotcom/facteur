@@ -208,6 +208,12 @@ class TestGrilleV13:
         assert grille("v1.2").criteres_corpus == ()
         assert g.fraicheur_max_jours == 1095
         assert g.criteres_double_eval == ("C5", "C9", "C10")
+        # Couverture voie B gouvernance (rapport_couverture) — structurels hors
+        # corpus et hors C1 ; C3 (corrections) vient du collecteur corpus.
+        assert g.criteres_gouvernance == ("C6", "C8", "C9", "C10")
+        assert grille("v1.2").criteres_gouvernance == (
+            "C5", "C7", "C8", "C9", "C11",
+        )
 
     def test_registre_type_signaux_corpus(self):
         g = grille("v1.3")

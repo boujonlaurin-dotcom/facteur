@@ -209,6 +209,33 @@ class TestCouverture:
         assert any("C9/societe_journalistes" in m for m in manquants)
         assert any("C7/politique_publicitaire" in m for m in manquants)
 
+    async def test_couverture_v13_suit_la_grille_du_batch(
+        self, db_session, media_cnews
+    ):
+        # Batch v1.3 (run non enregistré → repli sur la version du batch) : les
+        # manquants citent la gouvernance v1.3 (C6/C10), jamais C5/C11 (v1.2).
+        batch = SignalBatchArtifact.model_validate(
+            {
+                "run_id": "run-test-v13",
+                "agent": "agent:media-eval-collecteur-gouvernance@v1",
+                "genere_at": "2026-07-20T08:00:00",
+                "version_methodo": "v1.3",
+                "items": [
+                    {
+                        "media_domaine": "cnews.fr",
+                        "critere": "C9",
+                        "type_signal": "charte_deontologique",
+                        "statut": "present",
+                        "source_urls": ["https://cnews.fr/charte"],
+                    }
+                ],
+            }
+        )
+        manquants = await rapport_couverture(db_session, [batch])
+        assert any("C6/identification_proprietaire" in m for m in manquants)
+        assert any("C10/societe_journalistes" in m for m in manquants)
+        assert not any("C5/" in m or "C11/" in m for m in manquants)
+
 
 class TestDryRun:
     async def test_rollback_n_ecrit_rien(self, db_session, media_cnews):

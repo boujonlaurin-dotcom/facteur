@@ -162,7 +162,7 @@ class TestPropreteDonnees:
                 sources=["https://cnews.fr/mentions", "https://pappers.fr/x"],
             )
         ]
-        prop = evaluer_proprete_donnees(signaux, [], {})
+        prop = evaluer_proprete_donnees(signaux, [], {}, "v1.2")
         cell = self._note(prop, "cnews.fr", "C5")
         assert cell["note"] == NOTE_RICHE
         assert cell["corrobore"] is True
@@ -178,7 +178,7 @@ class TestPropreteDonnees:
                 sources=["https://cnews.fr/a", "https://www.cnews.fr/b"],
             )
         ]
-        prop = evaluer_proprete_donnees(signaux, [], {})
+        prop = evaluer_proprete_donnees(signaux, [], {}, "v1.2")
         cell = self._note(prop, "cnews.fr", "C7")
         assert cell["note"] == NOTE_PARTIEL
         assert cell["corrobore"] is False
@@ -195,7 +195,7 @@ class TestPropreteDonnees:
                 consultees=["https://reporterre.net/charte", "https://cdjm.org"],
             ),
         ]
-        prop = evaluer_proprete_donnees(signaux, [], {})
+        prop = evaluer_proprete_donnees(signaux, [], {}, "v1.2")
         assert self._note(prop, "cnews.fr", "C1")["note"] == NOTE_BLOQUE
         assert self._note(prop, "reporterre.net", "C8")["note"] == NOTE_ABSENT
         # La distinction se lit dans le rollup : bloque compté comme trou.
@@ -211,7 +211,7 @@ class TestPropreteDonnees:
                 "statut": "non_applicable",
             }
         ]
-        prop = evaluer_proprete_donnees(signaux, evals, {})
+        prop = evaluer_proprete_donnees(signaux, evals, {}, "v1.2")
         assert self._note(prop, "reporterre.net", "C1")["note"] == NOTE_NA
 
     def test_cellule_sans_signal_ni_eval_ignoree(self):
@@ -219,6 +219,7 @@ class TestPropreteDonnees:
             [_signal("cnews.fr", "C5", "present", sources=["https://cnews.fr/x"])],
             [],
             {},
+            "v1.2",
         )
         criteres = {c["critere"] for c in prop["cellules"]}
         assert criteres == {"C5"}  # les autres critères ne sont pas inventés
@@ -233,7 +234,7 @@ class TestPropreteDonnees:
             ),
             _signal("cnews.fr", "C1", "bloque_acces"),
         ]
-        prop = evaluer_proprete_donnees(signaux, [], {})
+        prop = evaluer_proprete_donnees(signaux, [], {}, "v1.2")
         assert prop["global"]["n_signaux"] == 2
         assert prop["global"]["n_corrobore"] == 1
         assert prop["global"]["pct_corrobore"] == 1.0  # 1 corroboré / 1 avec donnée
@@ -303,7 +304,7 @@ def _rapport_data_synthetique():
     for e in evals:
         par_media.setdefault(e["media_domaine"], []).append(e)
     for media, evs in par_media.items():
-        fiches[media] = compute_fiche(evs)
+        fiches[media] = compute_fiche(evs, "v1.2")
     accord = {
         "n": 4,
         "accord_global": 0.75,
@@ -353,7 +354,7 @@ class TestRenderHtml:
     def _html(self):
         data = _rapport_data_synthetique()
         prop = evaluer_proprete_donnees(
-            data["signaux"], data["evaluations"], data["fiches"]
+            data["signaux"], data["evaluations"], data["fiches"], "v1.2"
         )
         return render_html(data, prop)
 
@@ -403,7 +404,7 @@ class TestRenderHtml:
             )
         )
         prop = evaluer_proprete_donnees(
-            data["signaux"], data["evaluations"], data["fiches"]
+            data["signaux"], data["evaluations"], data["fiches"], "v1.2"
         )
         page = render_html(data, prop)
         assert "d-human" in page and "b-human" in page
@@ -414,7 +415,7 @@ class TestRenderHtml:
         for c in data["verdict"]:
             c["pass"] = True
         prop = evaluer_proprete_donnees(
-            data["signaux"], data["evaluations"], data["fiches"]
+            data["signaux"], data["evaluations"], data["fiches"], "v1.2"
         )
         page = render_html(data, prop)
         assert "V0 VALIDÉ" in page
