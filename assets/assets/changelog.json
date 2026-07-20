@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Essentiel",
+      "summary": "L'Essentiel devient une surface vivante : tu y reviens toujours, et au fil de la journée il s'enrichit de contenu frais de tes sources et thèmes préférés. Une pastille « N nouveaux depuis ce matin » signale ce qui est arrivé depuis ta lettre du jour."
+    },
+    {
       "tag": "Rituel",
       "summary": "Ta lettre du matin est le passage vers l'Essentiel : à l'ouverture de l'app comme depuis une notification, tu la découvres d'abord, puis tu accèdes à ta tournée."
     },
