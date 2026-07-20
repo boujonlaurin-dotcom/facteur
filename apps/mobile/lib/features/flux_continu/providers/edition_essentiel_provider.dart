@@ -281,7 +281,9 @@ class EditionEssentielNotifier extends AsyncNotifier<EditionEssentielState> {
     bool serein,
   ) async {
     try {
-      return await _essentielRepo.fetch(serein: serein, date: date);
+      // Le sélecteur d'éditions passées n'affiche pas le delta « depuis ce
+      // matin » (édition figée) : on ne garde que les articles.
+      return (await _essentielRepo.fetch(serein: serein, date: date))?.articles;
     } catch (_) {
       return null;
     }

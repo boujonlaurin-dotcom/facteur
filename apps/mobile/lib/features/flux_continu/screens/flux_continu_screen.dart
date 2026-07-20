@@ -2,7 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
-    show ValueListenable, defaultTargetPlatform, setEquals, TargetPlatform;
+    show
+        ValueListenable,
+        defaultTargetPlatform,
+        setEquals,
+        TargetPlatform,
+        visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +16,7 @@ import 'package:go_router/go_router.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
@@ -29,6 +35,7 @@ import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
 import '../../feedback/widgets/feedback_closing_card.dart';
+import '../../gamification/providers/streak_activity_provider.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
 import '../../notif_du_jour/widgets/notif_du_jour_card.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
@@ -92,6 +99,103 @@ const double kSnapTopSafety = 4.0;
 /// pull-to-refresh hint pill — avoids nudging after a tiny inertia scroll.
 const double _kPullHintMinDepthPx = 800.0;
 
+/// Story 9.8 « L'Essentiel dynamique au retour » — cooldown avant qu'un retour
+/// au premier plan ne rafraîchisse L'Essentiel.
+///
+/// Inspiré d'Instagram / LinkedIn : un aller-retour éclair (lire une notif,
+/// copier un lien, basculer une seconde vers une autre app) ne DOIT pas
+/// recharger le feed et coûter à l'utilisateur le fil de sa progression. Seul un
+/// vrai « je reviens plus tard » (≥ ce délai) déclenche un refresh — et
+/// uniquement quand l'utilisateur est en haut du feed (cf.
+/// [shouldRefreshEssentielOnForeground]). Ce même délai borne l'intervalle
+/// minimal entre deux refresh (anti-thrash sur des cycles background/foreground
+/// rapprochés). Nettement plus court que le seuil widget Flâner (30 min) :
+/// L'Essentiel est désormais la surface vivante, il doit se sentir « frais » au
+/// retour sans jamais sursauter.
+const Duration essentielForegroundRefreshCooldown = Duration(minutes: 2);
+
+/// Décision pure du refresh au foreground de L'Essentiel. Retourne `true`
+/// seulement si TOUT est vrai :
+/// - [atTop] : l'utilisateur est en haut du feed Essentiel. Rafraîchir en cours
+///   de lecture décalerait le contenu sous ses yeux → perte du fil ;
+/// - [backgroundedFor] est connu ET ≥ [essentielForegroundRefreshCooldown] :
+///   l'app est restée assez longtemps en arrière-plan (les bascules éclair ne
+///   rechargent jamais — c'est le « cooldown » anti-toggle) ;
+/// - [sinceLastRefresh] est `null` (jamais rafraîchi) OU ≥ le cooldown : pas de
+///   refresh en rafale sur des reprises rapprochées.
+///
+/// Contrairement à [shouldRefreshFlanerOnForeground] (widget), un
+/// [backgroundedFor] inconnu ne déclenche **pas** de refresh : on préfère un
+/// faux négatif silencieux à un rechargement injustifié qui casserait la lecture.
+@visibleForTesting
+bool shouldRefreshEssentielOnForeground({
+  required bool atTop,
+  required Duration? backgroundedFor,
+  required Duration? sinceLastRefresh,
+}) {
+  if (!atTop) return false;
+  if (backgroundedFor == null ||
+      backgroundedFor < essentielForegroundRefreshCooldown) {
+    return false;
+  }
+  if (sinceLastRefresh != null &&
+      sinceLastRefresh < essentielForegroundRefreshCooldown) {
+    return false;
+  }
+  return true;
+}
+
+/// Comptabilité de la session Essentiel pour le garde-fou doomscroll (story
+/// 9.8). Chrono **foreground** (suspendu en arrière-plan) + flag de complétion
+/// de la carte de clôture, avec émission fire-once. Pur et à horloge injectée
+/// (`now`) → testable sans monter l'écran (cf. `shouldRefreshEssentielOnForeground`).
+@visibleForTesting
+class DigestSessionTracker {
+  Duration _elapsed = Duration.zero;
+  DateTime? _foregroundSince;
+  bool _closureAchieved = false;
+  bool _emitted = false;
+
+  bool get closureAchieved => _closureAchieved;
+  bool get hasEmitted => _emitted;
+
+  /// Démarre (ou redémarre) le chrono foreground à `now`.
+  void start(DateTime now) => _foregroundSince = now;
+
+  /// Suspend le chrono : verse l'intervalle courant dans le cumul. Idempotent
+  /// (no-op si déjà suspendu) — le temps en arrière-plan ne compte jamais.
+  void pause(DateTime now) {
+    final since = _foregroundSince;
+    if (since == null) return;
+    _elapsed += now.difference(since);
+    _foregroundSince = null;
+  }
+
+  /// Relance le chrono au retour au premier plan.
+  void resume(DateTime now) => _foregroundSince = now;
+
+  /// Marque la carte de clôture atteinte (fire-once implicite : idempotent).
+  void markClosureSeen() => _closureAchieved = true;
+
+  /// Durée foreground cumulée à `now`, sans muter l'état (pour l'inspection).
+  Duration elapsedAt(DateTime now) {
+    final since = _foregroundSince;
+    return since == null ? _elapsed : _elapsed + now.difference(since);
+  }
+
+  /// Charge à émettre **une seule fois** (durée + clôture), ou `null` si déjà
+  /// émise. Suspend le chrono au passage.
+  ({int totalTimeSeconds, bool closureAchieved})? finish(DateTime now) {
+    if (_emitted) return null;
+    _emitted = true;
+    pause(now);
+    return (
+      totalTimeSeconds: _elapsed.inSeconds,
+      closureAchieved: _closureAchieved,
+    );
+  }
+}
+
 /// Onglets sticky des deux cartes virtuelles.
 /// Accent intentionnellement neutre/crème (vs les accents vifs des sections
 /// éditoriales) pour signaler visuellement que Grille et Citation sont du
@@ -129,7 +233,8 @@ class FluxContinuScreen extends ConsumerStatefulWidget {
   ConsumerState<FluxContinuScreen> createState() => _FluxContinuScreenState();
 }
 
-class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
+class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scroll = ScrollController();
 
   /// Contrôleur dédié au mode « édition passée » (sélecteur de date). Séparé du
@@ -229,6 +334,19 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
 
+  /// Story 9.8 — horodatages du dernier passage en arrière-plan et du dernier
+  /// refresh au foreground, pour le cooldown anti-refresh-intempestif
+  /// (cf. [shouldRefreshEssentielOnForeground]).
+  DateTime? _backgroundedAt;
+  DateTime? _lastForegroundRefreshAt;
+
+  /// Story 9.8 — instrumentation « garde-fou doomscroll ». Durée foreground de
+  /// la session Essentiel + complétion de la carte de clôture, émises une fois
+  /// via `trackDigestSession` au [dispose]. Toute la comptabilité vit dans
+  /// [DigestSessionTracker] (pur, testable).
+  final DigestSessionTracker _sessionTracker = DigestSessionTracker();
+  int _lastKnownStreak = 0;
+
   /// Premier paint : on force le squelette (cartes vides à en-têtes réels) pour
   /// la toute première frame, **même si les données sont déjà prêtes**. À
   /// l'arrivée depuis le rituel matinal, l'édition est préchargée → l'écran
@@ -244,6 +362,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   @override
   void initState() {
     super.initState();
+    // Observe le cycle de vie pour ré-actualiser L'Essentiel au retour au
+    // premier plan (story 9.8, cf. [didChangeAppLifecycleState]).
+    WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_onScroll);
     // Compte une ouverture du feed par montage de l'écran. Alimente la bannière
     // de demande de géoloc (déclenchée après 5 ouvertures, cf.
@@ -254,10 +375,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() => _firstPaintDone = true);
     });
+    // Démarre le chrono de session Essentiel (garde-fou doomscroll, story 9.8).
+    _sessionTracker.start(DateTime.now());
   }
 
   @override
   void dispose() {
+    // Émet la session digest avant de démonter (ref encore valide).
+    _emitDigestSession();
+    WidgetsBinding.instance.removeObserver(this);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _editionScroll.dispose();
@@ -617,6 +743,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
       setState(_pendingFeedback.clear);
     }
     await ref.read(fluxContinuProvider.notifier).refresh();
+    // Un refresh explicite réarme le cooldown foreground : pas de double refetch
+    // si l'app repasse en arrière-plan puis revient juste après.
+    _lastForegroundRefreshAt = DateTime.now();
     if (!mounted) return;
     if (_scroll.hasClients) {
       unawaited(
@@ -627,6 +756,84 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
         ),
       );
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState appState) {
+    if (appState == AppLifecycleState.paused) {
+      _backgroundedAt = DateTime.now();
+      // Suspend le chrono de session : le temps en arrière-plan ne compte pas.
+      _sessionTracker.pause(DateTime.now());
+    } else if (appState == AppLifecycleState.resumed) {
+      // Relance le chrono foreground puis tente la ré-actualisation.
+      _sessionTracker.resume(DateTime.now());
+      _maybeRefreshEssentielOnForeground();
+    }
+  }
+
+  /// Émet la session digest (garde-fou doomscroll, story 9.8) — durée foreground
+  /// cumulée + complétion de la carte de clôture. Fire-once (délégué au
+  /// [DigestSessionTracker]). Best-effort : n'impacte jamais le teardown.
+  void _emitDigestSession() {
+    final payload = _sessionTracker.finish(DateTime.now());
+    if (payload == null) return;
+    // Les compteurs par-article ne sont pas instrumentés ici (hors périmètre du
+    // garde-fou) : seuls comptent la durée et la complétion de clôture.
+    unawaited(
+      ref.read(analyticsServiceProvider).trackDigestSession(
+            digestDate: DateTime.now().toIso8601String().split('T').first,
+            articlesRead: 0,
+            articlesSaved: 0,
+            articlesDismissed: 0,
+            articlesPassed: 0,
+            totalTimeSeconds: payload.totalTimeSeconds,
+            closureAchieved: payload.closureAchieved,
+            streak: _lastKnownStreak,
+          ),
+    );
+  }
+
+  /// Story 9.8 — au retour au premier plan, L'Essentiel se ré-actualise « comme
+  /// un feed vivant », mais **sans jamais casser la lecture en cours**. On ne
+  /// rafraîchit que si :
+  /// - l'utilisateur regarde effectivement le feed Essentiel (route exacte
+  ///   `/flux-continu` — pas un article ouvert, pas l'onglet Flâner) ;
+  /// - il est **en haut** de ce feed (sticky bar pas encore révélée) ;
+  /// - le passage en arrière-plan a duré assez longtemps et le cooldown est
+  ///   écoulé ([shouldRefreshEssentielOnForeground]).
+  ///
+  /// Le refresh passe par [FluxContinuNotifier.refresh] (sans `AsyncLoading` →
+  /// pas de squelette) ; l'utilisateur étant en haut, le hero (index 0) reste en
+  /// place : la ré-actualisation est invisible, zéro saut de scroll.
+  void _maybeRefreshEssentielOnForeground() {
+    if (!mounted) return;
+    final backgroundedAt = _backgroundedAt;
+    _backgroundedAt = null;
+    final now = DateTime.now();
+    final backgroundedFor =
+        backgroundedAt == null ? null : now.difference(backgroundedAt);
+    final sinceLastRefresh = _lastForegroundRefreshAt == null
+        ? null
+        : now.difference(_lastForegroundRefreshAt!);
+    final onEssentielRoot =
+        GoRouter.of(context).routerDelegate.currentConfiguration.uri.path ==
+            RoutePaths.fluxContinu;
+    // « En haut » = feed Essentiel visible, son scroll attaché, au ras du sommet
+    // (sous le seuil sticky). En mode édition passée, le CustomScrollView live
+    // n'est pas monté → `_scroll` sans clients → traité « pas en haut » → aucun
+    // refresh (on ne touche pas au live pendant qu'une édition passée est ouverte).
+    final atTop = onEssentielRoot &&
+        _scroll.hasClients &&
+        _scroll.offset <= _kStickyThreshold;
+    if (!shouldRefreshEssentielOnForeground(
+      atTop: atTop,
+      backgroundedFor: backgroundedFor,
+      sinceLastRefresh: sinceLastRefresh,
+    )) {
+      return;
+    }
+    _lastForegroundRefreshAt = now;
+    unawaited(ref.read(fluxContinuProvider.notifier).refresh());
   }
 
   /// Opens the dedicated full-page view for a [FeedThemeSection]. The
@@ -1031,6 +1238,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(fluxContinuProvider);
     final data = state.valueOrNull;
+    // Snapshot best-effort du streak courant pour l'event de session (garde-fou
+    // doomscroll, story 9.8) : lu au fil des builds, consommé au dispose.
+    _lastKnownStreak =
+        ref.read(streakActivityProvider).valueOrNull?.currentStreak ??
+            _lastKnownStreak;
     // EPIC « Lettre du jour » — sélection de date du bloc Essentiel. Hors
     // « Aujourd'hui », on rend une lettre passée autonome (lecture seule) et on
     // masque la tournée live + son sticky/snap (incohérent avec une édition
@@ -1337,15 +1549,26 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen> {
                 // visuelle mesurée par les ancres de snap. Sa hauteur change en
                 // asynchrone (résolution invite / vote → « Merci ») ⇒ elle
                 // signale ces relayouts pour rafraîchir les ancres de snap.
-                child: ClosingCardV18(
-                  onContinue: () => context.go(RoutePaths.flaner),
-                  onClose: isAndroid ? () => SystemNavigator.pop() : null,
-                  closeHint: isAndroid
-                      ? null
-                      : 'Vous pouvez refermer l’app — à demain',
-                  secondary: FeedbackClosingCard(
-                    embedded: true,
-                    onLayoutChanged: _scheduleAnchorRecompute,
+                // Enveloppée d'un VisibilityDetector (garde-fou doomscroll,
+                // story 9.8) : la clôture est « atteinte » dès qu'elle est
+                // visible à ≥ 50 %, fire-once (`_closingCardSeen`).
+                child: VisibilityDetector(
+                  key: const ValueKey('closing_card_vis'),
+                  onVisibilityChanged: (info) {
+                    if (info.visibleFraction >= 0.5) {
+                      _sessionTracker.markClosureSeen();
+                    }
+                  },
+                  child: ClosingCardV18(
+                    onContinue: () => context.go(RoutePaths.flaner),
+                    onClose: isAndroid ? () => SystemNavigator.pop() : null,
+                    closeHint: isAndroid
+                        ? null
+                        : 'Vous pouvez refermer l’app — à demain',
+                    secondary: FeedbackClosingCard(
+                      embedded: true,
+                      onLayoutChanged: _scheduleAnchorRecompute,
+                    ),
                   ),
                 ),
               ),

@@ -99,6 +99,7 @@ class SectionBlock extends StatelessWidget {
             // « rewind » de l'en-tête de la carte subsiste, lui.
             EssentielHiFiCard(
               articles: section.articles,
+              newSinceMorning: section.newSinceMorning,
               onTapArticle: (a) => onTapArticle(a),
             ),
             const SizedBox(height: 16),

@@ -65,7 +65,8 @@ class _FakeAuthNotifier extends StateNotifier<app_auth.AuthState>
 
 class _StubEssentielRepository implements EssentielRepository {
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => const [];
+  Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
+      (articles: const <EssentielArticle>[], newSinceMorning: 0);
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -1522,7 +1523,9 @@ void main() {
 
         final essentielRepo = _MockEssentielRepository();
         when(() => essentielRepo.fetch(serein: any(named: 'serein')))
-            .thenAnswer((_) async => const <EssentielArticle>[]);
+            .thenAnswer(
+          (_) async => (articles: const <EssentielArticle>[], newSinceMorning: 0),
+        );
 
         final container = ProviderContainer(
           overrides: [
@@ -1588,29 +1591,32 @@ class _OneArticleEssentielRepository implements EssentielRepository {
   final EssentielArticle _article;
 
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => [
-        _article,
-        EssentielArticle(
-          contentId: '${_article.contentId}-filler-1',
-          title: 'Filler 1',
-          url: 'https://x.test/${_article.contentId}-filler-1',
-          publishedAt: DateTime(2026, 1, 1),
-          sourceName: 'Source',
-          sourceLetter: 'S',
-          sectionLabel: 'Tech',
-          rank: 2,
-        ),
-        EssentielArticle(
-          contentId: '${_article.contentId}-filler-2',
-          title: 'Filler 2',
-          url: 'https://x.test/${_article.contentId}-filler-2',
-          publishedAt: DateTime(2026, 1, 1),
-          sourceName: 'Source',
-          sourceLetter: 'S',
-          sectionLabel: 'Tech',
-          rank: 3,
-        ),
-      ];
+  Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async => (
+        articles: [
+          _article,
+          EssentielArticle(
+            contentId: '${_article.contentId}-filler-1',
+            title: 'Filler 1',
+            url: 'https://x.test/${_article.contentId}-filler-1',
+            publishedAt: DateTime(2026, 1, 1),
+            sourceName: 'Source',
+            sourceLetter: 'S',
+            sectionLabel: 'Tech',
+            rank: 2,
+          ),
+          EssentielArticle(
+            contentId: '${_article.contentId}-filler-2',
+            title: 'Filler 2',
+            url: 'https://x.test/${_article.contentId}-filler-2',
+            publishedAt: DateTime(2026, 1, 1),
+            sourceName: 'Source',
+            sourceLetter: 'S',
+            sectionLabel: 'Tech',
+            rank: 3,
+          ),
+        ],
+        newSinceMorning: 0,
+      );
 }
 
 /// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.
@@ -1619,5 +1625,6 @@ class _FixedEssentielRepository implements EssentielRepository {
   final List<EssentielArticle> _articles;
 
   @override
-  Future<List<EssentielArticle>?> fetch({bool? serein, DateTime? date}) async => _articles;
+  Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
+      (articles: _articles, newSinceMorning: 0);
 }

@@ -268,4 +268,54 @@ void main() {
 
     expect(_currentPath(router), RoutePaths.fluxContinu);
   });
+
+  // ---------------------------------------------------------------------------
+  // Story 9.8 « L'Essentiel dynamique au retour » : l'auto-redirect « déjà
+  // parcouru → Flâner » est retiré. L'atterrissage post-auth reste TOUJOURS
+  // L'Essentiel, même une fois la tournée du jour parcourue.
+  // ---------------------------------------------------------------------------
+  testWidgets(
+      'Story 9.8: L\'Essentiel déjà parcouru ne renvoie plus vers Flâner',
+      (WidgetTester tester) async {
+    _useTallSurface(tester);
+    // Rituel vu (pas de /edition) + Essentiel déjà parcouru aujourd'hui :
+    // avant la story 9.8, postAuthHomePath renvoyait vers /flaner.
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      TourneeProgressService.morningRitualPrefsKey(DateTime.now()): true,
+      TourneeProgressService.essentielViewedPrefsKey(DateTime.now()): true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+
+    final container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => FakeAuthStateNotifier(
+            AuthState(
+              user: _confirmedSocialUser(),
+              isLoading: false,
+              needsOnboarding: false,
+              onboardingStatusKnown: true,
+            ),
+          ),
+        ),
+        sharedPreferencesProvider.overrideWithValue(prefs),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final router = container.read(routerProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Atterrissage post-auth : toujours L'Essentiel, jamais Flâner.
+    expect(_currentPath(router), RoutePaths.fluxContinu);
+    expect(_currentPath(router), isNot(RoutePaths.flaner));
+  });
 }

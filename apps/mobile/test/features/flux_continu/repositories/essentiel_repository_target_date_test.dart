@@ -56,4 +56,27 @@ void main() {
     expect(captured?['serein'], true);
     expect(captured?['target_date'], '2026-06-20');
   });
+
+  test('fetch() lit new_since_this_morning quand présent', () async {
+    when(
+      () => dio.get<dynamic>(
+        'essentiel',
+        queryParameters: any(named: 'queryParameters'),
+      ),
+    ).thenAnswer(
+      (_) async => Response<dynamic>(
+        requestOptions: RequestOptions(path: 'essentiel'),
+        statusCode: 200,
+        data: const {'articles': <dynamic>[], 'new_since_this_morning': 4},
+      ),
+    );
+    final result = await repo.fetch();
+    expect(result?.newSinceMorning, 4);
+  });
+
+  test('fetch() retombe à 0 quand new_since_this_morning est absent', () async {
+    // Le stub par défaut (setUp) ne renvoie pas le champ.
+    final result = await repo.fetch();
+    expect(result?.newSinceMorning, 0);
+  });
 }
