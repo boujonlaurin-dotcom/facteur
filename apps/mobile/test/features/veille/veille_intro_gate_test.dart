@@ -10,7 +10,7 @@ Widget _host({required bool isPremium}) {
   return ProviderScope(
     overrides: [
       premiumGateProvider.overrideWithValue(
-        PremiumGate(isPremium: isPremium, followedSourcesCount: 0),
+        PremiumGate(isPremium: isPremium),
       ),
     ],
     child: MaterialApp(

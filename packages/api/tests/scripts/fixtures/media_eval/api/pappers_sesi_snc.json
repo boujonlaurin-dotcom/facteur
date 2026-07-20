@@ -1,0 +1,12 @@
+{
+  "siren": "412916215",
+  "nom_entreprise": "SESI",
+  "capital": 7500,
+  "forme_juridique": "SNC, societe en nom collectif",
+  "representants": [
+    {"nom_complet": "Gerald-Brice VIRET", "qualite": "Gerant"}
+  ],
+  "beneficiaires_effectifs": [
+    {"nom_complet": "Groupe Canal Plus", "pourcentage_parts": 100.0}
+  ]
+}

@@ -473,25 +473,12 @@ class _ContentShortcuts extends ConsumerWidget {
     // sinon → libellé incitatif vers la création.
     final hasVeille = ref.watch(veilleActiveConfigProvider).valueOrNull != null;
     final gate = ref.watch(premiumGateProvider);
-    final colors = context.facteurColors;
     return _SheetCard(
       child: Column(
         children: [
           _ShortcutTile(
             icon: PhosphorIcons.bookOpen(PhosphorIconsStyle.regular),
             label: 'Mes sources',
-            // Badge de plafond free : N/30 (couleur primaire quand le cap est
-            // atteint). Les Fact·eur·isses n'ont pas de limite → pas de badge.
-            trailing: gate.isPremium
-                ? null
-                : Text(
-                    '${gate.followedSourcesCount}/$kFreeSourceCap',
-                    style: FacteurTypography.stamp(
-                      gate.sourceCapReached
-                          ? colors.primary
-                          : colors.textTertiary,
-                    ),
-                  ),
             onTap: () => context.pushNamed(RouteNames.sources),
           ),
           const _Divider(),

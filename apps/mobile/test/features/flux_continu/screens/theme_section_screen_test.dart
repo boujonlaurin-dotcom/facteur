@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/config/routes.dart';
@@ -76,6 +77,9 @@ Widget _wrap(Widget child, {required List<Override> overrides}) {
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
+    // Les cartes sont enveloppées d'un VisibilityDetector (nudge auto-grow) —
+    // sans intervalle nul, son timer interne reste pendant au teardown du test.
+    VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });
 
   testWidgets(

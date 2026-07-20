@@ -15,12 +15,11 @@ from urllib.parse import urlparse
 
 from app.models.media_eval import StatutEvaluation, StatutSignal
 from scripts.media_eval.schemas import (
-    BAREMES,
     CORROBORATION_MIN_SOURCES,
     FALLBACK_C1_MIN_DEBUNKAGES,
     FLAG_CORROBORATION,
-    FRAICHEUR_MAX_JOURS,
-    TYPES_EVENEMENTIELS,
+    VERSION_METHODO,
+    grille,
     palier_inferieur,
 )
 
@@ -40,28 +39,32 @@ def date_evenement(signal: dict) -> date | None:
     return date.fromisoformat(str(brut)[:10])
 
 
-def est_frais(signal: dict, aujourd_hui: date) -> bool:
+def est_frais(
+    signal: dict, aujourd_hui: date, version: str = VERSION_METHODO
+) -> bool:
     """True si le signal peut fonder une notation à la date donnée.
 
     Les signaux structurels (chartes, registres…) sont constatés à date, sans
     limite d'ancienneté. Les signaux événementiels (types C1) doivent dater de
-    moins de ``FRAICHEUR_MAX_JOURS`` ; sans date exploitable ils sont exclus
-    (ils ne peuvent pas prouver leur fraîcheur).
+    moins de ``fraicheur_max_jours`` (v1.2 : 730 j ; v1.3 : 1095 j / 36 mois) ;
+    sans date exploitable ils sont exclus (ils ne peuvent pas prouver leur
+    fraîcheur).
     """
-    if signal.get("type_signal") not in TYPES_EVENEMENTIELS:
+    g = grille(version)
+    if signal.get("type_signal") not in g.types_evenementiels:
         return True
     quand = date_evenement(signal)
     if quand is None:
         return False
-    return (aujourd_hui - quand).days <= FRAICHEUR_MAX_JOURS
+    return (aujourd_hui - quand).days <= g.fraicheur_max_jours
 
 
 def filtrer_fraicheur(
-    signaux: list[dict], aujourd_hui: date
+    signaux: list[dict], aujourd_hui: date, version: str = VERSION_METHODO
 ) -> tuple[list[dict], list[dict]]:
     """Sépare (frais, exclus) — les exclus sont journalisés, jamais notés."""
-    frais = [s for s in signaux if est_frais(s, aujourd_hui)]
-    exclus = [s for s in signaux if not est_frais(s, aujourd_hui)]
+    frais = [s for s in signaux if est_frais(s, aujourd_hui, version)]
+    exclus = [s for s in signaux if not est_frais(s, aujourd_hui, version)]
     return frais, exclus
 
 
@@ -108,14 +111,17 @@ def compter_sources_independantes(signaux_cites: list[dict]) -> int:
 
 
 def appliquer_corroboration(
-    critere: str, score: float, signaux_cites: list[dict]
+    critere: str,
+    score: float,
+    signaux_cites: list[dict],
+    version: str = VERSION_METHODO,
 ) -> tuple[float, list[str]]:
     """Score plein sans ≥ 2 sources indépendantes → palier inférieur + flag."""
-    if score < BAREMES[critere]:
+    if score < grille(version).baremes[critere]:
         return score, []
     if compter_sources_independantes(signaux_cites) >= CORROBORATION_MIN_SOURCES:
         return score, []
-    return palier_inferieur(critere, score), [FLAG_CORROBORATION]
+    return palier_inferieur(critere, score, version), [FLAG_CORROBORATION]
 
 
 def statut_evaluation(flags: list[str], signaux_cites: list[dict]) -> str:

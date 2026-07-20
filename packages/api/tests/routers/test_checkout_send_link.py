@@ -1,6 +1,7 @@
 """Tests pour POST /api/checkout/send-link."""
 
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
@@ -9,7 +10,26 @@ from fastapi.testclient import TestClient
 
 from app.database import get_db
 from app.dependencies import get_current_user_id
-from app.routers.checkout import router
+from app.routers.checkout import (
+    CHECKOUT_REDIRECT_BASE_URL,
+    _build_bridge_url,
+    router,
+)
+
+
+def _bridged_next(redirect_url: str) -> str:
+    """Extrait le paramètre `next` (URL RevenueCat) de l'URL-pont."""
+    return parse_qs(urlparse(redirect_url).query)["next"][0]
+
+
+def test_build_bridge_url_wraps_checkout_in_next():
+    bridge = _build_bridge_url("https://pay.rev.cat/facteur-premium?app_user_id=abc")
+
+    assert bridge.startswith(f"{CHECKOUT_REDIRECT_BASE_URL}?")
+    # L'URL RevenueCat est encodée dans `next`, décodable telle quelle.
+    assert (
+        _bridged_next(bridge) == "https://pay.rev.cat/facteur-premium?app_user_id=abc"
+    )
 
 
 def _make_client(db_session, user_id: str) -> TestClient:
@@ -40,11 +60,14 @@ async def test_send_link_happy_path(db_session):
     assert body["sent"] is True
     assert body["email"] == "user@example.com"
 
-    # Le redirect_to du magic link est l'URL de checkout avec l'app_user_id.
+    # Le redirect_to du magic link est l'URL-pont facteur.app ; l'URL de
+    # checkout RevenueCat (avec l'app_user_id) est encodée dans `next`.
     email_arg, redirect_arg = send_mock.await_args.args
     assert email_arg == "user@example.com"
-    assert redirect_arg.startswith("https://pay.rev.cat/facteur-premium")
-    assert f"app_user_id={user_id}" in redirect_arg
+    assert redirect_arg.startswith(CHECKOUT_REDIRECT_BASE_URL)
+    next_url = _bridged_next(redirect_arg)
+    assert next_url.startswith("https://pay.rev.cat/facteur-premium")
+    assert f"app_user_id={user_id}" in next_url
 
 
 @pytest.mark.asyncio
@@ -64,7 +87,8 @@ async def test_send_link_founder_offering(db_session):
 
     assert resp.status_code == 200
     _, redirect_arg = send_mock.await_args.args
-    assert redirect_arg.startswith("https://pay.rev.cat/facteur-founder")
+    assert redirect_arg.startswith(CHECKOUT_REDIRECT_BASE_URL)
+    assert _bridged_next(redirect_arg).startswith("https://pay.rev.cat/facteur-founder")
 
 
 @pytest.mark.asyncio

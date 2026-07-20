@@ -45,11 +45,16 @@ from app.models.media_eval import (
 )
 from scripts.cleanup_orphan_sources import _is_test_db
 from scripts.media_eval.schemas import (
+    TYPE_SIGNAUX,
     DebunkageArtifact,
     DebunkageBatchArtifact,
     SignalArtifact,
     SignalBatchArtifact,
 )
+
+# Couverture attendue de la voie B gouvernance : le silence est interdit, chaque
+# type de signal doit être adressé (present/partiel/absent_verifie/bloque_acces).
+CRITERES_GOUVERNANCE: tuple[str, ...] = ("C5", "C7", "C8", "C9", "C11")
 
 
 class IngestError(Exception):
@@ -76,6 +81,15 @@ def dedupe_key_signal(item: SignalArtifact) -> str:
     ancre = item.source_urls[0] if item.source_urls else (item.citation or "")
     brut = f"{item.critere}|{item.type_signal}|{item.statut}|{ancre}"
     return hashlib.sha256(brut.encode()).hexdigest()
+
+
+def voie_depuis_agent(agent: str) -> VoieCollecte:
+    """Voie dérivée du préfixe (D6) : ``humain:`` → HUMAIN, sinon AGENT.
+
+    Ouvre la voie C (artefact manuel ``agent: "humain:laurin"``) sans nouveau
+    script — un repli quand une source open data est inaccessible.
+    """
+    return VoieCollecte.HUMAIN if agent.startswith("humain:") else VoieCollecte.AGENT
 
 
 def dedupe_key_debunkage(item: DebunkageArtifact) -> str:
@@ -129,12 +143,14 @@ async def inserer_signaux(session, batch: SignalBatchArtifact) -> IngestResult:
                 statut=StatutSignal(item.statut),
                 valeur=item.valeur,
                 citation=item.citation,
-                voie=VoieCollecte.AGENT,
+                voie=voie_depuis_agent(batch.agent),
                 collecteur=batch.agent,
                 source_urls=item.source_urls,
                 sources_consultees=item.sources_consultees or None,
                 run_id=batch.run_id,
                 dedupe_key=key,
+                collecte_at=batch.genere_at,
+                version_prompt_collecteur=batch.version_prompt,
             )
         )
         result.inseres += 1
@@ -175,12 +191,14 @@ async def inserer_debunkages(session, batch: DebunkageBatchArtifact) -> IngestRe
                 "resume": item.resume,
             },
             citation=item.citation or item.resume,
-            voie=VoieCollecte.AGENT,
+            voie=voie_depuis_agent(batch.agent),
             collecteur=batch.agent,
             source_urls=item.source_urls,
             sources_consultees=item.sources_consultees or None,
             run_id=batch.run_id,
             dedupe_key=key,
+            collecte_at=batch.genere_at,
+            version_prompt_collecteur=batch.version_prompt,
         )
         session.add(signal)
         await session.flush()  # signal.id requis pour le couple
@@ -217,6 +235,34 @@ async def ingester(session, paths: list[Path]) -> IngestResult:
         total.doublons += partiel.doublons
         total.details.extend(partiel.details)
     return total
+
+
+async def rapport_couverture(session, batches: list) -> list[str]:
+    """Types de signaux gouvernance sans aucun signal pour (média, run).
+
+    Contrôle d'observabilité (anti-passivité) : la voie B doit adresser chaque
+    ``type_signal`` du registre gouvernance ; un type absent est signalé en
+    WARNING (non bloquant). Lu sur l'état de session courant (voie A + voie B),
+    donc valable en dry-run comme en ``--apply``.
+    """
+    cibles = {
+        (item.media_domaine, batch.run_id) for batch in batches for item in batch.items
+    }
+    manquants: list[str] = []
+    for domaine, run_id in sorted(cibles):
+        media = await resoudre_media(session, domaine)
+        rows = await session.execute(
+            select(MediaEvalSignal.critere, MediaEvalSignal.type_signal).where(
+                MediaEvalSignal.media_id == media.id,
+                MediaEvalSignal.run_id == run_id,
+            )
+        )
+        presents = {(c, t) for c, t in rows.all()}
+        for critere in CRITERES_GOUVERNANCE:
+            for type_signal in TYPE_SIGNAUX[critere]:
+                if (critere, type_signal) not in presents:
+                    manquants.append(f"{domaine} · {critere}/{type_signal}")
+    return manquants
 
 
 def _collecter_paths(artifact: Path) -> list[Path]:
@@ -258,6 +304,17 @@ async def run(artifact: Path, apply: bool, allow_prod: bool) -> int:
                 f"Artefacts : {len(paths)} | à insérer : {result.inseres} | "
                 f"doublons ignorés : {result.doublons}"
             )
+            manquants = await rapport_couverture(
+                session, [charger_artifact(p) for p in paths]
+            )
+            if manquants:
+                print(
+                    f"\n⚠ COUVERTURE : {len(manquants)} type(s) de signal "
+                    "gouvernance sans aucun signal (voie A + B) — le silence est "
+                    "interdit, chaque type doit être adressé :"
+                )
+                for ligne in manquants:
+                    print(f"    - {ligne}")
             if not apply:
                 await session.rollback()
                 print("(dry-run — aucune mutation. Relance avec --apply.)")

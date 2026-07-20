@@ -1,5 +1,11 @@
 # Méthodologie v1.2 — Amendements actés (extraits opérationnels)
 
+> 🗂️ **Supersédé par la v1.3** (`methodologie-v1.3.md`). Plusieurs amendements ci-dessous
+> sont **révisés** en v1.3 (décisions PO 18/07/2026) : fenêtre événementielle 730 j → **36
+> mois** (§5), **raccourci JTI supprimé** (§1 : JTI = signal du C9 fusionné), lettres A–E
+> reprises (§7). Ce document reste la référence des **runs v1.2**. Correspondance : Annexe B
+> de la v1.3.
+
 > **Import** : extraits de `FACTEUR_methodo-v1.2_reponses-commentaires_2026-07-02.md`
 > (revue des 48 commentaires ouverts sur la v1.1.1). Seuls les amendements
 > **nécessaires à la pipeline V0** sont repris ici, verbatim. Le document complet

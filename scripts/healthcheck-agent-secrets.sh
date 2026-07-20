@@ -195,6 +195,31 @@ else
   fi
 fi
 
+# ─── Pappers (media-eval, optionnel) ────────────────────────────────────────
+hdr "Pappers — registre entreprises (PAPPERS_API_TOKEN, media-eval)"
+if [[ -z "${PAPPERS_API_TOKEN:-}" ]]; then
+  echo "  [SKIP] PAPPERS_API_TOKEN absent — repli API gratuite recherche-entreprises.api.gouv.fr (non bloquant)"
+  skip=$((skip+1))
+elif [[ $FAST -eq 1 ]]; then
+  echo "  [OK]   PAPPERS_API_TOKEN présent (requête test sautée en --fast)"
+  pass=$((pass+1))
+else
+  # 1 lookup peu coûteux (SESI, éditeur de cnews.fr) pour distinguer
+  # token valide (200) de token épuisé (401). Épuisé n'est PAS un FAIL :
+  # collect_pappers bascule sur l'API publique gratuite.
+  code=$(curl -sS -o /dev/null -w "%{http_code}" \
+    "https://api.pappers.fr/v2/entreprise?api_token=$PAPPERS_API_TOKEN&siren=412916215" 2>/dev/null)
+  if [[ "$code" == "200" ]]; then
+    ok "Pappers API 200 (token valide)"
+  elif [[ "$code" == "401" ]]; then
+    echo "  [SKIP] Pappers 401 (token épuisé) → repli API gratuite (non bloquant)"
+    skip=$((skip+1))
+  else
+    echo "  [SKIP] Pappers HTTP $code → repli API gratuite (non bloquant)"
+    skip=$((skip+1))
+  fi
+fi
+
 # ─── GitHub (session courante) ──────────────────────────────────────────────
 hdr "GitHub"
 if [[ -n "${GITHUB_ACTIONS:-}" ]]; then

@@ -3,6 +3,10 @@ node_modules/
 # Scratch de session du Playwright CLI (snapshots, screenshots, logs console)
 .playwright-cli/
 
+# Répertoire de collaboration inter-agents (artefacts de run, jamais commité —
+# media-eval y dépose eval_inputs/evaluations/exports du run pilote)
+.context/
+
 # General
 **/.DS_Store
 .AppleDouble

@@ -2,48 +2,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/constants.dart';
 import '../../premium/premium_provider.dart';
-import '../../sources/providers/sources_providers.dart';
-
-/// Plafond de sources suivies pour les comptes free.
-const kFreeSourceCap = 30;
 
 /// Façade de gating premium « Fact·eur·isse » — client-side uniquement
 /// (décision produit : pas d'enforcement backend).
 class PremiumGate {
   final bool isPremium;
-  final int followedSourcesCount;
 
   const PremiumGate({
     required this.isPremium,
-    required this.followedSourcesCount,
   });
 
-  bool get sourceCapReached =>
-      !isPremium && followedSourcesCount >= kFreeSourceCap;
   bool get canCreateVeille => isPremium;
   bool get canCustomizeSerein => isPremium;
 
-  // Égalité par valeur : `premiumGateProvider` se recompose à chaque émission
-  // de `userSourcesProvider` (follow/unfollow/refresh) ; sans ceci, les
-  // watchers de l'objet entier se rebuild même quand rien de pertinent n'a
-  // changé.
   @override
   bool operator ==(Object other) =>
-      other is PremiumGate &&
-      other.isPremium == isPremium &&
-      other.followedSourcesCount == followedSourcesCount;
+      other is PremiumGate && other.isPremium == isPremium;
 
   @override
-  int get hashCode => Object.hash(isPremium, followedSourcesCount);
+  int get hashCode => isPremium.hashCode;
 }
 
 final premiumGateProvider = Provider<PremiumGate>((ref) {
   final isPremium = ref.watch(isPremiumProvider);
-  final sources = ref.watch(userSourcesProvider).valueOrNull ?? const [];
-  return PremiumGate(
-    isPremium: isPremium,
-    followedSourcesCount: sources.length,
-  );
+  return PremiumGate(isPremium: isPremium);
 });
 
 /// Date de souscription (« Fact·eur·isse depuis mois année »). Null si

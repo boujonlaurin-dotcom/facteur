@@ -15,9 +15,9 @@ from sqlalchemy import func, select
 
 from app.models.media_eval import (
     MediaEvalDebunkage,
-    MediaEvalMedia,
     MediaEvalSignal,
-    TypeMedia,
+    StatutSignal,
+    VoieCollecte,
 )
 from scripts.media_eval.ingest_artifacts import (
     IngestError,
@@ -25,22 +25,11 @@ from scripts.media_eval.ingest_artifacts import (
     ingester,
     inserer_debunkages,
     inserer_signaux,
+    rapport_couverture,
 )
 from scripts.media_eval.schemas import DebunkageBatchArtifact, SignalBatchArtifact
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "media_eval"
-
-pytestmark = pytest.mark.usefixtures("media_eval_run")
-
-
-@pytest.fixture
-async def media_cnews(db_session) -> MediaEvalMedia:
-    media = MediaEvalMedia(
-        nom="CNEWS", domaine="cnews.fr", type_media=TypeMedia.AUDIOVISUEL
-    )
-    db_session.add(media)
-    await db_session.commit()
-    return media
 
 
 def _signaux_batch() -> SignalBatchArtifact:
@@ -136,6 +125,87 @@ class TestInsererDebunkages:
         await db_session.commit()
         assert second.inseres == 0 and second.doublons == 2
         assert await _count(db_session, MediaEvalDebunkage) == 2
+
+
+class TestVoieEtHorodatage:
+    async def test_voie_agent_par_defaut(self, db_session, media_cnews):
+        await inserer_signaux(db_session, _signaux_batch())
+        await db_session.commit()
+        signal = (
+            (await db_session.execute(select(MediaEvalSignal).limit(1)))
+            .scalars()
+            .first()
+        )
+        assert signal.voie == VoieCollecte.AGENT
+
+    async def test_collecte_at_egale_genere_at(self, db_session, media_cnews):
+        batch = _signaux_batch()
+        await inserer_signaux(db_session, batch)
+        await db_session.commit()
+        signal = (
+            (await db_session.execute(select(MediaEvalSignal).limit(1)))
+            .scalars()
+            .first()
+        )
+        # collecte_at = moment réel de collecte (≠ ingere_at = écriture DB).
+        assert signal.collecte_at == batch.genere_at
+        assert signal.version_prompt_collecteur == batch.version_prompt
+
+    async def test_voie_humain_par_prefixe(self, db_session, media_cnews):
+        """D6 : agent ``humain:…`` → VoieCollecte.HUMAIN (ouvre la voie C)."""
+        batch = _signaux_batch()
+        batch.agent = "humain:laurin"
+        await inserer_signaux(db_session, batch)
+        await db_session.commit()
+        signal = (
+            (await db_session.execute(select(MediaEvalSignal).limit(1)))
+            .scalars()
+            .first()
+        )
+        assert signal.voie == VoieCollecte.HUMAIN
+        assert signal.collecteur == "humain:laurin"
+
+
+class TestCouverture:
+    async def test_types_manquants_signales(self, db_session, media_cnews):
+        # Un seul type gouvernance présent → les autres sont « manquants ».
+        db_session.add(
+            MediaEvalSignal(
+                media_id=media_cnews.id,
+                critere="C8",
+                type_signal="charte_deontologique",
+                statut=StatutSignal.PRESENT,
+                valeur={"url": "https://cnews.fr/charte"},
+                voie=VoieCollecte.CODE,
+                collecteur="code:collect_pages_types@v1",
+                source_urls=["https://cnews.fr/charte"],
+                run_id="run-test",
+                dedupe_key="k-charte",
+            )
+        )
+        await db_session.commit()
+        batch = SignalBatchArtifact.model_validate(
+            {
+                "run_id": "run-test",
+                "agent": "agent:media-eval-collecteur-gouvernance@v1",
+                "genere_at": "2026-07-13T08:00:00",
+                "items": [
+                    {
+                        "media_domaine": "cnews.fr",
+                        "critere": "C8",
+                        "type_signal": "charte_deontologique",
+                        "statut": "present",
+                        "source_urls": ["https://cnews.fr/charte"],
+                    }
+                ],
+            }
+        )
+        manquants = await rapport_couverture(db_session, [batch])
+        # Le type présent n'est pas listé…
+        assert not any("charte_deontologique" in m for m in manquants)
+        # …mais les silences le sont (C9 société des journalistes, C7 politique).
+        assert any("C9/societe_journalistes" in m for m in manquants)
+        assert any("C7/politique_publicitaire" in m for m in manquants)
 
 
 class TestDryRun:
