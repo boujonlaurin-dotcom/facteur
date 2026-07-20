@@ -200,9 +200,22 @@ class TestGrilleV13:
         assert set(GRILLES) == {"v1.2", "v1.3"}
         g = grille("v1.3")
         assert sum(g.baremes.values()) == 100
-        assert g.criteres_vague_1 == ("C1", "C6", "C8", "C9", "C10")
+        # Batch 2 : les 10 critères sont actifs (corpus C2/C3/C4/C5/C7 inclus).
+        assert g.criteres_vague_1 == (
+            "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10",
+        )
+        assert g.criteres_corpus == ("C2", "C3", "C4", "C5", "C7")
+        assert grille("v1.2").criteres_corpus == ()
         assert g.fraicheur_max_jours == 1095
         assert g.criteres_double_eval == ("C5", "C9", "C10")
+
+    def test_registre_type_signaux_corpus(self):
+        g = grille("v1.3")
+        for critere in g.criteres_corpus:
+            assert "articles" in g.type_signaux[critere]
+        # C3 mixte : structurels + bloc corpus.
+        assert "page_corrections" in g.type_signaux["C3"]
+        assert "canal_signalement" in g.type_signaux["C3"]
 
     def test_version_inconnue_leve(self):
         with pytest.raises(ValueError, match="version methodo inconnue"):
@@ -245,19 +258,20 @@ class TestGrilleV13:
         )
         assert ev.score_derive() == (15.0, 3)
 
-    def test_evaluation_output_v13_hors_vague_1(self):
-        # C2 (sourçage) est sur corpus : hors vague 1 v1.3 (batch 2).
-        with pytest.raises(ValidationError, match="hors vague 1"):
-            EvaluationOutput.model_validate(
-                {
-                    "media_domaine": "cnews.fr",
-                    "critere": "C2",
-                    "version_methodo": "v1.3",
-                    "determinations": {"niveau": 2},
-                    "justification": "x [signal:a].",
-                    "signal_ids_cites": [_UUID],
-                }
-            )
+    def test_evaluation_output_v13_corpus_actif(self):
+        # Batch 2 : C2 (sourçage, sur corpus) est désormais dans la vague 1 v1.3
+        # et produit une évaluation valide (score dérivé du niveau).
+        ev = EvaluationOutput.model_validate(
+            {
+                "media_domaine": "cnews.fr",
+                "critere": "C2",
+                "version_methodo": "v1.3",
+                "determinations": {"niveau": 2},
+                "justification": "x [signal:a].",
+                "signal_ids_cites": [_UUID],
+            }
+        )
+        assert ev.score_derive() == (7.0, 2)
 
     def test_signal_artifact_v13_fusion_c9(self):
         # Le C9 fusionné hérite des signaux ex-C8 (engagement) ET ex-C11 (position).

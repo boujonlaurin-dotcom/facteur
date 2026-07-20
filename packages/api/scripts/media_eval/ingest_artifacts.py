@@ -189,6 +189,10 @@ async def inserer_debunkages(session, batch: DebunkageBatchArtifact) -> IngestRe
                 "suite_donnee": item.suite_donnee,
                 "publie_at": item.publie_at.isoformat(),
                 "resume": item.resume,
+                # Dédup par affaire (§5.2.1) : lue par build_eval_input pour le
+                # comptage fallback C1 et par l'évaluateur. Repli sur l'URL si
+                # l'agent n'a pas qualifié l'affaire (1 débunkage = 1 litige).
+                "cle_affaire": item.cle_affaire or item.url_debunkage,
             },
             citation=item.citation or item.resume,
             voie=voie_depuis_agent(batch.agent),

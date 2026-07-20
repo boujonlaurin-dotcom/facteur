@@ -117,6 +117,8 @@ class TestInsererDebunkages:
         assert signal.critere == "C1"
         assert signal.type_signal == "sanction_arcom"
         assert signal.valeur["poids_emetteur"] == "fort"
+        # cle_affaire non qualifiée dans la fixture → repli sur l'URL (dédup §5.2.1).
+        assert signal.valeur["cle_affaire"] == arcom.url_debunkage
 
     async def test_idempotence(self, db_session, media_cnews):
         await inserer_debunkages(db_session, _debunkages_batch())
