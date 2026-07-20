@@ -215,6 +215,22 @@ class TestGrilleV13:
             "C5", "C7", "C8", "C9", "C11",
         )
 
+    def test_critere_pour_type_remap_voie_a(self):
+        # Les collecteurs voie A (codes v1.2 en dur) sont re-mappés par type.
+        from scripts.media_eval.schemas import critere_pour_type
+
+        assert critere_pour_type("mentions_legales", "v1.2") == "C5"
+        assert critere_pour_type("mentions_legales", "v1.3") == "C6"
+        assert critere_pour_type("regie_pub_identifiee", "v1.3") == "C8"
+        assert critere_pour_type("charte_deontologique", "v1.3") == "C9"
+        assert critere_pour_type("ligne_editoriale_publiee", "v1.3") == "C9"
+        assert critere_pour_type("societe_journalistes", "v1.3") == "C10"
+        assert critere_pour_type("sanction_arcom", "v1.3") == "C1"
+        with pytest.raises(ValueError):  # ambigu (5 critères corpus)
+            critere_pour_type("articles", "v1.3")
+        with pytest.raises(ValueError):  # inconnu
+            critere_pour_type("inexistant", "v1.3")
+
     def test_registre_type_signaux_corpus(self):
         g = grille("v1.3")
         for critere in g.criteres_corpus:

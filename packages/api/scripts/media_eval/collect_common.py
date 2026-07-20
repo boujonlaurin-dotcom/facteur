@@ -52,7 +52,7 @@ from app.models.media_eval import (
 )
 from scripts.cleanup_orphan_sources import _is_test_db
 from scripts.media_eval.ingest_artifacts import IngestError, resoudre_media
-from scripts.media_eval.schemas import SignalArtifact
+from scripts.media_eval.schemas import SignalArtifact, critere_pour_type
 
 # UA dédié : identifiable, honnête (pas de spoof d'un vrai navigateur en httpx —
 # le repli curl_cffi impersonate chrome n'est utilisé que sur anti-bot avéré).
@@ -286,14 +286,21 @@ class Collecteur:
     ) -> MediaEvalSignal | None:
         """Valide (SignalArtifact) puis insère un signal voie CODE.
 
+        Le ``critere`` passé par les collecteurs est un code v1.2 (en dur) : il
+        est re-mappé sur la grille du run via le ``type_signal`` (unique par
+        registre pour les types structurels) — un run v1.3 écrit donc C6/C8/
+        C9/C10 là où les collecteurs disent C5/C7/C8/C11.
         Retourne le signal inséré, ou ``None`` si c'est un doublon (dédupe).
         """
+        version = self.run.version_methodo
+        critere = critere_pour_type(type_signal, version)
         statut_str = statut.value if hasattr(statut, "value") else str(statut)
         try:
             artifact = SignalArtifact(
                 media_domaine=self.media.domaine,
                 critere=critere,
                 type_signal=type_signal,
+                version_methodo=version,
                 statut=statut_str,
                 valeur=valeur,
                 citation=citation,

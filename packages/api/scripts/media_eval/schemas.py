@@ -274,6 +274,25 @@ def grille(version: str) -> Grille:
         ) from None
 
 
+def critere_pour_type(type_signal: str, version: str) -> str:
+    """Critère portant un ``type_signal`` structurel dans la grille ``version``.
+
+    Les types structurels sont uniques dans chaque registre — c'est ce qui
+    permet aux collecteurs voie A (codes v1.2 en dur) d'écrire sous le bon
+    critère quel que soit le run. Lève si le type est ambigu (``articles``,
+    porté par les 5 critères corpus) ou inconnu.
+    """
+    porteurs = [
+        c for c, types in grille(version).type_signaux.items() if type_signal in types
+    ]
+    if len(porteurs) != 1:
+        raise ValueError(
+            f"type_signal {type_signal!r} {'ambigu' if porteurs else 'inconnu'} "
+            f"en {version} (critères: {porteurs})"
+        )
+    return porteurs[0]
+
+
 # --------------------------------------------------------------------------- #
 # Alias « plats » = v1.2 (relecture du batch 1 + compat des tests). Ne pas
 # ajouter de nouvel usage plat : le code neuf passe par `grille(version)`.
