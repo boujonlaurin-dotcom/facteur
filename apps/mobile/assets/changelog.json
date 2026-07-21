@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Fiche source",
+      "summary": "La couverture d'une source reflète à nouveau ses vrais thèmes : les articles pas encore rangés ne gonflent plus la part « Autres », et son volume d'articles publiés reste affiché tel quel. Les cartes retrouvent aussi leur pastille de thème."
+    },
+    {
       "tag": "Essentiel",
       "summary": "L'Essentiel devient une surface vivante : tu y reviens toujours, et au fil de la journée il s'enrichit de contenu frais de tes sources et thèmes préférés. Une pastille « N nouveaux depuis ce matin » signale ce qui est arrivé depuis ta lettre du jour."
     },

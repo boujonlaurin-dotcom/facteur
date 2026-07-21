@@ -5,8 +5,9 @@ import 'source_model.dart';
 /// (`GET /sources/{id}/profile`).
 ///
 /// `theme` reste une clé brute backend (mapping label/couleur côté front, kit
-/// Flux continu). `share` ∈ [0, 1] = `count / total` : le mobile en dérive le
-/// pourcentage affiché.
+/// Flux continu). `share` ∈ [0, 1] = `count / articles classés` (les non
+/// classés `theme NULL` sont exclus du dénominateur) : les parts totalisent
+/// 100 % et le mobile en dérive le pourcentage affiché.
 class ThemeShare {
   final String theme;
   final int count;

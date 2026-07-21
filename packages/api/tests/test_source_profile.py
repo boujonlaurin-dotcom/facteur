@@ -170,6 +170,54 @@ async def test_profile_window_excludes_old_but_oldest_reflects_it(profile_client
 
 
 @pytest.mark.asyncio
+async def test_profile_null_theme_excluded_from_distribution(profile_client):
+    """Non classés (theme NULL) : hors distribution, mais comptés dans articles_30d.
+
+    `articles_30d` reste le volume publié réel (frais non classé compris) pour
+    ne pas fausser la fréquence ; la distribution ne porte que sur les classés,
+    dont les `share` totalisent 1.0.
+    """
+    ac, source, db = profile_client
+    for i in range(3):
+        db.add(_content(source.id, theme="politics", days_ago=i, title=f"Pol {i}"))
+    for i in range(2):
+        db.add(_content(source.id, theme=None, days_ago=i, title=f"NULL {i}"))
+    await db.commit()
+
+    resp = await ac.get(f"/api/sources/{source.id}/profile")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Volume = tous les articles publiés (3 classés + 2 non classés).
+    assert body["articles_30d"] == 5
+
+    dist = body["theme_distribution"]
+    assert [d["theme"] for d in dist] == ["politics"]
+    assert dist[0]["count"] == 3
+    # share sur les classés (3/3), pas sur le volume publié (3/5).
+    assert dist[0]["share"] == pytest.approx(1.0)
+    # La somme des counts de la distribution (3) est < articles_30d (5) : les
+    # non classés sont exclus de la couverture mais présents dans le volume.
+    assert sum(d["count"] for d in dist) < body["articles_30d"]
+
+
+@pytest.mark.asyncio
+async def test_profile_all_null_hides_distribution(profile_client):
+    """Tout non classé → distribution vide (section masquée), volume gardé."""
+    ac, source, db = profile_client
+    for i in range(4):
+        db.add(_content(source.id, theme=None, days_ago=i, title=f"NULL {i}"))
+    await db.commit()
+
+    resp = await ac.get(f"/api/sources/{source.id}/profile")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["theme_distribution"] == []
+    assert body["articles_30d"] == 4
+
+
+@pytest.mark.asyncio
 async def test_profile_unknown_source_returns_404(profile_client):
     """Source inconnue → 404."""
     ac, _source, _db = profile_client

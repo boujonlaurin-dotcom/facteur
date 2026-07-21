@@ -3,8 +3,11 @@
 /// Fonction **pure** : le chip horloge du header en dérive un libellé naturel
 /// (« 70 articles par jour en moyenne », « quelques articles par semaine »…).
 ///
-/// - [articles30d] : nombre d'articles publiés sur les 30 derniers jours
-///   (= `articles_30d` du profil = somme des `theme_distribution`).
+/// - [articles30d] : nombre d'articles **publiés** sur les 30 derniers jours
+///   (= `articles_30d` du profil, tous thèmes confondus, y compris les non
+///   classés). Peut donc dépasser la somme des `theme_distribution`, qui ne
+///   couvre que les articles classés (frais non encore classé exclu des barres,
+///   mais bien compté dans le volume/fréquence ici).
 /// - [oldestContentAt] : date du plus ancien contenu connu (tout l'historique).
 ///   Clampe la fenêtre pour ne pas **sous-estimer** une source fraîche :
 ///   6 articles publiés en 3 jours → « quelques-uns/jour », pas « /mois ».

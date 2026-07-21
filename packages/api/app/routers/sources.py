@@ -858,7 +858,9 @@ async def detect_source(
 # Nombre maximum de thèmes affichés individuellement ; la longue traîne au-delà
 # est regroupée dans une ligne unique `theme="autres"`.
 COVERAGE_TOP_N = 6
-# Clé brute utilisée pour la ligne agrégée (longue traîne + thèmes NULL).
+# Clé brute utilisée pour la ligne agrégée de la longue traîne (thèmes nommés
+# au-delà du top-N). Les contenus non classés (`theme IS NULL`) n'y sont PAS
+# repliés : ils sont exclus de la couverture (cf. `_aggregate_source_themes`).
 COVERAGE_OTHER_THEME = "autres"
 # Espace fine insécable (U+202F) — séparateur des milliers en typographie FR.
 _NARROW_NBSP = " "
@@ -874,18 +876,25 @@ async def _aggregate_source_themes(
     source_id: UUID,
     *,
     days: int,
-) -> tuple[list[tuple[str, int]], int]:
+) -> tuple[list[tuple[str, int]], int, int]:
     """Agrège les contenus d'une source par thème sur une fenêtre glissante.
 
     Helper partagé par `/coverage` et `/profile` (zéro duplication).
 
-    Renvoie `(rows, total)` :
-    - `total` = nombre d'articles publiés sur la fenêtre, tous thèmes confondus
-      (avant troncature top-N) ;
+    Renvoie `(rows, total_published, total_classified)` :
+    - `total_published` = nombre d'articles publiés sur la fenêtre, **tous
+      thèmes confondus, y compris les non classés** (`theme IS NULL`). C'est le
+      signal de volume/fréquence et la légende « N articles publiés » : il ne
+      doit PAS chuter quand la classification prend du retard (backlog worker).
+    - `total_classified` = nombre d'articles au thème **non NULL**. C'est le
+      dénominateur des parts/pourcentages : la barre de couverture représente
+      100 % des articles *classés*, les non classés n'y figurent pas.
     - `rows` = liste `(theme, count)` triée par volume décroissant : les
-      `COVERAGE_TOP_N` thèmes nommés les plus volumineux, suivis d'une ligne
-      `COVERAGE_OTHER_THEME` repliant la longue traîne **et** les thèmes NULL
-      (présente seulement si non vide). Liste vide quand `total == 0`.
+      `COVERAGE_TOP_N` thèmes **nommés** les plus volumineux, suivis d'une
+      ligne `COVERAGE_OTHER_THEME` repliant la longue traîne des thèmes nommés
+      au-delà du top-N (présente seulement si non vide). Ne contient **jamais**
+      les non classés. Liste vide quand `total_classified == 0` (rien à
+      afficher, même si des articles non classés ont été publiés).
     """
     cutoff = datetime.now(UTC) - timedelta(days=days)
 
@@ -897,32 +906,33 @@ async def _aggregate_source_themes(
     )
     aggregates = result.all()
 
-    # total = somme sur TOUS les thèmes de la fenêtre (avant troncature top-N).
-    total = sum(int(count) for _theme, count in aggregates)
-    if total == 0:
-        return [], 0
+    # Volume publié = somme sur TOUS les thèmes, NULL compris (frais non classé).
+    total_published = sum(int(count) for _theme, count in aggregates)
+    if total_published == 0:
+        return [], 0, 0
 
-    # Sépare les thèmes nommés (non-NULL) de la part NULL, qui ira dans « autres ».
-    named: list[tuple[str, int]] = []
-    other_count = 0
-    for theme, count in aggregates:
-        count = int(count)
-        if theme is None:
-            other_count += count
-        else:
-            named.append((theme, count))
+    # On ne garde que les thèmes nommés : les non classés (theme NULL) sont
+    # exclus de la couverture (ni bucket « autres », ni dénominateur des parts).
+    named: list[tuple[str, int]] = [
+        (theme, int(count)) for theme, count in aggregates if theme is not None
+    ]
+    total_classified = sum(count for _theme, count in named)
+    if total_classified == 0:
+        # Des articles existent mais aucun n'est classé → pas de couverture à
+        # afficher (section masquée côté mobile), mais le volume reste connu.
+        return [], total_published, 0
 
     named.sort(key=lambda item: item[1], reverse=True)
 
-    # Top N affichés individuellement ; le reste rejoint « autres ».
+    # Top N affichés individuellement ; la traîne des thèmes nommés → « autres ».
     head = named[:COVERAGE_TOP_N]
     tail = named[COVERAGE_TOP_N:]
-    other_count += sum(count for _theme, count in tail)
+    tail_count = sum(count for _theme, count in tail)
 
     rows: list[tuple[str, int]] = list(head)
-    if other_count > 0:
-        rows.append((COVERAGE_OTHER_THEME, other_count))
-    return rows, total
+    if tail_count > 0:
+        rows.append((COVERAGE_OTHER_THEME, tail_count))
+    return rows, total_published, total_classified
 
 
 @router.get("/{source_id}/coverage", response_model=CoverageResponse)
@@ -935,14 +945,18 @@ async def get_source_coverage(
     """Couverture par thèmes d'une source sur une fenêtre glissante.
 
     Agrège `contents` par `theme` sur les `days` derniers jours. Trie par
-    volume décroissant, conserve le top N et regroupe la longue traîne (ainsi
-    que les thèmes NULL) dans une ligne unique `autres`. La clé `theme` reste
-    brute : le mapping label/couleur est fait côté front.
+    volume décroissant, conserve le top N et regroupe la longue traîne des
+    thèmes nommés dans une ligne unique `autres`. Les articles **non classés**
+    (`theme IS NULL`) sont exclus des barres et du dénominateur des `pct`, mais
+    restent comptés dans `total_count` (volume réellement publié). La clé
+    `theme` reste brute : le mapping label/couleur est fait côté front.
     """
     period_label = f"{days} derniers jours"
-    rows, total_count = await _aggregate_source_themes(db, source_id, days=days)
+    rows, total_published, total_classified = await _aggregate_source_themes(
+        db, source_id, days=days
+    )
 
-    if total_count == 0:
+    if total_published == 0:
         return CoverageResponse(
             period_label=period_label,
             total_count=0,
@@ -950,17 +964,20 @@ async def get_source_coverage(
             rows=[],
         )
 
+    # `pct` est calculé sur les articles classés → les barres totalisent 100 %.
+    # `rows` est vide si rien n'est classé (total_classified == 0) : pas de
+    # division ici, et la section se masque côté mobile.
     coverage_rows = [
-        CoverageRow(theme=theme, count=count, pct=round(count / total_count * 100))
+        CoverageRow(theme=theme, count=count, pct=round(count / total_classified * 100))
         for theme, count in rows
     ]
 
-    noun = "article publié" if total_count == 1 else "articles publiés"
-    caption = f"{_format_fr_thousands(total_count)} {noun} sur la période"
+    noun = "article publié" if total_published == 1 else "articles publiés"
+    caption = f"{_format_fr_thousands(total_published)} {noun} sur la période"
 
     return CoverageResponse(
         period_label=period_label,
-        total_count=total_count,
+        total_count=total_published,
         caption=caption,
         rows=coverage_rows,
     )
@@ -1020,9 +1037,19 @@ async def get_source_profile(
         follower_count=follower_count,
     )
 
-    rows, total = await _aggregate_source_themes(db, source_id, days=30)
+    rows, total_published, total_classified = await _aggregate_source_themes(
+        db, source_id, days=30
+    )
+    # `share` est calculé sur les articles classés (les non classés sont exclus
+    # de la distribution) ; `articles_30d` reste le volume publié réel, qui peut
+    # donc dépasser la somme des `count` de la distribution pendant un backlog
+    # de classification (frais non encore classé).
     theme_distribution = [
-        ThemeShare(theme=theme, count=count, share=count / total if total else 0.0)
+        ThemeShare(
+            theme=theme,
+            count=count,
+            share=count / total_classified if total_classified else 0.0,
+        )
         for theme, count in rows
     ]
 
@@ -1052,7 +1079,7 @@ async def get_source_profile(
         source=source_response,
         recent_articles=recent_articles,
         theme_distribution=theme_distribution,
-        articles_30d=total,
+        articles_30d=total_published,
         oldest_content_at=oldest_content_at,
     )
 

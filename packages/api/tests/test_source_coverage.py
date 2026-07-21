@@ -5,7 +5,9 @@ Story 7.8 — Refonte fiche source v2 (WS-A backend).
 Couvre :
 - agrégation par thème (counts, pct, tri décroissant) ;
 - exclusion de la fenêtre temporelle (articles plus vieux que `days`) ;
-- regroupement de la longue traîne (>top N) + thèmes NULL dans « autres » ;
+- regroupement de la longue traîne des thèmes nommés (>top N) dans « autres » ;
+- exclusion des non classés (`theme IS NULL`) des barres et du dénominateur
+  des `pct`, tout en les gardant dans `total_count` (volume publié réel) ;
 - source vide → rows: [], total 0 ;
 - `recent-items` renvoie désormais `theme` (et None si content.theme est NULL).
 """
@@ -123,7 +125,11 @@ async def test_coverage_excludes_articles_outside_window(coverage_client):
 
 @pytest.mark.asyncio
 async def test_coverage_long_tail_grouped_into_autres(coverage_client):
-    """Au-delà du top 6, la traîne et les thèmes NULL vont dans « autres »."""
+    """Au-delà du top 6, la traîne des thèmes NOMMÉS va dans « autres ».
+
+    Les non classés (theme NULL) restent comptés dans `total_count` (volume
+    publié) mais ne rejoignent PAS « autres » et ne pèsent pas dans les `pct`.
+    """
     ac, source, db = coverage_client
     # 8 thèmes nommés à volumes décroissants : t1=8 ... t8=1, + 4 NULL.
     for idx, count in enumerate(range(8, 0, -1), start=1):
@@ -137,7 +143,7 @@ async def test_coverage_long_tail_grouped_into_autres(coverage_client):
     assert resp.status_code == 200
     body = resp.json()
 
-    # total = sum(8..1) + 4 NULL = 36 + 4 = 40
+    # total_count = volume publié = sum(8..1) + 4 NULL = 36 + 4 = 40
     assert body["total_count"] == 40
 
     rows = body["rows"]
@@ -146,11 +152,59 @@ async def test_coverage_long_tail_grouped_into_autres(coverage_client):
     assert [r["theme"] for r in rows[:6]] == ["t1", "t2", "t3", "t4", "t5", "t6"]
     autres = rows[-1]
     assert autres["theme"] == "autres"
-    # « autres » = t7(2) + t8(1) + 4 NULL = 7
-    assert autres["count"] == 7
+    # « autres » = t7(2) + t8(1) = 3 (les 4 NULL sont EXCLUS, plus repliés ici).
+    assert autres["count"] == 3
+    # Dénominateur des pct = articles classés (36), pas le volume publié (40).
+    assert sum(r["count"] for r in rows) == 36
+    assert sum(r["pct"] for r in rows) == pytest.approx(100, abs=1)
     # Tri décroissant strict en tête
     counts = [r["count"] for r in rows[:6]]
     assert counts == sorted(counts, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_coverage_null_excluded_from_bars_and_pct(coverage_client):
+    """Thèmes NULL : hors barres et hors dénominateur des pct, mais dans total."""
+    ac, source, db = coverage_client
+    # politics x3, tech x1 classés + 6 non classés (NULL).
+    for _ in range(3):
+        db.add(_content(source.id, theme="politics", days_ago=1))
+    db.add(_content(source.id, theme="tech", days_ago=1))
+    for _ in range(6):
+        db.add(_content(source.id, theme=None, days_ago=1))
+    await db.commit()
+
+    resp = await ac.get(f"/api/sources/{source.id}/coverage?days=30")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # total_count = volume publié réel = 3 + 1 + 6 = 10 (les NULL comptent ici).
+    assert body["total_count"] == 10
+    assert body["caption"] == "10 articles publiés sur la période"
+
+    rows = body["rows"]
+    # Aucune ligne « autres » : les NULL ne sont pas repliés.
+    assert [r["theme"] for r in rows] == ["politics", "tech"]
+    # pct calculés sur les 4 classés → 75 / 25, totalisent 100.
+    assert [r["pct"] for r in rows] == [75, 25]
+
+
+@pytest.mark.asyncio
+async def test_coverage_all_null_hides_bars_but_counts_published(coverage_client):
+    """Tout non classé : rows vide (section masquée) mais volume publié gardé."""
+    ac, source, db = coverage_client
+    for _ in range(5):
+        db.add(_content(source.id, theme=None, days_ago=1))
+    await db.commit()
+
+    resp = await ac.get(f"/api/sources/{source.id}/coverage?days=30")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # 5 articles publiés mais aucun classé → pas de barres, volume renseigné.
+    assert body["rows"] == []
+    assert body["total_count"] == 5
+    assert body["caption"] == "5 articles publiés sur la période"
 
 
 @pytest.mark.asyncio
