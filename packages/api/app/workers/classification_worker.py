@@ -314,8 +314,13 @@ class ClassificationWorker:
         except Exception as e:
             logger.error("classification_worker.reset_stale_failed", error=str(e))
 
-    async def _process_batch(self):
+    async def _process_batch(self) -> int:
         """Process one batch of pending items using batch API call.
+
+        Renvoie le nombre d'items dequeués sur ce lot (0 si la file était vide).
+        La run-loop ignore la valeur ; elle sert au pilotage manuel via
+        `drive_once()` (endpoint admin force-drive) pour observer un batch à la
+        demande post-deploy.
 
         3 phases pour ne jamais tenir une transaction DB pendant les appels
         Mistral (90-180 s au pire) : le timeout serveur
@@ -334,7 +339,7 @@ class ClassificationWorker:
             items = await service.dequeue_batch(batch_size=self.batch_size)
 
             if not items:
-                return
+                return 0
 
             logger.info("classification_worker.processing_batch", count=len(items))
 
@@ -549,6 +554,21 @@ class ClassificationWorker:
 
                 except Exception as e:
                     await service.mark_failed(rec["queue_id"], str(e)[:500])
+
+        return len(items)
+
+    async def drive_once(self) -> int:
+        """Traite un lot à la demande, hors run-loop, et renvoie le nb dequeué.
+
+        Pilotage manuel (endpoint admin force-drive) : permet, si le worker
+        refuse de tourner après deploy, de déclencher un batch pour capturer
+        l'exception exacte (via Sentry/logs stderr) ou prouver que le pipeline
+        fonctionne. Sûr même en parallèle de la run-loop vivante : `dequeue_batch`
+        pose `FOR UPDATE SKIP LOCKED` → aucun double-traitement. Le classifier
+        est chargé paresseusement, donc l'appel marche même si `start()` n'a
+        jamais été invoqué sur ce process.
+        """
+        return await self._process_batch()
 
 
 # Global worker instance (singleton)

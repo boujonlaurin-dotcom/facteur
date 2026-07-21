@@ -1,6 +1,6 @@
 """Service pour gérer la file de classification."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -298,7 +298,13 @@ class ClassificationQueueService:
         count, oldest = result.one()
         if not count or oldest is None:
             return 0, None
-        return int(count), (datetime.utcnow() - oldest).total_seconds()
+        # `oldest` (created_at) revient naïf en prod (colonne `timestamp`) mais
+        # tz-aware sous le harness de test (`create_all` → `timestamptz`). On
+        # normalise en UTC avant la soustraction pour ne jamais lever
+        # "can't subtract offset-naive and offset-aware datetimes".
+        if oldest.tzinfo is None:
+            oldest = oldest.replace(tzinfo=UTC)
+        return int(count), (datetime.now(UTC) - oldest).total_seconds()
 
     async def requeue_failed(self, max_retries: int = 3) -> int:
         """Remet en file d'attente les articles échoués avec retry_count < max_retries.

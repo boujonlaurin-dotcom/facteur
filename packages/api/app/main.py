@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import socket
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -45,7 +46,13 @@ structlog.configure(
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.JSONRenderer(),
     ],
-    logger_factory=structlog.PrintLoggerFactory(),
+    # Route les logs structlog vers stderr (et non le stdout par défaut).
+    # Railway ne capture de façon fiable que stderr (uvicorn/alembic y écrivent) ;
+    # le stdout du process app est block-buffered en conteneur → les logs
+    # structlog (worker classif, sondes pool) restaient invisibles côté Railway
+    # pendant l'incident worker 30/06. stderr est line-buffered et remonté.
+    # Combiné à PYTHONUNBUFFERED=1 (Dockerfile) : plus aucun log avalé.
+    logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
 )
 logger = structlog.get_logger()
 # Boot probe : confirme en prod que les warnings structlog atteignent stdout
@@ -689,6 +696,98 @@ async def pool_metrics() -> dict[str, Any]:
 
     logger.info("pool_metrics_probed", **metrics)
     return metrics
+
+
+@app.get("/api/health/classification", tags=["Health"])
+async def classification_health(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """État du worker de classification ML — visible SANS dépendre des logs.
+
+    Incident 2026-06-30 : le worker (task asyncio du lifespan) est mort
+    silencieusement (CancelledError) et personne ne l'a vu pendant ~3 semaines,
+    faute d'observabilité. Cet endpoint expose l'état vivant du worker et de la
+    file pour vérifier en quelques minutes post-deploy que la loop tourne et
+    que le backlog se draine :
+
+    - `worker_running` : la task du worker in-process est-elle vivante
+      (`get_worker().running`) ;
+    - `pending` / `oldest_pending_age_s` : profondeur de file + âge du plus vieux
+      pending (un âge qui grimpe alors que `worker_running=true` = loop coincée) ;
+    - `last_completed_at` / `last_completed_age_s` : dernier `processed_at` écrit
+      (avance = le pipeline tourne réellement).
+
+    Renvoie **503** quand `ML_ENABLED=true` mais que le worker ne tourne pas
+    (état actionnable, alertable via le simple code HTTP). Un service où le
+    worker est légitimement désactivé (`ML_ENABLED=false`) répond 200/`disabled`.
+    Unauth exprès : diagnostic, aucune donnée utilisateur.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import func as sa_func
+    from sqlalchemy import select as sa_select
+
+    from app.models.classification_queue import ClassificationQueue
+    from app.services.classification_queue_service import ClassificationQueueService
+    from app.workers.classification_worker import get_worker
+
+    worker_running = get_worker().running
+    ml_enabled = settings.ml_enabled
+
+    pending, oldest_pending_age_s = await ClassificationQueueService(
+        db
+    ).get_pending_stats()
+
+    last_completed_at = (
+        await db.execute(sa_select(sa_func.max(ClassificationQueue.processed_at)))
+    ).scalar_one_or_none()
+    # `processed_at` revient naïf en prod (`timestamp`) mais tz-aware sous le
+    # harness de test (`timestamptz`) : normaliser en UTC évite le TypeError
+    # naive/aware sur la soustraction.
+    if last_completed_at is not None:
+        _completed = (
+            last_completed_at
+            if last_completed_at.tzinfo is not None
+            else last_completed_at.replace(tzinfo=UTC)
+        )
+        last_completed_age_s = (datetime.now(UTC) - _completed).total_seconds()
+    else:
+        last_completed_age_s = None
+
+    if not ml_enabled:
+        status = "disabled"
+    elif worker_running:
+        status = "ok"
+    else:
+        status = "worker_down"
+
+    payload: dict[str, Any] = {
+        "status": status,
+        "worker_running": worker_running,
+        "ml_enabled": ml_enabled,
+        "pending": pending,
+        "oldest_pending_age_s": oldest_pending_age_s,
+        "last_completed_at": (
+            last_completed_at.isoformat() if last_completed_at is not None else None
+        ),
+        "last_completed_age_s": last_completed_age_s,
+        "environment": settings.environment,
+        "probe": "classification",
+    }
+
+    if status == "worker_down":
+        from fastapi.responses import JSONResponse
+
+        logger.critical(
+            "classification_worker_down",
+            pending=pending,
+            oldest_pending_age_s=oldest_pending_age_s,
+            last_completed_age_s=last_completed_age_s,
+            hint="ML_ENABLED=true but worker not running — dead loop or never started.",
+        )
+        return JSONResponse(status_code=503, content=payload)
+
+    return payload
 
 
 if __name__ == "__main__":
