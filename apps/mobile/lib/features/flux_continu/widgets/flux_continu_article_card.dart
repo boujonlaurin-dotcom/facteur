@@ -575,6 +575,17 @@ class _Footer extends StatelessWidget {
             ),
           ),
         ],
+        // Pastille de thème (macro-thème ML granulaire, sinon thème source en
+        // fallback via `progressionTopic`) : rétablie après son retrait
+        // temporaire en Story 10.1. Le VM la calcule toujours ; masquée si vide.
+        if (vm.themeLabel != null && vm.themeLabel!.trim().isNotEmpty) ...[
+          const SizedBox(width: 6),
+          _ThemePill(
+            key: const Key('flux-theme-pill'),
+            label: vm.themeLabel!,
+            colors: colors,
+          ),
+        ],
         const SizedBox(width: 6),
         separator,
         const SizedBox(width: 6),
@@ -741,6 +752,36 @@ class _PressReviewChip extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Pastille de thème compacte affichée dans le footer de carte (source ·
+/// thème · heure). Style discret : fond très léger, texte secondaire.
+class _ThemePill extends StatelessWidget {
+  final String label;
+  final FacteurColors colors;
+
+  const _ThemePill({super.key, required this.label, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: colors.textPrimary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.dmSans(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.2,
+          height: 1.4,
+          color: colors.textSecondary,
+        ),
+      ),
     );
   }
 }

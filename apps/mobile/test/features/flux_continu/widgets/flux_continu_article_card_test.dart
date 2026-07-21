@@ -12,7 +12,7 @@ import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
-Content _content() => Content(
+Content _content({String? sourceTheme}) => Content(
       id: 'c-1',
       title: 'Titre article Flux',
       url: 'https://example.com/1',
@@ -21,7 +21,14 @@ Content _content() => Content(
       description: 'Un chapô pour l\'aperçu.',
       contentType: ContentType.article,
       publishedAt: DateTime(2026, 7, 10),
-      source: Source(id: 's-1', name: 'Le Monde', type: SourceType.article),
+      // Pas de topics ML → `progressionTopic` retombe sur le thème source, le
+      // fallback qui garde une pastille utile quand la classif est en retard.
+      source: Source(
+        id: 's-1',
+        name: 'Le Monde',
+        type: SourceType.article,
+        theme: sourceTheme,
+      ),
     );
 
 Widget _wrap(Widget child) => ProviderScope(
@@ -68,5 +75,27 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
     expect(find.byType(FacteurThumbnail), findsNothing);
+  });
+
+  testWidgets(
+      'footer renders the theme pill from the source-theme fallback when '
+      'ML topics are empty (mitigation « tout en Autres »)', (tester) async {
+    await tester.pumpWidget(_wrap(
+      FluxContinuArticleCard(article: _content(sourceTheme: 'tech')),
+    ));
+
+    expect(find.byKey(const Key('flux-theme-pill')), findsOneWidget);
+    // Le libellé affiché est le thème source mappé (fallback pré-ML), pas le
+    // slug brut : la pastille reste lisible même worker de classif mort.
+    expect(find.text('Tech & Innovation'), findsOneWidget);
+  });
+
+  testWidgets('no theme pill when neither ML topic nor source theme resolves',
+      (tester) async {
+    await tester.pumpWidget(_wrap(
+      FluxContinuArticleCard(article: _content()),
+    ));
+
+    expect(find.byKey(const Key('flux-theme-pill')), findsNothing);
   });
 }
