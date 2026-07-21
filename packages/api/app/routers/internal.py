@@ -63,6 +63,29 @@ async def backfill_serene(
     return {"message": "Backfill serene queued", "articles_queued": count}
 
 
+@router.post("/admin/classification/drive", status_code=status.HTTP_200_OK)
+async def force_drive_classification(
+    session: AsyncSession = Depends(get_db),
+):
+    """Force le traitement d'UN lot de classification à la demande (diagnostic).
+
+    Déclenche `ClassificationWorker.drive_once()` hors run-loop. Sert à vérifier
+    post-deploy que le pipeline tourne, ou à capturer l'exception exacte si le
+    worker refuse de démarrer (loop morte). Sûr même en parallèle du worker
+    vivant : `dequeue_batch` pose `FOR UPDATE SKIP LOCKED`, aucun double-traitement.
+    Peut durer jusqu'à ~3 min (appels Mistral batch).
+    """
+    from app.workers.classification_worker import get_worker
+
+    pending_before, _ = await ClassificationQueueService(session).get_pending_stats()
+    dequeued = await get_worker().drive_once()
+    return {
+        "message": "Classification batch driven",
+        "dequeued": dequeued,
+        "pending_before": pending_before,
+    }
+
+
 @router.get("/admin/ner-health", status_code=status.HTTP_200_OK)
 async def get_ner_health(
     sample_title: str = Query(

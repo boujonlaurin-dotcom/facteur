@@ -4,6 +4,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Logs non bufferisés : sans ça, le stdout/stderr Python est block-buffered en
+# conteneur et les logs applicatifs (worker classif, sondes pool) n'atteignent
+# Railway qu'au flush du buffer (souvent jamais avant un crash). Combiné au
+# routage structlog vers stderr (app/main.py), garantit des logs temps réel.
+# Cf. incident worker 2026-06-30 : 3 semaines de silence, zéro log worker.
+ENV PYTHONUNBUFFERED=1
+
 # Install dependencies
 COPY packages/api/requirements.txt .
 RUN pip install --no-cache-dir --timeout 300 --retries 5 -r requirements.txt
