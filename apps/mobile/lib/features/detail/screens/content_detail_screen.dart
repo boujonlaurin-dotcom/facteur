@@ -222,6 +222,15 @@ const double _kFooterBottomMargin = 8;
 /// de l'ombre). Sans elle, un liseré fantôme resterait visible en bas.
 const double _kFooterShadowClearance = 24;
 
+/// Tolérance (px) autour de l'offset 0 en dessous de laquelle l'utilisateur
+/// est encore considéré « en haut de l'article » pour le nudge perspectives —
+/// absorbe un léger rebond d'overscroll sans faire clignoter le nudge.
+const double _kPerspectivesNudgeTopTolerance = 32.0;
+
+/// Nombre minimal de points de vue en ligne pour que le nudge flottant
+/// « Voir plus de points de vue ? » vaille la peine d'être montré.
+const int _kPerspectivesNudgeMinCount = 2;
+
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _bookmarkBounceController;
@@ -351,6 +360,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   PerspectivesResponse? _perspectivesResponse;
   bool _perspectivesLoading = false;
   Timer? _perspectivesRefetchTimer;
+
+  // Nudge flottant "Voir plus de points de vue ?" — affordance permanente
+  // (pas un one-shot onboarding, à ne pas confondre avec
+  // `_perspectivesPulseController`/`NudgeIds.perspectivesCta`), réévaluée à
+  // chaque scroll et dès l'arrivée des perspectives. ValueNotifier pour éviter
+  // un setState global (cf. pattern `_readingProgress`/`_footerOffset`).
+  final ValueNotifier<bool> _showPerspectivesNudge = ValueNotifier<bool>(
+    false,
+  );
 
   bool get _showPerspectivesBand =>
       _content?.contentType == ContentType.article;
@@ -914,6 +932,84 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _ctaPulseController.forward(from: 0.0);
   }
 
+  /// ScrollController actif — un seul des deux a des clients à la fois (modes
+  /// mutuellement exclusifs dans build()), `null` avant le premier layout.
+  ScrollController? get _activeScrollController => _scrollController.hasClients
+      ? _scrollController
+      : (_inAppScrollController.hasClients ? _inAppScrollController : null);
+
+  /// Calcul pur des conditions d'affichage du nudge perspectives. Aucune
+  /// mutation d'état ici — voir [_updatePerspectivesNudgeVisibility].
+  bool _computeShouldShowPerspectivesNudge() {
+    // Contenu article + section perspectives effectivement affichée. Le
+    // nudge n'a de sens que pendant la lecture scrollable normale : dès que
+    // la WebView a pris le relais visuel, ou que le CTA a été tapé
+    // (révélation en cours), le carrousel n'est plus la destination
+    // pertinente d'un scroll.
+    if (!_showPerspectivesBand) return false;
+    if (_isWebViewActive || _ctaTapped) return false;
+    // Assez d'autres points de vue pour justifier le nudge.
+    if (_inlinePerspectives.length <= _kPerspectivesNudgeMinCount) {
+      return false;
+    }
+
+    // Utilisateur "en haut".
+    final ScrollController? active = _activeScrollController;
+    if (active == null) return false;
+    if (active.offset > _kPerspectivesNudgeTopTolerance) return false;
+
+    // Carrousel hors écran. Si la clé n'est pas encore montée (premier frame
+    // après fetch, ou perspectives pas encore rendues), on traite comme "non
+    // applicable" : pas de nudge pointant vers rien.
+    final renderObject = _perspectivesKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.attached) return false;
+    final topY = renderObject.localToGlobal(Offset.zero).dy;
+    final viewportHeight = MediaQuery.of(context).size.height;
+    return topY > viewportHeight;
+  }
+
+  /// Recalcule et applique la visibilité du nudge perspectives. Ne fait
+  /// jamais de `setState` — seule `_showPerspectivesNudge.value` change,
+  /// consommée par un `ValueListenableBuilder<bool>` dédié dans `build()`.
+  void _updatePerspectivesNudgeVisibility() {
+    if (!mounted) return;
+    final shouldShow = _computeShouldShowPerspectivesNudge();
+    if (_showPerspectivesNudge.value != shouldShow) {
+      _showPerspectivesNudge.value = shouldShow;
+    }
+  }
+
+  /// Tap sur le nudge : scrolle le contrôleur actif pour amener le haut du
+  /// carrousel de perspectives juste sous le header, puis masque le nudge
+  /// sans attendre le `ScrollUpdateNotification` résultant (sinon il
+  /// resterait visible, incongru, pendant toute l'animation).
+  void _scrollToPerspectives() {
+    final ScrollController? active = _activeScrollController;
+    final renderObject = _perspectivesKey.currentContext?.findRenderObject();
+    if (active == null ||
+        renderObject is! RenderBox ||
+        !renderObject.attached) {
+      return;
+    }
+
+    HapticFeedback.selectionClick();
+
+    final topY = renderObject.localToGlobal(Offset.zero).dy;
+    final desiredScreenY = _headerHeight + FacteurSpacing.space3;
+    final target = (active.offset + (topY - desiredScreenY)).clamp(
+      0.0,
+      active.position.maxScrollExtent,
+    );
+
+    active.animateTo(
+      target,
+      duration: const Duration(milliseconds: 550),
+      curve: Curves.easeInOutCubic,
+    );
+
+    _showPerspectivesNudge.value = false;
+  }
+
   /// Measures the pixel distance from the top of the scroll content to the
   /// end of the article section (before perspectives). Stored in
   /// [_articleContentExtent] so the progress bar ignores perspectives height.
@@ -1036,6 +1132,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() {
         _isWebViewActive = true;
       });
+      _updatePerspectivesNudgeVisibility();
       // Drop the article subtree from the tree once the 300 ms fade-out is
       // done, so Flutter stops painting it under the scrolling WebView.
       _articleLayerUnmountTimer?.cancel();
@@ -1598,6 +1695,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.dispose();
+    _showPerspectivesNudge.dispose();
     _scrollController.removeListener(_onScrollToSite);
 
     _scrollController.dispose();
@@ -1859,6 +1957,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _schedulePerspectivesPartialRefetch(content.id);
         }
         _maybeTriggerPerspectivesCta();
+        // `PerspectivesInlineSection`/`_perspectivesKey` ne sont montés qu'au
+        // prochain frame après ce `setState` — sans ce callback, un
+        // utilisateur déjà en haut et immobile ne verrait jamais le nudge
+        // apparaître avant son prochain scroll.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _updatePerspectivesNudgeVisibility();
+        });
       }
     } catch (e) {
       debugPrint('Error pre-fetching perspectives: $e');
@@ -2043,6 +2148,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     }
 
                     _onScrollDelta(delta);
+                    _updatePerspectivesNudgeVisibility();
                     // Track reading progress from any scrollable (including in-app reader)
                     if (metrics.maxScrollExtent > 0) {
                       final rawProgress =
@@ -2146,11 +2252,90 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       _showWebView && !useScrollToSite && !useInAppReading,
                 ),
               ),
+              // Nudge flottant "Voir plus de points de vue ?" — visible
+              // seulement en haut de l'article, tant que le carrousel de
+              // perspectives n'est pas encore à l'écran (cf.
+              // _computeShouldShowPerspectivesNudge). Flotte juste au-dessus
+              // du footer, jamais superposé (les deux ne sont visibles
+              // qu'en haut de l'article).
+              Positioned(
+                bottom: MediaQuery.of(context).viewPadding.bottom +
+                    _kFooterContentHeight +
+                    _kFooterBottomMargin +
+                    FacteurSpacing.space3,
+                left: 0,
+                right: 0,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: FacteurSpacing.space4),
+                    child: _buildPerspectivesNudge(context),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
         // All actions migrated to the persistent footer (article + video/audio).
         floatingActionButton: null,
+      ),
+    );
+  }
+
+  /// Pill flottant "Voir plus de points de vue ?" — visibilité pilotée par
+  /// [_showPerspectivesNudge], tap par [_scrollToPerspectives]. Purement
+  /// présentationnel.
+  Widget _buildPerspectivesNudge(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+
+    return ValueListenableBuilder<bool>(
+      valueListenable: _showPerspectivesNudge,
+      builder: (context, visible, child) => IgnorePointer(
+        ignoring: !visible,
+        child: AnimatedOpacity(
+          opacity: visible ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          child: AnimatedSlide(
+            offset: visible ? Offset.zero : const Offset(0, 0.3),
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            child: child,
+          ),
+        ),
+      ),
+      child: GlassPill(
+        borderRadius: BorderRadius.circular(FacteurRadius.pill),
+        shadowOffset: const Offset(0, 2),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _scrollToPerspectives,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: FacteurSpacing.space4,
+              vertical: FacteurSpacing.space2,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Voir plus de points de vue ?',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
+                  size: 13,
+                  color: colors.textSecondary,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2177,6 +2362,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !_showWebView;
     if (isScrollToSite && !_ctaTapped) {
       setState(() => _ctaTapped = true);
+      _updatePerspectivesNudgeVisibility();
       // Lance le chargement de la page distante MAINTENANT : le CTA anime 500 ms
       // avant que `_isWebViewActive` ne se verrouille → la page démarre ≥ 500 ms
       // avant la révélation (même avance qu'avec le chargement eager d'avant).
@@ -2225,6 +2411,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _showWebView = true;
       _ctaTapped = true;
     });
+    _updatePerspectivesNudgeVisibility();
     // Arrival gate : cache le footer + verrouille la révélation jusqu'au 1er
     // scroll (préserve le bandeau cookies du site en bas d'écran).
     _footerRevealLocked = true;
