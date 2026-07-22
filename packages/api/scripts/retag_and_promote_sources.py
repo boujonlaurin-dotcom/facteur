@@ -17,8 +17,10 @@ Deux composants, un seul rapport :
       l'ancien vocab — jamais de wipe d'un vrai spécialiste mince.
 
   A2. **Promotion catalogue** — `is_active AND NOT is_curated` avec
-      `bias_stance <> 'unknown'` **et** `reliability_score IN {medium,high}`
-      **et** `articles_30d >= MIN_VOLUME` -> `is_curated = true`.
+      `bias_stance NOT IN {unknown, alternative}` (aligné sur le gate de
+      recommandation) **et** `reliability_score IN {medium,high}` **et**
+      `articles_30d >= MIN_VOLUME` **et** URL hors `PROMO_DENYLIST` (exclusions
+      éditoriales PO) -> `is_curated = true`.
 
 Sorties : (a) mutation DB gatée + backup JSON ; (b) `--write-csv` régénère les
 colonnes `granular_topics`/`Status` de `sources/sources_master.csv` (relisible
@@ -55,6 +57,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database import async_session_maker, engine
 from app.services.ml.classification_service import VALID_TOPIC_SLUGS
+from app.services.source_recommendation_gate import QUALITY_CATALOG_EXCLUDED_BIAS
 from scripts.cleanup_orphan_sources import _is_test_db
 
 # --------------------------------------------------------------------------- #
@@ -68,6 +71,43 @@ TOP_K = 6  # nb max de spécialités gardées (par share desc)
 PROMO_WINDOW_DAYS = 30  # fenêtre du volume pour la promotion
 PROMO_MIN_VOLUME = 20  # articles_30d mini pour promouvoir
 PROMO_RELIABILITY = {"medium", "high"}
+# Biais exclus de la promotion. **Dérivé** (pas copié) du gate de RECOMMANDATION
+# `source_recommendation_gate.QUALITY_CATALOG_EXCLUDED_BIAS` -> une seule source
+# de vérité : une source `alternative`/`unknown` ne doit JAMAIS être stampée
+# `is_curated=true` (elle entrerait au catalogue curé sans jamais remonter dans
+# « Étoffer »). `specialized` reste promouvable (biais thématique, pas idéologique).
+PROMO_EXCLUDED_BIAS = frozenset(b.value for b in QUALITY_CATALOG_EXCLUDED_BIAS)
+
+
+def _norm_url(u: str | None) -> str:
+    return (u or "").strip().rstrip("/").lower()
+
+
+# Denylist ÉDITORIALE (décision PO 2026-07-22) : sources qui passent le gate
+# automatique (biais connu + fiabilité medium/high + volume) mais dont la
+# promotion au « catalogue qualité Facteur » se discute — l'auto-promotion ne
+# peut pas juger la valeur éditoriale. On les exclut par URL (normalisée) tant
+# qu'un choix PO explicite ne les réintègre pas. Réversible : retirer la ligne.
+PROMO_DENYLIST_RAW: dict[str, str] = {
+    # Blogs corpo / vendor (contenu promotionnel par nature)
+    "https://huggingface.co/blog": "Blog de Hugging Face (corpo)",
+    "https://thestack.technology/": "The Stack by Humanloop (vendor)",
+    # Newsletters / agrégateurs (pas du reportage primaire)
+    "https://tldr.tech/rss": "TLDR (agrégateur newsletter)",
+    "https://www.lennysnewsletter.com/": "Lenny's Newsletter",
+    "https://www.latent.space/": "Latent Space (newsletter)",
+    "https://towardsdatascience.com": "Towards Data Science (Medium UGC)",
+    "https://korben.info/feed": "Korben (blog perso)",
+    # Hyper-niche / hors ligne éditoriale
+    "https://www.reggae.fr/dev/rss/news.php": "Reggae.fr (niche musique)",
+    "https://www.h2-mobile.fr/feed/": "H2-mobile.fr (niche hydrogène)",
+    "https://www.vertigemedia.fr/blog-feed.xml": "Vertige Media (niche)",
+    # Data aggregator
+    "https://www.statista.com": "Statista (agrégateur data)",
+    # ONG militante (pas un média d'information)
+    "https://www.amnesty.org/": "Amnesty International (ONG)",
+}
+PROMO_DENYLIST = frozenset(_norm_url(u) for u in PROMO_DENYLIST_RAW)
 
 # Vocab hérité (sources.granular_topics) -> 51-slugs valides. Appliqué AVANT le
 # purge dans `resolve_new_topics` : sans cette map, une source à faible activité
@@ -246,14 +286,65 @@ def is_promotable(
     *,
     min_volume: int = PROMO_MIN_VOLUME,
     reliability_set: set[str] = PROMO_RELIABILITY,
+    excluded_bias: frozenset[str] = PROMO_EXCLUDED_BIAS,
+    denylist: frozenset[str] = PROMO_DENYLIST,
 ) -> bool:
-    """Source évaluée + productive, non encore curée : candidate à la promotion."""
+    """Source évaluée + productive, non curée, non denylistée : candidate.
+
+    Biais **connu et non alternatif** (aligné sur le gate de recommandation),
+    fiabilité medium/high, volume suffisant, et pas dans la denylist éditoriale.
+    """
     return (
         not m.is_curated
-        and m.bias_stance != "unknown"
+        and m.bias_stance not in excluded_bias
         and m.reliability_score in reliability_set
         and m.articles_30d >= min_volume
+        and _norm_url(m.url) not in denylist
     )
+
+
+def _to_promotion(m: SourceMeta, granular_topics: list[str] | None) -> Promotion:
+    """Projette une source promue en `Promotion` (report / CSV / DB)."""
+    return Promotion(
+        source_id=m.source_id,
+        name=m.name,
+        url=m.url,
+        theme=m.theme,
+        type=m.type,
+        bias_stance=m.bias_stance,
+        reliability_score=m.reliability_score,
+        description=m.description,
+        score_independence=m.score_independence,
+        score_rigor=m.score_rigor,
+        score_ux=m.score_ux,
+        source_tier=m.source_tier,
+        granular_topics=granular_topics,
+        articles_30d=m.articles_30d,
+    )
+
+
+def compute_promotions(
+    metas: list[SourceMeta],
+    *,
+    min_volume: int = PROMO_MIN_VOLUME,
+    reliability_set: set[str] = PROMO_RELIABILITY,
+    excluded_bias: frozenset[str] = PROMO_EXCLUDED_BIAS,
+    denylist: frozenset[str] = PROMO_DENYLIST,
+) -> list[Promotion]:
+    """Sous-plan léger « promotions seules » — sans dériver `granular_topics`
+    ni auditer la couverture. Utilisé par le job hebdo (qui ne réécrit que
+    `is_curated`) ; conserve `granular_topics` tel quel (jamais écrit)."""
+    return [
+        _to_promotion(m, m.granular_topics)
+        for m in metas
+        if is_promotable(
+            m,
+            min_volume=min_volume,
+            reliability_set=reliability_set,
+            excluded_bias=excluded_bias,
+            denylist=denylist,
+        )
+    ]
 
 
 def compute_plan(
@@ -266,6 +357,8 @@ def compute_plan(
     top_k: int = TOP_K,
     min_volume: int = PROMO_MIN_VOLUME,
     reliability_set: set[str] = PROMO_RELIABILITY,
+    excluded_bias: frozenset[str] = PROMO_EXCLUDED_BIAS,
+    denylist: frozenset[str] = PROMO_DENYLIST,
     valid_slugs: set[str] = VALID_TOPIC_SLUGS,
 ) -> RetagPlan:
     """Construit le plan complet (changes + promotions + audit) sans I/O."""
@@ -299,28 +392,15 @@ def compute_plan(
             )
 
         promote = is_promotable(
-            m, min_volume=min_volume, reliability_set=reliability_set
+            m,
+            min_volume=min_volume,
+            reliability_set=reliability_set,
+            excluded_bias=excluded_bias,
+            denylist=denylist,
         )
         curated_after[m.source_id] = m.is_curated or promote
         if promote:
-            promotions.append(
-                Promotion(
-                    source_id=m.source_id,
-                    name=m.name,
-                    url=m.url,
-                    theme=m.theme,
-                    type=m.type,
-                    bias_stance=m.bias_stance,
-                    reliability_score=m.reliability_score,
-                    description=m.description,
-                    score_independence=m.score_independence,
-                    score_rigor=m.score_rigor,
-                    score_ux=m.score_ux,
-                    source_tier=m.source_tier,
-                    granular_topics=new_topics,
-                    articles_30d=m.articles_30d,
-                )
-            )
+            promotions.append(_to_promotion(m, new_topics))
 
     coverage_contains, coverage_dominant = _coverage_audit(
         metas, granular_after, curated_after, valid_slugs
@@ -366,10 +446,6 @@ def _coverage_audit(
 # --------------------------------------------------------------------------- #
 # Régénération CSV (pure — testable avec des lignes synthétiques)
 # --------------------------------------------------------------------------- #
-def _norm_url(u: str | None) -> str:
-    return (u or "").strip().rstrip("/").lower()
-
-
 def _is_source_row(row: dict) -> bool:
     name = (row.get("Name") or "").strip()
     url = (row.get("URL") or "").strip()
@@ -548,13 +624,21 @@ async def load_topic_stats(
     return topic_stats, totals
 
 
+async def write_promotions(session, promotions: list[Promotion]) -> None:
+    """Applique UNIQUEMENT les promotions `is_curated=true` (idempotent).
+
+    Isolé de `write_plan` pour que le job hebdo puisse promouvoir sans toucher
+    `granular_topics` (le re-tag reste réservé au run manuel + revue CSV PO)."""
+    promote_stmt = text("UPDATE sources SET is_curated = true WHERE id = :id")
+    for p in promotions:
+        await session.execute(promote_stmt, {"id": UUID(p.source_id)})
+
+
 async def write_plan(session, plan: RetagPlan) -> None:
     topic_stmt = text("UPDATE sources SET granular_topics = :gt WHERE id = :id")
     for c in plan.topic_changes:
         await session.execute(topic_stmt, {"gt": c.new, "id": UUID(c.source_id)})
-    promote_stmt = text("UPDATE sources SET is_curated = true WHERE id = :id")
-    for p in plan.promotions:
-        await session.execute(promote_stmt, {"id": UUID(p.source_id)})
+    await write_promotions(session, plan.promotions)
 
 
 # --------------------------------------------------------------------------- #
