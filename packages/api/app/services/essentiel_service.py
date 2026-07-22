@@ -645,7 +645,10 @@ def _pick_transversal_articles(
     # Les articles déjà retenus restent (idempotent : ils sont re-rejetés par
     # `seen_content_ids`/`used_topics`), seuls des 2es articles d'un NOUVEAU
     # sujet peuvent entrer — la diversité de sujet reste garantie.
-    if len(picked) < ESSENTIEL_MAX_ARTICLES and max_per_source < _MAX_PER_SOURCE_FALLBACK:
+    if (
+        len(picked) < ESSENTIEL_MAX_ARTICLES
+        and max_per_source < _MAX_PER_SOURCE_FALLBACK
+    ):
         max_per_source = _MAX_PER_SOURCE_FALLBACK
         _fill_from_tier(followed_topics)
         if len(picked) < ESSENTIEL_MAX_ARTICLES:
