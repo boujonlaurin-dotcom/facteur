@@ -60,7 +60,12 @@ from app.utils.time import PARIS_TZ
 logger = logging.getLogger(__name__)
 
 ESSENTIEL_MAX_ARTICLES = 5
-ESSENTIEL_MAX_PER_SOURCE = 2  # Diversité dure : max 2 articles d'une même source.
+# Diversité dure : au plus 1 article par source. Relâché à 2 (``_MAX_PER_SOURCE_FALLBACK``)
+# en 2e passe quand le pool de sources distinctes ne suffit pas à remplir les 5
+# slots — évite une carte pauvre / un ``202 preparing``. Même logique que
+# ``DigestSelector._select_with_diversity`` (fallback source si trop peu de sources).
+ESSENTIEL_MAX_PER_SOURCE = 1
+_MAX_PER_SOURCE_FALLBACK = 2
 
 # Plancher de qualité : en-dessous de ce nombre d'articles issus du digest, on
 # complète depuis les sources suivies/favorites de l'utilisateur ; si le total
@@ -531,6 +536,10 @@ def _pick_transversal_articles(
     picked_title_tokens: list[set[str]] = []
     dedup_rejections = 0
     sport_rejections = 0
+    # Cap source courant : 1 en 1re passe (diversité dure), relâché à 2 si le
+    # pool de sources distinctes ne suffit pas à remplir les 5 slots (cf. plus
+    # bas). Lu comme variable libre par `_try_pick`.
+    max_per_source = ESSENTIEL_MAX_PER_SOURCE
 
     def _is_duplicate_subject(topic: DigestTopic, article: DigestTopicArticle) -> bool:
         """Un même sujet ne doit jamais occuper deux slots de l'Essentiel.
@@ -566,7 +575,7 @@ def _pick_transversal_articles(
         if article.content_id in seen_content_ids:
             dedup_rejections += 1
             return False
-        if source_count.get(article.source.id, 0) >= ESSENTIEL_MAX_PER_SOURCE:
+        if source_count.get(article.source.id, 0) >= max_per_source:
             return False
         if _is_duplicate_subject(topic, article):
             dedup_rejections += 1
@@ -630,6 +639,17 @@ def _pick_transversal_articles(
     followed_pick_count = len(picked)
     if len(picked) < ESSENTIEL_MAX_ARTICLES:
         _fill_from_tier(fresh_topics)
+
+    # Fallback diversité : le cap 1/source n'a pas rempli les 5 slots (trop peu
+    # de sources distinctes dans le pool). On relâche à 2/source et on complète.
+    # Les articles déjà retenus restent (idempotent : ils sont re-rejetés par
+    # `seen_content_ids`/`used_topics`), seuls des 2es articles d'un NOUVEAU
+    # sujet peuvent entrer — la diversité de sujet reste garantie.
+    if len(picked) < ESSENTIEL_MAX_ARTICLES and max_per_source < _MAX_PER_SOURCE_FALLBACK:
+        max_per_source = _MAX_PER_SOURCE_FALLBACK
+        _fill_from_tier(followed_topics)
+        if len(picked) < ESSENTIEL_MAX_ARTICLES:
+            _fill_from_tier(fresh_topics)
 
     # `picked` only grows after `followed_pick_count` is captured, so the
     # supplement count is always non-negative.
@@ -871,34 +891,44 @@ async def _fetch_live_supplements(
 
     supplements: list[EssentielArticle] = []
     rank = len(existing) + 1
-    for content in candidates:
-        if len(supplements) >= limit:
-            break
-        if content.id in seen_content_ids:
-            continue
-        source = content.source
-        if (source.type or "").lower() in _EXCLUDED_SOURCE_TYPES:
-            continue
-        if is_news_bulletin_title(content.title):
-            continue
-        if ctx.muted_topic_slugs and ctx.muted_topic_slugs.intersection(
-            content.topics or ()
-        ):
-            continue
-        if source_count.get(source.id, 0) >= ESSENTIEL_MAX_PER_SOURCE:
-            continue
-        tokens = normalize_title(content.title)
-        if tokens and any(
-            jaccard_similarity(tokens, prev) >= ScoringWeights.TOPIC_CLUSTER_THRESHOLD
-            for prev in picked_title_tokens
-            if prev
-        ):
-            continue
-        supplements.append(_content_to_essentiel_article(content, rank, ctx))
-        seen_content_ids.add(content.id)
-        source_count[source.id] = source_count.get(source.id, 0) + 1
-        picked_title_tokens.append(tokens)
-        rank += 1
+
+    def _fill(cap: int) -> None:
+        nonlocal rank
+        for content in candidates:
+            if len(supplements) >= limit:
+                return
+            if content.id in seen_content_ids:
+                continue
+            source = content.source
+            if (source.type or "").lower() in _EXCLUDED_SOURCE_TYPES:
+                continue
+            if is_news_bulletin_title(content.title):
+                continue
+            if ctx.muted_topic_slugs and ctx.muted_topic_slugs.intersection(
+                content.topics or ()
+            ):
+                continue
+            if source_count.get(source.id, 0) >= cap:
+                continue
+            tokens = normalize_title(content.title)
+            if tokens and any(
+                jaccard_similarity(tokens, prev)
+                >= ScoringWeights.TOPIC_CLUSTER_THRESHOLD
+                for prev in picked_title_tokens
+                if prev
+            ):
+                continue
+            supplements.append(_content_to_essentiel_article(content, rank, ctx))
+            seen_content_ids.add(content.id)
+            source_count[source.id] = source_count.get(source.id, 0) + 1
+            picked_title_tokens.append(tokens)
+            rank += 1
+
+    # 1re passe cap 1/source (diversité) ; fallback cap 2 pour compléter les
+    # slots libres si le pool de sources distinctes est trop pauvre.
+    _fill(ESSENTIEL_MAX_PER_SOURCE)
+    if len(supplements) < limit and ESSENTIEL_MAX_PER_SOURCE < _MAX_PER_SOURCE_FALLBACK:
+        _fill(_MAX_PER_SOURCE_FALLBACK)
 
     return supplements, new_since_morning
 

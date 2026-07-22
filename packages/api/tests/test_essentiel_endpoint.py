@@ -26,6 +26,7 @@ from app.services.essentiel_service import (
     _W_TRENDING,
     _W_UNE,
     ESSENTIEL_MAX_ARTICLES,
+    ESSENTIEL_MIN_ARTICLES,
     EssentielUserContext,
     _perspective_score,
     _score_article,
@@ -134,6 +135,96 @@ def test_build_essentiel_picks_one_article_per_topic():
     for i, article in enumerate(response.articles):
         assert article.rank == i + 1
         assert article.section_label == f"T{i + 1}"
+
+
+def _topic_from_articles(
+    *, rank: int, label: str, articles: list[DigestTopicArticle]
+) -> DigestTopic:
+    return DigestTopic(
+        topic_id=f"topic-{label}",
+        label=label,
+        rank=rank,
+        reason="Test",
+        theme="technologie",
+        perspective_count=1,
+        articles=articles,
+    )
+
+
+def test_build_essentiel_caps_one_article_per_source():
+    """Cap 1/source : avec ≥5 sources distinctes, aucune source n'apparaît 2×.
+
+    SourceA couvre 2 sujets distincts, mais 4 autres sources suffisent à remplir
+    les 5 slots → le 2e article de A est écarté (le fallback cap 2 ne se
+    déclenche pas puisqu'on atteint déjà le cap 5 en 1re passe).
+    """
+    src_a = _make_source("SourceA")
+    others = [_make_source(f"Src{i}") for i in range(4)]
+    # Titres à tokens distincts → aucune fausse dédup par similarité.
+    other_titles = ["Climat", "Culture", "Sciences", "Sante"]
+    topics = [
+        _topic_from_articles(
+            rank=1,
+            label="Politique",
+            articles=[_make_article(rank=1, title="Politique", source=src_a)],
+        ),
+        _topic_from_articles(
+            rank=2,
+            label="Economie",
+            articles=[_make_article(rank=1, title="Economie", source=src_a)],
+        ),
+    ] + [
+        _topic_from_articles(
+            rank=3 + i,
+            label=other_titles[i],
+            articles=[_make_article(rank=1, title=other_titles[i], source=others[i])],
+        )
+        for i in range(4)
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert len(response.articles) == ESSENTIEL_MAX_ARTICLES
+    source_ids = [a.source.id for a in response.articles]
+    assert len(source_ids) == len(set(source_ids)), "cap 1/source respecté"
+
+
+def test_build_essentiel_falls_back_to_two_per_source_when_scarce():
+    """Fallback : trop peu de sources distinctes → relâche à 2/source.
+
+    2 sources sur 5 sujets distincts : le cap 1 ne remplit que 2 slots (sous le
+    plancher `ESSENTIEL_MIN_ARTICLES`). Le 2e passage à cap 2 complète à 4 (2 par
+    source) → pas de régression `202 preparing` par excès de diversité.
+    """
+    src_a = _make_source("SourceA")
+    src_b = _make_source("SourceB")
+    layout = [
+        ("Alpha", src_a),
+        ("Bravo", src_b),
+        ("Charlie", src_a),
+        ("Delta", src_b),
+        ("Echo", src_a),
+    ]
+    topics = [
+        _topic_from_articles(
+            rank=i + 1,
+            label=title,
+            articles=[_make_article(rank=1, title=title, source=src)],
+        )
+        for i, (title, src) in enumerate(layout)
+    ]
+    digest = _make_digest(topics)
+
+    response = build_essentiel_response(digest)
+
+    assert len(response.articles) >= ESSENTIEL_MIN_ARTICLES, "pas de 202 preparing"
+    per_source: dict[UUID, int] = {}
+    for a in response.articles:
+        per_source[a.source.id] = per_source.get(a.source.id, 0) + 1
+    assert max(per_source.values()) <= 2, "fallback plafonne à 2 articles/source"
+    # 2 sources × cap 2 = 4 slots ; le 5e est impossible sans 3e source.
+    assert len(response.articles) == 4
 
 
 def test_build_essentiel_one_subject_per_topic_no_backfill():
