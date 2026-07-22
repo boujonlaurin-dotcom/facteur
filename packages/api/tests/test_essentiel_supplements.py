@@ -239,8 +239,44 @@ async def test_max_two_articles_per_source(db_session, make_source):
         is_serene=False,
     )
 
-    # 4 articles distincts d'une seule source → cap dur à 2.
-    assert len(response.articles) == 2, "cap de 2 articles par source"
+    # 4 articles distincts d'une seule source → cap 1 en 1re passe, puis
+    # fallback cap 2 (pool mono-source, sous le plancher) → plafond dur à 2.
+    assert len(response.articles) == 2, "cap de 2 articles par source (fallback)"
+
+
+@pytest.mark.asyncio
+async def test_live_blend_caps_one_per_source_when_pool_diverse(
+    db_session, make_source
+):
+    """Cap 1/source respecté : 5 sources suivies (2 articles chacune) → 5
+    articles au total, jamais 2× la même source (le fallback ne se déclenche
+    pas puisque le cap 1 remplit déjà les 5 slots)."""
+    user_id = uuid4()
+    sources = [await make_source(f"Src{i}") for i in range(5)]
+    titles = [
+        ["Politique", "Justice"],
+        ["Economie", "Emploi"],
+        ["Climat", "Energie"],
+        ["Culture", "Cinema"],
+        ["Sciences", "Espace"],
+    ]
+    for src, pair in zip(sources, titles, strict=True):
+        for title in pair:
+            await _add_content(db_session, src, title=title)
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset(s.id for s in sources))
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        _empty_digest(),
+        user_context=ctx,
+        is_serene=False,
+    )
+
+    assert len(response.articles) == 5
+    source_ids = [a.source.id for a in response.articles]
+    assert len(source_ids) == len(set(source_ids)), "cap 1/source respecté"
 
 
 @pytest.mark.asyncio

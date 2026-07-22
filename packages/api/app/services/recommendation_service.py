@@ -729,8 +729,20 @@ class RecommendationService:
             # Source interleaving: avoid consecutive articles from same source
             result = self._apply_source_interleaving(result)
 
-            # Snapshot all articles before regroupement removes hidden ones
+            # Snapshot all articles before regroupement removes hidden ones.
+            # Captured BEFORE cluster dedup so carousels (« Actu chaude ») keep
+            # the full multi-source coverage of a topic.
             pre_regroup_map = {a.id: a for a in result}
+
+            # Hide narrative duplicates (same subject covered by several sources)
+            # from the linear scroll of the default « Flâner » view. Skipped when
+            # a filter is active: entity/keyword views *want* the multi-source
+            # coverage of one subject, and `saved_only` must never hide an
+            # article the user explicitly saved. The carousel still surfaces the
+            # coverage via pre_regroup_map above.
+            has_filter = any([theme, topic, source_id, entity, keyword, saved_only])
+            if not has_filter:
+                result = self._apply_cluster_dedup(result)
 
             # Phase 1.5: Entity regroupement (highest thematic priority)
             result, entity_overflow, assigned_ids, entity_ctas = (
@@ -751,8 +763,8 @@ class RecommendationService:
             self.keyword_overflow = keyword_overflow
             self.topic_overflow = topic_overflow
 
-            # Phase 2.5: Promote overflow groups to carousels
-            has_filter = any([theme, topic, source_id, entity, keyword, saved_only])
+            # Phase 2.5: Promote overflow groups to carousels (same gate as the
+            # cluster dedup above — `has_filter` computed there).
             if not has_filter:
                 result, carousel_data = await self._build_carousels(
                     result, pre_regroup_map, user_id=user_id, serein=serein
@@ -1150,25 +1162,58 @@ class RecommendationService:
     @staticmethod
     def _apply_source_interleaving(articles: list[Content]) -> list[Content]:
         """
-        Prevent more than 2 consecutive articles from the same source.
+        Avoid two adjacent articles from the same source (soft, best-effort).
 
-        For each position i (starting at 2), if article[i] shares the same
-        source as article[i-1] and article[i-2], swap with the nearest
-        following article from a different source.
+        For each position i (starting at 1), if article[i] shares the same
+        source as its left neighbour article[i-1], swap it with the nearest
+        following article from a different source. If the tail is mono-source
+        (no such article exists), leave it as-is — we only reorder, never drop.
+        The swapped-in duplicate at position j is revisited as i advances.
         """
         result = list(articles)
         n = len(result)
-        for i in range(2, n):
-            if (
-                result[i].source_id == result[i - 1].source_id
-                and result[i].source_id == result[i - 2].source_id
-            ):
-                # Find the nearest different source to swap with
+        for i in range(1, n):
+            if result[i].source_id == result[i - 1].source_id:
+                # Find the nearest article from a different source to swap in
                 for j in range(i + 1, n):
-                    if result[j].source_id != result[i].source_id:
+                    if result[j].source_id != result[i - 1].source_id:
                         result[i], result[j] = result[j], result[i]
                         break
         return result
+
+    @staticmethod
+    def _apply_cluster_dedup(articles: list[Content]) -> list[Content]:
+        """Masque les doublons de cluster du scroll linéaire de Flâner.
+
+        Recalcule les clusters de sujets à la volée (Jaccard des titres, même
+        algo que « Actu chaude » via ``ImportanceDetector.build_topic_clusters``)
+        car ``Content.cluster_id`` persisté est dormant. On garde le 1er article
+        de chaque cluster (= plus récent/prioritaire, l'ordre étant déjà
+        chronologique diversifié) et on écarte les autres.
+
+        Réutilise le helper générique ``diversify`` (``max_per_key=1``,
+        ``fallback_ok=False`` pour ne PAS ré-injecter les doublons). Les
+        singletons ont chacun leur propre clé → tous conservés ; un titre sans
+        token (absent d'un cluster) tombe sur ``None`` → conservé.
+        """
+        if len(articles) < 2:
+            return articles
+
+        from app.services.briefing.importance_detector import ImportanceDetector
+        from app.services.recommendation.helpers.diversification import diversify
+
+        clusters = ImportanceDetector().build_topic_clusters(articles)
+        cluster_key: dict[UUID, int] = {}
+        for idx, cluster in enumerate(clusters):
+            for content in cluster.contents:
+                cluster_key[content.id] = idx
+
+        return diversify(
+            articles,
+            key_fn=lambda a: cluster_key.get(a.id),
+            max_per_key=1,
+            fallback_ok=False,
+        )
 
     @staticmethod
     def _apply_entity_regroupement(
