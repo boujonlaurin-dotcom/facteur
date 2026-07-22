@@ -59,6 +59,7 @@ class EssentielArticle(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+    read_at: datetime | None = None
     # Signaux user-aware pour affichage mobile (badges "Tu suis", pastille "Actu du jour").
     is_followed_source: bool = False
     is_followed_topic: bool = False

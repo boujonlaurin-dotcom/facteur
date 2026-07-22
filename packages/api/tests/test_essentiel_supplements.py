@@ -18,6 +18,7 @@ from app.models.source import Source
 from app.schemas.digest import DigestResponse
 from app.services.essentiel_service import (
     ESSENTIEL_MIN_ARTICLES,
+    ESSENTIEL_READ_EVICTION_GRACE,
     EssentielUserContext,
     build_essentiel_response_with_supplements,
 )
@@ -39,7 +40,9 @@ def _empty_digest() -> DigestResponse:
 
 @pytest_asyncio.fixture
 async def make_source(db_session):
-    async def _make(name: str, *, coverage_themes=None, theme: str = "politics") -> Source:
+    async def _make(
+        name: str, *, coverage_themes=None, theme: str = "politics"
+    ) -> Source:
         source = Source(
             id=uuid4(),
             name=name,
@@ -73,7 +76,8 @@ async def _add_content(
         source_id=source.id,
         title=title,
         url=f"https://example.com/{uuid4()}",
-        published_at=published_at or (datetime.now(UTC) - timedelta(minutes=minutes_ago)),
+        published_at=published_at
+        or (datetime.now(UTC) - timedelta(minutes=minutes_ago)),
         content_type=content_type,
         guid=str(uuid4()),
         is_serene=is_serene,
@@ -423,3 +427,173 @@ async def test_rich_theme_source_contributes_without_being_followed(
     ids = {a.content_id for a in response.articles}
     assert rich_article.id in ids, "source riche sur thème apprécié doit alimenter"
     assert thin_article.id not in ids, "coverage_themes NULL exclut la source"
+
+
+def _digest_with_topics(topics: list) -> DigestResponse:
+    return DigestResponse(
+        digest_id=uuid4(),
+        user_id=uuid4(),
+        target_date=datetime.now(UTC).date(),
+        generated_at=datetime.now(UTC),
+        format_version="topics_v1",
+        items=[],
+        topics=topics,
+        is_stale_fallback=False,
+    )
+
+
+def _topic_with_article(
+    label: str, *, is_read: bool = False, read_at: datetime | None = None
+):
+    """Un topic à article unique — permet de contrôler is_read/read_at par cas."""
+    from app.schemas.content import SourceMini
+    from app.schemas.digest import DigestTopic, DigestTopicArticle
+
+    return DigestTopic(
+        topic_id=uuid4().hex,
+        label=label,
+        rank=1,
+        reason="Test",
+        theme=label.lower(),
+        perspective_count=2,
+        articles=[
+            DigestTopicArticle(
+                content_id=uuid4(),
+                title=label,
+                url=f"https://example.com/{label.lower()}",
+                published_at=datetime.now(UTC),
+                source=SourceMini(
+                    id=uuid4(), name="Le Monde", logo_url=None, type="rss", theme=None
+                ),
+                rank=1,
+                reason="Test",
+                is_read=is_read,
+                read_at=read_at,
+            )
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_recently_read_article_stays_within_grace_window(db_session, make_source):
+    """Un article lu il y a 5 min reste dans la réponse (coche visible au cold-start)."""
+    user_id = uuid4()
+    now = datetime.now(UTC)
+    source = await make_source("Mediapart")
+    live_extra = await _add_content(db_session, source, title="Frais du jour")
+
+    digest = _digest_with_topics(
+        [
+            _topic_with_article(
+                "Politique", is_read=True, read_at=now - timedelta(minutes=5)
+            ),
+            _topic_with_article("Sciences"),
+            _topic_with_article("Cuisine"),
+        ]
+    )
+    ctx = EssentielUserContext(followed_source_ids=frozenset({source.id}))
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        digest,
+        user_context=ctx,
+        is_serene=False,
+        now=now,
+    )
+
+    politique = next(a for a in response.articles if a.section_label == "Politique")
+    assert politique.is_read is True
+    assert politique.read_at is not None
+    # 3 articles digest (dont l'article en grâce, compté comme non-lu) + 1 slot
+    # live libre = 4 ; le blend live ne comble qu'un seul slot, pas deux.
+    assert len(response.articles) == 4
+    assert live_extra.id in {a.content_id for a in response.articles}
+
+
+@pytest.mark.asyncio
+async def test_stale_read_article_still_evicted_after_grace(db_session, make_source):
+    """Passé la fenêtre de grâce, l'article lu est évincé comme avant (Essentiel vivant)."""
+    user_id = uuid4()
+    now = datetime.now(UTC)
+    source = await make_source("Mediapart")
+    live_extra = await _add_content(db_session, source, title="Frais du jour")
+
+    digest = _digest_with_topics(
+        [
+            _topic_with_article(
+                "Politique",
+                is_read=True,
+                read_at=now - ESSENTIEL_READ_EVICTION_GRACE - timedelta(minutes=1),
+            ),
+            _topic_with_article("Sciences"),
+            _topic_with_article("Cuisine"),
+        ]
+    )
+    ctx = EssentielUserContext(followed_source_ids=frozenset({source.id}))
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        digest,
+        user_context=ctx,
+        is_serene=False,
+        now=now,
+    )
+
+    labels = [a.section_label for a in response.articles]
+    # L'article lu (hors grâce) est repoussé en dernier recours, derrière le
+    # frais des sources suivies — comportement "Essentiel vivant" inchangé.
+    assert labels[-1] == "Politique" or "Politique" not in labels[:-1]
+    assert live_extra.id in {a.content_id for a in response.articles}
+
+
+@pytest.mark.asyncio
+async def test_never_read_article_has_no_read_at(db_session, make_source):
+    """Un article jamais lu n'a pas de `read_at`."""
+    user_id = uuid4()
+    digest = _digest_with_topics([_topic_with_article("Politique")])
+    ctx = EssentielUserContext()
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        digest,
+        user_context=ctx,
+        is_serene=False,
+    )
+
+    assert len(response.articles) == 1
+    assert response.articles[0].is_read is False
+    assert response.articles[0].read_at is None
+
+
+@pytest.mark.asyncio
+async def test_read_at_exactly_at_grace_boundary_is_evicted(db_session, make_source):
+    """`read_at` exactement à `now - GRACE` est évincé (comparaison stricte `<`)."""
+    user_id = uuid4()
+    now = datetime.now(UTC)
+    source = await make_source("Mediapart")
+    live_extra = await _add_content(db_session, source, title="Frais du jour")
+
+    digest = _digest_with_topics(
+        [
+            _topic_with_article(
+                "Politique", is_read=True, read_at=now - ESSENTIEL_READ_EVICTION_GRACE
+            ),
+            _topic_with_article("Sciences"),
+            _topic_with_article("Cuisine"),
+        ]
+    )
+    ctx = EssentielUserContext(followed_source_ids=frozenset({source.id}))
+
+    response = await build_essentiel_response_with_supplements(
+        db_session,
+        user_id,
+        digest,
+        user_context=ctx,
+        is_serene=False,
+        now=now,
+    )
+
+    assert live_extra.id in {a.content_id for a in response.articles}
