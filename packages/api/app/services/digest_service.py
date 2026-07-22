@@ -383,6 +383,16 @@ _EDITORIAL_FORMATS: tuple[str, ...] = (
 _READABLE_FORMATS: tuple[str, ...] = (*_EDITORIAL_FORMATS, "topics_v1")
 _HOTPATH_FALLBACK_DAYS = 7
 
+# Action state for a content_id absent from `_get_batch_action_states`'
+# result (no `UserContentStatus` row yet — never read/saved/liked/dismissed).
+_DEFAULT_ACTION_STATE: dict[str, bool | datetime | None] = {
+    "is_read": False,
+    "is_saved": False,
+    "is_liked": False,
+    "is_dismissed": False,
+    "read_at": None,
+}
+
 
 async def read_digest_or_fallback(
     session: AsyncSession,
@@ -2311,15 +2321,7 @@ class DigestService:
                     )
                     continue
 
-                action_state = action_states_map.get(
-                    content_id,
-                    {
-                        "is_read": False,
-                        "is_saved": False,
-                        "is_liked": False,
-                        "is_dismissed": False,
-                    },
-                )
+                action_state = action_states_map.get(content_id, _DEFAULT_ACTION_STATE)
 
                 reason = art_data.get("match_reason") or subject.get(
                     "selection_reason", ""
@@ -2348,6 +2350,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    read_at=action_state.get("read_at"),
                 )
                 topic_articles.append(topic_article)
 
@@ -2552,15 +2555,7 @@ class DigestService:
                 if not content or not content.source:
                     continue
 
-                action_state = action_states_map.get(
-                    content_id,
-                    {
-                        "is_read": False,
-                        "is_saved": False,
-                        "is_liked": False,
-                        "is_dismissed": False,
-                    },
-                )
+                action_state = action_states_map.get(content_id, _DEFAULT_ACTION_STATE)
 
                 # Rebuild breakdown
                 breakdown_raw = art_data.get("breakdown") or []
@@ -2605,6 +2600,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    read_at=action_state.get("read_at"),
                 )
                 topic_articles.append(topic_article)
 
@@ -2707,7 +2703,7 @@ class DigestService:
 
     async def _get_batch_action_states(
         self, user_id: UUID, content_ids: list[UUID]
-    ) -> dict[UUID, dict[str, bool]]:
+    ) -> dict[UUID, dict[str, bool | datetime | None]]:
         """Batch-fetch action states for multiple content items in one query.
 
         Optimized replacement for calling _get_item_action_state per item.
@@ -2731,6 +2727,7 @@ class DigestService:
                 "is_saved": status.is_saved,
                 "is_liked": status.is_liked,
                 "is_dismissed": status.is_hidden,
+                "read_at": status.seen_at,
             }
             for status in statuses
         }

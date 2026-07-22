@@ -80,6 +80,14 @@ _ESSENTIEL_DELTA_CAP = 9
 # suivies sont prioritaires, puis le pool éditorial global frais complète.
 ESSENTIEL_TOURNEE_WINDOW = timedelta(hours=24)
 
+# Fenêtre de grâce après lecture : "Essentiel vivant" (story 9.8) évince
+# activement tout article lu de la réponse `GET /api/essentiel` pour laisser
+# la place à du contenu frais. Mais l'app relance `_fetchAll()` sans cooldown
+# à chaque cold start, ce qui évince quasi systématiquement l'article qu'on
+# vient de lire avant que l'utilisateur n'ait pu voir la coche persister.
+# On protège donc un article tout juste lu de l'éviction pendant cette durée.
+ESSENTIEL_READ_EVICTION_GRACE = timedelta(minutes=30)
+
 # Valeur de `DigestTopicArticle.badge` qui marque l'article comme "Actu du jour".
 _BADGE_ACTU = "actu"
 
@@ -673,6 +681,7 @@ def _to_essentiel_article(
         is_saved=article.is_saved,
         is_liked=article.is_liked,
         is_dismissed=article.is_dismissed,
+        read_at=article.read_at,
         is_followed_source=_is_followed_source(article, ctx),
         is_followed_topic=_is_followed_topic(topic, ctx),
         is_actu_du_jour=_is_actu_du_jour(topic, article),
@@ -903,6 +912,21 @@ async def _fetch_live_supplements(
     return supplements, new_since_morning
 
 
+def _is_within_read_grace(article: EssentielArticle, now: datetime | None) -> bool:
+    """True si l'article a été lu il y a moins de `ESSENTIEL_READ_EVICTION_GRACE`.
+
+    Protège un article tout juste lu de l'éviction "Essentiel vivant" le temps
+    que l'utilisateur voie la coche persister sur un cold-start proche.
+    """
+    if not article.is_read or article.read_at is None:
+        return False
+    reference = now or datetime.now(UTC)
+    read_at = article.read_at
+    if read_at.tzinfo is None:
+        read_at = read_at.replace(tzinfo=UTC)
+    return reference - read_at < ESSENTIEL_READ_EVICTION_GRACE
+
+
 async def build_essentiel_response_with_supplements(
     db: AsyncSession,
     user_id: UUID,
@@ -919,8 +943,8 @@ async def build_essentiel_response_with_supplements(
     journée, tout en préservant l'ancre éditoriale et le cap 5 :
 
     1. Projection digest → jusqu'à 5 articles rankés + read-pénalisés.
-    2. Partition en **non-lus** (ancre stable, ordre digest) et **lus**
-       (évictables).
+    2. Partition en **non-lus** (ancre stable, ordre digest ; inclut les lus
+       tout juste marqués, en grâce) et **lus** (évictables, hors grâce).
     3. Pool live frais (sources suivies ∪ thèmes appréciés riches), scoré, pour
        remplir les slots libérés à mesure que l'utilisateur lit.
     4. Ordre final ≤ 5 : non-lus → live (score desc) → lus en dernier recours.
@@ -930,8 +954,13 @@ async def build_essentiel_response_with_supplements(
     """
     response = build_essentiel_response(digest, user_context=user_context, now=now)
 
-    non_read = [a for a in response.articles if not a.is_read]
-    read = [a for a in response.articles if a.is_read]
+    non_read: list[EssentielArticle] = []
+    read: list[EssentielArticle] = []
+    for article in response.articles:
+        if not article.is_read or _is_within_read_grace(article, now):
+            non_read.append(article)
+        else:
+            read.append(article)
     digest_content_ids = {a.content_id for a in response.articles}
     morning_anchor = _morning_anchor(now)
 

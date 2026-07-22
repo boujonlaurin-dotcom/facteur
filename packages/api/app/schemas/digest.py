@@ -73,6 +73,7 @@ class DigestTopicArticle(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+    read_at: datetime | None = None
     # Langue détectée du titre (forward-compat — label éventuel mobile).
     language: str | None = None
 

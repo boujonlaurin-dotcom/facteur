@@ -1251,3 +1251,119 @@ async def test_editorial_label_falls_back_to_actu_title(
 
     assert len(response.topics) == 1
     assert response.topics[0].label == expected_label
+
+
+# ─── Tests: propagation de `read_at` (fix coche Essentiel) ────────────────────
+
+
+def _make_digest_mock(*, format_version, items):
+    """Mock DailyDigest minimal, commun aux deux formats de réponse."""
+    digest = Mock()
+    digest.id = uuid4()
+    digest.user_id = uuid4()
+    digest.target_date = date(2026, 6, 1)
+    digest.generated_at = datetime(2026, 6, 1, 7, 30, 0)
+    digest.mode = "pour_vous"
+    digest.is_serene = False
+    digest.format_version = format_version
+    digest.items = items
+    return digest
+
+
+def _read_action_state(read_at):
+    return {
+        "is_read": True,
+        "is_saved": False,
+        "is_liked": False,
+        "is_dismissed": False,
+        "read_at": read_at,
+    }
+
+
+@pytest.mark.asyncio
+async def test_editorial_response_propagates_read_at(service, mock_session):
+    """`_get_batch_action_states["read_at"]` remonte jusqu'à `DigestTopicArticle`."""
+    cid = uuid4()
+    content = _make_editorial_content(content_id=cid, title="Conflit au Liban")
+    read_at = datetime(2026, 6, 1, 7, 0, 0)
+
+    digest = _make_digest_mock(
+        format_version="editorial_v1",
+        items={
+            "subjects": [
+                {
+                    "topic_id": "t1",
+                    "label": "À la une : Liban",
+                    "rank": 1,
+                    "actu_article": {
+                        "content_id": str(cid),
+                        "title": "Conflit au Liban",
+                    },
+                }
+            ]
+        },
+    )
+
+    followed_result = Mock()
+    followed_result.scalars.return_value.all.return_value = []
+    content_result = Mock()
+    content_result.scalars.return_value.all.return_value = [content]
+    mock_session.execute.side_effect = [followed_result, content_result]
+
+    with (
+        patch.object(
+            service,
+            "_get_batch_action_states",
+            new=AsyncMock(return_value={cid: _read_action_state(read_at)}),
+        ),
+        patch.object(service, "_compute_target_size", new=AsyncMock(return_value=5)),
+    ):
+        response = await service._build_editorial_response(digest, digest.user_id)
+
+    assert response.topics[0].articles[0].is_read is True
+    assert response.topics[0].articles[0].read_at == read_at
+
+
+@pytest.mark.asyncio
+async def test_topics_response_propagates_read_at(service, mock_session):
+    """Même propagation de `read_at` sur le chemin `_build_topics_response`."""
+    cid = uuid4()
+    content = _make_editorial_content(content_id=cid, title="Conflit au Liban")
+    read_at = datetime(2026, 6, 1, 7, 0, 0)
+
+    digest = _make_digest_mock(
+        format_version="topics_v1",
+        items={
+            "topics": [
+                {
+                    "topic_id": "t1",
+                    "label": "Politique",
+                    "rank": 1,
+                    "articles": [{"content_id": str(cid), "rank": 1, "reason": "Test"}],
+                }
+            ]
+        },
+    )
+
+    followed_result = Mock()
+    followed_result.scalars.return_value.all.return_value = []
+    mock_session.execute.return_value = followed_result
+    mock_session.scalar = AsyncMock(return_value=None)
+
+    with (
+        patch.object(
+            service,
+            "_get_cached_digest_contents",
+            new=AsyncMock(return_value={cid: content}),
+        ),
+        patch.object(
+            service,
+            "_get_batch_action_states",
+            new=AsyncMock(return_value={cid: _read_action_state(read_at)}),
+        ),
+    ):
+        response = await service._build_topics_response(digest, digest.user_id)
+
+    assert len(response.topics) == 1
+    assert response.topics[0].articles[0].is_read is True
+    assert response.topics[0].articles[0].read_at == read_at
