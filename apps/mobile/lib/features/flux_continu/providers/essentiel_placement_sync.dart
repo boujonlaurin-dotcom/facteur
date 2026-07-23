@@ -142,6 +142,24 @@ Future<void> reconcileEssentielPlacement(Ref ref) async {
         // Essentiel : présent dans tournee, absent de Flâner (modèle exclusif).
         if (!nextTournee.contains(tKey)) nextTournee.add(tKey);
         nextTab.remove(bKey);
+      } else if (nextTournee.contains(tKey)) {
+        // Self-heal : la DB dit Flâner, mais la clé Essentiel est présente
+        // localement. Les clés ne s'ajoutent que par action utilisateur
+        // explicite sur ce device ⇒ ce `false` est une divergence (écriture DB
+        // ratée). Le local gagne : on ne retire PAS la clé (pas d'éviction), on
+        // ne l'ajoute PAS à Flâner, et on RE-pousse `essentiel_mode=true` en DB
+        // (best-effort : retenté au prochain cold boot si l'échec persiste).
+        // Répare rétroactivement tout user déjà divergé, sans UI ni backfill.
+        try {
+          await ref.read(userSourcesStateProvider.notifier).setSourceState(
+                s.sourceId,
+                InterestState.favorite,
+                essentielMode: true,
+              );
+        } catch (e) {
+          debugPrint(
+              '[essentiel-sync] self-heal source ${s.sourceId} failed: $e');
+        }
       } else {
         // Flâner : retiré de l'Essentiel, présent dans les onglets.
         nextTournee.remove(tKey);
@@ -157,6 +175,21 @@ Future<void> reconcileEssentielPlacement(Ref ref) async {
       if (mode) {
         // Essentiel = défaut du thème : il suffit de le retirer de Flâner.
         nextTab.remove(bKey);
+      } else if (nextTournee.contains(tKey)) {
+        // Self-heal miroir (thème) : la clé Essentiel explicite (posée par
+        // `_moveTheme` / `_onAddTheme` dans `tournee_order_v1`) est
+        // présente localement alors que la DB porte un `false` incohérent. On
+        // garde le placement local et re-pousse `essentiel_mode=true`.
+        try {
+          await ref.read(userInterestsProvider.notifier).setInterestState(
+                ThemeFavoriteRef(slug: t.interestSlug),
+                InterestState.favorite,
+                essentielMode: true,
+              );
+        } catch (e) {
+          debugPrint(
+              '[essentiel-sync] self-heal theme ${t.interestSlug} failed: $e');
+        }
       } else {
         // Flâner : présent dans les onglets, retiré de l'Essentiel explicite.
         nextTournee.remove(tKey);

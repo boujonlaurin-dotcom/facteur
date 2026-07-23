@@ -11,6 +11,7 @@ import 'package:facteur/features/feed/providers/feed_provider.dart';
 import 'package:facteur/features/feed/repositories/feed_repository.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/providers/flux_continu_provider.dart';
+import 'package:facteur/features/flux_continu/providers/tournee_order_prefs_provider.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/flux_continu/repositories/flux_continu_repository.dart';
 import 'package:facteur/features/flux_continu/services/flux_continu_cache_service.dart';
@@ -100,6 +101,22 @@ class _StubUserInterestsNotifier extends UserInterestsNotifier {
   void setState(UserInterestsState next) {
     _initial = next;
     state = AsyncValue.data(next);
+  }
+}
+
+/// Comme [_StubUserInterestsNotifier] mais `setInterestState` lève (le vrai
+/// notifier fait rollback + rethrow sur échec réseau) : sert à vérifier que
+/// `promoteSuggestion` propage l'erreur au lieu de l'avaler.
+class _ThrowingInterestsNotifier extends _StubUserInterestsNotifier {
+  _ThrowingInterestsNotifier(super.initial);
+
+  @override
+  Future<void> setInterestState(
+    FavoriteRef ref,
+    InterestState s, {
+    bool? essentielMode,
+  }) async {
+    throw Exception('network down');
   }
 }
 
@@ -1578,6 +1595,44 @@ void main() {
       expect(capped.coreVisibleCount, 1);
       expect(capped.themeSlug, 'tech');
       expect(capped.currentPage, 2);
+    });
+  });
+
+  group('FluxContinuNotifier — promoteSuggestion', () {
+    test(
+        'échec DB → exception propagée + ordre Tournée non pollué (plus de '
+        'faux succès)', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final container = makeContainer(
+        interestsNotifier: _ThrowingInterestsNotifier(_interestsState()),
+      );
+      addTearDown(container.dispose);
+      await settle(container);
+
+      final notifier = container.read(fluxContinuProvider.notifier);
+      const section = FeedThemeSection(
+        kind: SectionKind.theme,
+        label: 'Tech',
+        accent: Color(0xFF000000),
+        coreVisibleCount: 0,
+        items: <Content>[],
+        themeSlug: 'tech',
+        origin: SectionOrigin.suggested,
+      );
+
+      // L'erreur DB remonte (l'écran l'attrape pour montrer un message d'échec
+      // au lieu d'un faux « Ajoutée à tes favoris »).
+      await expectLater(
+        notifier.promoteSuggestion(section),
+        throwsA(isA<Exception>()),
+      );
+
+      // L'ordre local n'a PAS reçu d'append fantôme `theme:tech` : pas de
+      // divergence « clé locale + DB non persistée » à évincer au cold boot.
+      expect(
+        container.read(tourneeOrderPrefsProvider).order,
+        isNot(contains('theme:tech')),
+      );
     });
   });
 }

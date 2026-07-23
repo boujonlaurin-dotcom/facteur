@@ -31,6 +31,9 @@ class _SpyInterestsNotifier extends UserInterestsNotifier {
   final List<(FavoriteRef, InterestState)> stateCalls = [];
   final List<bool?> modeCalls = [];
 
+  /// Simule un échec réseau du setter DB (le vrai fait rollback + rethrow).
+  bool throwOnSet = false;
+
   @override
   Future<UserInterestsState> build() async => _initial;
 
@@ -42,6 +45,7 @@ class _SpyInterestsNotifier extends UserInterestsNotifier {
   }) async {
     stateCalls.add((ref, s));
     modeCalls.add(essentielMode);
+    if (throwOnSet) throw Exception('network down');
   }
 
   @override
@@ -54,6 +58,9 @@ class _SpySourcesNotifier extends UserSourcesStateNotifier {
   final List<(String, InterestState)> stateCalls = [];
   final List<bool?> modeCalls = [];
 
+  /// Simule un échec réseau du setter DB (le vrai fait rollback + rethrow).
+  bool throwOnSet = false;
+
   @override
   Future<UserSourcesState> build() async => _initial;
 
@@ -65,6 +72,7 @@ class _SpySourcesNotifier extends UserSourcesStateNotifier {
   }) async {
     stateCalls.add((sourceId, s));
     modeCalls.add(essentielMode);
+    if (throwOnSet) throw Exception('network down');
   }
 
   @override
@@ -173,9 +181,13 @@ Future<({_SpyInterestsNotifier interests, _SpySourcesNotifier sources})>
   required UserSourcesState sources,
   List<Source> catalog = const [],
   ManageFavoritesEntry entry = ManageFavoritesEntry.essentiel,
+  bool throwOnSourceSet = false,
+  bool throwOnInterestSet = false,
 }) async {
-  final spyInterests = _SpyInterestsNotifier(interests);
-  final spySources = _SpySourcesNotifier(sources);
+  final spyInterests = _SpyInterestsNotifier(interests)
+    ..throwOnSet = throwOnInterestSet;
+  final spySources = _SpySourcesNotifier(sources)
+    ..throwOnSet = throwOnSourceSet;
 
   await tester.pumpWidget(
     ProviderScope(
@@ -335,6 +347,96 @@ void main() {
     expect(
       prefs.getStringList('pinned_tabs_order_v1') ?? const <String>[],
       isNot(contains('source:s1')),
+    );
+  });
+
+  testWidgets(
+      'déplacer une source Flâner → Essentiel (DB OK) persiste '
+      'essentielMode=true APRÈS la DB', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'pinned_tabs_order_v1': ['source:s1'],
+    });
+    final spies = await _openSheet(
+      tester,
+      interests: _interests(),
+      sources: _sources(
+        favorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+      ),
+      catalog: [_source('s1', 'Le Monde')],
+    );
+
+    await tester.tap(
+      find.byIcon(PhosphorIcons.arrowLineUp(PhosphorIconsStyle.bold)),
+    );
+    await tester.pumpAndSettle();
+
+    // Le mode Essentiel est persisté en DB (DB d'abord).
+    expect(spies.sources.stateCalls, isNotEmpty);
+    expect(spies.sources.modeCalls.last, isTrue);
+    // Puis le local est mis à jour.
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getStringList('tournee_order_v1'), contains('source:s1'));
+  });
+
+  testWidgets(
+      'déplacer une source Flâner → Essentiel quand la DB échoue ne modifie '
+      'AUCUNE pref locale (DB-first, pas de divergence)', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'pinned_tabs_order_v1': ['source:s1'],
+    });
+    final spies = await _openSheet(
+      tester,
+      interests: _interests(),
+      sources: _sources(
+        favorites: const [SourceFavoriteRef(sourceId: 's1', position: 0)],
+      ),
+      catalog: [_source('s1', 'Le Monde')],
+      throwOnSourceSet: true,
+    );
+
+    await tester.tap(
+      find.byIcon(PhosphorIcons.arrowLineUp(PhosphorIconsStyle.bold)),
+    );
+    await tester.pumpAndSettle();
+
+    // La DB a bien été tentée EN PREMIER avec le bon mode…
+    expect(spies.sources.modeCalls, contains(true));
+    // …mais son échec laisse les prefs locales intactes : aucune clé Essentiel
+    // fantôme, la source reste en Flâner (plus de « clé locale + DB false »
+    // rejouée en éviction au cold boot).
+    final prefs = await SharedPreferences.getInstance();
+    expect(
+      prefs.getStringList('tournee_order_v1') ?? const <String>[],
+      isNot(contains('source:s1')),
+    );
+    expect(prefs.getStringList('pinned_tabs_order_v1'), contains('source:s1'));
+  });
+
+  testWidgets(
+      'déplacer un thème Essentiel → Flâner quand la DB échoue ne modifie '
+      'AUCUNE pref locale', (tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'tournee_order_v1': ['theme:tech'],
+    });
+    final spies = await _openSheet(
+      tester,
+      interests: _interests(favorites: const [ThemeFavoriteRef(slug: 'tech')]),
+      sources: _sources(),
+      throwOnInterestSet: true,
+    );
+
+    await tester.tap(
+      find.byIcon(PhosphorIcons.arrowLineDown(PhosphorIconsStyle.bold)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(spies.interests.modeCalls, contains(false));
+    final prefs = await SharedPreferences.getInstance();
+    // Le thème reste dans l'Essentiel, jamais poussé en Flâner.
+    expect(prefs.getStringList('tournee_order_v1'), contains('theme:tech'));
+    expect(
+      prefs.getStringList('pinned_tabs_order_v1') ?? const <String>[],
+      isNot(contains('theme:tech')),
     );
   });
 

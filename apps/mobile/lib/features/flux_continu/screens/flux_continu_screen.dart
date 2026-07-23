@@ -911,8 +911,17 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       sectionTitle: section.label,
       reason: section.reason,
       onKeep: () async {
-        await notifier.promoteSuggestion(section);
-        NotificationService.showSuccess('Ajoutée à tes favoris');
+        // N'annonce le succès que si la promotion a réellement persisté en DB.
+        // Un faux « Ajoutée » sur échec réseau laissait une divergence local/DB
+        // que le cold boot rejouait en éviction.
+        try {
+          await notifier.promoteSuggestion(section);
+          NotificationService.showSuccess('Ajoutée à tes favoris');
+        } catch (_) {
+          NotificationService.showError(
+            'Impossible d\'ajouter à tes favoris pour le moment.',
+          );
+        }
       },
       onDismiss: () async {
         await notifier.dismissSuggestion(section);
