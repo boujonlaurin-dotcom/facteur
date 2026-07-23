@@ -28,6 +28,10 @@ class _FakeRepo implements UserInterestsRepository {
   final List<({String sourceId, bool? mode})> sourcePatches = [];
   final List<({String slug, bool? mode})> themePatches = [];
 
+  /// Simule un échec réseau sur `setSourceState` (test du re-push self-heal
+  /// best-effort : la clé locale doit survivre, pas de crash).
+  bool throwOnSetSource = false;
+
   _FakeRepo({required this.sources, required this.interests});
 
   @override
@@ -43,6 +47,7 @@ class _FakeRepo implements UserInterestsRepository {
     int? position,
     bool? essentielMode,
   }) async {
+    if (throwOnSetSource) throw Exception('network down');
     sourcePatches.add((sourceId: sourceId, mode: essentielMode));
     return sources;
   }
@@ -224,8 +229,50 @@ void main() {
   });
 
   test(
-      'hydrate: source backend essentiel=false → clé retirée de tournee, '
-      'ajoutée à pinned_tabs', () async {
+      'self-heal: source backend essentiel=false MAIS clé Essentiel locale '
+      'présente → clé conservée + re-push essentiel=true (le local gagne)',
+      () async {
+    final repo = _FakeRepo(
+      sources: _sourcesWith(const [
+        SourceInterest(
+          sourceId: s1,
+          state: InterestState.favorite,
+          priorityMultiplier: 1.0,
+          essentielMode: false, // `false` incohérent (écriture DB ratée).
+        ),
+      ]),
+      interests: _interestsWith(const []),
+    );
+    // Divergence : la clé Essentiel est présente localement (action utilisateur
+    // explicite) alors que la DB porte un `false`. Flag posé → on isole le
+    // chemin d'hydratation/self-heal du backfill.
+    final container = await _boot(repo, {
+      'tournee_order_v1': <String>['source:$s1'],
+      'essentiel_placement_reconciled_v1': true,
+    });
+    addTearDown(container.dispose);
+
+    await container.read(_reconcileProbe.future);
+
+    // Le local gagne : la clé reste dans l'Essentiel, absente de Flâner (plus
+    // d'éviction au cold boot).
+    expect(
+      container.read(tourneeOrderPrefsProvider).order,
+      contains('source:$s1'),
+    );
+    expect(
+      container.read(tabOrderPrefsProvider),
+      isNot(contains('source:$s1')),
+    );
+    // Et la DB est réparée : re-push essentiel=true.
+    expect(repo.sourcePatches, hasLength(1));
+    expect(repo.sourcePatches.single.sourceId, s1);
+    expect(repo.sourcePatches.single.mode, isTrue);
+  });
+
+  test(
+      'hydrate: source backend essentiel=false SANS clé locale → Flâner (clé '
+      'absente de tournee, présente dans pinned, aucun re-push)', () async {
     final repo = _FakeRepo(
       sources: _sourcesWith(const [
         SourceInterest(
@@ -237,9 +284,10 @@ void main() {
       ]),
       interests: _interestsWith(const []),
     );
-    // Localement (à tort) placé dans l'Essentiel : l'hydratation doit corriger.
+    // Aucune clé locale (ex. réinstallation) → la DB fait foi : Flâner. Le
+    // self-heal ne se déclenche PAS (pas d'action utilisateur locale à préserver).
     final container = await _boot(repo, {
-      'tournee_order_v1': <String>['source:$s1'],
+      'essentiel_placement_reconciled_v1': true,
     });
     addTearDown(container.dispose);
 
@@ -251,6 +299,69 @@ void main() {
     );
     expect(
       container.read(tabOrderPrefsProvider),
+      contains('source:$s1'),
+    );
+    expect(repo.sourcePatches, isEmpty);
+  });
+
+  test(
+      'self-heal miroir (thème): backend essentiel=false MAIS clé theme:<slug> '
+      'locale présente → conservée + re-push essentiel=true', () async {
+    final repo = _FakeRepo(
+      sources: _sourcesWith(const []),
+      interests: _interestsWith(const [
+        ThemeInterest(
+          interestSlug: 'tech',
+          weight: 1.0,
+          state: InterestState.favorite,
+          essentielMode: false,
+        ),
+      ]),
+    );
+    // Le thème a été explicitement placé en Essentiel (clé dans tournee_order_v1)
+    // mais la DB porte un `false` incohérent.
+    final container = await _boot(repo, {
+      'tournee_order_v1': <String>['theme:tech'],
+      'essentiel_placement_reconciled_v1': true,
+    });
+    addTearDown(container.dispose);
+
+    await container.read(_reconcileProbe.future);
+
+    expect(
+      container.read(tourneeOrderPrefsProvider).order,
+      contains('theme:tech'),
+    );
+    expect(repo.themePatches, hasLength(1));
+    expect(repo.themePatches.single.slug, 'tech');
+    expect(repo.themePatches.single.mode, isTrue);
+  });
+
+  test(
+      'self-heal best-effort: le re-push DB échoue → clé locale conservée, pas '
+      'de crash (retenté au boot suivant)', () async {
+    final repo = _FakeRepo(
+      sources: _sourcesWith(const [
+        SourceInterest(
+          sourceId: s1,
+          state: InterestState.favorite,
+          priorityMultiplier: 1.0,
+          essentielMode: false,
+        ),
+      ]),
+      interests: _interestsWith(const []),
+    )..throwOnSetSource = true;
+    final container = await _boot(repo, {
+      'tournee_order_v1': <String>['source:$s1'],
+      'essentiel_placement_reconciled_v1': true,
+    });
+    addTearDown(container.dispose);
+
+    // Ne doit pas lever : la réconciliation est best-effort.
+    await container.read(_reconcileProbe.future);
+
+    expect(
+      container.read(tourneeOrderPrefsProvider).order,
       contains('source:$s1'),
     );
   });

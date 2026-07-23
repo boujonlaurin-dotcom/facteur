@@ -243,69 +243,64 @@ class _ManageFavoritesContentState
     await _appendTournee(key);
   }
 
-  // ── Déplacement de mode (sources uniquement) ───────────────────────────────
+  // ── Déplacement de mode (sources & thèmes) ─────────────────────────────────
 
-  Future<void> _moveSourceToFlaner(String sourceId) async {
-    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
-    await _removeTournee(tourneeSourceKey(sourceId));
-    await _appendTab(tabOrderSourceKey(sourceId));
-    // Persiste le placement Flâner en DB (la source reste favorite, seul le mode
-    // change) — durable au-delà des prefs locales, resync sur chaque device.
-    await _persistSourceMode(sourceId, essentiel: false);
-    NotificationService.showSuccess('Déplacé vers Flâner');
+  // DB d'abord, local ensuite (même pattern que `_onAddSource`) : `setSourceState`
+  // /`setInterestState` sont optimistic + rollback + rethrow, donc en cas d'échec
+  // réseau on n'écrit AUCUNE pref locale → plus de divergence « clé locale
+  // présente + DB false » que la réconciliation cold-boot rejouerait en éviction.
+  // La clé (`source:<id>` / `theme:<slug>`) est partagée entre `tournee_order_v1`
+  // (Essentiel) et `pinned_tabs_order_v1` (Flâner) ; seul le mode bascule (la
+  // favorite reste intacte : `SourceFavoriteRef` / `ThemeFavoriteRef`).
+  Future<void> _moveSource(String sourceId, {required bool toEssentiel}) async {
+    await _moveMode(
+      persist: () => ref.read(userSourcesStateProvider.notifier).setSourceState(
+            sourceId,
+            InterestState.favorite,
+            essentielMode: toEssentiel,
+          ),
+      tourneeKey: tourneeSourceKey(sourceId),
+      tabKey: tabOrderSourceKey(sourceId),
+      toEssentiel: toEssentiel,
+    );
   }
 
-  Future<void> _moveSourceToEssentiel(String sourceId) async {
-    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
-    await _removeTab(tabOrderSourceKey(sourceId));
-    await _appendTournee(tourneeSourceKey(sourceId));
-    await _persistSourceMode(sourceId, essentiel: true);
-    NotificationService.showSuccess('Déplacé vers l\'Essentiel');
+  Future<void> _moveTheme(String slug, {required bool toEssentiel}) async {
+    await _moveMode(
+      persist: () =>
+          ref.read(userInterestsProvider.notifier).setInterestState(
+                ThemeFavoriteRef(slug: slug),
+                InterestState.favorite,
+                essentielMode: toEssentiel,
+              ),
+      tourneeKey: tourneeThemeKey(slug),
+      tabKey: tabOrderThemeKey(slug),
+      toEssentiel: toEssentiel,
+    );
   }
 
-  /// Écrit le mode Essentiel/Flâner d'une source favorite en DB (best-effort :
-  /// l'échec réseau ne doit pas casser le déplacement local déjà appliqué).
-  Future<void> _persistSourceMode(String sourceId,
-      {required bool essentiel}) async {
+  /// Bascule une favorite entre Essentiel et Flâner : DB d'abord (via [persist]),
+  /// puis les prefs locales seulement si la DB a réussi ; échec réseau → toast,
+  /// aucune écriture locale, donc aucune divergence.
+  Future<void> _moveMode({
+    required Future<void> Function() persist,
+    required String tourneeKey,
+    required String tabKey,
+    required bool toEssentiel,
+  }) async {
+    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     try {
-      await ref
-          .read(userSourcesStateProvider.notifier)
-          .setSourceState(sourceId, InterestState.favorite,
-              essentielMode: essentiel);
-    } catch (e) {
-      NotificationService.showError('Erreur : $e');
-    }
-  }
-
-  // Thèmes : même modèle exclusif que les sources. La clé `theme:<slug>` est
-  // partagée entre `tournee_order_v1` (Essentiel) et `pinned_tabs_order_v1`
-  // (Flâner) ; la favorite reste un `ThemeFavoriteRef` (on ne touche pas à
-  // `setInterestState`).
-  Future<void> _moveThemeToFlaner(String slug) async {
-    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
-    await _removeTournee(tourneeThemeKey(slug));
-    await _appendTab(tabOrderThemeKey(slug));
-    // Persiste le placement Flâner en DB (le thème reste favorite, seul le mode
-    // change) — durable au-delà des prefs locales, resync sur chaque device.
-    await _persistThemeMode(slug, essentiel: false);
-    NotificationService.showSuccess('Déplacé vers Flâner');
-  }
-
-  Future<void> _moveThemeToEssentiel(String slug) async {
-    await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
-    await _removeTab(tabOrderThemeKey(slug));
-    await _appendTournee(tourneeThemeKey(slug));
-    await _persistThemeMode(slug, essentiel: true);
-    NotificationService.showSuccess('Déplacé vers l\'Essentiel');
-  }
-
-  /// Écrit le mode Essentiel/Flâner d'un thème favori en DB (best-effort).
-  Future<void> _persistThemeMode(String slug, {required bool essentiel}) async {
-    try {
-      await ref
-          .read(userInterestsProvider.notifier)
-          .setInterestState(ThemeFavoriteRef(slug: slug), InterestState.favorite,
-              essentielMode: essentiel);
+      await persist();
+      if (toEssentiel) {
+        await _removeTab(tabKey);
+        await _appendTournee(tourneeKey);
+      } else {
+        await _removeTournee(tourneeKey);
+        await _appendTab(tabKey);
+      }
+      NotificationService.showSuccess(
+        toEssentiel ? 'Déplacé vers l\'Essentiel' : 'Déplacé vers Flâner',
+      );
     } catch (e) {
       NotificationService.showError('Erreur : $e');
     }
@@ -801,8 +796,8 @@ class _ManageFavoritesContentState
                     moveTooltip: 'Déplacer vers Flâner',
                     moveLabel: 'Flâner',
                     onMove: (item) => item.kind == _FavKind.theme
-                        ? _moveThemeToFlaner(item.id)
-                        : _moveSourceToFlaner(item.id),
+                        ? _moveTheme(item.id, toEssentiel: false)
+                        : _moveSource(item.id, toEssentiel: false),
                   ),
                 const SizedBox(height: FacteurSpacing.space4),
 
@@ -847,8 +842,8 @@ class _ManageFavoritesContentState
                     moveTooltip: 'Déplacer vers l\'Essentiel',
                     moveLabel: 'Essentiel',
                     onMove: (item) => item.kind == _FavKind.theme
-                        ? _moveThemeToEssentiel(item.id)
-                        : _moveSourceToEssentiel(item.id),
+                        ? _moveTheme(item.id, toEssentiel: true)
+                        : _moveSource(item.id, toEssentiel: true),
                     onSubjectVeille: (item) => _openVeilleConfig(),
                   ),
                 const SizedBox(height: FacteurSpacing.space4),

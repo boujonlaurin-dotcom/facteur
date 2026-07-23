@@ -2181,7 +2181,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         await _appendTourneeOrder(tourneeThemeKey(section.themeSlug!));
       }
     } catch (e) {
+      // Ne plus avaler l'échec : `setSourceState`/`setInterestState` ont
+      // rollback leur état optimiste, l'ordre local n'a pas été touché ; on
+      // propage pour que l'écran affiche une erreur au lieu d'un faux succès
+      // (qui laissait une source « ajoutée » côté UI mais false en DB → évincée
+      // au prochain cold boot).
       debugPrint('FluxContinu: promoteSuggestion failed: $e');
+      rethrow;
     }
   }
 
