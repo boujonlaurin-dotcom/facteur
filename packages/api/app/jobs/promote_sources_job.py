@@ -25,7 +25,7 @@ from __future__ import annotations
 import structlog
 
 from app.database import safe_async_session
-from scripts.retag_and_promote_sources import (
+from app.services.source_promotion import (
     compute_promotions,
     load_metas,
     write_promotions,
@@ -47,9 +47,7 @@ async def promote_evaluated_sources() -> None:
             promotions = compute_promotions(metas)
 
             if not promotions:
-                logger.info(
-                    "source_promotion_no_candidates", active_sources=len(metas)
-                )
+                logger.info("source_promotion_no_candidates", active_sources=len(metas))
                 return
 
             await write_promotions(session, promotions)

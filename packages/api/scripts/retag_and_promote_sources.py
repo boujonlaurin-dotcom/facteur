@@ -57,7 +57,26 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database import async_session_maker, engine
 from app.services.ml.classification_service import VALID_TOPIC_SLUGS
-from app.services.source_recommendation_gate import QUALITY_CATALOG_EXCLUDED_BIAS
+
+# Cœur de la promotion (gate, dataclasses, DB) extrait dans app/ pour rester
+# importable sans le package `scripts/` (pas embarqué dans l'image Docker).
+# Ré-exporté ici pour l'usage CLI + la compat des imports existants.
+from app.services.source_promotion import (  # noqa: F401
+    PROMO_DENYLIST,
+    PROMO_DENYLIST_RAW,
+    PROMO_EXCLUDED_BIAS,
+    PROMO_MIN_VOLUME,
+    PROMO_RELIABILITY,
+    PROMO_WINDOW_DAYS,
+    Promotion,
+    SourceMeta,
+    _norm_url,
+    _to_promotion,
+    compute_promotions,
+    is_promotable,
+    load_metas,
+    write_promotions,
+)
 from scripts.cleanup_orphan_sources import _is_test_db
 
 # --------------------------------------------------------------------------- #
@@ -67,47 +86,6 @@ WINDOW_DAYS = 90  # fenêtre d'agrégation des articles classés
 MIN_COUNT = 4  # nb mini d'articles taggés d'un topic pour le retenir
 MIN_SHARE = 0.10  # part mini de la production de la source sur ce topic
 TOP_K = 6  # nb max de spécialités gardées (par share desc)
-
-PROMO_WINDOW_DAYS = 30  # fenêtre du volume pour la promotion
-PROMO_MIN_VOLUME = 20  # articles_30d mini pour promouvoir
-PROMO_RELIABILITY = {"medium", "high"}
-# Biais exclus de la promotion. **Dérivé** (pas copié) du gate de RECOMMANDATION
-# `source_recommendation_gate.QUALITY_CATALOG_EXCLUDED_BIAS` -> une seule source
-# de vérité : une source `alternative`/`unknown` ne doit JAMAIS être stampée
-# `is_curated=true` (elle entrerait au catalogue curé sans jamais remonter dans
-# « Étoffer »). `specialized` reste promouvable (biais thématique, pas idéologique).
-PROMO_EXCLUDED_BIAS = frozenset(b.value for b in QUALITY_CATALOG_EXCLUDED_BIAS)
-
-
-def _norm_url(u: str | None) -> str:
-    return (u or "").strip().rstrip("/").lower()
-
-
-# Denylist ÉDITORIALE (décision PO 2026-07-22) : sources qui passent le gate
-# automatique (biais connu + fiabilité medium/high + volume) mais dont la
-# promotion au « catalogue qualité Facteur » se discute — l'auto-promotion ne
-# peut pas juger la valeur éditoriale. On les exclut par URL (normalisée) tant
-# qu'un choix PO explicite ne les réintègre pas. Réversible : retirer la ligne.
-PROMO_DENYLIST_RAW: dict[str, str] = {
-    # Blogs corpo / vendor (contenu promotionnel par nature)
-    "https://huggingface.co/blog": "Blog de Hugging Face (corpo)",
-    "https://thestack.technology/": "The Stack by Humanloop (vendor)",
-    # Newsletters / agrégateurs (pas du reportage primaire)
-    "https://tldr.tech/rss": "TLDR (agrégateur newsletter)",
-    "https://www.lennysnewsletter.com/": "Lenny's Newsletter",
-    "https://www.latent.space/": "Latent Space (newsletter)",
-    "https://towardsdatascience.com": "Towards Data Science (Medium UGC)",
-    "https://korben.info/feed": "Korben (blog perso)",
-    # Hyper-niche / hors ligne éditoriale
-    "https://www.reggae.fr/dev/rss/news.php": "Reggae.fr (niche musique)",
-    "https://www.h2-mobile.fr/feed/": "H2-mobile.fr (niche hydrogène)",
-    "https://www.vertigemedia.fr/blog-feed.xml": "Vertige Media (niche)",
-    # Data aggregator
-    "https://www.statista.com": "Statista (agrégateur data)",
-    # ONG militante (pas un média d'information)
-    "https://www.amnesty.org/": "Amnesty International (ONG)",
-}
-PROMO_DENYLIST = frozenset(_norm_url(u) for u in PROMO_DENYLIST_RAW)
 
 # Vocab hérité (sources.granular_topics) -> 51-slugs valides. Appliqué AVANT le
 # purge dans `resolve_new_topics` : sans cette map, une source à faible activité
@@ -166,27 +144,9 @@ _TYPE_TO_CSV = {
 
 
 # --------------------------------------------------------------------------- #
-# Données chargées (thin DB layer)
+# Données chargées (thin DB layer). `SourceMeta`/`Promotion` sont importés depuis
+# `app.services.source_promotion` (ré-exportés en tête de module).
 # --------------------------------------------------------------------------- #
-@dataclass
-class SourceMeta:
-    source_id: str
-    name: str
-    url: str
-    theme: str | None
-    type: str
-    is_curated: bool
-    bias_stance: str
-    reliability_score: str
-    description: str | None
-    score_independence: float | None
-    score_rigor: float | None
-    score_ux: float | None
-    source_tier: str
-    granular_topics: list[str] | None
-    articles_30d: int
-
-
 @dataclass
 class TopicChange:
     source_id: str
@@ -194,24 +154,6 @@ class TopicChange:
     url: str
     old: list[str] | None
     new: list[str] | None
-
-
-@dataclass
-class Promotion:
-    source_id: str
-    name: str
-    url: str
-    theme: str | None
-    type: str
-    bias_stance: str
-    reliability_score: str
-    description: str | None
-    score_independence: float | None
-    score_rigor: float | None
-    score_ux: float | None
-    source_tier: str
-    granular_topics: list[str] | None
-    articles_30d: int
 
 
 @dataclass
@@ -279,72 +221,6 @@ def resolve_new_topics(
     # dict.fromkeys = dédup en conservant l'ordre de 1re occurrence (idiome maison).
     cleaned = list(dict.fromkeys(t for t in remapped if t in valid_slugs))
     return cleaned or None
-
-
-def is_promotable(
-    m: SourceMeta,
-    *,
-    min_volume: int = PROMO_MIN_VOLUME,
-    reliability_set: set[str] = PROMO_RELIABILITY,
-    excluded_bias: frozenset[str] = PROMO_EXCLUDED_BIAS,
-    denylist: frozenset[str] = PROMO_DENYLIST,
-) -> bool:
-    """Source évaluée + productive, non curée, non denylistée : candidate.
-
-    Biais **connu et non alternatif** (aligné sur le gate de recommandation),
-    fiabilité medium/high, volume suffisant, et pas dans la denylist éditoriale.
-    """
-    return (
-        not m.is_curated
-        and m.bias_stance not in excluded_bias
-        and m.reliability_score in reliability_set
-        and m.articles_30d >= min_volume
-        and _norm_url(m.url) not in denylist
-    )
-
-
-def _to_promotion(m: SourceMeta, granular_topics: list[str] | None) -> Promotion:
-    """Projette une source promue en `Promotion` (report / CSV / DB)."""
-    return Promotion(
-        source_id=m.source_id,
-        name=m.name,
-        url=m.url,
-        theme=m.theme,
-        type=m.type,
-        bias_stance=m.bias_stance,
-        reliability_score=m.reliability_score,
-        description=m.description,
-        score_independence=m.score_independence,
-        score_rigor=m.score_rigor,
-        score_ux=m.score_ux,
-        source_tier=m.source_tier,
-        granular_topics=granular_topics,
-        articles_30d=m.articles_30d,
-    )
-
-
-def compute_promotions(
-    metas: list[SourceMeta],
-    *,
-    min_volume: int = PROMO_MIN_VOLUME,
-    reliability_set: set[str] = PROMO_RELIABILITY,
-    excluded_bias: frozenset[str] = PROMO_EXCLUDED_BIAS,
-    denylist: frozenset[str] = PROMO_DENYLIST,
-) -> list[Promotion]:
-    """Sous-plan léger « promotions seules » — sans dériver `granular_topics`
-    ni auditer la couverture. Utilisé par le job hebdo (qui ne réécrit que
-    `is_curated`) ; conserve `granular_topics` tel quel (jamais écrit)."""
-    return [
-        _to_promotion(m, m.granular_topics)
-        for m in metas
-        if is_promotable(
-            m,
-            min_volume=min_volume,
-            reliability_set=reliability_set,
-            excluded_bias=excluded_bias,
-            denylist=denylist,
-        )
-    ]
 
 
 def compute_plan(
@@ -542,53 +418,9 @@ def write_csv(path: Path, plan: RetagPlan, metas: list[SourceMeta]) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# DB layer (thin)
+# DB layer (thin). `load_metas` / `write_promotions` sont dans
+# `app.services.source_promotion` (ré-exportés en tête de module).
 # --------------------------------------------------------------------------- #
-async def load_metas(session) -> list[SourceMeta]:
-    sql = text(
-        f"""
-        SELECT s.id, s.name, s.url, s.theme, s.type, s.is_curated,
-               s.bias_stance, s.reliability_score, s.description,
-               s.score_independence, s.score_rigor, s.score_ux,
-               s.source_tier, s.granular_topics,
-               COALESCE(a30.n, 0) AS articles_30d
-        FROM sources s
-        LEFT JOIN (
-            SELECT source_id, COUNT(*) AS n
-            FROM contents
-            WHERE published_at >= now() - interval '{PROMO_WINDOW_DAYS} days'
-            GROUP BY source_id
-        ) a30 ON a30.source_id = s.id
-        WHERE s.is_active
-        """
-    )
-    result = await session.execute(sql)
-    metas: list[SourceMeta] = []
-    for r in result.mappings():
-        metas.append(
-            SourceMeta(
-                source_id=str(r["id"]),
-                name=r["name"],
-                url=r["url"],
-                theme=r["theme"],
-                type=str(r["type"]),
-                is_curated=bool(r["is_curated"]),
-                bias_stance=str(r["bias_stance"]),
-                reliability_score=str(r["reliability_score"]),
-                description=r["description"],
-                score_independence=r["score_independence"],
-                score_rigor=r["score_rigor"],
-                score_ux=r["score_ux"],
-                source_tier=r["source_tier"] or "mainstream",
-                granular_topics=list(r["granular_topics"])
-                if r["granular_topics"]
-                else None,
-                articles_30d=int(r["articles_30d"]),
-            )
-        )
-    return metas
-
-
 async def load_topic_stats(
     session,
 ) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
@@ -622,16 +454,6 @@ async def load_topic_stats(
         for r in (await session.execute(totals_sql)).mappings()
     }
     return topic_stats, totals
-
-
-async def write_promotions(session, promotions: list[Promotion]) -> None:
-    """Applique UNIQUEMENT les promotions `is_curated=true` (idempotent).
-
-    Isolé de `write_plan` pour que le job hebdo puisse promouvoir sans toucher
-    `granular_topics` (le re-tag reste réservé au run manuel + revue CSV PO)."""
-    promote_stmt = text("UPDATE sources SET is_curated = true WHERE id = :id")
-    for p in promotions:
-        await session.execute(promote_stmt, {"id": UUID(p.source_id)})
 
 
 async def write_plan(session, plan: RetagPlan) -> None:
