@@ -65,6 +65,37 @@ class TestScheduler:
             assert job["max_instances"] == 1
             assert job["coalesce"] is True
 
+    def test_scheduler_has_promotion_job_weekly_sunday(self):
+        """WS1 : promote_evaluated_sources hebdo dim. 04:00 Paris (après 03:45)."""
+        with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:
+            mock_scheduler = Mock()
+            mock_scheduler_class.return_value = mock_scheduler
+
+            captured = {}
+
+            def capture_add_job(*args, **kwargs):
+                job_id = kwargs.get("id")
+                if job_id:
+                    captured[job_id] = {
+                        "func": args[0] if args else kwargs.get("func"),
+                        **kwargs,
+                    }
+
+            mock_scheduler.add_job = capture_add_job
+            start_scheduler()
+
+            assert "promote_evaluated_sources" in captured
+            job = captured["promote_evaluated_sources"]
+            assert job["func"].__name__ == "promote_evaluated_sources"
+            assert isinstance(job["trigger"], CronTrigger)
+            assert "Europe/Paris" in str(job["trigger"].timezone)
+            fields = {f.name: str(f) for f in job["trigger"].fields}
+            assert fields.get("day_of_week") == "sun"
+            assert fields.get("hour") == "4"
+            assert fields.get("minute") == "0"
+            assert job["max_instances"] == 1
+            assert job["coalesce"] is True
+
     def test_scheduler_has_daily_digest_job(self):
         """TEST-01: Verify daily digest job is scheduled at 07:30 Paris time."""
         with patch("app.workers.scheduler.AsyncIOScheduler") as mock_scheduler_class:

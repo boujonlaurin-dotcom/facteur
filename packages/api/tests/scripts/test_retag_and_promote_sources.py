@@ -11,9 +11,12 @@ from __future__ import annotations
 from app.services.ml.classification_service import VALID_TOPIC_SLUGS
 from scripts.retag_and_promote_sources import (
     EXTENDED_MIGRATION_MAP,
+    PROMO_DENYLIST_RAW,
+    PROMO_EXCLUDED_BIAS,
     Promotion,
     SourceMeta,
     compute_plan,
+    compute_promotions,
     derive_granular_topics,
     is_promotable,
     regenerate_csv_rows,
@@ -167,6 +170,63 @@ def test_not_promotable_low_reliability():
 
 def test_not_promotable_low_volume():
     assert is_promotable(_meta("a", articles_30d=5)) is False
+
+
+def test_not_promotable_alternative_bias():
+    # Aligné sur le gate de reco : une source `alternative` n'entre jamais au
+    # catalogue curé, même évaluée + productive (image de marque Facteur).
+    assert is_promotable(_meta("a", bias_stance="alternative")) is False
+
+
+def test_promotable_specialized_bias():
+    # `specialized` (sport/tech/science) = biais thématique, pas idéologique :
+    # reste promouvable (ne pas sur-filtrer les spécialistes).
+    assert is_promotable(_meta("a", bias_stance="specialized")) is True
+
+
+def test_not_promotable_denylisted_url():
+    # URL dans la denylist éditoriale -> jamais promue, malgré un gate passant.
+    denied = next(iter(PROMO_DENYLIST_RAW))
+    assert is_promotable(_meta("a", url=denied)) is False
+
+
+def test_denylist_url_match_ignores_trailing_slash_and_case():
+    denied = next(iter(PROMO_DENYLIST_RAW)).rstrip("/")
+    assert is_promotable(_meta("a", url=f"{denied.upper()}/")) is False
+
+
+def test_excluded_bias_is_alternative_and_unknown():
+    # PROMO_EXCLUDED_BIAS est dérivé de QUALITY_CATALOG_EXCLUDED_BIAS ; on pin la
+    # policy attendue pour alerter si la source de vérité change par accident.
+    assert frozenset({"unknown", "alternative"}) == PROMO_EXCLUDED_BIAS
+
+
+def test_compute_promotions_filters_gate_and_denylist():
+    # Le sous-plan léger du job hebdo : même gate que compute_plan, promotions
+    # seules, granular_topics conservé tel quel (jamais dérivé).
+    metas = [
+        _meta("ok", granular_topics=["politics"]),
+        _meta("alt", bias_stance="alternative"),
+        _meta("deny", url=next(iter(PROMO_DENYLIST_RAW))),
+        _meta("curated", is_curated=True),
+        _meta("thin", articles_30d=5),
+    ]
+    promos = compute_promotions(metas)
+    assert {p.source_id for p in promos} == {"ok"}
+    assert promos[0].granular_topics == ["politics"]  # conservé, pas dérivé
+
+
+def test_compute_plan_skips_denylisted_and_alternative():
+    metas = [
+        _meta("ok", url="https://legit.test/"),
+        _meta("alt", bias_stance="alternative"),
+        _meta("deny", url=next(iter(PROMO_DENYLIST_RAW))),
+    ]
+    plan = compute_plan(metas, {}, {})
+    promoted = {p.source_id for p in plan.promotions}
+    assert promoted == {"ok"}
+    assert plan.curated_after["alt"] is False
+    assert plan.curated_after["deny"] is False
 
 
 # --------------------------------------------------------------------------- #

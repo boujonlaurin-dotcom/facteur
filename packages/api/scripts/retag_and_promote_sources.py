@@ -17,8 +17,10 @@ Deux composants, un seul rapport :
       l'ancien vocab — jamais de wipe d'un vrai spécialiste mince.
 
   A2. **Promotion catalogue** — `is_active AND NOT is_curated` avec
-      `bias_stance <> 'unknown'` **et** `reliability_score IN {medium,high}`
-      **et** `articles_30d >= MIN_VOLUME` -> `is_curated = true`.
+      `bias_stance NOT IN {unknown, alternative}` (aligné sur le gate de
+      recommandation) **et** `reliability_score IN {medium,high}` **et**
+      `articles_30d >= MIN_VOLUME` **et** URL hors `PROMO_DENYLIST` (exclusions
+      éditoriales PO) -> `is_curated = true`.
 
 Sorties : (a) mutation DB gatée + backup JSON ; (b) `--write-csv` régénère les
 colonnes `granular_topics`/`Status` de `sources/sources_master.csv` (relisible
@@ -55,6 +57,26 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.database import async_session_maker, engine
 from app.services.ml.classification_service import VALID_TOPIC_SLUGS
+
+# Cœur de la promotion (gate, dataclasses, DB) extrait dans app/ pour rester
+# importable sans le package `scripts/` (pas embarqué dans l'image Docker).
+# Ré-exporté ici pour l'usage CLI + la compat des imports existants.
+from app.services.source_promotion import (  # noqa: F401
+    PROMO_DENYLIST,
+    PROMO_DENYLIST_RAW,
+    PROMO_EXCLUDED_BIAS,
+    PROMO_MIN_VOLUME,
+    PROMO_RELIABILITY,
+    PROMO_WINDOW_DAYS,
+    Promotion,
+    SourceMeta,
+    _norm_url,
+    _to_promotion,
+    compute_promotions,
+    is_promotable,
+    load_metas,
+    write_promotions,
+)
 from scripts.cleanup_orphan_sources import _is_test_db
 
 # --------------------------------------------------------------------------- #
@@ -64,10 +86,6 @@ WINDOW_DAYS = 90  # fenêtre d'agrégation des articles classés
 MIN_COUNT = 4  # nb mini d'articles taggés d'un topic pour le retenir
 MIN_SHARE = 0.10  # part mini de la production de la source sur ce topic
 TOP_K = 6  # nb max de spécialités gardées (par share desc)
-
-PROMO_WINDOW_DAYS = 30  # fenêtre du volume pour la promotion
-PROMO_MIN_VOLUME = 20  # articles_30d mini pour promouvoir
-PROMO_RELIABILITY = {"medium", "high"}
 
 # Vocab hérité (sources.granular_topics) -> 51-slugs valides. Appliqué AVANT le
 # purge dans `resolve_new_topics` : sans cette map, une source à faible activité
@@ -126,27 +144,9 @@ _TYPE_TO_CSV = {
 
 
 # --------------------------------------------------------------------------- #
-# Données chargées (thin DB layer)
+# Données chargées (thin DB layer). `SourceMeta`/`Promotion` sont importés depuis
+# `app.services.source_promotion` (ré-exportés en tête de module).
 # --------------------------------------------------------------------------- #
-@dataclass
-class SourceMeta:
-    source_id: str
-    name: str
-    url: str
-    theme: str | None
-    type: str
-    is_curated: bool
-    bias_stance: str
-    reliability_score: str
-    description: str | None
-    score_independence: float | None
-    score_rigor: float | None
-    score_ux: float | None
-    source_tier: str
-    granular_topics: list[str] | None
-    articles_30d: int
-
-
 @dataclass
 class TopicChange:
     source_id: str
@@ -154,24 +154,6 @@ class TopicChange:
     url: str
     old: list[str] | None
     new: list[str] | None
-
-
-@dataclass
-class Promotion:
-    source_id: str
-    name: str
-    url: str
-    theme: str | None
-    type: str
-    bias_stance: str
-    reliability_score: str
-    description: str | None
-    score_independence: float | None
-    score_rigor: float | None
-    score_ux: float | None
-    source_tier: str
-    granular_topics: list[str] | None
-    articles_30d: int
 
 
 @dataclass
@@ -241,21 +223,6 @@ def resolve_new_topics(
     return cleaned or None
 
 
-def is_promotable(
-    m: SourceMeta,
-    *,
-    min_volume: int = PROMO_MIN_VOLUME,
-    reliability_set: set[str] = PROMO_RELIABILITY,
-) -> bool:
-    """Source évaluée + productive, non encore curée : candidate à la promotion."""
-    return (
-        not m.is_curated
-        and m.bias_stance != "unknown"
-        and m.reliability_score in reliability_set
-        and m.articles_30d >= min_volume
-    )
-
-
 def compute_plan(
     metas: list[SourceMeta],
     topic_stats: dict[str, dict[str, int]],
@@ -266,6 +233,8 @@ def compute_plan(
     top_k: int = TOP_K,
     min_volume: int = PROMO_MIN_VOLUME,
     reliability_set: set[str] = PROMO_RELIABILITY,
+    excluded_bias: frozenset[str] = PROMO_EXCLUDED_BIAS,
+    denylist: frozenset[str] = PROMO_DENYLIST,
     valid_slugs: set[str] = VALID_TOPIC_SLUGS,
 ) -> RetagPlan:
     """Construit le plan complet (changes + promotions + audit) sans I/O."""
@@ -299,28 +268,15 @@ def compute_plan(
             )
 
         promote = is_promotable(
-            m, min_volume=min_volume, reliability_set=reliability_set
+            m,
+            min_volume=min_volume,
+            reliability_set=reliability_set,
+            excluded_bias=excluded_bias,
+            denylist=denylist,
         )
         curated_after[m.source_id] = m.is_curated or promote
         if promote:
-            promotions.append(
-                Promotion(
-                    source_id=m.source_id,
-                    name=m.name,
-                    url=m.url,
-                    theme=m.theme,
-                    type=m.type,
-                    bias_stance=m.bias_stance,
-                    reliability_score=m.reliability_score,
-                    description=m.description,
-                    score_independence=m.score_independence,
-                    score_rigor=m.score_rigor,
-                    score_ux=m.score_ux,
-                    source_tier=m.source_tier,
-                    granular_topics=new_topics,
-                    articles_30d=m.articles_30d,
-                )
-            )
+            promotions.append(_to_promotion(m, new_topics))
 
     coverage_contains, coverage_dominant = _coverage_audit(
         metas, granular_after, curated_after, valid_slugs
@@ -366,10 +322,6 @@ def _coverage_audit(
 # --------------------------------------------------------------------------- #
 # Régénération CSV (pure — testable avec des lignes synthétiques)
 # --------------------------------------------------------------------------- #
-def _norm_url(u: str | None) -> str:
-    return (u or "").strip().rstrip("/").lower()
-
-
 def _is_source_row(row: dict) -> bool:
     name = (row.get("Name") or "").strip()
     url = (row.get("URL") or "").strip()
@@ -466,53 +418,9 @@ def write_csv(path: Path, plan: RetagPlan, metas: list[SourceMeta]) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# DB layer (thin)
+# DB layer (thin). `load_metas` / `write_promotions` sont dans
+# `app.services.source_promotion` (ré-exportés en tête de module).
 # --------------------------------------------------------------------------- #
-async def load_metas(session) -> list[SourceMeta]:
-    sql = text(
-        f"""
-        SELECT s.id, s.name, s.url, s.theme, s.type, s.is_curated,
-               s.bias_stance, s.reliability_score, s.description,
-               s.score_independence, s.score_rigor, s.score_ux,
-               s.source_tier, s.granular_topics,
-               COALESCE(a30.n, 0) AS articles_30d
-        FROM sources s
-        LEFT JOIN (
-            SELECT source_id, COUNT(*) AS n
-            FROM contents
-            WHERE published_at >= now() - interval '{PROMO_WINDOW_DAYS} days'
-            GROUP BY source_id
-        ) a30 ON a30.source_id = s.id
-        WHERE s.is_active
-        """
-    )
-    result = await session.execute(sql)
-    metas: list[SourceMeta] = []
-    for r in result.mappings():
-        metas.append(
-            SourceMeta(
-                source_id=str(r["id"]),
-                name=r["name"],
-                url=r["url"],
-                theme=r["theme"],
-                type=str(r["type"]),
-                is_curated=bool(r["is_curated"]),
-                bias_stance=str(r["bias_stance"]),
-                reliability_score=str(r["reliability_score"]),
-                description=r["description"],
-                score_independence=r["score_independence"],
-                score_rigor=r["score_rigor"],
-                score_ux=r["score_ux"],
-                source_tier=r["source_tier"] or "mainstream",
-                granular_topics=list(r["granular_topics"])
-                if r["granular_topics"]
-                else None,
-                articles_30d=int(r["articles_30d"]),
-            )
-        )
-    return metas
-
-
 async def load_topic_stats(
     session,
 ) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
@@ -552,9 +460,7 @@ async def write_plan(session, plan: RetagPlan) -> None:
     topic_stmt = text("UPDATE sources SET granular_topics = :gt WHERE id = :id")
     for c in plan.topic_changes:
         await session.execute(topic_stmt, {"gt": c.new, "id": UUID(c.source_id)})
-    promote_stmt = text("UPDATE sources SET is_curated = true WHERE id = :id")
-    for p in plan.promotions:
-        await session.execute(promote_stmt, {"id": UUID(p.source_id)})
+    await write_promotions(session, plan.promotions)
 
 
 # --------------------------------------------------------------------------- #

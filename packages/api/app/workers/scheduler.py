@@ -12,6 +12,7 @@ from app.jobs.digest_generation_job import (
     compute_digest_coverage,
     run_digest_generation,
 )
+from app.jobs.promote_sources_job import promote_evaluated_sources
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_coverage_themes import (
     recompute_source_coverage_themes,
@@ -560,6 +561,22 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Promotion catalogue hebdo (is_curated) — dimanche 04h00 Paris, juste après
+    # le recalcul de couverture (03h45). Vide le backlog de sources évaluées
+    # (biais connu non alternatif, fiabilité medium/high, volume >= seuil, hors
+    # denylist éditoriale) vers le catalogue curé de la reco « Étoffer ». Avant,
+    # la promotion ne tournait qu'au lancement manuel du script → backlog
+    # invisible. Idempotent (NOT is_curated), additif (DB partagée staging/prod).
+    scheduler.add_job(
+        promote_evaluated_sources,
+        trigger=CronTrigger(day_of_week="sun", hour=4, minute=0, timezone=_PARIS_TZ),
+        id="promote_evaluated_sources",
+        name="Weekly catalogue promotion (is_curated backlog)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Projection budget coût API externes (évidence G3 scaling) : conso du mois
     # courant par provider/call_site + projection ×2.25 (89→200 users), loguée
     # une fois par jour. Read-only, ne change aucun comportement.
@@ -649,6 +666,7 @@ def start_scheduler() -> None:
             "recompute_source_language",
             "rescue_failed_sources",
             "recompute_source_coverage_themes",
+            "promote_evaluated_sources",
             "zombie_session_sweeper",
             "pool_health_probe",
             "daily_essentiel_push_dispatch",
