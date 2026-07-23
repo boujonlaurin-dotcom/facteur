@@ -506,12 +506,19 @@ class ScoringWeights:
     TOURNEE_TARGET_SECTIONS = 8
 
     # Plafond dur de sections « Choisie pour vous » (thèmes + sources confondus)
-    # par arrangement. Levier *distinct* de la cible : aligné sur
-    # `TOURNEE_TARGET_SECTIONS` (donc non contraignant tant qu'ils sont égaux —
-    # un compte neuf est complété jusqu'à la cible), mais permet de plafonner les
-    # suggestions *sous* la cible sans toucher au nombre de sections visé
-    # (ex. cible 10 mais au plus 8 suggérées).
-    TOURNEE_SUGGEST_SUBCAP = 8
+    # par arrangement. Levier *distinct* de la cible : borne le nombre de
+    # suggestions servies un jour donné, indépendamment du nombre de favoris.
+    # Story 22.6 : abaissé 8 → 5 pour que les suggestions restent un accent
+    # quotidien (4-5) et non le gros de la Tournée d'un compte peu configuré.
+    TOURNEE_SUGGEST_SUBCAP = 5
+
+    # Plancher de suggestions « Choisie pour vous » (Story 22.6). Garantit un
+    # accent quotidien même aux comptes qui ont déjà atteint (ou dépassé)
+    # `TOURNEE_TARGET_SECTIONS` de favoris : `_arrange_tournee` vise
+    # `min(SUBCAP, max(remaining, FLOOR))` suggestions. Effet : 0 favori → 5
+    # (borné par SUBCAP), 8+ favoris → 4. Le pool réel peut en servir moins un
+    # jour pauvre (jamais d'invention hors invariant 22.3).
+    TOURNEE_SUGGEST_FLOOR = 4
 
     # Fenêtre de récence (jours) du comptage d'articles par candidat (aligné
     # sur le filtre 14 j du fallback `get_top_themes`).

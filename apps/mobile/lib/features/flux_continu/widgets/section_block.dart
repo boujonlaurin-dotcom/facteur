@@ -63,6 +63,13 @@ class SectionBlock extends StatelessWidget {
   /// pour les sections `origin == suggested` (cf. flux_continu_screen).
   final VoidCallback? onTapSuggestionInfo;
 
+  /// Story 22.6 — CTA direct « Ajouter à mon Essentiel » en pied d'une section
+  /// suggérée : promeut la section en favorite sans passer par la sheet. Câblé
+  /// uniquement pour les sections `origin == suggested` (non-null ⇒ bouton
+  /// rendu). Le future résout après la promotion (le bouton gère spinner +
+  /// anti double-tap localement).
+  final Future<void> Function()? onPromoteSuggestion;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -82,6 +89,7 @@ class SectionBlock extends StatelessWidget {
     this.onAddSources,
     this.onSeeAll,
     this.onTapSuggestionInfo,
+    this.onPromoteSuggestion,
   });
 
   @override
@@ -146,6 +154,12 @@ class SectionBlock extends StatelessWidget {
           onTapInfo: onTapSuggestionInfo,
         ),
         ...cards,
+        // Story 22.6 — CTA direct sur la carte suggérée (le badge/info-tap du
+        // banner reste, lui, la voie « Pourquoi cette section ? »).
+        if (section is FeedThemeSection &&
+            section.isSuggested &&
+            onPromoteSuggestion != null)
+          _PromoteSuggestionButton(onPromote: onPromoteSuggestion!),
         const SizedBox(height: 16),
       ],
     );
@@ -630,3 +644,56 @@ class SectionSkeletonCard extends StatelessWidget {
 List<Widget> sectionSkeletonCards(int count) => [
   for (var i = 0; i < count; i++) const SectionSkeletonCard(),
 ];
+
+/// Story 22.6 — bouton « Ajouter à mon Essentiel » en pied d'une section
+/// suggérée. Gère localement le spinner d'attente + l'anti double-tap ; la
+/// SnackBar de succès est émise via le `ScaffoldMessenger` capturé avant l'await
+/// (le bouton peut être démonté quand la section devient favorite).
+class _PromoteSuggestionButton extends StatefulWidget {
+  const _PromoteSuggestionButton({required this.onPromote});
+
+  final Future<void> Function() onPromote;
+
+  @override
+  State<_PromoteSuggestionButton> createState() =>
+      _PromoteSuggestionButtonState();
+}
+
+class _PromoteSuggestionButtonState extends State<_PromoteSuggestionButton> {
+  bool _pending = false;
+
+  Future<void> _handlePromote() async {
+    if (_pending) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _pending = true);
+    try {
+      await widget.onPromote();
+      // Succès uniquement : un throw saute directement au `finally`.
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Ajouté à ton Essentiel')),
+      );
+    } finally {
+      if (mounted) setState(() => _pending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton.tonal(
+          onPressed: _pending ? null : _handlePromote,
+          child: _pending
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Ajouter à mon Essentiel'),
+        ),
+      ),
+    );
+  }
+}

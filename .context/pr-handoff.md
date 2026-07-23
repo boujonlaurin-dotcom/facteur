@@ -1,46 +1,47 @@
-## perf(reader) — isolation raster : cartes carrousel + chrome vertical (RepaintBoundary natif)
+# feat(tournee): suggestions garanties + quota visible + CTA carte + instrumentation (story 22.6)
 
-Regroupe **PR 1 + PR 2** du plan fluidité scroll (`.context/attachments/97Nbws/plan.md`) en une
-seule PR, à la demande du PO. 100 % Dart mobile — aucun backend, aucune migration.
+Story 22.6 (PR 2), base `main`. Rend la Tournée « vivante » : un accent quotidien
+de 4-5 sections « Choisie pour vous » **garanti pour tous** (même 8+ favoris), un
+quota de 3 suggestions visibles sous le cap pour les comptes personnalisés, un CTA
+direct sur la carte, et l'instrumentation PostHog. **Aucune migration** (additif,
+expand-safe, 1 head Alembic). Invariant 22.3 conservé (jamais hors univers suivi).
 
-### Problème
+> PR 1 (`promoteSuggestion` fiabilisé) vit dans un autre workspace ; cette PR
+> suppose la même signature `promoteSuggestion(section)` et ajoute seulement un
+> `origin` **optionnel** (défaut `card`) → rebase non cassante.
 
-`FacteurCard` n'isole ses cartes que via `webRepaintBoundary` (`core/web/web_perf.dart:52`),
-**no-op hors web**. Sur natif, aucune carte du carrousel « comparaison de points de vue » n'était
-donc isolée : tout le `Row` (≤ 8 cartes, chacune ombre `blurRadius: 6` + `DiffTitle` multi-span +
-favicon) pouvait se re-rastériser à chaque frame de translation.
+## A. Backend — plancher de suggestions
 
-### Changements
+- `scoring_config.py` : `TOURNEE_SUGGEST_FLOOR = 4` ; `TOURNEE_SUGGEST_SUBCAP` 8 → 5.
+- `routers/users.py` `_arrange_tournee` : `sub_cap = min(SUBCAP, max(remaining, FLOOR))` ;
+  suppression de l'early-return `remaining <= 0` (gate `_smart_arrangement_enabled` conservé).
+  Effet : 0 favori → 5, 7 favoris → 4, 8+ favoris → 4. Pool pauvre → sert moins, jamais d'invention.
 
-**PR 1 — carrousel + nettoyage**
-- `RepaintBoundary` explicite par carte + par CTA dans `_buildCarousel` (le vrai boundary, pas le
-  helper web-only) → chaque carte = son layer, composité tel quel au scroll. Invisible.
-- `RepaintBoundary` par squelette dans `_buildLoadingSkeleton` (isole le shimmer).
-- `RepaintBoundary` autour des 2 `PerspectivesInlineSection` (N2) → isole les animations d'intro de
-  la bande du corps vertical.
-- Suppression de `_FadeScrollRow` (code mort, jamais instancié). −82 lignes.
-- **Choix H1 (Row + RepaintBoundary) plutôt que H2 (ListView virtualisée)** : pour ≤ 8 cartes, la
-  virtualisation rendrait `maxScrollExtent` estimé (casse le tap-to-scroll de la barre de biais) et
-  introduirait des hitches de build en cours de scroll. H1 délivre le gain cœur sans ces risques.
-  Détail dans `docs/maintenance/maintenance-reader-scroll-carrousel-repaint.md`.
+## B. Mobile — quota visible ≥3 sous le cap
 
-**PR 2 — audit V1 + micro-fix**
-- `RepaintBoundary` autour du `Transform.scale` du `_ctaPulseController` (N3). NB : pulse one-shot
-  280 ms, pas une animation répétée.
-- `PivotWashTitle` : key laissée telle quelle (rekey intentionnel qui pilote l'animation « wash » ;
-  la toucher casserait l'anim sans gain mesuré).
+- `flux_continu_provider.dart` `_orderedTourneeKeys` : insertion additive à la frontière du cap ;
+  `quota = min(kTourneeSuggestQuota=3, suggestions visibles)`, favoris tronqués à `cap - quota`
+  **sans permutation**, puis les `quota` premières suggestions en queue. No-op non-personnalisé.
 
-### Vérification
+## C. Mobile — CTA « Ajouter à mon Essentiel »
 
-- `flutter analyze` (fichiers touchés) : 0 nouvelle issue (warnings restants pré-existants).
-- `flutter test` (perspectives `feed/widgets` + `detail`) : 0 nouvel échec. Les échecs restants
-  (badge `scale: 1.6` vs test `1.0` ; phrase d'intro ; 4 stubs `notification_test`) sont
-  **confirmés pré-existants via baseline HEAD**.
-- ⚠️ **Profiling < 16 ms/frame = étape PO device** : le gain ne se mesure pas sur web (CanvasKit).
-  À vérifier en `flutter run --profile` (long article + carrousel).
+- `section_block.dart` : `onPromoteSuggestion` + `_PromoteSuggestionButton` (spinner, anti
+  double-tap, SnackBar « Ajouté à ton Essentiel »). Banner (badge + info-tap → sheet) inchangé.
+- `flux_continu_screen.dart` : câble `promoteSuggestion(section, origin: 'card')` ; la sheet
+  passe `origin: 'sheet'`.
 
-### Hors scope
+## D. Instrumentation PostHog
 
-PR 3 / V2 (virtualisation du corps `flutter_html`) — **le** levier pour le jank du corps des
-articles sans carrousel — non inclus (risque plus élevé, casse `_measureArticleExtent`). À ouvrir si
-le profiling montre encore > 16 ms/frame sur longs articles après ce lot.
+- `analytics_service.dart` : `trackSuggestionImpression` / `Promoted` / `Dismissed`.
+- Impressions dédupliquées **1/section/jour, persistées** (SharedPreferences `suggestion_impressions_v1`,
+  purge des jours passés). Émission au premier build de la section suggérée.
+
+## Vérification
+
+- Backend : `pytest` — 37 tests top-themes/suggester/users OK ; 1 head Alembic (`181c618da382`).
+- Mobile : `flutter test` — 453 tests flux_continu OK, 29 section_block, 14 analytics ;
+  `flutter analyze` 0 erreur (5 warnings pré-existants `dio.post` hors périmètre).
+- Changelog in-app : entrée « Ma Tournée » ajoutée (impact visible).
+
+Story : `docs/stories/core/22.6.tournee-suggestions-garanties-cta.md`.
+QA handoff : `.context/qa-handoff.md`.

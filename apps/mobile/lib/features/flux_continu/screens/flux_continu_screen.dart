@@ -56,6 +56,8 @@ import '../providers/selected_edition_date_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
     show tourneeOrderPrefsProvider;
 import '../services/auto_grow_nudge_scheduler.dart';
+import '../services/tournee_progress_service.dart'
+    show TourneeProgressService;
 import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
 import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
@@ -293,6 +295,12 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   final Set<String> _pendingFeedback = <String>{};
   bool _gestureNudgeRequested = false;
   bool _showSwipeHint = false;
+
+  /// Story 22.6 — garde-fou mémoire : sections suggérées déjà comptées en
+  /// impression durant la vie de cet écran. Évite de relire SharedPreferences à
+  /// chaque rebuild ; la dédup **persistée** (1×/section/jour) reste dans
+  /// `AnalyticsService.trackSuggestionImpression`.
+  final Set<String> _impressedSuggestionKeys = <String>{};
 
   /// Mutable, stable holder of the section-start anchors (absolute scroll
   /// pixels). Passed *by reference* to the immutable [_SectionSnapPhysics],
@@ -1674,6 +1682,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       // (elle se gère via son badge « Choisie pour vous » + sheet), pour ne pas
       // confondre les deux affordances.
       final isSuggested = section is FeedThemeSection && section.isSuggested;
+      // Story 22.6 — impression au premier build d'une section suggérée
+      // affichée (dédup persistée 1×/section/jour côté AnalyticsService ;
+      // garde-fou mémoire pour ne pas relire SharedPreferences à chaque frame).
+      if (isSuggested) {
+        final key = sectionKey(section);
+        if (_impressedSuggestionKeys.add(key)) {
+          unawaited(
+            ref.read(analyticsServiceProvider).trackSuggestionImpression(
+                  sectionKey: key,
+                  kind: section.kind.name,
+                  dayKey: TourneeProgressService.dayKey(DateTime.now()),
+                ),
+          );
+        }
+      }
       // Mode personnalisé : préfixe l'inline « Gérer / Tes N favoris » au-dessus
       // du `SectionBlock`, à l'intérieur du subtree mesuré → l'inline fait
       // partie du bloc de snap de cette section (cf. [inlineTargetIndex]).
@@ -1722,6 +1745,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                       onTapSuggestionInfo: isSuggested
                           ? () =>
                               _openSuggestionSheet(context, section, notifier)
+                          : null,
+                      // Story 22.6 — CTA direct « Ajouter à mon Essentiel » sur
+                      // la carte suggérée (origin=card pour l'analytics).
+                      onPromoteSuggestion: isSuggested
+                          ? () => notifier.promoteSuggestion(
+                                section,
+                                origin: 'card',
+                              )
                           : null,
                       // Story 23.4 — bouton réglages (tune) sur la section veille →
                       // ouvre la config en édition. Réutilisé par le CTA d'état vide.

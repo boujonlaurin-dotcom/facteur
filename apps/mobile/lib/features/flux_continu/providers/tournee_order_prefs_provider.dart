@@ -39,6 +39,13 @@ const _kTourneeCustomizedKey = 'tournee_customized_v1';
 /// 8 thématiques + Actus + Bonnes + Grille = 11, + marge.
 const int kTourneeVisibleCap = 13;
 
+/// Quota de sections « Choisie pour vous » garanti **sous le cap** (Story 22.6).
+/// Un ordre personnalisé relègue les suggestions en fin de liste où le cap les
+/// coupait ; `_orderedTourneeKeys` réserve jusqu'à ce nombre de slots en queue
+/// du cap aux premières suggestions disponibles, sans permuter les favoris. Le
+/// quota effectif est `min(kTourneeSuggestQuota, suggestions visibles)`.
+const int kTourneeSuggestQuota = 3;
+
 /// Seuils de cohérence d'affichage des sections favorites (thème/source) après
 /// la dédup inter-sections. Une section **maigre** (≤ [kThinSectionMaxItems]
 /// survivants) est dépriorisée sous les **riches** (≥ [kRichSectionMinItems])

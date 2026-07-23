@@ -223,4 +223,78 @@ void main() {
     // PostHog still fired (independent of backend).
     expect(posthog.captured.map((e) => e.event), contains('source_added'));
   });
+
+  // ── Suggestions « Choisie pour vous » (Story 22.6) ──────────────────────
+
+  test('trackSuggestionPromoted fires suggestion_promoted with origin/kind',
+      () async {
+    final service = AnalyticsService(api, posthog: posthog);
+    await service.trackSuggestionPromoted(
+      sectionKey: 'theme:tech',
+      kind: 'theme',
+      origin: 'card',
+    );
+    final entry =
+        posthog.captured.firstWhere((e) => e.event == 'suggestion_promoted');
+    expect(entry.properties?['section_key'], 'theme:tech');
+    expect(entry.properties?['kind'], 'theme');
+    expect(entry.properties?['origin'], 'card');
+  });
+
+  test('trackSuggestionDismissed fires suggestion_dismissed', () async {
+    final service = AnalyticsService(api, posthog: posthog);
+    await service.trackSuggestionDismissed(
+      sectionKey: 'source:s1',
+      kind: 'source',
+    );
+    final entry =
+        posthog.captured.firstWhere((e) => e.event == 'suggestion_dismissed');
+    expect(entry.properties?['section_key'], 'source:s1');
+    expect(entry.properties?['kind'], 'source');
+  });
+
+  test('trackSuggestionImpression dédupe 1×/section/jour et purge les jours '
+      'passés', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final service = AnalyticsService(api, posthog: posthog);
+
+    Iterable<dynamic> impressions() =>
+        posthog.captured.where((e) => e.event == 'suggestion_impression');
+
+    // Même section, même jour → une seule impression.
+    await service.trackSuggestionImpression(
+      sectionKey: 'theme:tech',
+      kind: 'theme',
+      dayKey: '2026-07-23',
+    );
+    await service.trackSuggestionImpression(
+      sectionKey: 'theme:tech',
+      kind: 'theme',
+      dayKey: '2026-07-23',
+    );
+    expect(impressions(), hasLength(1));
+
+    // Autre section le même jour → nouvelle impression.
+    await service.trackSuggestionImpression(
+      sectionKey: 'theme:science',
+      kind: 'theme',
+      dayKey: '2026-07-23',
+    );
+    expect(impressions(), hasLength(2));
+
+    // Jour suivant, même section → réémise (jour passé purgé).
+    await service.trackSuggestionImpression(
+      sectionKey: 'theme:tech',
+      kind: 'theme',
+      dayKey: '2026-07-24',
+    );
+    expect(impressions(), hasLength(3));
+
+    // La purge borne le set persisté au jour courant.
+    final prefs = await SharedPreferences.getInstance();
+    final stored =
+        prefs.getStringList('suggestion_impressions_v1') ?? const [];
+    expect(stored.every((e) => e.startsWith('2026-07-24|')), isTrue);
+    expect(stored, ['2026-07-24|theme:tech']);
+  });
 }

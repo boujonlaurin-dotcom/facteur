@@ -1,79 +1,77 @@
-# QA Handoff — « Rattraper » : nudge éphémère + point rouge « pas à jour »
+# QA Handoff — Tournée vivante : suggestions garanties + CTA (Story 22.6)
 
-> Rempli par l'agent dev. Input de /validate-feature. Story : `docs/stories/core/9.7.essentiel-rattraper-signal.md`.
-> (Handoff précédent « Lettres passées à parité visuelle » archivé dans
-> `.context/qa-handoff-lettres-parite.md`.)
+> Rempli par l'agent dev. Input de /validate-feature. Story :
+> `docs/stories/core/22.6.tournee-suggestions-garanties-cta.md`.
 
 ## Feature développée
 
-L'en-tête de la carte « Ton Essentiel » n'affiche plus « Rattraper » en
-permanence. En today à jour → icône ⏪ seule. Si l'édition d'hier (J-1) n'a pas
-été ouverte → point rouge persistant sur ⏪ + le texte « Rattraper ? » qui
-apparaît en fondu (~1 s), tient 2 s, disparaît en fondu, au plus 1×/jour. Sur
-une lettre passée → « Revenir » fixe (inchangé).
+La Tournée du jour garantit désormais un accent quotidien de 4-5 sections
+« Choisie pour vous » **pour tous les comptes** (même 8+ favoris), avec un quota
+de 3 suggestions visibles sous le cap d'affichage pour les comptes personnalisés,
+et un CTA direct « Ajouter à mon Essentiel » sur chaque carte suggérée.
 
 ## PR associée
 
-_(à compléter à l'ouverture de la PR)_
+À créer via `/go` (base `main`).
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Flux Continu — carte « Ton Essentiel » (en-tête, déclencheur rewind) | onglet Essentiel | Modifié |
+| Tournée du jour / Flux Continu | `/flux-continu` | Modifié |
+| Sheet « Pourquoi cette section ? » | overlay | Inchangé (toujours fonctionnel) |
 
 ## Scénarios de test
 
-> ⚠️ L'état « en retard » dépend des streaks (J-1 `opened == false`), difficile
-> à forcer sur le build web sans backend/streaks peuplés. **La preuve principale
-> = les widget tests** (`essentiel_hi_fi_card_test.dart`,
-> `ephemeral_rattraper_label_test.dart`, `edition_read_status_provider_test.dart`).
-> Playwright couvre surtout le rendu « à jour » et le tap ⏪ → timeline.
-
-### Scénario 1 : à jour (happy path) — header épuré
+### Scénario 1 : Happy path — CTA sur la carte suggérée
 **Parcours** :
-1. Ouvrir l'app, onglet Essentiel (today), utilisateur à jour.
-2. Observer l'en-tête à droite du titre « Ton Essentiel ».
-**Résultat attendu** : icône ⏪ **seule**, aucun texte « Rattraper », aucun point
-rouge. Tap sur ⏪ → la timeline « Remonter le temps » s'ouvre.
+1. Ouvrir la Tournée du jour avec un compte qui reçoit des suggestions.
+2. Repérer une section badgée « Choisie pour vous ».
+3. Taper le bouton « Ajouter à mon Essentiel » en pied de carte.
+**Résultat attendu** : spinner bref, SnackBar « Ajouté à ton Essentiel », la
+section devient favorite (badge « Choisie pour vous » disparaît), l'ordre des
+autres favoris n'est **pas** permuté.
 
-### Scénario 2 : en retard — point rouge + nudge éphémère
+### Scénario 2 : Quota visible (compte personnalisé)
 **Parcours** :
-1. Utilisateur ayant manqué l'édition d'hier (J-1 non ouverte).
-2. Ouvrir l'onglet Essentiel (today).
-**Résultat attendu** : **point rouge** vif sur ⏪ (persistant) ; **~1 s** après,
-« Rattraper ? » apparaît en fondu, **tient 2 s**, disparaît en fondu. Ne se
-rejoue **pas** dans la journée (gate 1×/jour). Le point rouge, lui, reste.
+1. Compte avec un ordre de Tournée personnalisé et beaucoup de favoris (proche
+   du cap 13).
+2. Ouvrir la Tournée.
+**Résultat attendu** : exactement 3 sections « Choisie pour vous » restent
+visibles en queue, sous le cap — elles ne sont plus toutes coupées.
 
-### Scénario 3 : lettre passée — « Revenir » fixe
+### Scénario 3 : Dismiss d'une suggestion
 **Parcours** :
-1. Ouvrir la timeline, sélectionner « Hier ».
-**Résultat attendu** : l'en-tête montre « Revenir » **fixe** (sans point rouge,
-sans animation).
+1. Sur une section suggérée, ouvrir le « i » du badge → sheet.
+2. Choisir « Retirer » (dismiss).
+**Résultat attendu** : la section disparaît (retrait local réversible) ; une
+autre suggestion coupée par le cap peut remonter à sa place.
 
-### Scénario 4 : reduce-motion / accessibilité
+### Scénario 4 : Anti double-tap
 **Parcours** :
-1. Activer « Réduire les animations » (OS), état « en retard ».
-**Résultat attendu** : le point rouge reste (signal immobile) ; le texte animé
-« Rattraper ? » **n'est pas joué**.
+1. Taper rapidement 2× le bouton « Ajouter à mon Essentiel ».
+**Résultat attendu** : une seule promotion (bouton désactivé pendant l'attente),
+une seule SnackBar.
 
 ## Critères d'acceptation
 
-- [ ] À jour → icône ⏪ seule (ni libellé fixe, ni point, ni nudge).
-- [ ] En retard → point rouge persistant + « Rattraper ? » fondu-in ~1 s / tient
-  2 s / fondu-out, au plus 1×/jour.
-- [ ] Lettre passée → « Revenir » fixe, sans point.
-- [ ] ⏪ toujours tappable (ouvre la timeline) dans tous les états ; cible ≥ 24 px.
-- [ ] Reduce-motion → pas d'animation de texte.
-- [ ] Aucun faux positif au cold-boot / nouvel utilisateur (streaks indispo).
+- [ ] 4-5 suggestions/jour garanties, y compris pour un compte 8+ favoris.
+- [ ] ≥3 suggestions visibles sous le cap pour un compte personnalisé, ordre des
+  favoris préservé.
+- [ ] CTA « Ajouter à mon Essentiel » rendu uniquement sur les sections suggérées.
+- [ ] La sheet « Pourquoi cette section ? » (garder/retirer) reste fonctionnelle.
+- [ ] Pas d'em-dash dans la copy visible.
 
 ## Zones de risque
 
-- Frontière de jour 07h30 Paris vs off-by-one streaks (déjà assumé par la
-  timeline existante ; cf. `.context/streaks-health-handoff.md`).
-- Gate 1×/jour persisté au moment du fondu-in (prefs
-  `essentiel_rattraper_nudge_last_shown_v1`).
+- Ordre des favoris jamais permuté par l'insertion du quota (vérifier visuellement).
+- Sections éditoriales (Actus, Bonnes, Grille) : sur un compte très chargé elles
+  peuvent être repoussées hors cap (comportement pré-existant, non aggravé).
+- Instrumentation PostHog : impression dédupliquée 1×/section/jour (persistée) —
+  non visible à l'écran mais à ne pas casser.
 
 ## Dépendances
 
-- Aucun endpoint / migration. Réutilise `editionReadStatusProvider` (streaks).
+- Backend `GET /api/users/top-themes` (plancher de suggestions, aucune migration).
+- Events PostHog : `suggestion_impression`, `suggestion_promoted`,
+  `suggestion_dismissed`.

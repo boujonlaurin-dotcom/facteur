@@ -504,28 +504,33 @@ async def _arrange_tournee(
     user_uuid: UUID,
     validated: list[TopThemeResponse],
 ) -> list[TopThemeResponse]:
-    """Affecte les `daily_rank` aux validées et **complète** jusqu'à la cible
-    `TOURNEE_TARGET_SECTIONS` par des sections « Choisie pour vous » (Story 22.3).
+    """Affecte les `daily_rank` aux validées et **ajoute** un accent quotidien de
+    sections « Choisie pour vous » (Story 22.3 + plancher garanti 22.6).
 
     Les validées gardent leur ordre d'entrée (jamais réordonnées/masquées ici) ;
-    les suggérées **s'ajoutent** derrière elles jusqu'à atteindre la cible
-    (additif, pas un reliquat du plafond favoris), déjà triées best-first pour
-    aujourd'hui par `TourneeSuggester`. Un compte à 7 favoris reçoit donc 1
-    suggestion, un compte à 0 favori jusqu'à `TOURNEE_TARGET_SECTIONS`. No-op si
-    le toggle est off, si la cible est déjà atteinte, ou si le pool est vide.
+    les suggérées **s'ajoutent** derrière elles, déjà triées best-first pour
+    aujourd'hui par `TourneeSuggester`. Story 22.6 : le nombre visé n'est plus le
+    reliquat jusqu'à la cible mais `min(SUBCAP, max(remaining, FLOOR))`, donc
+    tout compte (même 8+ favoris) reçoit au moins `FLOOR` suggestions tant que le
+    pool le permet. Effet : 0 favori → 5, 7 favoris → 4, 8+ favoris → 4. No-op
+    seulement si le toggle est off ou si le pool est vide (jamais d'empty-state
+    suggéré : un pool pauvre sert simplement moins que `FLOOR`).
     """
     from app.services.recommendation.scoring_config import ScoringWeights
 
     for rank, item in enumerate(validated):
         item.daily_rank = rank
 
-    remaining = max(0, ScoringWeights.TOURNEE_TARGET_SECTIONS - len(validated))
-    if remaining <= 0 or not await _smart_arrangement_enabled(db, user_uuid):
+    if not await _smart_arrangement_enabled(db, user_uuid):
         return validated
 
     from app.services.recommendation.tournee_suggester import TourneeSuggester
 
-    sub_cap = min(ScoringWeights.TOURNEE_SUGGEST_SUBCAP, remaining)
+    remaining = max(0, ScoringWeights.TOURNEE_TARGET_SECTIONS - len(validated))
+    sub_cap = min(
+        ScoringWeights.TOURNEE_SUGGEST_SUBCAP,
+        max(remaining, ScoringWeights.TOURNEE_SUGGEST_FLOOR),
+    )
     validated_slugs = {item.interest_slug for item in validated if item.interest_slug}
     suggestions = await TourneeSuggester(db).arrange(
         user_uuid, validated_slugs, sub_cap

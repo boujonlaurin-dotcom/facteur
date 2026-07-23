@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -118,6 +120,20 @@ FeedThemeSection _sourceSection({
     items: List.generate(items, (i) => _content('c$i')),
     hasMore: false,
     noRecentSource: noRecentSource,
+  );
+}
+
+FeedThemeSection _suggestedThemeSection({int items = 3}) {
+  return FeedThemeSection(
+    kind: SectionKind.theme,
+    label: 'Science',
+    accent: const Color(0xFF16A085),
+    coreVisibleCount: 3,
+    themeSlug: 'science',
+    items: List.generate(items, (i) => _content('c$i')),
+    hasMore: false,
+    origin: SectionOrigin.suggested,
+    reason: const SuggestionReason(label: 'Tu suis ce thème'),
   );
 }
 
@@ -576,6 +592,97 @@ void main() {
       // hero sur une section thème → toute FacteurImage est une image de carte).
       expect(find.byType(FluxContinuArticleCard), findsNWidgets(3));
       expect(find.byType(FacteurImage), findsNWidgets(2));
+    });
+  });
+
+  group('SectionBlock — CTA « Ajouter à mon Essentiel » (Story 22.6)', () {
+    final ctaFinder =
+        find.widgetWithText(FilledButton, 'Ajouter à mon Essentiel');
+
+    testWidgets('rendu uniquement pour une suggérée avec callback',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _suggestedThemeSection(),
+          onTapArticle: (_) {},
+          onPromoteSuggestion: () async {},
+        ),
+      ));
+      expect(ctaFinder, findsOneWidget);
+    });
+
+    testWidgets('absent sur une section validée', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 3),
+          onTapArticle: (_) {},
+          onPromoteSuggestion: () async {},
+        ),
+      ));
+      expect(find.text('Ajouter à mon Essentiel'), findsNothing);
+    });
+
+    testWidgets('absent si onPromoteSuggestion est null', (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _suggestedThemeSection(),
+          onTapArticle: (_) {},
+        ),
+      ));
+      expect(find.text('Ajouter à mon Essentiel'), findsNothing);
+    });
+
+    testWidgets('tap déclenche le callback une fois + SnackBar succès',
+        (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _suggestedThemeSection(),
+          onTapArticle: (_) {},
+          onPromoteSuggestion: () async => calls++,
+        ),
+      ));
+      await tester.ensureVisible(ctaFinder);
+      await tester.tap(ctaFinder);
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      expect(find.text('Ajouté à ton Essentiel'), findsOneWidget);
+    });
+
+    testWidgets('désactivé pendant le pending (anti double-tap)',
+        (tester) async {
+      final completer = Completer<void>();
+      var calls = 0;
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _suggestedThemeSection(),
+          onTapArticle: (_) {},
+          onPromoteSuggestion: () {
+            calls++;
+            return completer.future;
+          },
+        ),
+      ));
+      await tester.ensureVisible(ctaFinder);
+      await tester.tap(ctaFinder);
+      await tester.pump(); // entre en état pending
+
+      // Spinner affiché, libellé remplacé, bouton désactivé.
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(ctaFinder, findsNothing);
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      expect(button.onPressed, isNull);
+
+      // Second tap pendant le pending : aucun nouvel appel.
+      await tester.tap(find.byType(FilledButton), warnIfMissed: false);
+      await tester.pump();
+      expect(calls, 1);
+
+      // Résolution → CTA revient, SnackBar de succès.
+      completer.complete();
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      expect(find.text('Ajouté à ton Essentiel'), findsOneWidget);
     });
   });
 }
