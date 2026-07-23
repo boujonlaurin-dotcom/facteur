@@ -1020,6 +1020,155 @@ void main() {
     });
   });
 
+  group('quota de suggestions sous le cap (Story 22.6)', () {
+    // 13 slugs thématiques favoris = cap plein, sans marge pour les
+    // suggestions reléguées en fin d'un ordre personnalisé.
+    const favSlugs = [
+      'society',
+      'culture',
+      'economy',
+      'politics',
+      'tech',
+      'science',
+      'environment',
+      'health',
+      'sport',
+      'international',
+      'media',
+      'justice',
+      'food',
+    ];
+
+    List<TopTheme> suggested(List<String> slugs) => [
+          for (final slug in slugs)
+            TopTheme(
+              interestSlug: slug,
+              weight: 1.0,
+              articleCount: 4,
+              origin: 'suggested',
+              reason: const SuggestionReason(label: 'Tu suis ce thème'),
+            ),
+        ];
+
+    Map<String, List<String>> feedFor(List<String> slugs) => {
+          for (final slug in slugs) slug: ['$slug-1', '$slug-2'],
+        };
+
+    Future<ProviderContainer> personalized({
+      required List<String> suggestedSlugs,
+      required List<String> hiddenKeys,
+    }) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_customized_v1': true,
+        'tournee_order_v1': [for (final s in favSlugs) 'theme:$s'],
+        if (hiddenKeys.isNotEmpty) 'tournee_hidden_keys_v1': hiddenKeys,
+      });
+      when(() => fluxRepo.getTopThemes())
+          .thenAnswer((_) async => suggested(suggestedSlugs));
+      stubFeed(themeIds: {...feedFor(favSlugs), ...feedFor(suggestedSlugs)});
+      final container = await buildContainer(
+        interests: _interestsState(
+          favorites: [for (final s in favSlugs) ThemeFavoriteRef(slug: s)],
+        ),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+      );
+      addTearDown(container.dispose);
+      await settle(container);
+      return container;
+    }
+
+    test('personnalisé + 13 favoris ⇒ 3 suggestions en queue, favoris intacts',
+        () async {
+      final container = await personalized(
+        suggestedSlugs: const ['sugA', 'sugB', 'sugC', 'sugD'],
+        hiddenKeys: const [],
+      );
+      final sections = favoriteSections(container);
+      expect(sections, hasLength(kTourneeVisibleCap));
+
+      final suggestedVisible = sections.where((s) => s.isSuggested).toList();
+      expect(suggestedVisible, hasLength(3), reason: 'quota garanti sous le cap');
+      // Best-first (daily_rank backend) : les 3 premières, pas sugD.
+      expect(
+        suggestedVisible.map((s) => s.themeSlug).toList(),
+        ['sugA', 'sugB', 'sugC'],
+      );
+      // Suggestions en queue ; les 10 premiers slots = favoris, ordre manuel
+      // strictement préservé (jamais permuté).
+      final favVisible = sections.where((s) => !s.isSuggested).toList();
+      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(10));
+      expect(sections.skip(10).every((s) => s.isSuggested), isTrue);
+    });
+
+    test('suggestion cachée non comptée dans le quota', () async {
+      // 3 suggestions, 1 dismissée → 2 disponibles → quota 2.
+      final container = await personalized(
+        suggestedSlugs: const ['sugA', 'sugB', 'sugC'],
+        hiddenKeys: const ['theme:sugB'],
+      );
+      final sections = favoriteSections(container);
+      final suggestedVisible = sections.where((s) => s.isSuggested).toList();
+      expect(suggestedVisible, hasLength(2));
+      expect(
+        suggestedVisible.map((s) => s.themeSlug).toList(),
+        ['sugA', 'sugC'],
+        reason: 'la suggestion cachée sort du quota, pas de re-comptage',
+      );
+      final favVisible = sections.where((s) => !s.isSuggested).toList();
+      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(11));
+    });
+
+    test('1 seule suggestion dispo ⇒ quota 1', () async {
+      final container = await personalized(
+        suggestedSlugs: const ['sugA'],
+        hiddenKeys: const [],
+      );
+      final sections = favoriteSections(container);
+      final suggestedVisible = sections.where((s) => s.isSuggested).toList();
+      expect(suggestedVisible, hasLength(1));
+      expect(suggestedVisible.first.themeSlug, 'sugA');
+      final favVisible = sections.where((s) => !s.isSuggested).toList();
+      expect(favVisible.map((s) => s.themeSlug).toList(), favSlugs.take(12));
+    });
+
+    test('non-personnalisé sous le cap ⇒ ordre naturel inchangé', () async {
+      // 2 favoris + 2 suggestions tiennent largement sous le cap : pas de
+      // rééquilibrage, suggestions à leur position naturelle (après favoris).
+      when(() => fluxRepo.getTopThemes())
+          .thenAnswer((_) async => suggested(const ['sugA', 'sugB']));
+      stubFeed(
+        themeIds: {
+          ...feedFor(const ['society', 'culture']),
+          ...feedFor(const ['sugA', 'sugB']),
+        },
+      );
+      final container = await buildContainer(
+        interests: _interestsState(
+          favorites: const [
+            ThemeFavoriteRef(slug: 'society'),
+            ThemeFavoriteRef(slug: 'culture'),
+          ],
+        ),
+        sourcesState: _sourcesState(),
+        catalog: const [],
+      );
+      addTearDown(container.dispose);
+      await settle(container);
+
+      final sections = favoriteSections(container);
+      expect(
+        sections.map((s) => s.themeSlug).toList(),
+        ['society', 'culture', 'sugA', 'sugB'],
+        reason: 'favoris puis suggestions best-first, aucun rééquilibrage',
+      );
+      expect(
+        sections.where((s) => s.isSuggested).map((s) => s.themeSlug).toList(),
+        ['sugA', 'sugB'],
+      );
+    });
+  });
+
   test(
       'thème favori explicite à 1 item ⇒ section construite (jamais masquée, '
       'miroir source/veille)', () async {

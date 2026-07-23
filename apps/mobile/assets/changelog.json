@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ma Tournée",
+      "summary": "Chaque jour, ta tournée te propose quelques sections « Choisie pour vous » puisées dans tes thèmes et sources préférés, même si tu as déjà beaucoup configuré. Un bouton « Ajouter à mon Essentiel » sur la carte les garde en un tap, et celles que tu personnalises restent toujours visibles."
+    },
+    {
       "tag": "Fiche source",
       "summary": "La couverture d'une source reflète à nouveau ses vrais thèmes : les articles pas encore rangés ne gonflent plus la part « Autres », et son volume d'articles publiés reste affiché tel quel. Les cartes retrouvent aussi leur pastille de thème."
     },

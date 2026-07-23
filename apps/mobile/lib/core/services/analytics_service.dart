@@ -820,6 +820,73 @@ class AnalyticsService {
   }
 
   // ──────────────────────────────────────────────────────────────
+  // Tournée — suggestions « Choisie pour vous » (Story 22.6)
+  // ──────────────────────────────────────────────────────────────
+
+  /// Clé SharedPreferences de dédup des impressions de suggestions. Une entrée
+  /// `'$dayKey|$sectionKey'` par section suggérée déjà comptée aujourd'hui ;
+  /// purgée des jours passés à chaque émission (1 impression/section/jour).
+  static const _kSuggestionImpressionsKey = 'suggestion_impressions_v1';
+
+  /// Impression d'une section suggérée, **dédupliquée 1×/section/jour** et
+  /// persistée (survit aux rebuilds et relances). Émise au premier build de la
+  /// section ; les appels suivants du même jour sont des no-op silencieux.
+  Future<void> trackSuggestionImpression({
+    required String sectionKey,
+    required String kind,
+    required String dayKey,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final entry = '$dayKey|$sectionKey';
+    // Purge des jours passés : on ne conserve que les entrées du jour courant.
+    final kept = (prefs.getStringList(_kSuggestionImpressionsKey) ?? const [])
+        .where((e) => e.startsWith('$dayKey|'))
+        .toList();
+    if (kept.contains(entry)) return; // déjà comptée aujourd'hui
+    kept.add(entry);
+    await prefs.setStringList(_kSuggestionImpressionsKey, kept);
+    final props = {
+      'session_id': _sessionId,
+      'section_key': sectionKey,
+      'kind': kind,
+      'day_key': dayKey,
+    };
+    await _logEvent('suggestion_impression', props);
+    await _capturePostHog('suggestion_impression', props);
+  }
+
+  /// Promotion d'une suggestion en favori. [origin] = `card` (CTA de la carte)
+  /// ou `sheet` (« Garder dans mes favoris »).
+  Future<void> trackSuggestionPromoted({
+    required String sectionKey,
+    required String kind,
+    required String origin,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'section_key': sectionKey,
+      'kind': kind,
+      'origin': origin,
+    };
+    await _logEvent('suggestion_promoted', props);
+    await _capturePostHog('suggestion_promoted', props);
+  }
+
+  /// Dismiss d'une suggestion (retrait local réversible).
+  Future<void> trackSuggestionDismissed({
+    required String sectionKey,
+    required String kind,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'section_key': sectionKey,
+      'kind': kind,
+    };
+    await _logEvent('suggestion_dismissed', props);
+    await _capturePostHog('suggestion_dismissed', props);
+  }
+
+  // ──────────────────────────────────────────────────────────────
   // La Grille du jour (Story 24.2)
   // ──────────────────────────────────────────────────────────────
 

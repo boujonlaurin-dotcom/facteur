@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/auth_state.dart' show authStateProvider;
+import '../../../core/providers/analytics_provider.dart'
+    show analyticsServiceProvider;
 import '../../digest/models/digest_models.dart';
 import '../../digest/models/dual_digest_response.dart';
 import '../../digest/providers/digest_provider.dart'
@@ -2135,14 +2137,31 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// avait été coupée par le cap) remonte gratuitement.
   Future<void> dismissSuggestion(FeedThemeSection section) async {
     final key = sectionKey(section);
+    unawaited(
+      ref.read(analyticsServiceProvider).trackSuggestionDismissed(
+            sectionKey: key,
+            kind: section.kind.name,
+          ),
+    );
     await ref.read(tourneeOrderPrefsProvider.notifier).setHidden(key, true);
   }
 
   /// Promeut une suggestion en favori dédié (réutilise le chemin favori
   /// existant). La section repassera `origin="validated"` au prochain load et
   /// sortira du pool suggéré. Les listeners `userInterests`/`userSources`
-  /// recomposent la Tournée.
-  Future<void> promoteSuggestion(FeedThemeSection section) async {
+  /// recomposent la Tournée. [origin] (`card`/`sheet`, Story 22.6) trace le
+  /// point d'entrée de la promotion pour l'analytics.
+  Future<void> promoteSuggestion(
+    FeedThemeSection section, {
+    String origin = 'card',
+  }) async {
+    unawaited(
+      ref.read(analyticsServiceProvider).trackSuggestionPromoted(
+            sectionKey: sectionKey(section),
+            kind: section.kind.name,
+            origin: origin,
+          ),
+    );
     await ref.read(tourneeOrderPrefsProvider.notifier).markCustomized();
     try {
       if (section.kind == SectionKind.source && section.sourceId != null) {
@@ -2298,9 +2317,37 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ordered.insert(actusIndex >= 0 ? actusIndex + 1 : 0, kTourneeGrilleKey);
     }
 
-    return cap == null
-        ? ordered.toList(growable: false)
-        : ordered.take(cap).toList(growable: false);
+    if (cap == null) return ordered.toList(growable: false);
+
+    // Story 22.6 — quota de suggestions garanti sous le cap. Un ordre
+    // personnalisé (`applyOrder` sticky) relègue les sections « Choisie pour
+    // vous » en fin de liste, où `take(cap)` les coupait toutes (« plus tu
+    // configures, moins tu vois de suggestions »). On réserve jusqu'à
+    // `kTourneeSuggestQuota` slots en queue du cap aux premières suggestions
+    // disponibles, **sans jamais permuter l'ordre relatif des favoris**. No-op
+    // quand `take(cap)` en contient déjà assez (cas non-personnalisé) ou
+    // qu'aucune suggestion ne survit aux `hiddenKeys` (quota 0 rend tous les
+    // slots aux favoris).
+    final suggestedKeySet = suggestedKeys.toSet();
+    final orderedSuggested = [
+      for (final key in ordered)
+        if (suggestedKeySet.contains(key)) key,
+    ];
+    final quota = math.min(orderedSuggested.length, kTourneeSuggestQuota);
+    final capped = ordered.take(cap).toList(growable: false);
+    final visibleSuggested = capped.where(suggestedKeySet.contains).length;
+    // Couvre aussi `quota == 0` (aucune suggestion) : `0 >= 0` rend tous les
+    // slots aux favoris sans branche dédiée.
+    if (visibleSuggested >= quota) return capped;
+
+    // Rééquilibrage : favoris/éditorial dans l'ordre appliqué, tronqués à
+    // `cap - quota` (ordre préservé), puis les `quota` premières suggestions.
+    final favSlots = math.max(0, cap - quota);
+    final head = [
+      for (final key in ordered)
+        if (!suggestedKeySet.contains(key)) key,
+    ].take(favSlots);
+    return [...head, ...orderedSuggested.take(quota)].toList(growable: false);
   }
 
   /// Renvoie [themeKeys] avec, en tête, la clé du thème auquel l'utilisateur a
