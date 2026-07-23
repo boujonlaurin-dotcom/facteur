@@ -2011,6 +2011,16 @@ class _PerspectivesInlineSectionState
   Widget _buildCarousel(List<Perspective> variants) {
     // Sources suivies → résolution par domaine pour rendre la pastille cliquable.
     final sources = ref.watch(userSourcesProvider).valueOrNull;
+    // RepaintBoundary explicite par carte (et par CTA). `FacteurCard` n'isole
+    // ses cartes que via `webRepaintBoundary`, un no-op hors web
+    // (cf. core/web/web_perf.dart) : sur natif, sans ce boundary, tout le Row se
+    // re-rastérisait à chaque frame de translation (ombre blurRadius 6 +
+    // DiffTitle multi-span + favicon par carte). Ces boundaries confinent le
+    // raster de chaque carte à son propre layer, réutilisé tel quel pendant le
+    // scroll. On garde SingleChildScrollView+Row (carrousel court, ≤8 cartes) :
+    // build eager → `maxScrollExtent` exact pour le tap-to-scroll de la barre de
+    // biais (`_onSpectrumSegmentTap`) et zéro hitch de construction paresseuse
+    // en cours de défilement (ce qu'introduirait une ListView virtualisée ici).
     return SizedBox(
       height: _kCarouselViewportHeight,
       child: SingleChildScrollView(
@@ -2027,21 +2037,25 @@ class _PerspectivesInlineSectionState
           children: [
             // Carte CTA « Analyse Facteur » en tête du carrousel (avant les
             // cartes sources) : toujours rendue, le tap déclenche un fetch lazy.
-            _AnalysisCtaCard(
-              onTap: widget.onOpenAnalysis,
-              count: _displayedPerspectives.length,
+            RepaintBoundary(
+              child: _AnalysisCtaCard(
+                onTap: widget.onOpenAnalysis,
+                count: _displayedPerspectives.length,
+              ),
             ),
             if (variants.isNotEmpty) const SizedBox(width: _kCoverageCardGap),
             for (var i = 0; i < variants.length; i++) ...[
               if (i > 0) const SizedBox(width: _kCoverageCardGap),
-              CoverageComparisonCard(
-                key: ValueKey('coverage_${_animationGeneration}_$i'),
-                perspective: variants[i],
-                firstCardKey: i == 0 ? widget.firstCardKey : null,
-                onSourceTap: _sourceTapFor(
-                  context,
-                  sources,
-                  variants[i].sourceDomain,
+              RepaintBoundary(
+                child: CoverageComparisonCard(
+                  key: ValueKey('coverage_${_animationGeneration}_$i'),
+                  perspective: variants[i],
+                  firstCardKey: i == 0 ? widget.firstCardKey : null,
+                  onSourceTap: _sourceTapFor(
+                    context,
+                    sources,
+                    variants[i].sourceDomain,
+                  ),
                 ),
               ),
             ],
@@ -2061,12 +2075,15 @@ class _PerspectivesInlineSectionState
         scrollDirection: Axis.horizontal,
         physics: NeverScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(18, 15, 18, 16),
+        // RepaintBoundary par squelette : isole le shimmer (animation continue)
+        // de son voisin. Row conservé (2 items fixes, non défilants) plutôt
+        // qu'une ListView non scrollable qui n'apporterait rien ici.
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _CoverageCardSkeleton(),
+            RepaintBoundary(child: _CoverageCardSkeleton()),
             SizedBox(width: 13),
-            _CoverageCardSkeleton(),
+            RepaintBoundary(child: _CoverageCardSkeleton()),
           ],
         ),
       ),

@@ -2585,9 +2585,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 final t = _ctaPulseController.value;
                                 final scale =
                                     1.0 + 0.04 * math.sin(t * math.pi);
-                                return Transform.scale(
-                                  scale: scale,
-                                  child: child,
+                                // RepaintBoundary : confine le raster du pop
+                                // (Transform.scale animé, one-shot 280 ms) au
+                                // bouton — un pulse concomitant d'un scroll ne
+                                // salit pas la peinture du footer autour.
+                                return RepaintBoundary(
+                                  child: Transform.scale(
+                                    scale: scale,
+                                    child: child,
+                                  ),
                                 );
                               },
                               child: FilledButton(
@@ -3352,27 +3358,34 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           const SizedBox(height: FacteurSpacing.space8),
                           Container(
                             color: colors.backgroundPrimary,
-                            child: PerspectivesInlineSection(
-                              key: _perspectivesKey,
-                              status: _perspectivesStatus,
-                              perspectives: _inlinePerspectives,
-                              biasDistribution:
-                                  _perspectivesResponse?.biasDistribution ??
-                                      const {},
-                              keywords:
-                                  _perspectivesResponse?.keywords ?? const [],
-                              sourceBiasStance:
-                                  _perspectivesResponse?.sourceBiasStance ??
-                                      'unknown',
-                              sourceName: _content?.source.name ?? '',
-                              contentId: widget.contentId,
-                              comparisonQuality:
-                                  _perspectivesResponse?.comparisonQuality ??
-                                      'low',
-                              divergenceLevel:
-                                  _perspectivesResponse?.divergenceLevel,
-                              partial: _perspectivesResponse?.partial ?? false,
-                              onOpenAnalysis: _openPerspectivesAnalysis,
+                            // RepaintBoundary : isole les animations d'intro de
+                            // la bande perspectives (AnimatedOpacity/AnimatedSize,
+                            // fondu du carrousel) du corps vertical au-dessus, pour
+                            // qu'elles n'invalident pas la peinture du texte.
+                            child: RepaintBoundary(
+                              child: PerspectivesInlineSection(
+                                key: _perspectivesKey,
+                                status: _perspectivesStatus,
+                                perspectives: _inlinePerspectives,
+                                biasDistribution:
+                                    _perspectivesResponse?.biasDistribution ??
+                                        const {},
+                                keywords:
+                                    _perspectivesResponse?.keywords ?? const [],
+                                sourceBiasStance:
+                                    _perspectivesResponse?.sourceBiasStance ??
+                                        'unknown',
+                                sourceName: _content?.source.name ?? '',
+                                contentId: widget.contentId,
+                                comparisonQuality:
+                                    _perspectivesResponse?.comparisonQuality ??
+                                        'low',
+                                divergenceLevel:
+                                    _perspectivesResponse?.divergenceLevel,
+                                partial:
+                                    _perspectivesResponse?.partial ?? false,
+                                onOpenAnalysis: _openPerspectivesAnalysis,
+                              ),
                             ),
                           ),
                           SizedBox(
@@ -3956,22 +3969,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 // invisible) ; large respiration au-dessus pour la détacher.
                 if (_showPerspectivesBand) ...[
                   const SizedBox(height: FacteurSpacing.space8),
-                  PerspectivesInlineSection(
-                    key: _perspectivesKey,
-                    status: _perspectivesStatus,
-                    perspectives: _inlinePerspectives,
-                    biasDistribution:
-                        _perspectivesResponse?.biasDistribution ?? const {},
-                    keywords: _perspectivesResponse?.keywords ?? const [],
-                    sourceBiasStance:
-                        _perspectivesResponse?.sourceBiasStance ?? 'unknown',
-                    sourceName: _content?.source.name ?? '',
-                    contentId: widget.contentId,
-                    comparisonQuality:
-                        _perspectivesResponse?.comparisonQuality ?? 'low',
-                    divergenceLevel: _perspectivesResponse?.divergenceLevel,
-                    partial: _perspectivesResponse?.partial ?? false,
-                    onOpenAnalysis: _openPerspectivesAnalysis,
+                  RepaintBoundary(
+                    // Isole les animations d'intro de la bande perspectives du
+                    // corps vertical au-dessus (même motif que le reader natif).
+                    child: PerspectivesInlineSection(
+                      key: _perspectivesKey,
+                      status: _perspectivesStatus,
+                      perspectives: _inlinePerspectives,
+                      biasDistribution:
+                          _perspectivesResponse?.biasDistribution ?? const {},
+                      keywords: _perspectivesResponse?.keywords ?? const [],
+                      sourceBiasStance:
+                          _perspectivesResponse?.sourceBiasStance ?? 'unknown',
+                      sourceName: _content?.source.name ?? '',
+                      contentId: widget.contentId,
+                      comparisonQuality:
+                          _perspectivesResponse?.comparisonQuality ?? 'low',
+                      divergenceLevel: _perspectivesResponse?.divergenceLevel,
+                      partial: _perspectivesResponse?.partial ?? false,
+                      onOpenAnalysis: _openPerspectivesAnalysis,
+                    ),
                   ),
                 ],
 
@@ -4456,85 +4473,6 @@ class _ShimmerSkeletonState extends State<_ShimmerSkeleton>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: widget.children,
-      ),
-    );
-  }
-}
-
-class _FadeScrollRow extends StatefulWidget {
-  final List<Widget> children;
-
-  const _FadeScrollRow({required this.children});
-
-  @override
-  State<_FadeScrollRow> createState() => _FadeScrollRowState();
-}
-
-class _FadeScrollRowState extends State<_FadeScrollRow> {
-  final _controller = ScrollController();
-  bool _atStart = true;
-  bool _atEnd = false;
-  bool _pointerDown = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
-  }
-
-  void _onScroll() {
-    if (!_controller.hasClients) return;
-    final pos = _controller.position;
-    final atStart = pos.pixels <= 0;
-    final atEnd = pos.pixels >= pos.maxScrollExtent;
-    if (atStart != _atStart || atEnd != _atEnd) {
-      setState(() {
-        _atStart = atStart;
-        _atEnd = atEnd;
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: PopScope(
-        canPop: _atStart || !_pointerDown,
-        child: Listener(
-          onPointerDown: (_) => setState(() => _pointerDown = true),
-          onPointerUp: (_) => setState(() => _pointerDown = false),
-          onPointerCancel: (_) => setState(() => _pointerDown = false),
-          child: ShaderMask(
-            shaderCallback: (bounds) => LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [
-                _atStart ? Colors.white : Colors.transparent,
-                Colors.white,
-                Colors.white,
-                _atEnd ? Colors.white : Colors.transparent,
-              ],
-              stops: const [0.0, 0.12, 0.82, 1.0],
-            ).createShader(bounds),
-            blendMode: BlendMode.dstIn,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (_) => true,
-              child: SingleChildScrollView(
-                controller: _controller,
-                scrollDirection: Axis.horizontal,
-                child: Row(spacing: 6, children: widget.children),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
