@@ -111,16 +111,45 @@ s'éteignent naturellement (digests quotidiens).
 
 Aucun fichier mobile modifié (contrat `analysis` / `divergence_level` inchangé).
 
-## Vérification prévue
+## Vérification effectuée
 
-1. `pytest tests/test_perspective_service.py -v` — invariants prompt + contrat.
-2. `pytest tests/editorial/ -v` — non-régression pipeline (mocks `analyze_divergences`).
-3. Suite backend complète `pytest -v`.
-4. Vérification manuelle du rendu : le premier `\n\n` doit toujours produire
-   deux sections non vides dans le bottom sheet (test widget existant
-   `perspectives_inline_states_test.dart` inchangé).
-5. Optionnel (nécessite `MISTRAL_API_KEY`) : script de comparaison v1/v2 sur
-   3-4 sujets réels, à archiver dans `docs/qa/scripts/`.
+1. `pytest tests/test_perspective_service.py -q` — **22 passed** (16 existants
+   + 6 nouveaux tests de garde).
+2. `pytest tests/editorial/ -q` — **147 passed, 3 skipped**. 3 erreurs de setup
+   `TestPersistContentClusterIds` : Postgres de test (port 54322) indisponible
+   dans le conteneur, pas de Docker — **pré-existant, sans lien avec le diff**.
+3. Suite backend complète — **1951 passed, 30 skipped, 1 failed, 525 errors**.
+   Les 525 erreurs sont toutes des `psycopg.OperationalError` (base de test
+   absente). L'unique `failed`
+   (`test_essentiel_endpoint.py::test_get_essentiel_uses_user_context_from_router`)
+   **échoue à l'identique sur l'arbre propre** (vérifié via `git stash`) →
+   pré-existant.
+4. `ruff check` sur les 2 fichiers touchés — **All checks passed**.
+   `ruff format --check` : `perspective_service.py` propre ; le fichier de test
+   est signalé, mais uniquement sur des lignes **pré-existantes** (l. 47-172,
+   diff identique sur l'arbre propre) — non reformatées pour garder le diff
+   lisible.
+5. Contrat de rendu vérifié par test : le premier `\n\n` produit toujours deux
+   sections non vides, la seconde commençant par `→`. Aucun fichier mobile
+   modifié, donc `perspectives_inline_states_test.dart` reste valide.
+6. Prompt final relu en sortie réelle (dump du `system` + `user_message`).
+
+### Tests de garde ajoutés
+
+| Test | Ce qu'il verrouille |
+|---|---|
+| `test_analyze_divergences_prompt_targets_substance` | présence des 4 directives v2, disparition des consignes de lexicométrie v1, lexique borné à un rôle de preuve, `d'après leurs titres` passé d'obligation à interdiction |
+| `test_analyze_divergences_preserves_two_section_contract` | séparateur `\n\n`, puces `→ `, valeurs de `divergence_level` |
+| `test_analyze_divergences_feeds_wider_context` | troncatures 450/900, `temperature` 0.3, `max_tokens` 900 |
+| `test_analyze_divergences_json_contract_unchanged` | dict `{analysis, divergence_level}`, `None` si `analysis` absent |
+| `test_analyze_divergences_no_perspectives_skips_llm` | zéro perspective → zéro appel Mistral (garde-fou de coût) |
+
+### Reste à faire (hors code, au déploiement)
+
+- Purge du cache : `DELETE FROM perspective_analyses;` via le SQL Editor
+  Supabase, sinon les articles déjà analysés continuent de servir du texte v1.
+- Optionnel (nécessite `MISTRAL_API_KEY`) : comparaison v1/v2 sur 3-4 sujets
+  réels, à archiver dans `docs/qa/scripts/`.
 
 ## Annexe — prompt v2 proposé (texte exact soumis à validation)
 
@@ -203,9 +232,9 @@ sur le volet santé. »
 
 ## Statut
 
-- [ ] Plan confirmé PO
-- [ ] Prompt v2 implémenté
-- [ ] Troncatures / paramètres d'appel ajustés
-- [ ] Tests de garde ajoutés
-- [ ] Suite backend verte
+- [x] Plan confirmé PO
+- [x] Prompt v2 implémenté
+- [x] Troncatures / paramètres d'appel ajustés
+- [x] Tests de garde ajoutés
+- [x] Suite backend verte (hors échecs pré-existants / base de test absente)
 - [ ] Purge cache `perspective_analyses` (Supabase SQL Editor, au déploiement)
