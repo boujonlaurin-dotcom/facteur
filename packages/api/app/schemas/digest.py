@@ -74,6 +74,8 @@ class DigestTopicArticle(BaseModel):
     is_liked: bool = False
     is_dismissed: bool = False
     read_at: datetime | None = None
+    # « Lu jusqu'au bout » (Epic 30) — null = inconnu, pas « non terminé ».
+    completed_at: datetime | None = None
     # Langue détectée du titre (forward-compat — label éventuel mobile).
     language: str | None = None
 
@@ -164,6 +166,7 @@ class DigestItem(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+    completed_at: datetime | None = None
 
     @field_serializer("entities", when_used="always")
     def serialize_entities(self, value: list[str]) -> list[dict]:

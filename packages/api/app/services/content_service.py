@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from app.models.content import UserContentStatus
-from app.models.enums import ContentStatus, HiddenReason
+from app.models.enums import CompletionSource, ContentStatus, HiddenReason
 from app.schemas.content import ContentStatusUpdate
 from app.services.streak_service import StreakService
 
@@ -64,6 +64,7 @@ class ContentService:
             "hidden_reason": user_status.hidden_reason if user_status else None,
             "time_spent_seconds": user_status.time_spent_seconds if user_status else 0,
             "reading_progress": user_status.reading_progress if user_status else 0,
+            "completed_at": user_status.completed_at if user_status else None,
             "note_text": user_status.note_text if user_status else None,
             "note_updated_at": user_status.note_updated_at if user_status else None,
             "topics": content.topics,
@@ -99,11 +100,29 @@ class ContentService:
         if update_data.reading_progress is not None:
             values["reading_progress"] = update_data.reading_progress
 
+        completion_source = (
+            update_data.completion_source or CompletionSource.IN_APP
+            if update_data.completed
+            else None
+        )
+        if update_data.completed:
+            values["completed_at"] = now
+            values["completion_source"] = completion_source
+
         # Build conflict update set — for reading_progress, keep the max
         conflict_set = dict(values)
         if update_data.reading_progress is not None:
             conflict_set["reading_progress"] = func.greatest(
                 UserContentStatus.reading_progress, update_data.reading_progress
+            )
+        # Completion is first-write-wins: re-reading an article never moves the
+        # timestamp, so the daily counter can't be farmed by re-opening.
+        if update_data.completed:
+            conflict_set["completed_at"] = func.coalesce(
+                UserContentStatus.completed_at, now
+            )
+            conflict_set["completion_source"] = func.coalesce(
+                UserContentStatus.completion_source, completion_source
             )
         # time_spent_seconds accumulates across sessions instead of being overwritten.
         if update_data.time_spent_seconds is not None:

@@ -20,7 +20,9 @@ import 'dart:math' as math;
 import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../shared/widgets/fab_nudge_bubble.dart';
+import '../../../shared/widgets/completion_stamp.dart';
 import '../../../shared/widgets/glass_pill.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
@@ -243,6 +245,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _isShortArticle = false;
   // true once user reaches end of displayed content
   final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
+
+  /// « Lu jusqu'au bout ». Notifier **frère** de [_footerPermanent], et non le
+  /// même : ce dernier est délibérément bloqué en mode WebView (le verrouiller
+  /// figerait le pied de page pendant toute la session), ce qui est une
+  /// contrainte de layout et non de sémantique. Or la WebView est justement le
+  /// chemin nominal — ~90 % du catalogue est du contenu partiel.
+  final ValueNotifier<bool> _articleCompleted = ValueNotifier<bool>(false);
+  CompletionSource? _completionSource;
+
+  /// Résolu en `initState` — jamais via `ref` depuis `dispose()`.
+  AnalyticsService? _analytics;
   bool _showReadOnSiteNudge = false;
   // Nudge « Sauvegarde cet article » déclenché par l'action de lettre
   // « Sauvegarder 3 articles » (pendingSaveNudgeProvider), one-shot.
@@ -537,6 +550,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
     );
     _footerPermanent.addListener(_onFooterPermanentChanged);
+    _articleCompleted.addListener(_onArticleCompletedChanged);
+
+    // Résolu UNE fois, ici. `ref.read` dans `dispose()` levait, l'exception
+    // était avalée par le catch fourre-tout, et `article_read` /
+    // `article_completed` n'ont donc remonté aucun événement pendant des mois
+    // (régression déjà corrigée une fois dans ce fichier, cf. PR #413).
+    _analytics = ref.read(analyticsServiceProvider);
 
     WidgetsBinding.instance.addObserver(this);
 
@@ -862,6 +882,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (clamped > _maxReadingProgress) {
       _maxReadingProgress = clamped;
     }
+    // Chemin nominal : ~90 % du catalogue est partiel, donc la lecture aboutie
+    // se joue ici. Couvre les deux canaux (webview_flutter gratuit et
+    // `onProgress` de PremiumWebView) qui passent tous deux par cette méthode.
+    if (clamped >= 0.98) _latchCompleted(CompletionSource.web);
   }
 
   /// Whether the current article has only partial in-app content.
@@ -939,6 +963,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     _isShortArticle = true;
     _footerPermanent.value = true;
+    _latchCompleted(CompletionSource.short);
+  }
+
+  /// Latch one-shot de la complétion. Appelé depuis le listener de scroll, donc
+  /// gardé par un test booléen en tête : pas d'allocation, pas de `setState`.
+  void _latchCompleted(CompletionSource source) {
+    if (_articleCompleted.value) return;
+    if (_isExternal) return;
+    final article = _content;
+    if (article == null) return;
+    _completionSource = source;
+    _articleCompleted.value = true;
   }
 
   /// Fires a brief scale-pop on the primary CTA when `_footerPermanent`
@@ -947,8 +983,43 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onFooterPermanentChanged() {
     if (!_footerPermanent.value) return;
     if (_isWebViewActive || _ctaTapped || _showWebView) return;
+    // Anti-double-buzz : sur contenu complet les deux latches tombent dans la
+    // même frame. La complétion porte alors l'haptique, plus riche.
+    if (_articleCompleted.value) return;
     HapticFeedback.selectionClick();
     _ctaPulseController.forward(from: 0.0);
+  }
+
+  /// La lecture vient d'aboutir : un atterrissage, pas un tick. Jamais
+  /// `mediumImpact`/`heavyImpact` sur un acte de lecture.
+  void _onArticleCompletedChanged() {
+    if (!_articleCompleted.value) return;
+    final article = _content;
+    if (article == null) return;
+    final source = _completionSource ?? CompletionSource.inApp;
+
+    HapticFeedback.lightImpact();
+    unawaited(ref.read(readSyncServiceProvider).markCompleted(article.id, source));
+    _analytics?.trackArticleFinished(
+      contentId: article.id,
+      sourceId: article.source.id,
+      completionSource: source.wireValue,
+      isPartial: _isPartialContent,
+      renderMode: _completionRenderMode,
+      reachedFooterPermanent: _footerPermanent.value,
+      progressRaw: (_maxReadingProgress * 100).round().clamp(0, 100),
+      timeSpentSeconds: DateTime.now().difference(_startTime).inSeconds,
+      scrollable: _scrollController.hasClients &&
+          _scrollController.position.maxScrollExtent >= 50,
+      articleCharCount:
+          plainTextLength(article.htmlContent ?? article.description),
+    );
+  }
+
+  String get _completionRenderMode {
+    if (_isWebViewActive || _ctaTapped) return 'webview';
+    if (_isShortArticle) return 'short';
+    return 'in_app';
   }
 
   /// ScrollController actif — un seul des deux a des clients à la fois (modes
@@ -1697,13 +1768,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Accumulate reading time on user_content_status for recommendation signal.
         repository.updateContentStatusWithTimeSpent(_content!.id, duration);
 
-        // Track article read duration
-        ref
-            .read(analyticsServiceProvider)
-            .trackArticleRead(_content!.id, _content!.source.id, duration);
+        // Durée de lecture — le service a été résolu en `initState`, aucun
+        // `ref` n'est touché pendant le teardown.
+        _analytics?.trackArticleRead(
+          _content!.id,
+          _content!.source.id,
+          duration,
+        );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      // Un chemin de récompense ne doit jamais échouer en silence.
       debugPrint('Error tracking on dispose: $e');
+      unawaited(Sentry.captureException(e, stackTrace: stack));
     }
 
     _readingTimer?.cancel();
@@ -1722,6 +1798,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerAutoController.dispose();
     _ctaPulseController.dispose();
     _footerPermanent.removeListener(_onFooterPermanentChanged);
+    _articleCompleted.removeListener(_onArticleCompletedChanged);
+    _articleCompleted.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _footerOffset.dispose();
     _footerPermanent.dispose();
@@ -2197,6 +2275,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                         _footerPermanent.value = true;
                         _animateFooterTo(0.0);
                       }
+                      // Complétion in-app : seulement sur contenu complet. Sur
+                      // contenu partiel, atteindre le bas de l'extrait ne veut
+                      // pas dire avoir lu l'article — la complétion arrive
+                      // alors par le pont JS de la WebView.
+                      if (!_isPartialContent &&
+                          !_ctaTapped &&
+                          rawProgress >= 0.98) {
+                        _latchCompleted(CompletionSource.inApp);
+                      }
                       // Progress bar uses article-only extent so perspectives don't dilute it
                       final articleExtent =
                           _articleContentExtent ?? metrics.maxScrollExtent;
@@ -2545,7 +2632,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           top: 12,
           bottom: 12 + bottomInset + _kFooterBottomMargin,
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Le cachet « LU JUSQU'AU BOUT » vit dans le pied de page et non
+            // dans le flux de l'article : c'est le seul emplacement qui marche
+            // dans les quatre modes de rendu — impossible d'injecter quoi que
+            // ce soit dans le DOM de l'éditeur en WebView, qui est pourtant le
+            // chemin nominal.
+            ValueListenableBuilder<bool>(
+              valueListenable: _articleCompleted,
+              builder: (context, completed, _) {
+                if (!completed) return const SizedBox.shrink();
+                return const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: CompletionStamp(animate: true),
+                  ),
+                );
+              },
+            ),
+            Row(
           children: [
             // CTA — sized to content for articles (laisse de la place aux 3
             // boutons icônes à droite); fills width pour video/audio.
@@ -2557,13 +2665,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isArticle
                     ? ValueListenableBuilder<bool>(
                         valueListenable: _footerPermanent,
-                        builder: (context, permanent, _) {
+                        builder: (context, permanent, _) =>
+                            ValueListenableBuilder<bool>(
+                          valueListenable: _articleCompleted,
+                          builder: (context, completed, _) {
                           final isWebViewMode =
                               _ctaTapped || _isWebViewActive;
                           // Primary orange ONLY when the user has reached the
                           // bottom of the article (footer locked permanent) AND
                           // the WebView hasn't been revealed yet.
-                          final usePrimary = permanent && !isWebViewMode;
+                          //
+                          // Une fois l'article terminé, le pied de page porte
+                          // l'état « succès » (cachet vert) : l'action « Lire
+                          // sur … » se retire alors en `secondary` pour ne plus
+                          // concurrencer cet état. Un bouton d'action ne prend
+                          // jamais le vert, qui signifie « déjà fait » partout
+                          // ailleurs dans le produit.
+                          final usePrimary =
+                              permanent && !isWebViewMode && !completed;
+                          final useSecondary = completed;
 
                           final label = isWebViewMode
                               ? 'Lire via Navigateur'
@@ -2591,7 +2711,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 label,
                                 style: textTheme.labelMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
-                                  color: usePrimary
+                                  color: usePrimary || useSecondary
                                       ? Colors.white
                                       : colors.textPrimary,
                                 ),
@@ -2603,11 +2723,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             Icon(
                               iconData,
                               size: 16,
-                              color: usePrimary
+                              color: usePrimary || useSecondary
                                   ? Colors.white.withValues(alpha: 0.8)
                                   : colors.textSecondary,
                             ),
                           ];
+
+                          if (useSecondary) {
+                            return FilledButton(
+                              onPressed: _onReadOnSiteTap,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: colors.secondary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: children,
+                              ),
+                            );
+                          }
 
                           if (usePrimary) {
                             return AnimatedBuilder(
@@ -2667,7 +2806,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                             child: Row(children: children),
                           );
-                        },
+                          },
+                        ),
                       )
                     : _buildExternalCtaButton(context, content),
               ),
@@ -2777,6 +2917,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
               ],
+            ),
+          ],
             ),
           ],
         ),
@@ -3093,7 +3235,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
-    return ValueListenableBuilder<double>(
+    return ValueListenableBuilder<bool>(
+      valueListenable: _articleCompleted,
+      builder: (context, _, __) => ValueListenableBuilder<double>(
       valueListenable: _readingProgress,
       builder: (context, progress, _) {
         // Only show after 5% to avoid flashing on open
@@ -3102,9 +3246,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Grey→primary lerp, but opacity stays capped so the bar reads discreet
         // even at full progress (15% at start → ~50% max at end).
         final alpha = 0.15 + (clamped * 0.35);
+        // Article terminé : la barre vire au vert « succès ». Elle est
+        // l'instrument de mesure de la lecture, elle porte donc l'état — pas
+        // le bouton d'action.
+        final target =
+            _articleCompleted.value ? kStampGreen : colors.primary;
         final barColor = Color.lerp(
           Colors.grey.shade400,
-          colors.primary,
+          target,
           clamped,
         )!
             .withValues(alpha: alpha);
@@ -3123,6 +3272,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         );
       },
+      ),
     );
   }
 

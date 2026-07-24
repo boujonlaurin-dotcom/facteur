@@ -7,12 +7,20 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import AnalyticsEvent
+from app.models.content import UserContentStatus
 from app.models.user import UserProfile, UserStreak
 from app.schemas.streak import (
     StreakActivityDayResponse,
     StreakActivityResponse,
     StreakResponse,
 )
+from app.utils.time import editorial_day_bounds
+
+# Objectif journalier de lectures abouties. Constante serveur volontairement :
+# il n'existe aucune UI d'édition, et la garder ici permet de recalibrer sans
+# release client. Valeur provisoire — à arrêter sur la distribution réelle une
+# fois l'instrumentation réparée (aujourd'hui ≈ 1,2 lecture aboutie/jour actif).
+DAILY_COMPLETION_GOAL = 2
 
 
 class StreakService:
@@ -35,6 +43,31 @@ class StreakService:
             weekly_count=streak.weekly_count,
             weekly_goal=weekly_goal,
             weekly_progress=min(1.0, streak.weekly_count / weekly_goal),
+            daily_completed=await self.count_completed_today(user_id),
+            daily_goal=DAILY_COMPLETION_GOAL,
+        )
+
+    async def count_completed_today(self, user_id: str) -> int:
+        """Compte les lectures abouties de la journée éditoriale en cours.
+
+        Dérivé de `user_content_status.completed_at` — aucun compteur stocké,
+        donc aucun job de reset, aucune dérive et rien à reconstruire après
+        incident. La fenêtre suit la frontière 07h30 Paris (celle des éditions
+        et du rituel matinal), et non minuit : avant 07h30 le lecteur est
+        encore sur l'édition de la veille.
+        """
+        start, end = editorial_day_bounds()
+        return (
+            await self.db.scalar(
+                select(func.count())
+                .select_from(UserContentStatus)
+                .where(
+                    UserContentStatus.user_id == UUID(user_id),
+                    UserContentStatus.completed_at >= start,
+                    UserContentStatus.completed_at < end,
+                )
+            )
+            or 0
         )
 
     async def increment_consumption(self, user_id: str) -> UserStreak:

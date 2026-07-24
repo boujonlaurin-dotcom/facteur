@@ -35,6 +35,10 @@ class FluxArticleVM {
   final bool isFollowedSource;
   final bool isRead;
 
+  /// « Lu jusqu'au bout » — adossé à `completedAt`, distinct de [isRead] que le
+  /// seuil d'ouverture d'1 s suffit à déclencher.
+  final bool isCompleted;
+
   const FluxArticleVM({
     required this.contentId,
     required this.title,
@@ -47,6 +51,7 @@ class FluxArticleVM {
     this.publishedAt,
     this.isFollowedSource = false,
     this.isRead = false,
+    this.isCompleted = false,
   });
 
   bool get hasBeenRead => isRead;
@@ -84,6 +89,7 @@ class FluxArticleVM {
         isFollowedSource: article.isFollowedSource,
         isRead: article.status == ContentStatus.consumed ||
             article.readingProgress > 0,
+        isCompleted: article.isCompleted,
       );
     }
     throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -152,6 +158,11 @@ class _FluxContinuArticleCardState
       consumedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
     );
     final hasBeenRead = vm.hasBeenRead || wasConsumedThisSession;
+    // Complétée pendant la session : la carte reflète l'état sans attendre un
+    // refetch du feed.
+    final completedThisSession = ref.watch(
+      completedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
+    );
     final colors = context.facteurColors;
     final spec = ref.watch(displayModeSpecProvider);
     // Reclaim the thumb slot when the network image fails — avoids the
@@ -207,7 +218,10 @@ class _FluxContinuArticleCardState
               Positioned(
                 top: 4,
                 right: 4,
-                child: _ReadCheckBadge(color: colors.success),
+                child: _ReadCheckBadge(
+                  color: colors.success,
+                  isCompleted: vm.isCompleted || completedThisSession,
+                ),
               ),
           ],
         ),
@@ -788,7 +802,12 @@ class _ThemePill extends StatelessWidget {
 
 class _ReadCheckBadge extends StatelessWidget {
   final Color color;
-  const _ReadCheckBadge({required this.color});
+
+  /// Double check quand l'article a été lu jusqu'au bout, simple check quand il
+  /// a seulement été ouvert (ce que le seuil d'1 s suffit à déclencher).
+  final bool isCompleted;
+
+  const _ReadCheckBadge({required this.color, this.isCompleted = false});
 
   @override
   Widget build(BuildContext context) {
@@ -808,7 +827,9 @@ class _ReadCheckBadge extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Icon(
-        PhosphorIcons.check(PhosphorIconsStyle.bold),
+        isCompleted
+            ? PhosphorIcons.checks(PhosphorIconsStyle.bold)
+            : PhosphorIcons.check(PhosphorIconsStyle.bold),
         size: 12,
         color: Colors.white,
       ),

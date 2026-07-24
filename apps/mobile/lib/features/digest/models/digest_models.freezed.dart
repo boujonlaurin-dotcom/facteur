@@ -695,6 +695,10 @@ mixin _$DigestItem {
   bool get isLiked => throw _privateConstructorUsedError;
   @JsonKey(name: 'is_dismissed')
   bool get isDismissed => throw _privateConstructorUsedError;
+
+  /// « Lu jusqu'au bout » (Epic 30) — null = inconnu, pas « non terminé ».
+  @JsonKey(name: 'completed_at')
+  DateTime? get completedAt => throw _privateConstructorUsedError;
   @JsonKey(name: 'recommendation_reason')
   DigestRecommendationReason? get recommendationReason =>
       throw _privateConstructorUsedError;
@@ -738,6 +742,7 @@ abstract class $DigestItemCopyWith<$Res> {
       @JsonKey(name: 'is_saved') bool isSaved,
       @JsonKey(name: 'is_liked') bool isLiked,
       @JsonKey(name: 'is_dismissed') bool isDismissed,
+      @JsonKey(name: 'completed_at') DateTime? completedAt,
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') String? noteText,
@@ -779,6 +784,7 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
     Object? isSaved = null,
     Object? isLiked = null,
     Object? isDismissed = null,
+    Object? completedAt = freezed,
     Object? recommendationReason = freezed,
     Object? noteText = freezed,
     Object? badge = freezed,
@@ -860,6 +866,10 @@ class _$DigestItemCopyWithImpl<$Res, $Val extends DigestItem>
           ? _value.isDismissed
           : isDismissed // ignore: cast_nullable_to_non_nullable
               as bool,
+      completedAt: freezed == completedAt
+          ? _value.completedAt
+          : completedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
       recommendationReason: freezed == recommendationReason
           ? _value.recommendationReason
           : recommendationReason // ignore: cast_nullable_to_non_nullable
@@ -933,6 +943,7 @@ abstract class _$$DigestItemImplCopyWith<$Res>
       @JsonKey(name: 'is_saved') bool isSaved,
       @JsonKey(name: 'is_liked') bool isLiked,
       @JsonKey(name: 'is_dismissed') bool isDismissed,
+      @JsonKey(name: 'completed_at') DateTime? completedAt,
       @JsonKey(name: 'recommendation_reason')
       DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') String? noteText,
@@ -974,6 +985,7 @@ class __$$DigestItemImplCopyWithImpl<$Res>
     Object? isSaved = null,
     Object? isLiked = null,
     Object? isDismissed = null,
+    Object? completedAt = freezed,
     Object? recommendationReason = freezed,
     Object? noteText = freezed,
     Object? badge = freezed,
@@ -1055,6 +1067,10 @@ class __$$DigestItemImplCopyWithImpl<$Res>
           ? _value.isDismissed
           : isDismissed // ignore: cast_nullable_to_non_nullable
               as bool,
+      completedAt: freezed == completedAt
+          ? _value.completedAt
+          : completedAt // ignore: cast_nullable_to_non_nullable
+              as DateTime?,
       recommendationReason: freezed == recommendationReason
           ? _value.recommendationReason
           : recommendationReason // ignore: cast_nullable_to_non_nullable
@@ -1098,6 +1114,7 @@ class _$DigestItemImpl implements _DigestItem {
       @JsonKey(name: 'is_saved') this.isSaved = false,
       @JsonKey(name: 'is_liked') this.isLiked = false,
       @JsonKey(name: 'is_dismissed') this.isDismissed = false,
+      @JsonKey(name: 'completed_at') this.completedAt,
       @JsonKey(name: 'recommendation_reason') this.recommendationReason,
       @JsonKey(name: 'note_text') this.noteText,
       this.badge})
@@ -1170,6 +1187,11 @@ class _$DigestItemImpl implements _DigestItem {
   @override
   @JsonKey(name: 'is_dismissed')
   final bool isDismissed;
+
+  /// « Lu jusqu'au bout » (Epic 30) — null = inconnu, pas « non terminé ».
+  @override
+  @JsonKey(name: 'completed_at')
+  final DateTime? completedAt;
   @override
   @JsonKey(name: 'recommendation_reason')
   final DigestRecommendationReason? recommendationReason;
@@ -1181,7 +1203,7 @@ class _$DigestItemImpl implements _DigestItem {
 
   @override
   String toString() {
-    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, htmlContent: $htmlContent, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, recommendationReason: $recommendationReason, noteText: $noteText, badge: $badge)';
+    return 'DigestItem(contentId: $contentId, title: $title, url: $url, thumbnailUrl: $thumbnailUrl, description: $description, htmlContent: $htmlContent, topics: $topics, contentType: $contentType, durationSeconds: $durationSeconds, publishedAt: $publishedAt, source: $source, rank: $rank, reason: $reason, isFollowedSource: $isFollowedSource, isPaid: $isPaid, isRead: $isRead, isSaved: $isSaved, isLiked: $isLiked, isDismissed: $isDismissed, completedAt: $completedAt, recommendationReason: $recommendationReason, noteText: $noteText, badge: $badge)';
   }
 
   @override
@@ -1217,6 +1239,8 @@ class _$DigestItemImpl implements _DigestItem {
             (identical(other.isLiked, isLiked) || other.isLiked == isLiked) &&
             (identical(other.isDismissed, isDismissed) ||
                 other.isDismissed == isDismissed) &&
+            (identical(other.completedAt, completedAt) ||
+                other.completedAt == completedAt) &&
             (identical(other.recommendationReason, recommendationReason) ||
                 other.recommendationReason == recommendationReason) &&
             (identical(other.noteText, noteText) ||
@@ -1247,6 +1271,7 @@ class _$DigestItemImpl implements _DigestItem {
         isSaved,
         isLiked,
         isDismissed,
+        completedAt,
         recommendationReason,
         noteText,
         badge
@@ -1291,6 +1316,7 @@ abstract class _DigestItem implements DigestItem {
       @JsonKey(name: 'is_saved') final bool isSaved,
       @JsonKey(name: 'is_liked') final bool isLiked,
       @JsonKey(name: 'is_dismissed') final bool isDismissed,
+      @JsonKey(name: 'completed_at') final DateTime? completedAt,
       @JsonKey(name: 'recommendation_reason')
       final DigestRecommendationReason? recommendationReason,
       @JsonKey(name: 'note_text') final String? noteText,
@@ -1352,6 +1378,11 @@ abstract class _DigestItem implements DigestItem {
   @override
   @JsonKey(name: 'is_dismissed')
   bool get isDismissed;
+  @override
+
+  /// « Lu jusqu'au bout » (Epic 30) — null = inconnu, pas « non terminé ».
+  @JsonKey(name: 'completed_at')
+  DateTime? get completedAt;
   @override
   @JsonKey(name: 'recommendation_reason')
   DigestRecommendationReason? get recommendationReason;

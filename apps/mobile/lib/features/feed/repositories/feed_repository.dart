@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import '../../../core/api/api_client.dart';
 import '../models/content_model.dart';
+import '../services/read_sync_service.dart' show CompletionSource;
 
 class FeedRepository {
   final ApiClient _apiClient;
@@ -908,6 +909,24 @@ class FeedRepository {
     await _apiClient.dio.post<void>(
       'contents/$contentId/status',
       data: {'status': ContentStatus.consumed.name},
+    );
+  }
+
+  /// Marque un article « lu jusqu'au bout ».
+  ///
+  /// Envoyé **sans** `status` : côté serveur, la garde d'idempotence de la
+  /// transition CONSUMED (`ON CONFLICT ... WHERE status != 'consumed'`)
+  /// ignorerait l'update entier sur une ligne déjà consumed, et `completed_at`
+  /// serait perdu sans bruit. L'API rejette d'ailleurs la combinaison.
+  ///
+  /// Erreurs propagées : la file durable ne retire son entrée qu'après un 2xx.
+  Future<void> markContentCompleted(
+    String contentId,
+    CompletionSource source,
+  ) async {
+    await _apiClient.dio.post<void>(
+      'contents/$contentId/status',
+      data: {'completed': true, 'completion_source': source.wireValue},
     );
   }
 
