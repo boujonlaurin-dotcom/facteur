@@ -21,6 +21,13 @@ class FacteurImage extends StatelessWidget {
   final Widget Function(BuildContext context)? placeholder;
   final Widget Function(BuildContext context)? errorWidget;
 
+  /// Largeur (px physiques) de décodage en cache mémoire. Null = décodage
+  /// pleine résolution (comportement historique — logos/avatars petits n'en
+  /// ont pas besoin). À renseigner pour les grandes images (thumbnails
+  /// pleine largeur) : évite un spike de décode + une texture surdimensionnée.
+  /// Ignoré sur web (Image.network).
+  final int? memCacheWidth;
+
   const FacteurImage({
     super.key,
     required this.imageUrl,
@@ -29,6 +36,7 @@ class FacteurImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.placeholder,
     this.errorWidget,
+    this.memCacheWidth,
   });
 
   /// Sur web, route l'URL via le proxy backend pour contourner le canvas
@@ -62,6 +70,7 @@ class FacteurImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
+      memCacheWidth: memCacheWidth,
       placeholder: placeholder != null
           ? (context, url) => placeholder!.call(context)
           : null,

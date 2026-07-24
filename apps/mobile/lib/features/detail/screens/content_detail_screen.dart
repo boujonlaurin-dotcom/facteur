@@ -262,6 +262,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   // (cf. `_maybeStartWebViewLoad`), jamais en tâche de fond pendant la lecture
   // de LAYER 1. One-shot → évite un double `loadRequest` (déclencheurs multiples).
   bool _webViewLoadRequested = false;
+  // Anti-flash au montage du WebView gratuit (gaté sur `_ctaTapped`) : tant
+  // que `onPageFinished` n'a pas signalé la page prête, un ColoredBox couvre
+  // le platform view naissant dans `_buildWebViewLayer`.
+  bool _webViewPageReady = false;
   // Chemin premium (source payante connectée) : WebView sur flutter_inappwebview
   // pour réutiliser la session du média (cookies). Distinct du WebView
   // webview_flutter du scroll-to-site des sources gratuites.
@@ -305,6 +309,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _isMarkingConsumed = false;
   Timer? _noteNudgeTimer;
   Timer? _scrollStopTimer;
+  // Dernier réarmement (ms) du timer scroll-stop : throttle le
+  // cancel+recréation à 1×/s au lieu d'une allocation par frame de scroll.
+  int _lastScrollStopArmMs = 0;
   // 🌻 Nudge "Recommander ?" state
   Timer? _sunflowerNudgeTimer;
   bool _showSunflowerNudge = false;
@@ -650,7 +657,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // pour ne pas concurrencer LAYER 1 sur le thread UI/raster pendant la
     // lecture. `_historyTracker.reset` est déplacé au load (cf. la méthode) :
     // amorcé ici, il ferait compter un load différé comme nav utilisateur.
-    _webViewController = WebViewController()
+    _webViewController = _buildFreeWebViewController();
+  }
+
+  /// Contrôleur WebView gratuit (delegate + channel `ScrollBridge`), partagé
+  /// entre le chemin scroll-to-site ([_initScrollToSiteWebView]) et le
+  /// fallback d'affichage direct ([_buildWebViewFallback]) : le flag
+  /// `_webViewPageReady` (anti-flash du montage gaté sur `_ctaTapped`) doit
+  /// être levé quel que soit le site de création du contrôleur.
+  WebViewController _buildFreeWebViewController() {
+    return WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -659,6 +675,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           onPageFinished: (_) {
             _injectScrollBridgeScript();
             _historyTracker.onNavFinish();
+            if (!_webViewPageReady && mounted) {
+              setState(() => _webViewPageReady = true);
+            }
           },
         ),
       )
@@ -1054,9 +1073,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   /// Exit WebView mode and return to in-app article reading.
   void _exitWebViewMode() {
+    // La couche article a pu être démontée 320 ms après l'activation du
+    // WebView (timer de `_onScrollToSite`) : la remonter, sinon l'exit 1-tap
+    // rendrait un écran sans article.
+    _articleLayerUnmountTimer?.cancel();
     setState(() {
       _isWebViewActive = false;
       _ctaTapped = false;
+      _articleLayerMounted = true;
       _offsetsComputed = false;
       _bridgeEndOffset = 0;
       _lastMaxExtentForOffsets = -1;
@@ -1224,10 +1248,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (!isVideo && !_isShortArticle) {
       _applyChromeOffsetDelta(delta);
     }
-    _scrollStopTimer?.cancel();
-    _scrollStopTimer = Timer(const Duration(seconds: 10), () {
-      if (mounted) _animateFooterTo(0.0);
-    });
+    // Réarmement par timestamp : cancel+recréer un Timer(10s) à CHAQUE frame
+    // de scroll allouait en continu. Réarmer au plus 1×/s suffit (expiration
+    // 10-11 s après le dernier scroll au lieu de 10 s pile).
+    final now = _nowMs();
+    if (!(_scrollStopTimer?.isActive ?? false) ||
+        now - _lastScrollStopArmMs > 1000) {
+      _lastScrollStopArmMs = now;
+      _scrollStopTimer?.cancel();
+      _scrollStopTimer = Timer(const Duration(seconds: 10), () {
+        if (mounted) _animateFooterTo(0.0);
+      });
+    }
   }
 
   /// Nouveau geste tactile dans le WebView : repart d'une course cumulée nulle
@@ -3414,6 +3446,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   Widget _buildWebViewLayer({bool isConnectedPremiumSource = false}) {
     if (kIsWeb) return _buildWebViewFallback(_content!);
 
+    // Platform view monté = hybrid composition Android : surcoût de
+    // composition PAR FRAME sur tout ce qui est peint au-dessus (tout le
+    // scroll de l'article). Avant le tap CTA, LAYER 1 est un ColoredBox
+    // opaque plein écran et le spacer révélateur (ZONE 3) n'existe pas :
+    // LAYER 0 ne peut jamais être vu → le différer au tap est invisible.
+    // Le préchargement du contrôleur, lui, reste off-tree (inchangé).
+    if (!_ctaTapped) return const SizedBox.shrink();
+
     // Source premium connectée : révéler le `PremiumWebView` (cookies +
     // détection paywall), pas le contrôleur gratuit `webview_flutter` — sinon
     // l'abonné retomberait sur le paywall. La machinerie scroll-to-site est
@@ -3472,11 +3512,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       return const SizedBox.shrink();
     }
 
-    return WebViewWidget(
-      controller: _webViewController!,
-      gestureRecognizers: _isWebViewActive
-          ? swipeBackCompatiblePlatformViewGestureRecognizers()
-          : const {},
+    // Anti-flash de montage : tant que la page n'a pas fini de charger, on
+    // couvre le WebView (fond blanc/écran système du platform view naissant)
+    // avec la couleur de fond de l'app. Ceinture : la page est en général
+    // déjà préchargée (warm-up 40 % / fallback idle) et LAYER 1 reste opaque
+    // pendant les 500 ms d'animation du tap CTA.
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: WebViewWidget(
+            controller: _webViewController!,
+            gestureRecognizers: _isWebViewActive
+                ? swipeBackCompatiblePlatformViewGestureRecognizers()
+                : const {},
+          ),
+        ),
+        if (!_webViewPageReady)
+          Positioned.fill(
+            child: ColoredBox(color: context.facteurColors.backgroundPrimary),
+          ),
+      ],
     );
   }
 
@@ -4120,21 +4175,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // contrôleur déjà créé par `_initScrollToSiteWebView` mais non chargé
     // s'afficherait vide. `_historyTracker.reset` + `loadRequest` vivent dans le
     // helper (idempotent : no-op si déjà chargé).
-    _webViewController ??= WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) => _historyTracker.onNavStart(_nowMs()),
-          onPageFinished: (_) {
-            _injectScrollBridgeScript();
-            _historyTracker.onNavFinish();
-          },
-        ),
-      )
-      ..addJavaScriptChannel(
-        'ScrollBridge',
-        onMessageReceived: _onScrollBridgeMessage,
-      );
+    _webViewController ??= _buildFreeWebViewController();
     _maybeStartWebViewLoad();
 
     // CTA discret : source payante non connectée → proposer de lire avec son
