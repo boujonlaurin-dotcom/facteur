@@ -1,6 +1,6 @@
 # Epic 30 — La lecture aboutie
 
-> **Type** : Feature · **Cible** : `main` · **Statut** : **PLAN — en attente de GO**
+> **Type** : Feature · **Cible** : `main` · **Statut** : **CODE+TEST — lots 0 à 3 implémentés**
 > **Date** : 24/07/2026 · **Méthode** : ronde 1 de design BMAD (UX / PM / Architecte), arbitrée sur données prod
 
 ---
@@ -88,13 +88,24 @@ Le nombre est une **sortie** du lot 0, pas une entrée de la spec.
 
 ## 3. Le plan — 5 lots
 
-| Lot | Contenu | Backend | Mobile | SQL prod | Valeur seule |
+| Lot | Contenu | Backend | Mobile | Migration | Statut |
 |---|---|---|---|---|---|
-| **0** | Rendre le succès mesurable | ✅ | ✅ | ❌ | mesure + 1 bug prod corrigé |
-| **1** | Le contrat de données | ✅ | ✅ | ✅ *(le seul)* | — (socle) |
-| **2** | L'état visuel — **la demande initiale** | ❌ | ✅ | ❌ | ✅ **oui, livrable seul** |
-| **3** | L'objectif du jour *(conditionnel)* | ✅ lecture | ✅ | ❌ | ✅ |
-| **4** | Flamme *(conditionnel)* | ❌ | ✅ | ❌ | ✅ |
+| **0** | Rendre le succès mesurable | ✅ | ✅ | ❌ | ✅ fait |
+| **1** | Le contrat de données | ✅ | ✅ | ✅ *(la seule)* | ✅ fait |
+| **2** | L'état visuel — **la demande initiale** | ❌ | ✅ | ❌ | ✅ fait |
+| **3** | L'objectif du jour | ✅ lecture | ✅ | ❌ | ✅ fait |
+| **4** | Flamme — anneau des jours refermés | ❌ | ✅ | ❌ | ✅ fait (replié dans le lot 3) |
+
+> **Déploiement du schéma.** Contrairement à ce qu'indiquait la ronde 1 d'architecture,
+> **aucun SQL manuel n'est à passer dans le Supabase SQL Editor** : `CLAUDE.md` en fait
+> explicitement l'anti-pattern à l'origine du drift d'avril 2026. Le `Dockerfile`
+> (`packages/api/Dockerfile:40`) joue `alembic upgrade head` au boot de chaque conteneur
+> Railway — la migration `rd01_ucs_completed_at` s'applique donc **seule** au déploiement.
+>
+> **Expand-contract respecté** : la migration est purement additive (2 colonnes nullables
+> + 1 index partiel), donc inoffensive pour le backend `production` qui tourne sur la même
+> DB partagée avec l'ancien code jusqu'à une semaine. `user_content_status` fait 5 059
+> lignes / 2 Mo : la création d'index est instantanée, pas besoin de `CONCURRENTLY`.
 
 ### Lot 0 — Rendre le succès mesurable  *(prérequis absolu, réversible, sans schéma)*
 
@@ -152,9 +163,9 @@ Idempotence : `completed_at = COALESCE(completed_at, now())` — premier écrit 
 l'idiome déjà en place pour `reading_progress` (`func.greatest`, `content_service.py:102-113`).
 Le client n'envoie **jamais** d'horodatage.
 
-**Migration** : head unique vérifié `181c618da382`. Migration miroir `rd01_ucs_completed_at`
-(`down_revision = "181c618da382"`). Le SQL prod passe par le **Supabase SQL Editor** (index partiel
-`CREATE INDEX CONCURRENTLY` en statement séparé), jamais sur Railway.
+**Migration** : head unique vérifié `181c618da382` → `rd01_ucs_completed_at`
+(`down_revision = "181c618da382"`). `alembic upgrade head` validé localement contre une base
+**vide**, un seul head après ajout. Appliquée automatiquement au boot Railway.
 
 **Mobile** : `_articleCompleted` (`ValueNotifier<bool>` frère de `_footerPermanent`), 3 latches
 (`:2194-2199` / `:927-942` / `:857-865`), durabilité offline via `PendingReadQueue` avec un préfixe de clé
@@ -436,3 +447,49 @@ conclusion « ne pas optimiser pour les réguliers » s'en trouve affaiblie.
 `notif_du_jour_*` · `content_service.py:74-187` · `digest_service.py:1573,2917-2973` ·
 `recommendation_service.py:2727-2745` · `digest_selector.py:833-843` · `streak_service.py:40-97` ·
 `schemas/streak.py:8` · alembic head `181c618da382` (1 seul head, 44 révisions)
+
+---
+
+## 10. Journal d'implémentation (24/07/2026)
+
+### Décisions du PO au GO
+
+1. **Footer tout en vert**, et le CTA « Lire sur … » descend en **`colors.secondary`** — l'état prend
+   la couleur, l'action se retire. *(Arbitrage retenu contre la ronde 1 UX, qui voulait garder l'ocre.)*
+2. **Pas d'inversion d'opacité** : les cartes lues restent à `Opacity(0.6)`. Le grisé garde sa fonction
+   de repérage du non-lu.
+3. Sémantique `completed_at` = « bas de ce que Facteur affiche » : **validée**.
+4. Périmètre : **lots 0+1+2+3** d'emblée.
+
+### Écarts assumés par rapport au plan
+
+| Point | Plan | Livré | Pourquoi |
+|---|---|---|---|
+| Emplacement du cachet | dans le flux de l'article | **dans le pied de page** | Seul emplacement qui marche dans les 4 modes de rendu : impossible d'injecter dans le DOM de l'éditeur en WebView, qui est le chemin nominal (~90 % du catalogue). Un seul cachet au lieu de deux variantes. |
+| Filet vert sur les cartes | via un `ReadStateMark` neuf | **`AnimatedFeedCard` réhabilitée** | Le widget était déjà écrit (code mort, 0 référence). Restylé : filet vertical, `easeOutCubic` 320 ms, plus de scrim noir ni d'`elasticOut`, aucune haptique. |
+| `closing_recap.dart` | à réhabiliter | **laissé en l'état** | Le bloc de clôture n'a pas besoin du détail par section — une phrase suffit, et le récap par section rouvrirait la question du critère « lu » permissif. À reprendre si le PO veut le détail. |
+| Lot 4 (flamme) | conditionnel, après gate | **livré** | L'anneau ne dépend pas de `closure_streak` (qui est vide) : c'est un état du jour dérivé de `daily_completed`, il fonctionne dès le jour 1. Le gate ne portait que sur l'affichage d'une seconde série — toujours coupée. |
+
+### Vérifications
+
+- **Backend** : 2 485 tests passés (dont 13 nouveaux), 0 échec.
+- **Mobile** : 2 111 tests (dont 17 nouveaux). **33 échecs = exactement la baseline de `main`**, mesurée
+  en stashant la branche. **0 régression.** `flutter analyze` : 0 erreur, aucun nouveau warning.
+- **Alembic** : `upgrade head` rejoué contre une base **vide** (Postgres 16 local), 1 seul head.
+- **API** : bootée localement, contrat vérifié dans l'OpenAPI
+  (`ContentStatusUpdate.completed/completion_source`, `CompletionSource ∈ {in_app, short, web}`,
+  `StreakResponse.daily_completed/daily_goal`).
+- **Bout en bout contre une vraie base** : `completed_at` posé et estampillé serveur ; relecture
+  ne déplace pas l'horodatage (first-write-wins) ; compteur du jour dérivé correct ; un `consumed`
+  seul ne crée aucune complétion et ne bouge pas le compteur ; la combinaison
+  `completed` + `status=consumed` est rejetée ; une complétion de J-3 ne compte pas aujourd'hui.
+
+### Ce qui reste ouvert
+
+- **Le chiffre de `DAILY_COMPLETION_GOAL` (= 2) est provisoire.** Il doit être arrêté sur la
+  distribution réelle de `article_finished`, après ~2 semaines de collecte. Il est en constante
+  serveur (`streak_service.py`) précisément pour être recalibré **sans release client**.
+- **Pas encore de tagline de découverte dans la « Notif du jour »** (message one-shot expliquant
+  l'objectif). À ajouter si le PO le souhaite — le plan la prévoit, elle est triviale.
+- **Validation QA web** (`/validate-feature`) non exécutée : Flutter web n'était pas lancé dans cet
+  environnement. Les parcours visuels (cachet, CTA secondary, filet, anneau) restent à valider à l'œil.
