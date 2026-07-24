@@ -13,6 +13,11 @@ class FacteurThumbnail extends StatefulWidget {
   final VoidCallback? onError;
   final bool isVideo;
 
+  /// Largeur (px physiques) de décodage en cache mémoire. Null = largeur
+  /// d'écran × devicePixelRatio (le thumbnail est quasi toujours pleine
+  /// largeur) ; à surcharger pour les rendus plus étroits.
+  final int? memCacheWidth;
+
   /// Public accessor for failed image URLs cached during this session.
   static Set<String> get failedUrls => _FacteurThumbnailState._failedUrls;
 
@@ -25,6 +30,7 @@ class FacteurThumbnail extends StatefulWidget {
     this.durationLabel,
     this.onError,
     this.isVideo = false,
+    this.memCacheWidth,
   });
 
   @override
@@ -67,6 +73,10 @@ class _FacteurThumbnailState extends State<FacteurThumbnail> {
             FacteurImage(
               imageUrl: url,
               fit: BoxFit.cover,
+              memCacheWidth: widget.memCacheWidth ??
+                  (MediaQuery.sizeOf(context).width *
+                          MediaQuery.devicePixelRatioOf(context))
+                      .round(),
               placeholder: (context) => Container(
                 color: colors.backgroundSecondary,
                 child: Center(
