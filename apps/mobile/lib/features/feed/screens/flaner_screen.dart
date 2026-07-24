@@ -21,10 +21,12 @@ import '../../flux_continu/widgets/section_banner.dart';
 import '../../flux_continu/widgets/section_block.dart' show FluxFeedbackChip;
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../release_notes/widgets/changelog_banner.dart';
+import '../../sources/add_source_bridge.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
 import '../providers/flaner_discovery_provider.dart';
+import '../widgets/empty_filter_state.dart';
 import '../widgets/explore_section.dart';
 import '../widgets/favorite_topic_tabs.dart' show FavoriteTabKind;
 import '../widgets/feed_carousel.dart';
@@ -258,6 +260,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     final colors = context.facteurColors;
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
+    _watchEmptySearch();
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,
       // Header & footer vivent dans le scaffold de page partagé.
@@ -280,9 +283,68 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     );
   }
 
+  /// Élargit la recherche mot-clé courante aux sources non suivies.
+  Future<void> _broadenSearch(String keyword, int resultCount) async {
+    unawaited(HapticFeedback.mediumImpact());
+    unawaited(
+      ref.read(analyticsServiceProvider).trackSearchBroadened(
+            resultCount: resultCount,
+          ),
+    );
+    await ref
+        .read(feedProvider.notifier)
+        .setKeyword(keyword, includeUnfollowed: true);
+  }
+
+
+  /// Émet `search_submitted_empty` sur la **transition** « recherche résolue,
+  /// zéro article » — pas depuis le build, qui rejouerait l'événement à chaque
+  /// reconstruction du sliver.
+  void _watchEmptySearch() {
+    ref.listen<AsyncValue<FeedState>>(feedProvider, (previous, next) {
+      final items = next.valueOrNull?.items;
+      if (items == null || items.isNotEmpty) return;
+      final selection = ref.read(feedFilterSelectionProvider);
+      final keyword = selection.keyword?.trim();
+      if (keyword == null || keyword.isEmpty) return;
+      unawaited(
+        ref.read(analyticsServiceProvider).trackSearchSubmittedEmpty(
+              queryLength: keyword.length,
+              broadened: selection.includeUnfollowed,
+            ),
+      );
+    });
+  }
+
+  /// État vide d'un filtre actif — story 30.1. Jusqu'ici Flâner rendait une
+  /// liste vide (écran blanc) : c'était l'impasse la plus fréquente de la
+  /// recherche.
+  Widget _buildEmptyFilterState(
+    FeedFilterSelection selection,
+    FeedFilterKind kind,
+  ) {
+    final clear = ref.read(feedProvider.notifier).clearFilters;
+    if (kind != FeedFilterKind.keyword) {
+      return EmptyFilterState(kind: kind, onClearFilter: clear);
+    }
+    final keyword = selection.keyword!.trim();
+    return EmptyFilterState(
+      kind: kind,
+      filterName: keyword,
+      alreadyBroadened: selection.includeUnfollowed,
+      onClearFilter: clear,
+      onBroaden: () => _broadenSearch(keyword, 0),
+      onSearchSource: () => openAddSourceFor(context, ref, keyword),
+      onFollowTopic: () => followKeywordAsTopic(context, ref, keyword),
+    );
+  }
+
   Widget _buildContent(BuildContext context, FeedState state) {
     final colors = context.facteurColors;
-    final keyword = ref.watch(feedProvider.notifier).selectedKeyword;
+    final selection = ref.watch(feedFilterSelectionProvider);
+    final activeKind = selection.activeKind;
+    final keyword = selection.keyword?.trim();
+    final hasKeyword = activeKind == FeedFilterKind.keyword;
     return RefreshIndicator(
       onRefresh: _refresh,
       color: colors.primary,
@@ -307,11 +369,25 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
             delegate: _FilterHeaderDelegate(child: _FilterSurface()),
           ),
           const SliverToBoxAdapter(child: PinSubjectsBanner()),
-          SliverToBoxAdapter(
-            child: (keyword == null || keyword.trim().isEmpty)
-                ? const SizedBox.shrink()
-                : FollowKeywordSuggestionCard(keyword: keyword),
-          ),
+          // Recherche bredouille → l'état vide porte déjà « suivre ce sujet »
+          // parmi ses rattrapages ; on n'empile pas deux invitations à suivre.
+          if (hasKeyword && state.items.isNotEmpty)
+            SliverToBoxAdapter(
+              child: FollowKeywordSuggestionCard(keyword: keyword!),
+            ),
+          // Récolte maigre → on propose d'élargir plutôt que de laisser
+          // l'utilisateur conclure « il n'y a rien ». Le périmètre par défaut
+          // (sources suivies) reste le bon, mais il doit être franchissable.
+          if (hasKeyword &&
+              !selection.includeUnfollowed &&
+              state.items.isNotEmpty &&
+              state.items.length < 5)
+            SliverToBoxAdapter(
+              child: _BroadenSearchBanner(
+                resultCount: state.items.length,
+                onBroaden: () => _broadenSearch(keyword!, state.items.length),
+              ),
+            ),
           if (state.items.length > 4)
             const SliverToBoxAdapter(
               child: Padding(
@@ -319,7 +395,12 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
                 child: PepitesCarousel(),
               ),
             ),
-          _buildFeedList(state),
+          if (state.items.isEmpty && activeKind != null)
+            SliverToBoxAdapter(
+              child: _buildEmptyFilterState(selection, activeKind),
+            )
+          else
+            _buildFeedList(state),
           if (_loadingMore)
             const SliverToBoxAdapter(child: _LoadingMoreIndicator()),
           ..._buildExploreSlivers(state),
@@ -522,6 +603,66 @@ class _FilterHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   bool shouldRebuild(covariant _FilterHeaderDelegate oldDelegate) {
     return oldDelegate.child != child;
+  }
+}
+
+/// Bandeau « récolte maigre » — propose d'élargir la recherche mot-clé aux
+/// sources non suivies (story 30.1). Discret : c'est une suggestion, pas une
+/// erreur.
+class _BroadenSearchBanner extends StatelessWidget {
+  final int resultCount;
+  final VoidCallback onBroaden;
+
+  const _BroadenSearchBanner({
+    required this.resultCount,
+    required this.onBroaden,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space4,
+        FacteurSpacing.space1,
+        FacteurSpacing.space4,
+        FacteurSpacing.space2,
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space3,
+          vertical: FacteurSpacing.space2,
+        ),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(FacteurRadius.medium),
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                resultCount > 1
+                    ? '$resultCount résultats dans tes sources'
+                    : '1 seul résultat dans tes sources',
+                style: FacteurTypography.bodySmall(colors.textSecondary),
+              ),
+            ),
+            const SizedBox(width: FacteurSpacing.space2),
+            TextButton(
+              onPressed: onBroaden,
+              style: TextButton.styleFrom(
+                foregroundColor: colors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(0, 32),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Élargir'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

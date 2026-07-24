@@ -538,6 +538,69 @@ class AnalyticsService {
   }
 
   // ──────────────────────────────────────────────────────────────
+  // Story 30.1 — Recherche universelle.
+  // Funnel visé : search_opened → search_result_selected (succès) vs
+  // search_submitted_empty (impasse) → search_broadened /
+  // search_add_source_bridged (rattrapages).
+  // ──────────────────────────────────────────────────────────────
+
+  /// [origin] : `header` (loupe du header partagé) ou `filter_bar` (pill de
+  /// recherche active). [tab] : `essentiel` ou `flaner`.
+  Future<void> trackSearchOpened({
+    required String origin,
+    required String tab,
+  }) async {
+    final props = {'origin': origin, 'tab': tab};
+    await _logEvent('search_opened', props);
+    await _capturePostHog('search_opened', props);
+  }
+
+  /// [resultType] : `article` · `source` · `catalog_source` · `topic` ·
+  /// `entity` · `theme` · `add_source`. [rank] est l'index du résultat dans sa
+  /// section (0-based) — mesure si les bons résultats remontent assez haut.
+  Future<void> trackSearchResultSelected({
+    required String resultType,
+    required int rank,
+    required int queryLength,
+  }) async {
+    final props = {
+      'result_type': resultType,
+      'rank': rank,
+      'query_length': queryLength,
+    };
+    await _logEvent('search_result_selected', props);
+    await _capturePostHog('search_result_selected', props);
+  }
+
+  /// Recherche mot-clé n'ayant ramené aucun article — l'impasse qu'on cherche
+  /// à faire disparaître. [broadened] indique si la recherche portait déjà sur
+  /// toutes les sources (vs les seules sources suivies).
+  Future<void> trackSearchSubmittedEmpty({
+    required int queryLength,
+    required bool broadened,
+  }) async {
+    final props = {'query_length': queryLength, 'broadened': broadened};
+    await _logEvent('search_submitted_empty', props);
+    await _capturePostHog('search_submitted_empty', props);
+  }
+
+  /// Passage de la recherche au flow d'ajout de source. [bridgeCase] :
+  /// `catalog_follow` (ajout en 1 tap depuis le catalogue) ou `smart_search`
+  /// (bascule vers `AddSourceScreen` pré-rempli).
+  Future<void> trackSearchAddSourceBridged({required String bridgeCase}) async {
+    final props = {'case': bridgeCase};
+    await _logEvent('search_add_source_bridged', props);
+    await _capturePostHog('search_add_source_bridged', props);
+  }
+
+  /// Tap sur « élargir à toutes les sources » (`includeUnfollowed`).
+  Future<void> trackSearchBroadened({required int resultCount}) async {
+    final props = {'result_count': resultCount};
+    await _logEvent('search_broadened', props);
+    await _capturePostHog('search_broadened', props);
+  }
+
+  // ──────────────────────────────────────────────────────────────
   // Story 14.3 — Self-reported "well-informed" score (1-10 NPS).
   // Trois events pour construire le funnel shown → skipped / submitted.
   // ──────────────────────────────────────────────────────────────

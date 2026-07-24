@@ -50,6 +50,11 @@ class SourceAddPanel extends ConsumerStatefulWidget {
   /// Le hôte décide de fermer le sheet, naviguer ailleurs, etc.
   final ValueChanged<SmartSearchResult>? onSourceAdded;
 
+  /// Requête pré-remplie **et lancée** à l'ouverture (story 30.1 — pont depuis
+  /// la recherche universelle). L'utilisateur atterrit sur des résultats, pas
+  /// sur un champ vide qu'il devrait re-saisir.
+  final String? initialQuery;
+
   const SourceAddPanel({
     super.key,
     this.padding = const EdgeInsets.fromLTRB(
@@ -66,6 +71,7 @@ class SourceAddPanel extends ConsumerStatefulWidget {
     this.inlineProof = false,
     this.embedded = false,
     this.onSourceAdded,
+    this.initialQuery,
   });
 
   @override
@@ -99,6 +105,14 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
     // dépliage du bandeau communautaire soit instantané (le strip est lazy).
     if (widget.showCommunityGems) {
       ref.read(trendingSourcesProvider);
+    }
+    // Pont depuis la recherche universelle : la requête est déjà connue, on
+    // lance la recherche intelligente immédiatement plutôt que de rendre un
+    // champ vide. `_runSearch` ne fait qu'un setState — sûr en initState.
+    final initial = widget.initialQuery?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _searchController.text = initial;
+      _currentQuery = initial;
     }
     if (widget.autoFocusSearch) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -643,8 +643,15 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'add', // /settings/sources/add
                 name: RouteNames.addSource,
-                pageBuilder: (context, state) =>
-                    const FullSwipeCupertinoPage(child: AddSourceScreen()),
+                // `extra` (String) = requête pré-remplie depuis la recherche
+                // universelle (story 30.1). Absent → écran vierge habituel.
+                pageBuilder: (context, state) => FullSwipeCupertinoPage(
+                  child: AddSourceScreen(
+                    initialQuery: state.extra is String
+                        ? state.extra as String
+                        : null,
+                  ),
+                ),
               ),
               GoRoute(
                 path: 'preferences', // /settings/sources/preferences

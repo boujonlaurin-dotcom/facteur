@@ -7,6 +7,7 @@ import '../../../config/theme.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../providers/feed_provider.dart';
 import '../providers/tab_counts_provider.dart';
+import '../utils/search_results_builder.dart' show isFollowedSource;
 import 'compact_source_chip.dart';
 import 'compact_theme_chip.dart';
 import 'favorite_topic_tabs.dart';
@@ -84,15 +85,12 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
           }
           widget.onAfterChange?.call();
         },
-        // Taper l'onglet actif vide toute la sélection (feed non filtré). On
-        // remet aussi `setSource(null)` — oublié historiquement — pour bien
-        // désélectionner un onglet source actif.
+        // Taper l'onglet actif vide toute la sélection (feed non filtré).
+        // `clearFilters()` porte la liste des dimensions côté notifier : c'est
+        // l'oubli de `setSource(null)` ici qui avait motivé le regroupement.
         onTapActiveTab: () async {
           await HapticFeedback.selectionClick();
-          await notifier.setTopic(null);
-          await notifier.setTheme(null);
-          await notifier.setEntity(null);
-          await notifier.setSource(null);
+          await notifier.clearFilters();
           widget.onAfterChange?.call();
         },
         // Le « + » des onglets épingle des sujets précis (custom topics) —
@@ -103,29 +101,31 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
         },
         trailingFilterTrigger: filterTrigger,
       ),
-      leadingTrigger: _SearchTrigger(
-        active: hasSearch,
-        keyword: selection.keyword,
-        onTap: () {
-          HapticFeedback.mediumImpact();
-          SearchFilterSheet.show(
-            context,
-            currentKeyword: selection.keyword,
-            onSearchSubmitted: (keyword, {bool fromTrending = false}) async {
-              await notifier.setKeyword(
-                keyword,
-                includeUnfollowed: fromTrending,
-              );
-              widget.onAfterChange?.call();
-            },
-          );
-        },
-        onClear: () async {
-          await HapticFeedback.mediumImpact();
-          await notifier.setKeyword(null);
-          widget.onAfterChange?.call();
-        },
-      ),
+      // Story 30.1 — le point d'entrée de la recherche a migré dans le header
+      // partagé (visible sur les deux onglets, hors zone filtre). Ce trigger
+      // n'est plus qu'un **affichage d'état** : la pill « 🔍 mot-clé ✕ » quand
+      // une recherche est active, rien du tout sinon (au lieu d'occuper 34 px
+      // en permanence pour une loupe redondante).
+      leadingTrigger: hasSearch
+          ? _SearchTrigger(
+              keyword: selection.keyword!,
+              broadened: selection.includeUnfollowed,
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                SearchFilterSheet.show(
+                  context,
+                  currentKeyword: selection.keyword,
+                  origin: kSearchOriginFilterBar,
+                  onApplied: widget.onAfterChange,
+                );
+              },
+              onClear: () async {
+                await HapticFeedback.mediumImpact();
+                await notifier.setKeyword(null);
+                widget.onAfterChange?.call();
+              },
+            )
+          : null,
     );
   }
 
@@ -140,7 +140,7 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
 
     final allSources = ref.watch(userSourcesProvider).valueOrNull ?? [];
     final followedSources = allSources
-        .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
+        .where(isFollowedSource)
         .toList();
     final selectedSourceId = selection.sourceId;
     final selectedSource = selectedSourceId != null
@@ -202,92 +202,78 @@ class _FeedFilterBarState extends ConsumerState<FeedFilterBar> {
   }
 }
 
-/// Minimal search trigger — magnifier icon when idle, keyword pill with clear
-/// button when a search is active. Visually aligned with `FilterCollapsiblePanel`
-/// (34 px tall, primary accent when active).
+/// Pill d'état de la recherche active : « 🔍 mot-clé ✕ ». Tap = rouvrir la
+/// sheet pour affiner, ✕ = effacer le filtre. N'est monté que lorsqu'une
+/// recherche est en cours (story 30.1) — l'entrée de la recherche vit
+/// désormais dans le header partagé.
+///
+/// [broadened] signale une recherche élargie aux sources non suivies : le
+/// suffixe « · toutes sources » évite l'effet « d'où sortent ces articles ? ».
 class _SearchTrigger extends StatelessWidget {
-  final bool active;
-  final String? keyword;
+  final String keyword;
+  final bool broadened;
   final VoidCallback onTap;
   final VoidCallback onClear;
 
   const _SearchTrigger({
-    required this.active,
     required this.keyword,
+    required this.broadened,
     required this.onTap,
     required this.onClear,
   });
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
-    final primary = colors.primary;
-    if (active) {
-      return GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          height: 34,
-          padding: const EdgeInsets.only(left: 10, right: 4),
-          decoration: BoxDecoration(
-            color: primary.withValues(alpha: 0.12),
-            border: Border.all(color: primary),
-            borderRadius: BorderRadius.circular(FacteurRadius.full),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
-                size: 14,
-                color: primary,
-              ),
-              const SizedBox(width: 5),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 112),
-                child: Text(
-                  keyword ?? '',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: primary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onClear,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 7,
-                  ),
-                  child: Icon(
-                    PhosphorIcons.x(PhosphorIconsStyle.bold),
-                    size: 12,
-                    color: primary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    final primary = context.facteurColors.primary;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: SizedBox(
+      child: Container(
         height: 34,
-        width: 34,
-        child: Icon(
-          PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.regular),
-          // Loupe agrandie (16 → 22) : l'état inactif n'affiche que l'icône
-          // (pas de placeholder), la boîte 34×34 l'accueille largement.
-          size: 22,
-          color: colors.textSecondary,
+        padding: const EdgeInsets.only(left: 10, right: 4),
+        decoration: BoxDecoration(
+          color: primary.withValues(alpha: 0.12),
+          border: Border.all(color: primary),
+          borderRadius: BorderRadius.circular(FacteurRadius.full),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
+              size: 14,
+              color: primary,
+            ),
+            const SizedBox(width: 5),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                broadened ? '$keyword · toutes sources' : keyword,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: primary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onClear,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 7,
+                ),
+                child: Icon(
+                  PhosphorIcons.x(PhosphorIconsStyle.bold),
+                  size: 12,
+                  color: primary,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
