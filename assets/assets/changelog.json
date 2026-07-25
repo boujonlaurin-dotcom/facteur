@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Pas de recul",
+      "summary": "La suggestion « Pas de recul » passe en tête des suites de lecture, juste avant « Comparer les angles », avec un bandeau bleu pleine largeur un peu plus présent. Et quand tu ouvres l'article proposé, un liseré bleu et un médaillon longue-vue en haut du lecteur te rappellent d'où il vient."
+    },
+    {
       "tag": "Ma Tournée",
       "summary": "Chaque jour, ta tournée te propose quelques sections « Choisie pour vous » puisées dans tes thèmes et sources préférés, même si tu as déjà beaucoup configuré. Un bouton « Ajouter à mon Essentiel » sur la carte les garde en un tap, et celles que tu personnalises restent toujours visibles."
     },
