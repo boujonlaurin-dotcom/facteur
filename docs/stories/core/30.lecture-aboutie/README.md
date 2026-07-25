@@ -466,7 +466,7 @@ conclusion « ne pas optimiser pour les réguliers » s'en trouve affaiblie.
 | Point | Plan | Livré | Pourquoi |
 |---|---|---|---|
 | Emplacement du cachet | dans le flux de l'article | **dans le pied de page** | Seul emplacement qui marche dans les 4 modes de rendu : impossible d'injecter dans le DOM de l'éditeur en WebView, qui est le chemin nominal (~90 % du catalogue). Un seul cachet au lieu de deux variantes. |
-| Filet vert sur les cartes | via un `ReadStateMark` neuf | **`AnimatedFeedCard` réhabilitée** | Le widget était déjà écrit (code mort, 0 référence). Restylé : filet vertical, `easeOutCubic` 320 ms, plus de scrim noir ni d'`elasticOut`, aucune haptique. |
+| Filet vert sur les cartes | via un `ReadStateMark` neuf | **non livré** ⚠️ | `AnimatedFeedCard` a été *restylée* (filet vertical, `easeOutCubic` 320 ms, plus de scrim noir ni d'`elasticOut`, aucune haptique) mais **reste orpheline : 0 référence dans `lib/` et `test/`**. Le filet vert n'existe pas à l'écran. Le tableau annonçait « réhabilitée » à tort — corrigé le 25/07. À brancher en PR 2 mobile. |
 | `closing_recap.dart` | à réhabiliter | **laissé en l'état** | Le bloc de clôture n'a pas besoin du détail par section — une phrase suffit, et le récap par section rouvrirait la question du critère « lu » permissif. À reprendre si le PO veut le détail. |
 | Lot 4 (flamme) | conditionnel, après gate | **livré** | L'anneau ne dépend pas de `closure_streak` (qui est vide) : c'est un état du jour dérivé de `daily_completed`, il fonctionne dès le jour 1. Le gate ne portait que sur l'affichage d'une seconde série — toujours coupée. |
 
@@ -475,7 +475,13 @@ conclusion « ne pas optimiser pour les réguliers » s'en trouve affaiblie.
 - **Backend** : 2 485 tests passés (dont 13 nouveaux), 0 échec.
 - **Mobile** : 2 111 tests (dont 17 nouveaux). **33 échecs = exactement la baseline de `main`**, mesurée
   en stashant la branche. **0 régression.** `flutter analyze` : 0 erreur, aucun nouveau warning.
-- **Alembic** : `upgrade head` rejoué contre une base **vide** (Postgres 16 local), 1 seul head.
+- **Alembic** : ⚠️ **affirmation fausse au moment du merge** — `rd01` a bien été jouée contre une
+  base vide, mais depuis la *branche*, où elle était seule. Sur `main`, `pt01` (PR #1008, mergée
+  2 h plus tôt) porte le même `down_revision = 181c618da382` : **deux heads, aucune révision de
+  merge**, `alembic upgrade head` sans cible. Le boot staging démarrait quand même l'app sur un ORM
+  mappant `completed_at` / `completion_source` absentes → 500 sur feed, digest, statut, streaks.
+  Réparé par la révision de merge `mg04_merge_pt01_rd01` + garde `len(heads) != 1` au boot et sur
+  la sonde readiness + rejeu du smoke Alembic sur `push: main`. Voir la PR « hotfix Alembic ».
 - **API** : bootée localement, contrat vérifié dans l'OpenAPI
   (`ContentStatusUpdate.completed/completion_source`, `CompletionSource ∈ {in_app, short, web}`,
   `StreakResponse.daily_completed/daily_goal`).
