@@ -156,8 +156,16 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   final String biasStance;
   final bool isExternal;
 
-  const ContentDetailScreen({super.key, required this.contentId, this.content})
-      : externalUrl = null,
+  /// `true` quand l'article a été ouvert depuis un CTA « Pas de recul »
+  /// (query param `from=pdr`) → header contextuel (lavis bleu + médaillon 🔭).
+  final bool fromDeepReco;
+
+  const ContentDetailScreen({
+    super.key,
+    required this.contentId,
+    this.content,
+    this.fromDeepReco = false,
+  })  : externalUrl = null,
         sourceName = null,
         sourceDomain = null,
         externalTitle = null,
@@ -177,7 +185,8 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
         content = null,
         externalUrl = url,
         externalTitle = title,
-        isExternal = true;
+        isExternal = true,
+        fromDeepReco = false;
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -2143,7 +2152,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// route `content/:id` (re)fetch le Content depuis l'id, donc pas d'`extra`.
   void _openDeepReco(DeepRecommendation reco) {
     if (reco.contentId.isEmpty) return;
-    context.push('${RoutePaths.flaner}/content/${reco.contentId}');
+    // `from=pdr` signale au reader ouvert qu'il vient d'un CTA « Pas de recul »
+    // → header contextuel (lavis bleu + médaillon 🔭). L'`extra` étant déjà
+    // pris par `Content?`, on passe le contexte via un query param.
+    context.push('${RoutePaths.flaner}/content/${reco.contentId}?from=pdr');
   }
 
   void _schedulePerspectivesPartialRefetch(String contentId) {
@@ -3038,6 +3050,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
       child: Stack(
         children: [
+          // Lavis bleu vertical quand l'article vient d'un CTA « Pas de recul »
+          // (écho du header CTA). Peint au-dessus du fond opaque du pill mais
+          // derrière la Row → subtil, sans nuire à la lisibilité des icônes.
+          if (widget.fromDeepReco)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: DeepReculMedallion.lavisColors(colors.info),
+                  ),
+                ),
+              ),
+            ),
           Container(
             padding: EdgeInsets.only(
               top: topInset + FacteurSpacing.space3,
@@ -3063,6 +3090,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     onPressed: _handleReaderBack,
                   ),
                   const SizedBox(width: 4),
+
+                  // Médaillon 🔭 contextuel : marque l'origine « Pas de recul »
+                  // sans encombrer le header (uniquement si fromDeepReco).
+                  if (widget.fromDeepReco) ...[
+                    const DeepReculMedallion(size: 26),
+                    const SizedBox(width: 6),
+                  ],
 
                   // CTA source unique : logo + nom + étoile (indicateur) + heure,
                   // le tout tappable → ouvre directement la modal source (plus de
