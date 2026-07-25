@@ -210,20 +210,24 @@ class SectionBanner extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (suggested) ...[
-                        // Balise + puce d'action sur une même ligne. `Wrap`
-                        // (et non `Row`) : dans le cas courant les deux puces
-                        // tiennent sur une ligne (hauteur banner inchangée →
-                        // snap intact) ; sur un écran extrême ou un
-                        // `textScaleFactor` élevé, la puce passe à une 2ᵉ ligne
-                        // au lieu de lever un RenderFlex overflow.
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        // Balise + CTA texte sur une même ligne, qui ne doit
+                        // JAMAIS sauter de ligne (demande PO) : `Row` avec la
+                        // balise à taille fixe et le CTA `Flexible`, qui
+                        // rétrécit (et tronque son texte en ellipsis) plutôt
+                        // que de wrapper ou de lever un RenderFlex overflow.
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             _SuggestedBadge(accent: accent, onTap: onTapInfo),
-                            if (onPromote != null)
-                              _PromoteChip(accent: accent, onPromote: onPromote!),
+                            if (onPromote != null) ...[
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: _PromoteChip(
+                                  accent: accent,
+                                  onPromote: onPromote!,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -453,7 +457,7 @@ class _SuggestedBadge extends StatelessWidget {
           ),
           const SizedBox(width: 5),
           Text(
-            'Choisie pour vous',
+            'Choisi pour toi',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -485,15 +489,16 @@ class _SuggestedBadge extends StatelessWidget {
   }
 }
 
-/// Story 22.6 (redesign) — puce d'action « Ajouter à l'Essentiel » posée sur la
-/// ligne de la balise « Choisie pour vous ». Remplace l'ancien
-/// `_PromoteSuggestionButton` (FilledButton pleine largeur sous les cartes, qui
-/// cassait le budget snap/fit). Reprend telle quelle sa logique : flag `_pending`
-/// anti double-tap, capture du `ScaffoldMessenger` avant l'await (la puce peut
-/// être démontée quand la section devient favorite), SnackBar de succès,
-/// `finally` + garde `mounted`. Le corps visuel est calqué sur `_SuggestedBadge`
-/// (même chromie teintée, cohésion demandée par le PO) mais se lit comme une
-/// **action** via l'icône `plus` et le libellé verbe.
+/// Story 22.6 (redesign, puis allégé sur demande PO) — CTA texte « Ajouter à
+/// l'Essentiel » posé sur la ligne de la balise « Choisie pour vous ».
+/// Remplace l'ancien `_PromoteSuggestionButton` (FilledButton pleine largeur
+/// sous les cartes, qui cassait le budget snap/fit) puis l'ex-puce teintée
+/// (fond + bordure), jugée encore trop lourde : ici du simple texte inline,
+/// registre "discret" repris du CTA « Tout lire › » de `section_block.dart`
+/// (pas de fond/bordure). Reprend telle quelle la logique métier de l'ancien
+/// bouton : flag `_pending` anti double-tap, capture du `ScaffoldMessenger`
+/// avant l'await (le CTA peut être démonté quand la section devient favorite),
+/// SnackBar de succès, `finally` + garde `mounted`.
 class _PromoteChip extends StatefulWidget {
   const _PromoteChip({required this.accent, required this.onPromote});
 
@@ -527,23 +532,15 @@ class _PromoteChipState extends State<_PromoteChip> {
     final accent = widget.accent;
     return Semantics(
       button: true,
-      label: 'Ajouter à mon Essentiel',
+      label: 'Ajouter à ton Essentiel',
       child: GestureDetector(
         // Hit target élargi au-delà du visuel (~44px, FES §7.2) : le
-        // `HitTestBehavior.opaque` capte les taps sur tout le rectangle de la
-        // puce, marges de la ligne comprises.
+        // `HitTestBehavior.opaque` capte les taps sur tout le rectangle du
+        // CTA, marges de la ligne comprises.
         behavior: HitTestBehavior.opaque,
         onTap: _pending ? null : _handlePromote,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(8, 4, 9, 4),
-          decoration: BoxDecoration(
-            color: accent.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: accent.withValues(alpha: 0.34),
-              width: 0.8,
-            ),
-          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -561,14 +558,21 @@ class _PromoteChipState extends State<_PromoteChip> {
                       size: 11,
                       color: accent,
                     ),
-              const SizedBox(width: 5),
-              Text(
-                'Ajouter à l\'Essentiel',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.1,
-                  color: accent,
+              const SizedBox(width: 4),
+              // `Flexible` + ellipsis sur une ligne : jamais de saut de ligne
+              // ni de RenderFlex overflow, la fin du libellé se tronque en
+              // priorité quand l'espace manque (demande PO).
+              Flexible(
+                child: Text(
+                  'Ajouter à ton Essentiel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.1,
+                    color: accent,
+                  ),
                 ),
               ),
             ],

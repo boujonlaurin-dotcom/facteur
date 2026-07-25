@@ -599,7 +599,7 @@ void main() {
       () {
     // La puce est rendue dans le banner (plus de FilledButton sous les cartes).
     // On la cible par son libellé visible ; le tap passe par son GestureDetector.
-    final chipFinder = find.text('Ajouter à l\'Essentiel');
+    final chipFinder = find.text('Ajouter à ton Essentiel');
 
     // La puce vit dans le banner (en-tête), aucun contenu tappable sous les
     // cartes ne doit persister → garde-fou anti-régression du snap/fit.
@@ -618,7 +618,7 @@ void main() {
       ));
       expect(chipFinder, findsOneWidget);
       // Sur la ligne de la balise « Choisie pour vous ».
-      expect(find.text('Choisie pour vous'), findsOneWidget);
+      expect(find.text('Choisi pour toi'), findsOneWidget);
       expectNoFooterCta();
     });
 
@@ -641,7 +641,7 @@ void main() {
         ),
       ));
       // La balise reste, mais pas la puce d'action.
-      expect(find.text('Choisie pour vous'), findsOneWidget);
+      expect(find.text('Choisi pour toi'), findsOneWidget);
       expect(chipFinder, findsNothing);
     });
 
