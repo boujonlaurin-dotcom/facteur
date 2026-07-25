@@ -23,6 +23,11 @@ class NudgeIds {
   static const articleSaveNotes = 'article_save_notes';
   static const perspectivesCta = 'perspectives_cta';
   static const articleReadOnSite = 'article_read_on_site';
+  // Nudge de scroll flottant dans le reader : invite vers le pas de recul
+  // (prioritaire) ou vers la couverture médiatique. Deux ids indépendants →
+  // cooldown 24 h par cible.
+  static const scrollToDeepReco = 'scroll_to_deep_reco';
+  static const scrollToPerspectives = 'scroll_to_perspectives';
 
   // Story 14.3 — self-reported "well-informed" score (NPS-style).
   static const wellInformedPoll = 'well_informed_poll';

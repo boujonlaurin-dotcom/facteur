@@ -223,13 +223,38 @@ const double _kFooterBottomMargin = 8;
 const double _kFooterShadowClearance = 24;
 
 /// Tolérance (px) autour de l'offset 0 en dessous de laquelle l'utilisateur
-/// est encore considéré « en haut de l'article » pour le nudge perspectives —
+/// est encore considéré « en haut de l'article » pour le nudge de scroll —
 /// absorbe un léger rebond d'overscroll sans faire clignoter le nudge.
-const double _kPerspectivesNudgeTopTolerance = 32.0;
+const double _kScrollNudgeTopTolerance = 32.0;
 
 /// Nombre minimal de points de vue en ligne pour que le nudge flottant
-/// « Voir plus de points de vue ? » vaille la peine d'être montré.
-const int _kPerspectivesNudgeMinCount = 2;
+/// « Voir plus de points de vue ? » vaille la peine d'être montré (le pas de
+/// recul, prioritaire, n'a pas de seuil : une carte suffit).
+const int _kScrollNudgeMinCount = 2;
+
+/// Fraction de la hauteur d'écran sous laquelle la destination du nudge doit
+/// démarrer pour que le nudge se déclenche. < 1.0 → assouplit le seuil de
+/// longueur d'article : le nudge apparaît « un peu plus souvent » que quand la
+/// destination était intégralement sous le pli. Tunable au ressenti.
+const double _kScrollNudgeMinBelowFraction = 0.85;
+
+/// Délai avant d'armer le nudge à l'arrivée sur l'article : évite un pop
+/// instantané et intrusif (bonne pratique de nudging).
+const Duration _kScrollNudgeArmDelay = Duration(milliseconds: 1500);
+
+/// Durée d'affichage avant auto-masquage : le nudge ne traîne pas à l'écran.
+const Duration _kScrollNudgeAutoHideDelay = Duration(seconds: 6);
+
+/// Cible résolue du nudge de scroll flottant (pas de recul prioritaire, sinon
+/// couverture médiatique). Résolue à la volée par [_resolveScrollNudgeTarget].
+class _ScrollNudgeTarget {
+  const _ScrollNudgeTarget(this.id, this.key, this.label, this.icon);
+
+  final String id;
+  final GlobalKey key;
+  final String label;
+  final IconData icon;
+}
 
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
@@ -290,6 +315,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   final GlobalKey _perspectivesKey = GlobalKey();
+  final GlobalKey _deepRecoKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
@@ -368,14 +394,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _perspectivesLoading = false;
   Timer? _perspectivesRefetchTimer;
 
-  // Nudge flottant "Voir plus de points de vue ?" — affordance permanente
-  // (pas un one-shot onboarding, à ne pas confondre avec
-  // `_perspectivesPulseController`/`NudgeIds.perspectivesCta`), réévaluée à
-  // chaque scroll et dès l'arrivée des perspectives. ValueNotifier pour éviter
-  // un setState global (cf. pattern `_readingProgress`/`_footerOffset`).
-  final ValueNotifier<bool> _showPerspectivesNudge = ValueNotifier<bool>(
-    false,
-  );
+  // Nudge de scroll flottant — invite vers le pas de recul (prioritaire) ou la
+  // couverture médiatique. À ne pas confondre avec le pulse one-shot
+  // (`_perspectivesPulseController`/`NudgeIds.perspectivesCta`). Armé après un
+  // délai (anti-intrusif), auto-masqué, capé 1×/24 h par cible via
+  // [NudgeService]. ValueNotifier pour éviter un setState global (cf. pattern
+  // `_readingProgress`/`_footerOffset`).
+  final ValueNotifier<bool> _showScrollNudge = ValueNotifier<bool>(false);
+
+  // Cible courante résolue (label + icône + clé de mesure), lue par le builder.
+  _ScrollNudgeTarget? _activeScrollNudgeTarget;
+  // Passé à true une fois affiché ou tapé → ne réapparaît plus sur cet article.
+  bool _scrollNudgeSpent = false;
+  // Résultat du cooldown 24 h (NudgeService.canShow), résolu à l'armement.
+  bool _scrollNudgeCooldownOk = false;
+  // markShown() n'est appelé qu'une fois (au premier affichage réel).
+  bool _scrollNudgeShownRecorded = false;
+  // L'armement différé n'est planifié qu'une fois par article.
+  bool _scrollNudgeArmScheduled = false;
+  Timer? _scrollNudgeArmTimer;
+  Timer? _scrollNudgeAutoHideTimer;
 
   bool get _showPerspectivesBand =>
       _content?.contentType == ContentType.article;
@@ -957,54 +995,121 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ? _scrollController
       : (_inAppScrollController.hasClients ? _inAppScrollController : null);
 
-  /// Calcul pur des conditions d'affichage du nudge perspectives. Aucune
-  /// mutation d'état ici — voir [_updatePerspectivesNudgeVisibility].
-  bool _computeShouldShowPerspectivesNudge() {
-    // Contenu article + section perspectives effectivement affichée. Le
-    // nudge n'a de sens que pendant la lecture scrollable normale : dès que
-    // la WebView a pris le relais visuel, ou que le CTA a été tapé
-    // (révélation en cours), le carrousel n'est plus la destination
-    // pertinente d'un scroll.
-    if (!_showPerspectivesBand) return false;
-    if (_isWebViewActive || _ctaTapped) return false;
-    // Assez d'autres points de vue pour justifier le nudge.
-    if (_inlinePerspectives.length <= _kPerspectivesNudgeMinCount) {
-      return false;
+  /// Résout la cible prioritaire du nudge de scroll. Le pas de recul (deep
+  /// reco) prime sur la couverture médiatique quand il est présent. Retourne
+  /// `null` si aucune cible pertinente (pas un article, mode externe, ou pas
+  /// assez de points de vue et pas de pas de recul).
+  _ScrollNudgeTarget? _resolveScrollNudgeTarget() {
+    if (!_showPerspectivesBand || _isExternal) return null;
+    if (_perspectivesResponse?.deepRecommendation != null) {
+      return _ScrollNudgeTarget(
+        NudgeIds.scrollToDeepReco,
+        _deepRecoKey,
+        'Prendre du recul ?',
+        PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
+      );
     }
+    if (_inlinePerspectives.length > _kScrollNudgeMinCount) {
+      return _ScrollNudgeTarget(
+        NudgeIds.scrollToPerspectives,
+        _perspectivesKey,
+        'Voir plus de points de vue ?',
+        PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
+      );
+    }
+    return null;
+  }
 
-    // Utilisateur "en haut".
+  /// Planifie (une seule fois par article) l'armement différé du nudge :
+  /// attend `_kScrollNudgeArmDelay` (anti-pop instantané) puis résout le
+  /// cooldown 24 h avant d'autoriser l'affichage. Appelé dès qu'une cible
+  /// devient plausible (arrivée des perspectives, résolution du contenu).
+  void _maybeArmScrollNudge() {
+    if (_scrollNudgeArmScheduled) return;
+    final target = _resolveScrollNudgeTarget();
+    if (target == null) return;
+    _scrollNudgeArmScheduled = true;
+    _scrollNudgeArmTimer = Timer(_kScrollNudgeArmDelay, () async {
+      if (!mounted) return;
+      // Cooldown par-nudge uniquement (NudgeService, pas le coordinator) : on
+      // veut « 1×/24 h par cible », sans le budget global de session.
+      final ok = await ref.read(nudgeServiceProvider).canShow(target.id);
+      if (!mounted) return;
+      _scrollNudgeCooldownOk = ok;
+      _updateScrollNudgeVisibility();
+    });
+  }
+
+  /// Calcul pur des conditions d'affichage du nudge de scroll. Aucune
+  /// mutation d'état ici — voir [_updateScrollNudgeVisibility]. Résout et
+  /// mémorise la cible courante dans `_activeScrollNudgeTarget`.
+  bool _computeShouldShowScrollNudge() {
+    // Armé (cooldown 24 h résolu à l'armement), pas déjà consommé sur cet
+    // article. `_scrollNudgeCooldownOk` ne peut passer true qu'après le délai
+    // d'armement → il porte à lui seul l'état « armé + éligible ».
+    if (!_scrollNudgeCooldownOk || _scrollNudgeSpent) return false;
+    // Le nudge n'a de sens que pendant la lecture scrollable normale : dès que
+    // la WebView a pris le relais visuel, ou que le CTA a été tapé (révélation
+    // en cours), la destination n'est plus pertinente.
+    if (_isWebViewActive || _ctaTapped) return false;
+
+    // Gardes bon marché d'abord (chemin chaud du scroll) : « en haut » avant
+    // toute résolution/allocation de cible.
     final ScrollController? active = _activeScrollController;
     if (active == null) return false;
-    if (active.offset > _kPerspectivesNudgeTopTolerance) return false;
+    if (active.offset > _kScrollNudgeTopTolerance) return false;
 
-    // Carrousel hors écran. Si la clé n'est pas encore montée (premier frame
-    // après fetch, ou perspectives pas encore rendues), on traite comme "non
-    // applicable" : pas de nudge pointant vers rien.
-    final renderObject = _perspectivesKey.currentContext?.findRenderObject();
+    final target = _resolveScrollNudgeTarget();
+    if (target == null) return false;
+    _activeScrollNudgeTarget = target;
+
+    // Destination hors écran (assez bas pour valoir un scroll). Si la clé n'est
+    // pas encore montée (premier frame après fetch, ou carte non rendue dans la
+    // branche de layout courante), on traite comme "non applicable" : pas de
+    // nudge pointant vers rien.
+    final renderObject = target.key.currentContext?.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.attached) return false;
     final topY = renderObject.localToGlobal(Offset.zero).dy;
     final viewportHeight = MediaQuery.of(context).size.height;
-    return topY > viewportHeight;
+    return topY > viewportHeight * _kScrollNudgeMinBelowFraction;
   }
 
-  /// Recalcule et applique la visibilité du nudge perspectives. Ne fait
-  /// jamais de `setState` — seule `_showPerspectivesNudge.value` change,
-  /// consommée par un `ValueListenableBuilder<bool>` dédié dans `build()`.
-  void _updatePerspectivesNudgeVisibility() {
+  /// Recalcule et applique la visibilité du nudge de scroll. Ne fait jamais de
+  /// `setState` — seule `_showScrollNudge.value` change, consommée par un
+  /// `ValueListenableBuilder<bool>` dédié dans `build()`. Au premier passage
+  /// false→true : pose le cooldown 24 h (markShown, une seule fois) et arme
+  /// l'auto-masquage.
+  void _updateScrollNudgeVisibility() {
     if (!mounted) return;
-    final shouldShow = _computeShouldShowPerspectivesNudge();
-    if (_showPerspectivesNudge.value != shouldShow) {
-      _showPerspectivesNudge.value = shouldShow;
+    final shouldShow = _computeShouldShowScrollNudge();
+    if (_showScrollNudge.value == shouldShow) return;
+    _showScrollNudge.value = shouldShow;
+    if (!shouldShow) return;
+
+    final target = _activeScrollNudgeTarget;
+    if (target != null && !_scrollNudgeShownRecorded) {
+      _scrollNudgeShownRecorded = true;
+      // Démarre le cooldown 24 h dès le premier affichage réel → ne réapparaît
+      // plus aujourd'hui (couvre « déjà montré / cliqué »).
+      unawaited(ref.read(nudgeServiceProvider).markShown(target.id));
     }
+    // Auto-masquage : le nudge ne traîne pas à l'écran.
+    _scrollNudgeAutoHideTimer?.cancel();
+    _scrollNudgeAutoHideTimer = Timer(_kScrollNudgeAutoHideDelay, () {
+      if (!mounted) return;
+      _scrollNudgeSpent = true;
+      _showScrollNudge.value = false;
+    });
   }
 
-  /// Tap sur le nudge : scrolle le contrôleur actif pour amener le haut du
-  /// carrousel de perspectives juste sous le header, puis masque le nudge
-  /// sans attendre le `ScrollUpdateNotification` résultant (sinon il
-  /// resterait visible, incongru, pendant toute l'animation).
-  void _scrollToPerspectives() {
+  /// Tap sur le nudge : scrolle le contrôleur actif pour amener le haut de la
+  /// destination juste sous le header, puis masque le nudge sans attendre le
+  /// `ScrollUpdateNotification` résultant (sinon il resterait visible,
+  /// incongru, pendant toute l'animation). Le cooldown est déjà posé à
+  /// l'affichage.
+  void _scrollToNudgeTarget(GlobalKey key) {
     final ScrollController? active = _activeScrollController;
-    final renderObject = _perspectivesKey.currentContext?.findRenderObject();
+    final renderObject = key.currentContext?.findRenderObject();
     if (active == null ||
         renderObject is! RenderBox ||
         !renderObject.attached) {
@@ -1026,7 +1131,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       curve: Curves.easeInOutCubic,
     );
 
-    _showPerspectivesNudge.value = false;
+    _scrollNudgeSpent = true;
+    _showScrollNudge.value = false;
   }
 
   /// Measures the pixel distance from the top of the scroll content to the
@@ -1088,6 +1194,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerPermanent.value = false;
     _animateFooterTo(0.0);
     _scrollController.jumpTo(0);
+    // Retour en haut de l'article : ré-arme le nudge de scroll (le cooldown
+    // 24 h déjà posé le maintiendra masqué s'il a été montré aujourd'hui).
+    _resetScrollNudge();
+    _maybeArmScrollNudge();
+  }
+
+  /// Remet à zéro l'état du nudge de scroll (armement, cooldown, auto-hide) et
+  /// annule ses timers. Appelé au retour en haut de l'article (sortie WebView).
+  void _resetScrollNudge() {
+    _scrollNudgeArmTimer?.cancel();
+    _scrollNudgeAutoHideTimer?.cancel();
+    _scrollNudgeSpent = false;
+    _scrollNudgeCooldownOk = false;
+    _scrollNudgeShownRecorded = false;
+    _scrollNudgeArmScheduled = false;
+    _showScrollNudge.value = false;
   }
 
   /// Gère le retour arrière du reader (bouton header + bouton système Android).
@@ -1156,7 +1278,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() {
         _isWebViewActive = true;
       });
-      _updatePerspectivesNudgeVisibility();
+      _updateScrollNudgeVisibility();
       // Drop the article subtree from the tree once the 300 ms fade-out is
       // done, so Flutter stops painting it under the scrolling WebView.
       _articleLayerUnmountTimer?.cancel();
@@ -1714,6 +1836,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _articleLayerUnmountTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
     _perspectivesRefetchTimer?.cancel();
+    _scrollNudgeArmTimer?.cancel();
+    _scrollNudgeAutoHideTimer?.cancel();
     _analysisSheetData.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
@@ -1727,7 +1851,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.dispose();
-    _showPerspectivesNudge.dispose();
+    _showScrollNudge.dispose();
     _scrollController.removeListener(_onScrollToSite);
 
     _scrollController.dispose();
@@ -1989,12 +2113,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _schedulePerspectivesPartialRefetch(content.id);
         }
         _maybeTriggerPerspectivesCta();
+        // Une cible de nudge (pas de recul ou perspectives) est désormais
+        // plausible : planifie l'armement différé (1,5 s + cooldown).
+        _maybeArmScrollNudge();
         // `PerspectivesInlineSection`/`_perspectivesKey` ne sont montés qu'au
         // prochain frame après ce `setState` — sans ce callback, un
         // utilisateur déjà en haut et immobile ne verrait jamais le nudge
         // apparaître avant son prochain scroll.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _updatePerspectivesNudgeVisibility();
+          if (mounted) _updateScrollNudgeVisibility();
         });
       }
     } catch (e) {
@@ -2180,7 +2307,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     }
 
                     _onScrollDelta(delta);
-                    _updatePerspectivesNudgeVisibility();
+                    _updateScrollNudgeVisibility();
                     // Track reading progress from any scrollable (including in-app reader)
                     if (metrics.maxScrollExtent > 0) {
                       final rawProgress =
@@ -2284,12 +2411,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       _showWebView && !useScrollToSite && !useInAppReading,
                 ),
               ),
-              // Nudge flottant "Voir plus de points de vue ?" — visible
-              // seulement en haut de l'article, tant que le carrousel de
-              // perspectives n'est pas encore à l'écran (cf.
-              // _computeShouldShowPerspectivesNudge). Flotte juste au-dessus
-              // du footer, jamais superposé (les deux ne sont visibles
-              // qu'en haut de l'article).
+              // Nudge de scroll flottant ("Prendre du recul ?" ou "Voir plus
+              // de points de vue ?") — visible seulement en haut de l'article,
+              // tant que la destination n'est pas encore à l'écran (cf.
+              // _computeShouldShowScrollNudge). Flotte juste au-dessus du
+              // footer, jamais superposé (les deux ne sont visibles qu'en haut
+              // de l'article).
               Positioned(
                 bottom: MediaQuery.of(context).viewPadding.bottom +
                     _kFooterContentHeight +
@@ -2301,7 +2428,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   alignment: Alignment.centerRight,
                   child: Padding(
                     padding: const EdgeInsets.only(right: FacteurSpacing.space4),
-                    child: _buildPerspectivesNudge(context),
+                    child: _buildScrollNudge(context),
                   ),
                 ),
               ),
@@ -2314,61 +2441,70 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Pill flottant "Voir plus de points de vue ?" — visibilité pilotée par
-  /// [_showPerspectivesNudge], tap par [_scrollToPerspectives]. Purement
-  /// présentationnel.
-  Widget _buildPerspectivesNudge(BuildContext context) {
+  /// Pill flottant du nudge de scroll — visibilité pilotée par
+  /// [_showScrollNudge], contenu (label + icône + cible de scroll) par
+  /// [_activeScrollNudgeTarget]. Purement présentationnel.
+  Widget _buildScrollNudge(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
     return ValueListenableBuilder<bool>(
-      valueListenable: _showPerspectivesNudge,
-      builder: (context, visible, child) => IgnorePointer(
-        ignoring: !visible,
-        child: AnimatedOpacity(
-          opacity: visible ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          child: AnimatedSlide(
-            offset: visible ? Offset.zero : const Offset(0, 0.3),
+      valueListenable: _showScrollNudge,
+      builder: (context, visible, child) {
+        // Cible résolue au moment de l'affichage (stable tant que visible) ;
+        // fallback perspectives si null pour ne jamais rendre un pill vide.
+        final target = _activeScrollNudgeTarget;
+        return IgnorePointer(
+          ignoring: !visible,
+          child: AnimatedOpacity(
+            opacity: visible ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOut,
-            child: child,
-          ),
-        ),
-      ),
-      child: GlassPill(
-        borderRadius: BorderRadius.circular(FacteurRadius.pill),
-        shadowOffset: const Offset(0, 2),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _scrollToPerspectives,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: FacteurSpacing.space2,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Voir plus de points de vue ?',
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w600,
+            child: AnimatedSlide(
+              offset: visible ? Offset.zero : const Offset(0, 0.3),
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              child: GlassPill(
+                borderRadius: BorderRadius.circular(FacteurRadius.pill),
+                shadowOffset: const Offset(0, 2),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: target == null
+                      ? null
+                      : () => _scrollToNudgeTarget(target.key),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4,
+                      vertical: FacteurSpacing.space2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          target?.label ?? 'Voir plus de points de vue ?',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          target?.icon ??
+                              PhosphorIcons.arrowDown(
+                                PhosphorIconsStyle.regular,
+                              ),
+                          size: 13,
+                          color: colors.textSecondary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                Icon(
-                  PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
-                  size: 13,
-                  color: colors.textSecondary,
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2394,7 +2530,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !_showWebView;
     if (isScrollToSite && !_ctaTapped) {
       setState(() => _ctaTapped = true);
-      _updatePerspectivesNudgeVisibility();
+      _updateScrollNudgeVisibility();
       // Lance le chargement de la page distante MAINTENANT : le CTA anime 500 ms
       // avant que `_isWebViewActive` ne se verrouille → la page démarre ≥ 500 ms
       // avant la révélation (même avance qu'avec le chargement eager d'avant).
@@ -2443,7 +2579,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _showWebView = true;
       _ctaTapped = true;
     });
-    _updatePerspectivesNudgeVisibility();
+    _updateScrollNudgeVisibility();
     // Arrival gate : cache le footer + verrouille la révélation jusqu'au 1er
     // scroll (préserve le bandeau cookies du site en bas d'écran).
     _footerRevealLocked = true;
@@ -4054,10 +4190,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 if (_perspectivesResponse?.deepRecommendation != null &&
                     !_isExternal) ...[
                   const SizedBox(height: FacteurSpacing.space4),
-                  DeepRecommendationCard(
-                    reco: _perspectivesResponse!.deepRecommendation!,
-                    onTap: () => _openDeepReco(
-                      _perspectivesResponse!.deepRecommendation!,
+                  KeyedSubtree(
+                    // Clé de mesure pour le nudge de scroll « Prendre du recul ? »
+                    // (position de la carte vs pli — cf. _computeShouldShowScrollNudge).
+                    key: _deepRecoKey,
+                    child: DeepRecommendationCard(
+                      reco: _perspectivesResponse!.deepRecommendation!,
+                      onTap: () => _openDeepReco(
+                        _perspectivesResponse!.deepRecommendation!,
+                      ),
                     ),
                   ),
                 ],
