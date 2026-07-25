@@ -663,6 +663,11 @@ Variante "Lu" :
 
 **Librairie Flutter :** Composants custom basés sur les widgets natifs Flutter.
 
+> **Principe LOCKED — Design-system-first / minimalisme / respect du layout.** Toute nouvelle UI **repart de `apps/mobile/lib/config/theme.dart`** : tokens via `context.facteurColors`, `FacteurSpacing`/`FacteurRadius`/`FacteurTypography`, et des composants réutilisables existants (`FacteurButton`, `GlassPill`, chips/badges — `editorial_badge`, `compact_theme_chip`, `_SuggestedBadge`) **avant** d'introduire un widget Material brut (`FilledButton`, `ElevatedButton`, etc.). Trois boussoles de premier rang :
+> 1. **Design-system-first** — réutiliser les tokens et composants ; ne pas réinventer une chromie ou une échelle d'espacement.
+> 2. **Minimalisme** — préférer le retrait à l'ajout ; une action secondaire doit rester discrète (puce/badge, pas un bouton pleine largeur).
+> 3. **Respect du layout** — ne jamais casser les budgets de hauteur/snap du Flux Continu (`section_fit.dart`, `_recomputeSnapAnchors`) : pas de contenu tappable non budgété **sous les cartes**. Cible tap ≥ 44px (cf. §7.2). *Exemple :* le CTA « Ajouter à l'Essentiel » (story 22.6) a été relocalisé du pied de section vers une puce teintée dans le banner, sur la ligne de la balise « Choisie pour vous », précisément pour ne pas dérégler le snap.
+
 ### 5.2 Core Components
 
 #### Buttons

@@ -595,11 +595,19 @@ void main() {
     });
   });
 
-  group('SectionBlock — CTA « Ajouter à mon Essentiel » (Story 22.6)', () {
-    final ctaFinder =
-        find.widgetWithText(FilledButton, 'Ajouter à mon Essentiel');
+  group('SectionBlock — puce « Ajouter à l\'Essentiel » (Story 22.6 redesign)',
+      () {
+    // La puce est rendue dans le banner (plus de FilledButton sous les cartes).
+    // On la cible par son libellé visible ; le tap passe par son GestureDetector.
+    final chipFinder = find.text('Ajouter à l\'Essentiel');
 
-    testWidgets('rendu uniquement pour une suggérée avec callback',
+    // La puce vit dans le banner (en-tête), aucun contenu tappable sous les
+    // cartes ne doit persister → garde-fou anti-régression du snap/fit.
+    void expectNoFooterCta() {
+      expect(find.byType(FilledButton), findsNothing);
+    }
+
+    testWidgets('rendue dans le banner pour une suggérée avec callback',
         (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
@@ -608,10 +616,13 @@ void main() {
           onPromoteSuggestion: () async {},
         ),
       ));
-      expect(ctaFinder, findsOneWidget);
+      expect(chipFinder, findsOneWidget);
+      // Sur la ligne de la balise « Choisie pour vous ».
+      expect(find.text('Choisie pour vous'), findsOneWidget);
+      expectNoFooterCta();
     });
 
-    testWidgets('absent sur une section validée', (tester) async {
+    testWidgets('absente sur une section validée', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _themeSection(items: 3),
@@ -619,17 +630,19 @@ void main() {
           onPromoteSuggestion: () async {},
         ),
       ));
-      expect(find.text('Ajouter à mon Essentiel'), findsNothing);
+      expect(chipFinder, findsNothing);
     });
 
-    testWidgets('absent si onPromoteSuggestion est null', (tester) async {
+    testWidgets('absente si onPromoteSuggestion est null', (tester) async {
       await tester.pumpWidget(_wrap(
         SectionBlock(
           section: _suggestedThemeSection(),
           onTapArticle: (_) {},
         ),
       ));
-      expect(find.text('Ajouter à mon Essentiel'), findsNothing);
+      // La balise reste, mais pas la puce d'action.
+      expect(find.text('Choisie pour vous'), findsOneWidget);
+      expect(chipFinder, findsNothing);
     });
 
     testWidgets('tap déclenche le callback une fois + SnackBar succès',
@@ -642,14 +655,14 @@ void main() {
           onPromoteSuggestion: () async => calls++,
         ),
       ));
-      await tester.ensureVisible(ctaFinder);
-      await tester.tap(ctaFinder);
+      await tester.ensureVisible(chipFinder);
+      await tester.tap(chipFinder);
       await tester.pumpAndSettle();
       expect(calls, 1);
       expect(find.text('Ajouté à ton Essentiel'), findsOneWidget);
     });
 
-    testWidgets('désactivé pendant le pending (anti double-tap)',
+    testWidgets('désactivée pendant le pending (anti double-tap)',
         (tester) async {
       final completer = Completer<void>();
       var calls = 0;
@@ -663,25 +676,30 @@ void main() {
           },
         ),
       ));
-      await tester.ensureVisible(ctaFinder);
-      await tester.tap(ctaFinder);
+      await tester.ensureVisible(chipFinder);
+      await tester.tap(chipFinder);
       await tester.pump(); // entre en état pending
 
-      // Spinner affiché, libellé remplacé, bouton désactivé.
+      // Spinner affiché (l'icône `plus` est remplacée) ; le libellé reste.
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(ctaFinder, findsNothing);
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
-      expect(button.onPressed, isNull);
+      expect(chipFinder, findsOneWidget);
 
-      // Second tap pendant le pending : aucun nouvel appel.
-      await tester.tap(find.byType(FilledButton), warnIfMissed: false);
-      await tester.pump();
+      // La puce (GestureDetector portant le spinner) est désactivée pendant le
+      // pending → anti double-tap structurel (onTap null).
+      final gesture = tester.widget<GestureDetector>(
+        find.ancestor(
+          of: find.byType(CircularProgressIndicator),
+          matching: find.byType(GestureDetector),
+        ),
+      );
+      expect(gesture.onTap, isNull);
       expect(calls, 1);
 
-      // Résolution → CTA revient, SnackBar de succès.
+      // Résolution → puce revient, SnackBar de succès.
       completer.complete();
       await tester.pumpAndSettle();
       expect(calls, 1);
+      expect(chipFinder, findsOneWidget);
       expect(find.text('Ajouté à ton Essentiel'), findsOneWidget);
     });
   });

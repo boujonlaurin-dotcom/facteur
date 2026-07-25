@@ -62,6 +62,14 @@ class SectionBanner extends StatelessWidget {
   /// (garder / retirer). Null hors sections suggérées.
   final VoidCallback? onTapInfo;
 
+  /// Story 22.6 (redesign) — quand non null, une puce d'action « Ajouter à
+  /// l'Essentiel » est posée **sur la ligne de la balise** « Choisie pour
+  /// vous » : promeut la section suggérée en favorite sans passer par la sheet.
+  /// La puce gère localement son spinner + l'anti double-tap. Vit dans la ligne
+  /// de la balise (hauteur banner inchangée) → aucun contenu tappable sous les
+  /// cartes, donc pas de dérive du budget snap/fit.
+  final Future<void> Function()? onPromote;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -76,6 +84,7 @@ class SectionBanner extends StatelessWidget {
     this.hiddenCount = 0,
     this.suggested = false,
     this.onTapInfo,
+    this.onPromote,
   });
 
   static final _titleStyleLarge = GoogleFonts.fraunces(
@@ -201,7 +210,22 @@ class SectionBanner extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (suggested) ...[
-                        _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                        // Balise + puce d'action sur une même ligne. `Wrap`
+                        // (et non `Row`) : dans le cas courant les deux puces
+                        // tiennent sur une ligne (hauteur banner inchangée →
+                        // snap intact) ; sur un écran extrême ou un
+                        // `textScaleFactor` élevé, la puce passe à une 2ᵉ ligne
+                        // au lieu de lever un RenderFlex overflow.
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                            if (onPromote != null)
+                              _PromoteChip(accent: accent, onPromote: onPromote!),
+                          ],
+                        ),
                         const SizedBox(height: 8),
                       ],
                       _AccentDash(accent: accent, large: large),
@@ -456,6 +480,100 @@ class _SuggestedBadge extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: badge,
+      ),
+    );
+  }
+}
+
+/// Story 22.6 (redesign) — puce d'action « Ajouter à l'Essentiel » posée sur la
+/// ligne de la balise « Choisie pour vous ». Remplace l'ancien
+/// `_PromoteSuggestionButton` (FilledButton pleine largeur sous les cartes, qui
+/// cassait le budget snap/fit). Reprend telle quelle sa logique : flag `_pending`
+/// anti double-tap, capture du `ScaffoldMessenger` avant l'await (la puce peut
+/// être démontée quand la section devient favorite), SnackBar de succès,
+/// `finally` + garde `mounted`. Le corps visuel est calqué sur `_SuggestedBadge`
+/// (même chromie teintée, cohésion demandée par le PO) mais se lit comme une
+/// **action** via l'icône `plus` et le libellé verbe.
+class _PromoteChip extends StatefulWidget {
+  const _PromoteChip({required this.accent, required this.onPromote});
+
+  final Color accent;
+  final Future<void> Function() onPromote;
+
+  @override
+  State<_PromoteChip> createState() => _PromoteChipState();
+}
+
+class _PromoteChipState extends State<_PromoteChip> {
+  bool _pending = false;
+
+  Future<void> _handlePromote() async {
+    if (_pending) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _pending = true);
+    try {
+      await widget.onPromote();
+      // Succès uniquement : un throw saute directement au `finally`.
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Ajouté à ton Essentiel')),
+      );
+    } finally {
+      if (mounted) setState(() => _pending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
+    return Semantics(
+      button: true,
+      label: 'Ajouter à mon Essentiel',
+      child: GestureDetector(
+        // Hit target élargi au-delà du visuel (~44px, FES §7.2) : le
+        // `HitTestBehavior.opaque` capte les taps sur tout le rectangle de la
+        // puce, marges de la ligne comprises.
+        behavior: HitTestBehavior.opaque,
+        onTap: _pending ? null : _handlePromote,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(8, 4, 9, 4),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: accent.withValues(alpha: 0.34),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _pending
+                  ? SizedBox(
+                      width: 11,
+                      height: 11,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        color: accent,
+                      ),
+                    )
+                  : Icon(
+                      PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                      size: 11,
+                      color: accent,
+                    ),
+              const SizedBox(width: 5),
+              Text(
+                'Ajouter à l\'Essentiel',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

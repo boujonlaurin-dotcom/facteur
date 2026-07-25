@@ -14,7 +14,7 @@
 | Phase | Docs à Lire | Chemins Codebase | Actions |
 |-------|------------|------------------|---------|
 | **1. Contexte** | [PRD](../prd.md) (section concernée)<br>[Story README](../stories/README.md) | - | Comprendre le "pourquoi" |
-| **2. Specs Tech** | [Architecture](../architecture.md) (API concernée)<br>[Front-end Spec](../front-end-spec.md) (composants) | - | Identifier contraintes techniques |
+| **2. Specs Tech** | [Architecture](../architecture.md) (API concernée)<br>[Front-end Spec](../front-end-spec.md) (composants) → design-system-first + minimalisme + respect du layout sont des contraintes **LOCKED** (cf. FES §5.1) | - | Identifier contraintes techniques |
 | **3. Codebase** | [Mobile Map](#mobile-feature-map)<br>[Backend Map](#backend-feature-map) | Voir maps ci-dessous | Localiser fichiers à modifier |
 | **4. Story** | Crée `docs/stories/core/{epic}.{story}.{nom}.md`<br>Template: [Story Template](../stories/README.md#template) | - | Document plan d'implémentation |
 
@@ -284,6 +284,13 @@ features/{nom}/
 - [ ] Test migration sur copie DB prod (si disponible)
 - [ ] Plan de rollback (`alembic downgrade -1`)
 - [ ] Fenêtre de maintenance si destructive
+
+### UI / Design
+**AVANT toute modif UI** (contrainte **LOCKED**, cf. [Front-end Spec §5.1](../front-end-spec.md)) :
+- [ ] Réutiliser les tokens (`context.facteurColors`, `FacteurSpacing/Radius/Typography`) et les composants existants avant d'en inventer.
+- [ ] Respecter l'échelle d'espacement/rayons et le layout de l'écran ; minimalisme > décor.
+- [ ] Ne jamais ajouter de contenu **non budgété sous les cartes** du Flux Continu → casse les budgets snap/fit (`section_fit.dart` / `_recomputeSnapAnchors`) — cf. le CTA « Ajouter à l'Essentiel » relocalisé dans le banner (story 22.6 redesign).
+- [ ] Justifier toute UI *net-new* ; cibles tap ≥ 44px (FES §7.2).
 
 ---
 
