@@ -131,6 +131,10 @@ class SectionBlock extends StatelessWidget {
             section.items.isNotEmpty
         ? 'Pas d\'article récent.'
         : section.blurb;
+    // Section suggérée par le facteur → balise « Choisie pour vous » + puce
+    // « Ajouter à l'Essentiel ». Calculé une fois (partagé par les params
+    // `suggested` et `onPromote` du banner).
+    final isSuggested = section is FeedThemeSection && section.isSuggested;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -150,16 +154,15 @@ class SectionBlock extends StatelessWidget {
           onTap: onSeeAll,
           hiddenCount: hiddenCount,
           // Story 22.3 — badge « Choisie pour vous » sur les sections suggérées.
-          suggested: section is FeedThemeSection && section.isSuggested,
+          suggested: isSuggested,
           onTapInfo: onTapSuggestionInfo,
+          // Story 22.6 (redesign) — puce d'action « Ajouter à l'Essentiel » sur
+          // la ligne de la balise (plus de CTA sous les cartes → snap/fit
+          // intact). Le badge/info-tap reste la voie « Pourquoi cette
+          // section ? ». Câblage instrumentation inchangé (origin: 'card').
+          onPromote: isSuggested ? onPromoteSuggestion : null,
         ),
         ...cards,
-        // Story 22.6 — CTA direct sur la carte suggérée (le badge/info-tap du
-        // banner reste, lui, la voie « Pourquoi cette section ? »).
-        if (section is FeedThemeSection &&
-            section.isSuggested &&
-            onPromoteSuggestion != null)
-          _PromoteSuggestionButton(onPromote: onPromoteSuggestion!),
         const SizedBox(height: 16),
       ],
     );
@@ -644,56 +647,3 @@ class SectionSkeletonCard extends StatelessWidget {
 List<Widget> sectionSkeletonCards(int count) => [
   for (var i = 0; i < count; i++) const SectionSkeletonCard(),
 ];
-
-/// Story 22.6 — bouton « Ajouter à mon Essentiel » en pied d'une section
-/// suggérée. Gère localement le spinner d'attente + l'anti double-tap ; la
-/// SnackBar de succès est émise via le `ScaffoldMessenger` capturé avant l'await
-/// (le bouton peut être démonté quand la section devient favorite).
-class _PromoteSuggestionButton extends StatefulWidget {
-  const _PromoteSuggestionButton({required this.onPromote});
-
-  final Future<void> Function() onPromote;
-
-  @override
-  State<_PromoteSuggestionButton> createState() =>
-      _PromoteSuggestionButtonState();
-}
-
-class _PromoteSuggestionButtonState extends State<_PromoteSuggestionButton> {
-  bool _pending = false;
-
-  Future<void> _handlePromote() async {
-    if (_pending) return;
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() => _pending = true);
-    try {
-      await widget.onPromote();
-      // Succès uniquement : un throw saute directement au `finally`.
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Ajouté à ton Essentiel')),
-      );
-    } finally {
-      if (mounted) setState(() => _pending = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: FilledButton.tonal(
-          onPressed: _pending ? null : _handlePromote,
-          child: _pending
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Ajouter à mon Essentiel'),
-        ),
-      ),
-    );
-  }
-}
