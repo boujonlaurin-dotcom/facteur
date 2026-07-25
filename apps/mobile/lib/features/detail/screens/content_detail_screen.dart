@@ -4066,6 +4066,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         final textTheme = Theme.of(context).textTheme;
         final articleText = content.htmlContent ?? content.description;
         final isPartial = isPartialContent(articleText);
+        // Le pas de recul est désormais surfacé EN TÊTE des suites de lecture
+        // (au-dessus de « Comparer les angles ») ; ce flag pilote l'ordre et la
+        // respiration entre les deux blocs de fin de reader.
+        final hasDeepReco =
+            _perspectivesResponse?.deepRecommendation != null && !_isExternal;
 
         String? readingTime;
         if (content.durationSeconds != null && content.durationSeconds! > 0) {
@@ -4189,11 +4194,37 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
-                // ── Perspectives section (fin du reader) ───────────────────
-                // Bande frostée encastrée (hairline fine + teinte quasi-
-                // invisible) ; large respiration au-dessus pour la détacher.
-                if (_showPerspectivesBand) ...[
+                // ── « Le pas de recul » (deep reco) ─────────────────────────
+                // Carte d'analyse de fond, surfacée EN TÊTE des suites de
+                // lecture (au-dessus de « Comparer les angles ») : c'est la
+                // première proposition de suite. Silencieuse tant que
+                // deep_pending && reco null (calcul en cours).
+                if (hasDeepReco) ...[
                   const SizedBox(height: FacteurSpacing.space8),
+                  KeyedSubtree(
+                    // Clé de mesure pour le nudge de scroll « Prendre du recul ? »
+                    // (position de la carte vs pli — cf. _computeShouldShowScrollNudge).
+                    key: _deepRecoKey,
+                    child: DeepRecommendationCard(
+                      reco: _perspectivesResponse!.deepRecommendation!,
+                      onTap: () => _openDeepReco(
+                        _perspectivesResponse!.deepRecommendation!,
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ── Perspectives section (« Comparer les angles ») ─────────
+                // Bande frostée encastrée (hairline fine + teinte quasi-
+                // invisible). Respiration réduite (space6) quand le pas de
+                // recul la précède, pleine respiration (space8) si elle est
+                // seule sous le corps.
+                if (_showPerspectivesBand) ...[
+                  SizedBox(
+                    height: hasDeepReco
+                        ? FacteurSpacing.space6
+                        : FacteurSpacing.space8,
+                  ),
                   RepaintBoundary(
                     // Isole les animations d'intro de la bande perspectives du
                     // corps vertical au-dessus (même motif que le reader natif).
@@ -4213,26 +4244,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       divergenceLevel: _perspectivesResponse?.divergenceLevel,
                       partial: _perspectivesResponse?.partial ?? false,
                       onOpenAnalysis: _openPerspectivesAnalysis,
-                    ),
-                  ),
-                ],
-
-                // ── « Le pas de recul » (deep reco) ─────────────────────────
-                // Carte d'analyse de fond, surfacée SOUS la couverture
-                // médiatique (perspectives). Silencieuse tant que deep_pending
-                // && reco null (calcul en cours).
-                if (_perspectivesResponse?.deepRecommendation != null &&
-                    !_isExternal) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  KeyedSubtree(
-                    // Clé de mesure pour le nudge de scroll « Prendre du recul ? »
-                    // (position de la carte vs pli — cf. _computeShouldShowScrollNudge).
-                    key: _deepRecoKey,
-                    child: DeepRecommendationCard(
-                      reco: _perspectivesResponse!.deepRecommendation!,
-                      onTap: () => _openDeepReco(
-                        _perspectivesResponse!.deepRecommendation!,
-                      ),
                     ),
                   ),
                 ],

@@ -34,26 +34,28 @@ class DeepRecommendationCard extends StatelessWidget {
     return _PressableScale(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(22, 13, 22, 14),
+        padding: const EdgeInsets.fromLTRB(22, 16, 22, 18),
         decoration: BoxDecoration(
           // Lavis horizontal (≈105°) : de gauche vers droite avec léger biais
-          // bas, s'estompant vers transparent avant le bord droit.
+          // bas, s'estompant vers transparent avant le bord droit. Variante
+          // « strong » propre à la carte (accent PO) — le header contextuel
+          // garde le lavis standard.
           gradient: LinearGradient(
             begin: Alignment.centerLeft,
             end: const Alignment(1.0, 0.25),
-            colors: DeepReculMedallion.lavisColors(info),
+            colors: DeepReculMedallion.lavisColorsStrong(info),
             stops: const [0.0, 0.5, 0.92],
           ),
-          // Bord supérieur seul (bandeau edge-to-edge).
+          // Bord supérieur seul (bandeau edge-to-edge), accentué (PO).
           border: Border(
-            top: BorderSide(color: info.withValues(alpha: 0.18)),
+            top: BorderSide(color: info.withValues(alpha: 0.28), width: 1.0),
           ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const DeepReculMedallion(size: 44),
-            const SizedBox(width: 12),
+            const DeepReculMedallion(size: 48),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,7 +63,7 @@ class DeepRecommendationCard extends StatelessWidget {
                   Text(
                     'Le pas de recul · Facteur'.toUpperCase(),
                     style: GoogleFonts.courierPrime(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.3,
                       height: 1.0,
@@ -70,11 +72,11 @@ class DeepRecommendationCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 6),
                   Text(
                     reco.title,
                     style: GoogleFonts.fraunces(
-                      fontSize: 16,
+                      fontSize: 17.5,
                       fontWeight: FontWeight.w600,
                       height: 1.2,
                       letterSpacing: -0.3,
@@ -83,7 +85,7 @@ class DeepRecommendationCard extends StatelessWidget {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 6),
                   _SourceMeta(
                     logoUrl: reco.sourceLogoUrl,
                     sourceName: reco.sourceName,
@@ -97,7 +99,7 @@ class DeepRecommendationCard extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Icon(
                 PhosphorIcons.arrowRight(PhosphorIconsStyle.regular),
-                size: 18,
+                size: 19,
                 color: info,
               ),
             ),
@@ -128,6 +130,18 @@ class DeepReculMedallion extends StatelessWidget {
   static List<Color> lavisColors(Color info) => [
         info.withValues(alpha: 0.11),
         info.withValues(alpha: 0.06),
+        Colors.transparent,
+      ];
+
+  /// Variante « dense » du lavis, réservée au bandeau de la carte CTA (accent
+  /// PO : présence visuelle qui justifie sa priorité en tête de reader). On ne
+  /// modifie **pas** [lavisColors] car ce tint est partagé avec le header
+  /// contextuel `fromDeepReco` — l'assombrir déborderait sur le header (l'écho
+  /// visuel entre les deux reste volontairement discret). Même stops/direction
+  /// que la version standard, seule l'opacité change.
+  static List<Color> lavisColorsStrong(Color info) => [
+        info.withValues(alpha: 0.16),
+        info.withValues(alpha: 0.09),
         Colors.transparent,
       ];
 
