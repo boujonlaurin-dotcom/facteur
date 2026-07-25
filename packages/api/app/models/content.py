@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -47,6 +48,17 @@ class Content(Base):
         # Replaces single-column ix_contents_theme (composite is a strict superset)
         Index("ix_contents_theme_published", "theme", "published_at"),
         Index("ix_contents_entities", "entities", postgresql_using="gin"),
+        # GIN trigram sur l'expression exacte du live path perspectives
+        # (`content_entities_text(entities) ILIKE '%nom%'`). Index d'expression +
+        # opclass `extensions.gin_trgm_ops` (pg_trgm est WITH SCHEMA extensions) :
+        # créé dans la migration pt01. Déclaré ici pour cohérence ORM↔schéma
+        # (l'opclass est portée par le text() car l'autogenerate ne sait pas
+        # refléter un index d'expression trigram).
+        Index(
+            "ix_contents_entities_trgm",
+            text("content_entities_text(entities) extensions.gin_trgm_ops"),
+            postgresql_using="gin",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(

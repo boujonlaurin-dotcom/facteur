@@ -101,6 +101,23 @@ def create_tables():
                     "END $$;"
                 )
             )
+            # pt01 — `Content` déclare un index d'expression trigram sur
+            # `content_entities_text(entities)` (wrapper IMMUTABLE de
+            # array_to_string, créé par Alembic en prod). Le DROP SCHEMA public
+            # ci-dessus a effacé la fonction ; sans elle + l'opclass pg_trgm,
+            # `Base.metadata.create_all` lèverait `UndefinedFunction` /
+            # `UndefinedObject` au CREATE INDEX. Même logique que l'ENUM au-dessus.
+            await conn.execute(text("CREATE SCHEMA IF NOT EXISTS extensions"))
+            await conn.execute(
+                text("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions")
+            )
+            await conn.execute(
+                text(
+                    "CREATE OR REPLACE FUNCTION public.content_entities_text(text[]) "
+                    "RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE "
+                    "AS $fn$ SELECT array_to_string($1, ' ') $fn$"
+                )
+            )
             await conn.run_sync(Base.metadata.create_all)
 
     asyncio.run(_setup())

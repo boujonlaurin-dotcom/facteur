@@ -660,9 +660,13 @@ class PerspectiveService:
 
         cutoff = datetime.now(UTC) - timedelta(hours=time_window_hours)
 
-        # Build OR conditions: entities text array contains entity name
+        # Build OR conditions: entities text array contains entity name.
+        # Passer par le wrapper `content_entities_text` (et non le builtin
+        # `array_to_string`, STABLE donc non-sargable) est requis ICI : c'est
+        # l'expression exacte qu'indexe `ix_contents_entities_trgm` (GIN trigram,
+        # migration pt01), sinon le planner scanne toute la fenêtre 72h.
         entity_filters = [
-            func.array_to_string(Content.entities, " ").ilike(f"%{name}%")
+            func.content_entities_text(Content.entities).ilike(f"%{name}%")
             for name in entity_names
         ]
 
