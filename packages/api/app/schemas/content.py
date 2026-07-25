@@ -4,11 +4,12 @@ import json
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from app.models.enums import (
     BiasOrigin,
     BiasStance,
+    CompletionSource,
     ContentStatus,
     ContentType,
     HiddenReason,
@@ -115,6 +116,7 @@ class ContentResponse(BaseModel):
     content_quality: str | None = None  # In-App Reading: 'full', 'partial', 'none'
     recommendation_reason: RecommendationReason | None = None
     reading_progress: int = 0
+    completed_at: datetime | None = None
     note_text: str | None = None
     note_updated_at: datetime | None = None
     is_followed_source: bool = False
@@ -159,6 +161,7 @@ class ContentDetailResponse(BaseModel):
     theme: str | None = None
     time_spent_seconds: int = 0
     reading_progress: int = 0
+    completed_at: datetime | None = None
     note_text: str | None = None
     note_updated_at: datetime | None = None
 
@@ -180,6 +183,26 @@ class ContentStatusUpdate(BaseModel):
     status: ContentStatus | None = None
     time_spent_seconds: int | None = None
     reading_progress: int | None = Field(None, ge=0, le=100)
+    # « Lu jusqu'au bout ». Le client envoie un booléen, jamais un horodatage :
+    # c'est le serveur qui estampille (pas de triche par horloge device).
+    completed: bool | None = None
+    completion_source: CompletionSource | None = None
+
+    @model_validator(mode="after")
+    def _completion_is_its_own_request(self) -> "ContentStatusUpdate":
+        """Interdit de combiner `completed` et `status=consumed` dans un appel.
+
+        L'upsert protège la transition CONSUMED par un
+        `ON CONFLICT ... WHERE status != 'consumed'` : sur une ligne déjà
+        consumed, l'update entier est ignoré. Envoyer les deux ensemble ferait
+        donc silencieusement perdre `completed_at`. On rejette explicitement
+        plutôt que de perdre la donnée — le mobile envoie deux requêtes.
+        """
+        if self.completed and self.status == ContentStatus.CONSUMED:
+            raise ValueError(
+                "`completed` and `status=consumed` must be sent in separate requests"
+            )
+        return self
 
 
 class ArticleFeedbackRequest(BaseModel):

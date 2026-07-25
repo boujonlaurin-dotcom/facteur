@@ -104,7 +104,17 @@ class Content {
   final List<String> topics;
   final List<ContentEntity> entities;
   final RecommendationReason? recommendationReason;
-  final int readingProgress; // 0-100 scroll depth percentage
+  /// Scroll depth 0-100.
+  ///
+  /// ⚠️ Signal gelé : plafonné à 25 pour le contenu partiel (~90 % du
+  /// catalogue), donc `readingProgress >= 90` mesure le type d'article, pas la
+  /// lecture. Conservé pour l'historique ; [completedAt] est le signal de
+  /// complétion.
+  final int readingProgress;
+
+  /// Horodatage « lu jusqu'au bout » (estampillé serveur, premier écrit gagne).
+  /// Null = inconnu, pas « non terminé ».
+  final DateTime? completedAt;
   final String? noteText;
   final DateTime? noteUpdatedAt;
   final bool isFollowedSource; // Feed fallback: source suivie par l'utilisateur
@@ -170,6 +180,7 @@ class Content {
     this.entities = const [],
     this.recommendationReason,
     this.readingProgress = 0,
+    this.completedAt,
     this.noteText,
     this.noteUpdatedAt,
     this.isFollowedSource = false,
@@ -202,28 +213,35 @@ class Content {
 
   bool get hasNote => noteText != null && noteText!.isNotEmpty;
 
-  /// Reading badge label based on reading_progress.
-  /// Returns null if article hasn't been interacted with.
-  /// readingProgress > 0 always takes priority over consumed status,
-  /// because the 30s timer can mark consumed before meaningful scroll.
+  /// « Lu jusqu'au bout » — l'utilisateur a atteint le bas de ce que Facteur
+  /// lui a présenté (contenu in-app complet, article trop court pour scroller,
+  /// ou page de l'éditeur en WebView).
+  ///
+  /// Adossé à [completedAt] et **pas** à `readingProgress >= 90` : cette
+  /// dernière borne est inatteignable pour ~90 % du catalogue (contenu partiel
+  /// plafonné à 25), ce qui étiquetait « Parcouru » des lectures pourtant
+  /// menées à leur terme.
+  bool get isCompleted => completedAt != null;
+
+  /// Libellé d'état de lecture. `null` si l'article n'a pas été ouvert.
   String? get readingLabel {
+    if (isCompleted) {
+      return isVideo ? 'Vu jusqu\'au bout' : 'Lu jusqu\'au bout';
+    }
     if (status == ContentStatus.unseen && readingProgress == 0) return null;
 
-    // Video-specific labels
-    if (contentType == ContentType.youtube || contentType == ContentType.video) {
-      if (readingProgress >= 90) return 'Vu jusqu\'au bout';
-      if (readingProgress >= 25) return 'Vu en partie';
-      // Consumed via timer but no progress tracking
-      if (status == ContentStatus.consumed) return 'Vu en partie';
+    if (isVideo) {
+      // La vidéo n'a pas de cap partiel : sa progression reste exploitable.
+      if (readingProgress >= 25 || status == ContentStatus.consumed) {
+        return 'Vu en partie';
+      }
       return null;
     }
 
-    // Article labels
-    if (readingProgress >= 90) return 'Lu jusqu\'au bout';
-    if (readingProgress >= 30) return 'Lu';
-    if (readingProgress > 0) return 'Parcouru';
-    // Consumed via 30s timer but no scroll tracking (e.g. partial content)
-    if (status == ContentStatus.consumed) return 'Lu';
+    // Ouvrir un article le marque `consumed` au bout d'1 s
+    // (`articleReadThreshold`) : « Lu » ne dit donc rien de plus que
+    // « ouvert », d'où un libellé unique et sans jugement.
+    if (readingProgress > 0 || status == ContentStatus.consumed) return 'Lu';
     return null;
   }
 
@@ -251,6 +269,7 @@ class Content {
       entities: entities,
       recommendationReason: recommendationReason,
       readingProgress: readingProgress,
+      completedAt: completedAt,
       noteText: null,
       noteUpdatedAt: null,
       isFollowedSource: isFollowedSource,
@@ -322,6 +341,9 @@ class Content {
             ? RecommendationReason.fromJson(recJson)
             : null,
         readingProgress: (json['reading_progress'] as int?) ?? 0,
+        completedAt: json['completed_at'] != null
+            ? DateTime.tryParse(json['completed_at'] as String)
+            : null,
         noteText: json['note_text'] as String?,
         noteUpdatedAt: json['note_updated_at'] != null
             ? DateTime.tryParse(json['note_updated_at'] as String)
@@ -366,6 +388,7 @@ class Content {
     List<ContentEntity>? entities,
     RecommendationReason? recommendationReason,
     int? readingProgress,
+    DateTime? completedAt,
     String? noteText,
     DateTime? noteUpdatedAt,
     bool? isFollowedSource,
@@ -412,6 +435,7 @@ class Content {
       entities: entities ?? this.entities,
       recommendationReason: recommendationReason ?? this.recommendationReason,
       readingProgress: readingProgress ?? this.readingProgress,
+      completedAt: completedAt ?? this.completedAt,
       noteText: noteText ?? this.noteText,
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,
       isFollowedSource: isFollowedSource ?? this.isFollowedSource,

@@ -144,6 +144,13 @@ class UserContentStatus(Base):
         Index("ix_user_content_status_user_saved", "user_id", "is_saved"),
         Index("ix_user_content_status_user_liked", "user_id", "is_liked"),
         Index("ix_user_content_status_user_status", "user_id", "status"),
+        # Partial index: only completed rows, for the derived daily counter.
+        Index(
+            "ix_ucs_user_completed_at",
+            "user_id",
+            "completed_at",
+            postgresql_where=text("completed_at IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -181,10 +188,20 @@ class UserContentStatus(Base):
     note_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Reading progress: scroll depth percentage (0-100), max ever reached
+    # Reading progress: scroll depth percentage (0-100), max ever reached.
+    # ⚠️ Frozen signal — capped at 25 for partial content (~90% of the catalog),
+    # so `reading_progress >= 90` measures article type, not reading. Kept for
+    # analytics history only; `completed_at` is the completion signal.
     reading_progress: Mapped[int] = mapped_column(
         SmallInteger, default=0, server_default="0"
     )
+    # « Lu jusqu'au bout » — server-stamped, first write wins (monotonic).
+    # Orthogonal to `status`: completion never implies CONSUMED, so the feed
+    # exclusion filters and the implicit digest completion are untouched.
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completion_source: Mapped[str | None] = mapped_column(String(12), nullable=True)
     # Feed refresh: timestamp of last time article was shown but not clicked
     last_impressed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -6,6 +6,13 @@ class StreakModel {
   final int weeklyGoal;
   final double weeklyProgress;
 
+  /// Lectures abouties de la journée éditoriale (frontière 07h30 Paris).
+  /// Dérivé côté serveur de `completed_at`, jamais stocké.
+  final int dailyCompleted;
+
+  /// Objectif du jour. Constante serveur : recalibrable sans release client.
+  final int dailyGoal;
+
   const StreakModel({
     required this.currentStreak,
     required this.longestStreak,
@@ -13,7 +20,13 @@ class StreakModel {
     required this.weeklyCount,
     required this.weeklyGoal,
     required this.weeklyProgress,
+    this.dailyCompleted = 0,
+    this.dailyGoal = 2,
   });
+
+  /// L'objectif du jour est atteint. Volontairement pas exposé comme cible
+  /// avant l'effort : il ne sert qu'à un constat rétrospectif.
+  bool get dailyGoalReached => dailyCompleted >= dailyGoal;
 
   factory StreakModel.fromJson(Map<String, dynamic> json) {
     return StreakModel(
@@ -25,6 +38,8 @@ class StreakModel {
       weeklyCount: json['weekly_count'] as int? ?? 0,
       weeklyGoal: json['weekly_goal'] as int? ?? 10,
       weeklyProgress: (json['weekly_progress'] as num?)?.toDouble() ?? 0.0,
+      dailyCompleted: json['daily_completed'] as int? ?? 0,
+      dailyGoal: json['daily_goal'] as int? ?? 2,
     );
   }
 
@@ -35,6 +50,8 @@ class StreakModel {
     int? weeklyCount,
     int? weeklyGoal,
     double? weeklyProgress,
+    int? dailyCompleted,
+    int? dailyGoal,
   }) {
     return StreakModel(
       currentStreak: currentStreak ?? this.currentStreak,
@@ -43,6 +60,8 @@ class StreakModel {
       weeklyCount: weeklyCount ?? this.weeklyCount,
       weeklyGoal: weeklyGoal ?? this.weeklyGoal,
       weeklyProgress: weeklyProgress ?? this.weeklyProgress,
+      dailyCompleted: dailyCompleted ?? this.dailyCompleted,
+      dailyGoal: dailyGoal ?? this.dailyGoal,
     );
   }
 }
