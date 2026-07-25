@@ -469,3 +469,184 @@ def test_topical_signals_empty_seed_title():
     assert signals["title_jaccard"] == 0.0
     is_ok, reason = PerspectiveService._is_topically_coherent(signals)
     assert is_ok is False
+
+
+# ─── Analyse Facteur — prompt v2 (« établi » vs « en débat ») ─────────────────
+# Cf. docs/maintenance/maintenance-analyse-facteur-prompt-v2.md
+
+
+class _FakeLLMClient:
+    """Capture les arguments passés à `chat_json` sans appeler Mistral."""
+
+    calls: list[dict] = []
+    response: dict | None = {
+        "analysis": "Faits partagés.\n\n→ **Objet du désaccord** : A vs B.",
+        "divergence_level": "medium",
+    }
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @property
+    def is_ready(self) -> bool:
+        return True
+
+    async def chat_json(self, **kwargs):
+        type(self).calls.append(kwargs)
+        return type(self).response
+
+    async def close(self):
+        return None
+
+
+@pytest.fixture
+def fake_llm(monkeypatch):
+    """Patch le client LLM importé dans `analyze_divergences` (import local)."""
+    import app.services.editorial.llm_client as llm_module
+
+    _FakeLLMClient.calls = []
+    _FakeLLMClient.response = {
+        "analysis": "Faits partagés.\n\n→ **Objet du désaccord** : A vs B.",
+        "divergence_level": "medium",
+    }
+    monkeypatch.setattr(llm_module, "EditorialLLMClient", _FakeLLMClient)
+    return _FakeLLMClient
+
+
+PERSPECTIVES_FIXTURE = [
+    {
+        "title": "Budget 2026 : 12 milliards d'économies annoncés",
+        "source_name": "Les Échos",
+        "bias_stance": "center-right",
+        "description": "D" * 800,
+    },
+    {
+        "title": "Budget 2026 : un tour de vis sur la santé",
+        "source_name": "Libération",
+        "bias_stance": "left",
+        "description": "Un résumé court.",
+    },
+]
+
+
+async def _run_analysis(**overrides):
+    service = PerspectiveService()
+    kwargs = {
+        "article_title": "Bercy présente le budget 2026",
+        "source_name": "Le Monde",
+        "source_bias": "center-left",
+        "perspectives": PERSPECTIVES_FIXTURE,
+        "article_description": "R" * 1500,
+    }
+    kwargs.update(overrides)
+    return await service.analyze_divergences(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_analyze_divergences_prompt_targets_substance(fake_llm):
+    """Le prompt doit demander « ce qu'on sait / ce qui fait débat », pas une
+    lexicométrie des titres (plainte PO : analyse trop centrée sur les
+    variations de formulation)."""
+    await _run_analysis()
+
+    assert len(fake_llm.calls) == 1
+    system = fake_llm.calls[0]["system"]
+
+    # Structure v2 attendue
+    for directive in (
+        "CE QUI EST ÉTABLI",
+        "CE QUI FAIT DÉBAT",
+        "POINTS LITIGIEUX",
+        "TEST DE RECEVABILITÉ",
+    ):
+        assert directive in system, f"directive manquante : {directive}"
+
+    # La section « établi » n'est plus une phrase unique famélique
+    assert "45-75 mots" in system
+    assert "15-25 mots" not in system
+
+    # Les consignes de lexicométrie v1 ont disparu comme OBJECTIF
+    for banned in (
+        "marqueur d'opinion",
+        "mots forts vs neutres",
+        "REGROUPE les médias",
+        "emploient le terme",
+    ):
+        assert banned not in system, f"consigne v1 encore présente : {banned}"
+
+    # Le lexique reste admis, mais borné à un rôle de preuve
+    assert "au plus UN terme cité entre guillemets" in system
+    assert "jamais comme sujet de la ligne" in system
+
+    # « d'après leurs titres » passe d'obligation à interdiction
+    assert "d'après leurs titres" in system
+    assert "Interdits :" in system
+    interdits_block = system.split("Interdits :", 1)[1]
+    assert "d'après leurs titres" in interdits_block
+
+
+@pytest.mark.asyncio
+async def test_analyze_divergences_preserves_two_section_contract(fake_llm):
+    """Le prompt doit continuer d'imposer le séparateur `\\n\\n` entre les deux
+    sections : c'est le contrat lu par `splitAnalysisSections` côté mobile."""
+    await _run_analysis()
+
+    system = fake_llm.calls[0]["system"]
+    assert "Saut de ligne double (\\n\\n)" in system
+    # Les puces de la section 2 restent préfixées "→ " (rendu markdown mobile)
+    assert '"→ "' in system
+    # divergence_level : mêmes valeurs, consommées par polarization_bonus()
+    for level in ('"low"', '"medium"', '"high"'):
+        assert level in system
+
+
+@pytest.mark.asyncio
+async def test_analyze_divergences_feeds_wider_context(fake_llm):
+    """Fenêtres de matière élargies : sans résumé, le modèle se rabat sur les
+    titres — exactement le biais qu'on corrige."""
+    from app.services.perspective_service import (
+        PERSPECTIVE_DESC_CHARS,
+        REFERENCE_DESC_CHARS,
+    )
+
+    await _run_analysis()
+
+    call = fake_llm.calls[0]
+    user_message = call["user_message"]
+
+    assert PERSPECTIVE_DESC_CHARS == 450
+    assert REFERENCE_DESC_CHARS == 900
+    # Résumé de perspective tronqué à la nouvelle borne (ni 300, ni 800)
+    assert "D" * PERSPECTIVE_DESC_CHARS in user_message
+    assert "D" * (PERSPECTIVE_DESC_CHARS + 1) not in user_message
+    # Résumé de l'article de référence tronqué à la nouvelle borne
+    assert "R" * REFERENCE_DESC_CHARS in user_message
+    assert "R" * (REFERENCE_DESC_CHARS + 1) not in user_message
+    # Ancrage factuel renforcé + budget de sortie pour la section « établi »
+    assert call["temperature"] == 0.3
+    assert call["max_tokens"] == 900
+
+
+@pytest.mark.asyncio
+async def test_analyze_divergences_json_contract_unchanged(fake_llm):
+    """Contrat de retour inchangé : dict {analysis, divergence_level}, et None
+    si le LLM ne renvoie pas de clé `analysis`."""
+    result = await _run_analysis()
+    assert result == {
+        "analysis": "Faits partagés.\n\n→ **Objet du désaccord** : A vs B.",
+        "divergence_level": "medium",
+    }
+    # Le premier \n\n sépare bien deux sections non vides (contrat mobile)
+    essentiel, _, divergent = result["analysis"].partition("\n\n")
+    assert essentiel.strip()
+    assert divergent.strip().startswith("→")
+
+    fake_llm.response = {"divergence_level": "high"}
+    assert await _run_analysis() is None
+
+
+@pytest.mark.asyncio
+async def test_analyze_divergences_no_perspectives_skips_llm(fake_llm):
+    """Aucune perspective → pas d'appel Mistral (garde-fou de coût inchangé)."""
+    assert await _run_analysis(perspectives=[]) is None
+    assert fake_llm.calls == []
