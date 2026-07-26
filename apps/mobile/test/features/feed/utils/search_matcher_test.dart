@@ -30,8 +30,15 @@ void main() {
       expect(matchQuality('info', 'France-Info'), MatchQuality.wordPrefix);
     });
 
-    test('contains en dernier recours', () {
-      expect(matchQuality('iapa', 'Mediapart'), MatchQuality.contains);
+    test('sous-chaîne en milieu de mot est rejetée (plus de tier contains)', () {
+      // Le tier `contains` a été retiré : « belle » ne doit plus remonter
+      // « Isabelle » ni « poubelle » (sous-chaîne au milieu d'un mot).
+      expect(matchQuality('belle', 'Isabelle'), MatchQuality.none);
+      expect(matchQuality('belle', 'poubelle'), MatchQuality.none);
+      expect(matchQuality('iapa', 'Mediapart'), MatchQuality.none);
+      // La frontière de mot, elle, reste acceptée.
+      expect(matchQuality('belle', 'La belle époque'), MatchQuality.wordPrefix);
+      expect(matchQuality('belle', 'belles idées'), MatchQuality.prefix);
     });
 
     test('une requête multi-mots matche aussi sur frontière de mot', () {
@@ -55,6 +62,28 @@ void main() {
 
     test('none quand rien ne correspond', () {
       expect(matchQuality('zzz', 'Mediapart'), MatchQuality.none);
+    });
+  });
+
+  group('matchQuality — fuzzy (fautes de frappe)', () {
+    test('faute simple sur un mot long (≥7) → fuzzy', () {
+      expect(matchQuality('libertaion', 'Libération'), MatchQuality.fuzzy);
+    });
+
+    test('mot collé rattrapé mot à mot du candidat → fuzzy', () {
+      // « lemonde » (7) est à distance 2 du mot « monde » de « Le Monde ».
+      expect(matchQuality('lemonde', 'Le Monde'), MatchQuality.fuzzy);
+    });
+
+    test('seuil 1 pour 4-6 caractères : 1 faute OK, 2+ non', () {
+      expect(matchQuality('mande', 'Le Monde'), MatchQuality.fuzzy); // 1 faute
+      expect(matchQuality('xxxde', 'Le Monde'), MatchQuality.none); // 3 fautes
+    });
+
+    test('pas de fuzzy sous 4 caractères', () {
+      // Une distance de 1 sur une requête courte rendrait presque tout
+      // équivalent : le fuzzy est désactivé sous 4 caractères.
+      expect(matchQuality('abc', 'abd'), MatchQuality.none);
     });
   });
 

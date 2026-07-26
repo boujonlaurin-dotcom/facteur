@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
@@ -24,8 +25,11 @@ import '../../release_notes/widgets/changelog_banner.dart';
 import '../../sources/add_source_bridge.dart';
 import '../../sources/widgets/pepites_carousel.dart';
 import '../models/content_model.dart';
+import '../providers/active_filter_label_provider.dart';
 import '../providers/feed_provider.dart';
 import '../providers/flaner_discovery_provider.dart';
+import '../providers/search_navigation_provider.dart';
+import '../utils/empty_search_reporter.dart';
 import '../widgets/empty_filter_state.dart';
 import '../widgets/explore_section.dart';
 import '../widgets/favorite_topic_tabs.dart' show FavoriteTabKind;
@@ -296,24 +300,36 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
         .setKeyword(keyword, includeUnfollowed: true);
   }
 
+  final _emptySearchReporter = EmptySearchReporter();
 
-  /// Émet `search_submitted_empty` sur la **transition** « recherche résolue,
-  /// zéro article » — pas depuis le build, qui rejouerait l'événement à chaque
-  /// reconstruction du sliver.
+  /// Émet `search_submitted_empty` une fois par recherche bredouille.
+  ///
+  /// Le `ref.listen` seul rate le cas « recherche lancée depuis L'Essentiel » :
+  /// le feed est déjà résolu et vide quand cet écran se monte, donc aucune
+  /// notification n'arrive. On inspecte donc aussi l'état **courant**.
   void _watchEmptySearch() {
-    ref.listen<AsyncValue<FeedState>>(feedProvider, (previous, next) {
-      final items = next.valueOrNull?.items;
-      if (items == null || items.isNotEmpty) return;
-      final selection = ref.read(feedFilterSelectionProvider);
-      final keyword = selection.keyword?.trim();
-      if (keyword == null || keyword.isEmpty) return;
-      unawaited(
-        ref.read(analyticsServiceProvider).trackSearchSubmittedEmpty(
-              queryLength: keyword.length,
-              broadened: selection.includeUnfollowed,
-            ),
-      );
-    });
+    ref.listen<AsyncValue<FeedState>>(
+      feedProvider,
+      (previous, next) => _reportIfEmptySearch(next),
+    );
+    _reportIfEmptySearch(ref.read(feedProvider));
+  }
+
+  void _reportIfEmptySearch(AsyncValue<FeedState> async) {
+    final selection = ref.read(feedFilterSelectionProvider);
+    final keyword = selection.keyword?.trim();
+    final shouldReport = _emptySearchReporter.shouldReport(
+      itemCount: async.valueOrNull?.items.length,
+      keyword: keyword,
+      broadened: selection.includeUnfollowed,
+    );
+    if (!shouldReport) return;
+    unawaited(
+      ref.read(analyticsServiceProvider).trackSearchSubmittedEmpty(
+            queryLength: keyword!.length,
+            broadened: selection.includeUnfollowed,
+          ),
+    );
   }
 
   /// État vide d'un filtre actif — story 30.1. Jusqu'ici Flâner rendait une
@@ -321,16 +337,23 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   /// recherche.
   Widget _buildEmptyFilterState(
     FeedFilterSelection selection,
-    FeedFilterKind kind,
-  ) {
+    FeedFilterKind kind, {
+    bool compact = false,
+  }) {
     final clear = ref.read(feedProvider.notifier).clearFilters;
     if (kind != FeedFilterKind.keyword) {
-      return EmptyFilterState(kind: kind, onClearFilter: clear);
+      return EmptyFilterState(
+        kind: kind,
+        filterName: _resolvedFilterLabel(),
+        compact: compact,
+        onClearFilter: clear,
+      );
     }
     final keyword = selection.keyword!.trim();
     return EmptyFilterState(
       kind: kind,
       filterName: keyword,
+      compact: compact,
       alreadyBroadened: selection.includeUnfollowed,
       onClearFilter: clear,
       onBroaden: () => _broadenSearch(keyword, 0),
@@ -339,12 +362,26 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     );
   }
 
+  /// Libellé lisible du filtre actif, quand on sait le résoudre localement —
+  /// sinon `null`, et l'état vide garde son titre générique (mieux qu'un slug
+  /// brut affiché à l'utilisateur). Réutilise [activeFilterLabelProvider]
+  /// (source de vérité partagée avec le header et la barre de filtres) et
+  /// n'affiche que les libellés `resolved`.
+  String? _resolvedFilterLabel() {
+    final active = ref.read(activeFilterLabelProvider);
+    if (active == null || !active.resolved) return null;
+    return active.label;
+  }
+
   Widget _buildContent(BuildContext context, FeedState state) {
     final colors = context.facteurColors;
     final selection = ref.watch(feedFilterSelectionProvider);
     final activeKind = selection.activeKind;
     final keyword = selection.keyword?.trim();
     final hasKeyword = activeKind == FeedFilterKind.keyword;
+    // Calculé avant l'état vide : afficher « Aucun article » en pleine page
+    // au-dessus d'un bloc Explorer bien garni était une fausse impasse.
+    final exploreSlivers = _buildExploreSlivers(state);
     return RefreshIndicator(
       onRefresh: _refresh,
       color: colors.primary,
@@ -368,6 +405,10 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
             pinned: true,
             delegate: _FilterHeaderDelegate(child: _FilterSurface()),
           ),
+          // Bandeau contextuel éphémère après une bascule Essentiel → Flâner
+          // depuis la recherche du header : rappelle sur quoi on vient d'arriver
+          // (« Résultats pour « … » ») le temps de se repérer, puis s'efface.
+          const SliverToBoxAdapter(child: _SearchNavBanner()),
           const SliverToBoxAdapter(child: PinSubjectsBanner()),
           // Recherche bredouille → l'état vide porte déjà « suivre ce sujet »
           // parmi ses rattrapages ; on n'empile pas deux invitations à suivre.
@@ -397,13 +438,17 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
             ),
           if (state.items.isEmpty && activeKind != null)
             SliverToBoxAdapter(
-              child: _buildEmptyFilterState(selection, activeKind),
+              child: _buildEmptyFilterState(
+                selection,
+                activeKind,
+                compact: exploreSlivers.isNotEmpty,
+              ),
             )
           else
             _buildFeedList(state),
           if (_loadingMore)
             const SliverToBoxAdapter(child: _LoadingMoreIndicator()),
-          ..._buildExploreSlivers(state),
+          ...exploreSlivers,
           const SliverToBoxAdapter(child: SizedBox(height: 92)),
         ],
       ),
@@ -661,6 +706,133 @@ class _BroadenSearchBanner extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Bandeau contextuel éphémère joué après une bascule Essentiel → Flâner
+/// déclenchée par la recherche du header (story 30.1 pré-merge).
+///
+/// Auto-géré : il consomme **une fois** le signal [searchJustNavigatedProvider]
+/// (armé par [HeaderSearchButton] avant le `go(flaner)`), affiche
+/// « Résultats pour « … » » / « Filtré sur … » pendant ~3 s, puis se fond en
+/// sortie. Il ne s'arme **jamais** quand le filtre change depuis la barre de
+/// filtres de Flâner : l'utilisateur y est déjà.
+///
+/// Utilise `ref.listen` (et un contrôle du signal au montage) pour rester
+/// robuste que Flâner soit déjà monté (IndexedStack) ou construit à la volée.
+class _SearchNavBanner extends ConsumerStatefulWidget {
+  const _SearchNavBanner();
+
+  @override
+  ConsumerState<_SearchNavBanner> createState() => _SearchNavBannerState();
+}
+
+class _SearchNavBannerState extends ConsumerState<_SearchNavBanner> {
+  Timer? _timer;
+  bool _visible = false;
+  String? _text;
+
+  @override
+  void initState() {
+    super.initState();
+    // Cas « déjà monté et signal posé avant que le listener n'existe » : on
+    // vérifie l'état courant au premier frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _consumeIfPending());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _consumeIfPending() {
+    if (!mounted || !ref.read(searchJustNavigatedProvider)) return;
+    // Éteint le signal : one-shot (idempotent avec le `ref.listen`).
+    ref.read(searchJustNavigatedProvider.notifier).state = false;
+    final text = _bannerText();
+    if (text == null) return;
+    setState(() {
+      _text = text;
+      _visible = true;
+    });
+    _timer?.cancel();
+    _timer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _visible = false);
+    });
+  }
+
+  String? _bannerText() {
+    final active = ref.read(activeFilterLabelProvider);
+    if (active == null) return null;
+    if (active.isKeyword) {
+      final keyword = ref.read(feedFilterSelectionProvider).keyword?.trim();
+      if (keyword == null || keyword.isEmpty) return null;
+      return 'Résultats pour « $keyword »';
+    }
+    return 'Filtré sur ${active.label}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Un nouveau signal (false → true) pendant que le widget est monté.
+    ref.listen<bool>(searchJustNavigatedProvider, (prev, next) {
+      if (next) _consumeIfPending();
+    });
+
+    final colors = context.facteurColors;
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        opacity: _visible ? 1 : 0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        child: (!_visible || _text == null)
+            ? const SizedBox(width: double.infinity)
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  FacteurSpacing.space4,
+                  FacteurSpacing.space2,
+                  FacteurSpacing.space4,
+                  FacteurSpacing.space1,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FacteurSpacing.space3,
+                    vertical: FacteurSpacing.space2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
+                    border: Border.all(
+                      color: colors.primary.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold),
+                        size: 15,
+                        color: colors.primary,
+                      ),
+                      const SizedBox(width: FacteurSpacing.space2),
+                      Expanded(
+                        child: Text(
+                          _text!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: FacteurTypography.bodySmall(colors.primary)
+                              .copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
       ),
     );
   }

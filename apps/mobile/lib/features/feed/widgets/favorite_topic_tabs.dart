@@ -63,7 +63,11 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
   final void Function(FavoriteTabKind kind, String? slug) onTabTap;
   final VoidCallback onTapActiveTab;
   final VoidCallback onAddFavorite;
-  final Widget? trailingFilterTrigger;
+
+  /// Contenu épinglé à droite des onglets, juste avant l'affordance « gérer » :
+  /// la pill de recherche active. Sticky comme l'engrenage — le scroll
+  /// horizontal ne concerne que les onglets.
+  final Widget? trailing;
 
   const FavoriteTopicTabs({
     super.key,
@@ -76,7 +80,7 @@ class FavoriteTopicTabs extends ConsumerStatefulWidget {
     required this.onTabTap,
     required this.onTapActiveTab,
     required this.onAddFavorite,
-    this.trailingFilterTrigger,
+    this.trailing,
   });
 
   @override
@@ -170,62 +174,72 @@ class _FavoriteTopicTabsState extends ConsumerState<FavoriteTopicTabs> {
     // > 4 onglets épinglés → l'affordance d'ajout devient un engrenage
     // (« gérer ») plutôt qu'un « + ». Même action (ouvre la modal).
     final showGear = tabs.length > 4;
-    final trailingFilterTrigger = widget.trailingFilterTrigger;
-    final itemCount = tabs.length + 1 + (trailingFilterTrigger == null ? 0 : 1);
+    final trailing = widget.trailing;
 
     return SizedBox(
       height: 38,
-      child: ShaderMask(
-        shaderCallback: (rect) {
-          return const LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [Colors.white, Colors.white, Colors.transparent],
-            stops: [0.0, 0.92, 1.0],
-          ).createShader(rect);
-        },
-        blendMode: BlendMode.dstIn,
-        child: ListView.separated(
-          controller: _scrollController,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.only(right: 16),
-          itemCount: itemCount,
-          separatorBuilder: (_, __) => const SizedBox(width: 2),
-          itemBuilder: (ctx, i) {
-            if (i == tabs.length) {
-              return _AddFavoritePill(
-                showGear: showGear,
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  widget.onAddFavorite();
-                },
-                colors: colors,
-              );
-            }
-            if (i == tabs.length + 1) {
-              return Padding(
-                padding: const EdgeInsets.only(left: 2),
-                child: trailingFilterTrigger,
-              );
-            }
-            final tab = tabs[i];
-            return _FavoriteTabItem(
-              key: _keyFor(tab),
-              tab: tab,
-              colors: colors,
-              onTap: () {
-                // Taper l'onglet actif = vider la sélection (feed non filtré) ;
-                // le refresh est assuré par le pull-to-refresh de la page.
-                if (tab.active) {
-                  widget.onTapActiveTab();
-                } else {
-                  HapticFeedback.selectionClick();
-                  widget.onTabTap(tab.kind, tab.slug);
-                }
+      child: Row(
+        children: [
+          Expanded(
+            child: ShaderMask(
+              shaderCallback: (rect) {
+                return const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [Colors.white, Colors.white, Colors.transparent],
+                  stops: [0.0, 0.92, 1.0],
+                ).createShader(rect);
               },
-            );
-          },
-        ),
+              blendMode: BlendMode.dstIn,
+              child: ListView.separated(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(right: 8),
+                itemCount: tabs.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 2),
+                itemBuilder: (ctx, i) {
+                  final tab = tabs[i];
+                  return _FavoriteTabItem(
+                    key: _keyFor(tab),
+                    tab: tab,
+                    colors: colors,
+                    onTap: () {
+                      // Taper l'onglet actif = vider la sélection (feed non
+                      // filtré) ; le refresh est assuré par le pull-to-refresh
+                      // de la page.
+                      if (tab.active) {
+                        widget.onTapActiveTab();
+                      } else {
+                        HapticFeedback.selectionClick();
+                        widget.onTabTap(tab.kind, tab.slug);
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+          if (trailing != null) trailing,
+          // Séparateur : marque la frontière entre la zone qui défile et les
+          // affordances épinglées.
+          Container(
+            width: 1,
+            height: 18,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            color: colors.border.withValues(alpha: 0.6),
+          ),
+          // Sticky : « gérer mes onglets » reste atteignable quel que soit le
+          // défilement — c'est justement quand on a beaucoup de favoris qu'on
+          // en a besoin.
+          _AddFavoritePill(
+            showGear: showGear,
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              widget.onAddFavorite();
+            },
+            colors: colors,
+          ),
+        ],
       ),
     );
   }

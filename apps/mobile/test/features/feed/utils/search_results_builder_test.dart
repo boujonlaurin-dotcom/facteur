@@ -88,7 +88,7 @@ void main() {
       expect(sections.first.results.single, isA<KeywordResult>());
     });
 
-    test('« Ajouter une source » est toujours proposée', () {
+    test('« Chercher une source » est toujours proposée', () {
       final sections = buildSearchSections(
         query: 'retraites',
         allSources: allSources,
@@ -111,7 +111,7 @@ void main() {
       expect(result.source.id, 's1');
     });
 
-    test('une source du catalogue non suivie va dans « Ajouter une source »',
+    test('une source du catalogue non suivie va dans « Chercher une source »',
         () {
       final sections = buildSearchSections(
         query: 'Le Monde',
@@ -210,6 +210,37 @@ void main() {
       expect(sources.results, hasLength(2));
       expect(sources.totalMatches, 6);
       expect(sources.hasMore, isTrue);
+      // « Voir tout » déplie depuis `allResults`, sans second calcul.
+      expect(sources.allResults, hasLength(6));
+    });
+
+    test('« ajouter une source » ne se dit tronquée que si elle l\'est', () {
+      final sections = buildSearchSections(
+        query: 'gazette',
+        allSources: [
+          _source('c1', 'Gazette du Nord'),
+          _source('c2', 'Gazette du Sud'),
+        ],
+        topics: const [],
+      );
+      final add = _section(sections, kSectionAddSource)!;
+      // 2 catalogues + la recherche intelligente : tout est affiché.
+      expect(add.results, hasLength(3));
+      expect(add.hasMore, isFalse);
+    });
+
+    test('un match exact non classé premier bascule quand même en intention '
+        'source', () {
+      final sections = buildSearchSections(
+        query: 'le monde',
+        allSources: [
+          _source('x1', 'Le Monde diplomatique', isTrusted: true),
+          _source('x2', 'Le Monde', isTrusted: true),
+        ],
+        topics: const [],
+      );
+      expect(sections.first.title, kSectionSources);
+      expect(sections.last.title, kSectionArticles);
     });
   });
 }

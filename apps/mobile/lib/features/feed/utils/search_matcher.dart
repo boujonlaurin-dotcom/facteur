@@ -19,8 +19,10 @@ enum MatchQuality {
   /// Un mot du libellé commence par la requête (« monde » → « Le Monde »).
   wordPrefix,
 
-  /// La requête apparaît quelque part dans le libellé.
-  contains,
+  /// Tolérance aux fautes de frappe : un mot du libellé est à faible distance
+  /// de Levenshtein de la requête (« libertaion » → « Libération »). Seuil
+  /// borné par la longueur de la requête (cf. [_fuzzyThreshold]).
+  fuzzy,
 
   /// Aucun match.
   none,
@@ -28,7 +30,8 @@ enum MatchQuality {
 
 /// Replie casse et accents FR courants. **Préserve la longueur** (repli
 /// caractère par caractère) : les offsets restent valides pour un éventuel
-/// surlignage côté UI. Même table que `grille_result_view.dart:_fold`.
+/// surlignage côté UI. Repli de référence partagé (p. ex. importé par
+/// `grille_result_view.dart`).
 String foldForSearch(String input) {
   const map = {
     'à': 'a', 'â': 'a', 'ä': 'a', 'á': 'a', 'å': 'a', 'ã': 'a',
@@ -70,9 +73,10 @@ MatchQuality matchQuality(String query, String candidate) =>
 /// celle-ci une fois par candidat (et par alias) revenait à des centaines de
 /// `StringBuffer` identiques par frappe.
 ///
-/// Un seul balayage suffit pour les trois qualités restantes : la première
-/// occurrence précédée d'une frontière de mot donne `wordPrefix`, et la simple
-/// existence d'une occurrence donne `contains`.
+/// Le tier `contains` (sous-chaîne n'importe où) a été **retiré** : c'est lui
+/// qui remontait « Isabelle » pour « belle » ou « poubelle » pour « belle ». Ne
+/// restent que les frontières de mot (`exact`/`prefix`/`wordPrefix`) et, en
+/// dernier recours, un tier `fuzzy` tolérant aux fautes de frappe.
 MatchQuality qualityOfFolded(String foldedQuery, String candidate) {
   if (foldedQuery.isEmpty) return MatchQuality.none;
   final c = foldForSearch(candidate.trim());
@@ -81,17 +85,80 @@ MatchQuality qualityOfFolded(String foldedQuery, String candidate) {
   if (c == foldedQuery) return MatchQuality.exact;
   if (c.startsWith(foldedQuery)) return MatchQuality.prefix;
 
-  var found = false;
+  // Frontière de mot : une occurrence précédée d'un séparateur → wordPrefix.
   var from = 0;
   while (true) {
     final i = c.indexOf(foldedQuery, from);
     if (i < 0) break;
-    found = true;
     // i == 0 est déjà couvert par `startsWith` ci-dessus.
     if (_isWordBoundary(c.codeUnitAt(i - 1))) return MatchQuality.wordPrefix;
     from = i + 1;
   }
-  return found ? MatchQuality.contains : MatchQuality.none;
+
+  // Fuzzy : la requête est comparée **mot à mot** aux mots du candidat, avec un
+  // seuil de Levenshtein borné par sa longueur. Rattrape les fautes de frappe
+  // (« lemonde » → « Le Monde », « libertaion » → « Libération ») sans rouvrir
+  // la porte aux sous-chaînes en milieu de mot.
+  final threshold = _fuzzyThreshold(foldedQuery.length);
+  if (threshold > 0) {
+    for (final word in c.split(_wordSplit)) {
+      if (word.isEmpty) continue;
+      if (_boundedLevenshtein(foldedQuery, word, threshold) <= threshold) {
+        return MatchQuality.fuzzy;
+      }
+    }
+  }
+  return MatchQuality.none;
+}
+
+/// Séparateur de mots dans un libellé déjà replié (tout ce qui n'est ni lettre
+/// ASCII ni chiffre) — même frontière que [_isWordBoundary].
+final RegExp _wordSplit = RegExp(r'[^a-z0-9]+');
+
+/// Seuil de distance de Levenshtein toléré selon la longueur de la requête.
+///
+/// - < 4 caractères → 0 (pas de fuzzy : sur des requêtes courtes une distance
+///   de 1 rend presque tout équivalent).
+/// - 4-6 caractères → 1.
+/// - ≥ 7 caractères → 2.
+int _fuzzyThreshold(int queryLen) {
+  if (queryLen < 4) return 0;
+  if (queryLen <= 6) return 1;
+  return 2;
+}
+
+/// Distance de Levenshtein entre [a] et [b], **plafonnée** : renvoie
+/// `threshold + 1` dès qu'on est sûr de dépasser [threshold] (early-exit sur
+/// l'écart de longueur, puis sur le minimum de chaque ligne). Itératif à deux
+/// lignes — coût négligeable sur des listes locales.
+int _boundedLevenshtein(String a, String b, int threshold) {
+  final la = a.length, lb = b.length;
+  if ((la - lb).abs() > threshold) return threshold + 1;
+  if (la == 0) return lb;
+  if (lb == 0) return la;
+
+  var prev = List<int>.generate(lb + 1, (j) => j);
+  var curr = List<int>.filled(lb + 1, 0);
+  for (var i = 1; i <= la; i++) {
+    curr[0] = i;
+    var rowMin = curr[0];
+    final ca = a.codeUnitAt(i - 1);
+    for (var j = 1; j <= lb; j++) {
+      final cost = ca == b.codeUnitAt(j - 1) ? 0 : 1;
+      final del = prev[j] + 1;
+      final ins = curr[j - 1] + 1;
+      final sub = prev[j - 1] + cost;
+      var m = del < ins ? del : ins;
+      if (sub < m) m = sub;
+      curr[j] = m;
+      if (m < rowMin) rowMin = m;
+    }
+    if (rowMin > threshold) return threshold + 1;
+    final tmp = prev;
+    prev = curr;
+    curr = tmp;
+  }
+  return prev[lb];
 }
 
 /// Un candidat retenu par [rankMatches], avec la qualité qui a servi au tri.
@@ -126,9 +193,9 @@ List<RankedMatch<T>> rankMatches<T>(
   if (foldedQuery.isEmpty) return const [];
 
   // Décoré-trié-dédécoré : le comparateur ne doit ni rappeler `label()` ni
-  // reminusculer à chaque comparaison — sur une requête courte (« e », « la »)
-  // le catalogue entier matche en `contains`, soit quelques milliers de
-  // comparaisons par frappe.
+  // reminusculer à chaque comparaison — sur une requête courte (« le », « la »)
+  // une grande partie du catalogue matche en `wordPrefix`, soit quelques
+  // milliers de comparaisons par frappe.
   final decorated = <({RankedMatch<T> match, String label, String sortKey})>[];
   for (final item in items) {
     final primary = label(item);

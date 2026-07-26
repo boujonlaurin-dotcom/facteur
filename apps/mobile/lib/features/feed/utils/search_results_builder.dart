@@ -7,26 +7,30 @@ import 'search_matcher.dart';
 /// Un groupe de résultats affiché sous un intertitre dans la sheet.
 class SearchSection {
   final String title;
+
+  /// Vue cappée à `perSectionLimit` — ce qu'on affiche par défaut.
   final List<SearchResult> results;
 
-  /// Nombre de matches avant application du cap `perSectionLimit` — sert à
-  /// afficher « voir tout (N) » sans recalculer.
-  final int totalMatches;
+  /// Tous les matches, sans cap : le « voir tout » de la sheet déplie la
+  /// section sans relancer le calcul.
+  final List<SearchResult> allResults;
 
   const SearchSection({
     required this.title,
     required this.results,
-    required this.totalMatches,
+    required this.allResults,
   });
 
-  bool get hasMore => totalMatches > results.length;
+  int get totalMatches => allResults.length;
+
+  bool get hasMore => allResults.length > results.length;
 }
 
 const String kSectionArticles = 'Articles';
 const String kSectionSources = 'Tes sources';
 const String kSectionTopics = 'Sujets suivis';
 const String kSectionThemes = 'Thèmes';
-const String kSectionAddSource = 'Ajouter une source';
+const String kSectionAddSource = 'Chercher une source';
 
 /// True si la source compte comme « suivie » : ajoutée par l'utilisateur
 /// (catalogue trusté ou flux custom) et non mise en sourdine.
@@ -83,8 +87,10 @@ List<SearchSection> buildSearchSections({
     label: (t) => t,
   );
 
+  // Un match exact ne remonte pas forcément en tête du classement (un préfixe
+  // plus court peut passer devant) — on balaie donc toute la liste.
   bool hasExact(List<RankedMatch<Source>> m) =>
-      m.isNotEmpty && m.first.quality == MatchQuality.exact;
+      m.any((match) => match.quality == MatchQuality.exact);
   final sourceIntent = looksLikeSourceQuery(trimmed) ||
       hasExact(followedMatches) ||
       hasExact(catalogMatches);
@@ -95,14 +101,14 @@ List<SearchSection> buildSearchSections({
       title: title,
       results:
           all.length > perSectionLimit ? all.sublist(0, perSectionLimit) : all,
-      totalMatches: all.length,
+      allResults: all,
     );
   }
 
   final articles = SearchSection(
     title: kSectionArticles,
     results: [KeywordResult(trimmed)],
-    totalMatches: 1,
+    allResults: [KeywordResult(trimmed)],
   );
 
   final sources = section(
@@ -128,18 +134,21 @@ List<SearchSection> buildSearchSections({
         .toList(),
   );
 
-  // La section « Ajouter » est toujours présente : même sans match catalogue,
-  // la recherche intelligente reste la porte de sortie d'une requête bredouille.
-  final addResults = <SearchResult>[
-    ...catalogMatches
-        .take(perSectionLimit - 1)
-        .map((m) => CatalogSourceResult(m.item)),
-    AddSourceResult(trimmed),
-  ];
+  // La section « Ajouter » est toujours présente, et la recherche intelligente
+  // toujours en dernière ligne — cappée comme dépliée : c'est la porte de
+  // sortie d'une requête bredouille, elle ne doit jamais être tronquée.
   final addSource = SearchSection(
     title: kSectionAddSource,
-    results: addResults,
-    totalMatches: catalogMatches.length + 1,
+    results: <SearchResult>[
+      ...catalogMatches
+          .take(perSectionLimit - 1)
+          .map((m) => CatalogSourceResult(m.item)),
+      AddSourceResult(trimmed),
+    ],
+    allResults: <SearchResult>[
+      ...catalogMatches.map((m) => CatalogSourceResult(m.item)),
+      AddSourceResult(trimmed),
+    ],
   );
 
   final ordered = sourceIntent

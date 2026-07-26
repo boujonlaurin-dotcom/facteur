@@ -36,6 +36,11 @@ class EmptyFilterState extends StatelessWidget {
   /// Variante mot-clé — suivre la requête comme sujet.
   final VoidCallback? onFollowTopic;
 
+  /// Variante bandeau : un bloc « Explorer » suit juste en dessous, donc la
+  /// page n'est pas une impasse — on annonce simplement le vide, sans emoji
+  /// pleine page ni CTA de sortie qui détourneraient de ce qui suit.
+  final bool compact;
+
   const EmptyFilterState({
     super.key,
     required this.kind,
@@ -45,6 +50,7 @@ class EmptyFilterState extends StatelessWidget {
     this.onBroaden,
     this.onSearchSource,
     this.onFollowTopic,
+    this.compact = false,
   }) : assert(
           kind != FeedFilterKind.keyword || filterName != null,
           'Une recherche mot-clé porte toujours son libellé.',
@@ -89,6 +95,32 @@ class EmptyFilterState extends StatelessWidget {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space6,
+          vertical: FacteurSpacing.space4,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _title,
+              style: textTheme.titleSmall?.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: FacteurSpacing.space1),
+            Text(
+              'Rien dans tes sources sur ce filtre. Voici ce qui se dit ailleurs.',
+              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Ordre des rattrapages : du moins engageant (élargir la même recherche) au
     // plus engageant (ajouter une source), puis la sortie neutre.
     final secondary = <Widget>[
@@ -103,7 +135,7 @@ class EmptyFilterState extends StatelessWidget {
         _SecondaryCta(
           colors: colors,
           icon: PhosphorIcons.plusCircle(PhosphorIconsStyle.regular),
-          label: 'Ajouter « $filterName » comme source',
+          label: 'Chercher « $filterName » comme source',
           onPressed: onSearchSource!,
         ),
       if (_isKeyword && onFollowTopic != null)

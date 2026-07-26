@@ -28,7 +28,7 @@ void main() {
 
       expect(find.text('Rien sur « Mediapart »'), findsOneWidget);
       expect(find.text('Élargir à toutes les sources'), findsOneWidget);
-      expect(find.text('Ajouter « Mediapart » comme source'), findsOneWidget);
+      expect(find.text('Chercher « Mediapart » comme source'), findsOneWidget);
       expect(find.text('Suivre « Mediapart » comme sujet'), findsOneWidget);
       expect(find.text('Revenir au feed'), findsOneWidget);
     });
@@ -68,7 +68,7 @@ void main() {
       )));
 
       await tester.tap(find.text('Élargir à toutes les sources'));
-      await tester.tap(find.text('Ajouter « écologie » comme source'));
+      await tester.tap(find.text('Chercher « écologie » comme source'));
       await tester.tap(find.text('Suivre « écologie » comme sujet'));
       await tester.tap(find.text('Revenir au feed'));
       await tester.pump();
@@ -121,6 +121,24 @@ void main() {
         find.textContaining('Aucun article récent ne mentionne ce sujet'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('la variante compacte annonce le vide sans bloquer le scroll',
+        (tester) async {
+      await tester.pumpWidget(_host(EmptyFilterState(
+        filterName: 'Sport',
+        kind: FeedFilterKind.theme,
+        compact: true,
+        onClearFilter: () {},
+      )));
+
+      expect(find.text('Rien sur « Sport »'), findsOneWidget);
+      expect(
+        find.textContaining('Voici ce qui se dit ailleurs'),
+        findsOneWidget,
+      );
+      // Un bloc « Explorer » suit : la sortie neutre détournerait de lui.
+      expect(find.text('Revenir au feed'), findsNothing);
     });
   });
 }

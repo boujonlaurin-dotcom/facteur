@@ -16,6 +16,7 @@ import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../models/search_result.dart';
+import '../providers/active_filter_label_provider.dart';
 import '../providers/feed_provider.dart';
 import '../providers/search_history_provider.dart';
 import '../providers/trending_topics_provider.dart';
@@ -101,6 +102,10 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
   /// l'aller-retour réseau.
   String? _addingSourceId;
 
+  /// Sections dépliées via « voir tout » (clé = titre de section). Remise à
+  /// zéro dès que la requête change : les sections n'ont plus le même contenu.
+  final Set<String> _expandedSections = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -131,7 +136,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
     _debounce?.cancel();
     // Le bouton « effacer » et le passage vide → non-vide doivent être
     // instantanés ; seul le typage continu est débouncé.
-    if (value.trim().isEmpty || _query.isEmpty) {
+    if (value.trim().isEmpty || _query.trim().isEmpty) {
       setState(() => _query = value);
       return;
     }
@@ -142,23 +147,36 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
 
   // ── Application des filtres ────────────────────────────────────────────
 
-  /// Ferme la sheet, applique [apply], puis rend la main au hôte via
-  /// `onApplied` (c'est lui qui sait s'il faut changer d'onglet).
+  /// Ferme la sheet, rend **immédiatement** la main au hôte via `onApplied`
+  /// (c'est lui qui sait s'il faut changer d'onglet), puis applique [apply].
+  ///
+  /// L'ordre `pop → onApplied → await apply` (story 30.1 pré-merge) fait partir
+  /// la bascule d'onglet Essentiel → Flâner **avant** le refresh réseau :
+  /// l'animation de branche du shell se joue pendant/après le fetch, et Flâner
+  /// affiche son propre skeleton (`FeedNotifier` passe en `loading` dès
+  /// `apply`). Sinon l'utilisateur restait bloqué sur L'Essentiel le temps du
+  /// réseau, puis atterrissait sans contexte sur une liste déjà filtrée.
+  ///
+  /// [queryUsed] est le libellé qui a **réellement** déclenché la sélection :
+  /// le champ de saisie sur un résultat, mais le libellé du chip sur les
+  /// raccourcis du cold start (où le champ est vide — sinon `query_length`
+  /// vaudrait 0 sur tout un pan du funnel).
   Future<void> _applyAndClose(
     Future<void> Function() apply, {
     required SearchResult result,
     required int rank,
+    required String queryUsed,
   }) async {
     unawaited(
       ref.read(analyticsServiceProvider).trackSearchResultSelected(
             resultType: result.analyticsType,
             rank: rank,
-            queryLength: _searchController.text.trim().length,
+            queryLength: queryUsed.trim().length,
           ),
     );
     Navigator.of(context).pop();
-    await apply();
     widget.onApplied?.call();
+    await apply();
   }
 
   Future<void> _selectKeyword(
@@ -174,15 +192,17 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
       () => notifier.setKeyword(trimmed, includeUnfollowed: fromTrending),
       result: KeywordResult(trimmed),
       rank: rank,
+      queryUsed: trimmed,
     );
   }
 
-  Future<void> _selectSource(Source source, int rank) {
+  Future<void> _selectSource(Source source, int rank, {String? queryUsed}) {
     final notifier = ref.read(feedProvider.notifier);
     return _applyAndClose(
       () => notifier.setSource(source.id),
       result: FollowedSourceResult(source),
       rank: rank,
+      queryUsed: queryUsed ?? _searchController.text,
     );
   }
 
@@ -194,6 +214,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
           : notifier.setTopic(result.filterValue),
       result: result,
       rank: rank,
+      queryUsed: _searchController.text,
     );
   }
 
@@ -203,6 +224,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
       () => notifier.setTheme(result.slug),
       result: result,
       rank: rank,
+      queryUsed: _searchController.text,
     );
   }
 
@@ -235,6 +257,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
       () => notifier.setSource(source.id),
       result: CatalogSourceResult(source),
       rank: rank,
+      queryUsed: _searchController.text,
     );
   }
 
@@ -257,15 +280,19 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
     openAddSourceFor(host, ref, trimmed);
   }
 
-  /// Efface la recherche active depuis la sheet. C'est la seule sortie
-  /// disponible depuis L'Essentiel, qui ne monte jamais la barre de filtres
-  /// (donc jamais la pill « ✕ ») alors que la loupe du header, elle, y signale
-  /// bien une recherche en cours.
+  /// Efface le filtre actif depuis la sheet — **n'importe quelle** dimension
+  /// (mot-clé, source, thème, sujet), via `clearFilters()`. C'est la seule
+  /// sortie disponible depuis L'Essentiel, qui ne monte jamais la barre de
+  /// filtres (donc jamais la pill « ✕ ») alors que la loupe du header, elle, y
+  /// signale bien un filtre en cours.
+  ///
+  /// Volontairement **sans** `onApplied` : annuler un filtre n'est pas
+  /// l'appliquer, et depuis L'Essentiel `onApplied` navigue vers Flâner — on
+  /// téléporterait l'utilisateur sur un autre onglet pour avoir dit « non ».
   Future<void> _clearSearch() async {
     final notifier = ref.read(feedProvider.notifier);
     Navigator.of(context).pop();
-    await notifier.setKeyword(null);
-    widget.onApplied?.call();
+    await notifier.clearFilters();
   }
 
   // ── Rendu ─────────────────────────────────────────────────────────────
@@ -318,7 +345,10 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
                                 ),
                       ),
                     ),
-                    if (widget.currentKeyword != null)
+                    // Gaté sur *n'importe quel* filtre actif (pas seulement le
+                    // mot-clé passé en argument) : depuis L'Essentiel la sheet
+                    // est la seule sortie pour un filtre source/thème/sujet.
+                    if (ref.watch(activeFilterLabelProvider) != null)
                       TextButton(
                         onPressed: _clearSearch,
                         style: TextButton.styleFrom(
@@ -327,7 +357,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
                           minimumSize: const Size(0, 32),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        child: const Text('Effacer la recherche'),
+                        child: const Text('Effacer le filtre'),
                       ),
                   ],
                 ),
@@ -451,7 +481,11 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
                 _SourcePill(
                   source: favorites[i],
                   colors: colors,
-                  onTap: () => _selectSource(favorites[i], i),
+                  onTap: () => _selectSource(
+                    favorites[i],
+                    i,
+                    queryUsed: favorites[i].name,
+                  ),
                 ),
             ],
           ),
@@ -538,6 +572,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
         identical(_sectionsTopics, topics)) {
       return _sectionsCache;
     }
+    if (_sectionsQuery != _query) _expandedSections.clear();
     _sectionsQuery = _query;
     _sectionsSources = allSources;
     _sectionsTopics = topics;
@@ -558,19 +593,35 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
     final sections = _sectionsFor(allSources, topics);
 
     final children = <Widget>[];
+    // Rang **global** : deux résultats de sections différentes ne peuvent pas
+    // porter le même rang, sinon `search_result_selected.rank` est illisible.
+    var rank = 0;
     for (final section in sections) {
+      final expanded = _expandedSections.contains(section.title);
+      final visible = expanded ? section.allResults : section.results;
       children.add(_SectionHeader(
         label: section.title.toUpperCase(),
         colors: colors,
         trailing: section.hasMore
-            ? Text(
-                '${section.totalMatches}',
-                style: TextStyle(color: colors.textTertiary, fontSize: 12),
+            ? GestureDetector(
+                onTap: () => setState(() {
+                  if (expanded) {
+                    _expandedSections.remove(section.title);
+                  } else {
+                    _expandedSections.add(section.title);
+                  }
+                }),
+                behavior: HitTestBehavior.opaque,
+                child: Text(
+                  expanded ? 'Voir moins' : 'Voir tout (${section.totalMatches})',
+                  style: TextStyle(color: colors.primary, fontSize: 12),
+                ),
               )
             : null,
       ));
-      for (var i = 0; i < section.results.length; i++) {
-        children.add(_buildResultTile(section.results[i], i, colors));
+      for (final result in visible) {
+        children.add(_buildResultTile(result, rank, colors));
+        rank++;
       }
       children.add(const SizedBox(height: 12));
     }
@@ -654,7 +705,7 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
             color: colors.primary,
           ),
           title: 'Chercher « ${result.query} » sur le web',
-          subtitle: 'Ajouter une source qui n\'est pas encore au catalogue',
+          subtitle: 'Chercher une source qui n\'est pas encore au catalogue',
           onTap: () => _openAddSource(result, rank),
         );
     }
