@@ -239,6 +239,71 @@ async def test_ritual_kind_exempt_from_cooldown_but_not_from_budgets(db_session)
 
 
 @pytest.mark.asyncio
+async def test_ritual_companion_passes_despite_recent_ritual(db_session):
+    """Une alerte accompagne la tournée au lieu de lui disputer son créneau."""
+    user_id, (device_id,) = await _seed_user(db_session)
+    db_session.add(
+        _delivery(device_id, kind="daily_digest", sent_at=NOW - timedelta(hours=1))
+    )
+    await db_session.commit()
+
+    refused = await check_push_budget(
+        db_session, user_id=user_id, kind="source_alert:abc", now=NOW
+    )
+    assert refused.reason == "ritual_cooldown"
+
+    decision = await check_push_budget(
+        db_session,
+        user_id=user_id,
+        kind="source_alert:abc",
+        now=NOW,
+        ritual_companion=True,
+    )
+    assert decision.allowed
+
+
+@pytest.mark.asyncio
+async def test_ritual_companion_ignores_upcoming_ritual(db_session):
+    user_id, _ = await _seed_user(db_session)
+    await db_session.commit()
+
+    decision = await check_push_budget(
+        db_session,
+        user_id=user_id,
+        kind="source_alert:abc",
+        now=NOW,
+        next_ritual_at=NOW + timedelta(hours=2),
+        ritual_companion=True,
+    )
+    assert decision.allowed
+
+
+@pytest.mark.asyncio
+async def test_ritual_companion_still_bound_by_daily_budget(db_session):
+    """L'exemption ne porte que sur le cooldown : les budgets tiennent."""
+    user_id, (device_id,) = await _seed_user(db_session)
+    db_session.add_all(
+        [
+            _delivery(device_id, kind="daily_digest", sent_at=NOW - timedelta(hours=1)),
+            _delivery(
+                device_id, kind="source_alert:abc", sent_at=NOW - timedelta(hours=2)
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    decision = await check_push_budget(
+        db_session,
+        user_id=user_id,
+        kind="source_alert:def",
+        now=NOW,
+        ritual_companion=True,
+    )
+    assert not decision.allowed
+    assert decision.reason == "daily_budget_exceeded"
+
+
+@pytest.mark.asyncio
 async def test_ignores_non_sent_and_other_users(db_session):
     user_id, (device_id,) = await _seed_user(db_session)
     other_user, (other_device,) = await _seed_user(db_session)

@@ -6,6 +6,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
+import '../../alerts/widgets/alert_activation_sheet.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
 import '../widgets/source_detail_modal.dart';
@@ -47,6 +48,7 @@ class _ThemeSourcesScreenState extends ConsumerState<ThemeSourcesScreen> {
         if (mounted) {
           NotificationService.showSuccess(
               'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
+          await maybeOfferSourceAlert(context, ref, source.id);
         }
       }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../alerts/models/alert_item.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 
@@ -22,7 +23,9 @@ const int kThemeFewFollowedSources = 6; // < 6 = « peu de sources »
 /// PR « Sources dans la Tournée » : `source` ajouté comme 5ème kind — une
 /// source favorite rendue comme section premium (hero logo + top-3 classé),
 /// réutilisant le payload [FeedThemeSection] (champs `sourceId`/`sourceLogoUrl`).
-enum SectionKind { essentiel, bonnes, theme, veille, source }
+/// `alerts` (6ème kind) porte le rappel des cloches « alerte source rare » ayant
+/// du neuf : une carte compacte, pas un flux d'articles (cf. [AlertsSection]).
+enum SectionKind { essentiel, bonnes, theme, veille, source, alerts }
 
 /// Origine d'une section de la Tournée du jour (Story 22.3).
 ///
@@ -94,6 +97,7 @@ class SuggestionReason {
 String sectionKey(FluxSection section) {
   return switch (section) {
     EssentielSection() => 'essentiel_v3',
+    AlertsSection() => kAlertsSectionKey,
     DigestTopicSection() => section.kind.name,
     FeedThemeSection(
       :final kind,
@@ -288,6 +292,40 @@ class EssentielSection extends FluxSection {
   int get totalCount => articles.length;
 }
 
+/// Clé stable de la section « Tes alertes ». Constante (et non `kind.name`)
+/// parce que le provider en a besoin hors de toute instance : la section vit
+/// sous le héros, en dehors de l'ordre configurable, et le calcul du slot de La
+/// Grille doit savoir qu'elle précède toujours la Grille.
+const String kAlertsSectionKey = 'alerts';
+
+/// Nombre maximum de cloches listées dans la carte de la Tournée. Au-delà, le
+/// lien de pied renvoie vers « Mes alertes » plutôt que d'allonger un rappel qui
+/// doit rester lisible d'un coup d'œil.
+const int kAlertsSectionMaxRows = 3;
+
+/// Rappel « alerte source rare » : les cloches qui ont du neuf non lu, en une
+/// carte compacte sous le héros.
+///
+/// Ce n'est pas une section de contenu — elle ne fait pas concurrence aux
+/// thèmes/sources pour la place à l'écran : elle vit hors de l'ordre
+/// configurable de la Tournée (donc hors du cap de sections) et échappe au fit
+/// (taille fixe, cf. `_capSectionToFit`). Rendue par `AlertsSectionCard`.
+class AlertsSection extends FluxSection {
+  final List<AlertItem> items;
+
+  AlertsSection({
+    required this.items,
+    super.label = 'Tes alertes',
+    super.accent = const Color(0xFF9C6F19),
+  }) : super(
+          kind: SectionKind.alerts,
+          coreVisibleCount: items.length.clamp(0, kAlertsSectionMaxRows),
+        );
+
+  @override
+  int get totalCount => items.length;
+}
+
 /// Section backed by `digest.topics` (Essentiel, Bonnes Nouvelles). One
 /// card per topic — the lead article is selected via [pickTopicLead].
 class DigestTopicSection extends FluxSection {
@@ -467,6 +505,9 @@ Set<String> renderedContentIds(List<FluxSection> sections) {
         for (final article in articles) {
           seen.add(article.contentId);
         }
+      case AlertsSection():
+        // Le rappel ne rend aucun article : il n'a rien à retirer de l'Explorer.
+        break;
       case DigestTopicSection(:final topics):
         for (final topic in topics) {
           if (topic.articles.isEmpty) continue;
@@ -482,15 +523,16 @@ Set<String> renderedContentIds(List<FluxSection> sections) {
 }
 
 /// Returns the section that follows [currentKey] in [sections] (the ordered
-/// Tournée du jour list), ignoring `EssentielSection` (no "Voir + de") and the
-/// current section itself. Returns `null` when the current section is the
-/// last one — used by the theme/digest detail screens to decide whether to
-/// show the "Sujet suivant" CTA or fall back to "Retour à la Tournée".
+/// Tournée du jour list), ignoring `EssentielSection` / `AlertsSection` (no
+/// "Voir + de" — ni l'un ni l'autre n'a de page dédiée) and the current section
+/// itself. Returns `null` when the current section is the last one — used by
+/// the theme/digest detail screens to decide whether to show the "Sujet
+/// suivant" CTA or fall back to "Retour à la Tournée".
 FluxSection? nextSectionAfter(List<FluxSection> sections, String currentKey) {
   final ordered = sections
       .whereType<FluxSection>()
       .where((s) {
-        if (s is EssentielSection) return false;
+        if (s is EssentielSection || s is AlertsSection) return false;
         return true;
       })
       .toList(growable: false);

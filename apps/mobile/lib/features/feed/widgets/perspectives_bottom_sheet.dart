@@ -15,6 +15,7 @@ import '../../../widgets/design/facteur_card.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../digest/widgets/markdown_text.dart';
+import '../../alerts/widgets/alert_activation_sheet.dart';
 import '../../digest/widgets/section_divider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -88,10 +89,15 @@ void showSourceDetailModal(
     backgroundColor: Colors.transparent,
     builder: (_) => SourceDetailModal(
       source: source,
-      onToggleTrust: () {
-        ref
+      onToggleTrust: () async {
+        await ref
             .read(userSourcesProvider.notifier)
             .toggleTrust(source.id, source.isTrusted);
+        // La modale se ferme avant d'appeler ce callback : on repart du
+        // contexte de l'écran hôte, encore monté.
+        if (!source.isTrusted && context.mounted) {
+          await maybeOfferSourceAlert(context, ref, source.id);
+        }
       },
     ),
   );

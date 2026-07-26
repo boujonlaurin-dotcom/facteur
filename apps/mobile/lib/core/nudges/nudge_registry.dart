@@ -92,6 +92,13 @@ class NudgeRegistry {
       frequency: NudgeFrequency.once,
     ),
     const Nudge(
+      id: NudgeIds.alertsIntro,
+      surface: NudgeSurface.settings,
+      placement: NudgePlacement.inlineBanner,
+      priority: NudgePriority.normal,
+      frequency: NudgeFrequency.once,
+    ),
+    const Nudge(
       id: NudgeIds.articleSaveNotes,
       surface: NudgeSurface.article,
       placement: NudgePlacement.tooltip,

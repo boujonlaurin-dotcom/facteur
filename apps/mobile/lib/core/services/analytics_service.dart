@@ -739,14 +739,6 @@ class AnalyticsService {
     await _capturePostHog('modal_notif_shown', props);
   }
 
-  Future<void> trackModalNotifPresetChanged({
-    required NotifPreset preset,
-  }) async {
-    final props = <String, dynamic>{'preset': preset.wire};
-    await _logEvent('modal_notif_preset_changed', props);
-    await _capturePostHog('modal_notif_preset_changed', props);
-  }
-
   Future<void> trackModalNotifTimeChanged({
     required NotifTimeSlot timeSlot,
   }) async {
@@ -826,18 +818,6 @@ class AnalyticsService {
     };
     await _logEvent('notif_opened', props);
     await _capturePostHog('notif_opened', props);
-  }
-
-  Future<void> trackNotifSettingsChanged({
-    required NotifPreset fromPreset,
-    required NotifPreset toPreset,
-  }) async {
-    final props = <String, dynamic>{
-      'from_preset': fromPreset.wire,
-      'to_preset': toPreset.wire,
-    };
-    await _logEvent('notif_settings_changed', props);
-    await _capturePostHog('notif_settings_changed', props);
   }
 
   Future<void> trackNotifDisabled({required String source}) async {

@@ -9,15 +9,23 @@ import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../../core/nudges/nudge_coordinator.dart';
+import '../../../core/nudges/nudge_ids.dart';
+import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../../features/detail/screens/content_detail_screen.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../../widgets/design/facteur_button.dart';
+import '../../alerts/models/alert_item.dart';
+import '../../alerts/providers/alerts_provider.dart';
+import '../../custom_topics/widgets/entity_add_sheet.dart';
 import '../../feed/models/content_model.dart';
 import '../../flux_continu/utils/theme_color_mapping.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../my_interests/widgets/interest_priority_slider.dart';
+import '../../notifications/widgets/notification_activation_modal.dart';
+import '../../settings/providers/notifications_settings_provider.dart';
 import '../models/smart_search_result.dart';
 import '../models/source_model.dart';
 import '../providers/sources_providers.dart';
@@ -1653,6 +1661,8 @@ class _FsSettings extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _FsAlertRow(source: source),
+            const SizedBox(height: 16),
             Text(
               'Priorité dans ton flux',
               style: textTheme.labelMedium?.copyWith(
@@ -1678,6 +1688,189 @@ class _FsSettings extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Cloche « alerte source rare » (Epic 30, story 30.2).
+///
+/// L'éligibilité vient de [sourceProfileProvider], déjà chargé par la fiche
+/// pour le chip de fréquence : aucun appel réseau supplémentaire. Le serveur
+/// reste l'arbitre (il rejoue la rareté et le plafond) ; ce que fait l'UI ici
+/// est éviter de proposer un geste qui sera refusé.
+class _FsAlertRow extends ConsumerStatefulWidget {
+  final Source source;
+  const _FsAlertRow({required this.source});
+
+  @override
+  ConsumerState<_FsAlertRow> createState() => _FsAlertRowState();
+}
+
+class _FsAlertRowState extends ConsumerState<_FsAlertRow> {
+  bool _busy = false;
+  bool _showIntro = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _requestIntroNudge();
+  }
+
+  Future<void> _requestIntroNudge() async {
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    final active = await coordinator.request(NudgeIds.alertsIntro);
+    if (!mounted) return;
+    if (active == NudgeIds.alertsIntro) setState(() => _showIntro = true);
+  }
+
+  Future<void> _dismissIntro() async {
+    if (!_showIntro) return;
+    final coordinator = ref.read(nudgeCoordinatorProvider);
+    if (coordinator.activeId == NudgeIds.alertsIntro) {
+      await coordinator.dismiss(markSeen: true);
+    }
+    if (mounted) setState(() => _showIntro = false);
+  }
+
+  Future<void> _toggle(bool enabled) async {
+    setState(() => _busy = true);
+
+    // Poser une cloche sans droit de notifier produirait une alerte muette.
+    if (enabled) {
+      final settings = ref.read(notificationsSettingsProvider);
+      if (!settings.pushEnabled) {
+        await showNotificationActivationModal(
+          context,
+          ref,
+          trigger: ActivationTrigger.alert,
+        );
+        if (!mounted) return;
+        if (!ref.read(notificationsSettingsProvider).pushEnabled) {
+          setState(() => _busy = false);
+          return;
+        }
+      }
+    }
+
+    try {
+      await ref
+          .read(alertsProvider.notifier)
+          .setAlert(widget.source.id, enabled);
+    } on AlertCapReachedException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Tu as déjà ${e.cap} alertes. Désactives-en une dans Mes alertes.',
+          ),
+          action: SnackBarAction(
+            label: 'Voir',
+            onPressed: () => context.pushNamed(RouteNames.alerts),
+          ),
+        ),
+      );
+    } on SourceNotRareException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cette source publie trop souvent pour une alerte.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Impossible de régler cette alerte.')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final profile = ref.watch(sourceProfileProvider(widget.source.id));
+    final alerts = ref.watch(alertsProvider).valueOrNull;
+
+    final phrase = profile.valueOrNull == null
+        ? null
+        : rarityPhrase(
+            profile.valueOrNull!.articles30d,
+            profile.valueOrNull!.oldestContentAt,
+          );
+    final eligible = phrase != null;
+    final enabled =
+        alerts?.items.any((i) => i.sourceId == widget.source.id) ?? false;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_showIntro) ...[
+          NudgeInlineBanner(
+            body: 'Certaines sources publient une fois par mois. Pose une '
+                'cloche : Facteur te prévient à la parution, en silence.',
+            icon: PhosphorIcons.bell(PhosphorIconsStyle.regular),
+            onDismiss: _dismissIntro,
+          ),
+          const SizedBox(height: 12),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '📯 Activer la cloche',
+                    style: textTheme.labelMedium?.copyWith(
+                      color: eligible ? colors.textPrimary : colors.textTertiary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    eligible
+                        ? 'Cette source publie $phrase. Tu seras prévenu à '
+                            'chaque parution.'
+                        : 'Cette source publie trop souvent pour une alerte.',
+                    style: textTheme.labelSmall?.copyWith(
+                      color: colors.textTertiary,
+                      fontSize: 11.5,
+                      height: 1.4,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Switch.adaptive(
+              value: enabled,
+              onChanged: (!eligible || _busy) ? null : _toggle,
+            ),
+          ],
+        ),
+        // Source trop bavarde : la bonne réponse n'est pas une cloche mais un
+        // sujet, qui filtre au lieu d'inonder.
+        if (!eligible && profile.hasValue) ...[
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () => EntityAddSheet.show(context),
+            child: Text(
+              'Suis plutôt ce sujet.',
+              style: textTheme.labelSmall?.copyWith(
+                color: colors.primary,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

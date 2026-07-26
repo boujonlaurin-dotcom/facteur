@@ -9,11 +9,12 @@ import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/services/push_notification_service.dart';
 import '../../flux_continu/services/tournee_progress_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../widgets/profile_progression_card.dart';
 
-/// Le bloc QA (rituel matinal) n'est monté qu'en staging/dev : build debug
+/// Le bloc « Outils QA » n'est monté qu'en staging/dev : build debug
 /// **ou** canal beta (flavor staging). Jamais en prod (canal stable).
 bool get _showQaTools =>
     kDebugMode || AppUpdateConstants.updateChannel == 'beta';
@@ -111,7 +112,7 @@ class ProfileScreen extends ConsumerWidget {
             if (_showQaTools) ...[
               const SizedBox(height: FacteurSpacing.space6),
               _Section(
-                title: 'RITUEL MATINAL (QA)',
+                title: 'OUTILS QA',
                 children: [
                   _Tile(
                     icon: Icons.replay,
@@ -127,6 +128,24 @@ class ProfileScreen extends ConsumerWidget {
                         const SnackBar(
                           content: Text(
                             'Rituel réarmé — relance l\'app pour le revoir.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  _Tile(
+                    icon: PhosphorIcons.bell(PhosphorIconsStyle.regular),
+                    title: 'Tester une alerte source',
+                    subtitle:
+                        'Affiche localement le payload exact d\'une alerte',
+                    onTap: () async {
+                      await PushNotificationService().showTestSourceAlert();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Alerte de test envoyée. Regarde ton tiroir de '
+                            'notifications.',
                           ),
                         ),
                       );

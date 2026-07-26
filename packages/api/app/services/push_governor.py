@@ -6,6 +6,11 @@ Règle des 4h : un kind non rituel est refusé si un push rituel a été envoyé
 y a moins de 4h, ou si le prochain créneau rituel tombe dans moins de 4h — le
 rituel (tournée) garde son territoire. Le kind rituel n'est jamais bloqué par
 le cooldown mais reste soumis aux budgets.
+
+Exception `ritual_companion` (story 30.2) : les alertes source sont
+silencieuses et partent dans la même passe que la tournée — le cooldown les
+refuserait toutes. Elles en sont donc exemptées, mais restent soumises aux
+budgets, ce qui laisse au plus 1 alerte par jour une fois la tournée envoyée.
 """
 
 from dataclasses import dataclass
@@ -37,12 +42,17 @@ async def check_push_budget(
     now: datetime,
     target_date: date | None = None,
     next_ritual_at: datetime | None = None,
+    ritual_companion: bool = False,
 ) -> GovernorDecision:
     """Décide si un push `kind` peut partir maintenant pour `user_id`.
 
     `target_date` identifie le push logique en cours : ses livraisons déjà
     `sent` (autres devices du même utilisateur) ne comptent pas dans les
     budgets, sinon le 2e device serait bloqué par le 1er.
+
+    `ritual_companion=True` exempte le kind du cooldown rituel (il accompagne
+    la tournée au lieu de lui disputer son territoire) sans toucher aux
+    budgets.
     """
     week_ago = now - timedelta(days=7)
     day_ago = now - timedelta(hours=24)
@@ -64,7 +74,7 @@ async def check_push_budget(
         )
     ).all()
 
-    if kind not in RITUAL_KINDS:
+    if kind not in RITUAL_KINDS and not ritual_companion:
         if any(
             row.kind in RITUAL_KINDS and row.last_sent_at >= now - RITUAL_COOLDOWN
             for row in rows
@@ -74,9 +84,7 @@ async def check_push_budget(
             return GovernorDecision(allowed=False, reason="ritual_upcoming")
 
     budget_rows = [
-        row
-        for row in rows
-        if not (row.kind == kind and row.target_date == target_date)
+        row for row in rows if not (row.kind == kind and row.target_date == target_date)
     ]
     daily_count = sum(1 for row in budget_rows if row.last_sent_at >= day_ago)
     if daily_count >= DAILY_BUDGET:

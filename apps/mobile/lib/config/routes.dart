@@ -36,6 +36,7 @@ import '../features/settings/screens/notifications_screen.dart';
 import '../features/settings/screens/about_screen.dart';
 import '../features/settings/widgets/settings_sheet.dart';
 import '../features/my_interests/screens/my_interests_screen.dart';
+import '../features/alerts/screens/my_alerts_screen.dart';
 import '../features/custom_topics/screens/topic_explorer_screen.dart';
 import '../features/soutien/screens/link_sent_screen.dart';
 import '../features/soutien/screens/soutien_screen.dart';
@@ -102,6 +103,7 @@ class RouteNames {
   static const String emailConfirmation = 'email-confirmation';
   static const String resetPassword = 'reset-password';
   static const String myInterests = 'my-interests';
+  static const String alerts = 'alerts';
   static const String topicExplorer = 'topic-explorer';
   static const String themeSources = 'theme-sources';
   static const String veilleConfig = 'veille-config';
@@ -142,6 +144,7 @@ class RoutePaths {
   static const String about = '/settings/about';
   static const String profile = '/settings/profile';
   static const String myInterests = '/settings/interests';
+  static const String alerts = '/settings/alerts';
   static const String topicExplorer = '/topic-explorer';
   static const String progress = '/progress';
   static const String quiz = '/quiz';
@@ -701,6 +704,12 @@ final routerProvider = Provider<GoRouter>((ref) {
             name: RouteNames.about,
             pageBuilder: (context, state) =>
                 const FullSwipeCupertinoPage(child: AboutScreen()),
+          ),
+          GoRoute(
+            path: 'alerts', // /settings/alerts
+            name: RouteNames.alerts,
+            pageBuilder: (context, state) =>
+                const FullSwipeCupertinoPage(child: MyAlertsScreen()),
           ),
           GoRoute(
             path: 'interests', // /settings/interests

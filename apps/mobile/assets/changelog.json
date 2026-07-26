@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Alertes",
+      "summary": "Certaines sources ne publient qu'une fois par mois, et c'est justement pour ça qu'on les rate. Pose une cloche sur leur fiche : Facteur te prévient à chaque parution, en silence, dans ta tournée. Cinq alertes maximum, sur des sources rares uniquement. Retrouve-les toutes dans Mes alertes."
+    },
+    {
       "tag": "Pas de recul",
       "summary": "La suggestion « Pas de recul » passe en tête des suites de lecture, juste avant « Comparer les angles », avec un bandeau bleu pleine largeur un peu plus présent. Et quand tu ouvres l'article proposé, un liseré bleu et un médaillon longue-vue en haut du lecteur te rappellent d'où il vient."
     },

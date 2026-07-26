@@ -19,16 +19,7 @@ String humanizeFrequency(
 }) {
   if (articles30d <= 0) return 'peu actif';
 
-  final reference = now ?? DateTime.now();
-
-  // Fenêtre = 30 j, bornée par l'âge réel de la source (1..30) si connu.
-  var windowDays = 30;
-  if (oldestContentAt != null) {
-    final age = reference.difference(oldestContentAt).inDays;
-    windowDays = age < 1 ? 1 : (age > 30 ? 30 : age);
-  }
-
-  final perDay = articles30d / windowDays;
+  final perDay = _perDay(articles30d, oldestContentAt, now);
 
   if (perDay >= 10) {
     final rounded = _niceRound(perDay);
@@ -37,6 +28,54 @@ String humanizeFrequency(
   if (perDay >= 1.5) return 'quelques articles par jour';
   if (perDay * 7 >= 1.5) return 'quelques articles par semaine';
   return 'quelques articles par mois';
+}
+
+/// Une source est « rare » si elle publie moins d'une fois par semaine.
+///
+/// C'est le seul critère d'éligibilité à la cloche « alerte source » : il rend
+/// la fonctionnalité insensible au spam par construction. Miroir exact de
+/// `is_rare_source` côté serveur (`app/services/source_alert_producer.py`), qui
+/// reste l'arbitre — le client peut afficher un profil périmé.
+///
+/// `articles30d == 0` n'est **pas** éligible : sans preuve que la source
+/// publie (flux cassé, source morte), la cloche ne sonnerait jamais.
+bool isRareSource(
+  int articles30d,
+  DateTime? oldestContentAt, {
+  DateTime? now,
+}) {
+  if (articles30d < 1) return false;
+  return _perDay(articles30d, oldestContentAt, now) * 7 < 1.0;
+}
+
+/// Phrase de rareté affichée sous la cloche — dérivée des mêmes seuils.
+///
+/// Jamais une affirmation que les chiffres ne soutiennent pas : la borne
+/// d'éligibilité (< 1/semaine) garantit qu'on reste sur « deux semaines » ou
+/// « mois ». Renvoie `null` si la source n'est pas rare, pour que l'appelant
+/// ne puisse pas promettre une cadence qu'il ne tiendra pas.
+String? rarityPhrase(
+  int articles30d,
+  DateTime? oldestContentAt, {
+  DateTime? now,
+}) {
+  if (!isRareSource(articles30d, oldestContentAt, now: now)) return null;
+  final perWeek = _perDay(articles30d, oldestContentAt, now) * 7;
+  if (perWeek >= 0.5) return 'environ une fois toutes les deux semaines';
+  return 'environ une fois par mois';
+}
+
+/// Volume quotidien moyen sur une fenêtre de 30 j bornée par l'âge réel de la
+/// source. Base partagée de [humanizeFrequency] et [isRareSource] : les deux
+/// doivent lire la même cadence, sinon la fiche affiche « quelques articles
+/// par mois » à côté d'une cloche refusée.
+double _perDay(int articles30d, DateTime? oldestContentAt, DateTime? now) {
+  var windowDays = 30;
+  if (oldestContentAt != null) {
+    final age = (now ?? DateTime.now()).difference(oldestContentAt).inDays;
+    windowDays = age < 1 ? 1 : (age > 30 ? 30 : age);
+  }
+  return articles30d / windowDays;
 }
 
 /// Arrondi « joli » pour les gros volumes (lecture rapide, pas exacte).

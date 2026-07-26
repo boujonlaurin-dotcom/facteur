@@ -421,7 +421,11 @@ class _DeepDiveListHost extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final flux = ref.watch(fluxContinuProvider).valueOrNull;
-    final sections = flux?.sections ?? const <FluxSection>[];
+    // Le rappel d'alertes n'est pas une destination de lecture : une ligne
+    // « Tes alertes, 0 article » n'aurait rien à ouvrir.
+    final sections = (flux?.sections ?? const <FluxSection>[])
+        .where((s) => s is! AlertsSection)
+        .toList(growable: false);
     if (sections.isEmpty) return const SizedBox.shrink();
     return SectionDeepDiveList(
       sections: sections,
