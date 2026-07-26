@@ -33,7 +33,7 @@ class StickyTab {
 ///   current / upcoming), driven by [activeIndex], so the bar reads as discrete
 ///   « pages » matching the section snap rather than a continuous gauge,
 /// - when [showFilterBar] is true (Explorer mode), [FeedFilterBar] is
-///   inserted below the tabs so the filter chips morph in under the same
+///   inserted below the tabs so the favorite-topic tabs sit under the same
 ///   parchment surface rather than swapping the whole sticky.
 class StickyTabBar extends StatelessWidget {
   final List<StickyTab> tabs;

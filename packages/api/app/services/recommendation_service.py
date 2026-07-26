@@ -2898,7 +2898,8 @@ class RecommendationService:
         if entity and not source_id:
             query = apply_entity_filter(query, entity)
 
-        # Apply keyword filter (title ILIKE match for keyword overflow chip taps)
+        # Apply keyword filter (title/description word-start match ~* for the
+        # keyword overflow chip taps and the universal search, story 30.1)
         if keyword and not source_id:
             query = apply_keyword_filter(query, keyword)
 

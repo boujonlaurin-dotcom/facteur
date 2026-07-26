@@ -70,6 +70,10 @@ final feedUndoSnapshotProvider = StateProvider<FeedSnapshot?>((ref) => null);
 /// l'UI (chips, tabs, badge du funnel) puisse réagir **dès le tap** sans
 /// attendre la fin du refresh réseau. Les setters du [FeedNotifier] poussent
 /// ici avant `await refresh()`.
+/// Dimension de filtrage active du feed. Mutuellement exclusives : chaque
+/// setter de [FeedNotifier] annule les autres.
+enum FeedFilterKind { keyword, source, theme, topic, entity }
+
 class FeedFilterSelection {
   final String? sourceId;
   final String? topic;
@@ -77,12 +81,19 @@ class FeedFilterSelection {
   final String? entity;
   final String? keyword;
 
+  /// Recherche élargie aux sources non suivies (story 30.1). Fait partie de la
+  /// sélection — et pas seulement de l'état interne du notifier — parce que
+  /// l'UI doit se redessiner quand seul ce drapeau change (même mot-clé, mais
+  /// périmètre différent).
+  final bool includeUnfollowed;
+
   const FeedFilterSelection({
     this.sourceId,
     this.topic,
     this.theme,
     this.entity,
     this.keyword,
+    this.includeUnfollowed = false,
   });
 
   static const empty = FeedFilterSelection();
@@ -94,6 +105,23 @@ class FeedFilterSelection {
     return c;
   }
 
+  /// Vrai dès qu'**un** filtre est posé, quel qu'il soit. Distinct de
+  /// [activeCount], qui ne compte que source + mot-clé (badge du funnel).
+  bool get hasAnyFilter => activeKind != null;
+
+  /// Nature du filtre actif — les dimensions sont mutuellement exclusives
+  /// (chaque setter du notifier annule les autres). `null` = flux non filtré.
+  FeedFilterKind? get activeKind {
+    if (keyword != null && keyword!.trim().isNotEmpty) {
+      return FeedFilterKind.keyword;
+    }
+    if (sourceId != null) return FeedFilterKind.source;
+    if (theme != null) return FeedFilterKind.theme;
+    if (entity != null) return FeedFilterKind.entity;
+    if (topic != null) return FeedFilterKind.topic;
+    return null;
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -102,10 +130,12 @@ class FeedFilterSelection {
           topic == other.topic &&
           theme == other.theme &&
           entity == other.entity &&
-          keyword == other.keyword;
+          keyword == other.keyword &&
+          includeUnfollowed == other.includeUnfollowed;
 
   @override
-  int get hashCode => Object.hash(sourceId, topic, theme, entity, keyword);
+  int get hashCode =>
+      Object.hash(sourceId, topic, theme, entity, keyword, includeUnfollowed);
 }
 
 final feedFilterSelectionProvider = StateProvider<FeedFilterSelection>(
@@ -612,6 +642,21 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     await refresh();
   }
 
+  /// Vide **toutes** les dimensions de filtrage en un seul refresh.
+  ///
+  /// Enchaîner `setTopic(null)` + `setTheme(null)` + … marchait par accident
+  /// (chaque setter annule déjà les autres, donc les suivants sortaient en
+  /// no-op), mais obligeait chaque appelant à connaître la liste des
+  /// dimensions — d'où la dérive documentée dans `feed_filter_bar.dart`
+  /// (« on remet aussi `setSource(null)` — oublié historiquement »).
+  Future<void> clearFilters() async {
+    final selection = ref.read(feedFilterSelectionProvider);
+    if (!selection.hasAnyFilter && _selectedFilter == null) return;
+    _resetFiltersToEmpty(syncSelectionProvider: false);
+    _syncSelectionProvider();
+    await refresh();
+  }
+
   Future<void> setSource(String? sourceId) async {
     if (_selectedSourceId == sourceId) return;
     _selectedSourceId = sourceId;
@@ -636,7 +681,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTheme = selection.theme;
     _selectedEntity = selection.entity;
     _selectedKeyword = selection.keyword;
-    _includeUnfollowed = false;
+    // Le périmètre élargi fait partie de la sélection restaurée : sans ça, un
+    // rebuild du notifier (changement d'auth, invalidation) rétrécissait
+    // silencieusement une recherche « toutes sources » aux seules sources
+    // suivies, en gardant le mot-clé affiché.
+    _includeUnfollowed = selection.includeUnfollowed;
   }
 
   void _resetFiltersToEmpty({required bool syncSelectionProvider}) {
@@ -670,6 +719,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       theme: _selectedTheme,
       entity: _selectedEntity,
       keyword: _selectedKeyword,
+      includeUnfollowed: _includeUnfollowed,
     );
   }
 

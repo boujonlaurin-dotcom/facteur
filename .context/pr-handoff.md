@@ -1,107 +1,92 @@
-# feat(lecture-aboutie): rendre la complétion visible, durable et non rejouable (Epic 30)
+# feat(recherche): recherche universelle — sources · sujets · thèmes · articles (story 30.1)
 
-Epic 30 « La lecture aboutie », base `main`. **Aucune migration** (1 head Alembic,
-`mg04_merge_pt01_rd01`, inchangé).
+Story 30.1, base `main`. La loupe du 2ᵉ onglet ne savait chercher qu'une chose : un
+mot dans un titre d'article, parmi les seules sources suivies. Elle devient un **point
+d'entrée de navigation** : trouver une source, un sujet, un thème ou un article — et,
+quand ce qu'on cherche n'existe pas encore dans le compte, enchaîner sans friction sur
+l'**ajout de source**. **Aucun changement backend, aucune migration.**
 
-L'audit fichier par fichier de `main` a établi que la moitié visible de la demande
-d'origine n'était jamais montée à l'écran, que la complétion ne survivait pas au
-redémarrage, et que deux bugs backend restaient ouverts, dont un que #1007 avait
-aggravé.
+## Ce qui n'allait pas (constaté dans le code)
 
-## A. Backend
+| Constat | Fichier |
+|---|---|
+| La sheet n'affichait **rien pendant la frappe** (`if (!hasQuery)` gardait tout le contenu) | `search_filter_sheet.dart` |
+| La recherche ne renvoyait **que des articles** — `title ILIKE %q%` | `filter_presets.py:368` |
+| Aucune recherche de source / sujet / thème, alors que les 3 filtres existaient déjà | `feed_provider.dart` |
+| **Zéro résultat → écran blanc.** `EmptyFilterState` existait mais n'était jamais monté | `empty_filter_state.dart` |
+| `CompactSearchChip` : code mort, aucune référence | `compact_search_chip.dart` |
+| `includeUnfollowed` n'était activable que depuis une chip « sujet du moment » | `feed_filter_bar.dart` |
+| Aucun événement analytics sur la recherche | `analytics_service.dart` |
 
-- **`_update_closure_streak(user_id, target_date)` estampille l'édition close**,
-  plus une notion de « aujourd'hui ». Le correctif de #1007 avait remplacé une
-  frontière UTC (00h→02h Paris) par la frontière éditoriale 07h30 alors que ses
-  deux appelants cherchent le digest via `today_paris()` (minuit) : la fenêtre de
-  divergence avait *grandi*. Un lecteur qui clôturait l'édition D à 01h se voyait
-  estampiller D-1, puis sa série remise à 1 le lendemain. **Zéro test ne couvrait
-  la méthode** (mockée dans les 3 fichiers qui l'approchent) ; elle l'est
-  maintenant, démockée, contre une vraie base.
-- **Garde-fou édition passée** : `complete_digest` accepte n'importe quel
-  `digest_id` et le sélecteur de date sert les éditions J-7. Un `days_since`
-  négatif tombait dans la branche « série cassée » (reset à 1) *et* ramenait
-  `last_closure_date` en arrière, cassant aussi la clôture du lendemain.
-- **`week_start_paris()`** dans `app/utils/time.py` : la règle « semaine = lundi,
-  heure de Paris » était recopiée 3 fois sur un `date.today()` UTC (reset hebdo
-  une à deux heures trop tôt le lundi côté lecteur).
-- **`DAILY_COMPLETION_GOAL`** descend dans `app.schemas.streak` : le
-  `daily_goal: int = 2` du schéma était un doublon en dur, libre de diverger.
-  Sens de dépendance `services → schemas` conservé.
-- **`count_completed_today`** (le compteur exposé à l'UI) a enfin des tests
-  (J-3, frontière 07h30 des deux côtés, scope utilisateur).
-- **`EssentielArticle.completed_at`** est servi : la carte héros de la Tournée ne
-  pouvait pas connaître la complétion, alors que `_to_essentiel_article` recevait
-  déjà le champ.
+## A. Recherche multi-entités (100 % locale)
 
-## B. Mobile — durabilité
+- `utils/search_matcher.dart` — primitives pures : `foldForSearch` (casse + accents FR,
+  longueur préservée), `matchQuality` (exact > prefix > wordPrefix > contains),
+  `rankMatches` (tri déterministe : qualité, puis libellé le plus court, puis alpha),
+  `looksLikeSourceQuery` (URL / domaine collé).
+- `utils/search_results_builder.dart` — `buildSearchSections` compose 5 sections à partir
+  de données **déjà en mémoire** (`userSourcesProvider` porte tout le catalogue avec les
+  drapeaux `isTrusted` / `isMuted`) : `Articles`, `Tes sources`, `Sujets suivis`, `Thèmes`,
+  `Ajouter une source`. **Aucun appel réseau pendant la frappe** (debounce 180 ms).
+- **Ordre adaptatif** : un match exact sur une source, ou un domaine saisi, remonte les
+  sections source devant `Articles` — taper « Mediapart » est une intention source, pas une
+  intention mot-clé.
+- `models/search_result.dart` — sealed class des 5 natures de résultat ; chacune mappe sur
+  un geste déjà supporté par `FeedNotifier`.
 
-- **`CompletedReadsStore`** (box Hive `completed_reads` dédiée, purge 30 j, cap
-  1000). Box séparée de `pending_reads` : cette dernière est une file de synchro
-  qui *supprime* l'entrée au succès. `markCompleted` écrit le registre d'abord,
-  puis l'état, comme `markConsumed`.
-- **Hydratation poussée** au démarrage (one-shot, post-frame), pas watchée :
-  faire dépendre `completedContentIdsProvider` de `readSyncUserIdProvider`
-  remonterait à `Supabase.instance` et casserait tout widget test montant une carte.
-- **Fuite inter-comptes** : `completedContentIdsProvider` est vidé au logout.
+## B. Le pont vers l'ajout de source
 
-## C. Mobile — visible
+- **Source du catalogue non suivie** → bouton **Ajouter** inline : `trustSource()` puis
+  filtre immédiat sur la source, sans quitter la sheet ni écran intermédiaire. Les sources
+  en **sourdine** sont exclues (les re-proposer contredirait un choix explicite).
+- **Source inconnue** → `AddSourceScreen` avec la recherche intelligente **déjà lancée** :
+  nouveau paramètre `initialQuery` sur `SourceAddPanel`, propagé par l'écran et lu depuis
+  `state.extra` dans `routes.dart`. Pas de re-saisie.
 
-- **`ReadStateMark`** partagé remplace 2 des 3 copies privées : celle de la carte
-  Essentiel codait `check` en dur, donc était *structurellement* incapable
-  d'afficher une complétion. `_ReadStatusPill` (timeline d'éditions) n'est pas
-  touchée : elle décrit l'état d'une *édition*, pas d'un article.
-- **`AnimatedFeedCard`** était restée orpheline (0 référence dans `lib/`) : le
-  filet vert n'existait pas à l'écran. Elle est montée sur les 3 familles de
-  cartes en `animate: false` (un état au montage, une animation seulement sur la
-  transition de retour d'article). Son `AnimationController` était `late final`
-  et n'était instancié qu'au `dispose()` d'une carte non aboutie : inoffensif
-  tant qu'elle était du code mort, systématique dès qu'elle est montée partout.
-- **Mapping** : `FluxArticleVM.from(DigestItem)` et `articleToContent` jetaient
-  `completedAt` ; le modèle mobile `EssentielArticle` ne le parsait pas.
-- **Layout du cachet** : sorti de la `Column` du pied de page (il y ajoutait
-  ~34 px alors que `_kFooterContentHeight` sert de spacer à 9 endroits) et rendu
-  **frère** du pill via `Stack` + `FractionalTranslation(0, -1)`. Aucune mesure,
-  les 9 usages inchangés.
+## C. L'état vide de Flâner
 
-## D. Mobile — réouverture
+`EmptyFilterState` (code mort) est ressuscité, doté d'une variante mot-clé et **monté** dans
+`flaner_screen.dart` quand la liste est vide et qu'un filtre est actif. Rattrapages, du moins
+au plus engageant : élargir · ajouter la source · suivre le sujet · revenir au feed. La carte
+`FollowKeywordSuggestionCard` est masquée dans ce cas (doublon avec « suivre ce sujet »).
 
-- **`ArticleCompletionLatch`** (Dart pur, testé) sépare l'état connu à l'ouverture
-  de l'événement de session. Rouvrir un article terminé ne rejoue plus haptique +
-  POST + `article_finished` — l'événement même qui doit servir à calibrer
-  l'objectif journalier, jusqu'ici gonflé par les relectures.
+## D. Élargir la recherche
 
-## E. Silences
+- Bandeau « N résultats dans tes sources → **Élargir** » quand un mot-clé ramène 1 à 4
+  articles.
+- `includeUnfollowed` **déplacé dans `FeedFilterSelection`** : `setKeyword(q,
+  includeUnfollowed: true)` avec le même mot-clé ne changeait pas la sélection, donc l'UI ne
+  se redessinait pas (`==` ignorait le périmètre). `_restoreFiltersFromSelection` le restaure
+  désormais au lieu de le remettre à `false` — ce qui rétrécissait silencieusement une
+  recherche élargie après un rebuild du notifier.
+- La pill de la barre de filtres affiche « mot-clé · toutes sources » quand le périmètre est
+  élargi.
 
-- Le `catch (_)` du flush de la file de lectures remonte à Sentry, hors erreurs de
-  connectivité (cas nominal de cette file, `isOfflineError`).
-- L'opt-out gamification n'échoue plus en silence (relit la vérité serveur + le dit).
+## E. Découvrabilité (décision PO : header partagé)
+
+- Loupe 40 px dans `_SharedTopHeader` (`main_shell.dart`), à gauche de l'avatar : présente
+  sur les **deux** onglets, hors de la zone filtre. Teinte accent quand une recherche est
+  active.
+- Depuis L'Essentiel, valider une recherche **bascule sur Flâner** avec le filtre appliqué.
+- Le trigger de la barre de filtres est rétrogradé en **affichage d'état** : la pill
+  « 🔍 mot-clé ✕ » quand une recherche est active, **rien** sinon (au lieu d'occuper 34 px en
+  permanence pour une loupe redondante).
+- Suppression de `compact_search_chip.dart` (code mort).
+
+## F. Instrumentation
+
+`search_opened` · `search_result_selected` (type + rang) · `search_submitted_empty` ·
+`search_add_source_bridged` · `search_broadened`. Le funnel visé : ouverture → sélection
+(succès) vs impasse → rattrapage. `search_submitted_empty` est dédupliqué par signature
+`mot-clé|périmètre` (l'état vide est reconstruit à chaque rebuild du sliver).
 
 ## Vérification
 
-- Backend : `pytest` — **2514 passed**, 18 skipped, 2 xfailed, 0 échec.
-  1 head Alembic, aucune migration ajoutée.
-- Mobile : `flutter test` — **+1747 / -28**, les 28 échecs dans 8 fichiers
-  qu'aucun commit de cette PR ne touche (baseline documentée ~27 :
-  `auth/router_redirection`, `custom_topics`, `digest/bookmark`,
-  `detail/notification_test`, `feed_sources`, `perspectives_*`, `settings/*`,
-  `widget_test`). Les 53 tests des fichiers touchés/ajoutés passent.
-- `flutter analyze` : **0 erreur**.
-- Changelog in-app : entrée « Lecture » ajoutée (impact visible).
-
-## Zones à risque
-
-`digest_service._update_closure_streak` (série de clôture), `read_sync_service`
-(file de synchro des lectures), boot Hive (`main.dart`, 7e box), et les 3 familles
-de cartes du feed.
-
-Story : `docs/stories/core/30.lecture-aboutie/README.md` (§11 journal
-d'implémentation).
-
-## Reste ouvert
-
-- Fenêtre de 14 j de collecte `article_finished` (PostHog) avant d'arrêter
-  `DAILY_COMPLETION_GOAL` sur P50/P75/P90. La correction de la réouverture est ce
-  qui rend cette distribution exploitable.
-- `/validate-feature` (parcours visuels : cachet, filet, anneau) non exécuté —
-  Flutter web n'était pas lancé dans cet environnement.
+- `flutter analyze` : **0 erreur**, aucun nouveau warning sur les fichiers touchés.
+- **47 nouveaux tests, tous verts** : 17 matcher · 13 builder · 5 état vide · 9 sheet ·
+  3 pont ajout de source.
+- Suite complète : **1740 passants / 33 échecs, tous préexistants** — vérifié en rejouant les
+  mêmes fichiers sur `main` sans le diff (mêmes 33 : stubs `fail('Test not implemented')` de
+  `feed_sources_test.dart`, goldens `ring_avatar`, `widget_test.dart`…).
+- Pas d'E2E Playwright : le build web n'a pas été exercé dans cet environnement.
+  QA handoff prêt dans `.context/qa-handoff.md` (10 scénarios) pour `/validate-feature`.

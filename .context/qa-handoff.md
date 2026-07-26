@@ -1,13 +1,14 @@
-# QA Handoff — Objectif quotidien réglable + footer validé vert (story 30.2)
+# QA Handoff — Recherche universelle (Story 30.1)
 
 > Rempli par l'agent dev. Input de /validate-feature. Story :
-> `docs/stories/core/30.2.objectif-quotidien-reglable.md`.
+> `docs/stories/core/30.1.recherche-universelle.md`.
 
 ## Feature développée
-L'objectif quotidien de lectures abouties devient réglable (1 → 7, défaut 2) via
-un curseur dans l'écran « Progression », persisté serveur (`daily_goal`). Le toast
-« objectif atteint » propose un CTA pour l'ajuster, et le footer d'un article
-terminé passe tout au vert `success`.
+
+La loupe de Flâner devient une **recherche universelle** : un seul champ pour retrouver un
+article, une source (suivie ou à ajouter), un sujet suivi ou un thème. Quand la requête ne
+donne rien, l'écran propose des rattrapages au lieu d'un écran blanc. Le point d'entrée
+migre dans le **header partagé** (visible sur les deux onglets).
 
 ## PR associée
 À créer (`/go`) vers `main`.
@@ -15,53 +16,97 @@ terminé passe tout au vert `success`.
 ## Écrans impactés
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Progression | `/lettres` | Modifié — nouvelle carte « Objectif quotidien » sous l'en-tête |
-| Lecteur d'article (détail) | `/flaner/content/:id` | Modifié — CTA toast + couleur footer |
+| Header partagé (2 onglets) | `/flux-continu` et `/flaner` | Modifié — nouvelle loupe à gauche de l'avatar |
+| Sheet de recherche | modale | Réécrite |
+| Flâner | `/flaner` | Modifié — état vide + bandeau « élargir » |
+| Barre de filtres | `/flaner` et Explorer de L'Essentiel | Modifié — la loupe devient une pill d'état |
+| Ajouter une source | `/settings/sources/add` | Modifié — accepte une requête pré-remplie |
 
 ## Scénarios de test
 
-### Scénario 1 : Régler l'objectif (happy path)
-1. Ouvrir « Progression » (`/lettres`).
-2. Repérer la carte « Objectif quotidien » (sous l'en-tête).
-3. Glisser le curseur de 2 à 5.
-**Attendu** : la valeur affichée passe à « 5 articles » ; après un reload de
-l'écran, la valeur reste 5 (persistée serveur).
+### Scénario 1 : Happy path — filtrer sur une source suivie
+1. Depuis Flâner, taper la loupe du header.
+2. Saisir le début du nom d'une source suivie (ex. « media »).
+3. Taper le résultat sous « TES SOURCES ».
 
-### Scénario 2 : CTA du toast à l'objectif atteint
-1. Régler l'objectif à 1 (pour atteindre l'objectif en une lecture).
-2. Ouvrir un article et le lire jusqu'au bout.
-**Attendu** : le toast `micro` « lu jusqu'au bout » affiche la ligne tappable
-« Quel objectif on se donne ? » ; un tap ouvre l'écran Progression et ferme le
-toast.
+**Attendu** : la sheet se ferme, le flux est filtré sur cette source, la barre de filtres
+affiche la chip source active.
 
-### Scénario 3 : Pas de CTA sous l'objectif
-1. Régler l'objectif à 3.
-2. Lire un seul article jusqu'au bout (1/3).
-**Attendu** : le toast affiche « 1/3 » sans CTA.
+### Scénario 2 : Source absente du compte → ajout en 1 tap
+1. Ouvrir la recherche, saisir le nom d'une source du catalogue **non suivie**.
+2. Vérifier qu'elle apparaît sous « AJOUTER UNE SOURCE » avec le sous-titre
+   « Pas encore dans tes sources » et un bouton **Ajouter**.
+3. Taper **Ajouter**.
 
-### Scénario 4 : Footer validé vert
-1. Lire un article jusqu'au bout.
-**Attendu** : le pied de page passe en état validé — le bouton « Lire sur … »
-est vert `success` (plus de gris), cohérent avec la teinte du pill et le toast.
+**Attendu** : spinner sur la ligne, toast « … ajoutée à tes sources », sheet fermée, flux
+filtré sur la nouvelle source. La source apparaît ensuite dans Réglages → Sources.
 
-### Scénario 5 : Gate gamification
-1. Désactiver la gamification (réglages).
-2. Ouvrir « Progression ».
-**Attendu** : la carte « Objectif quotidien » est masquée.
+### Scénario 3 : Source inconnue → pont vers la recherche intelligente
+1. Ouvrir la recherche, saisir un nom absent du catalogue (ex. « gazette de saint-flour »).
+2. Taper « Chercher « … » sur le web ».
+
+**Attendu** : navigation vers l'écran **Ajouter une source** avec le champ **déjà rempli**
+et la recherche **déjà lancée** (résultats ou skeleton visibles, pas d'écran d'accueil vide).
+
+### Scénario 4 : Recherche bredouille → rattrapages
+1. Ouvrir la recherche, saisir un mot-clé sans résultat dans les sources suivies.
+2. Valider au clavier (action « rechercher »).
+
+**Attendu** : Flâner affiche l'état vide 🔍 « Rien sur « … » » avec, dans l'ordre :
+« Élargir à toutes les sources », « Ajouter « … » comme source », « Suivre « … » comme
+sujet », « Revenir au feed ». **Pas** de carte « Pour ne rien rater sur … » en doublon.
+
+### Scénario 5 : Élargissement
+1. Depuis l'état vide, taper « Élargir à toutes les sources ».
+
+**Attendu** : le flux se recharge en incluant les sources non suivies ; la pill de la barre
+de filtres affiche « mot-clé · toutes sources » ; le CTA « Élargir » disparaît de l'état
+vide s'il reste vide.
+
+### Scénario 6 : Récolte maigre
+1. Chercher un mot-clé qui ramène entre 1 et 4 articles.
+
+**Attendu** : un bandeau discret « N résultats dans tes sources » + bouton « Élargir »
+s'intercale sous la barre de filtres. Il disparaît à 5 résultats ou plus, et une fois élargi.
+
+### Scénario 7 : Recherche depuis L'Essentiel
+1. Aller sur l'onglet L'Essentiel.
+2. Taper la loupe du header, saisir un thème (ex. « environnement »), taper le résultat.
+
+**Attendu** : bascule automatique sur l'onglet **Flâner** avec le filtre thème appliqué.
+
+### Scénario 8 : Intention source vs mot-clé
+1. Saisir exactement le nom d'une source suivie (ex. « Mediapart »).
+2. Puis saisir un domaine (ex. « lemonde.fr »).
+
+**Attendu** : dans les deux cas, la section source / « Ajouter une source » passe **devant**
+« ARTICLES », qui est relégué en fin de liste.
+
+### Scénario 9 : Accents et casse
+1. Saisir « ecolo » (sans accent) alors qu'un sujet « Écologie » est suivi.
+
+**Attendu** : le sujet remonte sous « SUJETS SUIVIS ».
+
+### Scénario 10 : État initial et historique
+1. Ouvrir la recherche sans rien saisir.
+
+**Attendu** : recherches récentes (si historique), sources favorites (si favoris), sujets du
+moment. Aucune section de résultats. Le champ prend le focus automatiquement.
 
 ## Critères d'acceptation
-- [ ] Curseur 1 → 7, défaut 2, valeur persistée après reload.
-- [ ] CTA présent uniquement à `current >= total`.
-- [ ] Footer article terminé entièrement vert `success`.
-- [ ] Carte masquée si gamification désactivée.
-- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
 
-## Zones de risque
-- Optimistic UI du curseur : rollback + SnackBar si le PUT échoue.
-- Le CTA du toast n'est tappable que sur sa propre ligne (niveau `micro` non
-  tappable globalement).
+- [ ] La loupe du header est visible et cliquable sur les **deux** onglets.
+- [ ] La loupe passe en couleur accent quand une recherche est active.
+- [ ] Aucune loupe résiduelle dans la barre de filtres quand aucune recherche n'est active.
+- [ ] Toute recherche bredouille propose au moins un rattrapage (jamais d'écran blanc).
+- [ ] Le pont vers l'ajout de source arrive avec la recherche **déjà lancée**.
+- [ ] Console sans erreur, réseau sans 4xx/5xx inattendu.
 
-## Dépendances
-- `PUT /api/users/profile` avec `{"daily_goal": <1..7>}` (422 hors bornes).
-- `GET /api/streaks` (ou route streak) renvoie `daily_goal`.
-- Migration `dg01_daily_goal_user_profiles` appliquée (colonne `user_profiles.daily_goal`).
+## Points d'attention
+
+- Le calcul des résultats est **100 % local** (aucun appel réseau pendant la frappe) : si un
+  résultat attendu manque, vérifier que `userSourcesProvider` / `customTopicsProvider` sont
+  bien chargés avant d'ouvrir la sheet.
+- Une source **mise en sourdine** ne doit jamais être reproposée à l'ajout.
+- ⚠️ Flutter web = canvas : activer la sémantique au boot avant tout `snapshot`
+  (cf. skill `facteur-qa-web`).
