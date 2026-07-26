@@ -104,6 +104,23 @@ capacité réelle, soit 14 et 18 connexions sorties.
 **Pas de changement de `pool_size`/`max_overflow`** — le pic réel observé est 11/20 (55 %).
 Cf. `docs/bugs/bug-infinite-load-requests.md` : interdit sans preuve métrique.
 
+## Conséquence indirecte — le watchdog d'auto-remédiation
+
+`.github/workflows/pool-saturation-watchdog.yml` interroge `/api/health/pool` **toutes les
+5 minutes** et déclenche sa branche « saturation confirmée » si
+`status == "saturated"` **ou** `usage_pct > 90`, sur deux sondes à 30 s d'intervalle.
+
+Or l'ancienne formule mettait `status = "saturated"` dès que `checked_in == 0` et
+`usage_pct > 90` dès 9 connexions sorties sur 20. Le watchdog s'appuyait donc sur le même
+signal faux. Il n'a pas encore déclenché (aucune issue ouverte à ce jour — la double sonde à
+30 s a filtré les pics transitoires), mais l'en-tête du workflow annonce qu'après 24 h sans
+faux positif, la branche dry-run devait être remplacée par la mutation Railway
+`serviceInstanceRedeploy`. **Un redeploy automatique du backend aurait donc pu être armé sur
+un seuil atteint à 45 % de charge réelle.**
+
+Ce correctif désamorce le risque sans toucher au workflow, puisque celui-ci consomme
+`read_pool_stats` via `/api/health/pool`.
+
 ## Non-régression
 
 `packages/api/tests/test_pool_observability.py` :

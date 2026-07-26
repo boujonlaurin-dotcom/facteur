@@ -46,6 +46,17 @@ réelle), puis restait bloqué à 100 %.
 artefact. Le fix d'alors n'a pas « lâché » — il n'y avait rien à corriger côté capacité.
 Ses mitigations ne sont **pas** revert.
 
+## Conséquence indirecte — le watchdog d'auto-remédiation
+
+`.github/workflows/pool-saturation-watchdog.yml` sonde `/api/health/pool` **toutes les
+5 minutes** et déclenche sa branche « saturation confirmée » si `status == "saturated"` ou
+`usage_pct > 90`. Il s'appuyait donc sur le même signal faux. Il n'a pas encore déclenché
+(aucune issue ouverte — la double sonde à 30 s a filtré les pics), mais l'en-tête du workflow
+prévoit de remplacer la branche dry-run par la mutation Railway `serviceInstanceRedeploy`
+après 24 h sans faux positif. **Un redeploy automatique du backend aurait pu être armé sur un
+seuil atteint à 45 % de charge réelle.** Ce correctif désamorce le risque sans toucher au
+workflow, qui consomme `read_pool_stats`.
+
 ## Changements
 
 - `app/observability/pool_stats.py` — capacité lue via `pool._max_overflow` (pas
