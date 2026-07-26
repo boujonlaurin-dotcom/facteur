@@ -285,9 +285,7 @@ async def dispatch_daily_essentiel_pushes(
                 continue
 
             if cache_key not in composed_cache:
-                composed_cache[cache_key] = compose_daily_digest(
-                    essentiel, target_date
-                )
+                composed_cache[cache_key] = compose_daily_digest(essentiel, target_date)
             composed = composed_cache[cache_key]
             delivery.attempt_count += 1
             delivery.last_attempt_at = utc_now
