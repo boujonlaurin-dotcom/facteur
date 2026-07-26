@@ -1,77 +1,67 @@
-# QA Handoff — Tournée vivante : suggestions garanties + CTA (Story 22.6)
+# QA Handoff — Objectif quotidien réglable + footer validé vert (story 30.2)
 
 > Rempli par l'agent dev. Input de /validate-feature. Story :
-> `docs/stories/core/22.6.tournee-suggestions-garanties-cta.md`.
+> `docs/stories/core/30.2.objectif-quotidien-reglable.md`.
 
 ## Feature développée
-
-La Tournée du jour garantit désormais un accent quotidien de 4-5 sections
-« Choisie pour vous » **pour tous les comptes** (même 8+ favoris), avec un quota
-de 3 suggestions visibles sous le cap d'affichage pour les comptes personnalisés,
-et un CTA direct « Ajouter à mon Essentiel » sur chaque carte suggérée.
+L'objectif quotidien de lectures abouties devient réglable (1 → 7, défaut 2) via
+un curseur dans l'écran « Progression », persisté serveur (`daily_goal`). Le toast
+« objectif atteint » propose un CTA pour l'ajuster, et le footer d'un article
+terminé passe tout au vert `success`.
 
 ## PR associée
-
-À créer via `/go` (base `main`).
+À créer (`/go`) vers `main`.
 
 ## Écrans impactés
-
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Tournée du jour / Flux Continu | `/flux-continu` | Modifié |
-| Sheet « Pourquoi cette section ? » | overlay | Inchangé (toujours fonctionnel) |
+| Progression | `/lettres` | Modifié — nouvelle carte « Objectif quotidien » sous l'en-tête |
+| Lecteur d'article (détail) | `/flaner/content/:id` | Modifié — CTA toast + couleur footer |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — CTA sur la carte suggérée
-**Parcours** :
-1. Ouvrir la Tournée du jour avec un compte qui reçoit des suggestions.
-2. Repérer une section badgée « Choisie pour vous ».
-3. Taper le bouton « Ajouter à mon Essentiel » en pied de carte.
-**Résultat attendu** : spinner bref, SnackBar « Ajouté à ton Essentiel », la
-section devient favorite (badge « Choisie pour vous » disparaît), l'ordre des
-autres favoris n'est **pas** permuté.
+### Scénario 1 : Régler l'objectif (happy path)
+1. Ouvrir « Progression » (`/lettres`).
+2. Repérer la carte « Objectif quotidien » (sous l'en-tête).
+3. Glisser le curseur de 2 à 5.
+**Attendu** : la valeur affichée passe à « 5 articles » ; après un reload de
+l'écran, la valeur reste 5 (persistée serveur).
 
-### Scénario 2 : Quota visible (compte personnalisé)
-**Parcours** :
-1. Compte avec un ordre de Tournée personnalisé et beaucoup de favoris (proche
-   du cap 13).
-2. Ouvrir la Tournée.
-**Résultat attendu** : exactement 3 sections « Choisie pour vous » restent
-visibles en queue, sous le cap — elles ne sont plus toutes coupées.
+### Scénario 2 : CTA du toast à l'objectif atteint
+1. Régler l'objectif à 1 (pour atteindre l'objectif en une lecture).
+2. Ouvrir un article et le lire jusqu'au bout.
+**Attendu** : le toast `micro` « lu jusqu'au bout » affiche la ligne tappable
+« Quel objectif on se donne ? » ; un tap ouvre l'écran Progression et ferme le
+toast.
 
-### Scénario 3 : Dismiss d'une suggestion
-**Parcours** :
-1. Sur une section suggérée, ouvrir le « i » du badge → sheet.
-2. Choisir « Retirer » (dismiss).
-**Résultat attendu** : la section disparaît (retrait local réversible) ; une
-autre suggestion coupée par le cap peut remonter à sa place.
+### Scénario 3 : Pas de CTA sous l'objectif
+1. Régler l'objectif à 3.
+2. Lire un seul article jusqu'au bout (1/3).
+**Attendu** : le toast affiche « 1/3 » sans CTA.
 
-### Scénario 4 : Anti double-tap
-**Parcours** :
-1. Taper rapidement 2× le bouton « Ajouter à mon Essentiel ».
-**Résultat attendu** : une seule promotion (bouton désactivé pendant l'attente),
-une seule SnackBar.
+### Scénario 4 : Footer validé vert
+1. Lire un article jusqu'au bout.
+**Attendu** : le pied de page passe en état validé — le bouton « Lire sur … »
+est vert `success` (plus de gris), cohérent avec la teinte du pill et le toast.
+
+### Scénario 5 : Gate gamification
+1. Désactiver la gamification (réglages).
+2. Ouvrir « Progression ».
+**Attendu** : la carte « Objectif quotidien » est masquée.
 
 ## Critères d'acceptation
-
-- [ ] 4-5 suggestions/jour garanties, y compris pour un compte 8+ favoris.
-- [ ] ≥3 suggestions visibles sous le cap pour un compte personnalisé, ordre des
-  favoris préservé.
-- [ ] CTA « Ajouter à mon Essentiel » rendu uniquement sur les sections suggérées.
-- [ ] La sheet « Pourquoi cette section ? » (garder/retirer) reste fonctionnelle.
-- [ ] Pas d'em-dash dans la copy visible.
+- [ ] Curseur 1 → 7, défaut 2, valeur persistée après reload.
+- [ ] CTA présent uniquement à `current >= total`.
+- [ ] Footer article terminé entièrement vert `success`.
+- [ ] Carte masquée si gamification désactivée.
+- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus.
 
 ## Zones de risque
-
-- Ordre des favoris jamais permuté par l'insertion du quota (vérifier visuellement).
-- Sections éditoriales (Actus, Bonnes, Grille) : sur un compte très chargé elles
-  peuvent être repoussées hors cap (comportement pré-existant, non aggravé).
-- Instrumentation PostHog : impression dédupliquée 1×/section/jour (persistée) —
-  non visible à l'écran mais à ne pas casser.
+- Optimistic UI du curseur : rollback + SnackBar si le PUT échoue.
+- Le CTA du toast n'est tappable que sur sa propre ligne (niveau `micro` non
+  tappable globalement).
 
 ## Dépendances
-
-- Backend `GET /api/users/top-themes` (plancher de suggestions, aucune migration).
-- Events PostHog : `suggestion_impression`, `suggestion_promoted`,
-  `suggestion_dismissed`.
+- `PUT /api/users/profile` avec `{"daily_goal": <1..7>}` (422 hors bornes).
+- `GET /api/streaks` (ou route streak) renvoie `daily_goal`.
+- Migration `dg01_daily_goal_user_profiles` appliquée (colonne `user_profiles.daily_goal`).

@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.content import Content, ContentType, UserContentStatus
-from app.models.user import UserStreak
+from app.models.user import UserProfile, UserStreak
 from app.schemas.content import SourceMini
 from app.schemas.digest import DigestTopic, DigestTopicArticle
 from app.schemas.essentiel import EssentielArticle
@@ -241,6 +241,37 @@ def test_daily_goal_default_tracks_the_constant():
         weekly_progress=0.0,
     )
     assert response.daily_goal == DAILY_COMPLETION_GOAL
+
+
+@pytest.mark.asyncio
+async def test_get_streak_reflects_profile_daily_goal(db_session):
+    """L'objectif quotidien réglable (colonne profil `daily_goal`) doit être
+    servi par `get_streak`, et non plus la constante en dur (story 30.2)."""
+    user_id = uuid4()
+    db_session.add(
+        UserProfile(
+            user_id=user_id,
+            gamification_enabled=True,
+            weekly_goal=10,
+            daily_goal=5,
+        )
+    )
+    await db_session.flush()
+
+    streak = await StreakService(db_session).get_streak(str(user_id))
+
+    assert streak.daily_goal == 5
+
+
+@pytest.mark.asyncio
+async def test_get_streak_falls_back_to_constant_without_profile(db_session):
+    """Sans profil (ex. utilisateur legacy), l'objectif retombe sur la constante
+    serveur plutôt que de planter."""
+    user_id = uuid4()
+
+    streak = await StreakService(db_session).get_streak(str(user_id))
+
+    assert streak.daily_goal == DAILY_COMPLETION_GOAL
 
 
 def test_essentiel_article_carries_completed_at():

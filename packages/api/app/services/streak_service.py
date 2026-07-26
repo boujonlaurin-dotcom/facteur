@@ -39,7 +39,7 @@ class StreakService:
             weekly_goal=weekly_goal,
             weekly_progress=min(1.0, streak.weekly_count / weekly_goal),
             daily_completed=await self.count_completed_today(user_id),
-            daily_goal=DAILY_COMPLETION_GOAL,
+            daily_goal=profile.daily_goal if profile else DAILY_COMPLETION_GOAL,
         )
 
     async def count_completed_today(self, user_id: str) -> int:

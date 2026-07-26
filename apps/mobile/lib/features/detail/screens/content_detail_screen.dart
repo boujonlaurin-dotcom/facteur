@@ -1112,6 +1112,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       total: total,
       label: 'lu jusqu\'au bout',
       accentColor: context.facteurColors.success,
+      // À l'objectif atteint (`current >= total`) : proposer d'ouvrir l'écran
+      // Progression pour régler la cible. Sinon aucun CTA (toast neutre).
+      onGoalCta: current >= total
+          ? () {
+              if (mounted) context.push(RoutePaths.lettres);
+            }
+          : null,
     );
     return true;
   }
@@ -2871,12 +2878,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           // bottom of the article (footer locked permanent) AND
                           // the WebView hasn't been revealed yet.
                           //
-                          // Une fois l'article terminé, le pied de page porte
-                          // l'état « succès » (cachet vert) : l'action « Lire
-                          // sur … » se retire alors en `secondary` pour ne plus
-                          // concurrencer cet état. Un bouton d'action ne prend
-                          // jamais le vert, qui signifie « déjà fait » partout
-                          // ailleurs dans le produit.
+                          // Une fois l'article terminé, tout le pied de page
+                          // porte l'état « succès » (cachet + teinte vert) :
+                          // l'action « Lire sur … » passe elle aussi au vert
+                          // `success` pour un footer validé cohérent. La règle
+                          // antérieure (« un bouton d'action ne prend jamais le
+                          // vert ») est explicitement levée par le PO pour cette
+                          // itération (story 30.2).
                           final usePrimary =
                               permanent && !isWebViewMode && !completed;
                           final useSecondary = completed;
@@ -2929,7 +2937,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             return FilledButton(
                               onPressed: _onReadOnSiteTap,
                               style: FilledButton.styleFrom(
-                                backgroundColor: colors.secondary,
+                                backgroundColor: colors.success,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),

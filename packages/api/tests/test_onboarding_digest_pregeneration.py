@@ -182,6 +182,7 @@ async def test_onboarding_schedules_initial_digest_generation():
         onboarding_completed=True,
         gamification_enabled=True,
         weekly_goal=5,
+        daily_goal=2,
         created_at=now,
         updated_at=now,
     )
