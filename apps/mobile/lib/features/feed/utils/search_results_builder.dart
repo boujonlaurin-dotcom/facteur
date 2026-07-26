@@ -123,15 +123,7 @@ List<SearchSection> buildSearchSections({
 
   final themes = section(
     kSectionThemes,
-    themeMatches
-        .map<SearchResult>(
-          (m) => ThemeResult(
-            label: m.item,
-            slug: macroThemeToApiSlug[m.item] ?? m.item,
-            emoji: getMacroThemeEmoji(m.item),
-          ),
-        )
-        .toList(),
+    themeMatches.map<SearchResult>((m) => _themeResultFor(m.item)).toList(),
   );
 
   // La section « Ajouter » est toujours présente, et la recherche intelligente
@@ -157,3 +149,50 @@ List<SearchSection> buildSearchSections({
 
   return ordered.whereType<SearchSection>().toList();
 }
+
+/// Match **exact** de [query] sur une source suivie, un sujet/entité suivi ou
+/// un thème — dans cet ordre de priorité.
+///
+/// Sert à rediriger une recherche tapée au clavier (ou une chip d'historique)
+/// vers le filtre de catalogue correspondant plutôt que vers un mot-clé
+/// générique, quand `q` correspond exactement au nom d'un onglet déjà épinglé
+/// (`FavoriteTopicTabs` sait alors le scroller en vue automatiquement).
+SearchResult? findExactFollowedMatch({
+  required String query,
+  required List<Source> allSources,
+  required List<UserTopicProfile> topics,
+}) {
+  final foldedQuery = foldForSearch(query.trim());
+  if (foldedQuery.isEmpty) return null;
+
+  // Seule l'égalité exacte compte : replier le libellé et comparer suffit —
+  // inutile de payer les tiers préfixe/mot/fuzzy de `qualityOfFolded`.
+  bool isExact(String label) => foldForSearch(label.trim()) == foldedQuery;
+
+  for (final s in allSources.where(isFollowedSource)) {
+    if (isExact(s.name) || (s.url != null && isExact(s.url!))) {
+      return FollowedSourceResult(s);
+    }
+  }
+
+  for (final t in topics) {
+    if (isExact(t.name) || (t.canonicalName != null && isExact(t.canonicalName!))) {
+      return TopicResult(t);
+    }
+  }
+
+  for (final theme in macroThemeOrder) {
+    if (isExact(theme)) return _themeResultFor(theme);
+  }
+
+  return null;
+}
+
+/// Construit le [ThemeResult] d'un thème macro (slug API + emoji) — partagé par
+/// `buildSearchSections` et `findExactFollowedMatch` pour que les deux chemins
+/// ne dérivent jamais sur la dérivation slug/emoji.
+ThemeResult _themeResultFor(String theme) => ThemeResult(
+      label: theme,
+      slug: macroThemeToApiSlug[theme] ?? theme,
+      emoji: getMacroThemeEmoji(theme),
+    );

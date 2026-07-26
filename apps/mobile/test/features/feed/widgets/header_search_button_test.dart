@@ -90,10 +90,9 @@ Widget _host({
   );
 }
 
-Finder get _clearButton => find.bySemanticsLabel('Effacer le filtre');
-// RegExp (contains) : dans l'état pill, le libellé « Rechercher » est fusionné
-// avec le texte du filtre dans le même nœud sémantique.
-Finder get _searchButton => find.bySemanticsLabel(RegExp('Rechercher'));
+Finder get _searchButton => find.bySemanticsLabel('Rechercher');
+Finder get _searchIcon =>
+    find.byIcon(PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold));
 
 void main() {
   setUp(() {
@@ -106,26 +105,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(_searchButton, findsOneWidget);
-    expect(_clearButton, findsNothing);
+    expect(_searchIcon, findsOneWidget);
     expect(find.byIcon(PhosphorIcons.x(PhosphorIconsStyle.bold)), findsNothing);
   });
 
-  testWidgets('mot-clé actif : pill teintée avec ✕', (tester) async {
+  testWidgets('mot-clé actif : la loupe reste une icône simple, pas de pill',
+      (tester) async {
     await tester.pumpWidget(
       _host(selection: const FeedFilterSelection(keyword: 'retraites')),
     );
     await tester.pumpAndSettle();
 
-    expect(_clearButton, findsOneWidget);
-    expect(find.text('retraites'), findsOneWidget);
-
-    final icon = tester.widget<Icon>(
-      find.byIcon(PhosphorIcons.magnifyingGlass(PhosphorIconsStyle.bold)),
-    );
-    expect(icon.color, FacteurPalettes.light.primary);
+    expect(_searchButton, findsOneWidget);
+    expect(_searchIcon, findsOneWidget);
+    expect(find.text('retraites'), findsNothing);
+    expect(find.byIcon(PhosphorIcons.x(PhosphorIconsStyle.bold)), findsNothing);
   });
 
-  testWidgets('filtre source (même non favori) : pill avec le nom de la source',
+  testWidgets(
+      'filtre source (même non favori) : la loupe reste une icône simple',
       (tester) async {
     await tester.pumpWidget(
       _host(
@@ -135,39 +133,23 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Régression clé : le header ne suivait que `keyword` et repassait en icône
-    // neutre sur un filtre source/thème/sujet.
-    expect(_clearButton, findsOneWidget);
-    expect(find.text('Mediapart'), findsOneWidget);
+    expect(_searchButton, findsOneWidget);
+    expect(_searchIcon, findsOneWidget);
+    expect(find.text('Mediapart'), findsNothing);
   });
 
-  testWidgets('filtre thème : pill avec le libellé lisible du thème',
-      (tester) async {
+  testWidgets('filtre thème : la loupe reste une icône simple', (tester) async {
     await tester.pumpWidget(
       _host(selection: const FeedFilterSelection(theme: 'tech')),
     );
     await tester.pumpAndSettle();
 
-    expect(_clearButton, findsOneWidget);
-    expect(find.text('Technologie'), findsOneWidget);
+    expect(_searchButton, findsOneWidget);
+    expect(_searchIcon, findsOneWidget);
+    expect(find.text('Technologie'), findsNothing);
   });
 
-  testWidgets('tap ✕ appelle clearFilters() sans ouvrir la sheet',
-      (tester) async {
-    await tester.pumpWidget(
-      _host(selection: const FeedFilterSelection(sourceId: 's-mediapart'),
-          catalog: [_source(id: 's-mediapart', name: 'Mediapart')]),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(_clearButton);
-    await tester.pumpAndSettle();
-
-    expect(_RecordingFeedNotifier.calls, ['clearFilters']);
-    expect(find.byType(TextField), findsNothing);
-  });
-
-  testWidgets('tap loupe ouvre la recherche (onglet Flâner)', (tester) async {
+  testWidgets('tap loupe ouvre la sheet (onglet Flâner)', (tester) async {
     await tester.pumpWidget(
       _host(selection: const FeedFilterSelection(keyword: 'retraites')),
     );
@@ -180,7 +162,7 @@ void main() {
     expect(_RecordingFeedNotifier.calls, isEmpty);
   });
 
-  testWidgets('isEssentielTab: true — la pill de filtre reste montée',
+  testWidgets('isEssentielTab: true — la loupe reste une icône simple',
       (tester) async {
     await tester.pumpWidget(
       _host(
@@ -190,9 +172,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Sur L'Essentiel la barre de filtres n'existe pas : la loupe du header est
-    // la seule affordance qui signale (et efface) un filtre actif.
-    expect(_clearButton, findsOneWidget);
-    expect(find.text('retraites'), findsOneWidget);
+    expect(_searchButton, findsOneWidget);
+    expect(_searchIcon, findsOneWidget);
+  });
+
+  testWidgets('isEssentielTab: true — tap loupe ouvre la sheet', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        selection: const FeedFilterSelection(keyword: 'retraites'),
+        isEssentielTab: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(_searchButton);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsOneWidget);
   });
 }

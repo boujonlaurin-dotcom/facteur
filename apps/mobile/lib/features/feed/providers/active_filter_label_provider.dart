@@ -7,22 +7,26 @@ import '../models/search_result.dart' show TopicResult;
 import 'feed_provider.dart';
 
 /// Libellé du filtre feed actif, **quelle que soit sa dimension** (mot-clé,
-/// source, thème, sujet, entité). Source de vérité unique pour la loupe du
-/// header ([HeaderSearchButton]) et la pill de la barre de filtres
-/// ([FeedFilterBar]) : jusqu'ici le header ne regardait que `keyword` et
-/// repassait en icône neutre dès qu'on filtrait par source/sujet/thème
-/// (setters exclusifs du notifier), alors qu'un filtre était bien actif.
+/// source, thème, sujet, entité). Source de vérité de la pill de la barre de
+/// filtres ([FeedFilterBar]), qui suit **n'importe quelle** dimension (setters
+/// exclusifs du notifier) et non plus seulement `keyword`. La loupe du header
+/// ([HeaderSearchButton]) reste, elle, une icône simple et ne consomme pas ce
+/// provider.
 ///
 /// Renvoie `null` quand aucun filtre n'est posé. `isKeyword` distingue le
-/// mot-clé — le seul à porter le suffixe « · toutes sources » quand la
-/// recherche est élargie — des filtres de catalogue.
+/// mot-clé des filtres de catalogue.
 ///
 /// `resolved` distingue un libellé lisible (nom de source/thème/sujet trouvé,
 /// ou mot-clé) d'un repli sur le slug/id brut le temps qu'un provider async se
-/// peuple. Les pills du header et de la barre affichent toujours `label` (mieux
-/// vaut un slug qu'une icône neutre alors qu'un filtre est actif) ; l'état vide
-/// de `flaner_screen` n'affiche que les libellés `resolved` et garde sinon son
+/// peuple. La pill de la barre affiche toujours `label` (mieux vaut un slug
+/// qu'une icône neutre alors qu'un filtre est actif) ; l'état vide de
+/// `flaner_screen` n'affiche que les libellés `resolved` et garde sinon son
 /// titre générique.
+///
+/// Le suffixe « · toutes sources » (recherche élargie) n'apparaît PAS ici : la
+/// pill est persistante, la précision n'a de sens que juste après avoir
+/// lancé/élargi la recherche — elle vit dans le bandeau éphémère de
+/// `flaner_screen` (`_SearchNavBanner`).
 final activeFilterLabelProvider =
     Provider<({String label, bool isKeyword, bool resolved})?>((ref) {
   final selection = ref.watch(feedFilterSelectionProvider);
@@ -32,8 +36,7 @@ final activeFilterLabelProvider =
   switch (kind) {
     case FeedFilterKind.keyword:
       final kw = selection.keyword!.trim();
-      final label = selection.includeUnfollowed ? '$kw · toutes sources' : kw;
-      return (label: label, isKeyword: true, resolved: true);
+      return (label: kw, isKeyword: true, resolved: true);
     case FeedFilterKind.source:
       final id = selection.sourceId!;
       final sources = ref.watch(userSourcesProvider).valueOrNull;

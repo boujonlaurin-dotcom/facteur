@@ -187,6 +187,26 @@ class _SearchFilterSheetState extends ConsumerState<SearchFilterSheet> {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
     unawaited(ref.read(searchHistoryProvider.notifier).addSearch(trimmed));
+
+    // Taper exactement le nom d'une source/d'un sujet/d'un thème déjà suivi
+    // est une intention de navigation, pas de mot-clé : rediriger vers le
+    // filtre de catalogue réutilise le scroll auto de `FavoriteTopicTabs`.
+    final exactMatch = findExactFollowedMatch(
+      query: trimmed,
+      allSources: ref.read(userSourcesProvider).valueOrNull ?? const <Source>[],
+      topics: ref.read(customTopicsProvider).valueOrNull ?? const <UserTopicProfile>[],
+    );
+    switch (exactMatch) {
+      case FollowedSourceResult(:final source):
+        return _selectSource(source, rank, queryUsed: trimmed);
+      case TopicResult():
+        return _selectTopic(exactMatch, rank);
+      case ThemeResult():
+        return _selectTheme(exactMatch, rank);
+      default:
+        break;
+    }
+
     final notifier = ref.read(feedProvider.notifier);
     await _applyAndClose(
       () => notifier.setKeyword(trimmed, includeUnfollowed: fromTrending),

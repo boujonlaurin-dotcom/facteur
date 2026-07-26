@@ -768,9 +768,11 @@ class _SearchNavBannerState extends ConsumerState<_SearchNavBanner> {
     final active = ref.read(activeFilterLabelProvider);
     if (active == null) return null;
     if (active.isKeyword) {
-      final keyword = ref.read(feedFilterSelectionProvider).keyword?.trim();
+      final selection = ref.read(feedFilterSelectionProvider);
+      final keyword = selection.keyword?.trim();
       if (keyword == null || keyword.isEmpty) return null;
-      return 'Résultats pour « $keyword »';
+      final suffix = selection.includeUnfollowed ? ' · toutes sources' : '';
+      return 'Résultats pour « $keyword »$suffix';
     }
     return 'Filtré sur ${active.label}';
   }

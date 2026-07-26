@@ -109,9 +109,7 @@ class FeedFilterBar extends ConsumerWidget {
 /// recherche est en cours (story 30.1) — l'entrée de la recherche vit
 /// désormais dans le header partagé.
 ///
-/// [label] provient de `activeFilterLabelProvider` (même source que le header) :
-/// il porte déjà le suffixe « · toutes sources » quand la recherche est élargie
-/// aux sources non suivies.
+/// [label] provient de `activeFilterLabelProvider` (même source que le header).
 class _SearchTrigger extends StatelessWidget {
   final String label;
   final VoidCallback onTap;

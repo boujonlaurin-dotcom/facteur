@@ -321,6 +321,34 @@ void main() {
     expect(_RecordingFeedNotifier.calls, contains('keyword:retraites:false'));
   });
 
+  testWidgets(
+      'valider au clavier le nom exact d\'une source suivie sélectionne la source',
+      (tester) async {
+    await _openSheet(tester);
+    await tester.enterText(find.byType(TextField), 'Mediapart');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(_RecordingFeedNotifier.calls, contains('source:s1'));
+    expect(_RecordingFeedNotifier.calls, isNot(contains(startsWith('keyword:'))));
+  });
+
+  testWidgets(
+      'valider au clavier le nom exact d\'un sujet suivi sélectionne le sujet',
+      (tester) async {
+    await _openSheet(tester);
+    await tester.enterText(find.byType(TextField), 'Écologie');
+    // Laisse `customTopicsProvider` se résoudre avant de soumettre — sans
+    // frappe préalable il n'a encore jamais été lu par la sheet (contrairement
+    // au catalogue de sources, déjà résolu pour le bloc « Tes sources »).
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(_RecordingFeedNotifier.calls, contains('topic:environment'));
+    expect(_RecordingFeedNotifier.calls, isNot(contains(startsWith('keyword:'))));
+  });
+
   testWidgets('la sheet ne navigue pas elle-même : elle notifie le hôte',
       (tester) async {
     await _openSheet(tester);
