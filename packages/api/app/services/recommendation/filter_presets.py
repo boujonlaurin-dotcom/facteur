@@ -538,6 +538,79 @@ EDITORIAL_SOURCE_DENYLIST: frozenset[str] = frozenset(
 )
 
 
+# --- Signal "feuilleton / épisode de série" (dépriorisation douce) ---
+#
+# Distinct de `is_news_bulletin_title` : celui-ci **exclut** de l'Essentiel, on
+# veut ici seulement **déprioriser** dans le classement des sections de la
+# Tournée. Un épisode de série reste légitime, il ne doit simplement pas
+# occuper les 3 slots previewés au détriment de l'actualité.
+#
+# `NEWS_BULLETIN_PATTERNS` ne couvre qu'une forme de compteur : parenthésé ET
+# en fin de titre (« … (1/4) »). La forme réellement produite par les flux est
+# tout autre — compteur nu au milieu du titre, introduisant un sous-titre :
+#   « Les sciences dans le règne animal 4/4 : Emotions des cétacés »
+#   « La révolution numérique 2/10 : 1942-1946, l'ENIAC »
+#   « Les cosmologies, mythes et sciences du monde 4/22 : L'Inde »
+#   « #IA (7/10). Société : le grand effritement »
+
+# Compteur N/M isolé (ni précédé ni suivi d'un chiffre ou d'un séparateur de
+# date), suivi soit d'un séparateur de sous-titre, soit de la fin du titre.
+# Le tri série/date se fait ensuite sur les valeurs, cf. _is_serial_counter.
+_SERIAL_COUNTER_RE = re.compile(
+    r"(?<![\d/.,-])(\d{1,2})\s?/\s?(\d{1,2})(?![\d/.,])\s*([:.)\]]|$)"
+)
+
+# Marqueurs d'épisode explicites. `#\d{2,3}` cible la numérotation de
+# newsletter (« QSPTAG #332 ») en excluant les millésimes à 4 chiffres.
+_EPISODE_MARKERS_RE = re.compile(
+    r"|".join(
+        [
+            r"\b[ée]pisode\s*[#n°]?\s*\d{1,3}\b",
+            r"\b[ée]p\.?\s*\d{1,3}\b",
+            r"\bs\d{1,2}\s?e\d{1,2}\b",
+            r"\b(?:partie|volet)\s*\d{1,2}\b",
+            r"\b\d{1,2}\s?(?:e|ème|er|ère)?\s+(?:partie|volet)\b",
+            r"#\s?\d{2,3}(?!\d)",
+        ]
+    ),
+    re.IGNORECASE,
+)
+
+
+def _is_serial_counter(index: int, total: int, tail: str) -> bool:
+    """Discrimine un compteur de feuilleton d'une date JJ/MM.
+
+    Deux garde-fous, validés sur un relevé de titres réels (cf.
+    docs/bugs/bug-curation-entree-sections-thematiques.md) :
+
+    1. **index ≤ total** — un épisode porte son rang sous son total (« 4/22 »,
+       « 13/25 ») ; une date a son jour au-dessus de son mois 11 mois sur 12
+       (« - 24/07 », « le 21/07 »).
+    2. **le motif introduit un sous-titre** (« 4/4 : … », « (7/10). ») **ou**
+       le total dépasse 12, impossible pour un mois. Sans ça, une date de
+       décembre (« - 05/12 ») passerait le garde-fou 1.
+    """
+    if index < 1 or index > total:
+        return False
+    return tail in {":", ")", "]"} or total > 12
+
+
+def is_serial_episode_title(title: str | None) -> bool:
+    """True si le titre porte un marqueur de feuilleton / épisode de série.
+
+    Signal de **dépriorisation douce** (malus léger), jamais d'exclusion :
+    volontairement conservateur, il préfère laisser passer un feuilleton que
+    rétrograder une actualité. Coût : quelques regex compilées sur un titre
+    (≤ 500 caractères), sans allocation notable.
+    """
+    if not title:
+        return False
+    for match in _SERIAL_COUNTER_RE.finditer(title):
+        if _is_serial_counter(int(match.group(1)), int(match.group(2)), match.group(3)):
+            return True
+    return bool(_EPISODE_MARKERS_RE.search(title))
+
+
 def is_denylisted_editorial_source(content) -> bool:  # type: ignore[no-untyped-def]
     """True si la source du contenu est dans EDITORIAL_SOURCE_DENYLIST."""
     source = getattr(content, "source", None)

@@ -8,6 +8,7 @@ au score final car elles représentent des signaux négatifs forts.
 import json
 
 from app.models.content import Content
+from app.services.recommendation.filter_presets import is_serial_episode_title
 from app.services.recommendation.pillars.base import PillarContribution
 from app.services.recommendation.pillars.pertinence import _subtopic_label, _theme_label
 from app.services.recommendation.scoring_config import ScoringWeights
@@ -116,6 +117,22 @@ class PenaltyPass:
                         is_positive=False,
                     )
                 )
+
+        # --- Feuilleton / épisode de série (sections de la Tournée) ---
+        # Gaté sur `personalized_theme_mode` : décision PO, le reste de l'app
+        # (« Pour vous », Flâner scoré, digest) garde son classement. Le check
+        # regex ne tourne donc que sur les candidats d'une section thématique.
+        if getattr(context, "personalized_theme_mode", False) and (
+            is_serial_episode_title(content.title)
+        ):
+            score += ScoringWeights.SERIAL_EPISODE_MALUS
+            contributions.append(
+                PillarContribution(
+                    label="Épisode d'une série",
+                    points=ScoringWeights.SERIAL_EPISODE_MALUS,
+                    is_positive=False,
+                )
+            )
 
         # --- Impression Penalties ---
         impression_result = self._score_impressions(content, context)
