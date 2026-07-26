@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../config/theme.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'essentiel_hi_fi_card.dart';
@@ -443,7 +444,10 @@ class SectionBlock extends StatelessWidget {
     // (padded par défaut) → c'est cette hauteur fantôme, pas la marge, qui
     // éloignait « Tout lire › » de sa section. On la collapse au contenu réel.
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+    // Typo du DS (DM Sans via `labelMedium`) : le `TextStyle` brut précédent
+    // n'avait pas de `fontFamily` → rendu dans la police système, hors DS. La
+    // couleur reste portée par `foregroundColor` (texte + chevron).
+    textStyle: FacteurTypography.labelMedium(const Color(0xFF5D5B5A)),
   );
 
   Widget _seeAllFooter() {
