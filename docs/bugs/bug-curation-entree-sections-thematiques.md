@@ -296,11 +296,107 @@ de `_backfillThinSections` (touche la composition → risque de régression).
 - QA Playwright : ouvrir Technologie et Environnement, compter les articles,
   vérifier que le lazy loading ne se coupe plus.
 
+## Résultats (phase CODE — 2026-07-26)
+
+### Implémenté
+
+- [x] **1.1** — extraction déléguée à `extract_content_ids` (helper partagé,
+  connaît `flat_v1` / `topics_v1` / `editorial_v*`). Pur Python sur une ligne
+  déjà chargée en phase 1.
+- [x] **1.1 bis** — `extract_content_ids` récupère aussi
+  `subjects[].representative_content_id`. Le pivot diffère d'`actu_article` sur
+  **3 sujets sur 6** dans le digest de référence ; il était donc invisible à la
+  fois pour l'exclusion feed **et** pour le storage cleanup, qui pouvait
+  supprimer la ligne dont dépend le bottom sheet Perspectives.
+- [x] **1.1 ter** — `digest_stmt` filtre sur `is_serene`. Sans ce prédicat, un
+  compte disposant des deux digests du jour en tirait un **au hasard**
+  (`session.scalar` ne lève pas sur plusieurs lignes) : l'exclusion pouvait
+  porter sur les articles de l'autre digest.
+- [x] **1.2** — exclusion restreinte à `personalized_theme_mode`.
+- [x] **1.3** — `_themeHasMore` aligné sur Flâner (`hasNext && itemCount > 0`).
+- [x] **1.4** — top-up post-frame sur la page dédiée, borné à 2 tours.
+- [x] **1.5** — `loadMoreTheme` déduplique contre toute la Tournée
+  (`renderedContentIds`), plus seulement contre sa propre section.
+- [x] **Terminateur** — une page non vide dont aucun item ne survit à la dédup
+  passe `hasMore=false`. Remplace, en plus précis, l'ancienne règle « page
+  incomplète ⇒ fin » : sans lui, `_themeHasMore` assoupli laissait tourner
+  l'indicateur de chargement et rendait la carte de clôture inatteignable.
+- [x] **Lot 2** — `is_serial_episode_title` + `SERIAL_EPISODE_MALUS = -6.0`
+  dans `PenaltyPass`, gaté par `ScoringContext.personalized_theme_mode`.
+
+Écartés comme prévu : page à 20, élargissement de fenêtre, extension de
+`_backfillThinSections`.
+
+### Coût — exigence PO « n'alourdir aucune requête »
+
+`EXPLAIN` sur la prod, section `environment`, 24 h, sources suivies :
+
+| | coût estimé |
+|---|---|
+| sans le `NOT IN` | 735.15 |
+| avec le `NOT IN` (14 UUID) | 739.58 |
+
+**Plan identique**, au nœud près. Postgres compile le `NOT IN` en
+`id <> ALL (…)` évalué en filtre sur les lignes déjà remontées par
+`ix_contents_source_published` — aucun accès index ou table supplémentaire.
+**+0,6 %**, et **0 requête ajoutée** (le prédicat `is_serene` s'ajoute à une
+requête déjà exécutée ; l'extraction est du Python sur une ligne en mémoire).
+
+Le check regex ne tourne que sur les candidats d'une section de la Tournée
+(gate `personalized_theme_mode`), 4 regex compilées sur un titre ≤ 500 car.
+
+### Preuve empirique
+
+Digest `pour_vous` du jour, compte de référence : **14 articles distincts
+rendus, tous publiés < 24 h, dont 4 en `theme=environment`** — soit les 4
+articles que la dédup client retirait de la section Environnement (10 − 4 = 6,
+le symptôme exact). Ils sont désormais exclus **avant** le slice : la section
+sert 10 articles réellement affichables.
+
+Précision d'honnêteté : la part du digest dans le pool varie d'un jour à
+l'autre (relevé du lendemain : 2 sur 39 pour `environment`, 0 sur 25 pour
+`tech`). L'overlap n'est pas uniforme dans le pool — il se **concentre en tête
+de classement**, puisque la section est triée par le PillarScoringEngine et que
+le digest sélectionne les meilleurs articles du jour. C'est précisément la
+tranche que le slice de 10 prélève. Le reste de la perte (chevauchement avec
+une autre section thème rendue plus haut) est couvert par 1.3 + 1.4.
+
+Signal feuilleton — volume sur les sources suivies du compte, 72 h : **3
+titres flaggés** (2 `tech`, 1 `culture`). Faible par construction (~0,5 % du
+corpus) : l'objectif n'est pas le volume mais d'empêcher qu'une série qui
+tombe en rafale (un 4/4, une série en 22 épisodes) ne monopolise les 3 slots
+previewés.
+
+### Tests
+
+- Backend : **2516 passed, 30 skipped**, 0 échec (suite complète).
+- `ruff check app/` : clean. `ruff format --check app/` : clean (un échec
+  pré-existant hérité de `main` sur `app/utils/time.py` a été repris dans un
+  commit `style:` distinct — il rendait la CI rouge indépendamment de cette PR).
+- Nouveaux : `tests/test_serial_episode_signal.py` (23 cas — 9 feuilletons
+  réels détectés, 9 actualités datées JJ/MM épargnées, gate Tournée,
+  calibration du malus), 2 cas dans `tests/test_thematic_curation.py`
+  (exclusion appliquée en Tournée / **non** appliquée en Flâner), 1 cas dans
+  `tests/test_digest_content_refs.py` (pivot extrait).
+- Mobile : test de pagination réécrit (une page courte ne coupe plus la
+  pagination) + nouveau test du terminateur « page entièrement dédupliquée ».
+
+### ⚠️ Limite de vérification
+
+`flutter test` et `flutter analyze` **n'ont pas pu être exécutés** : aucun SDK
+Flutter/Dart n'est installé dans cet environnement d'exécution. Les
+modifications Dart ont été relues à la main et l'impact sur les tests existants
+tracé un par un (les stubs `hasNext: false` des autres suites sont inertes
+sous la nouvelle règle ; `_LoadingFluxNotifier` court-circuite le top-up via
+`state.valueOrNull == null`). **La CI ou un run local doit valider le mobile
+avant merge.**
+
 ## Tasks
 
-- [ ] GO PO sur le plan révisé
-- [ ] Lot 1 — backend (1.1, 1.2)
-- [ ] Lot 1 — mobile (1.3, 1.4, 1.5)
-- [ ] Lot 2 — `serial_episode_signal` + `PenaltyPass` gaté Tournée
-- [ ] Preuve empirique avant/après
-- [ ] Suite de tests complète
+- [x] GO PO sur le plan révisé
+- [x] Lot 1 — backend (1.1, 1.2)
+- [x] Lot 1 — mobile (1.3, 1.4, 1.5)
+- [x] Lot 2 — `serial_episode_signal` + `PenaltyPass` gaté Tournée
+- [x] Preuve empirique avant/après
+- [x] Suite de tests backend complète
+- [ ] `flutter test` + `flutter analyze` (bloqués — pas de SDK ici, à valider en CI)
