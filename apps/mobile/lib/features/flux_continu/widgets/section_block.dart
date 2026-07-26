@@ -116,10 +116,6 @@ class SectionBlock extends StatelessWidget {
       );
     }
     final cards = _buildCards();
-    final hiddenCount = (section.totalCount - section.coreVisibleCount).clamp(
-      0,
-      999,
-    );
     // Section source sans article récent (≤72h) mais avec des cartes plus
     // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
     // la blurb du banner. L'empty-state (aucun article même vieux) reste géré
@@ -152,7 +148,6 @@ class SectionBlock extends StatelessWidget {
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
           onTap: onSeeAll,
-          hiddenCount: hiddenCount,
           // Story 22.3 — badge « Choisie pour vous » sur les sections suggérées.
           suggested: isSuggested,
           onTapInfo: onTapSuggestionInfo,
@@ -452,6 +447,11 @@ class SectionBlock extends StatelessWidget {
   );
 
   Widget _seeAllFooter() {
+    // Volume promis par la page dédiée, borné [3, 9] : le compte vient du
+    // snapshot client (`totalCount`, déjà en mémoire), jamais d'une requête —
+    // ce CTA ne doit rien coûter au chargement. Le « + » assume la borne haute
+    // (la page dédiée pagine au-delà).
+    final count = section.totalCount.clamp(3, 9);
     return Container(
       // Marges resserrées : le CTA colle au bas de la dernière carte (qui porte
       // déjà 12px de padding bas). `kSeeAllFooterHeight` reflète la hauteur
@@ -461,12 +461,12 @@ class SectionBlock extends StatelessWidget {
       child: TextButton(
         onPressed: onSeeAll,
         style: _seeAllFooterStyle,
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Tout lire'),
-            SizedBox(width: 2),
-            Icon(Icons.chevron_right_rounded, size: 16),
+            Text('Tout lire ($count+)'),
+            const SizedBox(width: 2),
+            const Icon(Icons.chevron_right_rounded, size: 16),
           ],
         ),
       ),

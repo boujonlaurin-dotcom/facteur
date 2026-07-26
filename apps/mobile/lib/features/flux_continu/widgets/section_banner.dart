@@ -48,11 +48,6 @@ class SectionBanner extends StatelessWidget {
   /// (page Flâner : pas de navigation de section).
   final VoidCallback? onTap;
 
-  /// Nombre d'articles non affichés (`totalCount - coreVisibleCount`).
-  /// Rendu en « +X » gris discret après le chevron quand > 0 et [onTap]
-  /// est câblé.
-  final int hiddenCount;
-
   /// Story 22.3 — quand true, le banner pose un badge « Choisie pour vous »
   /// au-dessus du titre, tappable via [onTapInfo] (ouvre la sheet « Pourquoi
   /// cette section ? »). Signale une section suggérée par le facteur.
@@ -81,7 +76,6 @@ class SectionBanner extends StatelessWidget {
     this.large = false,
     this.logoUrl,
     this.onTap,
-    this.hiddenCount = 0,
     this.suggested = false,
     this.onTapInfo,
     this.onPromote,
