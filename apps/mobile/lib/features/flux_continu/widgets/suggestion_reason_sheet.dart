@@ -122,7 +122,7 @@ class _SuggestionReasonContent extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Choisie pour vous dans « $sectionTitle », toujours à partir de '
+              'Choisi pour toi dans « $sectionTitle », toujours à partir de '
               'tes préférences.',
               style: textTheme.bodySmall?.copyWith(
                 color: colors.textTertiary,

@@ -7,6 +7,7 @@ import '../../../config/theme.dart';
 import '../providers/gamification_preference_provider.dart';
 import '../providers/streak_animation_provider.dart';
 import '../providers/streak_celebration_provider.dart';
+import '../../../shared/widgets/completion_stamp.dart' show kStampGreen;
 import '../providers/streak_provider.dart';
 import 'streak_explainer_modal.dart';
 
@@ -101,6 +102,7 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
         return streakAsync.when(
           data: (streak) {
             final isActive = streak.currentStreak > 0;
+            final dayClosed = streak.dailyGoalReached;
             final textColor = isActive
                 ? colors.primary
                 : colors.textSecondary.withValues(alpha: 0.55);
@@ -126,9 +128,15 @@ class _StreakIndicatorState extends ConsumerState<StreakIndicator>
                         alpha: isActive ? 0.03 : 0.015,
                       ),
                       borderRadius: BorderRadius.circular(16),
+                      // Journée refermée : un anneau vert fin, en **additif**.
+                      // Jamais de flamme désaturée tant que l'objectif n'est
+                      // pas atteint — ce serait un signal de déficit affiché
+                      // tous les matins. On n'enlève rien, on ajoute parfois.
                       border: Border.all(
-                        color: colors.primary.withValues(alpha: 0.06),
-                        width: 1,
+                        color: dayClosed
+                            ? kStampGreen.withValues(alpha: 0.55)
+                            : colors.primary.withValues(alpha: 0.06),
+                        width: dayClosed ? 1.5 : 1,
                       ),
                     ),
                     child: Row(

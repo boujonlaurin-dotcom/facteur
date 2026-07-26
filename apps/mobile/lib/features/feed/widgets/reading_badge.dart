@@ -4,12 +4,16 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../models/content_model.dart';
 
-/// Badge showing reading progress level on article cards.
+/// Badge d'état de lecture sur les cartes article.
 ///
-/// Levels:
-/// - "Parcouru" (< 30%) — neutral gray
-/// - "Lu" (30-89%) — green with single check
-/// - "Lu jusqu'au bout" (>= 90%) — green with double check
+/// Deux états seulement — « Lu » (ouvert) et « Lu jusqu'au bout » (complété) —
+/// adossés à `completedAt` et non plus à `readingProgress`, qui est plafonné à
+/// 25 pour ~90 % du catalogue et affichait donc « Parcouru » sur des lectures
+/// pourtant menées à leur terme.
+///
+/// Le niveau « Parcouru » (icône `eye`, gris) a été retiré : ce n'est pas un
+/// accomplissement, et le nommer revient à commenter la lecture superficielle
+/// de l'utilisateur. L'opacité de la carte suffit à le signaler.
 class ReadingBadge extends StatelessWidget {
   final Content content;
 
@@ -21,31 +25,12 @@ class ReadingBadge extends StatelessWidget {
     if (label == null) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
-    final progress = content.readingProgress;
-    final isConsumed = content.status == ContentStatus.consumed;
 
-    // Color logic
-    final Color bgColor;
-    final Color fgColor;
-    final IconData icon;
-
-    if (progress >= 90) {
-      // Lu jusqu'au bout — strong green + double check
-      bgColor = colors.success;
-      fgColor = Colors.white;
-      icon = PhosphorIcons.checks(PhosphorIconsStyle.bold);
-    } else if (progress >= 30 || isConsumed) {
-      // Lu — green + check circle (also covers freshly-opened articles
-      // where status==consumed but scroll progress is still 0)
-      bgColor = colors.success;
-      fgColor = Colors.white;
-      icon = PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
-    } else {
-      // Parcouru — neutral gray
-      bgColor = colors.textSecondary.withOpacity(0.7);
-      fgColor = Colors.white;
-      icon = PhosphorIcons.eye(PhosphorIconsStyle.regular);
-    }
+    final Color bgColor = colors.success;
+    const Color fgColor = Colors.white;
+    final IconData icon = content.isCompleted
+        ? PhosphorIcons.checks(PhosphorIconsStyle.bold)
+        : PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

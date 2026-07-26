@@ -14,6 +14,10 @@ class StreakResponse(BaseModel):
     weekly_count: int
     weekly_goal: int
     weekly_progress: float  # 0.0 à 1.0
+    # Lectures abouties de la journée éditoriale (frontière 07h30 Paris).
+    # Dérivé de `completed_at`, jamais stocké.
+    daily_completed: int = 0
+    daily_goal: int = 2
 
     class Config:
         from_attributes = True

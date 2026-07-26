@@ -1,19 +1,35 @@
 import 'package:flutter/material.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
-/// Wrapper widget that shows a "Lu" (Read) overlay when content is consumed
-/// before the card is removed from the feed.
+import '../../../shared/widgets/completion_stamp.dart' show kStampGreen;
+
+/// Marque discrètement, **au retour de l'article**, la carte d'une lecture
+/// menée jusqu'au bout : un filet vertical vert se dessine sur le bord gauche.
+///
+/// Volontairement pas une célébration. La version d'origine de ce widget —
+/// restée du code mort, jamais montée — posait un scrim noir à 60 % sur la
+/// carte, une pastille grise (à rebours de la convention verte du produit) et
+/// une courbe `elasticOut` sur 1000 ms : un vocabulaire de jeu pour un
+/// non-événement. Ici : `easeOutCubic`, 320 ms, aucun scrim, et **aucune
+/// haptique** — elle a déjà eu lieu dans l'article. Un événement, une vibration.
+///
+/// Une carte seulement ouverte ne déclenche rien du tout : il ne s'est rien
+/// passé, l'annoncer serait la définition du bruit.
 class AnimatedFeedCard extends StatefulWidget {
-  final Widget child;
-  final bool isConsumed;
-  final VoidCallback? onAnimationComplete;
-
   const AnimatedFeedCard({
     super.key,
     required this.child,
-    required this.isConsumed,
-    this.onAnimationComplete,
+    required this.isCompleted,
+    this.animate = true,
   });
+
+  final Widget child;
+
+  /// L'article a été lu jusqu'au bout (`completedAt != null`).
+  final bool isCompleted;
+
+  /// `false` quand l'état était déjà connu à la construction : le filet est
+  /// alors peint d'emblée, sans animation. C'est un état, pas un événement.
+  final bool animate;
 
   @override
   State<AnimatedFeedCard> createState() => _AnimatedFeedCardState();
@@ -21,65 +37,29 @@ class AnimatedFeedCard extends StatefulWidget {
 
 class _AnimatedFeedCardState extends State<AnimatedFeedCard>
     with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeInAnimation;
-  late Animation<double> _fadeOutAnimation;
-  late Animation<double> _scaleAnimation;
-
-  bool _showOverlay = false;
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 320),
+  );
 
   @override
   void initState() {
     super.initState();
-
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    );
-
-    // Fade in overlay (0-30%)
-    _fadeInAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 0.3, curve: Curves.easeOut),
-    ));
-
-    // Fade out overlay (70-100%)
-    _fadeOutAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.7, 1.0, curve: Curves.easeIn),
-    ));
-
-    // Scale badge (0-40%)
-    _scaleAnimation = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 0.4, curve: Curves.elasticOut),
-    ));
-
-    _controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        widget.onAnimationComplete?.call();
-      }
-    });
+    if (widget.isCompleted && !widget.animate) _controller.value = 1.0;
+    if (widget.isCompleted && widget.animate) _startDelayed();
   }
 
   @override
   void didUpdateWidget(AnimatedFeedCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isConsumed && !oldWidget.isConsumed && !_showOverlay) {
-      setState(() {
-        _showOverlay = true;
-      });
-      _controller.forward();
-    }
+    if (widget.isCompleted && !oldWidget.isCompleted) _startDelayed();
+  }
+
+  /// Léger retard : ne pas concurrencer l'animation de retour de route.
+  void _startDelayed() {
+    Future<void>.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) _controller.forward();
+    });
   }
 
   @override
@@ -88,87 +68,58 @@ class _AnimatedFeedCardState extends State<AnimatedFeedCard>
     super.dispose();
   }
 
-  double get _currentOpacity {
-    if (_controller.value <= 0.7) {
-      return _fadeInAnimation.value;
-    } else {
-      return _fadeOutAnimation.value;
-    }
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isCompleted) return widget.child;
+
+    final reduceMotion =
+        MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+
+    return Semantics(
+      label: 'Lu jusqu\'au bout',
+      child: Stack(
+        children: [
+          widget.child,
+          PositionedDirectional(
+            start: 0,
+            top: 0,
+            bottom: 0,
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                final t = reduceMotion
+                    ? 1.0
+                    : Curves.easeOutCubic.transform(_controller.value);
+                if (t == 0) return const SizedBox.shrink();
+                return Transform.scale(
+                  scaleY: t,
+                  alignment: Alignment.center,
+                  child: child,
+                );
+              },
+              child: const _CompletionRule(),
+            ),
+          ),
+        ],
+      ),
+    );
   }
+}
+
+/// Filet vertical 3 px — idiome du filet de journal. Pas de teinte de fond :
+/// sur le crème `#F2E8D5`, un vert à 4 % passe sous le seuil de perception et
+/// à 8 % il vire kaki, ce qui détruit la sensation papier.
+class _CompletionRule extends StatelessWidget {
+  const _CompletionRule();
 
   @override
   Widget build(BuildContext context) {
-    // Don't show overlay if not consumed
-    if (!_showOverlay) {
-      return widget.child;
-    }
-
-    return Stack(
-      children: [
-        // Original card
-        widget.child,
-
-        // "Lu" overlay
-        Positioned.fill(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return Opacity(
-                opacity: _currentOpacity,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Center(
-                    child: Transform.scale(
-                      scale: _scaleAnimation.value,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade700,
-                          borderRadius: BorderRadius.circular(30),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 8,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              PhosphorIcons.checkCircle(
-                                  PhosphorIconsStyle.fill),
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                            const SizedBox(width: 10),
-                            const Text(
-                              'Lu',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    return Container(
+      width: 3,
+      decoration: const BoxDecoration(
+        color: kStampGreen,
+        borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
+      ),
     );
   }
 }

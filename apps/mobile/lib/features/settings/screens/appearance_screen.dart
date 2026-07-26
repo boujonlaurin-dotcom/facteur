@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../gamification/providers/gamification_preference_provider.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../providers/display_mode_provider.dart';
 import '../providers/theme_provider.dart';
@@ -54,6 +55,13 @@ class AppearanceScreen extends ConsumerWidget {
                 subtitle: displayMode.label,
                 onTap: () => showDisplayModeBottomSheet(context, ref),
               ),
+              Divider(
+                height: 1,
+                indent: FacteurSpacing.space4,
+                endIndent: FacteurSpacing.space4,
+                color: colors.border.withValues(alpha: 0.5),
+              ),
+              const _GamificationToggle(),
             ],
           ),
         ),
@@ -67,6 +75,83 @@ class AppearanceScreen extends ConsumerWidget {
       AppThemeMode.dark => 'Encre & Nuit',
       AppThemeMode.oled => 'Encre Pure',
     };
+  }
+}
+
+/// Opt-out de la flamme, de l'objectif du jour et du calendrier d'ouverture.
+///
+/// Le flag `gamification_enabled` existait en base (défaut `true`) sans aucun
+/// écran pour le changer. Ajouter de la surface objectif/série sans offrir la
+/// sortie n'aurait pas été acceptable.
+class _GamificationToggle extends ConsumerStatefulWidget {
+  const _GamificationToggle();
+
+  @override
+  ConsumerState<_GamificationToggle> createState() =>
+      _GamificationToggleState();
+}
+
+class _GamificationToggleState extends ConsumerState<_GamificationToggle> {
+  bool _saving = false;
+
+  Future<void> _toggle(bool value) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      await ref
+          .read(gamificationPreferenceRepositoryProvider)
+          .setEnabled(value);
+      ref.invalidate(gamificationPreferenceProvider);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    final enabled =
+        ref.watch(gamificationPreferenceProvider).valueOrNull ?? true;
+
+    return Padding(
+      padding: const EdgeInsets.all(FacteurSpacing.space4),
+      child: Row(
+        children: [
+          Icon(
+            PhosphorIcons.flame(PhosphorIconsStyle.regular),
+            color: colors.primary,
+            size: 24,
+          ),
+          const SizedBox(width: FacteurSpacing.space4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Série et objectif du jour',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  enabled
+                      ? 'Flamme, objectif du jour et calendrier affichés'
+                      : 'Masqués — la lecture reste inchangée',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          Switch.adaptive(
+            value: enabled,
+            onChanged: _saving ? null : _toggle,
+          ),
+        ],
+      ),
+    );
   }
 }
 

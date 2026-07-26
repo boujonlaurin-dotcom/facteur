@@ -99,8 +99,12 @@ void main() {
   });
 
   test(
-    'content_interaction read >30s emits article_read + article_completed',
+    'content_interaction read emits article_read, never article_completed',
     () async {
+      // Epic 30 — la complétion n'est plus dérivée d'un seuil de durée. La
+      // médiane de temps par article est de 20 s : le seuil de 30 s
+      // sous-comptait structurellement, et définissait « terminé » par une
+      // durée plutôt que par le fait d'avoir atteint la fin.
       final service = AnalyticsService(api, posthog: posthog);
       await service.trackContentInteraction(
         action: 'read',
@@ -111,30 +115,37 @@ void main() {
       );
 
       final events = posthog.captured.map((e) => e.event).toList();
-      expect(
-        events,
-        containsAll(<String>['article_read', 'article_completed']),
-      );
-    },
-  );
-
-  test(
-    'content_interaction read <30s emits article_read but NOT completed',
-    () async {
-      final service = AnalyticsService(api, posthog: posthog);
-      await service.trackContentInteraction(
-        action: 'read',
-        surface: 'digest',
-        contentId: 'c1',
-        sourceId: 's1',
-        timeSpentSeconds: 12,
-      );
-
-      final events = posthog.captured.map((e) => e.event).toList();
       expect(events, contains('article_read'));
       expect(events, isNot(contains('article_completed')));
     },
   );
+
+  test('trackArticleFinished emits article_finished with its qualifiers',
+      () async {
+    final service = AnalyticsService(api, posthog: posthog);
+    await service.trackArticleFinished(
+      contentId: 'c1',
+      sourceId: 's1',
+      completionSource: 'web',
+      isPartial: true,
+      renderMode: 'webview',
+      reachedFooterPermanent: false,
+      progressRaw: 100,
+      timeSpentSeconds: 42,
+      scrollable: true,
+      articleCharCount: 320,
+    );
+
+    final captured =
+        posthog.captured.firstWhere((e) => e.event == 'article_finished');
+    // Sans `is_partial` ni `render_mode`, on recompterait le type d'article
+    // plutôt que la lecture — c'est l'erreur qu'avait produite le seuil
+    // `reading_progress >= 90`.
+    expect(captured.properties?['completion_source'], 'web');
+    expect(captured.properties?['is_partial'], isTrue);
+    expect(captured.properties?['render_mode'], 'webview');
+    expect(captured.properties?['scrollable'], isTrue);
+  });
 
   test('save action does not emit article_read', () async {
     final service = AnalyticsService(api, posthog: posthog);
@@ -186,20 +197,17 @@ void main() {
   });
 
   test(
-    'trackArticleRead mirrors article_read + article_completed when >=30s',
+    'trackArticleRead mirrors article_read only — never article_completed',
     () async {
       // Story 14.1 — feed/detail surfaces still call the legacy
-      // trackArticleRead, so it must mirror to PostHog with the same
-      // threshold logic as trackContentInteraction. Otherwise
-      // article_completed would never fire from real reading flows.
+      // trackArticleRead, so it must mirror to PostHog. Epic 30 lui retire en
+      // revanche la dérivation de complétion par seuil de durée.
       final service = AnalyticsService(api, posthog: posthog);
       await service.trackArticleRead('c1', 's1', 45);
 
       final events = posthog.captured.map((e) => e.event).toList();
-      expect(
-        events,
-        containsAll(<String>['article_read', 'article_completed']),
-      );
+      expect(events, contains('article_read'));
+      expect(events, isNot(contains('article_completed')));
     },
   );
 

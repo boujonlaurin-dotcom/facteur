@@ -43,6 +43,13 @@ PERSPECTIVE_FILTER_ENABLED = (
     os.environ.get("PERSPECTIVE_FILTER_ENABLED", "true").lower() == "true"
 )
 
+# --- Matière envoyée à l'Analyse Facteur (analyze_divergences) ---
+# Fenêtres élargies en prompt v2 : moins de résumé = le modèle se rabat sur les
+# variations de titres, ce qu'on cherche justement à éviter.
+# Cf. docs/maintenance/maintenance-analyse-facteur-prompt-v2.md
+PERSPECTIVE_DESC_CHARS = 450
+REFERENCE_DESC_CHARS = 900
+
 
 def _parse_entity_names(
     entities: list[str] | None, types: set[str] | None = None
@@ -381,8 +388,16 @@ class PerspectiveService:
     ) -> dict | None:
         """Generate a short LLM analysis of editorial divergences.
 
+        Prompt v2 : la sortie répond à « ce que l'on sait » puis « ce qui fait
+        débat » (points litigieux de fond), et non plus aux variations de
+        formulation entre titres. Cf.
+        docs/maintenance/maintenance-analyse-facteur-prompt-v2.md.
+
         Returns a dict with keys:
-        - "analysis": str — the editorial divergence text (~150 words)
+        - "analysis": str — texte markdown (~180 mots). Le **premier `\\n\\n`**
+          sépare la section « établi » de la section « en débat » : c'est le
+          contrat lu côté mobile par `splitAnalysisSections`
+          (perspectives_bottom_sheet.dart). Ne pas casser ce séparateur.
         - "divergence_level": str — "low", "medium", or "high"
         Or None on failure.
         """
@@ -403,60 +418,84 @@ class PerspectiveService:
             line = f'- "{p["title"]}" ({p["source_name"]}, {stance})'
             desc = p.get("description")
             if desc:
-                line += f" — {desc[:300]}"
+                line += f" — {desc[:PERSPECTIVE_DESC_CHARS]}"
             perspectives_lines.append(line)
         perspectives_text = "\n".join(perspectives_lines)
 
         system = (
-            "Analyste média français. Tu compares la couverture d'un même sujet "
-            "par plusieurs rédactions et tu fais ressortir CE QUI LES OPPOSE.\n\n"
+            "Analyste média français. À partir de la couverture d'un même sujet "
+            "par plusieurs rédactions, tu produis deux choses : CE QUI EST ÉTABLI "
+            "et CE QUI FAIT DÉBAT.\n\n"
             "Méthode obligatoire :\n"
             "1. Lis tous les titres + résumés.\n"
-            "2. REGROUPE les médias en 2 à 4 clusters selon l'angle commun qu'ils "
-            "adoptent — pas un constat par média, mais un constat par groupe partageant "
-            "un même cadrage. Si tous traitent le sujet de la même manière, dis-le "
-            "et explique pourquoi (divergence_level: low).\n"
-            "3. Pour chaque cluster, identifie : la qualification des faits choisie "
-            "(mots forts vs neutres), ce qui est mis en avant ou occulté, et tout "
-            "marqueur d'opinion (adjectifs chargés, attribution morale, lexique "
-            'révélateur — "dérapage" vs "incident", "renoncement" vs "ajustement", '
-            '"victoire" vs "concession").\n\n'
+            "2. ÉTABLI : isole les faits que les couvertures partagent — "
+            "l'événement, les acteurs, les chiffres et les dates repris d'une "
+            "source à l'autre.\n"
+            "3. DÉBAT : identifie 2 à 3 POINTS LITIGIEUX. Un point litigieux est "
+            "une question de fond sur laquelle les couvertures ne répondent pas "
+            "pareil : la cause, la responsabilité, l'ampleur, l'efficacité, la "
+            "légitimité, la suite probable. Pour chacun, dis quelle position tient "
+            "quel média.\n"
+            "4. TEST DE RECEVABILITÉ : si un constat ne peut pas se reformuler en "
+            "question (« Qui est responsable ? », « Quelle ampleur ? », « Est-ce "
+            "que ça marche ? », « Et après ? »), c'est une variation de style — "
+            "écarte-le. Ne retiens jamais un constat dont le seul contenu est le "
+            "choix d'un mot.\n"
+            "5. Si les couvertures convergent vraiment, ne fabrique pas de "
+            "désaccord : dis-le et nomme ce qui reste inconnu ou non vérifié "
+            "(divergence_level: low).\n\n"
             "Réponds en JSON avec deux clés :\n"
             '- "analysis": texte structuré ainsi :\n'
-            "  1. Phrase de contexte : le fait central que tous couvrent (15-25 mots).\n"
+            "  1. CE QUI EST ÉTABLI : 2 à 3 phrases (45-75 mots), les faits "
+            "partagés. Aucun nom de média ici, aucun commentaire sur les "
+            "formulations.\n"
             "  2. Saut de ligne double (\\n\\n).\n"
-            '  3. 2 à 4 constats, chacun préfixé "→ ", chacun 30-50 mots :\n'
-            '     • cluster de médias en **gras** ("**Le Monde** et **Libération**"),\n'
-            '     • verbe ou nom-clé d\'angle en **gras** ("**cadrent**", "**minimisent**"),\n'
-            "     • un élément concret tiré du titre/résumé (chiffre, acteur, "
-            "qualification, mot précis cité entre guillemets si possible),\n"
-            "     • si pertinent : marqueur d'opinion repéré "
-            '("emploient le terme «X»", "qualifient de Y", "présentent comme Z").\n'
-            "  Max 5 segments en gras par ligne. Aucun titre de section.\n"
-            '- "divergence_level": "low" (couvertures similaires), "medium" '
-            '(angles sensiblement différents), "high" (cadrages opposés ou contradictoires).\n\n'
+            '  3. CE QUI FAIT DÉBAT : 2 à 3 lignes préfixées "→ ", 35-55 mots '
+            "chacune :\n"
+            "     • l'objet du désaccord en **gras** "
+            "(« **la responsabilité du déficit** », "
+            "« **l'ampleur réelle des économies** »),\n"
+            "     • la position A et les médias qui la tiennent (noms en **gras**),\n"
+            "     • la position opposée et les médias qui la tiennent,\n"
+            "     • au plus UN terme cité entre guillemets, en appui du désaccord, "
+            "jamais comme sujet de la ligne.\n"
+            "  Si divergence_level = low : une seule ligne « → », qui constate la "
+            "convergence et nomme ce qui reste en suspens.\n"
+            "  Max 5 segments en gras par ligne. Aucun titre de section "
+            "(l'app les ajoute).\n"
+            '- "divergence_level": "low" (mêmes faits, mêmes conclusions), '
+            '"medium" (désaccords d\'interprétation ou de priorité), "high" '
+            "(conclusions contradictoires sur un même fait).\n\n"
             "RÈGLES :\n"
             "- Uniquement les titres/résumés fournis. Zéro fait inventé, zéro "
             "intention prêtée à un média sans appui textuel.\n"
-            "- Si l'angle d'un cluster repose uniquement sur le titre, ajouter "
-            '"d\'après leurs titres".\n'
-            "- Verbes concrets : insiste(nt) sur, minimise(nt), cadre(nt) comme, "
-            "ignore(nt), met(tent) en avant, oppose(nt), contextualise(nt), "
-            "relativise(nt), dramatise(nt), neutralise(nt), qualifie(nt) de, "
-            "dénonce(nt), salue(nt).\n"
+            "- Position inférée d'un titre seul : nuance avec « semble » ou "
+            "« laisse entendre ». Pas de formule répétée en fin de ligne.\n"
+            "- Verbes de position : attribue(nt) à, impute(nt) à, chiffre(nt) à, "
+            "juge(nt), conteste(nt), relativise(nt), tient/tiennent pour, "
+            "avance(nt), doute(nt) de, lie(nt) à.\n"
             '- Interdits : "met en lumière", "soulève des questions", '
-            '"révèle la fragilité", "fait écho", "interroge", "questionne".\n'
-            "- Ton factuel, phrases denses. Français impeccable.\n\n"
+            '"révèle la fragilité", "fait écho", "interroge", "questionne", '
+            '"d\'après leurs titres".\n'
+            "- Ton assertif, phrases denses, pas de précautions inutiles. "
+            "Français impeccable.\n\n"
             "EXEMPLE :\n"
-            "\"Tous reviennent sur l'annonce du plan budgétaire 2026 présenté par Bercy.\\n\\n"
-            "→ **Le Monde** et **Libération** **insistent** sur le volet social, "
-            "citant les arbitrages à venir sur les retraites et qualifiant la "
-            "trajectoire de «resserrement nécessaire mais douloureux».\\n"
-            "→ **Le Figaro** et **Les Échos** **cadrent** la mesure comme un signal "
-            "de sérieux budgétaire, mettant en avant les 12 milliards d'économies "
-            "et le terme «redressement» dans leurs titres.\\n"
-            "→ **Mediapart** **dénonce** un budget «d'austérité déguisée», marqueur "
-            "d'opinion explicite absent des autres couvertures.\""
+            "« Bercy a présenté le 14 octobre un budget 2026 prévoyant 12 milliards "
+            "d'euros d'économies, dont 4 sur l'assurance maladie et 2 sur les "
+            "collectivités. Le texte arrive à l'Assemblée en novembre, sans "
+            "majorité acquise. Toutes les rédactions donnent les mêmes montants et "
+            "le même calendrier.\\n\\n"
+            "→ **L'origine du déficit** : **Les Échos** et **Le Figaro** "
+            "l'imputent à la dérive des dépenses sociales et chiffrent à 2 points "
+            "de PIB le décrochage ; **Mediapart** et **Libération** l'attribuent "
+            "aux baisses d'impôts consenties depuis 2017, jamais compensées.\\n"
+            "→ **L'ampleur réelle de l'effort** : **Le Monde** rappelle que les "
+            "12 milliards portent sur une hausse tendancielle, soit une "
+            "quasi-stabilité en euros constants ; **Le Point** présente le même "
+            "chiffre comme la coupe la plus forte depuis 2011.\\n"
+            "→ **Les chances d'adoption** : **Politico** et **L'Opinion** jugent "
+            "le 49.3 probable dès décembre ; **La Croix** croit à un compromis "
+            "avec les socialistes sur le volet santé. »"
         )
 
         source_stance = STANCE_LABELS.get(source_bias, source_bias)
@@ -465,7 +504,7 @@ class PerspectiveService:
             f'Article de référence : "{article_title}" ({source_name}, {source_stance})'
         )
         if article_description:
-            user_message += f"\nRésumé : {article_description[:500]}"
+            user_message += f"\nRésumé : {article_description[:REFERENCE_DESC_CHARS]}"
         user_message += f"\n\nCouverture par d'autres médias :\n{perspectives_text}"
 
         try:
@@ -473,8 +512,8 @@ class PerspectiveService:
                 system=system,
                 user_message=user_message,
                 model="mistral-large-latest",
-                temperature=0.4,
-                max_tokens=700,
+                temperature=0.3,
+                max_tokens=900,
             )
             if isinstance(result, dict) and "analysis" in result:
                 return result
@@ -660,9 +699,13 @@ class PerspectiveService:
 
         cutoff = datetime.now(UTC) - timedelta(hours=time_window_hours)
 
-        # Build OR conditions: entities text array contains entity name
+        # Build OR conditions: entities text array contains entity name.
+        # Passer par le wrapper `content_entities_text` (et non le builtin
+        # `array_to_string`, STABLE donc non-sargable) est requis ICI : c'est
+        # l'expression exacte qu'indexe `ix_contents_entities_trgm` (GIN trigram,
+        # migration pt01), sinon le planner scanne toute la fenêtre 72h.
         entity_filters = [
-            func.array_to_string(Content.entities, " ").ilike(f"%{name}%")
+            func.content_entities_text(Content.entities).ilike(f"%{name}%")
             for name in entity_names
         ]
 

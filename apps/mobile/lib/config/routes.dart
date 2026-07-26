@@ -510,10 +510,15 @@ final routerProvider = Provider<GoRouter>((ref) {
                     pageBuilder: (context, state) {
                       final contentId = state.pathParameters['id']!;
                       final content = state.extra as Content?;
+                      // `from=pdr` → article ouvert depuis un CTA « Pas de
+                      // recul » : header contextuel (lavis bleu + médaillon 🔭).
+                      final fromDeepReco =
+                          state.uri.queryParameters['from'] == 'pdr';
                       return FullSwipeCupertinoPage(
                         child: ContentDetailScreen(
                           contentId: contentId,
                           content: content,
+                          fromDeepReco: fromDeepReco,
                         ),
                       );
                     },

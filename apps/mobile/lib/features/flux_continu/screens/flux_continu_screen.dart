@@ -63,6 +63,7 @@ import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
+import '../widgets/daily_completion_recap.dart';
 import '../widgets/edition_timeline_sheet.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/my_interests_intro.dart';
@@ -1615,9 +1616,18 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     closeHint: isAndroid
                         ? null
                         : 'Vous pouvez refermer l’app — à demain',
-                    secondary: FeedbackClosingCard(
-                      embedded: true,
-                      onLayoutChanged: _scheduleAnchorRecompute,
+                    secondary: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Constat rétrospectif des lectures abouties — après
+                        // la lecture, jamais avant. Ne se rend pas du tout à
+                        // zéro lecture aboutie (le cas majoritaire).
+                        const DailyCompletionRecap(),
+                        FeedbackClosingCard(
+                          embedded: true,
+                          onLayoutChanged: _scheduleAnchorRecompute,
+                        ),
+                      ],
                     ),
                   ),
                 ),

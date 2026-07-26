@@ -114,6 +114,27 @@ class NudgeRegistry {
       frequency: NudgeFrequency.once,
     ),
 
+    // Nudges de scroll flottants dans le reader (cf. content_detail_screen).
+    // Pilotés directement via [NudgeService] (pas le coordinator) : seul le
+    // cooldown par-nudge s'applique → « 1×/24 h par cible ». La priorité n'est
+    // pas consultée sur ce chemin ; l'entrée sert au lookup canShow/cooldown.
+    const Nudge(
+      id: NudgeIds.scrollToDeepReco,
+      surface: NudgeSurface.article,
+      placement: NudgePlacement.hintAnimation,
+      priority: NudgePriority.low,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 1),
+    ),
+    const Nudge(
+      id: NudgeIds.scrollToPerspectives,
+      surface: NudgeSurface.article,
+      placement: NudgePlacement.hintAnimation,
+      priority: NudgePriority.low,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 1),
+    ),
+
     // Story 14.3 — well-informed NPS. Cooldown porté à 21j (skip) ; le
     // provider impose en plus un cooldown 60j après une vraie soumission, et un
     // tirage aléatoire quotidien (~1 jour sur 7) pour rarefier sans biais.

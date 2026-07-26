@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
+import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
@@ -16,6 +17,7 @@ import '../providers/flux_continu_provider.dart';
 import '../providers/theme_discovery_provider.dart';
 import '../widgets/flux_continu_article_card.dart';
 import '../widgets/section_banner.dart';
+import '../widgets/suggestion_reason_sheet.dart';
 import '../widgets/theme_detail_footer.dart';
 import '../widgets/veille_group_header.dart';
 
@@ -106,6 +108,33 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
 
   void _onBackToTournee() {
     Navigator.of(context).maybePop();
+  }
+
+  /// Miroir de `flux_continu_screen._openSuggestionSheet` — même sheet
+  /// « Pourquoi cette section ? », mêmes actions garder/retirer, pour que la
+  /// page dédiée offre exactement la même UI que le hero du feed.
+  void _openSuggestionSheet(BuildContext context, FeedThemeSection section) {
+    showSuggestionReasonSheet(
+      context,
+      sectionTitle: section.label,
+      reason: section.reason,
+      onKeep: () async {
+        try {
+          await ref
+              .read(fluxContinuProvider.notifier)
+              .promoteSuggestion(section, origin: 'card');
+          NotificationService.showSuccess('Ajoutée à tes favoris');
+        } catch (_) {
+          NotificationService.showError(
+            'Impossible d\'ajouter à tes favoris pour le moment.',
+          );
+        }
+      },
+      onDismiss: () async {
+        await ref.read(fluxContinuProvider.notifier).dismissSuggestion(section);
+        NotificationService.showSuccess('Suggestion retirée');
+      },
+    );
   }
 
   void _onTapNextSection(FluxSection next) {
@@ -218,6 +247,18 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             // bannière inline de la Tournée (flux_continu_screen).
             onTapSettings: section.kind == SectionKind.veille
                 ? () => context.push('${RoutePaths.veilleConfig}?mode=edit')
+                : null,
+            // Parité avec le hero du feed : une section suggérée porte aussi
+            // la balise « Choisi pour toi » + la puce « Ajouter à ton
+            // Essentiel » sur sa page dédiée (miroir flux_continu_screen).
+            suggested: section.isSuggested,
+            onTapInfo: section.isSuggested
+                ? () => _openSuggestionSheet(context, section)
+                : null,
+            onPromote: section.isSuggested
+                ? () => ref
+                    .read(fluxContinuProvider.notifier)
+                    .promoteSuggestion(section, origin: 'card')
                 : null,
           ),
         ),

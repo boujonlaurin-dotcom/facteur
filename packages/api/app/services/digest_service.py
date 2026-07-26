@@ -52,7 +52,7 @@ from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
 from app.services.topic_selector import ScoredArticle, TopicGroup
-from app.utils.time import today_paris
+from app.utils.time import editorial_day, today_paris
 
 logger = structlog.get_logger()
 
@@ -2208,6 +2208,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    completed_at=action_state.get("completed_at"),
                 )
             )
 
@@ -2350,6 +2351,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    completed_at=action_state.get("completed_at"),
                     read_at=action_state.get("read_at"),
                 )
                 topic_articles.append(topic_article)
@@ -2380,6 +2382,7 @@ class DigestService:
                         is_saved=action_state["is_saved"],
                         is_liked=action_state["is_liked"],
                         is_dismissed=action_state["is_dismissed"],
+                        completed_at=action_state.get("completed_at"),
                     )
                 )
 
@@ -2600,6 +2603,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    completed_at=action_state.get("completed_at"),
                     read_at=action_state.get("read_at"),
                 )
                 topic_articles.append(topic_article)
@@ -2629,6 +2633,7 @@ class DigestService:
                         is_saved=action_state["is_saved"],
                         is_liked=action_state["is_liked"],
                         is_dismissed=action_state["is_dismissed"],
+                        completed_at=action_state.get("completed_at"),
                     )
                 )
 
@@ -2692,6 +2697,7 @@ class DigestService:
                 "is_saved": False,
                 "is_liked": False,
                 "is_dismissed": False,
+                "completed_at": None,
             }
 
         return {
@@ -2699,6 +2705,7 @@ class DigestService:
             "is_saved": status.is_saved,
             "is_liked": status.is_liked,
             "is_dismissed": status.is_hidden,
+            "completed_at": status.completed_at,
         }
 
     async def _get_batch_action_states(
@@ -2728,6 +2735,7 @@ class DigestService:
                 "is_liked": status.is_liked,
                 "is_dismissed": status.is_hidden,
                 "read_at": status.seen_at,
+                "completed_at": status.completed_at,
             }
             for status in statuses
         }
@@ -2930,7 +2938,12 @@ class DigestService:
             self.session.add(streak)
             await self.session.flush()
 
-        today = date.today()
+        # Editorial day (07h30 Paris), NOT `date.today()` (server UTC). The
+        # trigger `maybe_record_implicit_completion` already gates on Paris
+        # time: stamping in UTC made a completion recorded for day D land on
+        # D-1 between 00h and 02h Paris in summer, breaking or doubling the
+        # streak.
+        today = editorial_day()
 
         # Update closure streak
         if streak.last_closure_date:

@@ -32,6 +32,20 @@ class ContentStatus(StrEnum):
     CONSUMED = "consumed"
 
 
+class CompletionSource(StrEnum):
+    """D'où vient le signal « lu jusqu'au bout ».
+
+    `completed_at` signifie « l'utilisateur a atteint le bas de ce que Facteur
+    lui a présenté ». Cette énumération enregistre *quel* bas a été atteint —
+    ~90 % du catalogue étant du contenu partiel, `WEB` est le cas nominal d'une
+    lecture réellement menée à son terme chez l'éditeur.
+    """
+
+    IN_APP = "in_app"  # contenu complet, bas de l'article atteint dans l'app
+    SHORT = "short"  # article trop court pour scroller
+    WEB = "web"  # contenu partiel, bas de la page atteint chez l'éditeur
+
+
 class HiddenReason(StrEnum):
     """Raison pour laquelle un contenu est masqué."""
 

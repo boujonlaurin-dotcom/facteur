@@ -124,13 +124,46 @@ class AnalyticsService {
     // Story 14.1 — dedicated PostHog events for clean funnel/retention.
     if (action == 'read') {
       await _capturePostHog('article_read', props);
-      // Threshold ≥ 30 s signals a completed article (conventional for
-      // text content; videos/podcasts already have dedicated completion
-      // events in their own flows).
-      if (timeSpentSeconds >= 30) {
-        await _capturePostHog('article_completed', props);
-      }
     }
+  }
+
+  /// « Lu jusqu'au bout » (Epic 30).
+  ///
+  /// Émis **au moment de l'événement**, jamais depuis `dispose()`. Distinct de
+  /// [trackArticleRead], qui reste un événement de durée.
+  ///
+  /// Les propriétés sont là pour éviter de refaire l'erreur du seuil
+  /// `reading_progress >= 90` : sans [isPartial] ni [renderMode], on
+  /// recompterait le type d'article plutôt que la lecture. [scrollable]
+  /// désambiguïse enfin le bucket « progression 0 » (rebond vs article court lu
+  /// en entier).
+  Future<void> trackArticleFinished({
+    required String contentId,
+    required String sourceId,
+    required String completionSource,
+    required bool isPartial,
+    required String renderMode,
+    required bool reachedFooterPermanent,
+    required int progressRaw,
+    required int timeSpentSeconds,
+    required bool scrollable,
+    required int articleCharCount,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'content_id': contentId,
+      'source_id': sourceId,
+      'completion_source': completionSource,
+      'is_partial': isPartial,
+      'render_mode': renderMode,
+      'reached_footer_permanent': reachedFooterPermanent,
+      'progress_raw': progressRaw,
+      'time_spent_seconds': timeSpentSeconds,
+      'scrollable': scrollable,
+      'article_char_count': articleCharCount,
+    };
+    await _logEvent('article_finished', props);
+    await _capturePostHog('article_finished', props);
   }
 
   /// Enregistre une session digest complète.
@@ -223,10 +256,16 @@ class AnalyticsService {
   ///
   /// Story 14.1 — even though this is deprecated, it's still the only call
   /// site for feed/detail reading flows (which carry real `timeSpentSeconds`).
-  /// We MUST mirror to PostHog from here too, otherwise `article_read` and
-  /// `article_completed` PostHog events would never fire from the surfaces
-  /// where users actually spend reading time. The digest "save" flow that
-  /// uses `trackContentInteraction` hardcodes `timeSpentSeconds: 0`.
+  /// We MUST mirror to PostHog from here too, otherwise `article_read` would
+  /// never fire from the surfaces where users actually spend reading time. The
+  /// digest "save" flow that uses `trackContentInteraction` hardcodes
+  /// `timeSpentSeconds: 0`.
+  ///
+  /// Epic 30 — l'ancien `article_completed` dérivé d'un seuil de 30 s a été
+  /// retiré : la médiane de temps par article est de 20 s, il sous-comptait
+  /// donc structurellement, et surtout il définissait « terminé » par une
+  /// durée. La complétion est désormais un événement propre,
+  /// [trackArticleFinished].
   Future<void> trackArticleRead(
     String contentId,
     String sourceId,
@@ -241,9 +280,6 @@ class AnalyticsService {
     await _logEvent('article_read', props);
 
     await _capturePostHog('article_read', props);
-    if (timeSpentSeconds >= 30) {
-      await _capturePostHog('article_completed', props);
-    }
   }
 
   /// @deprecated Use [trackFeedSession] instead.

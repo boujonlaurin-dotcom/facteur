@@ -90,6 +90,9 @@ _$DigestItemImpl _$$DigestItemImplFromJson(Map<String, dynamic> json) =>
       isSaved: json['is_saved'] as bool? ?? false,
       isLiked: json['is_liked'] as bool? ?? false,
       isDismissed: json['is_dismissed'] as bool? ?? false,
+      completedAt: json['completed_at'] == null
+          ? null
+          : DateTime.parse(json['completed_at'] as String),
       recommendationReason: json['recommendation_reason'] == null
           ? null
           : DigestRecommendationReason.fromJson(
@@ -119,6 +122,7 @@ Map<String, dynamic> _$$DigestItemImplToJson(_$DigestItemImpl instance) =>
       'is_saved': instance.isSaved,
       'is_liked': instance.isLiked,
       'is_dismissed': instance.isDismissed,
+      'completed_at': instance.completedAt?.toIso8601String(),
       'recommendation_reason': instance.recommendationReason,
       'note_text': instance.noteText,
       'badge': instance.badge,

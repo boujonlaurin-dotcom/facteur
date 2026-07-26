@@ -62,6 +62,14 @@ class SectionBanner extends StatelessWidget {
   /// (garder / retirer). Null hors sections suggérées.
   final VoidCallback? onTapInfo;
 
+  /// Story 22.6 (redesign) — quand non null, une puce d'action « Ajouter à
+  /// l'Essentiel » est posée **sur la ligne de la balise** « Choisie pour
+  /// vous » : promeut la section suggérée en favorite sans passer par la sheet.
+  /// La puce gère localement son spinner + l'anti double-tap. Vit dans la ligne
+  /// de la balise (hauteur banner inchangée) → aucun contenu tappable sous les
+  /// cartes, donc pas de dérive du budget snap/fit.
+  final Future<void> Function()? onPromote;
+
   const SectionBanner({
     super.key,
     required this.title,
@@ -76,6 +84,7 @@ class SectionBanner extends StatelessWidget {
     this.hiddenCount = 0,
     this.suggested = false,
     this.onTapInfo,
+    this.onPromote,
   });
 
   static final _titleStyleLarge = GoogleFonts.fraunces(
@@ -201,7 +210,26 @@ class SectionBanner extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (suggested) ...[
-                        _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                        // Balise + CTA texte sur une même ligne, qui ne doit
+                        // JAMAIS sauter de ligne (demande PO) : `Row` avec la
+                        // balise à taille fixe et le CTA `Flexible`, qui
+                        // rétrécit (et tronque son texte en ellipsis) plutôt
+                        // que de wrapper ou de lever un RenderFlex overflow.
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            _SuggestedBadge(accent: accent, onTap: onTapInfo),
+                            if (onPromote != null) ...[
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: _PromoteChip(
+                                  accent: accent,
+                                  onPromote: onPromote!,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
                         const SizedBox(height: 8),
                       ],
                       _AccentDash(accent: accent, large: large),
@@ -429,7 +457,7 @@ class _SuggestedBadge extends StatelessWidget {
           ),
           const SizedBox(width: 5),
           Text(
-            'Choisie pour vous',
+            'Choisi pour toi',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -456,6 +484,100 @@ class _SuggestedBadge extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: badge,
+      ),
+    );
+  }
+}
+
+/// Story 22.6 (redesign, puis allégé sur demande PO) — CTA texte « Ajouter à
+/// l'Essentiel » posé sur la ligne de la balise « Choisie pour vous ».
+/// Remplace l'ancien `_PromoteSuggestionButton` (FilledButton pleine largeur
+/// sous les cartes, qui cassait le budget snap/fit) puis l'ex-puce teintée
+/// (fond + bordure), jugée encore trop lourde : ici du simple texte inline,
+/// registre "discret" repris du CTA « Tout lire › » de `section_block.dart`
+/// (pas de fond/bordure). Reprend telle quelle la logique métier de l'ancien
+/// bouton : flag `_pending` anti double-tap, capture du `ScaffoldMessenger`
+/// avant l'await (le CTA peut être démonté quand la section devient favorite),
+/// SnackBar de succès, `finally` + garde `mounted`.
+class _PromoteChip extends StatefulWidget {
+  const _PromoteChip({required this.accent, required this.onPromote});
+
+  final Color accent;
+  final Future<void> Function() onPromote;
+
+  @override
+  State<_PromoteChip> createState() => _PromoteChipState();
+}
+
+class _PromoteChipState extends State<_PromoteChip> {
+  bool _pending = false;
+
+  Future<void> _handlePromote() async {
+    if (_pending) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _pending = true);
+    try {
+      await widget.onPromote();
+      // Succès uniquement : un throw saute directement au `finally`.
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Ajouté à ton Essentiel')),
+      );
+    } finally {
+      if (mounted) setState(() => _pending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
+    return Semantics(
+      button: true,
+      label: 'Ajouter à ton Essentiel',
+      child: GestureDetector(
+        // Hit target élargi au-delà du visuel (~44px, FES §7.2) : le
+        // `HitTestBehavior.opaque` capte les taps sur tout le rectangle du
+        // CTA, marges de la ligne comprises.
+        behavior: HitTestBehavior.opaque,
+        onTap: _pending ? null : _handlePromote,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _pending
+                  ? SizedBox(
+                      width: 11,
+                      height: 11,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        color: accent,
+                      ),
+                    )
+                  : Icon(
+                      PhosphorIcons.plus(PhosphorIconsStyle.bold),
+                      size: 11,
+                      color: accent,
+                    ),
+              const SizedBox(width: 4),
+              // `Flexible` + ellipsis sur une ligne : jamais de saut de ligne
+              // ni de RenderFlex overflow, la fin du libellé se tronque en
+              // priorité quand l'espace manque (demande PO).
+              Flexible(
+                child: Text(
+                  'Ajouter à ton Essentiel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: 0.1,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

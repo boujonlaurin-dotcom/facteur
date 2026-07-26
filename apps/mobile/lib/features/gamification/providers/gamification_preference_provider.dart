@@ -45,6 +45,18 @@ class GamificationPreferenceRepository {
     return null;
   }
 
+  /// Bascule l'opt-out de gamification (flamme, objectif du jour, calendrier).
+  ///
+  /// Le flag existait en base avec `true` par défaut et **aucune UI** — dès
+  /// lors qu'on ajoute de la surface objectif/série, l'opt-out doit exister.
+  Future<bool> setEnabled(bool enabled) async {
+    final profile = await _userApiService.updateProfile({
+      'gamification_enabled': enabled,
+    });
+    await _writeCache(profile);
+    return profile.gamificationEnabled;
+  }
+
   Future<void> _writeCache(app_model.UserProfile profile) async {
     final box = await Hive.openBox<dynamic>(_boxName);
     await box.put(_profileKey, profile.toJson());

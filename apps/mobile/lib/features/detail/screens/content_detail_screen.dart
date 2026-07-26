@@ -20,7 +20,9 @@ import 'dart:math' as math;
 import '../../../config/theme.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../shared/widgets/fab_nudge_bubble.dart';
+import '../../../shared/widgets/completion_stamp.dart';
 import '../../../shared/widgets/glass_pill.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
@@ -156,8 +158,16 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   final String biasStance;
   final bool isExternal;
 
-  const ContentDetailScreen({super.key, required this.contentId, this.content})
-      : externalUrl = null,
+  /// `true` quand l'article a été ouvert depuis un CTA « Pas de recul »
+  /// (query param `from=pdr`) → header contextuel (lavis bleu + médaillon 🔭).
+  final bool fromDeepReco;
+
+  const ContentDetailScreen({
+    super.key,
+    required this.contentId,
+    this.content,
+    this.fromDeepReco = false,
+  })  : externalUrl = null,
         sourceName = null,
         sourceDomain = null,
         externalTitle = null,
@@ -177,7 +187,8 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
         content = null,
         externalUrl = url,
         externalTitle = title,
-        isExternal = true;
+        isExternal = true,
+        fromDeepReco = false;
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -223,13 +234,38 @@ const double _kFooterBottomMargin = 8;
 const double _kFooterShadowClearance = 24;
 
 /// Tolérance (px) autour de l'offset 0 en dessous de laquelle l'utilisateur
-/// est encore considéré « en haut de l'article » pour le nudge perspectives —
+/// est encore considéré « en haut de l'article » pour le nudge de scroll —
 /// absorbe un léger rebond d'overscroll sans faire clignoter le nudge.
-const double _kPerspectivesNudgeTopTolerance = 32.0;
+const double _kScrollNudgeTopTolerance = 32.0;
 
 /// Nombre minimal de points de vue en ligne pour que le nudge flottant
-/// « Voir plus de points de vue ? » vaille la peine d'être montré.
-const int _kPerspectivesNudgeMinCount = 2;
+/// « Voir plus de points de vue ? » vaille la peine d'être montré (le pas de
+/// recul, prioritaire, n'a pas de seuil : une carte suffit).
+const int _kScrollNudgeMinCount = 2;
+
+/// Fraction de la hauteur d'écran sous laquelle la destination du nudge doit
+/// démarrer pour que le nudge se déclenche. < 1.0 → assouplit le seuil de
+/// longueur d'article : le nudge apparaît « un peu plus souvent » que quand la
+/// destination était intégralement sous le pli. Tunable au ressenti.
+const double _kScrollNudgeMinBelowFraction = 0.85;
+
+/// Délai avant d'armer le nudge à l'arrivée sur l'article : évite un pop
+/// instantané et intrusif (bonne pratique de nudging).
+const Duration _kScrollNudgeArmDelay = Duration(milliseconds: 1500);
+
+/// Durée d'affichage avant auto-masquage : le nudge ne traîne pas à l'écran.
+const Duration _kScrollNudgeAutoHideDelay = Duration(seconds: 6);
+
+/// Cible résolue du nudge de scroll flottant (pas de recul prioritaire, sinon
+/// couverture médiatique). Résolue à la volée par [_resolveScrollNudgeTarget].
+class _ScrollNudgeTarget {
+  const _ScrollNudgeTarget(this.id, this.key, this.label, this.icon);
+
+  final String id;
+  final GlobalKey key;
+  final String label;
+  final IconData icon;
+}
 
 class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
@@ -243,6 +279,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _isShortArticle = false;
   // true once user reaches end of displayed content
   final ValueNotifier<bool> _footerPermanent = ValueNotifier<bool>(false);
+
+  /// « Lu jusqu'au bout ». Notifier **frère** de [_footerPermanent], et non le
+  /// même : ce dernier est délibérément bloqué en mode WebView (le verrouiller
+  /// figerait le pied de page pendant toute la session), ce qui est une
+  /// contrainte de layout et non de sémantique. Or la WebView est justement le
+  /// chemin nominal — ~90 % du catalogue est du contenu partiel.
+  final ValueNotifier<bool> _articleCompleted = ValueNotifier<bool>(false);
+  CompletionSource? _completionSource;
+
+  /// Résolu en `initState` — jamais via `ref` depuis `dispose()`.
+  AnalyticsService? _analytics;
   bool _showReadOnSiteNudge = false;
   // Nudge « Sauvegarde cet article » déclenché par l'action de lettre
   // « Sauvegarder 3 articles » (pendingSaveNudgeProvider), one-shot.
@@ -290,6 +337,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   final GlobalKey _articleKey = GlobalKey();
   final GlobalKey _bridgeKey = GlobalKey();
   final GlobalKey _perspectivesKey = GlobalKey();
+  final GlobalKey _deepRecoKey = GlobalKey();
   bool _isWebViewActive = false;
   bool _ctaTapped = false;
   double _bridgeEndOffset = 0;
@@ -368,14 +416,26 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _perspectivesLoading = false;
   Timer? _perspectivesRefetchTimer;
 
-  // Nudge flottant "Voir plus de points de vue ?" — affordance permanente
-  // (pas un one-shot onboarding, à ne pas confondre avec
-  // `_perspectivesPulseController`/`NudgeIds.perspectivesCta`), réévaluée à
-  // chaque scroll et dès l'arrivée des perspectives. ValueNotifier pour éviter
-  // un setState global (cf. pattern `_readingProgress`/`_footerOffset`).
-  final ValueNotifier<bool> _showPerspectivesNudge = ValueNotifier<bool>(
-    false,
-  );
+  // Nudge de scroll flottant — invite vers le pas de recul (prioritaire) ou la
+  // couverture médiatique. À ne pas confondre avec le pulse one-shot
+  // (`_perspectivesPulseController`/`NudgeIds.perspectivesCta`). Armé après un
+  // délai (anti-intrusif), auto-masqué, capé 1×/24 h par cible via
+  // [NudgeService]. ValueNotifier pour éviter un setState global (cf. pattern
+  // `_readingProgress`/`_footerOffset`).
+  final ValueNotifier<bool> _showScrollNudge = ValueNotifier<bool>(false);
+
+  // Cible courante résolue (label + icône + clé de mesure), lue par le builder.
+  _ScrollNudgeTarget? _activeScrollNudgeTarget;
+  // Passé à true une fois affiché ou tapé → ne réapparaît plus sur cet article.
+  bool _scrollNudgeSpent = false;
+  // Résultat du cooldown 24 h (NudgeService.canShow), résolu à l'armement.
+  bool _scrollNudgeCooldownOk = false;
+  // markShown() n'est appelé qu'une fois (au premier affichage réel).
+  bool _scrollNudgeShownRecorded = false;
+  // L'armement différé n'est planifié qu'une fois par article.
+  bool _scrollNudgeArmScheduled = false;
+  Timer? _scrollNudgeArmTimer;
+  Timer? _scrollNudgeAutoHideTimer;
 
   bool get _showPerspectivesBand =>
       _content?.contentType == ContentType.article;
@@ -537,6 +597,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       vsync: this,
     );
     _footerPermanent.addListener(_onFooterPermanentChanged);
+    _articleCompleted.addListener(_onArticleCompletedChanged);
+
+    // Résolu UNE fois, ici. `ref.read` dans `dispose()` levait, l'exception
+    // était avalée par le catch fourre-tout, et `article_read` /
+    // `article_completed` n'ont donc remonté aucun événement pendant des mois
+    // (régression déjà corrigée une fois dans ce fichier, cf. PR #413).
+    _analytics = ref.read(analyticsServiceProvider);
 
     WidgetsBinding.instance.addObserver(this);
 
@@ -862,6 +929,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (clamped > _maxReadingProgress) {
       _maxReadingProgress = clamped;
     }
+    // Chemin nominal : ~90 % du catalogue est partiel, donc la lecture aboutie
+    // se joue ici. Couvre les deux canaux (webview_flutter gratuit et
+    // `onProgress` de PremiumWebView) qui passent tous deux par cette méthode.
+    if (clamped >= 0.98) _latchCompleted(CompletionSource.web);
   }
 
   /// Whether the current article has only partial in-app content.
@@ -939,6 +1010,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     _isShortArticle = true;
     _footerPermanent.value = true;
+    _latchCompleted(CompletionSource.short);
+  }
+
+  /// Latch one-shot de la complétion. Appelé depuis le listener de scroll, donc
+  /// gardé par un test booléen en tête : pas d'allocation, pas de `setState`.
+  void _latchCompleted(CompletionSource source) {
+    if (_articleCompleted.value) return;
+    if (_isExternal) return;
+    final article = _content;
+    if (article == null) return;
+    _completionSource = source;
+    _articleCompleted.value = true;
   }
 
   /// Fires a brief scale-pop on the primary CTA when `_footerPermanent`
@@ -947,8 +1030,43 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _onFooterPermanentChanged() {
     if (!_footerPermanent.value) return;
     if (_isWebViewActive || _ctaTapped || _showWebView) return;
+    // Anti-double-buzz : sur contenu complet les deux latches tombent dans la
+    // même frame. La complétion porte alors l'haptique, plus riche.
+    if (_articleCompleted.value) return;
     HapticFeedback.selectionClick();
     _ctaPulseController.forward(from: 0.0);
+  }
+
+  /// La lecture vient d'aboutir : un atterrissage, pas un tick. Jamais
+  /// `mediumImpact`/`heavyImpact` sur un acte de lecture.
+  void _onArticleCompletedChanged() {
+    if (!_articleCompleted.value) return;
+    final article = _content;
+    if (article == null) return;
+    final source = _completionSource ?? CompletionSource.inApp;
+
+    HapticFeedback.lightImpact();
+    unawaited(ref.read(readSyncServiceProvider).markCompleted(article.id, source));
+    _analytics?.trackArticleFinished(
+      contentId: article.id,
+      sourceId: article.source.id,
+      completionSource: source.wireValue,
+      isPartial: _isPartialContent,
+      renderMode: _completionRenderMode,
+      reachedFooterPermanent: _footerPermanent.value,
+      progressRaw: (_maxReadingProgress * 100).round().clamp(0, 100),
+      timeSpentSeconds: DateTime.now().difference(_startTime).inSeconds,
+      scrollable: _scrollController.hasClients &&
+          _scrollController.position.maxScrollExtent >= 50,
+      articleCharCount:
+          plainTextLength(article.htmlContent ?? article.description),
+    );
+  }
+
+  String get _completionRenderMode {
+    if (_isWebViewActive || _ctaTapped) return 'webview';
+    if (_isShortArticle) return 'short';
+    return 'in_app';
   }
 
   /// ScrollController actif — un seul des deux a des clients à la fois (modes
@@ -957,54 +1075,121 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ? _scrollController
       : (_inAppScrollController.hasClients ? _inAppScrollController : null);
 
-  /// Calcul pur des conditions d'affichage du nudge perspectives. Aucune
-  /// mutation d'état ici — voir [_updatePerspectivesNudgeVisibility].
-  bool _computeShouldShowPerspectivesNudge() {
-    // Contenu article + section perspectives effectivement affichée. Le
-    // nudge n'a de sens que pendant la lecture scrollable normale : dès que
-    // la WebView a pris le relais visuel, ou que le CTA a été tapé
-    // (révélation en cours), le carrousel n'est plus la destination
-    // pertinente d'un scroll.
-    if (!_showPerspectivesBand) return false;
-    if (_isWebViewActive || _ctaTapped) return false;
-    // Assez d'autres points de vue pour justifier le nudge.
-    if (_inlinePerspectives.length <= _kPerspectivesNudgeMinCount) {
-      return false;
+  /// Résout la cible prioritaire du nudge de scroll. Le pas de recul (deep
+  /// reco) prime sur la couverture médiatique quand il est présent. Retourne
+  /// `null` si aucune cible pertinente (pas un article, mode externe, ou pas
+  /// assez de points de vue et pas de pas de recul).
+  _ScrollNudgeTarget? _resolveScrollNudgeTarget() {
+    if (!_showPerspectivesBand || _isExternal) return null;
+    if (_perspectivesResponse?.deepRecommendation != null) {
+      return _ScrollNudgeTarget(
+        NudgeIds.scrollToDeepReco,
+        _deepRecoKey,
+        'Prendre du recul ?',
+        PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
+      );
     }
+    if (_inlinePerspectives.length > _kScrollNudgeMinCount) {
+      return _ScrollNudgeTarget(
+        NudgeIds.scrollToPerspectives,
+        _perspectivesKey,
+        'Voir plus de points de vue ?',
+        PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
+      );
+    }
+    return null;
+  }
 
-    // Utilisateur "en haut".
+  /// Planifie (une seule fois par article) l'armement différé du nudge :
+  /// attend `_kScrollNudgeArmDelay` (anti-pop instantané) puis résout le
+  /// cooldown 24 h avant d'autoriser l'affichage. Appelé dès qu'une cible
+  /// devient plausible (arrivée des perspectives, résolution du contenu).
+  void _maybeArmScrollNudge() {
+    if (_scrollNudgeArmScheduled) return;
+    final target = _resolveScrollNudgeTarget();
+    if (target == null) return;
+    _scrollNudgeArmScheduled = true;
+    _scrollNudgeArmTimer = Timer(_kScrollNudgeArmDelay, () async {
+      if (!mounted) return;
+      // Cooldown par-nudge uniquement (NudgeService, pas le coordinator) : on
+      // veut « 1×/24 h par cible », sans le budget global de session.
+      final ok = await ref.read(nudgeServiceProvider).canShow(target.id);
+      if (!mounted) return;
+      _scrollNudgeCooldownOk = ok;
+      _updateScrollNudgeVisibility();
+    });
+  }
+
+  /// Calcul pur des conditions d'affichage du nudge de scroll. Aucune
+  /// mutation d'état ici — voir [_updateScrollNudgeVisibility]. Résout et
+  /// mémorise la cible courante dans `_activeScrollNudgeTarget`.
+  bool _computeShouldShowScrollNudge() {
+    // Armé (cooldown 24 h résolu à l'armement), pas déjà consommé sur cet
+    // article. `_scrollNudgeCooldownOk` ne peut passer true qu'après le délai
+    // d'armement → il porte à lui seul l'état « armé + éligible ».
+    if (!_scrollNudgeCooldownOk || _scrollNudgeSpent) return false;
+    // Le nudge n'a de sens que pendant la lecture scrollable normale : dès que
+    // la WebView a pris le relais visuel, ou que le CTA a été tapé (révélation
+    // en cours), la destination n'est plus pertinente.
+    if (_isWebViewActive || _ctaTapped) return false;
+
+    // Gardes bon marché d'abord (chemin chaud du scroll) : « en haut » avant
+    // toute résolution/allocation de cible.
     final ScrollController? active = _activeScrollController;
     if (active == null) return false;
-    if (active.offset > _kPerspectivesNudgeTopTolerance) return false;
+    if (active.offset > _kScrollNudgeTopTolerance) return false;
 
-    // Carrousel hors écran. Si la clé n'est pas encore montée (premier frame
-    // après fetch, ou perspectives pas encore rendues), on traite comme "non
-    // applicable" : pas de nudge pointant vers rien.
-    final renderObject = _perspectivesKey.currentContext?.findRenderObject();
+    final target = _resolveScrollNudgeTarget();
+    if (target == null) return false;
+    _activeScrollNudgeTarget = target;
+
+    // Destination hors écran (assez bas pour valoir un scroll). Si la clé n'est
+    // pas encore montée (premier frame après fetch, ou carte non rendue dans la
+    // branche de layout courante), on traite comme "non applicable" : pas de
+    // nudge pointant vers rien.
+    final renderObject = target.key.currentContext?.findRenderObject();
     if (renderObject is! RenderBox || !renderObject.attached) return false;
     final topY = renderObject.localToGlobal(Offset.zero).dy;
     final viewportHeight = MediaQuery.of(context).size.height;
-    return topY > viewportHeight;
+    return topY > viewportHeight * _kScrollNudgeMinBelowFraction;
   }
 
-  /// Recalcule et applique la visibilité du nudge perspectives. Ne fait
-  /// jamais de `setState` — seule `_showPerspectivesNudge.value` change,
-  /// consommée par un `ValueListenableBuilder<bool>` dédié dans `build()`.
-  void _updatePerspectivesNudgeVisibility() {
+  /// Recalcule et applique la visibilité du nudge de scroll. Ne fait jamais de
+  /// `setState` — seule `_showScrollNudge.value` change, consommée par un
+  /// `ValueListenableBuilder<bool>` dédié dans `build()`. Au premier passage
+  /// false→true : pose le cooldown 24 h (markShown, une seule fois) et arme
+  /// l'auto-masquage.
+  void _updateScrollNudgeVisibility() {
     if (!mounted) return;
-    final shouldShow = _computeShouldShowPerspectivesNudge();
-    if (_showPerspectivesNudge.value != shouldShow) {
-      _showPerspectivesNudge.value = shouldShow;
+    final shouldShow = _computeShouldShowScrollNudge();
+    if (_showScrollNudge.value == shouldShow) return;
+    _showScrollNudge.value = shouldShow;
+    if (!shouldShow) return;
+
+    final target = _activeScrollNudgeTarget;
+    if (target != null && !_scrollNudgeShownRecorded) {
+      _scrollNudgeShownRecorded = true;
+      // Démarre le cooldown 24 h dès le premier affichage réel → ne réapparaît
+      // plus aujourd'hui (couvre « déjà montré / cliqué »).
+      unawaited(ref.read(nudgeServiceProvider).markShown(target.id));
     }
+    // Auto-masquage : le nudge ne traîne pas à l'écran.
+    _scrollNudgeAutoHideTimer?.cancel();
+    _scrollNudgeAutoHideTimer = Timer(_kScrollNudgeAutoHideDelay, () {
+      if (!mounted) return;
+      _scrollNudgeSpent = true;
+      _showScrollNudge.value = false;
+    });
   }
 
-  /// Tap sur le nudge : scrolle le contrôleur actif pour amener le haut du
-  /// carrousel de perspectives juste sous le header, puis masque le nudge
-  /// sans attendre le `ScrollUpdateNotification` résultant (sinon il
-  /// resterait visible, incongru, pendant toute l'animation).
-  void _scrollToPerspectives() {
+  /// Tap sur le nudge : scrolle le contrôleur actif pour amener le haut de la
+  /// destination juste sous le header, puis masque le nudge sans attendre le
+  /// `ScrollUpdateNotification` résultant (sinon il resterait visible,
+  /// incongru, pendant toute l'animation). Le cooldown est déjà posé à
+  /// l'affichage.
+  void _scrollToNudgeTarget(GlobalKey key) {
     final ScrollController? active = _activeScrollController;
-    final renderObject = _perspectivesKey.currentContext?.findRenderObject();
+    final renderObject = key.currentContext?.findRenderObject();
     if (active == null ||
         renderObject is! RenderBox ||
         !renderObject.attached) {
@@ -1026,7 +1211,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       curve: Curves.easeInOutCubic,
     );
 
-    _showPerspectivesNudge.value = false;
+    _scrollNudgeSpent = true;
+    _showScrollNudge.value = false;
   }
 
   /// Measures the pixel distance from the top of the scroll content to the
@@ -1088,6 +1274,22 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerPermanent.value = false;
     _animateFooterTo(0.0);
     _scrollController.jumpTo(0);
+    // Retour en haut de l'article : ré-arme le nudge de scroll (le cooldown
+    // 24 h déjà posé le maintiendra masqué s'il a été montré aujourd'hui).
+    _resetScrollNudge();
+    _maybeArmScrollNudge();
+  }
+
+  /// Remet à zéro l'état du nudge de scroll (armement, cooldown, auto-hide) et
+  /// annule ses timers. Appelé au retour en haut de l'article (sortie WebView).
+  void _resetScrollNudge() {
+    _scrollNudgeArmTimer?.cancel();
+    _scrollNudgeAutoHideTimer?.cancel();
+    _scrollNudgeSpent = false;
+    _scrollNudgeCooldownOk = false;
+    _scrollNudgeShownRecorded = false;
+    _scrollNudgeArmScheduled = false;
+    _showScrollNudge.value = false;
   }
 
   /// Gère le retour arrière du reader (bouton header + bouton système Android).
@@ -1156,7 +1358,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       setState(() {
         _isWebViewActive = true;
       });
-      _updatePerspectivesNudgeVisibility();
+      _updateScrollNudgeVisibility();
       // Drop the article subtree from the tree once the 300 ms fade-out is
       // done, so Flutter stops painting it under the scrolling WebView.
       _articleLayerUnmountTimer?.cancel();
@@ -1697,13 +1899,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Accumulate reading time on user_content_status for recommendation signal.
         repository.updateContentStatusWithTimeSpent(_content!.id, duration);
 
-        // Track article read duration
-        ref
-            .read(analyticsServiceProvider)
-            .trackArticleRead(_content!.id, _content!.source.id, duration);
+        // Durée de lecture — le service a été résolu en `initState`, aucun
+        // `ref` n'est touché pendant le teardown.
+        _analytics?.trackArticleRead(
+          _content!.id,
+          _content!.source.id,
+          duration,
+        );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      // Un chemin de récompense ne doit jamais échouer en silence.
       debugPrint('Error tracking on dispose: $e');
+      unawaited(Sentry.captureException(e, stackTrace: stack));
     }
 
     _readingTimer?.cancel();
@@ -1714,6 +1921,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _articleLayerUnmountTimer?.cancel();
     _linkCopiedHeaderTimer?.cancel();
     _perspectivesRefetchTimer?.cancel();
+    _scrollNudgeArmTimer?.cancel();
+    _scrollNudgeAutoHideTimer?.cancel();
     _analysisSheetData.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
@@ -1722,12 +1931,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _footerAutoController.dispose();
     _ctaPulseController.dispose();
     _footerPermanent.removeListener(_onFooterPermanentChanged);
+    _articleCompleted.removeListener(_onArticleCompletedChanged);
+    _articleCompleted.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _footerOffset.dispose();
     _footerPermanent.dispose();
     _readingProgress.removeListener(_onReadingProgressNudge);
     _readingProgress.dispose();
-    _showPerspectivesNudge.dispose();
+    _showScrollNudge.dispose();
     _scrollController.removeListener(_onScrollToSite);
 
     _scrollController.dispose();
@@ -1989,12 +2200,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _schedulePerspectivesPartialRefetch(content.id);
         }
         _maybeTriggerPerspectivesCta();
+        // Une cible de nudge (pas de recul ou perspectives) est désormais
+        // plausible : planifie l'armement différé (1,5 s + cooldown).
+        _maybeArmScrollNudge();
         // `PerspectivesInlineSection`/`_perspectivesKey` ne sont montés qu'au
         // prochain frame après ce `setState` — sans ce callback, un
         // utilisateur déjà en haut et immobile ne verrait jamais le nudge
         // apparaître avant son prochain scroll.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _updatePerspectivesNudgeVisibility();
+          if (mounted) _updateScrollNudgeVisibility();
         });
       }
     } catch (e) {
@@ -2016,7 +2230,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// route `content/:id` (re)fetch le Content depuis l'id, donc pas d'`extra`.
   void _openDeepReco(DeepRecommendation reco) {
     if (reco.contentId.isEmpty) return;
-    context.push('${RoutePaths.flaner}/content/${reco.contentId}');
+    // `from=pdr` signale au reader ouvert qu'il vient d'un CTA « Pas de recul »
+    // → header contextuel (lavis bleu + médaillon 🔭). L'`extra` étant déjà
+    // pris par `Content?`, on passe le contexte via un query param.
+    context.push('${RoutePaths.flaner}/content/${reco.contentId}?from=pdr');
   }
 
   void _schedulePerspectivesPartialRefetch(String contentId) {
@@ -2180,7 +2397,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     }
 
                     _onScrollDelta(delta);
-                    _updatePerspectivesNudgeVisibility();
+                    _updateScrollNudgeVisibility();
                     // Track reading progress from any scrollable (including in-app reader)
                     if (metrics.maxScrollExtent > 0) {
                       final rawProgress =
@@ -2196,6 +2413,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                           rawProgress >= 0.98) {
                         _footerPermanent.value = true;
                         _animateFooterTo(0.0);
+                      }
+                      // Complétion in-app : seulement sur contenu complet. Sur
+                      // contenu partiel, atteindre le bas de l'extrait ne veut
+                      // pas dire avoir lu l'article — la complétion arrive
+                      // alors par le pont JS de la WebView.
+                      if (!_isPartialContent &&
+                          !_ctaTapped &&
+                          rawProgress >= 0.98) {
+                        _latchCompleted(CompletionSource.inApp);
                       }
                       // Progress bar uses article-only extent so perspectives don't dilute it
                       final articleExtent =
@@ -2284,12 +2510,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       _showWebView && !useScrollToSite && !useInAppReading,
                 ),
               ),
-              // Nudge flottant "Voir plus de points de vue ?" — visible
-              // seulement en haut de l'article, tant que le carrousel de
-              // perspectives n'est pas encore à l'écran (cf.
-              // _computeShouldShowPerspectivesNudge). Flotte juste au-dessus
-              // du footer, jamais superposé (les deux ne sont visibles
-              // qu'en haut de l'article).
+              // Nudge de scroll flottant ("Prendre du recul ?" ou "Voir plus
+              // de points de vue ?") — visible seulement en haut de l'article,
+              // tant que la destination n'est pas encore à l'écran (cf.
+              // _computeShouldShowScrollNudge). Flotte juste au-dessus du
+              // footer, jamais superposé (les deux ne sont visibles qu'en haut
+              // de l'article).
               Positioned(
                 bottom: MediaQuery.of(context).viewPadding.bottom +
                     _kFooterContentHeight +
@@ -2301,7 +2527,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   alignment: Alignment.centerRight,
                   child: Padding(
                     padding: const EdgeInsets.only(right: FacteurSpacing.space4),
-                    child: _buildPerspectivesNudge(context),
+                    child: _buildScrollNudge(context),
                   ),
                 ),
               ),
@@ -2314,61 +2540,70 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
   }
 
-  /// Pill flottant "Voir plus de points de vue ?" — visibilité pilotée par
-  /// [_showPerspectivesNudge], tap par [_scrollToPerspectives]. Purement
-  /// présentationnel.
-  Widget _buildPerspectivesNudge(BuildContext context) {
+  /// Pill flottant du nudge de scroll — visibilité pilotée par
+  /// [_showScrollNudge], contenu (label + icône + cible de scroll) par
+  /// [_activeScrollNudgeTarget]. Purement présentationnel.
+  Widget _buildScrollNudge(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
     return ValueListenableBuilder<bool>(
-      valueListenable: _showPerspectivesNudge,
-      builder: (context, visible, child) => IgnorePointer(
-        ignoring: !visible,
-        child: AnimatedOpacity(
-          opacity: visible ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOut,
-          child: AnimatedSlide(
-            offset: visible ? Offset.zero : const Offset(0, 0.3),
+      valueListenable: _showScrollNudge,
+      builder: (context, visible, child) {
+        // Cible résolue au moment de l'affichage (stable tant que visible) ;
+        // fallback perspectives si null pour ne jamais rendre un pill vide.
+        final target = _activeScrollNudgeTarget;
+        return IgnorePointer(
+          ignoring: !visible,
+          child: AnimatedOpacity(
+            opacity: visible ? 1.0 : 0.0,
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOut,
-            child: child,
-          ),
-        ),
-      ),
-      child: GlassPill(
-        borderRadius: BorderRadius.circular(FacteurRadius.pill),
-        shadowOffset: const Offset(0, 2),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _scrollToPerspectives,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: FacteurSpacing.space4,
-              vertical: FacteurSpacing.space2,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Voir plus de points de vue ?',
-                  style: textTheme.labelSmall?.copyWith(
-                    color: colors.textPrimary,
-                    fontWeight: FontWeight.w600,
+            child: AnimatedSlide(
+              offset: visible ? Offset.zero : const Offset(0, 0.3),
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              child: GlassPill(
+                borderRadius: BorderRadius.circular(FacteurRadius.pill),
+                shadowOffset: const Offset(0, 2),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: target == null
+                      ? null
+                      : () => _scrollToNudgeTarget(target.key),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4,
+                      vertical: FacteurSpacing.space2,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          target?.label ?? 'Voir plus de points de vue ?',
+                          style: textTheme.labelSmall?.copyWith(
+                            color: colors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          target?.icon ??
+                              PhosphorIcons.arrowDown(
+                                PhosphorIconsStyle.regular,
+                              ),
+                          size: 13,
+                          color: colors.textSecondary,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                Icon(
-                  PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
-                  size: 13,
-                  color: colors.textSecondary,
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -2394,7 +2629,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         !_showWebView;
     if (isScrollToSite && !_ctaTapped) {
       setState(() => _ctaTapped = true);
-      _updatePerspectivesNudgeVisibility();
+      _updateScrollNudgeVisibility();
       // Lance le chargement de la page distante MAINTENANT : le CTA anime 500 ms
       // avant que `_isWebViewActive` ne se verrouille → la page démarre ≥ 500 ms
       // avant la révélation (même avance qu'avec le chargement eager d'avant).
@@ -2443,7 +2678,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       _showWebView = true;
       _ctaTapped = true;
     });
-    _updatePerspectivesNudgeVisibility();
+    _updateScrollNudgeVisibility();
     // Arrival gate : cache le footer + verrouille la révélation jusqu'au 1er
     // scroll (préserve le bandeau cookies du site en bas d'écran).
     _footerRevealLocked = true;
@@ -2545,7 +2780,28 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           top: 12,
           bottom: 12 + bottomInset + _kFooterBottomMargin,
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Le cachet « LU JUSQU'AU BOUT » vit dans le pied de page et non
+            // dans le flux de l'article : c'est le seul emplacement qui marche
+            // dans les quatre modes de rendu — impossible d'injecter quoi que
+            // ce soit dans le DOM de l'éditeur en WebView, qui est pourtant le
+            // chemin nominal.
+            ValueListenableBuilder<bool>(
+              valueListenable: _articleCompleted,
+              builder: (context, completed, _) {
+                if (!completed) return const SizedBox.shrink();
+                return const Padding(
+                  padding: EdgeInsets.only(bottom: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: CompletionStamp(animate: true),
+                  ),
+                );
+              },
+            ),
+            Row(
           children: [
             // CTA — sized to content for articles (laisse de la place aux 3
             // boutons icônes à droite); fills width pour video/audio.
@@ -2557,13 +2813,25 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isArticle
                     ? ValueListenableBuilder<bool>(
                         valueListenable: _footerPermanent,
-                        builder: (context, permanent, _) {
+                        builder: (context, permanent, _) =>
+                            ValueListenableBuilder<bool>(
+                          valueListenable: _articleCompleted,
+                          builder: (context, completed, _) {
                           final isWebViewMode =
                               _ctaTapped || _isWebViewActive;
                           // Primary orange ONLY when the user has reached the
                           // bottom of the article (footer locked permanent) AND
                           // the WebView hasn't been revealed yet.
-                          final usePrimary = permanent && !isWebViewMode;
+                          //
+                          // Une fois l'article terminé, le pied de page porte
+                          // l'état « succès » (cachet vert) : l'action « Lire
+                          // sur … » se retire alors en `secondary` pour ne plus
+                          // concurrencer cet état. Un bouton d'action ne prend
+                          // jamais le vert, qui signifie « déjà fait » partout
+                          // ailleurs dans le produit.
+                          final usePrimary =
+                              permanent && !isWebViewMode && !completed;
+                          final useSecondary = completed;
 
                           final label = isWebViewMode
                               ? 'Lire via Navigateur'
@@ -2591,7 +2859,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                                 label,
                                 style: textTheme.labelMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
-                                  color: usePrimary
+                                  color: usePrimary || useSecondary
                                       ? Colors.white
                                       : colors.textPrimary,
                                 ),
@@ -2603,11 +2871,30 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             Icon(
                               iconData,
                               size: 16,
-                              color: usePrimary
+                              color: usePrimary || useSecondary
                                   ? Colors.white.withValues(alpha: 0.8)
                                   : colors.textSecondary,
                             ),
                           ];
+
+                          if (useSecondary) {
+                            return FilledButton(
+                              onPressed: _onReadOnSiteTap,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: colors.secondary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: children,
+                              ),
+                            );
+                          }
 
                           if (usePrimary) {
                             return AnimatedBuilder(
@@ -2667,7 +2954,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             ),
                             child: Row(children: children),
                           );
-                        },
+                          },
+                        ),
                       )
                     : _buildExternalCtaButton(context, content),
               ),
@@ -2777,6 +3065,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
               ],
+            ),
+          ],
             ),
           ],
         ),
@@ -2902,6 +3192,21 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       ),
       child: Stack(
         children: [
+          // Lavis bleu vertical quand l'article vient d'un CTA « Pas de recul »
+          // (écho du header CTA). Peint au-dessus du fond opaque du pill mais
+          // derrière la Row → subtil, sans nuire à la lisibilité des icônes.
+          if (widget.fromDeepReco)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: DeepReculMedallion.lavisColors(colors.info),
+                  ),
+                ),
+              ),
+            ),
           Container(
             padding: EdgeInsets.only(
               top: topInset + FacteurSpacing.space3,
@@ -2927,6 +3232,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                     onPressed: _handleReaderBack,
                   ),
                   const SizedBox(width: 4),
+
+                  // Médaillon 🔭 contextuel : marque l'origine « Pas de recul »
+                  // sans encombrer le header (uniquement si fromDeepReco).
+                  if (widget.fromDeepReco) ...[
+                    const DeepReculMedallion(size: 26),
+                    const SizedBox(width: 6),
+                  ],
 
                   // CTA source unique : logo + nom + étoile (indicateur) + heure,
                   // le tout tappable → ouvre directement la modal source (plus de
@@ -3093,7 +3405,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
-    return ValueListenableBuilder<double>(
+    return ValueListenableBuilder<bool>(
+      valueListenable: _articleCompleted,
+      builder: (context, _, __) => ValueListenableBuilder<double>(
       valueListenable: _readingProgress,
       builder: (context, progress, _) {
         // Only show after 5% to avoid flashing on open
@@ -3102,9 +3416,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Grey→primary lerp, but opacity stays capped so the bar reads discreet
         // even at full progress (15% at start → ~50% max at end).
         final alpha = 0.15 + (clamped * 0.35);
+        // Article terminé : la barre vire au vert « succès ». Elle est
+        // l'instrument de mesure de la lecture, elle porte donc l'état — pas
+        // le bouton d'action.
+        final target =
+            _articleCompleted.value ? kStampGreen : colors.primary;
         final barColor = Color.lerp(
           Colors.grey.shade400,
-          colors.primary,
+          target,
           clamped,
         )!
             .withValues(alpha: alpha);
@@ -3123,6 +3442,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         );
       },
+      ),
     );
   }
 
@@ -3896,6 +4216,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         final textTheme = Theme.of(context).textTheme;
         final articleText = content.htmlContent ?? content.description;
         final isPartial = isPartialContent(articleText);
+        // Le pas de recul est désormais surfacé EN TÊTE des suites de lecture
+        // (au-dessus de « Comparer les angles ») ; ce flag pilote l'ordre et la
+        // respiration entre les deux blocs de fin de reader.
+        final hasDeepReco =
+            _perspectivesResponse?.deepRecommendation != null && !_isExternal;
 
         String? readingTime;
         if (content.durationSeconds != null && content.durationSeconds! > 0) {
@@ -4019,11 +4344,37 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                   ],
                 ),
 
-                // ── Perspectives section (fin du reader) ───────────────────
-                // Bande frostée encastrée (hairline fine + teinte quasi-
-                // invisible) ; large respiration au-dessus pour la détacher.
-                if (_showPerspectivesBand) ...[
+                // ── « Le pas de recul » (deep reco) ─────────────────────────
+                // Carte d'analyse de fond, surfacée EN TÊTE des suites de
+                // lecture (au-dessus de « Comparer les angles ») : c'est la
+                // première proposition de suite. Silencieuse tant que
+                // deep_pending && reco null (calcul en cours).
+                if (hasDeepReco) ...[
                   const SizedBox(height: FacteurSpacing.space8),
+                  KeyedSubtree(
+                    // Clé de mesure pour le nudge de scroll « Prendre du recul ? »
+                    // (position de la carte vs pli — cf. _computeShouldShowScrollNudge).
+                    key: _deepRecoKey,
+                    child: DeepRecommendationCard(
+                      reco: _perspectivesResponse!.deepRecommendation!,
+                      onTap: () => _openDeepReco(
+                        _perspectivesResponse!.deepRecommendation!,
+                      ),
+                    ),
+                  ),
+                ],
+
+                // ── Perspectives section (« Comparer les angles ») ─────────
+                // Bande frostée encastrée (hairline fine + teinte quasi-
+                // invisible). Respiration réduite (space6) quand le pas de
+                // recul la précède, pleine respiration (space8) si elle est
+                // seule sous le corps.
+                if (_showPerspectivesBand) ...[
+                  SizedBox(
+                    height: hasDeepReco
+                        ? FacteurSpacing.space6
+                        : FacteurSpacing.space8,
+                  ),
                   RepaintBoundary(
                     // Isole les animations d'intro de la bande perspectives du
                     // corps vertical au-dessus (même motif que le reader natif).
@@ -4043,21 +4394,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                       divergenceLevel: _perspectivesResponse?.divergenceLevel,
                       partial: _perspectivesResponse?.partial ?? false,
                       onOpenAnalysis: _openPerspectivesAnalysis,
-                    ),
-                  ),
-                ],
-
-                // ── « Le pas de recul » (deep reco) ─────────────────────────
-                // Carte d'analyse de fond, surfacée SOUS la couverture
-                // médiatique (perspectives). Silencieuse tant que deep_pending
-                // && reco null (calcul en cours).
-                if (_perspectivesResponse?.deepRecommendation != null &&
-                    !_isExternal) ...[
-                  const SizedBox(height: FacteurSpacing.space4),
-                  DeepRecommendationCard(
-                    reco: _perspectivesResponse!.deepRecommendation!,
-                    onTap: () => _openDeepReco(
-                      _perspectivesResponse!.deepRecommendation!,
                     ),
                   ),
                 ],

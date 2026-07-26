@@ -75,6 +75,8 @@ class DigestItem with _$DigestItem {
     @JsonKey(name: 'is_saved') @Default(false) bool isSaved,
     @JsonKey(name: 'is_liked') @Default(false) bool isLiked,
     @JsonKey(name: 'is_dismissed') @Default(false) bool isDismissed,
+    /// « Lu jusqu'au bout » (Epic 30) — null = inconnu, pas « non terminé ».
+    @JsonKey(name: 'completed_at') DateTime? completedAt,
     @JsonKey(name: 'recommendation_reason')
     DigestRecommendationReason? recommendationReason,
     @JsonKey(name: 'note_text') String? noteText,
