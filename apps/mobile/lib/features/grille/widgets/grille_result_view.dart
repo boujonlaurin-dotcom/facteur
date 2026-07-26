@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/theme.dart';
+import '../../feed/utils/search_matcher.dart' show foldForSearch;
 import '../grille_constants.dart';
 import '../models/grille_models.dart';
 import 'dashed_border.dart';
@@ -292,8 +293,8 @@ class GrilleResultView extends StatelessWidget {
     if (surface == null || surface.isEmpty) {
       return TextSpan(text: snippet);
     }
-    final hay = _fold(snippet);
-    final needle = _fold(surface);
+    final hay = foldForSearch(snippet);
+    final needle = foldForSearch(surface);
     final idx = hay.indexOf(needle);
     if (idx < 0) {
       return TextSpan(text: snippet);
@@ -308,25 +309,6 @@ class GrilleResultView extends StatelessWidget {
     );
   }
 
-  /// Normalisation légère pour la recherche de surface : minuscules + accents
-  /// FR courants repliés (la longueur est préservée → les offsets restent valides).
-  String _fold(String s) {
-    const map = {
-      'à': 'a', 'â': 'a', 'ä': 'a', 'á': 'a',
-      'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
-      'î': 'i', 'ï': 'i', 'í': 'i',
-      'ô': 'o', 'ö': 'o', 'ó': 'o',
-      'û': 'u', 'ü': 'u', 'ù': 'u', 'ú': 'u',
-      'ç': 'c',
-    };
-    final lower = s.toLowerCase();
-    final buf = StringBuffer();
-    for (var i = 0; i < lower.length; i++) {
-      final ch = lower[i];
-      buf.write(map[ch] ?? ch);
-    }
-    return buf.toString();
-  }
 }
 
 /// Cachet circulaire de verdict (`.mv-cachet`) — ✓ Livré / ✕ Manqué /

@@ -2,55 +2,150 @@ import 'package:flutter/material.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../providers/feed_provider.dart' show FeedFilterKind;
 
-/// Empty state affiché quand un filtre (thème, topic, entity, source)
+/// Empty state affiché quand un filtre (mot-clé, thème, topic, entity, source)
 /// ne retourne aucun article. Propose des CTAs contextuels pour
 /// réduire la frustration et guider l'utilisateur.
+///
+/// Story 30.1 — la variante mot-clé est la plus riche : une recherche
+/// bredouille est le moment où l'utilisateur a le plus besoin d'une porte de
+/// sortie (élargir · ajouter la source · suivre le sujet), plutôt que d'un
+/// écran blanc comme c'était le cas jusqu'ici.
 class EmptyFilterState extends StatelessWidget {
+  /// Nature du filtre qui n'a rien ramené. Reprise telle quelle de
+  /// [FeedFilterSelection.activeKind] — les dimensions étant exclusives, un
+  /// seul champ vaut mieux que quatre booléens dont 11 combinaisons sur 16
+  /// seraient invalides.
+  final FeedFilterKind kind;
+
   final String? filterName;
-  final bool isTheme;
-  final bool isEntity;
-  final bool isSource;
+
+  /// Recherche déjà élargie aux sources non suivies — masque le CTA « élargir ».
+  final bool alreadyBroadened;
+
   final VoidCallback onClearFilter;
-  final VoidCallback? onBrowseThemes;
+
+  /// Variante mot-clé — relancer la recherche sur toutes les sources.
+  final VoidCallback? onBroaden;
+
+  /// Variante mot-clé — chercher une source portant ce nom (recherche
+  /// intelligente pré-remplie).
+  final VoidCallback? onSearchSource;
+
+  /// Variante mot-clé — suivre la requête comme sujet.
+  final VoidCallback? onFollowTopic;
+
+  /// Variante bandeau : un bloc « Explorer » suit juste en dessous, donc la
+  /// page n'est pas une impasse — on annonce simplement le vide, sans emoji
+  /// pleine page ni CTA de sortie qui détourneraient de ce qui suit.
+  final bool compact;
 
   const EmptyFilterState({
     super.key,
-    this.filterName,
-    this.isTheme = false,
-    this.isEntity = false,
-    this.isSource = false,
+    required this.kind,
     required this.onClearFilter,
-    this.onBrowseThemes,
-  });
+    this.filterName,
+    this.alreadyBroadened = false,
+    this.onBroaden,
+    this.onSearchSource,
+    this.onFollowTopic,
+    this.compact = false,
+  }) : assert(
+          kind != FeedFilterKind.keyword || filterName != null,
+          'Une recherche mot-clé porte toujours son libellé.',
+        );
+
+  bool get _isKeyword => kind == FeedFilterKind.keyword;
 
   String get _emoji {
-    if (isEntity) return '🔍';
-    if (isSource) return '📰';
-    return '📭';
+    switch (kind) {
+      case FeedFilterKind.keyword:
+      case FeedFilterKind.entity:
+        return '🔍';
+      case FeedFilterKind.source:
+        return '📰';
+      case FeedFilterKind.theme:
+      case FeedFilterKind.topic:
+        return '📭';
+    }
   }
 
-  String get _title {
-    if (filterName != null) {
-      return 'Rien sur « $filterName »';
-    }
-    return 'Aucun article trouvé';
-  }
+  String get _title =>
+      filterName != null ? 'Rien sur « $filterName »' : 'Aucun article trouvé';
 
   String get _subtitle {
-    if (isEntity) {
-      return 'Aucun article récent ne mentionne ce sujet.\nDe nouveaux contenus peuvent arriver bientôt.';
+    switch (kind) {
+      case FeedFilterKind.keyword:
+        return alreadyBroadened
+            ? 'Aucun article récent ne porte ce mot dans son titre,\nmême hors de tes sources.'
+            : 'Aucun article récent de tes sources ne porte ce mot\ndans son titre.';
+      case FeedFilterKind.entity:
+        return 'Aucun article récent ne mentionne ce sujet.\nDe nouveaux contenus peuvent arriver bientôt.';
+      case FeedFilterKind.source:
+        return 'Aucun article récent de cette source.';
+      case FeedFilterKind.theme:
+      case FeedFilterKind.topic:
+        return 'Aucun article récent ne correspond à ce filtre.';
     }
-    if (isSource) {
-      return 'Aucun article récent de cette source.';
-    }
-    return 'Aucun article récent ne correspond à ce filtre.';
   }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: FacteurSpacing.space6,
+          vertical: FacteurSpacing.space4,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _title,
+              style: textTheme.titleSmall?.copyWith(
+                color: colors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: FacteurSpacing.space1),
+            Text(
+              'Rien dans tes sources sur ce filtre. Voici ce qui se dit ailleurs.',
+              style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Ordre des rattrapages : du moins engageant (élargir la même recherche) au
+    // plus engageant (ajouter une source), puis la sortie neutre.
+    final secondary = <Widget>[
+      if (_isKeyword && !alreadyBroadened && onBroaden != null)
+        _SecondaryCta(
+          colors: colors,
+          icon: PhosphorIcons.globeHemisphereWest(PhosphorIconsStyle.regular),
+          label: 'Élargir à toutes les sources',
+          onPressed: onBroaden!,
+        ),
+      if (_isKeyword && onSearchSource != null)
+        _SecondaryCta(
+          colors: colors,
+          icon: PhosphorIcons.plusCircle(PhosphorIconsStyle.regular),
+          label: 'Chercher « $filterName » comme source',
+          onPressed: onSearchSource!,
+        ),
+      if (_isKeyword && onFollowTopic != null)
+        _SecondaryCta(
+          colors: colors,
+          icon: PhosphorIcons.bellSimpleRinging(PhosphorIconsStyle.regular),
+          label: 'Suivre « $filterName » comme sujet',
+          onPressed: onFollowTopic!,
+        ),
+    ];
 
     return Center(
       child: Padding(
@@ -61,11 +156,8 @@ class EmptyFilterState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Emoji
             Text(_emoji, style: const TextStyle(fontSize: 48)),
             const SizedBox(height: FacteurSpacing.space4),
-
-            // Title
             Text(
               _title,
               style: textTheme.titleMedium?.copyWith(
@@ -75,8 +167,6 @@ class EmptyFilterState extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: FacteurSpacing.space2),
-
-            // Subtitle
             Text(
               _subtitle,
               style: textTheme.bodyMedium?.copyWith(
@@ -86,52 +176,76 @@ class EmptyFilterState extends StatelessWidget {
             ),
             const SizedBox(height: FacteurSpacing.space6),
 
-            // Primary CTA: clear filter
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onClearFilter,
-                icon: Icon(
-                  PhosphorIcons.arrowLeft(PhosphorIconsStyle.bold),
-                  size: 18,
-                ),
-                label: const Text('Revenir au feed'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: colors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(FacteurRadius.medium),
-                  ),
-                ),
-              ),
-            ),
-
-            // Secondary CTA: browse other themes (only if current filter is theme/topic/entity)
-            if (onBrowseThemes != null && !isSource) ...[
+            // Les rattrapages passent devant la sortie neutre : sur une
+            // recherche bredouille, « revenir au feed » n'est pas ce que
+            // l'utilisateur veut en premier.
+            for (final cta in secondary) ...[
+              cta,
               const SizedBox(height: FacteurSpacing.space3),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onBrowseThemes,
-                  icon: Icon(
-                    PhosphorIcons.compass(PhosphorIconsStyle.regular),
-                    size: 18,
-                  ),
-                  label: const Text('Explorer un autre thème'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: colors.textSecondary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    side: BorderSide(color: colors.border),
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(FacteurRadius.medium),
-                    ),
-                  ),
-                ),
-              ),
             ],
+            _ClearFilterCta(colors: colors, onPressed: onClearFilter),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ClearFilterCta extends StatelessWidget {
+  final FacteurColors colors;
+  final VoidCallback onPressed;
+
+  const _ClearFilterCta({required this.colors, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: onPressed,
+        icon: Icon(PhosphorIcons.arrowLeft(PhosphorIconsStyle.bold), size: 18),
+        label: const Text('Revenir au feed'),
+        style: FilledButton.styleFrom(
+          backgroundColor: colors.primary,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SecondaryCta extends StatelessWidget {
+  final FacteurColors colors;
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _SecondaryCta({
+    required this.colors,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label, textAlign: TextAlign.center),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colors.textSecondary,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          side: BorderSide(color: colors.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
+          ),
         ),
       ),
     );

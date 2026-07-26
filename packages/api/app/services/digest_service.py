@@ -52,7 +52,7 @@ from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
 from app.services.topic_selector import ScoredArticle, TopicGroup
-from app.utils.time import editorial_day, today_paris
+from app.utils.time import today_paris, week_start_paris
 
 logger = structlog.get_logger()
 
@@ -1534,8 +1534,8 @@ class DigestService:
         )
         await self.session.execute(upsert_stmt)
 
-        # Update closure streak (idempotent same-day via last_closure_date).
-        streak_update = await self._update_closure_streak(user_id)
+        # Update closure streak (idempotent same-edition via last_closure_date).
+        streak_update = await self._update_closure_streak(user_id, digest.target_date)
 
         await self.session.flush()
 
@@ -1626,11 +1626,11 @@ class DigestService:
                     inserted=inserted_id is not None,
                 )
                 # Keep the closure streak in sync when we actually inserted a
-                # new row — `_update_closure_streak` is itself same-day
+                # new row — `_update_closure_streak` is itself same-edition
                 # idempotent, but skipping the call when we no-opped on
                 # conflict avoids an unnecessary UserStreak read/write.
                 if inserted_id is not None:
-                    await self._update_closure_streak(user_id)
+                    await self._update_closure_streak(user_id, digest.target_date)
                 return True
         except Exception as exc:  # noqa: BLE001 — never break the caller
             logger.warning(
@@ -2922,8 +2922,19 @@ class DigestService:
 
         return {"read": read_count, "saved": saved_count, "dismissed": dismissed_count}
 
-    async def _update_closure_streak(self, user_id: UUID) -> dict[str, Any]:
-        """Update user's closure streak for digest completion."""
+    async def _update_closure_streak(
+        self, user_id: UUID, target_date: date
+    ) -> dict[str, Any]:
+        """Update user's closure streak for digest completion.
+
+        `target_date` is the *edition* that was just closed, never a notion of
+        "today". Deriving it server-side is what broke the streak: the two call
+        sites look up the digest with `today_paris()` (midnight boundary) while
+        this method stamped `editorial_day()` (07h30 boundary), so a reader
+        closing edition D at 01h got stamped D-1, and closing D+1 the next
+        evening saw `days_since == 2` — streak reset. Stamping the edition
+        itself removes the boundary question entirely.
+        """
         # Get or create streak record
         streak = await self.session.scalar(
             select(UserStreak).where(UserStreak.user_id == user_id)
@@ -2933,21 +2944,30 @@ class DigestService:
             streak = UserStreak(
                 id=uuid4(),
                 user_id=user_id,
-                week_start=date.today() - timedelta(days=date.today().weekday()),
+                week_start=week_start_paris(),
             )
             self.session.add(streak)
             await self.session.flush()
 
-        # Editorial day (07h30 Paris), NOT `date.today()` (server UTC). The
-        # trigger `maybe_record_implicit_completion` already gates on Paris
-        # time: stamping in UTC made a completion recorded for day D land on
-        # D-1 between 00h and 02h Paris in summer, breaking or doubling the
-        # streak.
-        today = editorial_day()
+        today = target_date
 
         # Update closure streak
         if streak.last_closure_date:
             days_since = (today - streak.last_closure_date).days
+
+            if days_since < 0:
+                # Édition *passée* refermée : le sélecteur de date sert les
+                # éditions J-7 et `complete_digest` accepte n'importe quel
+                # `digest_id`. Elle ne peut ni prolonger ni casser la série en
+                # cours. Sans cette sortie, `days_since` négatif tombait dans
+                # le `else` (reset à 1) et ramenait en plus le curseur
+                # `last_closure_date` en arrière — regression introduite en
+                # même temps que l'estampillage sur l'édition.
+                return {
+                    "current": streak.closure_streak,
+                    "longest": streak.longest_closure_streak,
+                    "message": None,
+                }
 
             if days_since == 0:
                 # Already completed today - don't increment

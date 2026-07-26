@@ -18,6 +18,7 @@ class UserProfileUpdate(BaseModel):
     display_name: str | None = None
     gamification_enabled: bool | None = None
     weekly_goal: int | None = Field(None, ge=3, le=7)
+    daily_goal: int | None = Field(None, ge=1, le=7)
 
 
 class UserProfileResponse(BaseModel):
@@ -31,6 +32,7 @@ class UserProfileResponse(BaseModel):
     onboarding_completed: bool
     gamification_enabled: bool
     weekly_goal: int
+    daily_goal: int
     created_at: datetime
     updated_at: datetime
 

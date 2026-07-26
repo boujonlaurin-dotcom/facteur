@@ -45,6 +45,7 @@ class FacteurApp extends ConsumerStatefulWidget {
 class _FacteurAppState extends ConsumerState<FacteurApp>
     with WidgetsBindingObserver {
   bool _deepLinksStarted = false;
+  bool _completedReadsHydrated = false;
   bool _wasBackgrounded = false;
   DateTime? _backgroundedAt;
 
@@ -280,6 +281,9 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
         unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
       } else if (prev?.isAuthenticated == true) {
         ref.read(consumedContentIdsProvider.notifier).state = <String>{};
+        // Idem pour les lectures abouties, sans quoi le compte suivant hérite
+        // du filet de complétion du précédent.
+        ref.read(completedContentIdsProvider.notifier).state = <String>{};
         _endAnalyticsSessionIfNeeded();
       }
     });
@@ -287,6 +291,22 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     DeepLinkService.instance.setAuthenticated(
       ref.read(authStateProvider).isAuthenticated,
     );
+    // Complétions durables relues au démarrage : le filet de lecture aboutie
+    // doit survivre au kill de l'app, la session ne le porte plus seule.
+    //
+    // One-shot (même motif que `_deepLinksStarted`) et hors frame de build :
+    // `build` se rejoue à chaque changement de router/thème/preload, et
+    // l'hydratation rescanne toute la box + mute un provider — deux choses
+    // qui n'ont rien à faire dans un `build`. Si l'utilisateur n'est pas
+    // encore authentifié ici, c'est `flushCurrentUser()` du `ref.listen`
+    // ci-dessus qui hydratera à la connexion.
+    if (!_completedReadsHydrated) {
+      _completedReadsHydrated = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(readSyncServiceProvider).hydrateCompletedReads();
+      });
+    }
 
     return MaterialApp.router(
       title: 'Facteur',

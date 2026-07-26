@@ -9,6 +9,7 @@ import '../../../widgets/design/facteur_image.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/models/source_model.dart';
 import '../../sources/providers/sources_providers.dart';
+import '../utils/search_results_builder.dart' show isFollowedSource;
 
 class SourceFilterSheet extends ConsumerStatefulWidget {
   final String? currentSourceId;
@@ -55,7 +56,7 @@ class _SourceFilterSheetState extends ConsumerState<SourceFilterSheet> {
 
   List<Source> _getFollowedSources(List<Source> allSources) {
     final followed = allSources
-        .where((s) => (s.isTrusted || s.isCustom) && !s.isMuted)
+        .where(isFollowedSource)
         .toList();
     followed
         .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));

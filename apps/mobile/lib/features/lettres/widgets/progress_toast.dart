@@ -23,6 +23,8 @@ void showProgressToast(
   String? stepTitle,
   Color? accentColor,
   VoidCallback? onOpen,
+  VoidCallback? onGoalCta,
+  String ctaLabel = 'Quel objectif on se donne ?',
 }) {
   final overlay = Overlay.maybeOf(context, rootOverlay: true);
   if (overlay == null) return;
@@ -56,6 +58,8 @@ void showProgressToast(
       stepTitle: stepTitle,
       accentColor: accentColor,
       onOpen: onOpen,
+      onGoalCta: onGoalCta,
+      ctaLabel: ctaLabel,
       onDismissed: onDismissed,
       onRequestClose: (cb) {
         dismiss = cb;
@@ -94,6 +98,8 @@ class _ProgressToast extends StatefulWidget {
   final String? stepTitle;
   final Color? accentColor;
   final VoidCallback? onOpen;
+  final VoidCallback? onGoalCta;
+  final String ctaLabel;
   final VoidCallback onDismissed;
   final ValueChanged<VoidCallback> onRequestClose;
 
@@ -109,6 +115,8 @@ class _ProgressToast extends StatefulWidget {
     this.stepTitle,
     this.accentColor,
     this.onOpen,
+    this.onGoalCta,
+    this.ctaLabel = 'Quel objectif on se donne ?',
   });
 
   @override
@@ -125,9 +133,22 @@ class _ProgressToastState extends State<_ProgressToast>
   Timer? _holdTimer;
   bool _leaving = false;
 
-  Duration get _hold => widget.level == ProgressToastLevel.step
+  bool get _hasGoalCta =>
+      widget.level == ProgressToastLevel.micro &&
+      widget.onGoalCta != null &&
+      (widget.current ?? 0) >= (widget.total ?? 0);
+
+  Duration get _hold =>
+      widget.level == ProgressToastLevel.step || _hasGoalCta
       ? const Duration(milliseconds: 4500)
       : const Duration(milliseconds: 3000);
+
+  /// Déclenche le CTA « objectif » puis referme le toast.
+  void _handleGoalCta() {
+    final cb = widget.onGoalCta;
+    _close();
+    cb?.call();
+  }
 
   @override
   void initState() {
@@ -206,7 +227,11 @@ class _ProgressToastState extends State<_ProgressToast>
             : colors.success);
 
     final body = switch (widget.level) {
-      ProgressToastLevel.micro => _MicroBody(accent: accent, toast: widget),
+      ProgressToastLevel.micro => _MicroBody(
+        accent: accent,
+        toast: widget,
+        onGoalCta: _hasGoalCta ? _handleGoalCta : null,
+      ),
       ProgressToastLevel.section => _SectionBody(accent: accent, toast: widget),
       ProgressToastLevel.step => _StepBody(accent: accent, toast: widget),
     };
@@ -288,7 +313,15 @@ class _MicroBody extends StatelessWidget {
   final Color accent;
   final _ProgressToast toast;
 
-  const _MicroBody({required this.accent, required this.toast});
+  /// Non nul uniquement quand l'objectif est atteint (`current >= total`) et
+  /// qu'un CTA a été fourni : rend la ligne tappable « Quel objectif … ? ».
+  final VoidCallback? onGoalCta;
+
+  const _MicroBody({
+    required this.accent,
+    required this.toast,
+    this.onGoalCta,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -338,8 +371,65 @@ class _MicroBody extends StatelessWidget {
               padding: const EdgeInsets.only(left: 26),
               child: _Segments(current: current, total: total, accent: accent),
             ),
+            if (onGoalCta != null) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 26),
+                child: _GoalCtaLine(
+                  label: toast.ctaLabel,
+                  accent: accent,
+                  onTap: onGoalCta!,
+                ),
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Ligne tappable affichée sous les segments quand l'objectif du jour est
+/// atteint : invite discrète à régler l'objectif (ouvre l'écran Progression).
+class _GoalCtaLine extends StatelessWidget {
+  final String label;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _GoalCtaLine({
+    required this.label,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              label,
+              style: GoogleFonts.dmSans(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.1,
+                color: accent,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(
+            PhosphorIcons.arrowRight(),
+            size: 12,
+            color: accent,
+          ),
+        ],
       ),
     );
   }

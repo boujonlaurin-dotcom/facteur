@@ -6,6 +6,7 @@ import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/widgets/feed_card.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -14,8 +15,11 @@ void main() {
   });
 
   // Helper to pump the widget with Theme
+  // `FeedCard` est un `ConsumerStatefulWidget` (il watche les complétions) :
+  // sans `ProviderScope` au-dessus, tout montage lève.
   Widget createWidget(Widget child) {
-    return MaterialApp(
+    return ProviderScope(
+      child: MaterialApp(
       theme: FacteurTheme.darkTheme,
       home: Scaffold(
         body: SingleChildScrollView(
@@ -24,6 +28,7 @@ void main() {
             child: child,
           ),
         ),
+      ),
       ),
     );
   }

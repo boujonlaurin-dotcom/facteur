@@ -8,7 +8,6 @@ import 'package:facteur/features/custom_topics/models/topic_models.dart';
 import 'package:facteur/features/custom_topics/providers/custom_topics_provider.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/feed/widgets/favorite_topic_tabs.dart';
-import 'package:facteur/features/feed/widgets/filter_collapsible_panel.dart';
 import 'package:facteur/features/my_interests/models/user_interests_state.dart';
 import 'package:facteur/features/my_interests/models/user_sources_state.dart';
 import 'package:facteur/features/my_interests/providers/user_interests_provider.dart';
@@ -517,7 +516,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byType(Icon).first);
+      await tester.tap(find.byIcon(PhosphorIcons.plus(PhosphorIconsStyle.regular)));
       await tester.pump();
 
       expect(addCalls, 1);
@@ -576,49 +575,73 @@ void main() {
     });
   });
 
-  group('FilterCollapsiblePanel', () {
-    testWidgets('funnel lives in collapsed horizontal content and expands',
-        (tester) async {
-      await tester.pumpWidget(MaterialApp(
-        theme: FacteurTheme.lightTheme,
-        home: Scaffold(
-          body: FilterCollapsiblePanel(
-            activeCount: 0,
-            chipsRow: const Text('chips row'),
-            leadingTrigger: const Text('search'),
-            collapsedContentBuilder: (filterTrigger) => SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  const Text('Sujet épinglé'),
-                  filterTrigger,
+  group('FavoriteTopicTabs — affordances épinglées', () {
+    // 10 onglets : bien plus large que le viewport de test, donc la liste
+    // défile. L'engrenage doit rester monté hors de ce Scrollable.
+    final manyTopics = List.generate(
+      10,
+      (i) => _topic(id: 't$i', name: 'Sujet numéro $i', slugParent: 'slug-$i'),
+    );
+
+    Widget host({Widget? trailing}) => ProviderScope(
+          overrides: [
+            customTopicsProvider
+                .overrideWith(() => _StaticCustomTopicsNotifier(manyTopics)),
+            userInterestsProvider.overrideWith(() {
+              return _StaticUserInterestsNotifier(
+                favorites: [
+                  for (final t in manyTopics) CustomTopicFavoriteRef(id: t.id),
                 ],
+                customTopics: manyTopics.map(_interestFromProfile).toList(),
+              );
+            }),
+          ],
+          child: MaterialApp(
+            theme: FacteurTheme.lightTheme,
+            home: Scaffold(
+              body: FavoriteTopicTabs(
+                items: const [],
+                onTabTap: (_, __) {},
+                onTapActiveTab: () {},
+                onAddFavorite: () {},
+                trailing: trailing,
               ),
             ),
           ),
-        ),
-      ));
+        );
+
+    testWidgets('l\'engrenage « gérer » reste hors du scroll horizontal',
+        (tester) async {
+      await tester.pumpWidget(host());
       await tester.pumpAndSettle();
 
-      final funnel = find.byIcon(
-        PhosphorIcons.funnel(PhosphorIconsStyle.regular),
-      );
-      expect(funnel, findsOneWidget);
+      final gear = find.byIcon(PhosphorIcons.gear(PhosphorIconsStyle.regular));
+      expect(gear, findsOneWidget);
       expect(
-        find.ancestor(
-          of: funnel,
-          matching: find.byType(SingleChildScrollView),
-        ),
-        findsOneWidget,
+        find.ancestor(of: gear, matching: find.byType(Scrollable)),
+        findsNothing,
       );
+    });
 
-      await tester.tap(funnel);
+    testWidgets('le trailing (pill de recherche) est épinglé lui aussi',
+        (tester) async {
+      await tester.pumpWidget(host(trailing: const Text('pill')));
       await tester.pumpAndSettle();
 
-      expect(find.text('chips row'), findsOneWidget);
+      expect(find.text('pill'), findsOneWidget);
       expect(
-        find.byIcon(PhosphorIcons.x(PhosphorIconsStyle.bold)),
-        findsOneWidget,
+        find.ancestor(of: find.text('pill'), matching: find.byType(Scrollable)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('plus aucun entonnoir dans la barre', (tester) async {
+      await tester.pumpWidget(host());
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byIcon(PhosphorIcons.funnel(PhosphorIconsStyle.regular)),
+        findsNothing,
       );
     });
   });

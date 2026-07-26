@@ -10,6 +10,41 @@ import '../../custom_topics/providers/custom_topics_provider.dart';
 final dismissedFollowSuggestionsProvider =
     StateProvider<Set<String>>((_) => <String>{});
 
+/// Suit [name] comme sujet custom et confirme (ou signale l'échec) par une
+/// SnackBar.
+///
+/// Partagé entre la carte de suggestion ci-dessous et l'état vide de Flâner
+/// (story 30.1) : les deux offrent le même geste sur le même mot-clé, ils
+/// doivent donner le même retour.
+Future<void> followKeywordAsTopic(
+  BuildContext context,
+  WidgetRef ref,
+  String name,
+) async {
+  final colors = context.facteurColors;
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    await ref.read(customTopicsProvider.notifier).followTopic(name);
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('« $name » ajouté à tes sujets suivis'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Impossible d\'ajouter ce sujet pour le moment.'),
+        backgroundColor: colors.error,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
 /// Subtle promo card shown below the feed header when a search keyword is
 /// active, inviting the user to add it to their followed topics in 1 tap.
 ///
@@ -87,7 +122,9 @@ class FollowKeywordSuggestionCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: FacteurSpacing.space2),
-            _FollowPill(onPressed: () => _handleFollow(context, ref, normalized)),
+            _FollowPill(
+              onPressed: () => followKeywordAsTopic(context, ref, normalized),
+            ),
             const SizedBox(width: 2),
             InkResponse(
               radius: 16,
@@ -111,34 +148,6 @@ class FollowKeywordSuggestionCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _handleFollow(
-    BuildContext context,
-    WidgetRef ref,
-    String name,
-  ) async {
-    final colors = context.facteurColors;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await ref.read(customTopicsProvider.notifier).followTopic(name);
-      if (!context.mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text('« $name » ajouté à tes sujets suivis'),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Impossible d\'ajouter ce sujet pour le moment.'),
-          backgroundColor: colors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
 }
 
 class _FollowPill extends StatelessWidget {

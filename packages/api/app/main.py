@@ -121,7 +121,12 @@ settings = get_settings()
 
 
 def _get_alembic_head() -> str:
-    """Retourne la révision Alembic HEAD depuis le code (ou 'unknown')."""
+    """Retourne la révision Alembic HEAD depuis le code (ou 'unknown').
+
+    Un fork (>1 head) est rapporté tel quel plutôt que masqué par ``heads[0]`` :
+    c'est ce silence qui a rendu l'incident du 25/07/2026 invisible dans les logs
+    de boot.
+    """
     try:
         from alembic.config import Config
 
@@ -133,6 +138,8 @@ def _get_alembic_head() -> str:
         cfg = Config(alembic_ini)
         script_dir = script.ScriptDirectory.from_config(cfg)
         heads = script_dir.get_heads()
+        if len(heads) > 1:
+            return f"multiple-heads:{','.join(heads)}"
         return heads[0] if heads else "no-heads"
     except Exception:
         return "unknown"

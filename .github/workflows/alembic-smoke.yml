@@ -12,6 +12,12 @@ on:
       - 'packages/api/alembic/**'
       - 'packages/api/requirements.txt'
       - '.github/workflows/alembic-smoke.yml'
+  # Sans filtre `paths` : deux PRs mergées le même jour depuis la même base
+  # créent un fork que ni l'une ni l'autre ne voyait (le smoke tourne sur la PR
+  # et ne rejoue pas quand la base bouge sous elle). Rejouer sur `main` rend le
+  # fork rouge dans la minute au lieu d'être découvert par un 503 en staging.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:

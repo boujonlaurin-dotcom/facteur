@@ -4,10 +4,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../feed/services/read_sync_service.dart';
+import '../../feed/widgets/animated_feed_card.dart';
 import '../../detail/content_preview_mapper.dart';
 import '../../tour/tour_anchors.dart';
 import '../../settings/models/display_mode_spec.dart';
@@ -52,6 +54,12 @@ class EssentielHiFiCard extends ConsumerWidget {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     final accent = colors.sectionEssentiel;
     final spec = ref.watch(displayModeSpecProvider);
+
+    // Un seul point de lecture du provider : le booléen descend ensuite dans
+    // les tuiles, qui restent des `StatelessWidget`.
+    final completedIds = ref.watch(completedContentIdsProvider);
+    bool isCompleted(EssentielArticle a) =>
+        a.completedAt != null || completedIds.contains(a.contentId);
 
     final lead = articles.isNotEmpty ? articles.first : null;
     final remaining = articles.length > 1
@@ -134,6 +142,7 @@ class EssentielHiFiCard extends ConsumerWidget {
                 article: lead,
                 accent: accent,
                 spec: spec,
+                isCompleted: isCompleted(lead),
                 onTap: () => onTapArticle(lead),
               ),
             for (final a in remaining) ...[
@@ -142,7 +151,12 @@ class EssentielHiFiCard extends ConsumerWidget {
               const SizedBox(height: 6),
               const _Hairline(),
               const SizedBox(height: 6),
-              _MediumTile(article: a, spec: spec, onTap: () => onTapArticle(a)),
+              _MediumTile(
+                article: a,
+                spec: spec,
+                isCompleted: isCompleted(a),
+                onTap: () => onTapArticle(a),
+              ),
             ],
           ],
         ),
@@ -611,6 +625,11 @@ class _LeadTile extends StatelessWidget {
   final EssentielArticle article;
   final Color accent;
   final DisplayModeSpec spec;
+
+  /// Lu jusqu'au bout : double coche + filet vert au bord gauche. Descendu par
+  /// la carte plutôt que relu ici — un seul point de lecture du provider.
+  final bool isCompleted;
+
   final VoidCallback onTap;
 
   const _LeadTile({
@@ -618,6 +637,7 @@ class _LeadTile extends StatelessWidget {
     required this.accent,
     required this.spec,
     required this.onTap,
+    required this.isCompleted,
   });
 
   @override
@@ -640,7 +660,10 @@ class _LeadTile extends StatelessWidget {
         // l'Opacity pour s'estomper de concert avec le contenu.
         child: Opacity(
           opacity: article.isRead ? 0.6 : 1.0,
-          child: Stack(
+          child: AnimatedFeedCard(
+            isCompleted: isCompleted,
+            animate: false,
+            child: Stack(
             children: [
               Container(
                 // Compaction passe 2 (validée UX) : padding héro 12→10. Plancher
@@ -686,9 +709,13 @@ class _LeadTile extends StatelessWidget {
                 Positioned(
                   top: 8,
                   right: 8,
-                  child: _ReadCheckBadge(color: colors.success),
+                  child: ReadStateMark(
+                    color: colors.success,
+                    isCompleted: isCompleted,
+                  ),
                 ),
             ],
+          ),
           ),
         ),
           ),
@@ -701,12 +728,14 @@ class _LeadTile extends StatelessWidget {
 class _MediumTile extends StatelessWidget {
   final EssentielArticle article;
   final DisplayModeSpec spec;
+  final bool isCompleted;
   final VoidCallback onTap;
 
   const _MediumTile({
     required this.article,
     required this.spec,
     required this.onTap,
+    required this.isCompleted,
   });
 
   @override
@@ -726,7 +755,10 @@ class _MediumTile extends StatelessWidget {
         // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
         child: Opacity(
           opacity: article.isRead ? 0.6 : 1.0,
-          child: Stack(
+          child: AnimatedFeedCard(
+            isCompleted: isCompleted,
+            animate: false,
+            child: Stack(
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
@@ -770,9 +802,14 @@ class _MediumTile extends StatelessWidget {
                 Positioned(
                   top: 0,
                   right: 0,
-                  child: _ReadCheckBadge(color: colors.success, size: 18),
+                  child: ReadStateMark(
+                    color: colors.success,
+                    isCompleted: isCompleted,
+                    size: 18,
+                  ),
                 ),
             ],
+          ),
           ),
         ),
           ),
@@ -862,42 +899,6 @@ class _SourceRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Coche « lu » verte, reproduite à l'identique du motif de
-/// `flux_continu_article_card.dart` pour une cohérence visuelle entre la carte
-/// Essentiel et les cartes des autres sections. [size] permet une coche plus
-/// compacte sur les tuiles médiums.
-class _ReadCheckBadge extends StatelessWidget {
-  final Color color;
-  final double size;
-
-  const _ReadCheckBadge({required this.color, this.size = 22});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        PhosphorIcons.check(PhosphorIconsStyle.bold),
-        size: size * 0.55,
-        color: Colors.white,
-      ),
     );
   }
 }
