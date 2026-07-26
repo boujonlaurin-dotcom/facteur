@@ -26,26 +26,40 @@ void main() {
       );
     });
 
-    test('variant B caps at 2 titles + "+ N autres" line in bigText', () {
+    test('variant B caps at 3 titles + "+ N autres" line in bigText', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
-        teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
+        teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième', 'Cinquième'],
       );
       expect(copy.body, 'Trump');
       expect(
         copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n+ 2 autres !",
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille\n"
+        '+ 2 autres !',
       );
     });
 
-    test('variant B with exactly 3 teasers shows "+ 1 autre !" (singular)', () {
+    test('variant B with exactly 4 teasers shows "+ 1 autre !" (singular)', () {
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
+      );
+      expect(
+        copy.bigText,
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille\n"
+        '+ 1 autre !',
+      );
+    });
+
+    test('variant B with exactly 3 teasers keeps the generic CTA', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump', 'Climat', 'Marseille'],
       );
       expect(
         copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n+ 1 autre !",
+        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille\n"
+        "${PushNotificationService.digestCta}",
       );
     });
 
@@ -64,14 +78,39 @@ void main() {
     test('variant B serene: rest line "+ N autres", header stays serene', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
-        teasers: ['Trump', 'Climat', 'Marseille'],
+        teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
         serene: true,
       );
       expect(copy.body, 'Trump');
       expect(
         copy.bigText,
-        'Du calme dans ton actu :\n• Trump\n• Climat\n+ 1 autre !',
+        'Du calme dans ton actu :\n• Trump\n• Climat\n• Marseille\n+ 1 autre !',
       );
+    });
+
+    test('variant B intro overrides the default header (server push)', () {
+      final copy = PushNotificationService.buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: ['Trump', 'Climat', 'Marseille'],
+        intro: "À retenir aujourd'hui :",
+      );
+      expect(
+        copy.bigText,
+        "À retenir aujourd'hui :\n• Trump\n• Climat\n• Marseille\n"
+        "${PushNotificationService.digestCta}",
+      );
+    });
+
+    test('variant B empty/absent intro keeps the default header (rétrocompat)',
+        () {
+      for (final intro in [null, '', '   ']) {
+        final copy = PushNotificationService.buildCopy(
+          variant: NotifVariant.variantB,
+          teasers: ['Trump'],
+          intro: intro,
+        );
+        expect(copy.bigText, startsWith("À la une dans l'Essentiel :"));
+      }
     });
 
     test('variant B serene with exactly 2 teasers keeps serene CTA', () {
