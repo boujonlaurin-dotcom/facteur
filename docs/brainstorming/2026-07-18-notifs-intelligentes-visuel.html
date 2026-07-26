@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Facteur : la notif intelligente</title>
+<style>
+  :root {
+    --paper: #faf6ef;
+    --ink: #2b2620;
+    --ink-soft: #6b6259;
+    --accent: #c0392b;
+    --card: #ffffff;
+    --line: #e8e0d3;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.55;
+    padding: 48px 20px 80px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  .kicker {
+    text-transform: uppercase; letter-spacing: 0.14em; font-size: 12px;
+    color: var(--accent); font-weight: 700; margin-bottom: 10px;
+  }
+  h1 { font-size: 34px; line-height: 1.2; margin-bottom: 14px; letter-spacing: -0.01em; }
+  .lede { font-size: 18px; color: var(--ink-soft); max-width: 640px; margin-bottom: 8px; }
+  .section { margin-top: 64px; }
+  h2 { font-size: 23px; margin-bottom: 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-soft); font-size: 15px; margin-bottom: 24px; max-width: 620px; }
+
+  .principle {
+    background: var(--ink); color: var(--paper);
+    border-radius: 16px; padding: 28px 32px; margin-top: 40px;
+  }
+  .principle p { font-size: 19px; line-height: 1.5; }
+  .principle strong { color: #f5c66f; }
+
+  .phones { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  .phone {
+    flex: 1 1 260px; max-width: 320px;
+    background: #1c1a17; border-radius: 28px; padding: 14px 12px 18px;
+    box-shadow: 0 10px 30px rgba(43,38,32,0.18);
+  }
+  .phone .clock {
+    color: #cfc9c0; text-align: center; font-size: 12px; margin-bottom: 10px;
+    letter-spacing: 0.05em;
+  }
+  .notif {
+    background: var(--card); border-radius: 14px; padding: 13px 15px;
+    margin-bottom: 9px; font-size: 13.5px;
+  }
+  .notif .app {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--ink-soft); margin-bottom: 6px;
+  }
+  .notif .dot { width: 14px; height: 14px; border-radius: 4px; background: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 9px; font-weight: 700; }
+  .notif .title { font-weight: 700; margin-bottom: 3px; font-size: 14px; }
+  .notif .body { color: #46403a; }
+  .notif ul { list-style: none; margin-top: 5px; }
+  .notif li { padding-left: 14px; position: relative; margin-bottom: 2px; }
+  .notif li::before { content: "•"; position: absolute; left: 2px; color: var(--accent); }
+  .notif .actions { display: flex; gap: 14px; margin-top: 10px; }
+  .notif .actions span {
+    font-size: 12px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .caption { margin-top: 14px; font-size: 13.5px; color: var(--ink-soft); padding: 0 4px; }
+  .caption strong { color: var(--ink); }
+
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+  .rule {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px;
+  }
+  .rule .emoji { font-size: 26px; margin-bottom: 10px; }
+  .rule h3 { font-size: 15px; margin-bottom: 6px; }
+  .rule p { font-size: 13.5px; color: var(--ink-soft); }
+
+  .settings {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    max-width: 360px; padding: 22px 24px; font-size: 14px;
+  }
+  .settings .s-title { font-weight: 700; font-size: 16px; margin-bottom: 2px; }
+  .settings .s-sub { color: var(--ink-soft); font-size: 12.5px; margin-bottom: 16px; }
+  .settings .row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 11px 0; border-top: 1px solid var(--line);
+  }
+  .settings .row .val { color: var(--accent); font-weight: 600; font-size: 13px; }
+  .settings .row.off .val { color: var(--ink-soft); font-weight: 400; }
+
+  .steps { counter-reset: step; }
+  .step {
+    display: flex; gap: 18px; padding: 18px 0; border-top: 1px solid var(--line);
+  }
+  .step .num {
+    counter-increment: step; flex: 0 0 34px; height: 34px; border-radius: 50%;
+    background: var(--ink); color: var(--paper); display: flex; align-items: center;
+    justify-content: center; font-weight: 700; font-size: 15px;
+  }
+  .step .num::before { content: counter(step); }
+  .step h3 { font-size: 16px; margin-bottom: 3px; }
+  .step p { font-size: 14px; color: var(--ink-soft); max-width: 560px; }
+  .footer { margin-top: 70px; font-size: 12.5px; color: var(--ink-soft); border-top: 1px solid var(--line); padding-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">Facteur · prochain chantier</div>
+  <h1>La notif intelligente</h1>
+  <p class="lede">Aujourd'hui, Facteur envoie une seule notification, toujours la même, qui dit juste « ta tournée est prête ». Elle ne montre pas ce qui s'est passé d'important, et elle ne sait pas prévenir quand un sujet ou une source qui compte pour toi bouge enfin.</p>
+  <p class="lede">Voici ce qu'on veut construire, en trois notifications et quatre règles.</p>
+
+  <div class="principle">
+    <p><strong>Le principe :</strong> une info = une notif claire, avec son bouton et son réglage. Mais tout arrive au même moment de la journée, et une seule fait du bruit. On ne multiplie pas les interruptions, on clarifie chaque message.</p>
+  </div>
+
+  <div class="section">
+    <h2>Un matin type, sur l'écran verrouillé</h2>
+    <p class="sub">Une seule vibration : la tournée. Les alertes, quand il y en a (c'est rare), s'ajoutent en silence juste en dessous. La plupart des jours, il n'y a que la première.</p>
+
+    <div class="phones">
+      <div class="phone">
+        <div class="clock">7:30</div>
+        <div class="notif">
+          <div class="app"><span class="dot">F</span> Facteur · maintenant</div>
+          <div class="title">🌅 Ta tournée est prête</div>
+          <div class="body">
+            <ul>
+              <li>Retraites : accord trouvé à l'Assemblée</li>
+              <li>Nestlé Waters : le procès s'ouvre à Paris</li>
+              <li>Nvidia franchit les 5 000 milliards</li>
+            </ul>
+          </div>
+        </div>
+        <div class="notif">
+          <div class="app"><span class="dot">F</span> Facteur · maintenant</div>
+          <div class="title">Le 1 Hebdo vient de publier 🔔</div>
+          <div class="body">Son numéro de juillet est disponible. Ça n'arrive qu'une fois par mois.</div>
+          <div class="actions"><span>Lire</span><span>Régler cette alerte</span></div>
+        </div>
+        <div class="notif">
+          <div class="app"><span class="dot">F</span> Facteur · maintenant</div>
+          <div class="title">« glyphosate » : du nouveau 🔔</div>
+          <div class="body">3 sources en parlent aujourd'hui, dont Le Monde et Reporterre.</div>
+          <div class="actions"><span>Voir</span><span>Régler cette alerte</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><strong>Un jour exceptionnel</strong> avec les 3 en même temps. En réalité : la tournée tous les jours, une alerte source environ 1 fois par mois et par cloche posée, une alerte sujet seulement quand plusieurs sources confirment un événement. La cloche 🔔 en fin de titre suffit à signaler une alerte.</p>
+  </div>
+
+  <div class="section">
+    <h2>Les 3 notifications, une par une</h2>
+
+    <div class="phones" style="margin-top: 26px;">
+      <div style="flex: 1 1 260px; max-width: 320px;">
+        <div class="phone">
+          <div class="clock">Tous les jours</div>
+          <div class="notif">
+            <div class="app"><span class="dot">F</span> Facteur</div>
+            <div class="title">🌅 Ta tournée est prête</div>
+            <div class="body">
+              <ul>
+                <li>Retraites : accord trouvé à l'Assemblée</li>
+                <li>Nestlé Waters : le procès s'ouvre</li>
+                <li>Nvidia franchit les 5 000 milliards</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <p class="caption"><strong>1. La tournée, version « coup d'œil ».</strong> Le vrai fix de notre faiblesse actuelle : la notif montre enfin l'important du jour, choisi selon tes intérêts, écrit comme des faits. Un seul geste : ouvrir la tournée.</p>
+      </div>
+
+      <div style="flex: 1 1 260px; max-width: 320px;">
+        <div class="phone">
+          <div class="clock">Environ 1 fois par mois</div>
+          <div class="notif">
+            <div class="app"><span class="dot">F</span> Facteur</div>
+            <div class="title">Le 1 Hebdo vient de publier 🔔</div>
+            <div class="body">Son numéro de juillet est disponible. Ça n'arrive qu'une fois par mois.</div>
+            <div class="actions"><span>Lire</span><span>Régler cette alerte</span></div>
+          </div>
+        </div>
+        <p class="caption"><strong>2. L'alerte source.</strong> Tu poses une cloche sur une publication rare (moins d'un article par semaine) que tu rates toujours : la revue mensuelle, la newsletter trimestrielle. Le spam est impossible : c'est la rareté de la source qui fait la rareté de l'alerte.</p>
+      </div>
+
+      <div style="flex: 1 1 260px; max-width: 320px;">
+        <div class="phone">
+          <div class="clock">Quand ça bouge vraiment</div>
+          <div class="notif">
+            <div class="app"><span class="dot">F</span> Facteur</div>
+            <div class="title">« glyphosate » : du nouveau 🔔</div>
+            <div class="body">3 sources en parlent aujourd'hui, dont Le Monde et Reporterre.</div>
+            <div class="actions"><span>Voir</span><span>Régler cette alerte</span></div>
+          </div>
+        </div>
+        <p class="caption"><strong>3. L'alerte sujet.</strong> Tu suis un sujet précis ; Facteur ne sonne que quand plusieurs sources en parlent en même temps, jamais sur un simple mot-clé repéré dans un titre. Un événement = une seule notif, même si 10 articles sortent.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Les 4 règles qui empêchent le spam</h2>
+    <p class="sub">Le pari : si Facteur notifie rarement, recevoir une notif Facteur devient en soi une information. Cette rareté n'est pas une promesse, elle est garantie par le système.</p>
+    <div class="rules">
+      <div class="rule">
+        <div class="emoji">🧮</div>
+        <h3>Un budget dur, côté serveur</h3>
+        <p>Jamais plus de 2 notifications par jour et 6 par semaine, tous types confondus. Aucun réglage ne peut le dépasser. Si le budget est atteint, l'alerte attend la tournée suivante.</p>
+      </div>
+      <div class="rule">
+        <div class="emoji">🕰️</div>
+        <h3>Ton créneau, pas le leur</h3>
+        <p>Une alerte est livrée à ton moment (matin ou soir), pas à la seconde où l'article sort. La vitesse est le produit des autres ; le bon moment est le nôtre.</p>
+      </div>
+      <div class="rule">
+        <div class="emoji">🔇</div>
+        <h3>Une seule notif sonne</h3>
+        <p>La tournée garde son son et son identité, pour toujours. Les alertes sont silencieuses et vivent sur un canal séparé : en désactiver une ne touche jamais le rituel quotidien.</p>
+      </div>
+      <div class="rule">
+        <div class="emoji">🚪</div>
+        <h3>La sortie en 1 tap</h3>
+        <p>« Régler cette alerte » est dans la notif elle-même. Avant même de créer une alerte, Facteur annonce sa fréquence estimée (« ce mot aurait sonné 14 fois ce mois-ci 🔴 »).</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Ce que l'utilisateur contrôle</h2>
+    <p class="sub">Chaque alerte a sa fiche, simple, dans « Mes intérêts ». Maximum 5 alertes actives. Le silence y est montré comme un service rendu, pas comme une panne.</p>
+    <div class="settings">
+      <div class="s-title">« glyphosate » 🔔</div>
+      <div class="s-sub">En veille active · rien d'important depuis 3 semaines, et c'est vérifié</div>
+      <div class="row"><span>Quand me prévenir</span><span class="val">Dans ma tournée</span></div>
+      <div class="row off"><span>Récap hebdo</span><span class="val">Non</span></div>
+      <div class="row off"><span>Désactiver l'alerte</span><span class="val">›</span></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Comment on le construit</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h3>Le chef d'orchestre + la tournée « coup d'œil »</h3>
+          <p>D'abord le système central qui compte, groupe et plafonne toutes les notifs (le « gouverneur »), et la refonte du contenu du push quotidien. Zéro notif ajoutée, effet mesurable immédiatement sur l'ouverture.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h3>L'alerte source rare</h3>
+          <p>Le cas d'usage le plus « facteur » et le plus sûr : impossible à transformer en spam. Il installe le geste « poser une alerte » et le devis de fréquence qui serviront à tout le reste.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num"></div>
+        <div>
+          <h3>L'alerte sujet</h3>
+          <p>Le cœur « intelligent », gardé pour la fin : on ne l'ouvre qu'une fois le garde-fou en place et le geste validé par l'usage. Gratuite au lancement : on prouve la valeur avant de penser monétisation.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Facteur · notif intelligente · synthèse du brainstorming du 18 juillet 2026 · maquettes indicatives, textes non définitifs
+  </div>
+
+</div>
+</body>
+</html>

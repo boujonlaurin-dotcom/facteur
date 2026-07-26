@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -14,6 +15,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import '../../config/routes.dart';
 import '../../features/flux_continu/services/tournee_progress_service.dart';
 import '../api/notification_preferences_api_service.dart';
+import 'posthog_service.dart';
 
 /// Variante de copy de la notification quotidienne.
 ///
@@ -182,13 +184,16 @@ class PushNotificationService {
   ///
   /// - [variantB] requiert au moins un teaser dans [teasers]. Le titre complet
   ///   du premier teaser est utilisé pour le body collapsed (l'OS l'ellipsise
-  ///   sur une ligne) ; les 2 premiers titres sont rendus en bullets dans le
+  ///   sur une ligne) ; les 3 premiers titres sont rendus en bullets dans le
   ///   bigText Android, suivis d'une ligne CTA renvoyant vers l'app.
   /// - [serene] bascule l'en-tête et le CTA sur un ton apaisé (mode Serein).
+  /// - [intro] (push serveur « coup d'œil », `data['intro']`) remplace
+  ///   l'en-tête par défaut du bigText quand il est fourni non vide.
   static ({String title, String body, String bigText}) buildCopy({
     required NotifVariant variant,
     List<String>? teasers,
     bool serene = false,
+    String? intro,
   }) {
     switch (variant) {
       case NotifVariant.variantA:
@@ -198,11 +203,14 @@ class PushNotificationService {
             .map((t) => t.trim())
             .where((t) => t.isNotEmpty)
             .toList();
-        final cleaned = all.take(2).toList();
+        final cleaned = all.take(3).toList();
         if (cleaned.isEmpty) {
           return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
         }
-        final header = serene ? digestHeaderSerene : digestHeader;
+        final trimmedIntro = intro?.trim();
+        final header = (trimmedIntro != null && trimmedIntro.isNotEmpty)
+            ? trimmedIntro
+            : (serene ? digestHeaderSerene : digestHeader);
         // Nombre d'articles « à la une » non rendus en bullets : la ligne CTA
         // les annonce (« + N autres ! »). Pile 1-2 teasers → aucun reste →
         // on garde le CTA générique (apaisé ou non).
@@ -573,7 +581,11 @@ class PushNotificationService {
     final String body;
     final String bigText;
     if (teasers.isNotEmpty) {
-      final copy = buildCopy(variant: NotifVariant.variantB, teasers: teasers);
+      final copy = buildCopy(
+        variant: NotifVariant.variantB,
+        teasers: teasers,
+        intro: data['intro'] as String?,
+      );
       title = copy.title;
       body = copy.body;
       bigText = copy.bigText;
@@ -672,6 +684,16 @@ class PushNotificationService {
     return scheduled;
   }
 
+  /// Émetteur d'analytics au tap d'une notif locale — seam de test
+  /// (réassignable), défaut = PostHog `notif_opened`.
+  @visibleForTesting
+  static void Function(String route) notifOpenedTracker = (route) => unawaited(
+        PostHogService().capture(
+          event: 'notif_opened',
+          properties: {'type': 'local', 'route': route},
+        ),
+      );
+
   static void _onNotificationTapped(NotificationResponse response) {
     final payload = response.payload;
     debugPrint(
@@ -679,6 +701,7 @@ class PushNotificationService {
     );
 
     final route = _routeFromPayload(payload);
+    notifOpenedTracker(route);
     openRoute(route);
   }
 
