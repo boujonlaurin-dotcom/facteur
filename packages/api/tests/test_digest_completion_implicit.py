@@ -226,7 +226,10 @@ async def test_updates_closure_streak_on_successful_insert(
     ):
         await service.maybe_record_implicit_completion(user_id, content_ids[0])
 
-    service._update_closure_streak.assert_awaited_once_with(user_id)
+    # Stamped on the edition that was closed, never on a server-side "today".
+    service._update_closure_streak.assert_awaited_once_with(
+        user_id, date(2026, 4, 24)
+    )
 
 
 @pytest.mark.asyncio

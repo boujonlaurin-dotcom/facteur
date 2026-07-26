@@ -115,7 +115,8 @@ Le nombre est une **sortie** du lot 0, pas une entrée de la spec.
    30 s** (`analytics_service.dart:244`).
 3. Remplacer le `catch` muet (`:1705`) par une remontée Sentry. *Un chemin de récompense ne doit jamais
    échouer en silence.*
-4. **Corriger le bug de frontière de `closure_streak`** : `_update_closure_streak` estampille
+4. **Corriger le bug de frontière de `closure_streak`** *(⚠️ le correctif de #1007 était lui-même
+   une régression — cf. §11)* : `_update_closure_streak` estampille
    `last_closure_date = date.today()` (UTC serveur, `digest_service.py:2933`) alors que son déclencheur
    `maybe_record_implicit_completion` teste `today_paris()` (`:1573`). Entre 00h et 02h Paris l'été, la
    complétion est comptée pour J et datée J-1 → série cassée ou dédoublée.
@@ -466,7 +467,7 @@ conclusion « ne pas optimiser pour les réguliers » s'en trouve affaiblie.
 | Point | Plan | Livré | Pourquoi |
 |---|---|---|---|
 | Emplacement du cachet | dans le flux de l'article | **dans le pied de page** | Seul emplacement qui marche dans les 4 modes de rendu : impossible d'injecter dans le DOM de l'éditeur en WebView, qui est le chemin nominal (~90 % du catalogue). Un seul cachet au lieu de deux variantes. |
-| Filet vert sur les cartes | via un `ReadStateMark` neuf | **non livré** ⚠️ | `AnimatedFeedCard` a été *restylée* (filet vertical, `easeOutCubic` 320 ms, plus de scrim noir ni d'`elasticOut`, aucune haptique) mais **reste orpheline : 0 référence dans `lib/` et `test/`**. Le filet vert n'existe pas à l'écran. Le tableau annonçait « réhabilitée » à tort — corrigé le 25/07. À brancher en PR 2 mobile. |
+| Filet vert sur les cartes | via un `ReadStateMark` neuf | **livré le 25/07** (PR « lecture aboutie visible ») | `AnimatedFeedCard` était restée orpheline (0 référence dans `lib/`) : le filet n'existait pas à l'écran. Elle est désormais montée sur les 3 familles de cartes, et `ReadStateMark` existe bel et bien, partagé. |
 | `closing_recap.dart` | à réhabiliter | **laissé en l'état** | Le bloc de clôture n'a pas besoin du détail par section — une phrase suffit, et le récap par section rouvrirait la question du critère « lu » permissif. À reprendre si le PO veut le détail. |
 | Lot 4 (flamme) | conditionnel, après gate | **livré** | L'anneau ne dépend pas de `closure_streak` (qui est vide) : c'est un état du jour dérivé de `daily_completed`, il fonctionne dès le jour 1. Le gate ne portait que sur l'affichage d'une seconde série — toujours coupée. |
 
@@ -499,3 +500,111 @@ conclusion « ne pas optimiser pour les réguliers » s'en trouve affaiblie.
   l'objectif). À ajouter si le PO le souhaite — le plan la prévoit, elle est triviale.
 - **Validation QA web** (`/validate-feature`) non exécutée : Flutter web n'était pas lancé dans cet
   environnement. Les parcours visuels (cachet, CTA secondary, filet, anneau) restent à valider à l'œil.
+
+
+## 11. Journal d'implémentation — 25/07/2026 (« rendre la lecture aboutie visible »)
+
+L'audit fichier par fichier de `main` a établi que **la moitié visible de la demande d'origine
+n'était jamais montée à l'écran**, que la complétion **ne survivait pas au redémarrage**, et que
+deux bugs backend restaient ouverts — dont un que #1007 avait *aggravé*.
+
+### Ce qui est refermé
+
+**Backend**
+
+- `_update_closure_streak(user_id, target_date)` estampille désormais **l'édition close** et non une
+  notion de « aujourd'hui ». Le correctif de #1007 avait remplacé une frontière UTC (00h→02h Paris)
+  par la frontière éditoriale 07h30, alors que ses deux appelants cherchent le digest via
+  `today_paris()` (minuit) : la fenêtre de divergence avait *grandi* (00h→07h30). Un lecteur qui
+  clôturait l'édition D à 01h se voyait estampiller D-1, puis voyait sa série remise à 1 le
+  lendemain soir. **Zéro test ne couvrait la méthode** (mockée dans les 3 fichiers qui l'approchent) ;
+  elle l'est maintenant, démockée, contre une vraie base.
+- `week_start` calculé en `today_paris()` (`digest_service`, `streak_service` ×2), plus en UTC.
+- `DAILY_COMPLETION_GOAL` descend dans `app.schemas.streak` : le `daily_goal: int = 2` du schéma
+  était un doublon en dur, libre de diverger. Sens de dépendance `services → schemas` conservé.
+- `count_completed_today` — le compteur exposé à l'UI — a enfin des tests (J-3, frontière 07h30
+  exercée des deux côtés, scope utilisateur).
+- `EssentielArticle` sert `completed_at` : la carte héros de la Tournée ne pouvait pas connaître la
+  complétion, alors que `_to_essentiel_article` recevait déjà le champ.
+
+**Mobile**
+
+- **Durabilité** : nouveau `CompletedReadsStore` (box Hive `completed_reads` dédiée, purge 30 j,
+  cap 1000). `markCompleted` écrit d'abord le registre, puis l'état — comme `markConsumed`.
+  L'hydratation est *poussée* au démarrage (`hydrateCompletedReads`) plutôt que watchée : faire
+  dépendre `completedContentIdsProvider` de `readSyncUserIdProvider` remonterait jusqu'à
+  `Supabase.instance` et casserait tout widget test montant une carte.
+- **Fuite inter-comptes** : `completedContentIdsProvider` est vidé au logout (il ne l'était pas).
+- **Mapping** : `FluxArticleVM.from(DigestItem)` et `articleToContent` jetaient `completedAt` ;
+  le modèle mobile `EssentielArticle` ne le parsait pas.
+- **Visuel** : `ReadStateMark` partagé (`lib/shared/widgets/`) remplace 2 des 3 copies privées —
+  celle de la carte Essentiel codait `check` en dur, donc était *structurellement* incapable
+  d'afficher une complétion. `_ReadStatusPill` (timeline d'éditions) n'est **pas** touchée :
+  sémantique différente. `AnimatedFeedCard` est montée sur les 3 familles de cartes en
+  `animate: false` — un état au montage, une animation seulement sur la transition (retour
+  d'article). Au passage, son `AnimationController` était `late final` et n'était instancié qu'au
+  `dispose()` d'une carte non aboutie : inoffensif tant qu'elle était du code mort, systématique
+  dès qu'elle est montée partout.
+- **Réouverture** : `ArticleCompletionLatch` (Dart pur, testé) sépare l'état connu à l'ouverture de
+  l'événement de session. Rouvrir un article terminé ne rejoue plus haptique + POST +
+  `article_finished` — l'événement même qui doit servir à calibrer l'objectif.
+- **Layout du cachet** : sorti de la `Column` du pied de page (il y ajoutait ~34 px alors que
+  `_kFooterContentHeight` sert de spacer à 9 endroits) et rendu **frère** du pill via
+  `Stack` + `FractionalTranslation(0, -1)`. Aucune mesure, les 9 usages inchangés.
+- **Silences** : le `catch (_)` du flush de la file de lectures remonte à Sentry (hors erreurs de
+  connectivité, cas nominal de cette file) ; l'opt-out gamification n'échoue plus en silence.
+
+### Ce qui reste ouvert
+
+- La fenêtre de 14 jours de collecte `article_finished` (PostHog) avant d'arrêter
+  `DAILY_COMPLETION_GOAL` sur P50/P75/P90. La correction de la réouverture est ce qui rend cette
+  distribution exploitable.
+- Tagline de découverte one-shot dans la « Notif du jour » ; chiffre du jour dans
+  `streak_explainer_modal`.
+- `/validate-feature` (parcours visuels) : toujours à passer.
+
+## 12. Journal d'implémentation — 25/07/2026 (correctif E2E : reconverger le livré avec le plan)
+
+Les retours E2E du PO ont révélé trois écarts entre le plan acté (§10-11) et le livré. **Le PO
+inverse explicitement deux arbitrages** posés plus haut — cette entrée les acte sans réécrire
+l'historique §10-11.
+
+### Décisions du PO — arbitrages inversés
+
+- **Footer lavé `colors.success`.** Décision PO n°1 (« footer tout en vert, CTA en `secondary` »)
+  était sous-livrée : le CTA passait bien en `secondary` mais le seul signal vert était un cachet à
+  bordure + une barre 3,5 px, tous deux en `kStampGreen` (#2E7D32, vert forêt terne) et non en
+  `colors.success` (#27AE60, le vert « lu » du produit). Correctif : le `GlassPill` du pied de page
+  reçoit un `fillTint: colors.success @ 14 %` quand l'article est terminé (nouveau paramètre optionnel
+  de `GlassPill`, `null` = call-sites inchangés). Le CTA reste en `secondary`.
+- **Toast `X/Y lu jusqu'au bout` à la complétion — override des garde-fous §4 #4 et #5.** Le plan
+  avait *délibérément* coupé toute notif de progression (« aucun X/Y », « aucune interruption en fin
+  d'article ») au profit d'une phrase rétrospective (`DailyCompletionRecap`). Le PO **inverse** cet
+  arbitrage : réutilisation de `showProgressToast` (déjà utilisé par Lettres/Veille) en niveau `micro`
+  à chaque complétion neuve. On **assume le X/Y**. Reste gaté par `gamificationPreferenceProvider`
+  (garde-fou §14 respecté). Compteur **optimiste** (`streakProvider` est dérivé serveur, rafraîchi en
+  asynchrone) : `current = min(dailyCompleted + 1, dailyGoal)` ; série inconnue → pas de toast.
+  Garde-fou §12 (double-buzz) **maintenu** : le toast `micro` joue déjà `selectionClick()`, donc on
+  saute le `lightImpact()` du handler → une seule vibration.
+- **Cachet retiré du reader ; la barre devient le signal principal.** Posé en overlay à fond
+  transparent (`PositionedDirectional` + `FractionalTranslation(0, -1)` + `Clip.none`), le cachet
+  flottait au-dessus du pied de page et se **superposait au carrousel Perspectives** qui défile
+  dessous. Retiré du reader. Le signal de complétion est désormais porté par le lavis `success` du
+  pill **et** la barre de progression, qui vire au `colors.success` plein, s'épaissit (3,5 → 6 px) et
+  monte en opacité (~0,9) une fois l'article terminé. Le cachet **reste** utilisé ailleurs
+  (`DailyCompletionRecap`, carte de clôture) — non touché.
+
+### Vérifications
+
+- `flutter analyze` : 0 nouvelle erreur (baseline d'infos/warnings pré-existante inchangée).
+- Test unitaire `GlassPill.fillTint` : `null` → fond inchangé (aucune régression call-sites) ;
+  non-null → fond teinté vers le vert (`Color.alphaBlend`).
+- Le retrait du cachet du reader est **structurel** : l'import `completion_stamp.dart` (et
+  `kStampGreen`) a disparu de `content_detail_screen.dart` — aucun `CompletionStamp` ne peut plus
+  apparaître dans l'arbre du reader. Le one-shot du toast est garanti par `ArticleCompletionLatch`
+  (déjà testé) : une réouverture ne rejoue pas l'événement de complétion.
+
+### Ce qui reste ouvert
+
+- `/validate-feature` (web, 390×844) : passage visuel — footer vert franc, barre épaisse verte,
+  toast « X/Y lu jusqu'au bout », plus de superposition cachet/carrousel en présence de Perspectives.

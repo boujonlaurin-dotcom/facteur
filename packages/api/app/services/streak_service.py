@@ -10,17 +10,12 @@ from app.models.analytics import AnalyticsEvent
 from app.models.content import UserContentStatus
 from app.models.user import UserProfile, UserStreak
 from app.schemas.streak import (
+    DAILY_COMPLETION_GOAL,
     StreakActivityDayResponse,
     StreakActivityResponse,
     StreakResponse,
 )
-from app.utils.time import editorial_day_bounds
-
-# Objectif journalier de lectures abouties. Constante serveur volontairement :
-# il n'existe aucune UI d'édition, et la garder ici permet de recalibrer sans
-# release client. Valeur provisoire — à arrêter sur la distribution réelle une
-# fois l'instrumentation réparée (aujourd'hui ≈ 1,2 lecture aboutie/jour actif).
-DAILY_COMPLETION_GOAL = 2
+from app.utils.time import editorial_day_bounds, today_paris, week_start_paris
 
 
 class StreakService:
@@ -78,10 +73,12 @@ class StreakService:
         cette méthode conserve uniquement le suivi de progression hebdo.
         """
         streak = await self._get_or_create_streak(user_id)
-        today = date.today()
+        # Semaine calée sur Paris : `date.today()` (UTC) fait basculer le reset
+        # hebdo une à deux heures trop tôt le lundi matin côté lecteur.
+        today = today_paris()
 
         # Vérifier si on doit reset la semaine
-        week_start = today - timedelta(days=today.weekday())
+        week_start = week_start_paris(today)
         if streak.week_start != week_start:
             streak.weekly_count = 0
             streak.week_start = week_start
@@ -208,7 +205,7 @@ class StreakService:
             streak = UserStreak(
                 id=uuid4(),
                 user_id=UUID(user_id),
-                week_start=date.today() - timedelta(days=date.today().weekday()),
+                week_start=week_start_paris(),
             )
             self.db.add(streak)
             await self.db.flush()

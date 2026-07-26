@@ -705,6 +705,7 @@ def _to_essentiel_article(
         is_liked=article.is_liked,
         is_dismissed=article.is_dismissed,
         read_at=article.read_at,
+        completed_at=article.completed_at,
         is_followed_source=_is_followed_source(article, ctx),
         is_followed_topic=_is_followed_topic(topic, ctx),
         is_actu_du_jour=_is_actu_du_jour(topic, article),

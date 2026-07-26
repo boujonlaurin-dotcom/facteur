@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Lecture",
+      "summary": "Les articles que tu as lus jusqu'au bout se reconnaissent d'un coup d'œil : un fin filet vert au bord de la carte et une double coche. La marque reste après un redémarrage de l'app, et rouvrir un article terminé ne le recompte plus."
+    },
+    {
       "tag": "Pas de recul",
       "summary": "La suggestion « Pas de recul » passe en tête des suites de lecture, juste avant « Comparer les angles », avec un bandeau bleu pleine largeur un peu plus présent. Et quand tu ouvres l'article proposé, un liseré bleu et un médaillon longue-vue en haut du lecteur te rappellent d'où il vient."
     },
