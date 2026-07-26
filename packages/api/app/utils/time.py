@@ -43,7 +43,9 @@ def editorial_day(now: datetime | None = None) -> date:
     edition".
     """
     moment = now.astimezone(PARIS_TZ) if now is not None else datetime.now(PARIS_TZ)
-    if is_before_paris_time(moment, EDITORIAL_DAY_START_HOUR, EDITORIAL_DAY_START_MINUTE):
+    if is_before_paris_time(
+        moment, EDITORIAL_DAY_START_HOUR, EDITORIAL_DAY_START_MINUTE
+    ):
         return moment.date() - timedelta(days=1)
     return moment.date()
 
