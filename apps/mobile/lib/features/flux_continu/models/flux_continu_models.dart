@@ -165,6 +165,11 @@ class EssentielArticle {
   final bool isSaved;
   final bool isLiked;
   final bool isDismissed;
+
+  /// « Lu jusqu'au bout ». Servi par `/api/essentiel`, distinct de [isRead] que
+  /// le seuil d'ouverture d'1 s suffit à déclencher.
+  final DateTime? completedAt;
+
   // Signaux user-aware servis par /api/essentiel pour rendre la personnalisation
   // et l'Actu du jour visibles côté carte (pastille, badges, avatar accent).
   final bool isFollowedSource;
@@ -189,6 +194,7 @@ class EssentielArticle {
     this.isSaved = false,
     this.isLiked = false,
     this.isDismissed = false,
+    this.completedAt,
     this.isFollowedSource = false,
     this.isFollowedTopic = false,
     this.isActuDuJour = false,
@@ -218,6 +224,7 @@ class EssentielArticle {
       isSaved: (json['is_saved'] as bool?) ?? false,
       isLiked: (json['is_liked'] as bool?) ?? false,
       isDismissed: (json['is_dismissed'] as bool?) ?? false,
+      completedAt: DateTime.tryParse(json['completed_at'] as String? ?? ''),
       isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
       isFollowedTopic: (json['is_followed_topic'] as bool?) ?? false,
       isActuDuJour: (json['is_actu_du_jour'] as bool?) ?? false,
@@ -242,6 +249,7 @@ class EssentielArticle {
     'is_saved': isSaved,
     'is_liked': isLiked,
     'is_dismissed': isDismissed,
+    'completed_at': completedAt?.toIso8601String(),
     'is_followed_source': isFollowedSource,
     'is_followed_topic': isFollowedTopic,
     'is_actu_du_jour': isActuDuJour,

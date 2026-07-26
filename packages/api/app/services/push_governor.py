@@ -74,9 +74,7 @@ async def check_push_budget(
             return GovernorDecision(allowed=False, reason="ritual_upcoming")
 
     budget_rows = [
-        row
-        for row in rows
-        if not (row.kind == kind and row.target_date == target_date)
+        row for row in rows if not (row.kind == kind and row.target_date == target_date)
     ]
     daily_count = sum(1 for row in budget_rows if row.last_sent_at >= day_ago)
     if daily_count >= DAILY_BUDGET:

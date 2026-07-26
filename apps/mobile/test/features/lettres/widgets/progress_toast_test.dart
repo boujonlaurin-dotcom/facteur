@@ -106,6 +106,59 @@ void main() {
     );
   });
 
+  testWidgets(
+    'micro à l\'objectif atteint (N/N) affiche le CTA et l\'invoque au tap',
+    (tester) async {
+      var tapped = 0;
+      await tester.pumpWidget(
+        _harness(
+          onReady: (ctx) => showProgressToast(
+            ctx,
+            level: ProgressToastLevel.micro,
+            current: 2,
+            total: 2,
+            label: 'lu jusqu\'au bout',
+            onGoalCta: () => tapped++,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.text('Quel objectif on se donne ?'), findsOneWidget);
+
+      await tester.tap(find.text('Quel objectif on se donne ?'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(tapped, 1);
+      // Le toast se referme après le tap sur le CTA.
+      expect(find.text('Quel objectif on se donne ?'), findsNothing);
+    },
+  );
+
+  testWidgets('micro en dessous de l\'objectif (N-1/N) n\'affiche pas de CTA', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _harness(
+        onReady: (ctx) => showProgressToast(
+          ctx,
+          level: ProgressToastLevel.micro,
+          current: 1,
+          total: 2,
+          label: 'lu jusqu\'au bout',
+          onGoalCta: () {},
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('1/2'), findsOneWidget);
+    expect(find.text('Quel objectif on se donne ?'), findsNothing);
+  });
+
   testWidgets('niveau section affiche titre Fraunces + sous-titre 100%', (
     tester,
   ) async {

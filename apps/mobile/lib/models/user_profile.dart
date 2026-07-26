@@ -8,6 +8,7 @@ class UserProfile {
   final bool onboardingCompleted;
   final bool gamificationEnabled;
   final int weeklyGoal;
+  final int dailyGoal;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -20,6 +21,7 @@ class UserProfile {
     required this.onboardingCompleted,
     required this.gamificationEnabled,
     required this.weeklyGoal,
+    this.dailyGoal = 2,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -36,6 +38,7 @@ class UserProfile {
         onboardingCompleted: (json['onboarding_completed'] as bool?) ?? false,
         gamificationEnabled: (json['gamification_enabled'] as bool?) ?? true,
         weeklyGoal: (json['weekly_goal'] as num?)?.toInt() ?? 10,
+        dailyGoal: (json['daily_goal'] as num?)?.toInt() ?? 2,
         createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
             DateTime.now(),
         updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
@@ -69,6 +72,7 @@ class UserProfile {
       'onboarding_completed': onboardingCompleted,
       'gamification_enabled': gamificationEnabled,
       'weekly_goal': weeklyGoal,
+      'daily_goal': dailyGoal,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -84,6 +88,7 @@ class UserProfile {
     bool? onboardingCompleted,
     bool? gamificationEnabled,
     int? weeklyGoal,
+    int? dailyGoal,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -96,6 +101,7 @@ class UserProfile {
       onboardingCompleted: onboardingCompleted ?? this.onboardingCompleted,
       gamificationEnabled: gamificationEnabled ?? this.gamificationEnabled,
       weeklyGoal: weeklyGoal ?? this.weeklyGoal,
+      dailyGoal: dailyGoal ?? this.dailyGoal,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -118,7 +124,8 @@ class UserProfile {
         other.gender == gender &&
         other.onboardingCompleted == onboardingCompleted &&
         other.gamificationEnabled == gamificationEnabled &&
-        other.weeklyGoal == weeklyGoal;
+        other.weeklyGoal == weeklyGoal &&
+        other.dailyGoal == dailyGoal;
   }
 
   @override
@@ -132,6 +139,7 @@ class UserProfile {
       onboardingCompleted,
       gamificationEnabled,
       weeklyGoal,
+      dailyGoal,
     );
   }
 }

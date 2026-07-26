@@ -6,12 +6,14 @@ import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
+import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/services/read_sync_service.dart';
+import '../../feed/widgets/animated_feed_card.dart';
 import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
@@ -73,6 +75,10 @@ class FluxArticleVM {
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
         isRead: article.isRead,
+        // `DigestItem` n'a pas de getter `isCompleted` : freezed exigerait un
+        // `const DigestItem._();` que la classe n'a pas. Inliné plutôt que
+        // régénéré.
+        isCompleted: article.completedAt != null,
       );
     }
     if (article is Content) {
@@ -163,6 +169,7 @@ class _FluxContinuArticleCardState
     final completedThisSession = ref.watch(
       completedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
     );
+    final isCompleted = vm.isCompleted || completedThisSession;
     final colors = context.facteurColors;
     final spec = ref.watch(displayModeSpecProvider);
     // Reclaim the thumb slot when the network image fails — avoids the
@@ -181,7 +188,13 @@ class _FluxContinuArticleCardState
         opacity: hasBeenRead ? 0.6 : 1.0,
         child: Stack(
           children: [
-            Material(
+            // `animate: false` au montage : le filet d'une carte déjà aboutie
+            // est peint d'emblée (c'est un état). `didUpdateWidget` anime la
+            // seule transition qui est un événement — le retour d'article.
+            AnimatedFeedCard(
+              isCompleted: isCompleted,
+              animate: false,
+              child: Material(
               color: colors.surface,
               borderRadius: cardRadius,
               elevation: 0,
@@ -214,13 +227,14 @@ class _FluxContinuArticleCardState
                 ),
               ),
             ),
+            ),
             if (hasBeenRead)
               Positioned(
                 top: 4,
                 right: 4,
-                child: _ReadCheckBadge(
+                child: ReadStateMark(
                   color: colors.success,
-                  isCompleted: vm.isCompleted || completedThisSession,
+                  isCompleted: isCompleted,
                 ),
               ),
           ],
@@ -425,6 +439,10 @@ Content articleToContent(Object article) {
       isPaid: article.isPaid,
       isSaved: article.isSaved,
       isLiked: article.isLiked,
+      // Sans ça l'écran de détail ouvert depuis une carte du flux rejouait la
+      // complétion (haptique + POST + `article_finished`) sur un article déjà
+      // terminé.
+      completedAt: article.completedAt,
     );
   }
   throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -800,39 +818,3 @@ class _ThemePill extends StatelessWidget {
   }
 }
 
-class _ReadCheckBadge extends StatelessWidget {
-  final Color color;
-
-  /// Double check quand l'article a été lu jusqu'au bout, simple check quand il
-  /// a seulement été ouvert (ce que le seuil d'1 s suffit à déclencher).
-  final bool isCompleted;
-
-  const _ReadCheckBadge({required this.color, this.isCompleted = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        isCompleted
-            ? PhosphorIcons.checks(PhosphorIconsStyle.bold)
-            : PhosphorIcons.check(PhosphorIconsStyle.bold),
-        size: 12,
-        color: Colors.white,
-      ),
-    );
-  }
-}

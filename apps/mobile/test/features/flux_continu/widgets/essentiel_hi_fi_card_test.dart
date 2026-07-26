@@ -19,6 +19,8 @@ import 'package:facteur/features/gamification/models/streak_activity_model.dart'
 import 'package:facteur/features/gamification/providers/streak_activity_provider.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
+import 'package:facteur/shared/widgets/completion_stamp.dart' show kStampGreen;
+import 'package:facteur/shared/widgets/read_state_mark.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -81,6 +83,7 @@ EssentielArticle _article({
   String source = 'Le Monde',
   bool isActuDuJour = false,
   bool isRead = false,
+  DateTime? completedAt,
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
@@ -95,6 +98,7 @@ EssentielArticle _article({
     perspectiveCount: 3,
     isActuDuJour: isActuDuJour,
     isRead: isRead,
+    completedAt: completedAt,
   );
 }
 
@@ -130,6 +134,66 @@ void main() {
         reason: 'Vague 2 hotfix: gray "ÉDITION DU [day]" banner removed.',
       );
       expect(find.text('Titre 1'), findsOneWidget);
+    });
+
+    testWidgets('la tuile lead affiche le filet et la double coche quand '
+        'l\'article est lu jusqu\'au bout', (tester) async {
+      // Impossible avant : la copie locale de la pastille codait `check` en
+      // dur, et `AnimatedFeedCard` n'était monté nulle part.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(
+              rank: 1,
+              isRead: true,
+              completedAt: DateTime(2026, 5, 23, 9),
+            ),
+          ],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).color == kStampGreen,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<ReadStateMark>(find.byType(ReadStateMark))
+            .isCompleted,
+        isTrue,
+      );
+    });
+
+    testWidgets('une tuile seulement ouverte reste strictement inchangée',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1, isRead: true)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).color == kStampGreen,
+        ),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<ReadStateMark>(find.byType(ReadStateMark))
+            .isCompleted,
+        isFalse,
+      );
     });
 
     testWidgets('tap on the lead fires onTapArticle with the right article',

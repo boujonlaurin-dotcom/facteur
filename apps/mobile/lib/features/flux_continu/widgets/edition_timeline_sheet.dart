@@ -298,8 +298,10 @@ class _ReadStatusPill extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         // État lu : coche verte (même motif que le badge « read » app-wide).
-        // (`_ReadCheckBadge` est privé/dupliqué ailleurs → on inline l'icône
-        // plutôt que d'introduire un import croisé.)
+        // Volontairement **pas** `ReadStateMark` : la pastille décrit l'état
+        // d'une *édition* (bascule `success`/`primary`), pas la complétion d'un
+        // article. Partager le widget ferait entrer un « lu jusqu'au bout » qui
+        // n'a aucun sens ici.
         if (read)
           Icon(
             PhosphorIcons.check(PhosphorIconsStyle.bold),

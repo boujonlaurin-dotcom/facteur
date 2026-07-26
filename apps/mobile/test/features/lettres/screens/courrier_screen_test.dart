@@ -121,6 +121,10 @@ void main() {
     expect(find.text('GRADES'), findsOneWidget);
     expect(find.byType(GradeLadder), findsOneWidget);
     expect(find.text('Facteur Stagiaire'), findsWidgets);
+    // La carte « Objectif quotidien » + la ladder poussent les sections sous le
+    // fold (build paresseux du sliver) → petit scroll avant de les asserter.
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -250));
+    await tester.pumpAndSettle();
     // Les libellés section existent aussi en pill sur les rows → findsWidgets.
     expect(find.text('EN COURS'), findsWidgets);
     expect(find.text('À VENIR'), findsWidgets);

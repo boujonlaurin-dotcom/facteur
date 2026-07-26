@@ -36,6 +36,10 @@ class UserProfile(Base):
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     gamification_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     weekly_goal: Mapped[int] = mapped_column(Integer, default=10)
+    # Objectif journalier de lectures abouties (« valider sa journée »), réglable
+    # par l'utilisateur (1→7, défaut 2). server_default pour backfill additif sur
+    # table peuplée et parité model↔DB (cf. closure_streak).
+    daily_goal: Mapped[int] = mapped_column(Integer, default=2, server_default="2")
     # Soft-delete (App Store 5.1.1(v) + Play Store account deletion).
     # `deleted_at` set by DELETE /api/users/me ; cron purge after 30 days.
     deleted_at: Mapped[datetime | None] = mapped_column(

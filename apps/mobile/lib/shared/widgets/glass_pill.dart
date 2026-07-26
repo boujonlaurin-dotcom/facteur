@@ -18,11 +18,18 @@ class GlassPill extends StatelessWidget {
   /// Direction de l'ombre : (0, 4) pour un header, (0, -4) pour un footer.
   final Offset shadowOffset;
 
+  /// Teinte optionnelle mélangée **par-dessus** le fond quasi-opaque du pill.
+  /// `null` (défaut) ⇒ comportement inchangé pour tous les autres appelants
+  /// (header, etc.). Non-null ⇒ `Color.alphaBlend(fillTint, fond)` : sert au
+  /// footer « lavé success » quand l'article est terminé.
+  final Color? fillTint;
+
   const GlassPill({
     super.key,
     required this.child,
     this.borderRadius = const BorderRadius.all(Radius.circular(20)),
     this.shadowOffset = const Offset(0, 4),
+    this.fillTint,
   });
 
   @override
@@ -30,9 +37,13 @@ class GlassPill extends StatelessWidget {
     final isDark = context.isDarkMode;
     // Fond quasi-opaque dérivé du token de thème : masque le corps du pill,
     // ne laisse « passer » le contenu qu'aux coins arrondis.
-    final fillColor = context.facteurColors.backgroundPrimary.withValues(
+    final baseFill = context.facteurColors.backgroundPrimary.withValues(
       alpha: isDark ? 0.97 : 0.98,
     );
+    // Teinte optionnelle mélangée par-dessus le fond (footer « lavé success »).
+    final fillColor = fillTint == null
+        ? baseFill
+        : Color.alphaBlend(fillTint!, baseFill);
     // Arête extérieure sombre (hairline discret, proche de l'existant).
     final outerEdge = isDark
         ? Colors.white.withValues(alpha: 0.12)

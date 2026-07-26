@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/ui/notification_service.dart';
 import '../../gamification/providers/gamification_preference_provider.dart';
 import '../../onboarding/widgets/theme_choice_bottom_sheet.dart';
 import '../providers/display_mode_provider.dart';
@@ -102,6 +103,16 @@ class _GamificationToggleState extends ConsumerState<_GamificationToggle> {
           .read(gamificationPreferenceRepositoryProvider)
           .setEnabled(value);
       ref.invalidate(gamificationPreferenceProvider);
+    } catch (_) {
+      // Sans `catch`, l'opt-out échouait en silence : l'interrupteur revenait
+      // seul à sa position et le lecteur croyait avoir désactivé la
+      // gamification. On relit la vérité serveur et on le dit.
+      ref.invalidate(gamificationPreferenceProvider);
+      if (mounted) {
+        NotificationService.showError(
+          'Impossible d’enregistrer ce réglage. Réessaye dans un instant.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
