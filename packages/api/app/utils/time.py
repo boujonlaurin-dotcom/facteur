@@ -26,6 +26,19 @@ def now_paris() -> datetime:
     return datetime.now(PARIS_TZ)
 
 
+def week_start_paris(day: date | None = None) -> date:
+    """Return the Monday of `day`'s ISO week, `today_paris()` by default.
+
+    La règle « la semaine commence lundi, en heure de Paris » était recopiée
+    à trois endroits (`streak_service` ×2, `digest_service`) : sur un
+    `date.today()` UTC, le reset hebdomadaire basculait une à deux heures trop
+    tôt le lundi matin côté lecteur. Une seule définition évite que le prochain
+    correctif de fuseau ait à les retrouver toutes.
+    """
+    day = day or today_paris()
+    return day - timedelta(days=day.weekday())
+
+
 # Editorial day boundary: the "tournée" flips at 07h30 Paris, not at midnight.
 # Mirror of `TourneeProgressService.dayKey` (mobile). Kept in one place so the
 # daily reading goal, the closure streak and the implicit digest completion all

@@ -25,6 +25,7 @@ import 'core/services/push_notification_service.dart';
 import 'core/services/server_push_service.dart';
 import 'core/errors/user_facing_error_notifier.dart';
 import 'core/ui/notification_service.dart';
+import 'features/feed/services/completed_reads_store.dart';
 import 'features/flux_continu/services/tournee_progress_service.dart';
 
 import 'package:timeago/timeago.dart' as timeago;
@@ -146,14 +147,17 @@ Future<void> _bootstrap() async {
     _openBoxSafe<String>('feed_cache'),
     _openBoxSafe<String>('flux_continu_cache'),
     _openBoxSafe<String>('pending_reads'),
+    // Registre durable des lectures abouties — ouvert au boot pour que
+    // `completedContentIdsProvider` puisse s'hydrater dès la première frame.
+    _openBoxSafe<String>(CompletedReadsStore.boxName),
     SharedPreferences.getInstance(),
   ]);
-  final boxes = initResults.take(6).cast<Box<dynamic>>().toList();
-  final sharedPreferences = initResults[6] as SharedPreferences;
+  final boxes = initResults.take(7).cast<Box<dynamic>>().toList();
+  final sharedPreferences = initResults[7] as SharedPreferences;
   final authBox = boxes[1];
   final supabaseBox = boxes[2];
   debugPrint(
-    '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (6 boxes + prefs parallel)',
+    '[PERF] boot.hive_boxes_ms=${boxesSw.elapsedMilliseconds} (7 boxes + prefs parallel)',
   );
 
   debugPrint('Main: Hive auth_prefs keys: ${authBox.keys.toList()}');

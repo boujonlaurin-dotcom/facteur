@@ -60,6 +60,9 @@ class EssentielArticle(BaseModel):
     is_liked: bool = False
     is_dismissed: bool = False
     read_at: datetime | None = None
+    # Lecture aboutie (fin d'article atteinte), pas seulement ouverte : c'est ce
+    # qui permet à la carte héros de la Tournée d'afficher le filet de complétion.
+    completed_at: datetime | None = None
     # Signaux user-aware pour affichage mobile (badges "Tu suis", pastille "Actu du jour").
     is_followed_source: bool = False
     is_followed_topic: bool = False

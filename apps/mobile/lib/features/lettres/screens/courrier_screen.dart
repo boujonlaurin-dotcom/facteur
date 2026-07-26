@@ -10,6 +10,7 @@ import '../models/facteur_grade.dart';
 import '../models/letter.dart';
 import '../models/letter_progress.dart';
 import '../providers/letters_provider.dart';
+import '../widgets/daily_goal_card.dart';
 import '../widgets/grade_ladder.dart';
 import '../widgets/leaderboard_teaser_card.dart';
 import '../widgets/letter_row.dart';
@@ -138,6 +139,7 @@ class _Body extends ConsumerWidget {
           slivers: [
             const SliverToBoxAdapter(child: _TopBar()),
             SliverToBoxAdapter(child: ProgressionHeader(state: state)),
+            const SliverToBoxAdapter(child: DailyGoalCard()),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 18),
               sliver: SliverList(

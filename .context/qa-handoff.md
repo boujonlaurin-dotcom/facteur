@@ -11,11 +11,9 @@ donne rien, l'écran propose des rattrapages au lieu d'un écran blanc. Le point
 migre dans le **header partagé** (visible sur les deux onglets).
 
 ## PR associée
-
-À créer via `/go` (base `main`).
+À créer (`/go`) vers `main`.
 
 ## Écrans impactés
-
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
 | Header partagé (2 onglets) | `/flux-continu` et `/flaner` | Modifié — nouvelle loupe à gauche de l'avatar |

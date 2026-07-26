@@ -23,6 +23,26 @@ _ALEMBIC_INI_PATH = os.path.join(
 MIGRATION_BYPASS_ENV = "FACTEUR_MIGRATION_IN_PROGRESS"
 
 
+class MultipleAlembicHeadsError(RuntimeError):
+    """Le code embarque plusieurs heads Alembic — l'image est cassée.
+
+    Deux PRs mergées le même jour depuis la même base sans révision de merge
+    suffisent (incident du 25/07/2026). ``alembic upgrade head`` n'a alors plus
+    de cible : le boot Railway démarre l'app quand même et l'ORM mappe des
+    colonnes jamais créées → 500 sur tout le trafic authentifié. Prendre
+    ``heads[0]`` masquait la panne : selon l'ordre retourné, le contrôle de
+    démarrage et la sonde readiness pouvaient passer au vert.
+    """
+
+
+def _single_head(script_directory: "script.ScriptDirectory") -> str | None:
+    """Head unique du code, ou ``MultipleAlembicHeadsError`` s'il y en a plusieurs."""
+    heads = script_directory.get_heads()
+    if len(heads) > 1:
+        raise MultipleAlembicHeadsError(f"Multiple Alembic heads: {heads}")
+    return heads[0] if heads else None
+
+
 def _get_current_revision_sync(connection: AsyncConnection):
     """Sync function to get current revision from DB context."""
     context = migration.MigrationContext.configure(connection)
@@ -68,8 +88,11 @@ async def check_migrations_up_to_date():
     try:
         alembic_cfg = Config(_ALEMBIC_INI_PATH)
         script_directory = script.ScriptDirectory.from_config(alembic_cfg)
-        heads = script_directory.get_heads()
-        head_rev = heads[0] if heads else None
+        head_rev = _single_head(script_directory)
+    except MultipleAlembicHeadsError as e:
+        # Fatal, comme un schéma en retard : l'image ne peut pas migrer.
+        logger.critical("startup_check_migrations_multiple_heads", error=str(e))
+        raise
     except Exception as e:
         # G2: Non-essential config errors should warn, not crash
         logger.warning("startup_check_migrations_skipped_config", error=str(e))
@@ -100,12 +123,12 @@ def _code_head_and_ancestors() -> tuple[str | None, frozenset[str]]:
     """Code-side head revision + the full set of its ancestors (incl. head).
 
     Derived only from the Alembic script files bundled in this image, so it is
-    static per process — memoised. Raises on config error (caller catches).
+    static per process — memoised. Raises on config error, ou
+    ``MultipleAlembicHeadsError`` si l'image embarque un fork (caller catches).
     """
     alembic_cfg = Config(_ALEMBIC_INI_PATH)
     script_directory = script.ScriptDirectory.from_config(alembic_cfg)
-    heads = script_directory.get_heads()
-    head_rev = heads[0] if heads else None
+    head_rev = _single_head(script_directory)
     if head_rev is None:
         return None, frozenset()
     ancestors = frozenset(
@@ -135,6 +158,11 @@ async def get_migration_readiness() -> dict[str, str | bool | None]:
     """
     try:
         head_rev, ancestors = _code_head_and_ancestors()
+    except MultipleAlembicHeadsError as e:
+        # Pas un hoquet : l'image ne peut pas migrer, son schéma attendu est
+        # indéterminé. Le fail-open ne s'applique pas — on sort du LB.
+        logger.critical("readiness_migration_multiple_heads", error=str(e))
+        return {"behind": True, "head": None, "current": None}
     except Exception as e:
         logger.warning("readiness_migration_check_config_error", error=str(e))
         return {"behind": False, "head": None, "current": None}

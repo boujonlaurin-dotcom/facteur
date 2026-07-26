@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../config/theme.dart' show FacteurRadius;
 import '../../../shared/widgets/completion_stamp.dart' show kStampGreen;
 
 /// Marque discrètement, **au retour de l'article**, la carte d'une lecture
@@ -37,14 +38,21 @@ class AnimatedFeedCard extends StatefulWidget {
 
 class _AnimatedFeedCardState extends State<AnimatedFeedCard>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 320),
-  );
+  // Créé en `initState` et **pas** `late final` : en `late`, une carte non
+  // aboutie ne touchait jamais le champ (initState et build sortent tous deux
+  // en amont), si bien que `dispose()` l'initialisait au moment même de la
+  // destruction — `vsync: this` allait alors chercher un ancêtre désactivé et
+  // levait. Invisible tant que le widget était du code mort, systématique dès
+  // qu'il est monté sur chaque carte.
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+    );
     if (widget.isCompleted && !widget.animate) _controller.value = 1.0;
     if (widget.isCompleted && widget.animate) _startDelayed();
   }
@@ -118,7 +126,12 @@ class _CompletionRule extends StatelessWidget {
       width: 3,
       decoration: const BoxDecoration(
         color: kStampGreen,
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(16)),
+        // Suit le rayon des cartes (`FacteurRadius.large`) : le filet doit
+        // épouser l'angle, pas déborder. Constante et non littéral 16 —
+        // l'égalité était une coïncidence.
+        borderRadius: BorderRadius.horizontal(
+          left: Radius.circular(FacteurRadius.large),
+        ),
       ),
     );
   }
