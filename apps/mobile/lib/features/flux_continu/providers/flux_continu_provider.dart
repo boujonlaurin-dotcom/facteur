@@ -89,11 +89,14 @@ const int _kMaxFavoriteSections = kTourneeVisibleCap;
 const int _kMaxFavoriteSourceSections = kTourneeVisibleCap;
 
 /// Number of items requested per page for each theme section of the Tournée
-/// (initial load + each "loadMoreTheme" call). When the backend returns
-/// strictly fewer items than this, [_buildThemeSection] forces hasMore=false —
-/// no subsequent page can exist regardless of what the backend's
-/// pagination.hasNext (computed from a pre-compression candidate count) says.
-const int _kThemeSectionPageLimit = 10;
+/// (initial load + each "loadMoreTheme" call).
+///
+/// Maintenu à 10 (décision PO) : le cold-open tire déjà ~10 appels
+/// `personalized=true` en parallèle sur un unique worker uvicorn, doubler la
+/// page doublerait cette charge. Le volume est repris côté lazy loading
+/// ([_themeHasMore] + top-up de la page dédiée) plutôt que par une page plus
+/// grosse.
+const int kThemeSectionPageLimit = 10;
 
 /// Borne de concurrence du fan-out Phase 2 (cold-open). Le backend tourne sous
 /// un **unique worker uvicorn** et le scoring perso est CPU-bound : tirer les
@@ -1392,10 +1395,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // La veille pagine via /api/veille/feed (offset), PAS via le feed général
       // personnalisé : ce dernier injectait des articles hors-veille en fin de
       // section et déclenchait tout le pipeline de reco (plan V0, Pb 2&3).
-      final offset = (nextPage - 1) * _kThemeSectionPageLimit;
+      final offset = (nextPage - 1) * kThemeSectionPageLimit;
       response = await _safe<FeedResponse>(
         () => ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
-              limit: _kThemeSectionPageLimit,
+              limit: kThemeSectionPageLimit,
               offset: offset,
               serein: isSerene,
             ),
@@ -1407,7 +1410,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       response = await _safe<FeedResponse>(
         () => _feedRepo.getFeed(
           page: nextPage,
-          limit: _kThemeSectionPageLimit,
+          limit: kThemeSectionPageLimit,
           theme: theme,
           topic: topic,
           serein: isSerene,
@@ -1434,16 +1437,33 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     } else {
       // Dedupe by content id — guards against a new article being published
       // between page 1 and page 2 and shifting the chronological cursor.
-      final existingIds = {for (final item in afterTarget.items) item.id};
+      //
+      // Étendu à TOUTE la Tournée (`renderedContentIds`) : le dedup
+      // inter-sections ne tourne que dans [_compose], que `loadMoreTheme` ne
+      // rejoue pas. Sans ça une page 2 pouvait ré-afficher un article déjà
+      // rendu par l'Essentiel ou Actus du jour, juste sous la page 1 qui, elle,
+      // en avait été purgée. Coût : un parcours des sections déjà en mémoire.
+      final existingIds = {
+        ...renderedContentIds(afterCurrent.sections),
+        for (final item in afterTarget.items) item.id,
+      };
       final appended = [
         ...afterTarget.items,
         for (final item in response.items)
           if (!existingIds.contains(item.id)) item,
       ];
-      final hasMore = _themeHasMore(
-        response.pagination.hasNext,
-        response.items.length,
-      );
+      // Terminateur : une page non vide dont AUCUN item ne survit à la dédup
+      // n'a rien apporté. Sans ce garde-fou la section garderait `hasMore=true`
+      // sans jamais grandir → indicateur de chargement permanent, carte de
+      // clôture (« Vous êtes à jour ») et bloc « Section suivante » jamais
+      // atteignables. Remplace, en plus précis, l'ancienne règle
+      // « page incomplète ⇒ hasMore=false » qui coupait aussi les cas sains.
+      final producedNothing = appended.length == afterTarget.items.length;
+      final hasMore = !producedNothing &&
+          _themeHasMore(
+            response.pagination.hasNext,
+            response.items.length,
+          );
       updated = afterTarget.copyWith(
         items: appended,
         currentPage: nextPage,
@@ -1560,8 +1580,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// total_candidates being computed before compression layers — a partial page
   /// (< limit) is definitive proof that no next page exists regardless of
   /// pagination.hasNext.
-  bool _themeHasMore(bool hasNext, int itemCount) =>
-      hasNext && itemCount >= _kThemeSectionPageLimit;
+  /// `has_next` du backend, borné par « la page n'était pas vide ».
+  ///
+  /// L'ancienne règle exigeait une page **pleine**
+  /// (`itemCount >= kThemeSectionPageLimit`) : dès qu'une page revenait courte
+  /// alors que le backend annonçait `has_next: true`, la pagination était
+  /// coupée **définitivement**. Ce cas est réel — `total_candidates` est figé
+  /// côté serveur AVANT les post-filtres Python (entités mutées, filtre
+  /// entité), donc `has_next` peut être vrai avec une page incomplète.
+  /// On s'aligne sur Flâner (`feed_provider.dart` : `hasNext && isNotEmpty`).
+  bool _themeHasMore(bool hasNext, int itemCount) => hasNext && itemCount > 0;
 
   /// Builds a FeedThemeSection from a fetched payload. The label/accent come
   /// from the canonical theme visual mapping for Theme favorites; for custom
@@ -1760,7 +1788,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       ThemeFavoriteRef(:final slug) => _fetchWithRetry<FeedResponse>(
           () => _feedRepo.getFeed(
             page: 1,
-            limit: _kThemeSectionPageLimit,
+            limit: kThemeSectionPageLimit,
             theme: slug,
             serein: isSerene,
             personalized: true,
@@ -1773,7 +1801,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       CustomTopicFavoriteRef(:final id) => _fetchWithRetry<FeedResponse>(
           () => _feedRepo.getFeed(
             page: 1,
-            limit: _kThemeSectionPageLimit,
+            limit: kThemeSectionPageLimit,
             topic: id,
             serein: isSerene,
             personalized: true,
@@ -1785,7 +1813,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // réponse en FeedResponse Content-compatible).
       VeilleFavoriteRef() => _fetchWithRetry<FeedResponse>(
           () => ref.read(fluxContinuRepositoryProvider).getVeilleFeedItems(
-                limit: _kThemeSectionPageLimit,
+                limit: kThemeSectionPageLimit,
                 serein: isSerene,
               ),
           'getVeilleFeedItems',
@@ -1858,7 +1886,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return _fetchWithRetry<FeedResponse>(
       () => _feedRepo.getFeed(
         page: 1,
-        limit: _kThemeSectionPageLimit,
+        limit: kThemeSectionPageLimit,
         sourceId: sourceId,
         serein: isSerene,
         personalized: true,

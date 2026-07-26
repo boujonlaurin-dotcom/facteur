@@ -692,9 +692,6 @@ void main() {
         SharedPreferences.setMockInitialValues(<String, Object>{});
 
         // Initial fetch (page 1) — 10 items (= page limit), hasNext=true.
-        // The page must be FULL to keep hasMore=true after the safety-net
-        // guard "items.length < limit ⇒ hasMore=false" (cf.
-        // `_kThemeSectionPageLimit` in flux_continu_provider.dart).
         final pageOneIds = List.generate(10, (i) => 'a${i + 1}');
         final pageTwoIds = List.generate(3, (i) => 'b${i + 1}');
         when(
@@ -750,15 +747,16 @@ void main() {
     );
 
     test(
-        'partial page-1 response (< limit) forces hasMore=false even if '
-        'backend reports hasNext=true', () async {
-      // Garde-fou : si la page initiale renvoie moins d'items que la limite
-      // demandée, aucune page suivante ne peut exister, peu importe ce que
-      // dit pagination.hasNext. Évite le cas où total_candidates est
-      // surestimé côté backend (compté avant compression applicative) et
-      // empêche ScrollExhausted de devenir true sur la page dédiée
-      // ThemeSectionScreen → bloque l'affichage de la closing card et du
-      // bloc "Section suivante".
+        'partial page-1 response (< limit) KEEPS hasMore when backend reports '
+        'hasNext=true', () async {
+      // Bug curation sections thématiques : l'ancienne règle coupait la
+      // pagination dès qu'une page revenait incomplète. Or `total_candidates`
+      // est figé côté backend AVANT les post-filtres Python (entités mutées,
+      // filtre entité) → `has_next=true` avec une page courte est un cas SAIN,
+      // et le couper enfermait l'utilisateur sur 6-7 articles. On suit
+      // désormais le backend (parité Flâner) ; la terminaison est assurée par
+      // une page vide OU une page entièrement dédupliquée (cf. test suivant),
+      // pas par la taille de la page.
       SharedPreferences.setMockInitialValues(<String, Object>{});
       when(
         () => feedRepo.getFeed(
@@ -789,8 +787,74 @@ void main() {
       expect(themeSection.items.length, 3);
       expect(
         themeSection.hasMore,
+        true,
+        reason: 'a short page is not proof that the pool is exhausted',
+      );
+    });
+
+    test(
+        'page entirely deduped against the rest of the Tournée settles '
+        'hasMore=false', () async {
+      // Terminateur du lazy loading : une page 2 non vide dont tous les items
+      // sont déjà rendus ailleurs n'ajoute rien. Sans ce garde-fou la section
+      // resterait `hasMore=true` sans jamais grandir → spinner permanent et
+      // carte de clôture inatteignable.
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final pageOneIds = <String>[
+        for (var i = 0; i < kThemeSectionPageLimit; i++) 'a$i',
+      ];
+      when(
+        () => feedRepo.getFeed(
+          page: 1,
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer(
+        (_) async => _feedResponseWithIds(pageOneIds, page: 1, hasNext: true),
+      );
+      // Page 2 : non vide, mais 100 % de doublons de la page 1.
+      when(
+        () => feedRepo.getFeed(
+          page: 2,
+          limit: any(named: 'limit'),
+          theme: any(named: 'theme'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+        ),
+      ).thenAnswer(
+        (_) async => _feedResponseWithIds(pageOneIds, page: 2, hasNext: true),
+      );
+
+      final container = makeContainer(
+        interests: _interestsState(
+          favorites: const [ThemeFavoriteRef(slug: 'tech')],
+        ),
+      );
+      addTearDown(container.dispose);
+
+      final initial = await settle(container);
+      final themeSection =
+          initial.sections.whereType<FeedThemeSection>().single;
+      expect(themeSection.hasMore, true);
+
+      await container
+          .read(fluxContinuProvider.notifier)
+          .loadMoreTheme(sectionKey(themeSection));
+
+      final updated = container
+          .read(fluxContinuProvider)
+          .value!
+          .sections
+          .whereType<FeedThemeSection>()
+          .single;
+      expect(updated.items.length, kThemeSectionPageLimit,
+          reason: 'no new item survived the dedup');
+      expect(
+        updated.hasMore,
         false,
-        reason: 'partial page must short-circuit pagination',
+        reason: 'a page that produced nothing must stop the pagination',
       );
     });
 
