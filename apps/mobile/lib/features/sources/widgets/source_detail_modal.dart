@@ -103,15 +103,23 @@ class SourceDetailModal extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Drag handle
-            Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 2),
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
+            // Drag handle — zone de préhension pleine largeur (au lieu des
+            // seuls 40x4 de la barre visuelle) : c'est la seule bande de la
+            // fiche qui n'est pas absorbée par le `SingleChildScrollView` du
+            // dessous, donc c'est le seul endroit où glisser vers le bas ferme
+            // la modale de façon fiable. Il faut que cette bande soit assez
+            // haute pour qu'un pouce l'attrape sans viser précisément la barre.
+            SizedBox(
+              width: double.infinity,
+              height: 32,
+              child: Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.textTertiary.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
             ),
