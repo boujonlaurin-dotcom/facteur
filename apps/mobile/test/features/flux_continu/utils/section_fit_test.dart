@@ -5,7 +5,7 @@ import 'package:facteur/features/settings/models/display_mode_spec.dart';
 void main() {
   group('fitVisibleCount', () {
     // Section chrome = banner + footer. With the no-blurb banner that is
-    // 54 + 16 = 70 px of fixed chrome, then each card is 146 px.
+    // 52 + 16 = 68 px of fixed chrome, then each card is 146 px.
     const banner = kBannerHeightNoBlurb;
     const footer = kSectionFooterHeight;
     final card = estimateRegularCardHeight();
@@ -25,8 +25,8 @@ void main() {
     });
 
     test('a mid screen drops to 2', () {
-      // 70 + 2·146 = 362 fits, 70 + 3·146 = 508 does not.
-      expect(fit(500), 2);
+      // 68 + 2·146 = 360 fits, 68 + 3·146 = 506 does not.
+      expect(fit(480), 2);
     });
 
     test('a small screen floors to 1 — never 0', () {
@@ -49,10 +49,10 @@ void main() {
     });
 
     test('a blurb banner reserves more chrome, so it can fit fewer cards', () {
-      // Same usable height, the with-blurb banner (82) leaves 28 px less.
-      // Pick a height where the extra 28 px tips 3 → 2.
-      // no-blurb: 70 + 3·146 = 508 ; with-blurb: 98 + 3·146 = 536.
-      const usable = 520.0;
+      // Same usable height, the with-blurb banner (76) leaves 30 px less.
+      // Pick a height where the extra 30 px tips 3 → 2.
+      // no-blurb: 68 + 3·146 = 506 ; with-blurb: 92 + 3·146 = 530.
+      const usable = 510.0;
       final noBlurb = fitVisibleCount(
         usableHeight: usable,
         bannerHeight: kBannerHeightNoBlurb,
@@ -119,9 +119,9 @@ void main() {
     });
 
     test('réserver le footer retire une carte au seuil (bascule 3 → 2)', () {
-      // no-blurb chrome 54 + 3·146 = 492. À usable = 495 le fit tient 3 cartes
+      // no-blurb banner 52 + 3·146 = 490. À usable = 490 le fit tient 3 cartes
       // SANS footer, mais le footer « Tout lire › » (28) fait déborder → 2.
-      const usable = 495.0;
+      const usable = 490.0;
       final withoutFooter = fitVisibleCount(
         usableHeight: usable,
         bannerHeight: kBannerHeightNoBlurb,
@@ -234,7 +234,7 @@ void main() {
     test(
         'minimal : le fit MONTE jusqu\'au plafond 6 selon le viewport '
         '(cible 4-6)', () {
-      // Chrome 70 + N·126 : 4 cartes = 574, 5 = 700, 6 = 826.
+      // Chrome 68 + N·126 : 4 cartes = 572, 5 = 698, 6 = 824.
       expect(fitForMode(DisplayModeSpec.minimal, 600), 4);
       expect(fitForMode(DisplayModeSpec.minimal, 720), 5);
       // Écran géant : plafonné à 6 (et non 7+).
@@ -247,7 +247,7 @@ void main() {
 
     test('normal : grandit jusqu\'à 4 quand l\'écran le permet (cible 3-4)',
         () {
-      // Chrome 70 + N·146 : 3 = 508, 4 = 654.
+      // Chrome 68 + N·146 : 3 = 506, 4 = 652.
       expect(fitForMode(DisplayModeSpec.normal, 600), 3);
       expect(fitForMode(DisplayModeSpec.normal, 700), 4);
       // Plafonné à 4 même sur écran géant.
@@ -255,7 +255,7 @@ void main() {
     });
 
     test('ludique : 2-3 cartes selon le viewport, plafonné à 3', () {
-      // Chrome 70 + N·272 : 2 = 614, 3 = 886.
+      // Chrome 68 + N·272 : 2 = 612, 3 = 884.
       expect(fitForMode(DisplayModeSpec.playful, 640), 2);
       expect(fitForMode(DisplayModeSpec.playful, 920), 3);
       // Plafonné à 3 même sur écran géant.

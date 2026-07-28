@@ -279,12 +279,24 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// Sliver « Grille du jour » (carte d'entrée de La Grille). Son insertion est
   /// pilotée par `FluxContinuState.grilleSlotIndex`. Wrappé dans un
   /// `KeyedSubtree(_grilleKey)` pour exposer la carte au suivi sticky.
-  SliverToBoxAdapter get _grilleSliver => SliverToBoxAdapter(
+  ///
+  /// [followedByNormalSection] : true en mi-feed (la carte suivante n'a pas de
+  /// marge top propre, donc le bottom padding ici recrée l'écart standard
+  /// inter-sections) ; false en fin de feed (suivie de `CitationDuJourCard`,
+  /// qui porte déjà 24px de marge top — un bottom padding ici doublerait
+  /// l'écart, jugé incorrect par le PO).
+  SliverToBoxAdapter _grilleSliver({required bool followedByNormalSection}) =>
+      SliverToBoxAdapter(
         child: KeyedSubtree(
           key: _grilleKey,
-          child: const Padding(
-            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-            child: GrilleCtaCard(),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              22,
+              16,
+              followedByNormalSection ? 16 : 0,
+            ),
+            child: const GrilleCtaCard(),
           ),
         ),
       );
@@ -1684,7 +1696,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       if (state.grilleSlotIndex == i) {
-        slivers.add(_grilleSliver);
+        slivers.add(_grilleSliver(followedByNormalSection: true));
       }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
@@ -1820,7 +1832,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       }
     }
     if (state.grilleSlotIndex == state.sections.length) {
-      slivers.add(_grilleSliver);
+      slivers.add(_grilleSliver(followedByNormalSection: false));
     }
     return slivers;
   }

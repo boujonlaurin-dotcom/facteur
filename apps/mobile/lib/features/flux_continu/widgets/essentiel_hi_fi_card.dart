@@ -376,7 +376,7 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
         key: const ValueKey('weather'),
         behavior: HitTestBehavior.opaque,
         onTap: () => showWeatherDetailSheet(context),
-        child: _WeatherBadge(forecast: forecast),
+        child: _WeatherBadge(forecast: forecast, accent: widget.accent),
       );
     } else {
       child = GestureDetector(
@@ -435,8 +435,9 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
 /// discret signalant qu'un tap ouvre la modal détaillée 5 jours.
 class _WeatherBadge extends StatefulWidget {
   final WeatherForecast forecast;
+  final Color accent;
 
-  const _WeatherBadge({required this.forecast});
+  const _WeatherBadge({required this.forecast, required this.accent});
 
   @override
   State<_WeatherBadge> createState() => _WeatherBadgeState();
@@ -485,12 +486,29 @@ class _WeatherBadgeState extends State<_WeatherBadge>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        WeatherConditionIcon(
-          condition: widget.forecast.condition,
-          size: 88,
-          badgeSize: 30,
-          emojiSize: 18,
-          badgeInset: 4,
+        // Halo doux teinté accent derrière l'illustration météo : au repos, il
+        // fait « léviter » l'icône et signale que le badge est tappable (ouvre
+        // la modal 5 jours). Le BoxShadow se dessine à partir de la forme du
+        // conteneur même avec un remplissage transparent → glow diffus, sans
+        // contour dur.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: widget.accent.withValues(alpha: 0.14),
+                blurRadius: 18,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: WeatherConditionIcon(
+            condition: widget.forecast.condition,
+            size: 88,
+            badgeSize: 30,
+            emojiSize: 18,
+            badgeInset: 4,
+          ),
         ),
         const SizedBox(height: 2),
         ScaleTransition(
