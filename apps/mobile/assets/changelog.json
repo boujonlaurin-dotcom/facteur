@@ -2,7 +2,7 @@
   "unreleased": [
     {
       "tag": "Alertes",
-      "summary": "Certaines sources ne publient qu'une fois par mois, et c'est justement pour ça qu'on les rate. Pose une cloche sur leur fiche : Facteur te prévient à chaque parution, en silence, dans ta tournée. Cinq alertes maximum, sur des sources rares uniquement. Retrouve-les toutes dans Mes alertes."
+      "summary": "Pose une alerte sur n'importe quelle source ou n'importe quel sujet que tu suis. Avant de l'activer, Facteur t'annonce franchement le rythme : « environ 12 alertes par semaine », par exemple. Si c'est trop, coche « seulement les plus marquantes » et tu n'en recevras qu'une par jour, la plus pertinente pour toi. Cinq alertes maximum, toujours en silence, dans ta tournée. Le réglage est aussi devenu plus simple à trouver : « Notifications et alertes », directement dans les Réglages."
     },
     {
       "tag": "Objectif du jour",

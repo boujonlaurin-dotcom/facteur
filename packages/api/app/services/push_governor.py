@@ -22,8 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.push_notification import PushDelivery, PushDevice
 
-DAILY_BUDGET = 2
-WEEKLY_BUDGET = 6
+#: Alertes v2 : la cloche devient universelle (5 cibles possibles, sources et
+#: sujets confondus), donc le budget passe de 2 à 5 push/24 h. Le budget hebdo
+#: suit (20) — resté à 6, il annulerait le quotidien dès J+2.
+DAILY_BUDGET = 5
+WEEKLY_BUDGET = 20
 RITUAL_COOLDOWN = timedelta(hours=4)
 RITUAL_KINDS = {"daily_digest"}
 

@@ -68,8 +68,6 @@ from app.services.search.smart_source_search import (
 from app.services.source_alert_producer import (
     ALERT_CAP,
     count_active_alerts,
-    is_rare_source,
-    source_frequency_stats,
 )
 from app.services.source_recommendation_gate import (
     is_quality_catalog,
@@ -1132,13 +1130,12 @@ async def update_source_alert(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ) -> SourceAlertToggleResponse:
-    """Pose ou retire la cloche « alerte source rare ».
+    """Pose ou retire la cloche « alerte » sur une source suivie.
 
-    L'éligibilité est rejouée ici et non déduite du client : le profil affiché
-    dans la fiche source peut dater, et une source devenue bavarde depuis ne
-    doit plus pouvoir recevoir de cloche. Désactiver reste toujours possible,
-    sans vérification — sinon une source devenue bavarde piégerait sa propre
-    alerte.
+    Alertes v2 : plus de gate de rareté — n'importe quelle source suivie est
+    éligible, le bruit se règle par `filtered` (1 alerte/jour, la mieux scorée)
+    et se prévient par le devis de cadence affiché côté client. Ne restent que
+    les refus structurels : source inconnue, source non suivie, plafond atteint.
     """
     uid = UUID(user_id)
     source_exists = (
@@ -1165,29 +1162,22 @@ async def update_source_alert(
         )
 
     if data.enabled and user_source.notify is not True:
-        now = datetime.now(UTC)
         active_count = await count_active_alerts(db, user_id=uid)
         if active_count >= ALERT_CAP:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"error": "alert_cap_reached", "cap": ALERT_CAP},
             )
-        articles_30d, oldest_content_at = await source_frequency_stats(
-            db, source_id=source_id, now=now
-        )
-        if not is_rare_source(articles_30d, oldest_content_at, now):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={"error": "source_not_rare"},
-            )
 
     user_source.notify = data.enabled
+    user_source.notify_filtered = data.filtered if data.enabled else None
     await db.commit()
     FEED_CACHE.invalidate(uid)
     SOURCES_CACHE.invalidate(uid)
 
     return SourceAlertToggleResponse(
         enabled=data.enabled,
+        filtered=data.enabled and data.filtered,
         active_count=await count_active_alerts(db, user_id=uid),
         cap=ALERT_CAP,
     )

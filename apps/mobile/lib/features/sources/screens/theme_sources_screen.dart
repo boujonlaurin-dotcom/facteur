@@ -48,7 +48,7 @@ class _ThemeSourcesScreenState extends ConsumerState<ThemeSourcesScreen> {
         if (mounted) {
           NotificationService.showSuccess(
               'Source ajoutee ! Ses contenus apparaitront dans ton feed.');
-          await maybeOfferSourceAlert(context, ref, source.id);
+          await maybeOfferAlert(context, ref, sourceId: source.id);
         }
       }
 

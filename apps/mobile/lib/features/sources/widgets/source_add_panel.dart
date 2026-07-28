@@ -253,7 +253,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             .setSourceState(sourceId, InterestState.favorite);
         if (!mounted) return;
 
-        await maybeOfferSourceAlert(context, ref, sourceId);
+        await maybeOfferAlert(context, ref, sourceId: sourceId);
         if (!mounted) return;
 
         // E3 — preuve inline « Connecté » sans modale pour l'onboarding
@@ -340,7 +340,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           NotificationService.showSuccess(
             'Source ajoutee ! Ses contenus apparaitront dans ton feed.',
           );
-          await maybeOfferSourceAlert(context, ref, source.id);
+          await maybeOfferAlert(context, ref, sourceId: source.id);
         }
       }
       ref.invalidate(trendingSourcesProvider);

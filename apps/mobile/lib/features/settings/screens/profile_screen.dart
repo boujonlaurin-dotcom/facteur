@@ -151,6 +151,24 @@ class ProfileScreen extends ConsumerWidget {
                       );
                     },
                   ),
+                  _Tile(
+                    icon: PhosphorIcons.bell(PhosphorIconsStyle.regular),
+                    title: 'Tester une alerte sujet',
+                    subtitle:
+                        'Affiche localement le payload exact d\'une alerte',
+                    onTap: () async {
+                      await PushNotificationService().showTestTopicAlert();
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Alerte de test envoyée. Regarde ton tiroir de '
+                            'notifications.',
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ],

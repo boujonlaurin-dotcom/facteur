@@ -18,6 +18,10 @@ import '../../my_interests/widgets/interest_state_pill.dart';
 import '../../sources/widgets/premium_source_connection.dart';
 import '../../sources/widgets/source_detail_modal.dart';
 import '../models/topic_models.dart';
+import '../../alerts/models/alert_item.dart';
+import '../../alerts/providers/alerts_provider.dart';
+import '../../alerts/widgets/alert_activation_sheet.dart';
+import '../../alerts/widgets/alert_toggle_row.dart';
 import '../providers/custom_topics_provider.dart';
 import '../providers/personalization_provider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -494,7 +498,7 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
           const SizedBox(height: FacteurSpacing.space2),
 
           // ── State pill (followed) or Follow button (not followed) ──
-          if (isFollowed && matchedTopic != null)
+          if (isFollowed && matchedTopic != null) ...[
             _PulseHighlight(
               active: shouldHighlight,
               child: CustomTopicStatePill(
@@ -502,8 +506,13 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 title: matchedTopic.name,
                 fillWidth: true,
               ),
-            )
-          else ...[
+            ),
+            // Même règle que les sources, où `_FsSettings` n'est rendu que si
+            // la source est suivie : on ne propose une cloche que sur un sujet
+            // déjà choisi.
+            const SizedBox(height: FacteurSpacing.space3),
+            _TopicAlertToggle(topicId: matchedTopic.id),
+          ] else ...[
             _PulseHighlight(
               active: shouldHighlight,
               child: SizedBox(
@@ -511,9 +520,14 @@ class _ArticleSheetState extends ConsumerState<ArticleSheet> {
                 child: FilledButton.icon(
                   onPressed: () async {
                     try {
-                      await ref.read(customTopicsProvider.notifier).followTopic(
-                          widget.topicLabel,
-                          slugParent: widget.topicSlug);
+                      final created = await ref
+                          .read(customTopicsProvider.notifier)
+                          .followTopic(widget.topicLabel,
+                              slugParent: widget.topicSlug);
+                      if (context.mounted && created != null) {
+                        await maybeOfferAlert(context, ref,
+                            topicId: created.id);
+                      }
                     } on DioException catch (e) {
                       if (context.mounted) {
                         final detail = e.response?.data;
@@ -1370,6 +1384,31 @@ class _PulseHighlightState extends State<_PulseHighlight>
         );
       },
       child: widget.child,
+    );
+  }
+}
+
+
+/// Adaptateur de la rangée d'alerte partagée pour la fiche sujet.
+///
+/// La cadence vient de [topicFrequencyProvider] (miroir de
+/// `sourceProfileProvider` côté source) : une agrégation par sujet, payée
+/// seulement sur la fiche ouverte et jamais pour chaque chip de la liste.
+class _TopicAlertToggle extends ConsumerWidget {
+  final String topicId;
+  const _TopicAlertToggle({required this.topicId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final frequency = ref.watch(topicFrequencyProvider(topicId)).valueOrNull;
+    return AlertToggleRow(
+      targetId: topicId,
+      kind: AlertKind.topic,
+      // Cadence prise telle quelle : un sujet n'a pas d'« âge » exploitable
+      // côté client, et la recalculer sur une fenêtre devinée ferait diverger
+      // le devis affiché de celui qui gouverne les envois.
+      cadencePerWeek: frequency?.cadencePerWeek ?? 0,
+      hasProfile: frequency != null,
     );
   }
 }

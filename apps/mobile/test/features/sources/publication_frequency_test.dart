@@ -1,8 +1,13 @@
 import 'package:facteur/features/sources/utils/publication_frequency.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Cadence des cibles d'alerte — le devis de bruit qui a remplacé le gate de
+/// rareté de la v1. Miroir de `tests/services/test_alert_cadence.py`, qui reste
+/// l'arbitre : les deux doivent lire la même cadence, sinon la fiche promet un
+/// rythme que le serveur ne tient pas.
 void main() {
   final now = DateTime(2026, 7, 26, 12);
+  final month = now.subtract(const Duration(days: 30));
 
   group('humanizeFrequency', () {
     test('source sans article = peu actif', () {
@@ -11,100 +16,107 @@ void main() {
 
     test('gros volume = moyenne arrondie', () {
       expect(
-        humanizeFrequency(600, now.subtract(const Duration(days: 30)),
-            now: now),
+        humanizeFrequency(600, month, now: now),
         '20 articles par jour en moyenne',
       );
     });
 
     test('source mensuelle', () {
       expect(
-        humanizeFrequency(1, now.subtract(const Duration(days: 30)), now: now),
+        humanizeFrequency(1, month, now: now),
         'quelques articles par mois',
       );
     });
   });
 
-  group('isRareSource', () {
-    test('mensuelle = rare', () {
-      expect(
-        isRareSource(1, now.subtract(const Duration(days: 30)), now: now),
-        isTrue,
-      );
-    });
-
-    test('hebdomadaire = pas rare', () {
-      expect(
-        isRareSource(5, now.subtract(const Duration(days: 30)), now: now),
-        isFalse,
-      );
-    });
-
-    test('quotidienne = pas rare', () {
-      expect(
-        isRareSource(30, now.subtract(const Duration(days: 30)), now: now),
-        isFalse,
-      );
+  group('cadencePerWeek', () {
+    test('fenêtre pleine de 30 j par défaut', () {
+      expect(cadencePerWeek(30, month, now: now), closeTo(7, 0.001));
     });
 
     test('source fraîche non sous-estimée par le clamp', () {
-      // 3 articles en 2 jours : sans le clamp, la fenêtre de 30 j diluerait
-      // le volume et la source passerait pour rare.
+      // 3 articles en 2 jours : sans le clamp, la fenêtre de 30 j diluerait le
+      // volume et le devis de bruit promettrait le calme.
       expect(
-        isRareSource(3, now.subtract(const Duration(days: 2)), now: now),
-        isFalse,
+        cadencePerWeek(3, now.subtract(const Duration(days: 2)), now: now),
+        greaterThan(7),
       );
-    });
-
-    test('zéro article = jamais éligible', () {
-      expect(
-        isRareSource(0, now.subtract(const Duration(days: 90)), now: now),
-        isFalse,
-      );
-      expect(isRareSource(0, null, now: now), isFalse);
     });
 
     test('sans historique connu, fenêtre pleine de 30 j', () {
-      expect(isRareSource(1, null, now: now), isTrue);
-      expect(isRareSource(20, null, now: now), isFalse);
+      expect(cadencePerWeek(30, null, now: now), closeTo(7, 0.001));
     });
   });
 
-  group('rarityPhrase', () {
-    test('null si la source n\'est pas rare', () {
+  group('isNoisy', () {
+    test('seuil à 3 parutions par semaine', () {
+      expect(isNoisy(12, month, now: now), isFalse); // ~2,8 / semaine
+      expect(isNoisy(14, month, now: now), isTrue); // ~3,3 / semaine
+    });
+
+    test('source muette jamais bruyante', () {
+      expect(isNoisy(0, null, now: now), isFalse);
+    });
+  });
+
+  group('cadencePhrase', () {
+    test('adapte son unité au rythme réel', () {
+      expect(cadencePhrase(0, month, now: now), 'Publie rarement');
       expect(
-        rarityPhrase(30, now.subtract(const Duration(days: 30)), now: now),
-        isNull,
+        cadencePhrase(1, month, now: now),
+        'Publie environ une fois par mois',
+      );
+      expect(
+        cadencePhrase(4, month, now: now),
+        'Publie environ une fois par semaine',
+      );
+      expect(
+        cadencePhrase(10, month, now: now),
+        'Publie environ 2 fois par semaine',
+      );
+      expect(
+        cadencePhrase(30, month, now: now),
+        'Publie environ une fois par jour',
+      );
+      expect(
+        cadencePhrase(150, month, now: now),
+        'Publie environ 5 fois par jour',
       );
     });
 
-    test('mensuelle', () {
-      expect(
-        rarityPhrase(1, now.subtract(const Duration(days: 30)), now: now),
-        'environ une fois par mois',
-      );
+    test('bascule en « par jour » au-delà du seuil de bruit', () {
+      // Passé 3/semaine, un chiffre hebdomadaire ne se visualise plus.
+      expect(cadencePhrase(60, month, now: now), contains('par jour'));
     });
+  });
 
-    test('bimensuelle', () {
-      expect(
-        rarityPhrase(3, now.subtract(const Duration(days: 30)), now: now),
-        'environ une fois toutes les deux semaines',
-      );
-    });
-
-    test('ne promet jamais plus que ce que les chiffres soutiennent', () {
-      // Toute source éligible publie moins d'une fois par semaine : aucune
-      // phrase ne doit parler de « semaine » au singulier.
-      for (final articles in [1, 2, 3, 4]) {
-        final phrase = rarityPhrase(
-          articles,
-          now.subtract(const Duration(days: 30)),
-          now: now,
+  group('variantes « At » — cadence donnée directement', () {
+    test('même verdict que les fonctions dérivées du profil', () {
+      // Les sujets reçoivent leur cadence déjà calculée du backend : les deux
+      // chemins doivent produire exactement la même copy, sinon le devis
+      // affiché divergerait de celui qui gouverne les envois.
+      for (final articles in [0, 1, 4, 10, 30, 150]) {
+        final perWeek = cadencePerWeek(articles, month, now: now);
+        expect(cadencePhraseAt(perWeek), cadencePhrase(articles, month, now: now));
+        expect(isNoisyAt(perWeek), isNoisy(articles, month, now: now));
+        expect(
+          expectedAlertsPhraseAt(perWeek),
+          expectedAlertsPhrase(articles, month, now: now),
         );
-        if (phrase != null) {
-          expect(phrase, isNot(contains('par semaine')));
-        }
       }
+    });
+  });
+
+  group('expectedAlertsPhrase', () {
+    test('le devis honnête, dans l\'unité qui se lit', () {
+      expect(
+        expectedAlertsPhrase(12, month, now: now),
+        'Environ 3 alertes par semaine',
+      );
+      expect(
+        expectedAlertsPhrase(150, month, now: now),
+        'Environ 5 alertes par jour',
+      );
     });
   });
 }

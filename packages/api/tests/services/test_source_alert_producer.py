@@ -1,4 +1,9 @@
-"""Éligibilité « source rare » + production des candidats (story 30.2)."""
+"""Production des candidats d'alerte source (stories 30.2 puis 30.3 v2).
+
+Le gate de rareté a disparu en v2 : ce qui est testé ici est donc l'inverse de
+la 30.2 — une source bavarde **produit** des candidats — plus le nouveau mode
+filtré, où c'est le meilleur article qui part et non le plus récent.
+"""
 
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -9,17 +14,18 @@ from app.models.content import Content
 from app.models.enums import ContentType, InterestState, SourceType
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile
+from app.models.user_topic_profile import UserTopicProfile
+from app.services.essentiel_service import EssentielUserContext
 from app.services.source_alert_producer import (
+    count_active_alerts,
     find_source_alert_candidates,
-    is_rare_source,
-    rarity_phrase,
     source_alert_kind,
 )
 
 NOW = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
 
 
-def _source(name: str = "Source rare") -> Source:
+def _source(name: str = "Source") -> Source:
     return Source(
         id=uuid4(),
         name=name,
@@ -32,7 +38,9 @@ def _source(name: str = "Source rare") -> Source:
     )
 
 
-def _content(source_id, *, hours_ago: float, title: str = "Article") -> Content:
+def _content(
+    source_id, *, hours_ago: float, title: str = "Article", theme: str = "society"
+) -> Content:
     return Content(
         id=uuid4(),
         source_id=source_id,
@@ -41,7 +49,7 @@ def _content(source_id, *, hours_ago: float, title: str = "Article") -> Content:
         guid=str(uuid4()),
         published_at=NOW - timedelta(hours=hours_ago),
         content_type=ContentType.ARTICLE,
-        theme="society",
+        theme=theme,
     )
 
 
@@ -58,51 +66,13 @@ async def _seed_user(db_session) -> object:
     return user_id
 
 
-# ── is_rare_source ───────────────────────────────────────────────────
-
-
-def test_monthly_source_is_rare():
-    # 1 article sur 30 jours d'historique → ~0,23/semaine.
-    assert is_rare_source(1, NOW - timedelta(days=30), NOW) is True
-
-
-def test_weekly_source_is_not_rare():
-    # 5 articles sur 30 jours → ~1,17/semaine, au-dessus du seuil.
-    assert is_rare_source(5, NOW - timedelta(days=30), NOW) is False
-
-
-def test_daily_source_is_not_rare():
-    assert is_rare_source(30, NOW - timedelta(days=30), NOW) is False
-
-
-def test_fresh_source_is_not_underestimated_by_the_clamp():
-    """3 articles en 2 jours = quotidien, pas « rare ».
-
-    Sans le clamp sur l'âge réel, la fenêtre de 30 j diluerait le volume à
-    0,1/jour et la source passerait pour rare — la cloche sonnerait tous les
-    jours.
-    """
-    assert is_rare_source(3, NOW - timedelta(days=2), NOW) is False
-
-
-def test_source_without_history_uses_the_full_window():
-    assert is_rare_source(1, None, NOW) is True
-    assert is_rare_source(20, None, NOW) is False
-
-
-def test_silent_source_is_not_eligible():
-    """0 article = aucune preuve qu'elle publie : promesse vide."""
-    assert is_rare_source(0, NOW - timedelta(days=90), NOW) is False
-    assert is_rare_source(0, None, NOW) is False
-
-
-def test_rarity_phrase_matches_the_eligibility_thresholds():
-    assert rarity_phrase(1, NOW - timedelta(days=30), NOW) == (
-        "Ça n'arrive qu'une fois par mois."
-    )
-    # 3 articles / 30 j = 0,7 / semaine → « toutes les deux semaines ».
-    assert rarity_phrase(3, NOW - timedelta(days=30), NOW) == (
-        "Ça n'arrive qu'une fois toutes les deux semaines."
+def _bell(user_id, source_id, *, filtered: bool | None = None) -> UserSource:
+    return UserSource(
+        user_id=user_id,
+        source_id=source_id,
+        state=InterestState.FOLLOWED,
+        notify=True,
+        notify_filtered=filtered,
     )
 
 
@@ -118,11 +88,37 @@ def test_source_alert_kind_fits_the_column_and_round_trips():
     assert kind != source_alert_kind(uuid4())
 
 
+# ── plafond partagé ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cap_counts_sources_and_topics_together(db_session):
+    """5 cloches, toutes familles confondues — c'est un budget d'attention."""
+    user_id = await _seed_user(db_session)
+    source = _source()
+    db_session.add(source)
+    await db_session.flush()
+    db_session.add(_bell(user_id, source.id))
+    db_session.add(
+        UserTopicProfile(
+            user_id=user_id,
+            topic_name="Ligue 1",
+            slug_parent="sport",
+            canonical_name="Ligue 1",
+            state=InterestState.FOLLOWED,
+            notify=True,
+        )
+    )
+    await db_session.commit()
+
+    assert await count_active_alerts(db_session, user_id=user_id) == 2
+
+
 # ── find_source_alert_candidates ─────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_returns_fresh_article_of_a_rare_followed_source(db_session):
+async def test_returns_fresh_article_of_a_followed_source(db_session):
     user_id = await _seed_user(db_session)
     source = _source("Mensuel")
     db_session.add(source)
@@ -133,14 +129,7 @@ async def test_returns_fresh_article_of_a_rare_followed_source(db_session):
             _content(source.id, hours_ago=24 * 29),
         ]
     )
-    db_session.add(
-        UserSource(
-            user_id=user_id,
-            source_id=source.id,
-            state=InterestState.FOLLOWED,
-            notify=True,
-        )
-    )
+    db_session.add(_bell(user_id, source.id))
     await db_session.commit()
 
     candidates = await find_source_alert_candidates(
@@ -153,20 +142,34 @@ async def test_returns_fresh_article_of_a_rare_followed_source(db_session):
 
 
 @pytest.mark.asyncio
+async def test_noisy_source_is_no_longer_gated(db_session):
+    """Régression 30.3 : la v1 filtrait cette source, la v2 la laisse sonner.
+
+    Le bruit se règle par le mode filtré et le gouverneur, pas par un veto qui
+    se lit comme une interdiction.
+    """
+    user_id = await _seed_user(db_session)
+    source = _source("Quotidien bavard")
+    db_session.add(source)
+    await db_session.flush()
+    db_session.add_all([_content(source.id, hours_ago=h) for h in range(1, 20)])
+    db_session.add(_bell(user_id, source.id))
+    await db_session.commit()
+
+    candidates = await find_source_alert_candidates(
+        db_session, user_id=user_id, now=NOW
+    )
+    assert len(candidates) == 1
+
+
+@pytest.mark.asyncio
 async def test_ignores_articles_older_than_24h(db_session):
     user_id = await _seed_user(db_session)
     source = _source()
     db_session.add(source)
     await db_session.flush()
     db_session.add(_content(source.id, hours_ago=30))
-    db_session.add(
-        UserSource(
-            user_id=user_id,
-            source_id=source.id,
-            state=InterestState.FOLLOWED,
-            notify=True,
-        )
-    )
+    db_session.add(_bell(user_id, source.id))
     await db_session.commit()
 
     assert (
@@ -215,51 +218,18 @@ async def test_ignores_unfollowed_source(db_session):
 
 
 @pytest.mark.asyncio
-async def test_rarity_is_replayed_at_dispatch(db_session):
-    """Cloche posée quand la source était calme, source devenue bavarde."""
-    user_id = await _seed_user(db_session)
-    source = _source()
-    db_session.add(source)
-    await db_session.flush()
-    db_session.add_all([_content(source.id, hours_ago=h) for h in range(1, 40)])
-    db_session.add(
-        UserSource(
-            user_id=user_id,
-            source_id=source.id,
-            state=InterestState.FOLLOWED,
-            notify=True,
-        )
-    )
-    await db_session.commit()
-
-    assert (
-        await find_source_alert_candidates(db_session, user_id=user_id, now=NOW) == []
-    )
-
-
-@pytest.mark.asyncio
-async def test_one_candidate_per_source_keeps_the_most_recent(db_session):
+async def test_default_mode_keeps_the_most_recent_of_the_day(db_session):
     user_id = await _seed_user(db_session)
     source = _source()
     db_session.add(source)
     await db_session.flush()
     db_session.add_all(
         [
-            # Historique de 30 j : sans lui, le clamp ramènerait la fenêtre à
-            # 1 jour et 2 articles suffiraient à disqualifier la source.
-            _content(source.id, hours_ago=24 * 30, title="Archive"),
             _content(source.id, hours_ago=20, title="Le plus ancien du jour"),
             _content(source.id, hours_ago=1, title="Le plus récent"),
         ]
     )
-    db_session.add(
-        UserSource(
-            user_id=user_id,
-            source_id=source.id,
-            state=InterestState.FOLLOWED,
-            notify=True,
-        )
-    )
+    db_session.add(_bell(user_id, source.id))
     await db_session.commit()
 
     candidates = await find_source_alert_candidates(
@@ -267,3 +237,54 @@ async def test_one_candidate_per_source_keeps_the_most_recent(db_session):
     )
     assert len(candidates) == 1
     assert candidates[0].content_title == "Le plus récent"
+
+
+@pytest.mark.asyncio
+async def test_filtered_mode_keeps_the_best_scored_not_the_latest(db_session):
+    """Mode filtré : le thème apprécié bat la fraîcheur.
+
+    C'est tout l'intérêt du mode — sur une source bavarde, recevoir *le* bon
+    article plutôt que le dernier tombé.
+    """
+    user_id = await _seed_user(db_session)
+    source = _source()
+    db_session.add(source)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            _content(source.id, hours_ago=1, title="Dépêche fraîche"),
+            _content(source.id, hours_ago=10, title="Thème apprécié", theme="sport"),
+        ]
+    )
+    db_session.add(_bell(user_id, source.id, filtered=True))
+    await db_session.commit()
+
+    candidates = await find_source_alert_candidates(
+        db_session,
+        user_id=user_id,
+        now=NOW,
+        ctx=EssentielUserContext(topic_weights={"sport": 3.0}),
+    )
+    assert [c.content_title for c in candidates] == ["Thème apprécié"]
+
+
+@pytest.mark.asyncio
+async def test_filtered_mode_falls_back_to_freshness_without_signal(db_session):
+    """Contexte vide → aucun article ne se distingue : le plus récent gagne."""
+    user_id = await _seed_user(db_session)
+    source = _source()
+    db_session.add(source)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            _content(source.id, hours_ago=10, title="Ancien"),
+            _content(source.id, hours_ago=1, title="Récent"),
+        ]
+    )
+    db_session.add(_bell(user_id, source.id, filtered=True))
+    await db_session.commit()
+
+    candidates = await find_source_alert_candidates(
+        db_session, user_id=user_id, now=NOW
+    )
+    assert [c.content_title for c in candidates] == ["Récent"]

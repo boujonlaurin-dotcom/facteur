@@ -230,9 +230,12 @@ class UserSource(Base):
     # Placement Essentiel/Flâner durable (source de vérité DB, resync par device).
     # true = Essentiel, false = Flâner, NULL = jamais placé / legacy (backfill device).
     essentiel_mode: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    # Cloche « alerte source rare » (Epic 30) : true = prévenir à chaque
-    # parution. NULL = legacy / jamais posée, lu partout comme `notify IS TRUE`.
+    # Cloche « alerte » (Epic 30) : true = prévenir à la parution.
+    # NULL = legacy / jamais posée, lu partout comme `notify IS TRUE`.
     notify: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Mode filtré (alertes v2) : true = seulement la parution la mieux scorée,
+    # 1 max par jour. NULL/false = toutes les parutions.
+    notify_filtered: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Relations
     source: Mapped["Source"] = relationship(back_populates="user_sources")

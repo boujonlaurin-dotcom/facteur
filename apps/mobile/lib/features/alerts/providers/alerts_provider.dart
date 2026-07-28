@@ -12,9 +12,19 @@ final alertsRepositoryProvider = Provider<AlertsRepository>((ref) {
 });
 
 /// Cloches actives de l'utilisateur — source unique du compteur « x / 5 »
-/// affiché dans les réglages, sur la fiche source et dans l'écran dédié.
+/// affiché dans les réglages, sur la fiche source, la fiche sujet et l'écran
+/// dédié. Le plafond est partagé entre sources et sujets.
 final alertsProvider = AsyncNotifierProvider<AlertsNotifier, AlertsState>(() {
   return AlertsNotifier();
+});
+
+/// Cadence d'un sujet — pendant de `sourceProfileProvider`.
+///
+/// Chargée à l'ouverture de la fiche et pas dans la liste : elle coûte une
+/// agrégation par sujet, et la liste en affiche des dizaines.
+final topicFrequencyProvider =
+    FutureProvider.family<TopicFrequency, String>((ref, topicId) async {
+  return ref.watch(alertsRepositoryProvider).topicFrequency(topicId);
 });
 
 class AlertsNotifier extends AsyncNotifier<AlertsState> {
@@ -27,25 +37,43 @@ class AlertsNotifier extends AsyncNotifier<AlertsState> {
 
   /// Pose ou retire la cloche sur [sourceId].
   ///
-  /// Pas d'optimisme ici : le serveur est seul juge du plafond et de la
-  /// rareté, et un toggle qui s'allume puis se rétracte est pire qu'un toggle
-  /// qui met 200 ms. Les exceptions typées ([AlertCapReachedException],
-  /// [SourceNotRareException]) remontent à l'appelant, qui porte la copy.
-  Future<void> setAlert(String sourceId, bool enabled) async {
+  /// Pas d'optimisme ici : le serveur est seul juge du plafond, et un toggle
+  /// qui s'allume puis se rétracte est pire qu'un toggle qui met 200 ms.
+  /// [AlertCapReachedException] remonte à l'appelant, qui porte la copy.
+  Future<void> setAlert(
+    String sourceId,
+    bool enabled, {
+    bool filtered = false,
+  }) async {
     final repo = ref.read(alertsRepositoryProvider);
-    await repo.setAlert(sourceId, enabled);
-    // La réponse du toggle ne porte que le compteur : on relit la liste
-    // complète pour que l'écran « Mes alertes » et la section Tournée soient
-    // justes du même coup.
-    state = AsyncData(await repo.listAlerts());
+    await repo.setAlert(sourceId, enabled, filtered: filtered);
+    await _reload(repo);
+  }
+
+  /// Même geste, sur un sujet suivi.
+  Future<void> setTopicAlert(
+    String topicId,
+    bool enabled, {
+    bool filtered = false,
+  }) async {
+    final repo = ref.read(alertsRepositoryProvider);
+    await repo.setTopicAlert(topicId, enabled, filtered: filtered);
+    await _reload(repo);
   }
 
   Future<void> refresh() async {
-    state = AsyncData(await ref.read(alertsRepositoryProvider).listAlerts());
+    await _reload(ref.read(alertsRepositoryProvider));
   }
 
-  /// Vrai si une cloche est posée sur [sourceId] (état connu seulement).
-  bool isEnabled(String sourceId) {
-    return state.valueOrNull?.items.any((i) => i.sourceId == sourceId) ?? false;
+  /// La réponse du toggle ne porte que le compteur : on relit la liste complète
+  /// pour que l'écran « Mes alertes » et la section Tournée soient justes du
+  /// même coup.
+  Future<void> _reload(AlertsRepository repo) async {
+    state = AsyncData(await repo.listAlerts());
+  }
+
+  /// Cloche posée sur [targetId] (source ou sujet), état connu seulement.
+  bool isEnabled(String targetId) {
+    return state.valueOrNull?.items.any((i) => i.sourceId == targetId) ?? false;
   }
 }

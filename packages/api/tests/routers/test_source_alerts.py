@@ -1,4 +1,4 @@
-"""Toggle de cloche + écran « Mes alertes » (story 30.2)."""
+"""Toggle de cloche + écran « Mes alertes » (stories 30.2 puis 30.3 v2)."""
 
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -102,7 +102,7 @@ def _client():
 
 
 @pytest.mark.asyncio
-async def test_enable_alert_on_rare_source(alert_user, db_session):
+async def test_enable_alert_on_a_quiet_source(alert_user, db_session):
     source = await _seed_source(db_session, alert_user)
 
     async with _client() as client:
@@ -111,12 +111,18 @@ async def test_enable_alert_on_rare_source(alert_user, db_session):
         )
 
     assert response.status_code == 200
-    assert response.json() == {"enabled": True, "active_count": 1, "cap": ALERT_CAP}
+    assert response.json() == {
+        "enabled": True,
+        "filtered": False,
+        "active_count": 1,
+        "cap": ALERT_CAP,
+    }
 
     user_source = await db_session.scalar(
         select(UserSource).where(UserSource.source_id == source.id)
     )
     assert user_source.notify is True
+    assert user_source.notify_filtered is False
 
 
 @pytest.mark.asyncio
@@ -162,16 +168,48 @@ async def test_not_followed_source_returns_409(alert_user, db_session):
 
 
 @pytest.mark.asyncio
-async def test_chatty_source_returns_422(alert_user, db_session):
+async def test_chatty_source_is_accepted_in_v2(alert_user, db_session):
+    """Régression 30.3 : la v1 répondait 422 `source_not_rare`.
+
+    Interdire — et *montrer* l'interdiction — vendait une frustration ; la v2
+    accepte et laisse le mode filtré régler le bruit.
+    """
     source = await _seed_source(db_session, alert_user, articles=40, oldest_days=29)
 
     async with _client() as client:
         response = await client.put(
-            f"/api/sources/{source.id}/alert", json={"enabled": True}
+            f"/api/sources/{source.id}/alert",
+            json={"enabled": True, "filtered": True},
         )
 
-    assert response.status_code == 422
-    assert response.json()["detail"]["error"] == "source_not_rare"
+    assert response.status_code == 200
+    assert response.json()["filtered"] is True
+
+    user_source = await db_session.scalar(
+        select(UserSource).where(UserSource.source_id == source.id)
+    )
+    assert user_source.notify_filtered is True
+
+
+@pytest.mark.asyncio
+async def test_disabling_clears_the_filtered_mode(alert_user, db_session):
+    """Éteindre la cloche efface le réglage : la rallumer repart du devis."""
+    source = await _seed_source(db_session, alert_user)
+
+    async with _client() as client:
+        await client.put(
+            f"/api/sources/{source.id}/alert",
+            json={"enabled": True, "filtered": True},
+        )
+        off = await client.put(
+            f"/api/sources/{source.id}/alert", json={"enabled": False}
+        )
+
+    assert off.json()["filtered"] is False
+    user_source = await db_session.scalar(
+        select(UserSource).where(UserSource.source_id == source.id)
+    )
+    assert user_source.notify_filtered is None
 
 
 @pytest.mark.asyncio
@@ -257,6 +295,7 @@ async def test_list_alerts_reports_silence_and_fresh_content(alert_user, db_sess
     assert payload["cap"] == ALERT_CAP
     assert payload["active_count"] == 1
     item = payload["items"][0]
+    assert item["kind"] == "source"
     assert item["source_id"] == str(source.id)
     assert item["source_name"] == "Le Mensuel"
     assert item["articles_30d"] == 2

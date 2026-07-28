@@ -96,7 +96,7 @@ void showSourceDetailModal(
         // La modale se ferme avant d'appeler ce callback : on repart du
         // contexte de l'écran hôte, encore monté.
         if (!source.isTrusted && context.mounted) {
-          await maybeOfferSourceAlert(context, ref, source.id);
+          await maybeOfferAlert(context, ref, sourceId: source.id);
         }
       },
     ),

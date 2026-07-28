@@ -9,11 +9,11 @@ import '../../sources/widgets/source_logo_avatar.dart';
 import '../models/alert_item.dart';
 import '../providers/alerts_provider.dart';
 
-/// Écran « Mes alertes » — inventaire des cloches posées sur les sources rares.
+/// Écran « Mes alertes » — inventaire des cloches, sources **et** sujets.
 ///
 /// Sa raison d'être : rendre le silence lisible. Une cloche qui ne sonne pas
 /// pendant six semaines ressemble à une cloche cassée ; la carte affiche donc
-/// la dernière parution réelle de la source pour prouver que rien n'a été
+/// la dernière parution réelle de la cible pour prouver que rien n'a été
 /// manqué.
 class MyAlertsScreen extends ConsumerWidget {
   const MyAlertsScreen({super.key});
@@ -68,7 +68,7 @@ class _AlertsList extends ConsumerWidget {
           ),
           const SizedBox(height: FacteurSpacing.space2),
           Text(
-            'Une alerte se pose sur une source qui publie rarement. '
+            'Une alerte se pose sur une source ou un sujet suivi. '
             'Elle arrive en silence, dans ta tournée.',
             style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
           ),
@@ -98,9 +98,12 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
   Future<void> _disable() async {
     setState(() => _removing = true);
     try {
-      await ref
-          .read(alertsProvider.notifier)
-          .setAlert(widget.item.sourceId, false);
+      final notifier = ref.read(alertsProvider.notifier);
+      if (widget.item.isTopic) {
+        await notifier.setTopicAlert(widget.item.sourceId, false);
+      } else {
+        await notifier.setAlert(widget.item.sourceId, false);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _removing = false);
@@ -128,12 +131,29 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
         children: [
           Row(
             children: [
-              SourceLogoAvatar.fromUrl(
-                logoUrl: item.sourceLogoUrl,
-                name: item.sourceName,
-                size: 32,
-                radius: 8,
-              ),
+              // Un sujet n'a pas de logo : la cloche tient lieu d'identité
+              // visuelle, au même gabarit pour que la liste reste alignée.
+              if (item.isTopic)
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    PhosphorIcons.bell(PhosphorIconsStyle.regular),
+                    size: 18,
+                    color: colors.primary,
+                  ),
+                )
+              else
+                SourceLogoAvatar.fromUrl(
+                  logoUrl: item.sourceLogoUrl,
+                  name: item.sourceName,
+                  size: 32,
+                  radius: 8,
+                ),
               const SizedBox(width: FacteurSpacing.space3),
               Expanded(
                 child: Text(
@@ -173,6 +193,13 @@ class _AlertCardState extends ConsumerState<_AlertCard> {
             _statusLine(item),
             style: textTheme.bodySmall?.copyWith(color: colors.textSecondary),
           ),
+          if (item.filtered) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Filtré : seulement les plus marquantes, 1 max par jour.',
+              style: textTheme.bodySmall?.copyWith(color: colors.textTertiary),
+            ),
+          ],
           const SizedBox(height: FacteurSpacing.space3),
           _WhenToNotify(),
           const SizedBox(height: FacteurSpacing.space2),
@@ -301,9 +328,10 @@ class _EmptyView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '📯',
-              style: TextStyle(fontSize: 40, color: colors.textPrimary),
+            Icon(
+              PhosphorIcons.bell(PhosphorIconsStyle.regular),
+              size: 40,
+              color: colors.textTertiary,
             ),
             const SizedBox(height: FacteurSpacing.space4),
             Text(
@@ -316,9 +344,8 @@ class _EmptyView extends StatelessWidget {
             ),
             const SizedBox(height: FacteurSpacing.space2),
             Text(
-              'Certaines sources publient une fois par mois. Pose une cloche '
-              'depuis leur fiche : tu seras prévenu à la parution, sans avoir '
-              'à y penser.',
+              'Pose une alerte depuis la fiche d\'une source ou d\'un sujet '
+              'suivi : tu seras prévenu à la parution, sans avoir à y penser.',
               style: textTheme.bodySmall?.copyWith(
                 color: colors.textSecondary,
               ),

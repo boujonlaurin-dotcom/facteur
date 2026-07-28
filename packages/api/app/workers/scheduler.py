@@ -20,7 +20,10 @@ from app.jobs.recompute_source_coverage_themes import (
 from app.jobs.recompute_source_language import recompute_source_language
 from app.jobs.rescue_failed_sources_job import run_rescue_failed_sources
 from app.services.observability.cost_budget import log_budget_projection
-from app.services.push_alert_dispatcher import dispatch_source_alerts
+from app.services.push_alert_dispatcher import (
+    dispatch_source_alerts,
+    dispatch_topic_alerts,
+)
 from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.workers.rss_sync import sync_all_sources
@@ -641,13 +644,25 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
-    # Alertes « source rare » (Epic 30) — même cadence que la tournée : elles
-    # partent dans la même fenêtre, silencieusement, sous le même gouverneur.
+    # Alertes source (Epic 30) — même cadence que la tournée : elles partent
+    # dans la même fenêtre, silencieusement, sous le même gouverneur.
     scheduler.add_job(
         dispatch_source_alerts,
         trigger=IntervalTrigger(minutes=5),
         id="source_alert_push_dispatch",
         name="Source alert push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Alertes sujet (alertes v2) — passe séparée, mêmes garanties. Le gouverneur
+    # (budget partagé par utilisateur) arbitre entre les deux familles.
+    scheduler.add_job(
+        dispatch_topic_alerts,
+        trigger=IntervalTrigger(minutes=5),
+        id="topic_alert_push_dispatch",
+        name="Topic alert push dispatcher",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
@@ -684,6 +699,7 @@ def start_scheduler() -> None:
             "pool_health_probe",
             "daily_essentiel_push_dispatch",
             "source_alert_push_dispatch",
+            "topic_alert_push_dispatch",
             "classification_queue_health_check",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,

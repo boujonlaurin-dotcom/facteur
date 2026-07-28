@@ -30,45 +30,81 @@ String humanizeFrequency(
   return 'quelques articles par mois';
 }
 
-/// Une source est « rare » si elle publie moins d'une fois par semaine.
+/// Rythme de parution en articles par semaine.
 ///
-/// C'est le seul critère d'éligibilité à la cloche « alerte source » : il rend
-/// la fonctionnalité insensible au spam par construction. Miroir exact de
-/// `is_rare_source` côté serveur (`app/services/source_alert_producer.py`), qui
-/// reste l'arbitre — le client peut afficher un profil périmé.
-///
-/// `articles30d == 0` n'est **pas** éligible : sans preuve que la source
-/// publie (flux cassé, source morte), la cloche ne sonnerait jamais.
-bool isRareSource(
+/// Miroir exact de `cadence_per_week` côté serveur
+/// (`app/services/alert_cadence.py`), qui reste l'arbitre : le client peut
+/// afficher un profil périmé.
+double cadencePerWeek(
   int articles30d,
   DateTime? oldestContentAt, {
   DateTime? now,
-}) {
-  if (articles30d < 1) return false;
-  return _perDay(articles30d, oldestContentAt, now) * 7 < 1.0;
+}) =>
+    _perDay(articles30d, oldestContentAt, now) * 7;
+
+/// Au-delà de ce rythme, la cloche devient du bruit : on affiche un
+/// avertissement et on pré-coche le mode filtré.
+const double kNoisyPerWeek = 3.0;
+
+/// Vrai si la cible publie assez pour que la cloche devienne du bruit.
+bool isNoisy(int articles30d, DateTime? oldestContentAt, {DateTime? now}) =>
+    isNoisyAt(cadencePerWeek(articles30d, oldestContentAt, now: now));
+
+/// Variante prenant la cadence directement.
+///
+/// Les sujets n'ont pas d'« âge » exploitable côté client : le backend renvoie
+/// leur cadence déjà calculée (`GET /personalization/topics/{id}/frequency`),
+/// et la recalculer ici sur une fenêtre devinée ferait diverger le devis
+/// affiché de celui qui gouverne réellement les envois.
+bool isNoisyAt(double perWeek) => perWeek > kNoisyPerWeek;
+
+/// Phrase de cadence affichée sous la cloche — le devis honnête qui a remplacé
+/// le gate de rareté de la v1.
+///
+/// L'unité suit le rythme réel (mois → semaine → jour) pour que le chiffre
+/// reste lisible : « 21 fois par semaine » ne se visualise pas, « environ 3 par
+/// jour » si.
+String cadencePhrase(
+  int articles30d,
+  DateTime? oldestContentAt, {
+  DateTime? now,
+}) =>
+    cadencePhraseAt(cadencePerWeek(articles30d, oldestContentAt, now: now));
+
+/// Variante prenant la cadence directement — cf. [isNoisyAt].
+String cadencePhraseAt(double perWeek) {
+  if (perWeek <= 0) return 'Publie rarement';
+  if (perWeek < 0.5) return 'Publie environ une fois par mois';
+  if (perWeek < 1.5) return 'Publie environ une fois par semaine';
+  if (perWeek < kNoisyPerWeek) {
+    return 'Publie environ ${perWeek.round()} fois par semaine';
+  }
+  final perDay = perWeek / 7;
+  if (perDay < 1.5) return 'Publie environ une fois par jour';
+  return 'Publie environ ${perDay.round()} fois par jour';
 }
 
-/// Phrase de rareté affichée sous la cloche — dérivée des mêmes seuils.
-///
-/// Jamais une affirmation que les chiffres ne soutiennent pas : la borne
-/// d'éligibilité (< 1/semaine) garantit qu'on reste sur « deux semaines » ou
-/// « mois ». Renvoie `null` si la source n'est pas rare, pour que l'appelant
-/// ne puisse pas promettre une cadence qu'il ne tiendra pas.
-String? rarityPhrase(
+/// Devis de bruit affiché avant l'activation d'une cloche bruyante.
+String expectedAlertsPhrase(
   int articles30d,
   DateTime? oldestContentAt, {
   DateTime? now,
-}) {
-  if (!isRareSource(articles30d, oldestContentAt, now: now)) return null;
-  final perWeek = _perDay(articles30d, oldestContentAt, now) * 7;
-  if (perWeek >= 0.5) return 'environ une fois toutes les deux semaines';
-  return 'environ une fois par mois';
+}) =>
+    expectedAlertsPhraseAt(
+        cadencePerWeek(articles30d, oldestContentAt, now: now));
+
+/// Variante prenant la cadence directement — cf. [isNoisyAt].
+String expectedAlertsPhraseAt(double perWeek) {
+  if (perWeek >= 7) {
+    return 'Environ ${(perWeek / 7).round()} alertes par jour';
+  }
+  return 'Environ ${perWeek.round()} alertes par semaine';
 }
 
 /// Volume quotidien moyen sur une fenêtre de 30 j bornée par l'âge réel de la
-/// source. Base partagée de [humanizeFrequency] et [isRareSource] : les deux
-/// doivent lire la même cadence, sinon la fiche affiche « quelques articles
-/// par mois » à côté d'une cloche refusée.
+/// source. Base partagée de [humanizeFrequency] et [cadencePerWeek] : les deux
+/// doivent lire la même cadence, sinon le chip de fréquence contredirait le
+/// devis de bruit affiché juste en dessous.
 double _perDay(int articles30d, DateTime? oldestContentAt, DateTime? now) {
   var windowDays = 30;
   if (oldestContentAt != null) {

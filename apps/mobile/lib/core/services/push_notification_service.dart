@@ -36,7 +36,7 @@ class _NotifIds {
   static const veilleDelivery = 3;
 
   /// Base des alertes source rare : l'ID réel vaut `sourceAlertBase + hash`,
-  /// jamais une valeur fixe (cf. `_showSourceAlert`).
+  /// jamais une valeur fixe (cf. `_showAlert`).
   static const sourceAlertBase = 1000;
 }
 
@@ -504,10 +504,10 @@ class PushNotificationService {
       return;
     }
 
-    // Alerte « source rare » (story 30.2) : canal et ID dédiés, jamais le
-    // canal digest — elle doit arriver sans son ni vibration.
-    if (data['kind'] == 'source_alert') {
-      await _showSourceAlert(data, notification: notification);
+    // Alertes source et sujet (stories 30.2/30.3) : canal et ID dédiés, jamais
+    // le canal digest — elles doivent arriver sans son ni vibration.
+    if (data['kind'] == 'source_alert' || data['kind'] == 'topic_alert') {
+      await _showAlert(data, notification: notification);
       return;
     }
 
@@ -555,14 +555,14 @@ class PushNotificationService {
     );
   }
 
-  /// Rend une alerte « source rare » à partir du `data` du push.
+  /// Rend une alerte (source ou sujet) à partir du `data` du push.
   ///
-  /// Chemin de rendu UNIQUE, partagé par [showRemoteNotification] et
-  /// [showTestSourceAlert] : le bouton QA ne vaut que s'il emprunte exactement
-  /// le même code qu'un vrai push. Le serveur duplique title/body dans `data`
+  /// Chemin de rendu UNIQUE, partagé par [showRemoteNotification] et les
+  /// boutons QA : ceux-ci ne valent que s'ils empruntent exactement le même
+  /// code qu'un vrai push. Le serveur duplique title/body dans `data`
   /// (cf. `_send_fcm` dans push_dispatcher.py), d'où la lecture prioritaire de
   /// `data` avec repli sur le bloc `notification` FCM.
-  Future<void> _showSourceAlert(
+  Future<void> _showAlert(
     Map<String, dynamic> data, {
     RemoteNotification? notification,
   }) async {
@@ -578,7 +578,7 @@ class PushNotificationService {
       // obtenable qu'avec un ID de canal jamais utilisé.
       'alerts_channel',
       'Alertes',
-      channelDescription: 'Alertes des sources rares que tu suis.',
+      channelDescription: 'Alertes des sources et sujets que tu suis.',
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       playSound: false,
@@ -590,11 +590,14 @@ class PushNotificationService {
     const iosDetails = DarwinNotificationDetails();
 
     await _plugin.show(
-      // ID stable par source (et non par message) : deux sources différentes
+      // ID stable par cible (et non par message) : deux cibles différentes
       // cohabitent dans le tiroir, tandis qu'une seconde alerte de la MÊME
-      // source remplace la précédente au lieu de l'empiler.
+      // cible remplace la précédente au lieu de l'empiler.
       id: _NotifIds.sourceAlertBase +
-          (data['source_id'] as String? ?? '').hashCode.abs() % 1000,
+          ((data['source_id'] ?? data['topic_id']) as String? ?? '')
+                  .hashCode
+                  .abs() %
+              1000,
       title: title,
       body: body,
       notificationDetails: NotificationDetails(
@@ -611,15 +614,32 @@ class PushNotificationService {
   Future<void> showTestSourceAlert() async {
     const contentId = '00000000-0000-4000-8000-0000000000a1';
     const body = "Le pantouflage discret d'un ex-ministre";
-    await _showSourceAlert(const {
+    await _showAlert(const {
       'route': '/article/$contentId',
       'kind': 'source_alert',
       'source_id': '00000000-0000-4000-8000-0000000000b2',
       'source_name': 'Le Canard Enchaîné',
       'content_id': contentId,
       'channel': 'alerts',
-      'big_text': "$body\nÇa n'arrive qu'une fois par mois.",
-      'title': '📯 Alerte : Le Canard Enchaîné vient de publier',
+      'big_text': '$body\nPublie environ une fois par mois',
+      'title': 'Alerte : Le Canard Enchaîné vient de publier',
+      'body': body,
+    });
+  }
+
+  /// Pendant sujet du bouton QA ci-dessus — même canal, même rendu.
+  Future<void> showTestTopicAlert() async {
+    const contentId = '00000000-0000-4000-8000-0000000000a2';
+    const body = 'La finale se jouera sans son meilleur buteur';
+    await _showAlert(const {
+      'route': '/article/$contentId',
+      'kind': 'topic_alert',
+      'topic_id': '00000000-0000-4000-8000-0000000000b3',
+      'topic_name': 'Ligue 1',
+      'content_id': contentId,
+      'channel': 'alerts',
+      'big_text': '$body\nPublie environ 2 fois par semaine',
+      'title': 'Alerte : Ligue 1',
       'body': body,
     });
   }

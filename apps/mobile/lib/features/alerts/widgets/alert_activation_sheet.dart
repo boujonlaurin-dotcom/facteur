@@ -9,74 +9,103 @@ import '../../sources/utils/publication_frequency.dart';
 import '../models/alert_item.dart';
 import '../providers/alerts_provider.dart';
 
-/// Propose la cloche juste après un suivi réussi, si la source est rare.
+/// Propose la cloche juste après un suivi réussi, source **ou** sujet.
 ///
-/// C'est le moment chaud : l'utilisateur vient de choisir cette source, il
-/// sait pourquoi elle l'intéresse. Proposer la même chose trois jours plus
-/// tard dans un écran de réglages ne convertit pas.
+/// C'est le moment chaud : l'utilisateur vient de choisir cette cible, il sait
+/// pourquoi elle l'intéresse. Proposer la même chose trois jours plus tard dans
+/// un écran de réglages ne convertit pas.
+///
+/// **Règle des alertes v2** : la proposition spontanée ne se déclenche que si
+/// la cible n'est pas bruyante (≤ 3 parutions/semaine). Poser une cloche sur Le
+/// Monde reste possible, mais ça doit rester un geste délibéré depuis la fiche
+/// — pas une offre qu'on n'a pas demandée.
 ///
 /// Point d'entrée unique appelé depuis tous les chemins de suivi, pour que la
-/// logique ne se disperse pas. Silencieux (aucun effet visible) si la source
-/// n'est pas éligible, si le plafond est atteint, ou si le profil n'est pas
-/// chargeable — jamais d'erreur remontée à l'utilisateur pour une proposition
-/// qu'il n'a pas demandée.
-Future<void> maybeOfferSourceAlert(
+/// logique ne se disperse pas. Silencieux (aucun effet visible) si le plafond
+/// est atteint, si la cadence n'est pas chargeable, ou si la cible est bavarde
+/// — jamais d'erreur remontée pour une proposition non sollicitée.
+Future<void> maybeOfferAlert(
   BuildContext context,
-  WidgetRef ref,
-  String sourceId,
-) async {
-  if (sourceId.isEmpty) return;
+  WidgetRef ref, {
+  String? sourceId,
+  String? topicId,
+}) async {
+  final targetId = sourceId ?? topicId;
+  if (targetId == null || targetId.isEmpty) return;
+  final kind = topicId != null ? AlertKind.topic : AlertKind.source;
+
   try {
     final alerts = await ref.read(alertsProvider.future);
     if (alerts.isFull) return;
-    if (alerts.items.any((i) => i.sourceId == sourceId)) return;
+    if (alerts.items.any((i) => i.sourceId == targetId)) return;
 
-    final profile = await ref.read(sourceProfileProvider(sourceId).future);
-    final phrase = rarityPhrase(profile.articles30d, profile.oldestContentAt);
-    if (phrase == null) return;
+    final String name;
+    final String phrase;
+    final bool noisy;
+    if (kind == AlertKind.topic) {
+      final frequency = await ref.read(topicFrequencyProvider(targetId).future);
+      // Un sujet dont on ne sait rien (aucune parution correspondante) ne
+      // mérite pas de proposition : la cloche ne sonnerait jamais.
+      if (frequency.articles30d < 1) return;
+      name = 'Ce sujet';
+      phrase = frequency.cadencePhrase;
+      noisy = frequency.noisy;
+    } else {
+      final profile = await ref.read(sourceProfileProvider(targetId).future);
+      if (profile.articles30d < 1) return;
+      name = profile.source?.name ?? 'Cette source';
+      phrase = cadencePhrase(profile.articles30d, profile.oldestContentAt);
+      noisy = isNoisy(profile.articles30d, profile.oldestContentAt);
+    }
+    if (noisy) return;
 
     if (!context.mounted) return;
     await showAlertActivationSheet(
       context,
       ref,
-      sourceId: sourceId,
-      sourceName: profile.source?.name ?? 'Cette source',
-      rarityPhrase: phrase,
+      targetId: targetId,
+      kind: kind,
+      targetName: name,
+      cadencePhrase: phrase,
     );
   } catch (_) {
-    // Proposition best-effort : un profil indisponible ne doit pas transformer
-    // un suivi réussi en message d'erreur.
+    // Proposition best-effort : une cadence indisponible ne doit pas
+    // transformer un suivi réussi en message d'erreur.
   }
 }
 
 Future<void> showAlertActivationSheet(
   BuildContext context,
   WidgetRef ref, {
-  required String sourceId,
-  required String sourceName,
-  required String rarityPhrase,
+  required String targetId,
+  required AlertKind kind,
+  required String targetName,
+  required String cadencePhrase,
 }) {
   return showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => _AlertActivationSheet(
-      sourceId: sourceId,
-      sourceName: sourceName,
-      rarityPhrase: rarityPhrase,
+      targetId: targetId,
+      kind: kind,
+      targetName: targetName,
+      cadencePhrase: cadencePhrase,
     ),
   );
 }
 
 class _AlertActivationSheet extends ConsumerStatefulWidget {
-  final String sourceId;
-  final String sourceName;
-  final String rarityPhrase;
+  final String targetId;
+  final AlertKind kind;
+  final String targetName;
+  final String cadencePhrase;
 
   const _AlertActivationSheet({
-    required this.sourceId,
-    required this.sourceName,
-    required this.rarityPhrase,
+    required this.targetId,
+    required this.kind,
+    required this.targetName,
+    required this.cadencePhrase,
   });
 
   @override
@@ -107,13 +136,16 @@ class _AlertActivationSheetState extends ConsumerState<_AlertActivationSheet> {
     }
 
     try {
-      await ref.read(alertsProvider.notifier).setAlert(widget.sourceId, true);
+      final notifier = ref.read(alertsProvider.notifier);
+      if (widget.kind == AlertKind.topic) {
+        await notifier.setTopicAlert(widget.targetId, true);
+      } else {
+        await notifier.setAlert(widget.targetId, true);
+      }
       if (!mounted) return;
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Cloche activée sur ${widget.sourceName}.'),
-        ),
+        SnackBar(content: Text('Alerte activée sur ${widget.targetName}.')),
       );
     } on AlertCapReachedException catch (e) {
       if (!mounted) return;
@@ -129,7 +161,7 @@ class _AlertActivationSheetState extends ConsumerState<_AlertActivationSheet> {
       if (!mounted) return;
       setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossible d\'activer la cloche.')),
+        const SnackBar(content: Text('Impossible d\'activer l\'alerte.')),
       );
     }
   }
@@ -138,6 +170,7 @@ class _AlertActivationSheetState extends ConsumerState<_AlertActivationSheet> {
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
+    final isTopic = widget.kind == AlertKind.topic;
 
     return SafeArea(
       child: Container(
@@ -152,7 +185,9 @@ class _AlertActivationSheetState extends ConsumerState<_AlertActivationSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '📯 Ne rate pas sa prochaine parution',
+              isTopic
+                  ? 'Ne rate pas la prochaine actu'
+                  : 'Ne rate pas sa prochaine parution',
               style: textTheme.bodyLarge?.copyWith(
                 fontWeight: FontWeight.w700,
                 color: colors.textPrimary,
@@ -160,8 +195,7 @@ class _AlertActivationSheetState extends ConsumerState<_AlertActivationSheet> {
             ),
             const SizedBox(height: FacteurSpacing.space2),
             Text(
-              '${widget.sourceName} publie ${widget.rarityPhrase}. '
-              'Être alerté à chaque parution ?',
+              '${widget.cadencePhrase}. Être alerté à chaque parution ?',
               style: textTheme.bodyMedium?.copyWith(
                 color: colors.textSecondary,
               ),
@@ -171,15 +205,14 @@ class _AlertActivationSheetState extends ConsumerState<_AlertActivationSheet> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: _busy ? null : _activate,
-                child: const Text('Activer la cloche'),
+                child: const Text('Activer l\'alerte'),
               ),
             ),
             const SizedBox(height: FacteurSpacing.space2),
             SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed:
-                    _busy ? null : () => Navigator.of(context).maybePop(),
+                onPressed: _busy ? null : () => Navigator.of(context).maybePop(),
                 child: const Text('Plus tard'),
               ),
             ),

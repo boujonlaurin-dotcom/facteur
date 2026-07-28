@@ -34,7 +34,4 @@ class NudgeIds {
 
   // Story web.1 — Modal "Ajouter à l'écran d'accueil" sur iOS Safari.
   static const iosAddToHome = 'ios_add_to_home';
-
-  // Story 30.2 — première rencontre avec la cloche « alerte source rare ».
-  static const alertsIntro = 'alerts_intro';
 }

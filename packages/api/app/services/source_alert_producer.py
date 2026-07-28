@@ -1,14 +1,20 @@
-"""Éligibilité « source rare » et production des alertes (Epic 30, story 30.2).
+"""Production des alertes source (Epic 30, stories 30.2 puis 30.3 « alertes v2 »).
 
-Une cloche ne peut être posée que sur une source qui publie **moins d'une fois
-par semaine** : c'est ce qui rend la fonctionnalité insensible au spam par
-construction. Le test d'éligibilité est rejoué à l'activation *et* au dispatch
-(défense en profondeur : le profil affiché côté client peut être périmé).
+La v1 conditionnait la cloche à la rareté de la source. La v2 lève ce gate :
+n'importe quelle source suivie est éligible, et le bruit se règle par un
+**mode filtré** (`user_sources.notify_filtered`) plutôt que par une
+interdiction. Deux régimes de production, donc :
 
-Le calcul de fréquence est le pendant serveur de
-`apps/mobile/lib/features/sources/utils/publication_frequency.dart` : même
-fenêtre de 30 jours clampée à l'âge réel de la source, pour ne pas classer
-« rare » une source qui vient d'être ingérée.
+- **toutes les parutions** — une alerte par source et par passe, le contenu le
+  plus récent des dernières 24 h (`DISTINCT ON (source_id)`) ;
+- **filtré** — tous les contenus < 24 h de la source sont scorés avec le même
+  scoring que le blend live de l'Essentiel, et seul le meilleur part. La
+  contrainte d'unicité `(device_id, target_date, kind)` de `push_deliveries`
+  fait le reste : au plus 1 alerte par jour et par source.
+
+Le calcul de fréquence vit dans `services/alert_cadence.py`, partagé avec le
+producteur sujet et miroir de
+`apps/mobile/lib/features/sources/utils/publication_frequency.dart`.
 """
 
 from dataclasses import dataclass
@@ -17,19 +23,43 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.content import Content
 from app.models.enums import InterestState
 from app.models.source import Source, UserSource
+from app.models.user_topic_profile import UserTopicProfile
+from app.services.alert_cadence import (
+    ALERT_CAP,
+    ALERT_LOOKBACK,
+    FREQUENCY_WINDOW_DAYS,
+    NOISY_PER_WEEK,
+    cadence_per_week,
+    cadence_phrase,
+    is_noisy,
+)
+from app.services.essentiel_service import (
+    EssentielUserContext,
+    _score_live_candidate,
+    fetch_user_essentiel_context,
+)
 
-#: Une alerte ne se pose que sur une source sous ce rythme (articles / semaine).
-RARE_MAX_PER_WEEK = 1.0
-#: Fenêtre de comptage, en jours, avant clamp sur l'âge réel de la source.
-FREQUENCY_WINDOW_DAYS = 30
-#: Fenêtre de fraîcheur d'un contenu pour déclencher une alerte.
-ALERT_LOOKBACK = timedelta(hours=24)
-#: Plafond de cloches actives par utilisateur.
-ALERT_CAP = 5
+__all__ = [
+    "ALERT_CAP",
+    "ALERT_LOOKBACK",
+    "ANALYTICS_KIND",
+    "FOLLOWED_SOURCE_STATES",
+    "FREQUENCY_WINDOW_DAYS",
+    "NOISY_PER_WEEK",
+    "SourceAlertCandidate",
+    "cadence_per_week",
+    "cadence_phrase",
+    "count_active_alerts",
+    "find_source_alert_candidates",
+    "is_noisy",
+    "source_alert_kind",
+    "source_frequency_stats",
+]
 
 FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 
@@ -63,48 +93,13 @@ def source_alert_kind(source_id: UUID) -> str:
     return f"{_KIND_PREFIX}:{source_id.hex[:16]}"
 
 
-def _per_day(
-    articles_30d: int, oldest_content_at: datetime | None, now: datetime
-) -> float:
-    window_days = FREQUENCY_WINDOW_DAYS
-    if oldest_content_at is not None:
-        age_days = (now - oldest_content_at).days
-        window_days = min(max(age_days, 1), FREQUENCY_WINDOW_DAYS)
-    return articles_30d / window_days
-
-
-def is_rare_source(
-    articles_30d: int, oldest_content_at: datetime | None, now: datetime
-) -> bool:
-    """Une source est « rare » si elle publie moins d'une fois par semaine.
-
-    `articles_30d == 0` n'est **pas** éligible : sans preuve qu'elle publie
-    (source morte, flux cassé), la cloche ne sonnerait jamais — poser une
-    alerte dessus serait une promesse vide.
-    """
-    if articles_30d < 1:
-        return False
-    return _per_day(articles_30d, oldest_content_at, now) * 7 < RARE_MAX_PER_WEEK
-
-
-def rarity_phrase(
-    articles_30d: int, oldest_content_at: datetime | None, now: datetime
-) -> str:
-    """Phrase de rareté pour le bigText — dérivée des mêmes seuils.
-
-    Jamais une affirmation que les chiffres ne soutiennent pas : la borne
-    d'éligibilité (< 1/semaine) garantit qu'on reste sur « deux semaines » ou
-    « mois ».
-    """
-    per_week = _per_day(articles_30d, oldest_content_at, now) * 7
-    if per_week >= 0.5:
-        return "Ça n'arrive qu'une fois toutes les deux semaines."
-    return "Ça n'arrive qu'une fois par mois."
-
-
 async def count_active_alerts(session: AsyncSession, *, user_id: UUID) -> int:
-    """Nombre de cloches actives sur des sources toujours suivies."""
-    return (
+    """Cloches actives, **toutes familles confondues** (sources + sujets).
+
+    Le plafond de 5 est un budget d'attention, pas un quota par écran : une
+    cloche sur un sujet coûte autant qu'une cloche sur une source.
+    """
+    sources = (
         await session.execute(
             select(func.count())
             .select_from(UserSource)
@@ -115,12 +110,24 @@ async def count_active_alerts(session: AsyncSession, *, user_id: UUID) -> int:
             )
         )
     ).scalar_one()
+    topics = (
+        await session.execute(
+            select(func.count())
+            .select_from(UserTopicProfile)
+            .where(
+                UserTopicProfile.user_id == user_id,
+                UserTopicProfile.notify.is_(True),
+                UserTopicProfile.state.in_(FOLLOWED_SOURCE_STATES),
+            )
+        )
+    ).scalar_one()
+    return sources + topics
 
 
 async def source_frequency_stats(
     session: AsyncSession, *, source_id: UUID, now: datetime
 ) -> tuple[int, datetime | None]:
-    """`(articles_30d, oldest_content_at)` — les deux entrées de `is_rare_source`.
+    """`(articles_30d, oldest_content_at)` — les deux entrées de la cadence.
 
     Un seul aller-retour : le compte 30 j est un `COUNT(*) FILTER` sur la fenêtre,
     la plus ancienne parution un `MIN` sur tout l'historique de la source.
@@ -138,23 +145,26 @@ async def source_frequency_stats(
 
 
 async def find_source_alert_candidates(
-    session: AsyncSession, *, user_id: UUID, now: datetime
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    now: datetime,
+    ctx: EssentielUserContext | None = None,
 ) -> list[SourceAlertCandidate]:
     """Contenus frais (< 24 h) des sources sous cloche, une alerte par source.
 
-    `DISTINCT ON (source_id)` : si une source rare publie deux articles dans la
-    même journée, on n'annonce que le plus récent — une info, une notif.
+    En mode « toutes les parutions », c'est l'article le plus récent ; en mode
+    filtré, le mieux scoré pour cet utilisateur. Dans les deux cas une seule
+    alerte par source et par passe — une info, une notif.
+
+    `ctx` (contexte de scoring Essentiel) n'est chargé que si au moins une
+    source est en mode filtré : le régime par défaut n'en a pas besoin.
     """
     since = now - ALERT_LOOKBACK
     rows = (
         await session.execute(
-            select(
-                Content.id,
-                Content.title,
-                Content.published_at,
-                Source.id.label("source_id"),
-                Source.name.label("source_name"),
-            )
+            select(Content, UserSource.notify_filtered)
+            .options(selectinload(Content.source))
             .join(Source, Source.id == Content.source_id)
             .join(UserSource, UserSource.source_id == Content.source_id)
             .where(
@@ -164,27 +174,44 @@ async def find_source_alert_candidates(
                 Content.published_at >= since,
                 Content.published_at <= now,
             )
-            .distinct(Source.id)
             .order_by(Source.id, Content.published_at.desc())
         )
     ).all()
+    if not rows:
+        return []
+
+    # Regroupement par source, en mémoire : les contenus frais d'un utilisateur
+    # sous cloche se comptent en dizaines, et le mode filtré a besoin de tout
+    # le lot pour choisir.
+    by_source: dict[UUID, tuple[bool, list[Content]]] = {}
+    for content, notify_filtered in rows:
+        entry = by_source.setdefault(content.source_id, (notify_filtered is True, []))
+        entry[1].append(content)
+
+    if ctx is None and any(filtered for filtered, _ in by_source.values()):
+        ctx = await fetch_user_essentiel_context(session, user_id)
 
     candidates: list[SourceAlertCandidate] = []
-    for row in rows:
-        # Rareté rejouée ici : la cloche a pu être posée quand la source était
-        # calme, et la source s'être mise à publier tous les jours depuis.
+    for source_id, (filtered, contents) in by_source.items():
+        if filtered:
+            scoring_ctx = ctx or EssentielUserContext()
+            best = max(
+                contents,
+                key=lambda c: (_score_live_candidate(c, scoring_ctx), c.published_at),
+            )
+        else:
+            best = max(contents, key=lambda c: c.published_at)
+
         articles_30d, oldest_content_at = await source_frequency_stats(
-            session, source_id=row.source_id, now=now
+            session, source_id=source_id, now=now
         )
-        if not is_rare_source(articles_30d, oldest_content_at, now):
-            continue
         candidates.append(
             SourceAlertCandidate(
-                source_id=row.source_id,
-                source_name=row.source_name,
-                content_id=row.id,
-                content_title=row.title,
-                published_at=row.published_at,
+                source_id=source_id,
+                source_name=best.source.name,
+                content_id=best.id,
+                content_title=best.title,
+                published_at=best.published_at,
                 articles_30d=articles_30d,
                 oldest_content_at=oldest_content_at,
             )
