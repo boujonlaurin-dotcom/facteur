@@ -10,6 +10,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../features/auth/utils/auth_error_messages.dart';
 import '../services/posthog_service.dart';
 import '../services/server_push_service.dart';
+import '../services/widget_background_refresh.dart';
 import '../services/widget_service.dart';
 import 'session_refresher.dart';
 
@@ -421,6 +422,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     // Wipe the home-screen widget so the next account on the same device
     // never briefly sees the previous user's digest.
     await WidgetService.clear();
+    // Le job de fond doit mourir avec la session : sinon il continue de
+    // réécrire le widget avec le flux du compte précédent.
+    await WidgetBackgroundRefresh.cancel();
 
     // Reset onboarding navigation state — otherwise a fresh signup on the
     // same device inherits saved section/question and skips Section 1.
