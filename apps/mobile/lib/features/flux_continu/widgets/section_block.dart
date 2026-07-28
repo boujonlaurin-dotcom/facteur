@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../config/theme.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
+import 'alerts_section_card.dart';
 import 'essentiel_hi_fi_card.dart';
 import 'etoffer_theme_footer.dart';
 import 'flux_continu_article_card.dart';
@@ -116,6 +117,17 @@ class SectionBlock extends StatelessWidget {
         ),
       );
     }
+    // Le rappel d'alertes porte son propre titre et ses propres lignes : pas de
+    // banner ni de cartes d'article, donc pas de shell de section non plus.
+    if (section is AlertsSection) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AlertsSectionCard(section: section),
+          const SizedBox(height: 16),
+        ],
+      );
+    }
     final cards = _buildCards();
     // Section source sans article récent (≤72h) mais avec des cartes plus
     // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
@@ -206,6 +218,9 @@ class SectionBlock extends StatelessWidget {
       case EssentielSection():
         // build() short-circuits to EssentielHiFiCard before reaching
         // _buildCards, so this branch is unreachable in practice.
+        return const [];
+      case AlertsSection():
+        // Idem : build() court-circuite sur AlertsSectionCard.
         return const [];
       case DigestTopicSection(:final topics, :final coreVisibleCount):
         final visible = topics.take(coreVisibleCount).toList();

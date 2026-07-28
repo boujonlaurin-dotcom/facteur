@@ -225,7 +225,13 @@ class NotificationsSettingsNotifier
   Future<void> _reschedule() async {
     final push = PushNotificationService();
     await push.cancelDigestNotification();
-    await push.cancelWeeklyCommunityPick();
+    // Purge one-shot de la pépite communauté hebdo, retirée du produit :
+    // inconditionnelle, car les installs qui l'ont déjà armée doivent la voir
+    // annulée même push OFF. `_reschedule` tourne à chaque `_commit` ET à
+    // chaque `syncDigestTeasers` (donc à chaque fetch Flux Continu) : le
+    // nettoyage se fait tout seul. Supprimable dans une release ultérieure,
+    // une fois le parc tourné.
+    await push.cancelLegacyCommunityPick();
     await push.cancelGoodNewsNotification();
     final box = await _box();
     final goodNewsTeasers = readTeasers(box, kGoodNewsTeasers);
@@ -233,16 +239,11 @@ class NotificationsSettingsNotifier
       ServerPushService.serverRegisteredKey,
       defaultValue: false,
     ) as bool;
-    if (state.pushEnabled) {
-      if (!serverRegistered) {
-        await ServerPushService.scheduleDigestFallback(
-          box: box,
-          timeSlot: state.timeSlot,
-        );
-      }
-      if (state.preset == NotifPreset.curieux) {
-        await push.scheduleWeeklyCommunityPick();
-      }
+    if (state.pushEnabled && !serverRegistered) {
+      await ServerPushService.scheduleDigestFallback(
+        box: box,
+        timeSlot: state.timeSlot,
+      );
     }
     if (state.goodNewsEnabled) {
       await push.scheduleDailyGoodNewsNotification(
@@ -306,22 +307,20 @@ class NotificationsSettingsNotifier
     await _commit(state.copyWith(pushEnabled: value));
   }
 
-  Future<void> setPreset(NotifPreset preset) =>
-      _commit(state.copyWith(preset: preset));
-
   Future<void> setTimeSlot(NotifTimeSlot slot) =>
       _commit(state.copyWith(timeSlot: slot));
 
-  /// Confirme la modal d'activation (préset + heure choisis, OS prompt déjà fait).
+  /// Confirme la modal d'activation (heure choisie, OS prompt déjà fait).
+  ///
+  /// `preset` n'est plus piloté par l'UI (le réglage Rythme a laissé la place
+  /// aux Alertes) mais reste persisté et synchronisé tel quel.
   Future<void> confirmActivation({
-    required NotifPreset preset,
     required NotifTimeSlot timeSlot,
     required bool osGranted,
   }) async {
     final now = DateTime.now().toUtc();
     await _commit(state.copyWith(
       pushEnabled: osGranted,
-      preset: preset,
       timeSlot: timeSlot,
       modalSeen: true,
       refusalCount: osGranted ? state.refusalCount : state.refusalCount + 1,

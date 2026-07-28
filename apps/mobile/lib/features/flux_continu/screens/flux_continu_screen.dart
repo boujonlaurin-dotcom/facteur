@@ -1170,6 +1170,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           for (final a in articles) {
             if (a.contentId == contentId) return a;
           }
+        case AlertsSection():
+          // Le rappel d'alertes ne porte que des sources, jamais d'article.
+          break;
         case DigestTopicSection(:final topics):
           for (final t in topics) {
             final lead = pickTopicLead(t);
@@ -1651,6 +1654,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final firstSwipeableSectionIndex = state.sections.indexWhere(
       (section) => switch (section) {
         EssentielSection() => false,
+        AlertsSection() => false,
         DigestTopicSection(:final topics) => topics.any(
             (topic) =>
                 !_pendingFeedback.contains(pickTopicLead(topic).contentId),
@@ -1673,13 +1677,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         ref.watch(personalisationCtaShouldShowProvider).valueOrNull ?? false;
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
-    // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de contenu après le
-    // hero. On l'embarque DANS le `KeyedSubtree` de cette section pour que son
-    // ancre de snap inclue l'inline — il n'est plus orphelin « entre deux
-    // snaps ». -1 = pas de cible (aucune section après le hero).
-    final inlineTargetIndex = heroPresent
-        ? (state.sections.length > 1 ? 1 : -1)
-        : (state.sections.isNotEmpty ? 0 : -1);
+    // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de **contenu** —
+    // ni le hero ni le rappel d'alertes n'en sont. On l'embarque DANS le
+    // `KeyedSubtree` de cette section pour que son ancre de snap inclue l'inline
+    // — il n'est plus orphelin « entre deux snaps ». -1 = pas de cible.
+    final inlineTargetIndex = state.sections.indexWhere(
+      (s) => s is! EssentielSection && s is! AlertsSection,
+    );
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
@@ -2144,6 +2148,9 @@ class _FluxContinuSkeleton extends StatelessWidget {
       for (final section in sections) {
         // Le hero est déjà rendu au-dessus.
         if (section is EssentielSection) continue;
+        // Le rappel d'alertes n'a rien à pré-réserver : il n'existe que si des
+        // cloches ont du neuf, ce que le squelette ne sait pas encore.
+        if (section is AlertsSection) continue;
         final isSource =
             section is FeedThemeSection && section.kind == SectionKind.source;
         children.add(

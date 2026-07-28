@@ -97,6 +97,7 @@ class SettingsSheet extends ConsumerWidget {
                     children: [
                       _ProfileBlock(),
                       SizedBox(height: FacteurSpacing.space4),
+                      _NotificationsTile(),
                       _SoutienTile(),
                       SizedBox(height: FacteurSpacing.space4),
                       _UpdateAvailableTile(),
@@ -225,6 +226,59 @@ String _frMonthYear(DateTime date) {
 /// Entrée Soutien « Fact·eur·isse » : porte 1 du système de monétisation.
 /// Free → invite à rejoindre (écran Soutien) ; premium → remerciement +
 /// gestion de l'abonnement.
+/// Raccourci direct vers les réglages de notifications.
+///
+/// Le test PO l'a remontée comme introuvable : la page existait, mais enterrée
+/// à trois niveaux (avatar → Réglages → Mon profil → COMPTE → Notifications),
+/// et la refonte de la 30.2 en avait retiré le repère visuel habituel. La tuile
+/// du `ProfileScreen` reste en place — c'est un raccourci, pas un déplacement.
+class _NotificationsTile extends StatelessWidget {
+  const _NotificationsTile();
+
+  @override
+  Widget build(BuildContext context) {
+    // Pas de push sur le web : la tuile mènerait à un écran sans effet.
+    if (kIsWeb) return const SizedBox.shrink();
+
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
+      child: _SheetCard(
+        onTap: () => context.pushNamed(RouteNames.notifications),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space4,
+            vertical: FacteurSpacing.space4,
+          ),
+          child: Row(
+            children: [
+              Icon(
+                PhosphorIcons.bell(PhosphorIconsStyle.regular),
+                color: colors.textSecondary,
+                size: 20,
+              ),
+              const SizedBox(width: FacteurSpacing.space3),
+              Expanded(
+                child: Text(
+                  'Notifications et alertes',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              Icon(
+                PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+                color: colors.textTertiary,
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SoutienTile extends ConsumerWidget {
   const _SoutienTile();
 
