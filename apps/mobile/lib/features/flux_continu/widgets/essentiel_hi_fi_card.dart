@@ -38,7 +38,7 @@ class EssentielHiFiCard extends ConsumerWidget {
   final void Function(EssentielArticle article) onTapArticle;
 
   /// Nb d'articles frais publiés depuis ce matin (`new_since_this_morning`).
-  /// `> 0` ⇒ pastille « N nouveaux depuis ce matin » près du titre du héros,
+  /// `> 0` ⇒ pastille « N nouveaux articles » près du titre du héros,
   /// masquée à `0`. Alimente « L'Essentiel vivant » (surface dynamique).
   final int newSinceMorning;
 
@@ -186,7 +186,7 @@ class _Header extends StatelessWidget {
   final Widget? rewind;
 
   /// Nb d'articles frais depuis ce matin (borné backend). `> 0` ⇒ pastille
-  /// « N nouveaux depuis ce matin » au-dessus du sous-titre, masquée à `0`.
+  /// « N nouveaux articles » au-dessus du sous-titre, masquée à `0`.
   final int newSinceMorning;
 
   const _Header({
@@ -270,7 +270,7 @@ class _HeaderAccentDash extends StatelessWidget {
   }
 }
 
-/// Pastille « N nouveaux depuis ce matin » (« L'Essentiel vivant »). Rendue
+/// Pastille « N nouveaux articles » (« L'Essentiel vivant »). Rendue
 /// près du titre du héros quand du contenu frais est arrivé depuis le digest
 /// du matin ; masquée à `0`. Réutilise le traitement arrondi/accent du
 /// [_HeaderAccentDash] et les chiffres `courierPrime` des tampons de date.
@@ -284,7 +284,8 @@ class _NewSinceMorningPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final numberLabel = count >= 9 ? '9+' : '$count';
-    final noun = count == 1 ? 'nouveau' : 'nouveaux';
+    final articlesLabel = count == 1 ? 'article' : 'articles';
+    final adjective = count == 1 ? 'nouvel' : 'nouveaux';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -306,7 +307,7 @@ class _NewSinceMorningPill extends StatelessWidget {
           ),
           const SizedBox(width: 5),
           Text(
-            '$noun depuis ce matin',
+            '$adjective $articlesLabel',
             style: FacteurTypography.bodySmall(accent).copyWith(
               fontSize: 11,
               fontWeight: FontWeight.w600,
