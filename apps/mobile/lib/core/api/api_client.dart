@@ -43,6 +43,22 @@ class ApiClient {
   /// (`HTTPException(status_code=403, detail="Email not confirmed")`).
   static const String _emailNotConfirmedDetail = 'Email not confirmed';
 
+  /// Marqueur posé sur les requêtes parties **sans** header `Authorization`.
+  /// Un 401 sur une telle requête ne prouve rien sur la validité de la session
+  /// et ne doit jamais déclencher `handleSessionExpired` (cf. C3 de
+  /// `docs/bugs/bug-widget-fiabilite.md`).
+  static const String _anonymousRequestFlag = 'facteur_anonymous_request';
+
+  /// Budget d'attente d'une session au moment d'émettre une requête.
+  ///
+  /// Les 100 ms d'origine étaient calibrées pour une race Riverpod ; elles ne
+  /// couvrent pas un cold boot (restauration Hive + `recoverSession` Supabase),
+  /// où l'app partait en anonyme, prenait un 401 et se déloguait. Même esprit
+  /// que `resolveMorningRitualMaxWait` : on laisse le temps au démarrage à
+  /// froid, sans jamais bloquer une requête qui a déjà sa session.
+  static const Duration _sessionWaitBudget = Duration(seconds: 2);
+  static const Duration _sessionPollInterval = Duration(milliseconds: 100);
+
   late final Dio _dio;
   final SupabaseClient _supabase;
   final void Function(int code)? onAuthError;
@@ -85,14 +101,7 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          // Try to get session, with a short wait if not immediately available
-          var session = _supabase.auth.currentSession;
-
-          // If no session, wait a bit and try again (race condition fix for Android release)
-          if (session == null) {
-            await Future<void>.delayed(const Duration(milliseconds: 100));
-            session = _supabase.auth.currentSession;
-          }
+          final session = await _awaitSession();
 
           if (session != null) {
             // ignore: avoid_print
@@ -100,9 +109,13 @@ class ApiClient {
                 'ApiClient: Attaching token ${session.accessToken.substring(0, 10)}...');
             options.headers['Authorization'] = 'Bearer ${session.accessToken}';
           } else {
+            // Requête émise quand même : certains endpoints sont publics. Mais
+            // on la marque pour que son éventuel 401 ne puisse pas être lu
+            // comme une session expirée.
+            options.extra[_anonymousRequestFlag] = true;
             // ignore: avoid_print
             print(
-                'ApiClient: [WARNING] No session found, request will be anonymous.');
+                'ApiClient: [WARNING] No session after ${_sessionWaitBudget.inMilliseconds}ms, request will be anonymous.');
           }
           return handler.next(options);
         },
@@ -110,6 +123,18 @@ class ApiClient {
           final statusCode = error.response?.statusCode;
 
           if (statusCode == 401) {
+            // La requête est partie sans header : le 401 est attendu et ne dit
+            // rien de la session. La traiter comme une expiration déconnectait
+            // l'utilisateur au cold boot (C3). On laisse le 401 remonter au
+            // caller, sans refresh ni `onAuthError`.
+            if (error.requestOptions.extra[_anonymousRequestFlag] == true) {
+              // ignore: avoid_print
+              print(
+                  'ApiClient: 401 on an anonymous request (${error.requestOptions.path}) — no session to expire, not signing out.');
+              _logError(error);
+              return handler.next(error);
+            }
+
             // Single-flight refresh via SessionRefresher : si plusieurs
             // requêtes parallèles reçoivent 401 (typique au resume après
             // background), un seul refresh est envoyé au SDK Supabase. Évite
@@ -117,8 +142,11 @@ class ApiClient {
             // (cf. docs/bugs/bug-android-disconnect-race.md).
             Session? refreshedSession;
             try {
-              refreshedSession = await SessionRefresher.instance
-                  .refresh(timeout: const Duration(seconds: 5));
+              // Pas de `timeout:` explicite : `SessionRefresher` calcule un
+              // budget adaptatif (8 s au premier plan, 20 s au cold boot /
+              // réveil). Les 5 s fixes d'avant expiraient systématiquement au
+              // réveil par tap widget, ce qui armait le logout ci-dessous.
+              refreshedSession = await SessionRefresher.instance.refresh();
             } catch (_) {
               // Refresh failed — recheck currentSession avant de logout :
               // un autre acteur (SDK auto-refresh) a peut-être obtenu une
@@ -239,6 +267,24 @@ class ApiClient {
     _dio.interceptors.add(UserErrorInterceptor());
   }
 
+  /// Attend une session Supabase jusqu'à [_sessionWaitBudget], en sortant dès
+  /// qu'elle est disponible. Retourne `null` si le budget est épuisé.
+  ///
+  /// Coût nul sur le chemin nominal (session déjà là → retour immédiat) ; le
+  /// budget ne s'applique qu'au cold boot, où la session est en cours de
+  /// restauration depuis Hive.
+  Future<Session?> _awaitSession() async {
+    var session = _supabase.auth.currentSession;
+    if (session != null) return session;
+
+    final deadline = DateTime.now().add(_sessionWaitBudget);
+    while (session == null && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(_sessionPollInterval);
+      session = _supabase.auth.currentSession;
+    }
+    return session;
+  }
+
   /// Extrait le champ `detail` d'une réponse d'erreur FastAPI (si dispo).
   String? _extractErrorDetail(dynamic data) {
     if (data is Map && data['detail'] is String) {
@@ -266,6 +312,11 @@ class ApiClient {
 
   /// Accès au client Dio
   Dio get dio => _dio;
+
+  /// `true` quand une session Supabase est disponible à l'instant T. Permet
+  /// aux caches applicatifs de ne pas mémoriser une réponse obtenue en
+  /// anonyme (cf. `FeedRepository._defaultViewLastResult`).
+  bool get hasSession => _supabase.auth.currentSession != null;
 
   /// Helper GET
   Future<dynamic> get(
