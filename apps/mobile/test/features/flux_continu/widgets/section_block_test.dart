@@ -457,8 +457,9 @@ void main() {
         ),
       ));
 
-      expect(find.text('Tout lire'), findsOneWidget);
-      await tester.tap(find.text('Tout lire'));
+      // Le CTA porte le volume promis, borné [3, 9] : 5 sujets ⇒ « (5+) ».
+      expect(find.text('Tout lire (5+)'), findsOneWidget);
+      await tester.tap(find.text('Tout lire (5+)'));
       await tester.pumpAndSettle();
       expect(opened, isTrue);
     });
@@ -472,7 +473,30 @@ void main() {
         ),
       ));
 
-      expect(find.text('Tout lire'), findsOneWidget);
+      expect(find.text('Tout lire (3+)'), findsOneWidget);
+    });
+
+    testWidgets('le compte annoncé est borné [3, 9] (snapshot client only)',
+        (tester) async {
+      // Plancher : 1 article ⇒ « (3+) » (on ne promet jamais moins de 3).
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 1),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+      expect(find.text('Tout lire (3+)'), findsOneWidget);
+
+      // Plafond : 20 articles ⇒ « (9+) », le « + » assume la pagination.
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 20),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+      expect(find.text('Tout lire (9+)'), findsOneWidget);
     });
 
     testWidgets('section source vide (empty-state) : pas de « Tout lire › » '
@@ -485,7 +509,7 @@ void main() {
         ),
       ));
 
-      expect(find.text('Tout lire'), findsNothing);
+      expect(find.textContaining('Tout lire'), findsNothing);
       expect(find.text('Voir toute la curation'), findsOneWidget);
     });
 
@@ -529,8 +553,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Ajouter plus de sources'), findsNothing);
-      expect(find.text('Tout lire'), findsOneWidget);
-      await tester.tap(find.text('Tout lire'));
+      // 7 articles ⇒ « (7+) » (sous la borne haute 9).
+      expect(find.text('Tout lire (7+)'), findsOneWidget);
+      await tester.tap(find.text('Tout lire (7+)'));
       await tester.pumpAndSettle();
       expect(opened, isTrue);
     });

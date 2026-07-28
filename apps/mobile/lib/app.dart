@@ -203,7 +203,16 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
   /// réseau (retour de premier plan après un long passage en arrière-plan).
   void _ensureWidgetFresh({bool stale = false}) {
     if (!ref.read(authStateProvider).isAuthenticated) return;
-    unawaited(ref.read(feedProvider.notifier).ensureWidgetFresh(stale: stale));
+    // Ceinture + bretelles : `ensureWidgetFresh` avale déjà ses erreurs, mais
+    // ce `unawaited` est justement le point où une future rejetée devenait un
+    // crash fatal sans handler (Sentry FLUTTER-1E).
+    unawaited(
+      ref.read(feedProvider.notifier).ensureWidgetFresh(stale: stale).catchError(
+        (Object e) {
+          debugPrint('FacteurApp: ensureWidgetFresh failed (ignored): $e');
+        },
+      ),
+    );
   }
 
   Future<void> _flushFluxScrollMetricIfAny() async {
@@ -249,6 +258,9 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
 
     // Bind the DeepLinkService once the router is built. Idempotent.
     final analytics = ref.read(analyticsServiceProvider);
+    // Capturé ici (et pas dans la closure) pour pouvoir tester l'existence
+    // d'un provider sans le construire — cf. `onRefreshRequested`.
+    final container = ProviderScope.containerOf(context, listen: false);
     DeepLinkService.instance.bind(
       router: router,
       analytics: analytics,
@@ -259,7 +271,15 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       // le bouton « sans effet ». On force donc un re-push complet des deux
       // caches. Fire-and-forget : le handler de deep link est synchrone.
       onRefreshRequested: () {
-        unawaited(ref.read(digestProvider.notifier).syncWidgetFromRefresh());
+        // `ref.read(digestProvider.notifier)` **construit** le provider s'il
+        // ne l'est pas encore, et son `build()` part sur `_loadBothDigests()`
+        // (45 s × 5 retries). Un tap sur le bouton widget ne doit jamais
+        // amorcer cette chaîne : on ne touche à l'Essentiel que s'il est déjà
+        // vivant, et `syncWidgetFromRefresh` se contente alors de re-sérialiser
+        // la mémoire. Cf. docs/bugs/bug-widget-fiabilite.md (C4).
+        if (container.exists(digestProvider)) {
+          unawaited(ref.read(digestProvider.notifier).syncWidgetFromRefresh());
+        }
         unawaited(ref.read(feedProvider.notifier).refreshForWidget());
       },
     );

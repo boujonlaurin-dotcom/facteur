@@ -38,6 +38,7 @@ import '../widgets/feed_filter_bar.dart';
 import '../widgets/feedback_inline.dart';
 import '../widgets/follow_keyword_suggestion_card.dart';
 import '../widgets/pin_subjects_sheet.dart';
+import '../widgets/widget_cta_banner.dart';
 
 const double _kLoadMoreLeadingPx = 800.0;
 
@@ -410,6 +411,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
           // (« Résultats pour « … » ») le temps de se repérer, puis s'efface.
           const SliverToBoxAdapter(child: _SearchNavBanner()),
           const SliverToBoxAdapter(child: PinSubjectsBanner()),
+          const SliverToBoxAdapter(child: WidgetCtaBanner()),
           // Recherche bredouille → l'état vide porte déjà « suivre ce sujet »
           // parmi ses rattrapages ; on n'empile pas deux invitations à suivre.
           if (hasKeyword && state.items.isNotEmpty)

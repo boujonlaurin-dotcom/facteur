@@ -47,6 +47,11 @@ class GrilleConstants {
   /// Côté d'une tuile sur l'écran de jeu. (`.mot-grid { --tile: 50px }`)
   static const double tileSize = 50;
 
+  /// Plancher de taille de tuile quand [tileSize] est réduit pour tenir dans
+  /// la hauteur disponible (cf. `grille_fit.dart`) — sous cette valeur les
+  /// lettres deviennent illisibles.
+  static const double tileSizeFitFloor = 34;
+
   /// Côté d'une tuile sur l'écran résultat. (`.mot-grid.v-resultat { --tile: 44px }`)
   static const double tileSizeResult = 44;
 

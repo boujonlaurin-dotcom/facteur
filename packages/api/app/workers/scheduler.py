@@ -301,6 +301,12 @@ async def _pool_health_probe() -> None:
       (early warning sans bruit sur les pics transitoires du rituel matinal).
     - **page** (`pool_page_threshold_pct`, défaut 90 %) : alerte Sentry
       `level=fatal` immédiate, dès la première sonde (saturation imminente).
+
+    Les seuils portent sur la **capacité** du pool (`pool_size + max_overflow`
+    = 20 en prod), soit 14 et 18 connexions sorties. Avant le correctif
+    PYTHON-63 le dénominateur suivait les connexions vivantes, ce qui faisait
+    pager dès 9 connexions sur 20 (cf.
+    docs/bugs/bug-pool-pressure-metric-false-positive.md).
     """
     global _pool_warn_streak
     import sentry_sdk
@@ -330,6 +336,17 @@ async def _pool_health_probe() -> None:
         # (page >= warn par construction), puis on choisit la sévérité.
         _pool_warn_streak += 1
 
+        def alert(message: str, level: str, **extra: object) -> None:
+            """Alerte Sentry avec les compteurs en contexte.
+
+            Le message ne doit porter AUCUN chiffre variable : Sentry groupe
+            les `capture_message` par texte, donc y interpoler `usage_pct`
+            créerait une issue par valeur mesurée.
+            """
+            with sentry_sdk.push_scope() as scope:
+                scope.set_context("db_pool", {**stats, **extra})
+                sentry_sdk.capture_message(message, level=level)
+
         if usage_pct >= page_threshold:
             logger.error(
                 "db_pool_pressure_critical",
@@ -338,9 +355,9 @@ async def _pool_health_probe() -> None:
                 threshold=page_threshold,
                 **stats,
             )
-            sentry_sdk.capture_message(
-                f"DB pool pressure CRITICAL: {usage_pct}% (>= {page_threshold}%)",
-                level="fatal",
+            alert(
+                f"DB pool pressure CRITICAL (>= {page_threshold}% of capacity)",
+                "fatal",
             )
         elif _pool_warn_streak >= settings.pool_warn_sustained_probes:
             logger.warning(
@@ -351,10 +368,10 @@ async def _pool_health_probe() -> None:
                 sustained_probes=_pool_warn_streak,
                 **stats,
             )
-            sentry_sdk.capture_message(
-                f"DB pool pressure sustained: {usage_pct}% (>= "
-                f"{warn_threshold}% for {_pool_warn_streak} consecutive probes)",
-                level="warning",
+            alert(
+                f"DB pool pressure sustained (>= {warn_threshold}% of capacity)",
+                "warning",
+                sustained_probes=_pool_warn_streak,
             )
         else:
             # Seuil franchi mais pas encore soutenu : on garde la trace en

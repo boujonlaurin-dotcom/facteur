@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../config/theme.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'alerts_section_card.dart';
@@ -128,10 +129,6 @@ class SectionBlock extends StatelessWidget {
       );
     }
     final cards = _buildCards();
-    final hiddenCount = (section.totalCount - section.coreVisibleCount).clamp(
-      0,
-      999,
-    );
     // Section source sans article récent (≤72h) mais avec des cartes plus
     // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
     // la blurb du banner. L'empty-state (aucun article même vieux) reste géré
@@ -164,7 +161,6 @@ class SectionBlock extends StatelessWidget {
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
           onTap: onSeeAll,
-          hiddenCount: hiddenCount,
           // Story 22.3 — badge « Choisie pour vous » sur les sections suggérées.
           suggested: isSuggested,
           onTapInfo: onTapSuggestionInfo,
@@ -463,10 +459,18 @@ class SectionBlock extends StatelessWidget {
     // (padded par défaut) → c'est cette hauteur fantôme, pas la marge, qui
     // éloignait « Tout lire › » de sa section. On la collapse au contenu réel.
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+    // Typo du DS (DM Sans via `labelMedium`) : le `TextStyle` brut précédent
+    // n'avait pas de `fontFamily` → rendu dans la police système, hors DS. La
+    // couleur reste portée par `foregroundColor` (texte + chevron).
+    textStyle: FacteurTypography.labelMedium(const Color(0xFF5D5B5A)),
   );
 
   Widget _seeAllFooter() {
+    // Volume promis par la page dédiée, borné [3, 9] : le compte vient du
+    // snapshot client (`totalCount`, déjà en mémoire), jamais d'une requête —
+    // ce CTA ne doit rien coûter au chargement. Le « + » assume la borne haute
+    // (la page dédiée pagine au-delà).
+    final count = section.totalCount.clamp(3, 9);
     return Container(
       // Marges resserrées : le CTA colle au bas de la dernière carte (qui porte
       // déjà 12px de padding bas). `kSeeAllFooterHeight` reflète la hauteur
@@ -476,12 +480,12 @@ class SectionBlock extends StatelessWidget {
       child: TextButton(
         onPressed: onSeeAll,
         style: _seeAllFooterStyle,
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Tout lire'),
-            SizedBox(width: 2),
-            Icon(Icons.chevron_right_rounded, size: 16),
+            Text('Tout lire ($count+)'),
+            const SizedBox(width: 2),
+            const Icon(Icons.chevron_right_rounded, size: 16),
           ],
         ),
       ),

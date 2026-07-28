@@ -58,6 +58,16 @@ import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 
 const tourneeSectionTransitionDuration = Duration(milliseconds: 420);
 
+/// `state.extra` typé, ou `null` quand il porte autre chose.
+///
+/// `extra` n'est jamais garanti : il est perdu à la restauration d'état par
+/// l'OS et absent des deep-links et des notifications. Le `as X?` d'origine
+/// levait alors `type 'Null' is not a subtype of type 'Perspective'` en pleine
+/// construction de page (Sentry FLUTTER-Y) — un test de type le dégrade
+/// proprement en `null`, que les écrans savent déjà gérer.
+T? extraAs<T>(GoRouterState state) =>
+    state.extra is T ? state.extra as T : null;
+
 /// Clés de navigator des deux branches du shell principal (Essentiel / Flâner).
 ///
 /// Chaque branche d'un `StatefulShellRoute` possède son propre navigator pour
@@ -181,15 +191,33 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Intercept widget deep links pushed by PlatformRouteInformationProvider.
       // Without this, a raw `io.supabase.facteur://digest/<id>` URI lands in
       // GoRouter and falls through to errorBuilder ("Page non trouvée") before
-      // DeepLinkService (app_links) can route. Idempotent with DeepLinkService:
-      // both ultimately call router.go on the same in-app path.
+      // DeepLinkService (app_links) can route.
+      //
+      // This branch used to `return action.route` directly, i.e. **before** the
+      // `authState.isLoading` gate below. Cold-opening the app from the widget
+      // therefore mounted the reader while `Supabase.currentSession` was still
+      // null: the first `/api` call went out anonymous, came back 401, the
+      // cold-boot refresh timed out and `onAuthError(401)` signed the user out
+      // app-wide — « j'ouvre le widget avant ma tournée et ensuite plus rien ne
+      // charge ». Cf. docs/bugs/bug-widget-fiabilite.md (C3).
+      //
+      // We now seed the URI as pending and park on the splash. Block 3 below
+      // consumes it once auth is fully resolved — the path the design already
+      // provided for `flushPendingIfReady`.
       if (state.uri.scheme == 'io.supabase.facteur') {
         final action = DeepLinkService.parse(state.uri);
-        // GoRouter received the deep link directly (some launchers deliver it
-        // as the initial route). Consume any seeded pending URI so the
-        // post-auth `flushPendingIfReady` doesn't replay it and double-navigate.
-        DeepLinkService.instance.clearPending();
-        return action.route ?? RoutePaths.fluxContinu;
+        if (action.target == WidgetDeepLinkTarget.authCallback) {
+          // The one family that must be handled before the gates: it carries
+          // the very session the gates are waiting on.
+          DeepLinkService.instance.clearPending();
+          return action.route ?? RoutePaths.splash;
+        }
+        if (DeepLinkService.navigableRouteFor(action) != null) {
+          DeepLinkService.instance.seedPending(state.uri);
+        } else {
+          DeepLinkService.instance.clearPending();
+        }
+        return RoutePaths.splash;
       }
 
       final authState = ref.read(authStateProvider);
@@ -278,10 +306,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Deep link de cold-start (widget) : il est la source de vérité de
         // l'atterrissage. On le consomme ici pour éviter la course avec
         // `flushPendingIfReady` (qui redeviendrait no-op après clearPending).
-        final pending = DeepLinkService.instance.pendingRoute();
-        if (pending != null) {
+        final pendingAction = DeepLinkService.instance.pendingAction();
+        if (pendingAction != null) {
           DeepLinkService.instance.clearPending();
-          return pending;
+          // `refresh=1` (widget refresh button) survives the cold start now.
+          // Deferred: we are inside `redirect`, no provider reads here.
+          if (pendingAction.refresh) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              DeepLinkService.instance.replayRefreshIfRequested(pendingAction);
+            });
+          }
+          return DeepLinkService.navigableRouteFor(pendingAction);
         }
         return postAuthHomePath();
       }
@@ -419,7 +454,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: NotificationService.navigatorKey,
                     pageBuilder: (context, state) {
                       final contentId = state.pathParameters['id']!;
-                      final content = state.extra as Content?;
+                      final content = extraAs<Content>(state);
                       return FullSwipeCupertinoPage(
                         child: ContentDetailScreen(
                           contentId: contentId,
@@ -433,7 +468,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: NotificationService.navigatorKey,
                     pageBuilder: (context, state) {
                       final key = state.pathParameters['key']!;
-                      final section = state.extra as FeedThemeSection?;
+                      final section = extraAs<FeedThemeSection>(state);
                       return FullSwipeCupertinoPage(
                         key: state.pageKey,
                         transitionDurationOverride:
@@ -451,7 +486,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: NotificationService.navigatorKey,
                     pageBuilder: (context, state) {
                       final key = state.pathParameters['key']!;
-                      final section = state.extra as DigestTopicSection?;
+                      final section = extraAs<DigestTopicSection>(state);
                       // `src=week` → « Tout lire » de la rétro hebdo : la page
                       // épingle l'agrégat passé en `extra` au lieu de résoudre
                       // le feed du jour (cf. DigestSectionScreen.pinToInitial).
@@ -478,7 +513,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: NotificationService.navigatorKey,
                     pageBuilder: (context, state) {
                       final id = state.pathParameters['id']!;
-                      final section = state.extra as FeedThemeSection?;
+                      final section = extraAs<FeedThemeSection>(state);
                       return FullSwipeCupertinoPage(
                         key: state.pageKey,
                         transitionDurationOverride:
@@ -512,7 +547,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: NotificationService.navigatorKey,
                     pageBuilder: (context, state) {
                       final contentId = state.pathParameters['id']!;
-                      final content = state.extra as Content?;
+                      final content = extraAs<Content>(state);
                       // `from=pdr` → article ouvert depuis un CTA « Pas de
                       // recul » : header contextuel (lavis bleu + médaillon 🔭).
                       final fromDeepReco =
@@ -583,7 +618,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         name: RouteNames.contentExternal,
         parentNavigatorKey: NotificationService.navigatorKey,
         pageBuilder: (context, state) {
-          final p = state.extra as Perspective?;
+          final p = extraAs<Perspective>(state);
           if (p == null) {
             // extra perdu (deep-link/notif après kill, ou restauration OS) :
             // on annule au lieu de planter la construction (FLUTTER-Y).
@@ -655,9 +690,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 // universelle (story 30.1). Absent → écran vierge habituel.
                 pageBuilder: (context, state) => FullSwipeCupertinoPage(
                   child: AddSourceScreen(
-                    initialQuery: state.extra is String
-                        ? state.extra as String
-                        : null,
+                    initialQuery: extraAs<String>(state),
                   ),
                 ),
               ),
@@ -672,7 +705,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 name: RouteNames.themeSources,
                 pageBuilder: (context, state) {
                   final slug = state.pathParameters['slug']!;
-                  final themeName = state.extra as String?;
+                  final themeName = extraAs<String>(state);
                   return FullSwipeCupertinoPage(
                     child: ThemeSourcesScreen(
                       themeSlug: slug,
@@ -798,7 +831,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: RoutePaths.topicExplorer,
         name: RouteNames.topicExplorer,
         pageBuilder: (context, state) {
-          final extra = state.extra as Map<String, dynamic>? ?? {};
+          final extra = extraAs<Map<String, dynamic>>(state) ?? <String, dynamic>{};
           return FullSwipeCupertinoPage(
             child: TopicExplorerScreen(
               topicSlug: extra['topicSlug'] as String? ?? '',
