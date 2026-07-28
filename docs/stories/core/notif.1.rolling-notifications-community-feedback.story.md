@@ -54,12 +54,16 @@ une file de candidats classés par pertinence + jitter quotidien déterministe, 
 
 ## Tâches
 
-- [ ] Ajouter les 4 ids + messages au catalogue (icônes Phosphor : `envelopeSimple`,
+- [x] Ajouter les 4 ids + messages au catalogue (icônes Phosphor : `envelopeSimple`,
       `whatsappLogo`, `shareNetwork`, `coffee`).
-- [ ] Ajouter les 4 candidats à `notifDuJourQueueProvider`.
-- [ ] Action `shareApp` : copie presse-papier + `SnackBar` de confirmation (pattern
+- [x] Ajouter les 4 candidats à `notifDuJourQueueProvider`.
+- [x] Action `shareApp` : copie presse-papier + `SnackBar` de confirmation (pattern
       `grille_share_screen.dart`).
-- [ ] Actions `feedbackMail`/`whatsappCommunity`/`coffeeLaurin` : `url_launcher` (pattern
+- [x] Actions `feedbackMail`/`whatsappCommunity`/`coffeeLaurin` : `url_launcher` (pattern
       `feedback_modal.dart`).
-- [ ] Tests unitaires catalogue + provider.
-- [ ] `flutter test` + `flutter analyze`.
+- [x] Test unitaire provider (les 4 ids toujours présents dans la file) — le test
+      catalogue existant couvre déjà la résolution `buildNotifDuJourMessage` pour
+      tout id de la file.
+- [ ] `flutter test` + `flutter analyze` — **non exécutable dans cet environnement**
+      (SDK Flutter absent du container). À faire vérifier localement ou en CI avant
+      merge.

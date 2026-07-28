@@ -143,6 +143,13 @@ final notifDuJourQueueProvider = Provider<List<String>>((ref) {
     candidates.add(const NotifCandidate(NotifDuJourIds.serein, 0.55));
   }
 
+  // Messages communauté/feedback — toujours éligibles, pertinence basse-moyenne
+  // pour ne jamais passer devant les nudges fonctionnels/profil ci-dessus.
+  candidates.add(const NotifCandidate(NotifDuJourIds.feedbackMail, 0.35));
+  candidates.add(const NotifCandidate(NotifDuJourIds.whatsappCommunity, 0.3));
+  candidates.add(const NotifCandidate(NotifDuJourIds.shareApp, 0.3));
+  candidates.add(const NotifCandidate(NotifDuJourIds.coffeeLaurin, 0.25));
+
   // Fallback : garantit une file jamais vide.
   candidates.add(const NotifCandidate(NotifDuJourIds.recommencer, 0.1));
 

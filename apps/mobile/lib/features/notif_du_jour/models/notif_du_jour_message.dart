@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../config/constants.dart';
 import '../../../config/routes.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
@@ -77,6 +80,19 @@ abstract final class NotifDuJourIds {
   static const notifRenudge = 'notif_renudge';
   static const geoloc = 'geoloc';
   static const wellInformed = 'well_informed';
+  static const feedbackMail = 'feedback_mail';
+  static const whatsappCommunity = 'whatsapp_community';
+  static const shareApp = 'share_app';
+  static const coffeeLaurin = 'coffee_laurin';
+}
+
+/// Ouvre une URL externe (mail/WhatsApp) dans l'app système. No-op silencieux
+/// si le device ne sait pas la résoudre (même garde que `feedback_modal.dart`).
+Future<void> _launchExternal(String url) async {
+  final uri = Uri.parse(url);
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
 }
 
 /// Catalogue : construit le message affichable pour un id de la file.
@@ -229,6 +245,73 @@ NotifDuJourMessage? buildNotifDuJourMessage(String id) {
             ref
                 .read(analyticsServiceProvider)
                 .trackWellInformedPromptSkipped(context: 'notif_du_jour'),
+          );
+        },
+      );
+    case NotifDuJourIds.feedbackMail:
+      return NotifDuJourMessage(
+        id: id,
+        icon: PhosphorIcons.envelopeSimple(),
+        tint: NotifTint.steel,
+        title: 'Une idée, une remarque ?',
+        ctaLabel: 'Écrire à Laurin',
+        onTap: (context, ref) async {
+          await _launchExternal(
+            Uri(
+              scheme: 'mailto',
+              path: LaurinContact.email,
+              query: 'subject=${Uri.encodeComponent('Retour sur Facteur')}',
+            ).toString(),
+          );
+        },
+      );
+    case NotifDuJourIds.whatsappCommunity:
+      return NotifDuJourMessage(
+        id: id,
+        icon: PhosphorIcons.whatsappLogo(),
+        tint: NotifTint.green,
+        title: 'Rejoins la communauté Facteur',
+        ctaLabel: 'Rejoindre le groupe WhatsApp',
+        ctaIsGreen: true,
+        onTap: (context, ref) async {
+          await _launchExternal(ExternalLinks.whatsappGroupUrl);
+        },
+      );
+    case NotifDuJourIds.shareApp:
+      return NotifDuJourMessage(
+        id: id,
+        icon: PhosphorIcons.shareNetwork(),
+        tint: NotifTint.ocre,
+        title: 'Facteur plaît à tes proches ?',
+        ctaLabel: 'Partager l\'app',
+        onTap: (context, ref) async {
+          const text =
+              'Je viens de découvrir Facteur, l\'app qui résume mon actu '
+              'du jour en 5 articles. Elle est dispo sur les stores : '
+              'https://facteur.app';
+          await Clipboard.setData(const ClipboardData(text: text));
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Message copié — colle-le où tu veux !'),
+            ),
+          );
+        },
+      );
+    case NotifDuJourIds.coffeeLaurin:
+      return NotifDuJourMessage(
+        id: id,
+        icon: PhosphorIcons.coffee(),
+        tint: NotifTint.ocre,
+        title: 'Envie d\'un café pour parler de Facteur ?',
+        ctaLabel: 'Proposer un café à Laurin',
+        onTap: (context, ref) async {
+          final text = Uri.encodeComponent(
+            'Coucou Laurin, je veux bien qu\'on prenne un café ☕️ pour '
+            'parler de Facteur !',
+          );
+          await _launchExternal(
+            'https://wa.me/${LaurinContact.whatsappE164}?text=$text',
           );
         },
       );
