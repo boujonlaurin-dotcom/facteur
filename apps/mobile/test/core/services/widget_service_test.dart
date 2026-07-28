@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:facteur/config/topic_labels.dart';
 import 'package:facteur/core/services/widget_service.dart';
@@ -12,6 +13,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// path also writes to SharedPreferences via `home_widget`, which requires the
 /// platform channel and is not exercised in unit tests.
 void main() {
+  _namespaceGuardTests();
+
   group('Digest → widget article shape', () {
     test('first topic article gets is_main=true', () {
       final digest = _digest(topics: [
@@ -328,4 +331,66 @@ Content _content(
     ),
     topics: topics,
   );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Garde anti-régression C1 — noms qualifiés vs namespace Gradle
+// ──────────────────────────────────────────────────────────────
+
+/// Le bug d'origine : `HomeWidgetPlugin` résout un `androidName` nu en
+/// `"${context.packageName}.$className"`, où `context.packageName` est
+/// l'**applicationId** (`com.example.facteur.staging` sur le flavor beta,
+/// `facteur.app` sur playstore) — jamais le **namespace** où vivent réellement
+/// les receivers. Résultat : `ClassNotFoundException` sur les deux flavors, à
+/// chaque appel, avalé par un `catch`. Zéro `ACTION_APPWIDGET_UPDATE` envoyé,
+/// « Ajouter un Widget » mort.
+///
+/// Ce test lit le namespace directement dans `build.gradle.kts` : si quelqu'un
+/// le change (ou change l'applicationId en croyant que c'est équivalent), la
+/// suite rougit ici au lieu de casser silencieusement en prod.
+void _namespaceGuardTests() {
+  group('C1 — noms qualifiés alignés sur le namespace Gradle', () {
+    late String gradleNamespace;
+
+    setUpAll(() {
+      final gradle = File('android/app/build.gradle.kts').readAsStringSync();
+      final match =
+          RegExp(r'namespace\s*=\s*"([^"]+)"').firstMatch(gradle);
+      expect(
+        match,
+        isNotNull,
+        reason: 'namespace introuvable dans android/app/build.gradle.kts',
+      );
+      gradleNamespace = match!.group(1)!;
+    });
+
+    test('WidgetService.androidNamespace == namespace de build.gradle.kts', () {
+      expect(WidgetService.androidNamespace, gradleNamespace);
+    });
+
+    test('le namespace n\'est pas dérivé de l\'applicationId des flavors', () {
+      // Les deux flavors ont un applicationId différent du namespace : c'est
+      // précisément ce qui rendait la concaténation du plugin invalide.
+      final gradle = File('android/app/build.gradle.kts').readAsStringSync();
+      expect(gradle, contains('applicationIdSuffix = ".staging"'));
+      expect(gradle, contains('applicationId = "facteur.app"'));
+      expect(WidgetService.androidNamespace, isNot('facteur.app'));
+      expect(
+        WidgetService.androidNamespace.endsWith('.staging'),
+        isFalse,
+      );
+    });
+
+    test('les deux receivers du manifest sont couverts', () {
+      final manifest =
+          File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      for (final receiver in ['FacteurWidgetLight', 'FacteurWidgetDark']) {
+        expect(
+          manifest,
+          contains('android:name=".$receiver"'),
+          reason: '$receiver doit rester déclaré dans le manifest',
+        );
+      }
+    });
+  });
 }

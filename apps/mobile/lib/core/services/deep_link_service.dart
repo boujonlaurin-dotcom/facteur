@@ -178,13 +178,10 @@ class DeepLinkService {
     _initialLinkSeeded = true;
   }
 
-  /// Resolve the in-app route for the currently pending URI **without
-  /// consuming it**, or `null` when nothing navigable is pending. Called by the
-  /// router `redirect` to land cold-opens on their deep-linked destination.
-  String? pendingRoute() {
-    final pending = _pending;
-    if (pending == null) return null;
-    final action = parse(pending);
+  /// The in-app route an [action] should land on, or `null` when the action
+  /// carries nothing navigable (auth callbacks are routed by the auth listener,
+  /// not by the pending-link path).
+  static String? navigableRouteFor(WidgetDeepLinkAction action) {
     switch (action.target) {
       case WidgetDeepLinkTarget.article:
       case WidgetDeepLinkTarget.digest:
@@ -197,6 +194,38 @@ class DeepLinkService {
       case WidgetDeepLinkTarget.unhandled:
         return null;
     }
+  }
+
+  /// The **full** pending action (route *and* `refresh` flag), without
+  /// consuming it. Returns `null` when nothing navigable is pending.
+  ///
+  /// [pendingRoute] used to be the only accessor, which is why the widget's
+  /// refresh button was a literal no-op on cold start: the router consumed the
+  /// route and dropped `refresh=1` on the floor, so `_onRefreshRequested` was
+  /// never invoked. Callers should prefer this and then
+  /// [replayRefreshIfRequested].
+  WidgetDeepLinkAction? pendingAction() {
+    final pending = _pending;
+    if (pending == null) return null;
+    final action = parse(pending);
+    return navigableRouteFor(action) == null ? null : action;
+  }
+
+  /// Resolve the in-app route for the currently pending URI **without
+  /// consuming it**, or `null` when nothing navigable is pending. Called by the
+  /// router `redirect` to land cold-opens on their deep-linked destination.
+  String? pendingRoute() {
+    final action = pendingAction();
+    return action == null ? null : navigableRouteFor(action);
+  }
+
+  /// Fire the widget-refresh side effects for an [action] the router consumed
+  /// itself (cold start). Analytics is re-emitted here because `_route` — the
+  /// usual emitter — is bypassed on that path.
+  void replayRefreshIfRequested(WidgetDeepLinkAction action) {
+    if (!action.refresh) return;
+    _analytics?.trackWidgetAppOpened(target: 'feed');
+    _onRefreshRequested?.call();
   }
 
   /// Clear the pending URI. Called by the redirect once it has consumed the

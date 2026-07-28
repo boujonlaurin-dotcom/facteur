@@ -38,6 +38,13 @@ class UserTopicProfile(Base):
             unique=True,
             postgresql_where=text("canonical_name IS NOT NULL"),
         ),
+        # Sert le producteur d'alertes sujet, qui part des utilisateurs et
+        # remonte vers leurs sujets sous cloche (quelques lignes par user).
+        Index(
+            "ix_utp_notify",
+            "user_id",
+            postgresql_where=text("notify IS TRUE"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -64,6 +71,11 @@ class UserTopicProfile(Base):
     excluded_from_serein: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Cloche « alerte sujet » (Epic 30, alertes v2). NULL = jamais posée, lu
+    # partout comme `notify IS TRUE`. `notify_filtered` = 1 alerte/jour max,
+    # la mieux scorée.
+    notify: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    notify_filtered: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     state: Mapped[InterestState] = mapped_column(
         Enum(
             InterestState,

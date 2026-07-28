@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -52,10 +52,39 @@ class SessionRefresher {
   Session? _defaultCurrentSession() =>
       Supabase.instance.client.auth.currentSession;
 
+  /// Budget d'attente par défaut d'un `refreshSession()`.
+  ///
+  /// 8 s suffisent quand l'app est au premier plan sur un réseau correct. Au
+  /// cold boot ou au retour de `paused` (app réveillée par un tap widget, radio
+  /// cellulaire endormie), le handshake dépasse régulièrement ce plafond : le
+  /// `TimeoutException 0:00:08` est Sentry FLUTTER-6, et son échec en cascade
+  /// arme `onAuthError(401)` → déconnexion. Même approche que
+  /// `resolveMorningRitualMaxWait` : on élargit le budget hors `resumed`.
+  ///
+  /// Exposé pour les tests.
+  @visibleForTesting
+  static Duration resolveRefreshTimeout(AppLifecycleState? lifecycle) {
+    return lifecycle == AppLifecycleState.resumed
+        ? const Duration(seconds: 8)
+        : const Duration(seconds: 20);
+  }
+
+  Duration get _defaultTimeout {
+    AppLifecycleState? lifecycle;
+    try {
+      lifecycle = WidgetsBinding.instance.lifecycleState;
+    } catch (_) {
+      // Binding non initialisé (tests unitaires purs, isolate de fond) : on
+      // retombe sur le budget « premier plan », le plus serré.
+      lifecycle = AppLifecycleState.resumed;
+    }
+    return resolveRefreshTimeout(lifecycle);
+  }
+
   /// Refresh single-flight. Si un appel est déjà en cours, retourne sa future.
-  Future<Session?> refresh({
-    Duration timeout = const Duration(seconds: 8),
-  }) {
+  /// [timeout] omis → budget adaptatif ([resolveRefreshTimeout]).
+  Future<Session?> refresh({Duration? timeout}) {
+    final budget = timeout ?? _defaultTimeout;
     final pending = _inflight;
     if (pending != null) {
       debugPrint('SessionRefresher: piggyback on in-flight refresh.');
@@ -64,7 +93,7 @@ class SessionRefresher {
 
     final completer = Completer<Session?>();
     _inflight = completer;
-    _runRefresh(completer, timeout);
+    _runRefresh(completer, budget);
     return completer.future;
   }
 

@@ -7,15 +7,18 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../../core/services/push_notification_service.dart';
 import '../../../core/web/web_perf.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
-import 'preset_selector.dart';
 import 'time_slot_selector.dart';
 
 /// Trigger d'affichage de la modal — utilisé pour l'event tracking.
 ///
 /// `veille` est un canal opt-in distinct du digest principal : titre/bullets/
-/// CTA dédiés, sections preset/time-slot/good-news masquées, et appel à
+/// CTA dédiés, sections time-slot/good-news masquées, et appel à
 /// `setNotifVeilleEnabled` au lieu de `confirmActivation`.
-enum ActivationTrigger { onboarding, update, renudge, veille }
+///
+/// `alert` est la porte d'entrée de la cloche « source rare » (story 30.2) :
+/// copy dédiée et mêmes sections masquées, mais confirmation classique — le
+/// dispatcher serveur ne pousse une alerte que si `push_enabled` est vrai.
+enum ActivationTrigger { onboarding, update, renudge, veille, alert }
 
 /// Affiche la modal d'activation comme dialogue flottant translucide.
 ///
@@ -68,7 +71,6 @@ class NotificationActivationModal extends ConsumerStatefulWidget {
 
 class _NotificationActivationModalState
     extends ConsumerState<NotificationActivationModal> {
-  late NotifPreset _preset;
   late NotifTimeSlot _timeSlot;
   late bool _goodNewsEnabled;
   late NotifTimeSlot _goodNewsTimeSlot;
@@ -78,7 +80,6 @@ class _NotificationActivationModalState
   void initState() {
     super.initState();
     final current = ref.read(notificationsSettingsProvider);
-    _preset = current.preset;
     _timeSlot = current.timeSlot;
     // Toggle Bonnes nouvelles : conserve l'état persisté si déjà activé,
     // sinon OFF par défaut. Aucun pré-cochage automatique basé sur d'autres
@@ -121,12 +122,13 @@ class _NotificationActivationModalState
       }
     } else {
       await notifier.confirmActivation(
-        preset: _preset,
         timeSlot: _timeSlot,
         osGranted: granted,
       );
 
-      if (_goodNewsEnabled) {
+      // Section Bonnes nouvelles masquée pour l'alerte : on ne réécrit jamais
+      // cet opt-in depuis un canal qui ne l'expose pas.
+      if (_goodNewsEnabled && widget.trigger != ActivationTrigger.alert) {
         await notifier.confirmGoodNewsActivation(
           timeSlot: _goodNewsTimeSlot,
           osGranted: granted,
@@ -134,7 +136,7 @@ class _NotificationActivationModalState
       }
 
       analytics.trackModalNotifConfirmed(
-        preset: _preset,
+        preset: ref.read(notificationsSettingsProvider).preset,
         timeSlot: _timeSlot,
         osPermissionGranted: granted,
       );
@@ -171,6 +173,9 @@ class _NotificationActivationModalState
     final colors = context.facteurColors;
     final theme = Theme.of(context);
     final isVeille = widget.trigger == ActivationTrigger.veille;
+    // Le pitch complet (bullets digest, aperçu, horaire, bonnes nouvelles) ne
+    // concerne que l'activation du digest principal.
+    final isDigest = !isVeille && widget.trigger != ActivationTrigger.alert;
 
     return Material(
       color: colors.backgroundPrimary,
@@ -192,9 +197,13 @@ class _NotificationActivationModalState
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                isVeille
-                    ? 'Te prévenir quand ta veille est prête ?'
-                    : "Mieux s'informer, à son rythme",
+                switch (widget.trigger) {
+                  ActivationTrigger.veille =>
+                    'Te prévenir quand ta veille est prête ?',
+                  ActivationTrigger.alert =>
+                    'Te prévenir quand cette source publie ?',
+                  _ => "Mieux s'informer, à son rythme",
+                },
                 style: theme.textTheme.displaySmall
                     ?.copyWith(fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
@@ -208,7 +217,7 @@ class _NotificationActivationModalState
                 ),
               ),
               const SizedBox(height: FacteurSpacing.space3),
-              if (!isVeille) ...[
+              if (isDigest) ...[
                 Text(
                   "Du mal à suivre l'essentiel ?",
                   style: theme.textTheme.bodyMedium
@@ -240,18 +249,6 @@ class _NotificationActivationModalState
                 const SizedBox(height: FacteurSpacing.space2),
                 _NotificationPreview(timeSlot: _timeSlot),
                 const SizedBox(height: FacteurSpacing.space6),
-                const _SectionHeader(label: 'Définis ton rythme'),
-                const SizedBox(height: FacteurSpacing.space3),
-                PresetSelector(
-                  value: _preset,
-                  onChanged: (p) {
-                    setState(() => _preset = p);
-                    ref
-                        .read(analyticsServiceProvider)
-                        .trackModalNotifPresetChanged(preset: p);
-                  },
-                ),
-                const SizedBox(height: FacteurSpacing.space4),
                 const _SectionHeader(label: 'À quel moment ?'),
                 const SizedBox(height: FacteurSpacing.space3),
                 TimeSlotSelector(
@@ -271,7 +268,7 @@ class _NotificationActivationModalState
                   onTimeSlotChanged: (s) =>
                       setState(() => _goodNewsTimeSlot = s),
                 ),
-              ] else ...[
+              ] else if (isVeille) ...[
                 _BulletPoint(
                   text: 'Notif quand ton digest est livré.',
                 ),
@@ -282,6 +279,18 @@ class _NotificationActivationModalState
                 const SizedBox(height: FacteurSpacing.space2),
                 _BulletPoint(
                   text: 'Activable/désactivable à tout moment.',
+                ),
+              ] else ...[
+                _BulletPoint(
+                  text: 'Une notif quand cette source rare publie.',
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+                _BulletPoint(
+                  text: 'Sans son ni vibration : elle attend son tour.',
+                ),
+                const SizedBox(height: FacteurSpacing.space2),
+                _BulletPoint(
+                  text: '5 cloches maximum, retirables à tout moment.',
                 ),
               ],
               const SizedBox(height: FacteurSpacing.space6),
@@ -296,7 +305,11 @@ class _NotificationActivationModalState
                     ),
                   ),
                   child: Text(
-                    isVeille ? "M'en informer" : 'Activer ton Facteur',
+                    switch (widget.trigger) {
+                      ActivationTrigger.veille => "M'en informer",
+                      ActivationTrigger.alert => 'Activer la cloche',
+                      _ => 'Activer ton Facteur',
+                    },
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -348,7 +361,7 @@ class _BulletPoint extends StatelessWidget {
 }
 
 /// Mini-titre de section (bodySmall bold, secondaire) pour introduire le
-/// `PresetSelector` et le `TimeSlotSelector`.
+/// `TimeSlotSelector`.
 class _SectionHeader extends StatelessWidget {
   final String label;
   const _SectionHeader({required this.label});

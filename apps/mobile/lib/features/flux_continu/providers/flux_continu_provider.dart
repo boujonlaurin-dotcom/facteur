@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_state.dart' show authStateProvider;
 import '../../../core/providers/analytics_provider.dart'
     show analyticsServiceProvider;
+import '../../alerts/models/alert_item.dart';
+import '../../alerts/providers/alerts_provider.dart' show alertsProvider;
 import '../../digest/models/digest_models.dart';
 import '../../digest/models/dual_digest_response.dart';
 import '../../digest/providers/digest_provider.dart'
@@ -334,6 +336,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       prev,
       next,
     ) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      if (next.valueOrNull == null) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // `alertsProvider` est lazy comme `themesFollowedProvider` : ce listen le
+    // déclenche à l'init du notifier et recompose à sa résolution (et à chaque
+    // pose/retrait de cloche) — sinon le rappel « Tes alertes » n'apparaîtrait
+    // qu'au prochain refetch complet de la Tournée.
+    ref.listen<AsyncValue<AlertsState>>(alertsProvider, (prev, next) {
       if (_bootstrapping) return;
       if (!state.hasValue) return;
       if (next.valueOrNull == null) return;
@@ -925,11 +938,20 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // garde les défauts, on recompose à l'arrivée de la mesure.
     final usableHeight = ref.read(usableViewportHeightProvider);
 
+    // Cloches « source rare » ayant du neuf non lu. Elles seules justifient le
+    // rappel : une cloche silencieuse n'a rien à annoncer.
+    final alerted =
+        ref.read(alertsProvider).valueOrNull?.withNewContent ??
+            const <AlertItem>[];
+
     final rawOrdered = <FluxSection>[
       // Héros jamais tronqué (PO) : ses 5 articles entrent tous dans `seen` via
       // [_dedupeSectionsInOrder] → les sections aval portant le même contentId
       // les retirent correctement (pas de doublon).
       if (_essentiel != null) _fitHeroSection(_essentiel!, usableHeight),
+      // Rappel d'alertes juste sous le héros — hors de `orderedKeys`, donc hors
+      // du cap de sections : c'est un signal, il ne prend la place d'aucun thème.
+      if (alerted.isNotEmpty) AlertsSection(items: alerted),
       for (final key in orderedKeys)
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
           sectionByKey[key]!,
@@ -1126,6 +1148,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   FluxSection _capSectionToFit(FluxSection s, double usableHeight) {
     if (s is EssentielSection) return s;
+    // Le rappel d'alertes est un signal contextuel de taille fixe (≤3 lignes),
+    // pas une section de contenu qui se dispute la hauteur d'écran.
+    if (s is AlertsSection) return s;
     // Issue #1 — une coquille (placeholder, `totalCount == 0`) doit **réserver**
     // sa hauteur nominale (`coreVisibleCount`). Sans ce court-circuit, le fit
     // rabattrait son compte à 1 (pool vide) et la réserve squelette ne ferait
@@ -1184,6 +1209,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (fitCap == s.coreVisibleCount) return s;
     return switch (s) {
       EssentielSection() => s,
+      AlertsSection() => s,
       DigestTopicSection() => DigestTopicSection(
           kind: s.kind,
           label: s.label,
@@ -1264,6 +1290,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
+          // Un swipe porte sur un article ; le rappel d'alertes n'en liste pas.
+          AlertsSection() => s,
           DigestTopicSection(:final topics) => DigestTopicSection(
               kind: s.kind,
               label: s.label,
@@ -1329,6 +1357,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               illustrationAsset: s.illustrationAsset,
             ),
           );
+        case AlertsSection():
+          // Aucun contentId à réserver : le rappel traverse la dédup intact.
+          result.add(s);
         case DigestTopicSection(:final topics):
           final kept = topics
               .where((t) => seen.add(pickTopicLead(t).contentId))
@@ -1411,6 +1442,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
+          // Le compteur d'une cloche vient du serveur (contenus non lus ≤24h) :
+          // il se corrige au prochain `refresh`, pas article par article.
+          AlertsSection() => s,
           DigestTopicSection(:final topics) => DigestTopicSection(
               kind: s.kind,
               label: s.label,
@@ -2491,6 +2525,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (grilleIndex < 0) return null;
     final keysBeforeGrille = <String>{
       if (_essentiel != null) sectionKey(_essentiel!),
+      // Comme le héros, le rappel d'alertes vit hors de `orderedKeys` et précède
+      // toujours la Grille : sans lui, le slot serait décalé d'un cran vers le
+      // haut les jours où une cloche a du neuf.
+      kAlertsSectionKey,
       ...orderedKeys.take(grilleIndex).where((key) => key != kTourneeGrilleKey),
     };
     var slot = 0;

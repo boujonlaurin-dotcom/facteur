@@ -192,7 +192,21 @@ void main() {
             keyword: any(named: 'keyword'),
             serein: any(named: 'serein'),
           ),
-        ).thenAnswer((_) async {
+        ).thenAnswer((inv) async {
+          // Les pages > 1 sont le prefetch de profondeur du widget
+          // (`_prefetchForWidget`), pas le chemin testé ici : on le sert à
+          // vide pour que le compteur ne suive que les fetch page 1.
+          if ((inv.namedArguments[#page] as int?) != 1) {
+            return FeedResponse(
+              items: const [],
+              pagination: Pagination(
+                page: 2,
+                perPage: 20,
+                total: 0,
+                hasNext: false,
+              ),
+            );
+          }
           callCount++;
           if (callCount == 1) {
             // initial build

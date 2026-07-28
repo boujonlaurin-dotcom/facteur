@@ -13,8 +13,8 @@ from app.models.user import UserProfile
 from app.models.user_notification_preferences import UserNotificationPreferences
 from app.services.push_dispatcher import (
     _build_exact_essentiel,
-    _is_due,
     dispatch_daily_essentiel_pushes,
+    is_due,
 )
 
 
@@ -163,7 +163,9 @@ async def test_dispatch_skips_definitively_when_governor_refuses(
         patch(
             "app.services.push_dispatcher.check_push_budget",
             new=AsyncMock(
-                return_value=GovernorDecision(allowed=False, reason="daily_budget_exceeded")
+                return_value=GovernorDecision(
+                    allowed=False, reason="daily_budget_exceeded"
+                )
             ),
         ),
     ):
@@ -286,8 +288,8 @@ def test_due_time_uses_each_users_local_timezone():
     montreal_morning = datetime(2026, 6, 15, 7, 30)
     paris_before_evening = datetime(2026, 6, 15, 18, 59)
 
-    assert _is_due(montreal_morning, "morning") is True
-    assert _is_due(paris_before_evening, "evening") is False
+    assert is_due(montreal_morning, "morning") is True
+    assert is_due(paris_before_evening, "evening") is False
 
 
 def test_send_fcm_is_data_only_with_teasers_preserved():
@@ -329,7 +331,7 @@ def test_send_fcm_is_data_only_with_teasers_preserved():
         patch.object(push_dispatcher, "_firebase_app", return_value=object()),
         patch.dict(sys.modules, {"firebase_admin": fake_firebase_admin}),
     ):
-        result = push_dispatcher._send_fcm("tok", "Facteur", "Trump", data)
+        result = push_dispatcher.send_fcm("tok", "Facteur", "Trump", data)
 
     assert result == "message-id"
     # Pas de notification top-level (data-only) → Android invoque le bg handler.
