@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ma Tournée",
+      "summary": "Tes sources favorites ne manquent plus à l'appel : leur section apparaît dès l'ouverture, même après une réinstallation ou sur un nouvel appareil. Et pendant que ta tournée se prépare, les blocs en attente respirent et l'annoncent clairement."
+    },
+    {
       "tag": "Objectif du jour",
       "summary": "Tu choisis désormais ton objectif quotidien : dans « Progression », un curseur règle le nombre d'articles à lire jusqu'au bout pour valider ta journée (de 1 à 7). Quand tu l'atteins, le message de félicitation te propose de le réajuster, et le pied de page d'un article terminé passe tout au vert."
     },

@@ -1681,6 +1681,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         ? (state.sections.length > 1 ? 1 : -1)
         : (state.sections.isNotEmpty ? 0 : -1);
 
+    // Un seul indicateur d'attente pour toute la Tournée : la **première**
+    // coquille de section encore non résolue porte le libellé « Ta tournée se
+    // prépare… » (les autres restent des cartes shimmer nues).
+    final firstPreparingIndex = state.sections.indexWhere(
+      (s) => s is FeedThemeSection && s.isPlaceholder,
+    );
+
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       if (state.grilleSlotIndex == i) {
@@ -1733,6 +1740,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     tallSections: _tallSections,
                     child: SectionBlock(
                       section: section,
+                      showPreparingLabel: i == firstPreparingIndex,
                       onTapArticle: (a) => _openArticle(context, a),
                       onDismissArticle: _onSwipeDismiss,
                       pendingFeedbackIds: _pendingFeedback,
@@ -2141,6 +2149,7 @@ class _FluxContinuSkeleton extends StatelessWidget {
         );
       }
     } else {
+      var labelPlaced = false;
       for (final section in sections) {
         // Le hero est déjà rendu au-dessus.
         if (section is EssentielSection) continue;
@@ -2158,7 +2167,13 @@ class _FluxContinuSkeleton extends StatelessWidget {
         // Issue #1 — réserve la **hauteur finale** (coreVisibleCount cartes) avec
         // la même carte squelette que les coquilles de section, pour que la
         // séquence cold-skeleton → Phase 1 → Phase 2 garde une géométrie stable.
-        children.addAll(sectionSkeletonCards(section.coreVisibleCount));
+        // Libellé d'attente unique, porté par la 1ʳᵉ section rendue (parité avec
+        // le placeholder de `SectionBlock`).
+        children.addAll(sectionSkeletonCards(
+          section.coreVisibleCount,
+          firstCardLabel: labelPlaced ? null : kSectionPreparingLabel,
+        ));
+        labelPlaced = true;
         children.add(const SizedBox(height: 16));
       }
     }
