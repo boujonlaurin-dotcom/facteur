@@ -1,5 +1,18 @@
 # Maintenance — Saturation pool DB nocturne (PYTHON-5M / 5G / 4X)
 
+> ⚠️ **Mise à jour 2026-07-26 — le « 100 % » de PYTHON-5M était un artefact de mesure.**
+> L'investigation de [PYTHON-63](../bugs/bug-pool-pressure-metric-false-positive.md) a
+> montré que `usage_pct` divisait par les connexions *vivantes* (`size + overflow()`) au
+> lieu de la capacité (`pool_size + max_overflow` = 20). La métrique atteignait donc 100 %
+> dès que la file d'idle se vidait, avec encore 10 connexions libres — et franchissait le
+> seuil de page dès **9 connexions sorties sur 20**. Le pool n'a vraisemblablement jamais
+> été saturé.
+>
+> Les axes A/C/D ci-dessous (discipline rollback, allègement du cleanup, observabilité)
+> restent pertinents sur le fond et **ne sont pas revert**. L'axe B (concurrence digest
+> 10 → 5, decay décalé à 06h50) est conservé par prudence, mais son gain réel est à
+> reconsidérer maintenant que la sonde dit vrai.
+
 ## Contexte
 Trois issues Sentry corrélées sur la fenêtre matinale ~07h20-07h35 Paris (même
 trace) : **PYTHON-5M** « DB pool pressure high: 100 % » (saturation pool app),

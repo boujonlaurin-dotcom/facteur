@@ -697,6 +697,11 @@ async def pool_metrics() -> dict[str, Any]:
             "db_pool_pressure_high",
             checked_out=metrics.get("checked_out"),
             size=metrics.get("size"),
+            # `capacity` (pool_size + max_overflow) est le dénominateur réel :
+            # c'est lui qui rend le ratio lisible pour l'astreinte. `overflow`
+            # (connexions vivantes au-delà de pool_size) reste en second, il
+            # avait induit en erreur lors de PYTHON-63.
+            capacity=metrics.get("capacity"),
             overflow=metrics.get("overflow"),
             usage_pct=usage_pct,
         )
