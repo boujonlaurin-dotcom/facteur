@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../../../config/theme.dart';
 import '../../feed/widgets/feedback_inline.dart';
@@ -72,6 +73,12 @@ class SectionBlock extends StatelessWidget {
   /// anti double-tap localement).
   final Future<void> Function()? onPromoteSuggestion;
 
+  /// Rend le libellé d'attente (« Ta tournée se prépare… ») en tête des cartes
+  /// squelette de cette section. Réservé à la **première** coquille non résolue
+  /// de la page (câblé par `flux_continu_screen`) : un seul indicateur pour
+  /// toute la Tournée, comme le veut le minimalisme du design system.
+  final bool showPreparingLabel;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -92,6 +99,7 @@ class SectionBlock extends StatelessWidget {
     this.onSeeAll,
     this.onTapSuggestionInfo,
     this.onPromoteSuggestion,
+    this.showPreparingLabel = false,
   });
 
   @override
@@ -289,7 +297,13 @@ class SectionBlock extends StatelessWidget {
         // ci-dessous, réservés aux sections **résolues** vides
         // (`isPlaceholder == false && items.isEmpty`).
         if (isPlaceholder) {
-          return sectionSkeletonCards(coreVisibleCount);
+          return sectionSkeletonCards(
+            coreVisibleCount,
+            // Le libellé vit **dans** la 1ʳᵉ carte squelette : il ne consomme
+            // aucune hauteur propre, donc l'invariant de géométrie stable
+            // (remplacement sur place, zéro décalage) tient toujours.
+            firstCardLabel: showPreparingLabel ? kSectionPreparingLabel : null,
+          );
         }
         // Story 23.4 — la section veille reste visible même vide : on rend un
         // placeholder + CTA réglages au lieu de cartes.
@@ -641,28 +655,70 @@ class _FavoriteEmptyState extends StatelessWidget {
 /// les sections suivantes. Calquée visuellement sur `ExploreDiscoverySkeleton`.
 /// Publique pour être réutilisée par le squelette cold-start
 /// (`_FluxContinuSkeleton`) → hauteur stable de bout en bout.
+///
+/// Le bloc respire (shimmer) : sans animation, les coquilles grises se lisent
+/// comme un état vide définitif alors que le fan-out des sections thème/source
+/// dure plusieurs secondes sous l'unique worker uvicorn.
 class SectionSkeletonCard extends StatelessWidget {
-  const SectionSkeletonCard({super.key});
+  /// Libellé d'attente rendu **dans** la carte (cf. [kSectionPreparingLabel]).
+  /// `null` = carte nue. Porté par la carte plutôt que par un widget au-dessus
+  /// pour ne consommer aucune hauteur propre (géométrie stable).
+  final String? label;
+
+  const SectionSkeletonCard({super.key, this.label});
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    // Mêmes teintes que `_MetaShimmer` (rituel matinal) — le sweep est porté par
+    // le **fond** seul : le libellé est posé par-dessus, hors du ShaderMask, qui
+    // sinon écraserait sa couleur.
+    final base = colors.textTertiary.withValues(alpha: 0.10);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Container(
+      child: SizedBox(
         height: 134,
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Shimmer.fromColors(
+              baseColor: base,
+              highlightColor: colors.textTertiary.withValues(alpha: 0.04),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: base,
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: Colors.black.withValues(alpha: 0.04)),
+                ),
+              ),
+            ),
+            if (label != null)
+              Center(
+                child: Text(
+                  label!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
+/// Libellé d'attente unique de la Tournée, rendu dans la 1ʳᵉ carte squelette
+/// non résolue (cf. `SectionBlock.showPreparingLabel`).
+const String kSectionPreparingLabel = 'Ta tournée se prépare…';
+
 /// Issue #1 — [count] cartes squelette réservant la hauteur finale d'une
 /// section. Partagé par le placeholder de [SectionBlock] et le cold-skeleton
 /// (`_FluxContinuSkeleton`) pour garantir la même géométrie de bout en bout.
-List<Widget> sectionSkeletonCards(int count) => [
-  for (var i = 0; i < count; i++) const SectionSkeletonCard(),
+/// [firstCardLabel] pose le libellé d'attente sur la première carte seulement.
+List<Widget> sectionSkeletonCards(int count, {String? firstCardLabel}) => [
+  for (var i = 0; i < count; i++)
+    SectionSkeletonCard(label: i == 0 ? firstCardLabel : null),
 ];
