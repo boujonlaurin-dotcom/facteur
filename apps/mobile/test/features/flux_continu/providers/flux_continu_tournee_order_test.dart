@@ -359,7 +359,8 @@ void main() {
 
   group('éditorial + Grille dans la liste unifiée', () {
     test(
-      'ordre normal par défaut : favoris puis Actus (+ Grille slot) puis Bonnes',
+      'ordre normal par défaut (compte non personnalisé) : Actus en tête '
+      '(+ Grille slot) puis favoris puis Bonnes',
       () async {
         stubDigest();
         stubFeed(
@@ -379,16 +380,16 @@ void main() {
 
         final state = await settle(container);
 
-        // Ordre par défaut demandé : favoris utilisateur, puis Actus du jour,
-        // puis Bonnes Nouvelles.
+        // Ordre par défaut pour tous les nouveaux utilisateurs : Actus du jour
+        // en première section, puis favoris, puis Bonnes Nouvelles.
         expect(state.sections.map(sectionKey).toList(), [
-          'theme:society',
           kTourneeActusKey,
+          'theme:society',
           kTourneeBonnesKey,
         ]);
         expect(
           state.grilleSlotIndex,
-          2,
+          1,
           reason: 'La Grille est rendue juste après Actus (ici en 2e position)',
         );
       },
@@ -430,8 +431,10 @@ void main() {
 
       final state = await settle(container);
 
-      // 8 thèmes + Actus + Grille + Bonnes = 11 items ≤ cap 13 → tout tient.
+      // Actus en tête (compte non personnalisé), puis 8 thèmes, puis Bonnes.
+      // + Grille = 11 items ≤ cap 13 → tout tient.
       expect(state.sections.map(sectionKey).toList(), [
+        kTourneeActusKey,
         'theme:society',
         'theme:culture',
         'theme:economy',
@@ -440,10 +443,9 @@ void main() {
         'theme:science',
         'theme:environment',
         'theme:international',
-        kTourneeActusKey,
         kTourneeBonnesKey,
       ]);
-      expect(state.grilleSlotIndex, 9);
+      expect(state.grilleSlotIndex, 1);
       expect(
         state.sections.map(sectionKey),
         contains(kTourneeBonnesKey),
@@ -473,10 +475,10 @@ void main() {
     });
 
     test(
-      'mode serène par défaut : même ordre que normal (favoris, Actus, Bonnes)',
+      'mode serène par défaut : même ordre que normal (Actus, favoris, Bonnes)',
       () async {
         // Plan QA onboarding — le mode serein garde l'ordre par défaut demandé
-        // (favoris → Actus → Bonnes), avec les contenus serein. Plus de Bonnes
+        // (Actus → favoris → Bonnes), avec les contenus serein. Plus de Bonnes
         // remontées en tête.
         stubDigest();
         stubFeed(
@@ -498,11 +500,11 @@ void main() {
         final state = await settle(container);
 
         expect(state.sections.map(sectionKey).toList(), [
-          'theme:society',
           kTourneeActusKey,
+          'theme:society',
           kTourneeBonnesKey,
         ]);
-        expect(state.grilleSlotIndex, 2);
+        expect(state.grilleSlotIndex, 1);
       },
     );
 
