@@ -171,6 +171,31 @@ class RoutePaths {
   static const String soutienLinkSent = '/soutien/lien-envoye';
 }
 
+/// Story 31.1 — session anonyme qui n'a pas encore créé son compte.
+///
+/// `is_anonymous` reste `true` côté Supabase entre la conversion et la
+/// confirmation de l'adresse : c'est `pendingEmailConfirmation` (persisté), et
+/// lui seul, qui marque « le compte existe déjà ».
+bool isAnonymousBeforeConversion({
+  required bool isAnonymous,
+  required String? pendingEmailConfirmation,
+}) =>
+    isAnonymous && pendingEmailConfirmation == null;
+
+/// La garde « email non confirmé » doit se taire dans deux cas :
+///
+/// - avant la conversion : l'utilisateur découvre le produit et remplit son
+///   questionnaire, il n'a pas d'adresse à confirmer ;
+/// - juste après la conversion, tant qu'il est sur les écrans d'onboarding :
+///   la conclusion doit pouvoir enregistrer le profil sous le même `user.id`
+///   avant qu'on l'envoie sur /emailConfirmation.
+bool shouldBypassEmailConfirmationGate({
+  required bool isAnonymous,
+  required String? pendingEmailConfirmation,
+  required bool isOnOnboarding,
+}) =>
+    isAnonymous && (pendingEmailConfirmation == null || isOnOnboarding);
+
 final routerProvider = Provider<GoRouter>((ref) {
   // Use ref.listen() (not ref.watch()) so auth state changes trigger
   // GoRouter's refreshListenable WITHOUT recreating the entire router.
@@ -283,8 +308,25 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // À partir d'ici, l'utilisateur est connecté
 
+      final beforeConversion = isAnonymousBeforeConversion(
+        isAnonymous: authState.isAnonymous,
+        pendingEmailConfirmation: authState.pendingEmailConfirmation,
+      );
+
+      // « J'ai déjà un compte » : depuis une session anonyme, /login reste
+      // accessible explicitement. Sans cette sortie, les gardes 3 et 4
+      // renverraient l'utilisateur sur /onboarding en boucle.
+      if (isOnLoginPage && beforeConversion) {
+        return null;
+      }
+
       // 2. Les utilisateurs non confirmés doivent aller sur l'écran de confirmation
-      if (!isEmailConfirmed) {
+      if (!isEmailConfirmed &&
+          !shouldBypassEmailConfirmationGate(
+            isAnonymous: authState.isAnonymous,
+            pendingEmailConfirmation: authState.pendingEmailConfirmation,
+            isOnOnboarding: isOnOnboarding,
+          )) {
         if (isOnEmailConfirmation) return null;
         return RoutePaths.emailConfirmation;
       }
