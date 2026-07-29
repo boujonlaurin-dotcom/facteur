@@ -54,6 +54,9 @@
                 })
                 .then(function (data) {
                     if (data && data.checkout_url) {
+                        if (typeof gtag === 'function') {
+                            gtag('event', 'generate_lead', { offering: offering });
+                        }
                         window.location.href = data.checkout_url;
                     } else {
                         throw new Error('Réponse invalide');
