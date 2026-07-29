@@ -5,6 +5,7 @@ garde-fou éditorial (exclusion fiabilité basse/inconnue + biais alternatif des
 tiers poussés), l'exclusion des sources déjà suivies, le thème vide et l'auth.
 """
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -14,8 +15,33 @@ from httpx import ASGITransport, AsyncClient
 from app.database import get_db
 from app.dependencies import get_current_user_id
 from app.main import app
-from app.models.enums import BiasStance, InterestState, ReliabilityScore, SourceType
+from app.models.content import Content
+from app.models.enums import (
+    BiasStance,
+    ContentType,
+    InterestState,
+    ReliabilityScore,
+    SourceType,
+)
 from app.models.source import Source, UserSource
+
+
+def _recent_article(source: Source) -> Content:
+    """Article récent (aujourd'hui) rattaché à `source`.
+
+    Nécessaire pour que la source passe le filtre de fraîcheur des surfaces
+    poussées (cf. `source_freshness`) : sans article récent, un flux `article`
+    est traité comme mort et écarté.
+    """
+    return Content(
+        id=uuid4(),
+        source_id=source.id,
+        title=f"Article récent {source.name}",
+        url=f"{source.url}/article-{uuid4()}",
+        published_at=datetime.now(UTC) - timedelta(days=1),
+        content_type=ContentType.ARTICLE,
+        guid=str(uuid4()),
+    )
 
 
 def _make_source(
@@ -86,6 +112,8 @@ async def test_tier_mapping_pepite_then_catalog(auth_ctx, db_session):
     )
     catalog = _make_source("Le Monde", theme="tech")
     db_session.add_all([pepite, catalog])
+    await db_session.flush()
+    db_session.add_all([_recent_article(pepite), _recent_article(catalog)])
     await db_session.commit()
 
     resp = await client.get("/api/sources/suggest-for-theme/tech")
@@ -133,6 +161,7 @@ async def test_excludes_followed_sources(auth_ctx, db_session):
     fresh = _make_source("Nouvelle", theme="tech")
     db_session.add_all([followed, fresh])
     await db_session.flush()
+    db_session.add_all([_recent_article(followed), _recent_article(fresh)])
     db_session.add(
         UserSource(
             user_id=user_id,
@@ -169,6 +198,8 @@ async def test_secondary_theme_source_is_eligible(auth_ctx, db_session):
     client, _ = auth_ctx
     src = _make_source("Secondaire", theme="economy", secondary_themes=["tech"])
     db_session.add(src)
+    await db_session.flush()
+    db_session.add(_recent_article(src))
     await db_session.commit()
 
     resp = await client.get("/api/sources/suggest-for-theme/tech")
