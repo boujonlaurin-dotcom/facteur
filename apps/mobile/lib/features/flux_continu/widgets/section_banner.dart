@@ -89,7 +89,7 @@ class SectionBanner extends StatelessWidget {
   );
 
   static final _titleStyleInline = GoogleFonts.fraunces(
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: FontWeight.w700,
     height: 1.08,
     letterSpacing: -0.4,
@@ -142,7 +142,7 @@ class SectionBanner extends StatelessWidget {
       // The `large` page-hero variant gets a taller floor to breathe, while
       // content can still grow naturally when title/blurb wrap.
       constraints: BoxConstraints(
-        minHeight: hasBlurb ? (large ? 116 : 76) : 48,
+        minHeight: hasBlurb ? (large ? 116 : 70) : (large ? 48 : 46),
       ),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -150,10 +150,9 @@ class SectionBanner extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            accent.withValues(alpha: 0.09),
-            accent.withValues(alpha: 0.02),
-          ],
+          colors: large
+              ? [accent.withValues(alpha: 0.09), accent.withValues(alpha: 0.02)]
+              : [accent.withValues(alpha: 0.16), accent.withValues(alpha: 0.02)],
         ),
       ),
       child: Stack(
@@ -165,8 +164,15 @@ class SectionBanner extends StatelessWidget {
             right: 0,
             child: IgnorePointer(
               child: Container(
-                width: 180,
-                height: 112,
+                // Le halo radial hérité du hero-card FeedScreen (180×112) est
+                // bien plus haut que le bandeau inline compacté (~44px) : coupé
+                // net au bord bas (clipBehavior antiAlias) avant d'avoir fondu
+                // vers alpha 0, il laissait une couture de couleur visible en
+                // bas à droite. En inline, on borne la boîte à la hauteur du
+                // bandeau pour que le dégradé finisse de fondre avant le clip.
+                // La variante `large` (Flâner, hero haut) garde le halo complet.
+                width: large ? 180 : 150,
+                height: large ? 112 : 48,
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     center: Alignment.topRight,
@@ -191,9 +197,9 @@ class SectionBanner extends StatelessWidget {
                 ? const EdgeInsets.fromLTRB(18, 18, 14, 16)
                 : EdgeInsets.fromLTRB(
                     16,
-                    hasBlurb ? 14 : 6,
+                    hasBlurb ? 12 : 12,
                     12,
-                    hasBlurb ? 11 : 7,
+                    hasBlurb ? 8 : 6,
                   ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -266,7 +272,7 @@ class SectionBanner extends StatelessWidget {
                                               .copyWith(
                                                 color: colors.textPrimary,
                                                 fontSize:
-                                                    (large ? 24 : 17) * 1.3,
+                                                    (large ? 24 : 16) * 1.3,
                                                 height: 1.0,
                                               ),
                                     ),
@@ -331,7 +337,7 @@ class SectionBanner extends StatelessWidget {
                       radius: 16,
                     ),
                   ),
-                ] else if (illustrationAsset != null) ...[
+                ] else if (large && illustrationAsset != null) ...[
                   const SizedBox(width: 12),
                   SizedBox(
                     width: large ? 96 : 62,
