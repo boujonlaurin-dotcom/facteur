@@ -10,9 +10,10 @@ class SoutienCopy {
   static const premiumStamp = 'FACT·EUR·ISSE';
   static const premiumSincePrefix = 'depuis'; // « depuis juillet 2026 »
   static const soutienTileFreeTitle = 'Nous soutenir';
-  static const soutienTileFreeSubtitle = 'Deviens Fact·eur·isse · 3 €/mois';
+  static const soutienTileFreeSubtitle =
+      'Deviens Fact·eur·isse · soutiens une info libre';
   static const soutienTilePremiumTitle = 'Ton soutien';
-  static const soutienTilePremiumSubtitle = '3 €/mois · gérer mon abonnement';
+  static const soutienTilePremiumSubtitle = 'Merci · gérer mon soutien';
   static const sereinCustomizeLabel = 'Personnaliser mes bonnes nouvelles';
   static const sereinCustomizeComingSoon = 'Bientôt disponible';
   static const veillePremiumStamp = 'PREMIUM';
@@ -47,14 +48,11 @@ class SoutienCopy {
   static const bonusSoonResumes = 'Résumés sur tes thématiques préférées';
   static const reassurance1 = 'Résiliable en un geste, sans engagement.';
   static const reassurance2 =
-      "Pas de pub, pas d'actionnaire : tes 3 € financent le média, rien "
+      "Pas de pub, pas d'actionnaire : ton soutien finance le média, rien "
       "d'autre.";
   static const reassurance3 =
       "On publie où va l'argent, chaque année, en clair.";
-  static const priceAmount = '3 €';
-  static const priceSuffix = '/mois';
-  static const soutienPriceNote = 'moins qu\'un café. Le même prix pour '
-      'tou·te·s.';
+  static const soutienPriceNote = 'sans engagement, tu soutiens quand tu veux.';
   static const soutienCta = 'Reçois ton lien pour nous rejoindre';
   static const soutienDisclaimer =
       "Le Facteur t'envoie une enveloppe par email, règles des stores "
@@ -121,5 +119,7 @@ class SoutienCopy {
   static const linkSentRateLimited =
       'Patiente une minute avant de renvoyer.';
   static const sendLinkError =
-      "Impossible d'envoyer le lien. Réessaie dans un instant.";
+      'Souci de notre côté, on est prévenus. Réessaie dans un instant.';
+  static const sendLinkAuthError =
+      'Reconnecte-toi, puis réessaie de recevoir ton lien.';
 }

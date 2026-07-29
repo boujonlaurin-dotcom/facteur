@@ -32,7 +32,7 @@ void main() {
     expect(find.text(SoutienCopy.soutienHeadline), findsOneWidget);
     expect(find.text(SoutienCopy.soutienEyebrow), findsOneWidget);
     expect(find.text(SoutienCopy.soutienCta), findsOneWidget);
-    expect(find.text(SoutienCopy.priceAmount), findsOneWidget);
+    expect(find.text(SoutienCopy.soutienPriceNote), findsOneWidget);
     expect(find.textContaining('BIENTÔT'), findsNWidgets(2));
   });
 

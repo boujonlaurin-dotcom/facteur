@@ -489,6 +489,19 @@ class _ContentShortcuts extends ConsumerWidget {
           ),
           const _Divider(),
           _ShortcutTile(
+            icon: PhosphorIcons.palette(PhosphorIconsStyle.regular),
+            label: 'Apparence',
+            onTap: () => context.pushNamed(RouteNames.appearance),
+          ),
+          const _Divider(),
+          _ShortcutTile(
+            icon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.regular),
+            label: 'Sauvegardés',
+            onTap: () => context.pushNamed(RouteNames.saved),
+          ),
+          const _Divider(),
+          // « Ma veille » en dernière position du menu (choix PO).
+          _ShortcutTile(
             icon: PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
             label: hasVeille ? 'Ma veille' : 'Crée ta veille',
             trailing: gate.canCreateVeille
@@ -502,18 +515,6 @@ class _ContentShortcuts extends ConsumerWidget {
                 : gate.canCreateVeille
                     ? context.pushNamed(RouteNames.veilleConfig)
                     : context.pushNamed(RouteNames.veilleWall),
-          ),
-          const _Divider(),
-          _ShortcutTile(
-            icon: PhosphorIcons.palette(PhosphorIconsStyle.regular),
-            label: 'Apparence',
-            onTap: () => context.pushNamed(RouteNames.appearance),
-          ),
-          const _Divider(),
-          _ShortcutTile(
-            icon: PhosphorIcons.bookmarkSimple(PhosphorIconsStyle.regular),
-            label: 'Sauvegardés',
-            onTap: () => context.pushNamed(RouteNames.saved),
           ),
         ],
       ),

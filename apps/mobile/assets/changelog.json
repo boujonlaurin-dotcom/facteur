@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Nous soutenir",
+      "summary": "L'offre de soutien met désormais en avant le geste plutôt qu'un tarif : plus de montant affiché, un cadrage « soutiens une info libre, sans pub ni actionnaire »."
+    },
+    {
       "tag": "Objectif du jour",
       "summary": "Tu choisis désormais ton objectif quotidien : dans « Progression », un curseur règle le nombre d'articles à lire jusqu'au bout pour valider ta journée (de 1 à 7). Quand tu l'atteins, le message de félicitation te propose de le réajuster, et le pied de page d'un article terminé passe tout au vert."
     },

@@ -1,5 +1,6 @@
 """Tests pour POST /api/checkout/send-link."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
@@ -13,6 +14,7 @@ from app.dependencies import get_current_user_id
 from app.routers.checkout import (
     CHECKOUT_REDIRECT_BASE_URL,
     _build_bridge_url,
+    _supabase_admin_get_user_email,
     router,
 )
 
@@ -105,6 +107,45 @@ async def test_send_link_email_not_found(db_session):
         resp = client.post("/api/checkout/send-link", json={})
 
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_send_link_email_not_found_reports_to_sentry(db_session):
+    """Le 404 « email introuvable » n'est plus silencieux : il émet un event
+    Sentry pour qu'une récidive (ex. service_role rotée) reste visible."""
+    user_id = str(uuid4())
+
+    with (
+        patch(
+            "app.routers.checkout._supabase_admin_get_user_email",
+            new=AsyncMock(return_value=None),
+        ),
+        patch("app.routers.checkout.sentry_sdk.capture_message") as capture,
+        _make_client(db_session, user_id) as client,
+    ):
+        resp = client.post("/api/checkout/send-link", json={})
+
+    assert resp.status_code == 404
+    capture.assert_called_once()
+    assert capture.call_args.args[0] == "checkout.send_link_user_email_not_found"
+
+
+@pytest.mark.asyncio
+async def test_admin_get_user_email_config_missing_reports_and_returns_none():
+    """Config admin absente → None + event Sentry (discriminant hypothèse n°1 :
+    SUPABASE_SERVICE_ROLE_KEY manquante/rotée sur le service prod)."""
+    fake_settings = SimpleNamespace(
+        supabase_url=None, supabase_service_role_key=None
+    )
+    with (
+        patch("app.routers.checkout.get_settings", return_value=fake_settings),
+        patch("app.routers.checkout.sentry_sdk.capture_message") as capture,
+    ):
+        result = await _supabase_admin_get_user_email("uid")
+
+    assert result is None
+    capture.assert_called_once()
+    assert capture.call_args.args[0] == "checkout.supabase_admin_config_missing"
 
 
 @pytest.mark.asyncio
