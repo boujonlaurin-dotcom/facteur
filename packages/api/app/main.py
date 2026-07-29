@@ -1,6 +1,7 @@
 """Point d'entrée de l'API Facteur."""
 
 import asyncio
+import hmac
 import logging
 import os
 import socket
@@ -31,7 +32,7 @@ _STARTUP_CATCHUP_LOCK = asyncio.Lock()
 
 import sentry_sdk
 import structlog
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
@@ -709,6 +710,43 @@ async def pool_metrics() -> dict[str, Any]:
         )
 
     logger.info("pool_metrics_probed", **metrics)
+    return metrics
+
+
+@app.get("/api/health/feed-cache", tags=["Health"])
+async def feed_cache_metrics(
+    x_health_token: str | None = Header(default=None, alias="X-Health-Token"),
+) -> dict[str, Any]:
+    """
+    Métriques du cache `/api/feed/` — mesure du hit rate sans infra externe.
+
+    Le cache in-process (`app.services.feed_cache`) est ce qui évite de
+    rejouer le pipeline de scoring sur les ~12 appels `personalized=true` du
+    cold-open. Cet endpoint expose ses compteurs pour vérifier, après un
+    changement d'invalidation ou de TTL, que le hit rate bouge dans le bon
+    sens.
+
+    Les compteurs sont **cumulatifs depuis le boot** : lire `hit_rate` seul
+    lisse la mesure et masquerait une régression. Prendre deux échantillons
+    et calculer le delta — `uptime_seconds` fournit la base de temps.
+
+    Contrairement à `/api/health/pool`, cet endpoint est **gated** quand
+    `HEALTH_METRICS_TOKEN` est configuré : `size` est un proxy du nombre
+    d'utilisateurs actifs. Sans le secret (staging), il reste ouvert —
+    fail-open assumé, à l'inverse de `require_admin_token`.
+    """
+    from app.services.feed_cache import FEED_CACHE
+
+    # Relu à chaque requête (comme `require_admin_token`) plutôt que depuis le
+    # `settings` de module : le secret peut être posé sans redéployer.
+    expected = get_settings().health_metrics_token
+    if expected and not (
+        x_health_token and hmac.compare_digest(x_health_token, expected)
+    ):
+        raise HTTPException(status_code=404, detail="Not Found")
+
+    metrics: dict[str, Any] = FEED_CACHE.stats()
+    logger.info("feed_cache_metrics_probed", **metrics)
     return metrics
 
 

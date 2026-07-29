@@ -80,7 +80,15 @@ async def update_content_status(
     )
 
     await db.commit()
-    FEED_CACHE.invalidate(user_uuid)
+    # SEEN (émis à chaque scroll) ne change que l'état d'affichage de cet
+    # article : purger les ~12 sections de la Tournée à chaque scroll vidait
+    # le cache en continu. La transition CONSUMED, elle, ajuste les poids
+    # subtopics/entités (cf. `content_service.update_content_status`) donc
+    # rebat le classement partout ⇒ purge complète.
+    if transitioned_to_consumed:
+        FEED_CACHE.invalidate(user_uuid)
+    else:
+        FEED_CACHE.invalidate_content(user_uuid, content_id)
     return {
         "status": "ok",
         "current_status": updated_status.status,
@@ -130,7 +138,9 @@ async def unsave_content(
     )
 
     await db.commit()
-    FEED_CACHE.invalidate(user_uuid)
+    # `set_save_status(False)` n'ajuste aucun poids (le boost n'est appliqué
+    # qu'au save).
+    FEED_CACHE.invalidate_content(user_uuid, content_id)
     return {"status": "ok", "is_saved": False}
 
 
@@ -228,7 +238,9 @@ async def unhide_content(
     await service.unset_hide_status(user_id=user_uuid, content_id=content_id)
 
     await db.commit()
-    FEED_CACHE.invalidate(user_uuid)
+    # `unset_hide_status` ne touche pas aux poids (le malus n'est appliqué
+    # qu'au hide).
+    FEED_CACHE.invalidate_content(user_uuid, content_id)
     return {"status": "ok", "is_hidden": False}
 
 
@@ -283,6 +295,10 @@ async def report_not_serene(
         )
         raise HTTPException(status_code=500, detail="Failed to record serene report")
 
+    # `is_serene=False` est un flip global sur le Content : sans purge
+    # cross-user, les sections serein des *autres* comptes continuaient à
+    # servir l'article signalé. N'invalidait rien jusqu'ici.
+    FEED_CACHE.invalidate_content_global(content_id)
     return {"status": "ok"}
 
 
@@ -325,7 +341,9 @@ async def impress_content(
     )
     await db.execute(stmt)
     await db.commit()
-    FEED_CACHE.invalidate(user_uuid)
+    # N'écrit que `manually_impressed` / `last_impressed_at` : signal par
+    # article, pas un ajustement de poids.
+    FEED_CACHE.invalidate_content(user_uuid, content_id)
     return {"status": "ok", "manually_impressed": True}
 
 
@@ -352,6 +370,10 @@ async def upsert_note(
         raise HTTPException(status_code=422, detail=str(e))
 
     await db.commit()
+    # `upsert_note` auto-sauvegarde ET booste les poids subtopics/entités
+    # (même delta que le bookmark) ⇒ le classement change partout.
+    # N'invalidait rien jusqu'ici.
+    FEED_CACHE.invalidate(user_uuid)
     return NoteResponse(
         note_text=result.note_text,
         note_updated_at=result.note_updated_at,
@@ -374,6 +396,9 @@ async def delete_note(
         raise HTTPException(status_code=404, detail="Status not found")
 
     await db.commit()
+    # Efface `note_text` sur cette ligne, sans retirer les poids boostés au
+    # upsert ⇒ seul cet article change. N'invalidait rien jusqu'ici.
+    FEED_CACHE.invalidate_content(user_uuid, content_id)
     return {"status": "ok"}
 
 

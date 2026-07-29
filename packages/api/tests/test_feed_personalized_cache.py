@@ -1,7 +1,14 @@
 """Unit tests for the personalized-section cache eligibility + variant key
-(app-load slowdown fix). Pure predicate functions — no DB / app needed."""
+(app-load slowdown fix), plus the per-request `feed_request` log."""
 
 from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+import structlog
+from httpx import ASGITransport, AsyncClient
 
 from app.models.enums import ContentType, FeedFilterMode
 from app.routers.feed import (
@@ -130,3 +137,92 @@ def test_variant_is_never_none() -> None:
         theme=None, topic=None, source_id="src", serein=True, limit=12
     )
     assert isinstance(v, str) and v
+
+
+# --- `feed_request` log ----------------------------------------------------
+#
+# `feed_total` is emitted by `_compute_feed`, so a cache hit used to produce
+# no log line at all — the hit rate was invisible and no decision on TTL or
+# invalidation scope could be grounded. These tests pin the one line every
+# request now emits.
+
+
+@pytest_asyncio.fixture
+async def feed_client(monkeypatch, feed_response_factory):
+    """Client hitting `/api/feed/` with the recommendation pipeline stubbed.
+
+    The log is what's under test, not the pipeline — stubbing `_compute_feed`
+    keeps these tests DB-free and fast.
+    """
+    from app.database import get_db
+    from app.dependencies import get_current_user_id
+    from app.main import app
+
+    async def _fake_compute(**_kwargs):
+        return feed_response_factory(items=3)
+
+    monkeypatch.setattr("app.routers.feed._compute_feed", _fake_compute)
+
+    user_id = uuid4()
+
+    async def _fake_user():
+        return str(user_id)
+
+    async def _fake_db():
+        yield None
+
+    app.dependency_overrides[get_current_user_id] = _fake_user
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            yield ac
+    finally:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        app.dependency_overrides.pop(get_db, None)
+
+
+def _feed_requests(logs: list[dict]) -> list[dict]:
+    return [entry for entry in logs if entry.get("event") == "feed_request"]
+
+
+@pytest.mark.asyncio
+async def test_logs_miss_then_hit_on_personalized_section(feed_client) -> None:
+    url = "/api/feed/?personalized=true&theme=tech&limit=12"
+
+    with structlog.testing.capture_logs() as logs:
+        assert (await feed_client.get(url)).status_code == 200
+        assert (await feed_client.get(url)).status_code == 200
+
+    miss, hit = _feed_requests(logs)
+    assert miss["cache"] == "miss"
+    assert miss["variant_class"] == "personalized"
+    assert miss["items"] == 3
+    assert miss["duration_ms"] >= 0
+    assert hit["cache"] == "hit"
+    assert hit["variant_class"] == "personalized"
+
+
+@pytest.mark.asyncio
+async def test_logs_default_view_class(feed_client) -> None:
+    with structlog.testing.capture_logs() as logs:
+        assert (await feed_client.get("/api/feed/?limit=20")).status_code == 200
+
+    (entry,) = _feed_requests(logs)
+    assert entry["cache"] == "miss"
+    assert entry["variant_class"] == "default"
+
+
+@pytest.mark.asyncio
+async def test_logs_bypass_for_non_cacheable_view(feed_client) -> None:
+    """Paginated fetches skip the cache entirely — they must still be counted,
+    else the hit rate reads as better than it is."""
+    with structlog.testing.capture_logs() as logs:
+        resp = await feed_client.get("/api/feed/?offset=20&limit=20")
+        assert resp.status_code == 200
+
+    (entry,) = _feed_requests(logs)
+    assert entry["cache"] == "bypass"
+    assert entry["variant_class"] == "none"
+    assert entry["items"] == 3
