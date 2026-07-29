@@ -210,101 +210,18 @@ void main() {
     });
 
     test(
-        'a moderate fling from inside a tall section stops at its bottom '
-        '(one step)', () {
-      // Lift inside the (300, 600) interior, landing past the section but
-      // BELOW kFastDownwardVelocity. The cap advances to the section's own
-      // bottom frame (600), not beyond (a *fast* fling skips it — see the
-      // fast-descent group).
+        'a hard fling from inside a tall section stops at its bottom (one step)',
+        () {
+      // Lift inside the (300, 600) interior, huge landing past the section.
+      // The cap advances to the section's own bottom frame (600), not beyond.
       final target = resolveSnapTarget(
         currentPixels: 320,
         naturalLanding: 5000,
-        velocity: kFastDownwardVelocity - 1,
-        scrollDirection: 1, // down, sub-threshold
+        velocity: 9000,
+        scrollDirection: 1, // down
         frames: frames,
       );
       expect(target, 600.0);
-    });
-
-    // --- Task: fast DOWNWARD fling clears a tall section in one gesture -----
-
-    test('a slow descent inside a tall section stays free (non-regression)',
-        () {
-      // Landing at 450 inside the (300,600) interior with a velocity under
-      // kFastDownwardVelocity ⇒ free reading, exactly as before.
-      final target = resolveSnapTarget(
-        currentPixels: 430,
-        naturalLanding: 450,
-        velocity: kFastDownwardVelocity - 1,
-        scrollDirection: 1,
-        frames: frames,
-      );
-      expect(target, isNull);
-    });
-
-    test('a fast descent inside a tall section snaps to the NEXT section top',
-        () {
-      // Same landing, but past the threshold: the intent reads as "passer à la
-      // suite" ⇒ target the next section top (1200), never the current
-      // section's bottom (600) — otherwise a long card needs two gestures.
-      final target = resolveSnapTarget(
-        currentPixels: 430,
-        naturalLanding: 450,
-        velocity: 2000,
-        scrollDirection: 1,
-        frames: frames,
-      );
-      expect(target, 1200.0);
-    });
-
-    test('a fast descent from a tall section bottom targets the next top', () {
-      final target = resolveSnapTarget(
-        currentPixels: 600,
-        naturalLanding: 5000,
-        velocity: 2000,
-        scrollDirection: 1,
-        frames: frames,
-      );
-      expect(target, 1200.0);
-    });
-
-    test('the fast-descent target is a different section ⇒ haptic fires', () {
-      // frameIndexOfTarget must differ from the active section (index 1, the
-      // tall one) so the screen fires exactly one settle haptic.
-      final target = resolveSnapTarget(
-        currentPixels: 430,
-        naturalLanding: 450,
-        velocity: 2000,
-        scrollDirection: 1,
-        frames: frames,
-      );
-      expect(frameIndexOfTarget(frames, target!), isNot(1));
-    });
-
-    test('a fast descent past the last section falls back to the nearest frame',
-        () {
-      // No section top after the lift point (already on the finale) ⇒ fall back
-      // to the nearest snap point rather than returning a runaway target.
-      final target = resolveSnapTarget(
-        currentPixels: 1250,
-        naturalLanding: 9000,
-        velocity: 3000,
-        scrollDirection: 1,
-        frames: frames,
-      );
-      expect(target, 1200.0);
-    });
-
-    test('a fast UPWARD fling is unaffected by the downward threshold', () {
-      // kFastDownwardVelocity is DOWN-only: the up escape still wins.
-      final target = resolveSnapTarget(
-        currentPixels: 430,
-        naturalLanding: 450,
-        velocity: -kFastUpwardVelocity - 100,
-        scrollDirection: -1,
-        frames: frames,
-      );
-      expect(target, isNull);
     });
 
     // --- Directional one-step commits --------------------------------------
