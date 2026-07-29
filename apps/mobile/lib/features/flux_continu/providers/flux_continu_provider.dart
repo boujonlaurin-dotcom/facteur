@@ -2407,22 +2407,27 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             !favoriteKeySet.contains(sectionKey(section)))
           sectionKey(section),
     ];
-    // Ordre par défaut unifié (normal & serein) : on démarre la Tournée par les
-    // favoris utilisateur (thèmes/sources/veille — le signal d'intérêt le plus
-    // fort), puis les sections suggérées « Choisie pour vous » (Story 22.3),
-    // puis les Actus du jour, puis Bonnes Nouvelles. En mode serein ce sont les
-    // contenus serein qui peuplent ces mêmes sections (fetch serein) ; seul
-    // l'ordre reste constant. Un ordre personnalisé (`customized`) reste
-    // prioritaire via `applyOrder`.
+    // Ordre par défaut unifié (normal & serein). Pour les comptes **non
+    // personnalisés** (tous les nouveaux utilisateurs), on démarre la Tournée
+    // par les Actus du jour — la section éditoriale cœur du rituel — puis les
+    // favoris utilisateur (thèmes/sources/veille), puis les suggestions
+    // « Choisie pour vous » (Story 22.3), puis Bonnes Nouvelles. La Grille
+    // s'épingle juste après les Actus (plus bas) → 2ᵉ position par défaut.
+    // Un compte **personnalisé** garde l'ordre historique (favoris d'abord,
+    // Actus après) : `applyOrder` réapplique ensuite l'arrangement manuel
+    // sticky à partir de cette base, laissant son comportement inchangé.
+    // En mode serein ce sont les contenus serein qui peuplent ces mêmes
+    // sections (fetch serein) ; seul l'ordre reste constant.
     // La Grille n'est PAS réordonnable par l'utilisateur (cf. modal « Mes
     // favoris ») : on l'exclut d'`applyOrder` et on l'épingle juste après les
     // Actus plus bas. Sinon, comme sa clé est absente de `order` (compte
     // personnalisé), `applyOrder` la reléguerait en fin de liste → coupée par
     // le cap → la Grille disparaîtrait. Régression corrigée par hotfix.
     final defaultKeys = <String>[
+      if (!customized) kTourneeActusKey,
       ...favoriteKeys,
       ...suggestedKeys,
-      kTourneeActusKey,
+      if (customized) kTourneeActusKey,
       kTourneeBonnesKey,
     ];
     final availableKeys = [
