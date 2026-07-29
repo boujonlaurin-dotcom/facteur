@@ -259,7 +259,13 @@ class _EmailConfirmationScreenState
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Clique sur le lien dans l\'email pour activer ton compte et commencer à utiliser Facteur. L\'envoi peut prendre quelques minutes.',
+                                  // Story 31.1 — arriver ici depuis la
+                                  // conversion d'une session anonyme, c'est
+                                  // avoir DÉJÀ tout configuré : « commencer à
+                                  // utiliser Facteur » serait à contresens.
+                                  ref.watch(authStateProvider).isAnonymous
+                                      ? 'Ta tournée est déjà prête. Clique sur le lien dans l\'email pour confirmer ton adresse et la recevoir. L\'envoi peut prendre quelques minutes.'
+                                      : 'Clique sur le lien dans l\'email pour activer ton compte et commencer à utiliser Facteur. L\'envoi peut prendre quelques minutes.',
                                   style: Theme.of(context)
                                       .textTheme
                                       .bodyMedium

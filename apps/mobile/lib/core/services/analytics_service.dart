@@ -346,6 +346,26 @@ class AnalyticsService {
     await _capturePostHog('onboarding_sources_registered', props);
   }
 
+  /// Étape d'onboarding vue ou franchie (story 31.1).
+  ///
+  /// Avant, une seule des treize étapes émettait un event : impossible de dire
+  /// où le parcours se perd. `stepName` est une clé stable (snake case), pas une
+  /// chaîne d'UI ; `stepIndex` est l'index global, monotone dans le parcours.
+  /// PostHog uniquement : c'est un funnel, pas une donnée produit à stocker.
+  Future<void> trackOnboardingStep({
+    required String event,
+    required String stepName,
+    required int stepIndex,
+    required int totalSteps,
+  }) async {
+    await _capturePostHog(event, {
+      'session_id': _sessionId,
+      'step_name': stepName,
+      'step_index': stepIndex,
+      'total_steps': totalSteps,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Sprint 2 — feature-by-feature events (PR1)
   // ──────────────────────────────────────────────────────────────

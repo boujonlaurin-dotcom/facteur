@@ -239,7 +239,11 @@ Future<void> _bootstrap() async {
 
   if (hasSession) {
     final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
+    // Story 31.1 — une session anonyme n'est PAS un compte : ni `$identify`
+    // (sinon la métrique d'activation install → compte devient mécaniquement
+    // 100 %), ni RevenueCat. À la conversion, Supabase émet `userUpdated` avec
+    // le même `user.id` et l'identification part à ce moment-là.
+    if (user != null && !user.isAnonymous) {
       unawaited(
         posthog.identify(
           userId: user.id,
@@ -255,7 +259,8 @@ Future<void> _bootstrap() async {
       case AuthChangeEvent.tokenRefreshed:
       case AuthChangeEvent.userUpdated:
         final user = data.session?.user;
-        if (user != null) {
+        // Idem : on n'identifie une personne qu'une fois son compte créé.
+        if (user != null && !user.isAnonymous) {
           posthog.identify(
             userId: user.id,
             properties: _userIdentifyProperties(user, appVersion: appVersion),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
+import '../../../core/providers/analytics_provider.dart';
+import '../providers/onboarding_analytics.dart';
 import '../providers/onboarding_provider.dart';
 import '../widgets/onboarding_progress_bar.dart';
 import '../widgets/reaction_screen.dart';
@@ -28,9 +30,26 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
+  /// Instrumentation du funnel (story 31.1). Vit ici plutôt que dans le
+  /// provider : celui-ci est aussi lu hors onboarding.
+  late final OnboardingStepTracker _stepTracker;
+
+  @override
+  void initState() {
+    super.initState();
+    _stepTracker = OnboardingStepTracker(ref.read(analyticsServiceProvider));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _stepTracker.onState(ref.read(onboardingProvider));
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(onboardingProvider);
+    ref.listen<OnboardingState>(
+      onboardingProvider,
+      (_, next) => _stepTracker.onState(next),
+    );
 
     return Scaffold(
       // Le clavier recouvre le bas sans redimensionner le body ; l'espace
@@ -66,11 +85,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       section: state.currentSection,
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => _showCancelConfirmation(context),
-                    icon: const Icon(Icons.close, size: 20),
-                    tooltip: 'Quitter le questionnaire',
-                  ),
+                  // Story 31.1 — pas de sortie pour une session anonyme : elle
+                  // n'a ni compte ni profil, quitter le questionnaire la
+                  // laisserait sur un feed vide sans jamais reproposer la
+                  // création de compte. La croix reste pour un utilisateur
+                  // authentifié qui refait son onboarding.
+                  if (ref.watch(authStateProvider).isAnonymous)
+                    const SizedBox(width: 48)
+                  else
+                    IconButton(
+                      onPressed: () => _showCancelConfirmation(context),
+                      icon: const Icon(Icons.close, size: 20),
+                      tooltip: 'Quitter le questionnaire',
+                    ),
                 ],
               ),
             ),

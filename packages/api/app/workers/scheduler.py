@@ -13,6 +13,7 @@ from app.jobs.digest_generation_job import (
     run_digest_generation,
 )
 from app.jobs.promote_sources_job import promote_evaluated_sources
+from app.jobs.purge_anonymous_users import purge_anonymous_users
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_coverage_themes import (
     recompute_source_coverage_themes,
@@ -551,6 +552,19 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Purge des sessions anonymes abandonnées (story 31.1 : l'onboarding sans
+    # compte crée une ligne `auth.users` par install). 4h15 Paris, juste après
+    # purge_deleted_users pour ne pas croiser ses suppressions de profils.
+    scheduler.add_job(
+        purge_anonymous_users,
+        trigger=CronTrigger(hour=4, minute=15, timezone=_PARIS_TZ),
+        id="purge_anonymous_users",
+        name="Purge abandoned anonymous sessions (>30d)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Recalcul `sources.language` à partir des Content des 30 derniers jours
     # (3h30 Paris, après storage_cleanup pour partir d'un pool nettoyé).
     scheduler.add_job(
@@ -680,6 +694,7 @@ def start_scheduler() -> None:
             "digest_watchdog",
             "storage_cleanup",
             "purge_deleted_users",
+            "purge_anonymous_users",
             "recompute_source_language",
             "rescue_failed_sources",
             "recompute_source_coverage_themes",
