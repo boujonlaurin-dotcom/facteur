@@ -64,7 +64,9 @@ class FeedbackInvite(Base):
 
     Attributes:
         user_id: UUID de l'utilisateur (unique).
-        status: "pending" | "snoozed" | "accepted" | "declined".
+        status: "pending" | "snoozed" | "accepted" | "declined" | "already_done".
+            Colonne texte libre (pas d'enum PG) : ajouter une valeur ne demande
+            aucune migration.
         segment: Segment d'activité au moment du déclenchement
             ("returning" | "low_active" | "active").
         shown_count: Nombre de fois où la modal a été affichée.

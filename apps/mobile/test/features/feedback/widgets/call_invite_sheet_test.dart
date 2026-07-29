@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:facteur/features/feedback/feedback_call_copy.dart';
 import 'package:facteur/features/feedback/providers/feedback_providers.dart';
 import 'package:facteur/features/feedback/repositories/feedback_repository.dart';
 import 'package:facteur/features/feedback/widgets/call_invite_sheet.dart';
@@ -15,6 +16,15 @@ void main() {
     mockRepo = MockFeedbackRepository();
     when(() => mockRepo.submitInviteAction(any())).thenAnswer((_) async {});
   });
+
+  // Viewport téléphone (390x844, la cible QA du projet) : le viewport de test
+  // par défaut (800x600) est plus court que n'importe quel mobile réel et
+  // pousserait les sorties de la modale hors écran.
+  void usePhoneViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+  }
 
   // Bouton lanceur pour disposer d'un Navigator capable de "pop".
   Widget createLauncher(String? segment) {
@@ -39,41 +49,63 @@ void main() {
   }
 
   Future<void> openSheet(WidgetTester tester, String? segment) async {
+    usePhoneViewport(tester);
     await tester.pumpWidget(createLauncher(segment));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
 
   group('CallInviteSheet', () {
-    testWidgets('shows the active-segment copy and three options',
+    testWidgets('shows the founders, the ask and the three exits',
         (tester) async {
       await openSheet(tester, 'active');
 
-      expect(find.textContaining('Merci d\'être là'), findsOneWidget);
-      expect(find.text('15 min, je suis curieux'), findsOneWidget);
-      expect(find.text('J\'ai un truc précis à te dire'), findsOneWidget);
-      expect(find.text('Pas maintenant'), findsOneWidget);
+      expect(find.text('DJANGO'), findsOneWidget);
+      expect(find.text('LAURIN'), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.stamp), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.title), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.ask), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.signature), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.ctaBook), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.ctaLater), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.ctaAlreadyDone), findsOneWidget);
     });
 
-    testWidgets('shows returning-segment copy', (tester) async {
-      await openSheet(tester, 'returning');
-      expect(find.textContaining('Content de te revoir'), findsOneWidget);
+    testWidgets('uses the regular-reader copy for the active segment',
+        (tester) async {
+      await openSheet(tester, 'active');
+      expect(find.text(FeedbackCallCopy.bodyActive), findsOneWidget);
     });
 
-    testWidgets('shows low_active-segment copy', (tester) async {
+    testWidgets('uses the occasional copy for low_active and returning',
+        (tester) async {
       await openSheet(tester, 'low_active');
-      expect(find.textContaining('On prend 15 min'), findsOneWidget);
+      expect(find.text(FeedbackCallCopy.bodyOccasional), findsOneWidget);
+
+      await openSheet(tester, 'returning');
+      expect(find.text(FeedbackCallCopy.bodyOccasional), findsOneWidget);
     });
 
-    testWidgets('"Pas maintenant" records declined and closes the sheet',
+    testWidgets('"Plus tard" records declined and closes the sheet',
         (tester) async {
       await openSheet(tester, 'active');
 
-      await tester.tap(find.text('Pas maintenant'));
+      await tester.tap(find.text(FeedbackCallCopy.ctaLater));
       await tester.pumpAndSettle();
 
       verify(() => mockRepo.submitInviteAction('declined')).called(1);
-      expect(find.text('Pas maintenant'), findsNothing);
+      expect(find.text(FeedbackCallCopy.ctaLater), findsNothing);
+    });
+
+    testWidgets('"On l\'a déjà fait" records already_done and closes the sheet',
+        (tester) async {
+      await openSheet(tester, 'active');
+
+      await tester.tap(find.text(FeedbackCallCopy.ctaAlreadyDone));
+      await tester.pumpAndSettle();
+
+      verify(() => mockRepo.submitInviteAction('already_done')).called(1);
+      expect(find.text(FeedbackCallCopy.ctaAlreadyDone), findsNothing);
     });
   });
 }

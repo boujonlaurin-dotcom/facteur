@@ -15,12 +15,27 @@ import pytest
 from app.services.ml.classification_service import (
     CLASSIFICATION_CACHE_KEY,
     CLASSIFICATION_MODEL,
+    CLASSIFICATION_SYSTEM_PROMPT,
     ENTITY_CACHE_KEY,
     ENTITY_SYSTEM_PROMPT,
     VALID_TOPIC_SLUGS,
     ClassificationService,
     _clean_text,
 )
+
+
+class TestSerenityPrompt:
+    """Guards for the serenity classification rule (issue 1: positive framing of
+    an anxiogenic base topic must not flip it to serene)."""
+
+    def test_positive_framing_rule_present(self):
+        """The system prompt states the base topic decides, not the framing."""
+        assert "c'est le sujet de fond qui décide" in CLASSIFICATION_SYSTEM_PROMPT
+        assert "cadrage positif" in CLASSIFICATION_SYSTEM_PROMPT
+
+    def test_cache_key_bumped_with_prompt(self):
+        """A system-prompt change must bump the Mistral prompt cache key."""
+        assert CLASSIFICATION_CACHE_KEY == "facteur-classif-v2"
 
 
 class TestCleanText:

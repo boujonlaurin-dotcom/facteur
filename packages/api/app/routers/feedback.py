@@ -45,6 +45,11 @@ ACTIVE_MIN = 4
 SNOOZE_DAYS = 21
 # Nombre maximum d'affichages avant abandon définitif.
 MAX_SHOWS = 2
+# Actions qui closent l'invitation immédiatement (story 13.3).
+TERMINAL_ACTIONS = ("accepted", "already_done")
+# Statuts qui closent l'invitation : les actions terminales, plus le "declined"
+# posé après MAX_SHOWS affichages. Source unique pour le gating du GET.
+TERMINAL_STATUSES = (*TERMINAL_ACTIONS, "declined")
 
 
 def classify_segment(completion_dates: list[date], today: date) -> str | None:
@@ -162,7 +167,7 @@ async def get_invite_status(
     )
 
     if invite is not None:
-        if invite.status in ("accepted", "declined"):
+        if invite.status in TERMINAL_STATUSES:
             return FeedbackInviteStatus(
                 should_show=False, segment=segment, reason=invite.status
             )
@@ -227,7 +232,9 @@ async def submit_invite_action(
     """Enregistre l'action de l'utilisateur sur la modal.
 
     - "accepted" : a cliqué pour prendre un call → statut terminal.
-    - "declined" : "Pas maintenant" → snooze, ou abandon définitif après
+    - "already_done" : a déjà échangé avec nous → statut terminal, plus jamais
+      sollicité (self-déclaration, cf. story 13.3).
+    - "declined" : "Plus tard" → snooze, ou abandon définitif après
       MAX_SHOWS affichages.
     """
     user_uuid = UUID(current_user_id)
@@ -240,8 +247,8 @@ async def submit_invite_action(
         db.add(invite)
 
     try:
-        if request.action == "accepted":
-            invite.status = "accepted"
+        if request.action in TERMINAL_ACTIONS:
+            invite.status = request.action
             invite.snoozed_until = None
         else:  # declined
             if invite.shown_count >= MAX_SHOWS:

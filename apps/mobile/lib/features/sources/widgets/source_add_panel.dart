@@ -86,7 +86,19 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   bool _expanded = false;
   bool _sourceAdded = false;
   final Set<String> _addedSourceIds = {};
+  // Ajouts en cours (clé stable par résultat) : désactive le bouton pendant
+  // l'appel réseau pour bloquer les double-taps.
+  final Set<String> _addingKeys = {};
   String? _lastAddedName;
+
+  /// Clé d'identité stable d'un résultat, valable pour une source catalogue
+  /// (sourceId) comme pour une URL custom (feedUrl/url) — le sourceId étant
+  /// null pour les ajouts manuels.
+  String _resultKey(SmartSearchResult r) {
+    final id = r.sourceId;
+    if (id != null && id.isNotEmpty && id != 'null') return id;
+    return r.feedUrl.isNotEmpty ? r.feedUrl : r.url;
+  }
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
   bool _searchActive = false;
@@ -205,6 +217,11 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
   }
 
   Future<void> _addSource(SmartSearchResult result) async {
+    final key = _resultKey(result);
+    // Anti double-tap : un ajout déjà en cours pour ce résultat bloque les
+    // clics répétés (le PO avait créé la source 4 fois).
+    if (_addingKeys.contains(key)) return;
+    setState(() => _addingKeys.add(key));
     try {
       final sourceId = result.sourceId;
       final hasCatalogId =
@@ -212,7 +229,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
 
       if (widget.veilleMode) {
         setState(() {
-          if (hasCatalogId) _addedSourceIds.add(sourceId);
+          _addedSourceIds.add(key);
           _sourceAdded = true;
           _lastAddedName = result.name;
         });
@@ -227,7 +244,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       if (hasCatalogId) {
         await repository.trustSource(sourceId);
         setState(() {
-          _addedSourceIds.add(sourceId);
+          _addedSourceIds.add(key);
           _sourceAdded = true;
           _lastAddedName = result.name;
         });
@@ -238,6 +255,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         }
         await repository.addCustomSource(result.feedUrl, name: result.name);
         setState(() {
+          _addedSourceIds.add(key);
           _sourceAdded = true;
           _lastAddedName = result.name;
         });
@@ -298,6 +316,8 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
       if (mounted) {
         NotificationService.showError('Erreur lors de l\'ajout : $e');
       }
+    } finally {
+      if (mounted) setState(() => _addingKeys.remove(key));
     }
   }
 
@@ -663,10 +683,12 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
         ),
         const SizedBox(height: 12),
         ...results.map((result) {
+          final key = _resultKey(result);
           final id = result.sourceId;
           final isAdded =
-              _addedSourceIds.contains(id) ||
+              _addedSourceIds.contains(key) ||
               (id != null && followedIds.contains(id));
+          final isAdding = _addingKeys.contains(key);
           // E3 — la carte bascule en preuve « Connecté » à l'ajout pour
           // l'onboarding (inlineProof) et pour une correspondance vérifiée
           // dans le panneau normal. Jamais en veilleMode : le sheet Veille
@@ -676,6 +698,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           return SourceResultCard(
             result: result,
             isAdded: isAdded,
+            isAdding: isAdding,
             showProof: showProof,
             onAdd: () => _addSource(result),
             onPreview: () => _previewSource(result),

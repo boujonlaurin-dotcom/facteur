@@ -164,6 +164,13 @@ class OnboardingAnswers {
   }
 }
 
+/// `mediaConcentration` → `media_concentration`. Utilisé pour dériver les clés
+/// d'analyse des noms d'enum sans les dupliquer à la main.
+String _snakeCase(String value) => value.replaceAllMapped(
+      RegExp(r'[A-Z]'),
+      (match) => '_${match.group(0)!.toLowerCase()}',
+    );
+
 /// Sections de l'onboarding
 enum OnboardingSection {
   overview(1, OnboardingStrings.section1Label),
@@ -292,6 +299,24 @@ class OnboardingState {
       case OnboardingSection.sourcePreferences:
         return _section3StepIndex / section3QuestionCount;
     }
+  }
+
+  /// Nom stable de l'étape courante, pour l'instrumentation du funnel
+  /// (`onboarding_step_viewed` / `onboarding_step_completed`, story 31.1).
+  ///
+  /// Snake case volontairement figé : c'est une clé d'analyse PostHog, pas une
+  /// chaîne d'UI. `unknown` couvre les index hors bornes (reprise Hive d'une
+  /// position écrite par une version antérieure).
+  String get currentStepName {
+    final questions = switch (currentSection) {
+      OnboardingSection.overview => Section1Question.values,
+      OnboardingSection.appPreferences => Section2Question.values,
+      OnboardingSection.sourcePreferences => Section3Question.values,
+    };
+    if (currentQuestionIndex < 0 || currentQuestionIndex >= questions.length) {
+      return 'unknown';
+    }
+    return _snakeCase(questions[currentQuestionIndex].name);
   }
 
   Section1Question get currentSection1Question =>

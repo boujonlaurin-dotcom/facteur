@@ -46,17 +46,10 @@ void main() {
       expect(find.text('🔥'), findsOneWidget);
     });
 
-    testWidgets('hides the call CTA when not eligible', (tester) async {
-      await tester.pumpWidget(
-        createWidget(const FeedbackInviteStatus(shouldShow: false)),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Discuter avec Laurin'), findsNothing);
-      verifyNever(() => mockRepo.markInviteShown());
-    });
-
-    testWidgets('shows the call CTA and marks shown when eligible',
+    // Story 13.3 — l'invitation a quitté la carte de clôture pour
+    // `CallInviteEntry`, quelques blocs avant la fin de la Tournée. La carte ne
+    // porte donc plus ni CTA ni comptage d'affichage, même pour un éligible.
+    testWidgets('never carries the call invite, even when eligible',
         (tester) async {
       await tester.pumpWidget(
         createWidget(
@@ -65,8 +58,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Discuter avec Laurin'), findsOneWidget);
-      verify(() => mockRepo.markInviteShown()).called(1);
+      expect(find.textContaining('café'), findsNothing);
+      expect(find.byType(ElevatedButton), findsNothing);
+      verifyNever(() => mockRepo.markInviteShown());
     });
   });
 }

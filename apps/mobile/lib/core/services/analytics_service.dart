@@ -346,6 +346,26 @@ class AnalyticsService {
     await _capturePostHog('onboarding_sources_registered', props);
   }
 
+  /// Étape d'onboarding vue ou franchie (story 31.1).
+  ///
+  /// Avant, une seule des treize étapes émettait un event : impossible de dire
+  /// où le parcours se perd. `stepName` est une clé stable (snake case), pas une
+  /// chaîne d'UI ; `stepIndex` est l'index global, monotone dans le parcours.
+  /// PostHog uniquement : c'est un funnel, pas une donnée produit à stocker.
+  Future<void> trackOnboardingStep({
+    required String event,
+    required String stepName,
+    required int stepIndex,
+    required int totalSteps,
+  }) async {
+    await _capturePostHog(event, {
+      'session_id': _sessionId,
+      'step_name': stepName,
+      'step_index': stepIndex,
+      'total_steps': totalSteps,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Sprint 2 — feature-by-feature events (PR1)
   // ──────────────────────────────────────────────────────────────
@@ -438,6 +458,55 @@ class AnalyticsService {
     await _logEvent('app_feedback_opened', props);
     await _capturePostHog('app_feedback_opened', props);
   }
+
+  // ─── Invitation « un café en visio » (Epic 13, story 13.3) ───
+  // Funnel complet : shown (entrée inline vue) → opened (modale, auto ou tap)
+  // → booked / snoozed / already_done. `segment` = classification backend
+  // ("active" | "low_active" | "returning").
+
+  /// Nom d'event de sortie du funnel, par action envoyée au backend.
+  static const _feedbackInviteExitEvents = {
+    'accepted': 'feedback_invite_booked',
+    'declined': 'feedback_invite_snoozed',
+    'already_done': 'feedback_invite_already_done',
+  };
+
+  Future<void> _trackFeedbackInvite(
+    String event,
+    String? segment, {
+    Map<String, dynamic> extra = const {},
+  }) async {
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      if (segment != null) 'segment': segment,
+      ...extra,
+    };
+    await _logEvent(event, props);
+    await _capturePostHog(event, props);
+  }
+
+  /// L'entrée inline est réellement entrée dans le viewport.
+  Future<void> trackFeedbackInviteShown({String? segment}) =>
+      _trackFeedbackInvite('feedback_invite_shown', segment);
+
+  /// origin: 'auto' (auto-déploiement une fois) | 'tap' (entrée inline).
+  Future<void> trackFeedbackInviteOpened({
+    String? segment,
+    required String origin,
+  }) =>
+      _trackFeedbackInvite(
+        'feedback_invite_opened',
+        segment,
+        extra: {'origin': origin},
+      );
+
+  /// Sortie du funnel. `action` = celle envoyée au backend
+  /// ("accepted" | "declined" | "already_done").
+  Future<void> trackFeedbackInviteAction(String action, {String? segment}) =>
+      _trackFeedbackInvite(
+        _feedbackInviteExitEvents[action] ?? 'feedback_invite_$action',
+        segment,
+      );
 
   /// origin: 'digest' | 'feed' | 'settings'
   Future<void> trackArticleFeedbackSubmitted({

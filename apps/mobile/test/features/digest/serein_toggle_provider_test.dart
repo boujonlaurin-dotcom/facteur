@@ -214,15 +214,17 @@ void main() {
       expect(Hive.box<dynamic>('settings').get(_key('userA')), isTrue);
     });
 
-    test('ne marque pas reconciled → une sync serveur peut encore corriger', () {
+    test('gèle la réconciliation → un /digest/both tardif ne l\'écrase pas', () {
+      // Régression issue 2 : le 1er /digest/both après l'onboarding peut lire
+      // une préférence pas encore commitée durablement (fenêtre purge→réinsert
+      // de save_onboarding). Le choix onboarding, explicite, doit tenir.
       final container = _container(_FakeAuthNotifier('userA'));
       final notifier = container.read(sereinToggleProvider.notifier);
 
       notifier.commitFromOnboarding(true);
-      // La préférence serveur fait autorité pour la réconciliation.
-      notifier.initFromApi(false);
+      notifier.initFromApi(false); // sync tardive lisant une valeur périmée
 
-      expect(container.read(sereinToggleProvider).enabled, isFalse);
+      expect(container.read(sereinToggleProvider).enabled, isTrue);
     });
   });
 

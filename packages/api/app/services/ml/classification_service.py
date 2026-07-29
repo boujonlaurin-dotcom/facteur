@@ -268,6 +268,7 @@ serene = false : tout sujet susceptible de provoquer de l'anxiété chez le lect
 - Tensions géopolitiques, menaces nucléaires, sanctions
 - Maltraitance, violences conjugales, pédocriminalité
 Règle : si le sujet principal de l'article est anxiogène, même partiellement, marque false.
+Un cadrage positif (solidarité, tourisme, entraide, hommage) d'un sujet de fond anxiogène NE le rend PAS serene : c'est le sujet de fond qui décide.
 En cas de doute, marque false.
 
 ## ENTITÉS NOMMÉES
@@ -319,7 +320,7 @@ MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 # (PAS `cache_control`) : route les requêtes partageant le même gros préfixe
 # système vers le même cache → tokens de prompt re-facturés moins cher. Une clé
 # par prompt système stable ; bumper le suffixe `-vN` si le prompt change.
-CLASSIFICATION_CACHE_KEY = "facteur-classif-v1"
+CLASSIFICATION_CACHE_KEY = "facteur-classif-v2"
 ENTITY_CACHE_KEY = "facteur-entities-v1"
 
 ENTITY_SYSTEM_PROMPT = """\
