@@ -21,6 +21,8 @@ from app.services.premium_curated_sources import (
     PREMIUM_CURATED_MAP,
     is_paywalled_source,
 )
+from app.services.source_freshness import freshness_verdicts
+from app.services.source_recommendation_gate import passes_safety_gate
 
 logger = structlog.get_logger()
 
@@ -145,16 +147,27 @@ class PepiteService:
         result = await self.db.execute(query)
         rows = result.all()
 
+        # Gate de sécurité : une pépite ne doit jamais être poussée si sa
+        # fiabilité est basse/inconnue ou son positionnement alternatif — même
+        # depuis le carrousel (cohérence avec le footer « Étoffer »).
+        rows = [row for row in rows if passes_safety_gate(row[0])]
+
+        # Fraîcheur : écarte les feeds morts, déclasse les cadences lentes sans
+        # article récent (cf. source_freshness).
+        verdicts = await freshness_verdicts(self.db, [row[0] for row in rows])
+        rows = [row for row in rows if not verdicts[row[0].id].excluded]
+
         def _match_score(source: Source) -> int:
             if not source.pepite_for_themes or not interest_slugs:
                 return 0
             return len(set(source.pepite_for_themes) & interest_slugs)
 
-        # Tri prioritaire : (1) source avec logo (les cartes sans logo
-        # sont moins "vendeuses" visuellement), (2) match thème user,
-        # (3) nb de followers.
+        # Tri prioritaire : (1) source fraîche avant source déclassée, (2) source
+        # avec logo (cartes sans logo moins "vendeuses"), (3) match thème user,
+        # (4) nb de followers.
         rows.sort(
             key=lambda row: (
+                0 if verdicts[row[0].id].downgraded else 1,
                 1 if row[0].logo_url else 0,
                 _match_score(row[0]),
                 row[1] or 0,

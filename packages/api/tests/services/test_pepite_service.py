@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.models.enums import SourceType
+from app.models.enums import BiasStance, ReliabilityScore, SourceType
 from app.services.pepite_service import (
     DISMISS_COOL_DOWN_DAYS,
     RATE_LIMIT_HOURS,
@@ -33,12 +33,15 @@ def _mk_source(
     is_curated=True,
     pepite_for_themes=None,
     source_id=None,
+    source_type=SourceType.ARTICLE,
+    reliability_score=ReliabilityScore.HIGH,
+    bias_stance=BiasStance.CENTER,
 ):
     return SimpleNamespace(
         id=source_id or uuid4(),
         name=name,
         url=f"https://{name.lower().replace(' ', '')}.example.com",
-        type=SourceType.ARTICLE,
+        type=source_type,
         theme=theme,
         description=None,
         logo_url=None,
@@ -46,8 +49,8 @@ def _mk_source(
         is_active=True,
         is_pepite_recommendation=True,
         pepite_for_themes=pepite_for_themes,
-        bias_stance=SimpleNamespace(value="unknown"),
-        reliability_score=SimpleNamespace(value="unknown"),
+        bias_stance=bias_stance,
+        reliability_score=reliability_score,
         bias_origin=SimpleNamespace(value="unknown"),
         secondary_themes=None,
         granular_topics=None,
@@ -56,6 +59,18 @@ def _mk_source(
         score_rigor=None,
         score_ux=None,
     )
+
+
+def _freshness_result(*sources, days_ago=1):
+    """MagicMock result for `fetch_last_published`.
+
+    Chaque source reçoit un dernier article à `days_ago` jours (fraîche par
+    défaut). Une source absente ⇒ aucun article ⇒ feed mort pour `classify`.
+    """
+    result = MagicMock()
+    last = _now() - timedelta(days=days_ago)
+    result.all.return_value = [(s.id, last) for s in sources]
+    return result
 
 
 class TestRateLimitPredicate:
@@ -188,7 +203,12 @@ class TestSelection:
         sources_result = MagicMock()
         sources_result.all.return_value = [(src, 0)]
         session.execute = AsyncMock(
-            side_effect=[followed_result, interests_result, sources_result]
+            side_effect=[
+                followed_result,
+                interests_result,
+                sources_result,
+                _freshness_result(src),
+            ]
         )
 
         service = PepiteService(session)
@@ -226,7 +246,12 @@ class TestSelection:
         sources_result.all.return_value = [(visible, 3)]
 
         session.execute = AsyncMock(
-            side_effect=[followed_result, interests_result, sources_result]
+            side_effect=[
+                followed_result,
+                interests_result,
+                sources_result,
+                _freshness_result(visible),
+            ]
         )
 
         service = PepiteService(session)
@@ -258,7 +283,12 @@ class TestSelection:
         sources_result.all.return_value = [(no_match, 10), (match, 1)]
 
         session.execute = AsyncMock(
-            side_effect=[followed_result, interests_result, sources_result]
+            side_effect=[
+                followed_result,
+                interests_result,
+                sources_result,
+                _freshness_result(no_match, match),
+            ]
         )
 
         service = PepiteService(session)
@@ -287,7 +317,12 @@ class TestSelection:
         sources_result.all.return_value = [(src, 0)]
 
         session.execute = AsyncMock(
-            side_effect=[followed_result, interests_result, sources_result]
+            side_effect=[
+                followed_result,
+                interests_result,
+                sources_result,
+                _freshness_result(src),
+            ]
         )
 
         service = PepiteService(session)
@@ -295,6 +330,88 @@ class TestSelection:
         assert results
         assert perso.pepite_carousel_last_shown_at is not None
         session.flush.assert_awaited()
+
+
+class TestSafetyGateAndFreshness:
+    """Le carrousel Pépites applique le gate de sécurité + le filtre fraîcheur."""
+
+    def _wire(self, session, rows, freshness):
+        perso = SimpleNamespace(
+            pepite_carousel_last_shown_at=None,
+            pepite_carousel_dismissed_at=None,
+            muted_sources=[],
+        )
+        session.scalar = AsyncMock(return_value=perso)
+        session.add = MagicMock()
+        session.flush = AsyncMock()
+        followed_result = MagicMock()
+        followed_result.scalars.return_value.all.return_value = []
+        interests_result = MagicMock()
+        interests_result.all.return_value = []
+        sources_result = MagicMock()
+        sources_result.all.return_value = rows
+        session.execute = AsyncMock(
+            side_effect=[
+                followed_result,
+                interests_result,
+                sources_result,
+                freshness,
+            ]
+        )
+
+    @pytest.mark.asyncio
+    async def test_excludes_alternative_bias_source(self):
+        session = AsyncMock()
+        alt = _mk_source(name="Limit", bias_stance=BiasStance.ALTERNATIVE)
+        ok = _mk_source(name="Vert")
+        self._wire(session, [(alt, 5), (ok, 5)], _freshness_result(alt, ok))
+
+        service = PepiteService(session)
+        results = await service.get_pepites_for_user(str(uuid4()), limit=4)
+        assert [r.name for r in results] == ["Vert"]
+
+    @pytest.mark.asyncio
+    async def test_excludes_unknown_reliability_source(self):
+        session = AsyncMock()
+        unknown = _mk_source(
+            name="Les Lueurs", reliability_score=ReliabilityScore.UNKNOWN
+        )
+        ok = _mk_source(name="Vert")
+        self._wire(session, [(unknown, 5), (ok, 5)], _freshness_result(unknown, ok))
+
+        service = PepiteService(session)
+        results = await service.get_pepites_for_user(str(uuid4()), limit=4)
+        assert [r.name for r in results] == ["Vert"]
+
+    @pytest.mark.asyncio
+    async def test_excludes_dead_article_feed(self):
+        session = AsyncMock()
+        dead = _mk_source(name="StreetPress", source_type=SourceType.ARTICLE)
+        alive = _mk_source(name="Vert", source_type=SourceType.ARTICLE)
+        # `dead` absente du résultat fraîcheur ⇒ 0/0 ⇒ feed mort exclu.
+        self._wire(session, [(dead, 5), (alive, 5)], _freshness_result(alive))
+
+        service = PepiteService(session)
+        results = await service.get_pepites_for_user(str(uuid4()), limit=4)
+        assert [r.name for r in results] == ["Vert"]
+
+    @pytest.mark.asyncio
+    async def test_slow_podcast_kept_but_downgraded(self):
+        session = AsyncMock()
+        # Podcast sans article sur 30j mais actif sur 90j ⇒ conservé, déclassé.
+        slow = _mk_source(name="Monsieur Phi", source_type=SourceType.PODCAST)
+        fresh = _mk_source(name="Next.ink", source_type=SourceType.ARTICLE)
+        freshness = MagicMock()
+        freshness.all.return_value = [
+            (slow.id, _now() - timedelta(days=45)),  # silencieux 30j, actif 90j
+            (fresh.id, _now() - timedelta(days=1)),
+        ]
+        # slow a plus de followers → sans déclassement il passerait devant.
+        self._wire(session, [(slow, 99), (fresh, 1)], freshness)
+
+        service = PepiteService(session)
+        results = await service.get_pepites_for_user(str(uuid4()), limit=4)
+        assert [r.name for r in results] == ["Next.ink", "Monsieur Phi"]
 
 
 class TestDismiss:
