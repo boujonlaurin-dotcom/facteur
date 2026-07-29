@@ -1964,6 +1964,11 @@ class DigestService:
                         if s.representative_content_id
                         else None
                     ),
+                    # `score` / `pillar_scores` : forward-only, alimentent la
+                    # jauge CTR (scripts/evaluate_feed_ranking.py). `None` sur
+                    # les chemins non scorés (fallback clusters vides) et sur
+                    # tous les `extra_actu_articles`, qui ne passent jamais par
+                    # le scoring.
                     "actu_article": {
                         "content_id": str(s.actu_article.content_id),
                         "title": s.actu_article.title,
@@ -1972,6 +1977,8 @@ class DigestService:
                         "is_user_source": s.actu_article.is_user_source,
                         "badge": "actu",
                         "published_at": s.actu_article.published_at.isoformat(),
+                        "score": s.actu_article.score,
+                        "pillar_scores": s.actu_article.pillar_scores,
                     }
                     if s.actu_article
                     else None,

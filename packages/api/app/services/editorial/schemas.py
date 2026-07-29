@@ -38,7 +38,17 @@ class SelectedTopic(BaseModel):
 
 
 class MatchedActuArticle(BaseModel):
-    """ÉTAPE 3A output — news article from user's sources."""
+    """ÉTAPE 3A output — news article from user's sources.
+
+    `score` / `pillar_scores` sont **facultatifs et forward-only** : ils ne sont
+    renseignés que pour le représentant re-scoré per-user
+    (`digest_selector._project_editorial_for_user`), afin que la jauge CTR
+    (`scripts/evaluate_feed_ranking.py`) puisse croiser consommation et score.
+    Les `extra_actu_articles` ne passent jamais par le scoring (tri
+    `(thumbnail, published_at)` dans `actu_matcher`) : ils resteront `None`.
+    Les défauts Pydantic garantissent que les snapshots déjà persistés
+    continuent de parser.
+    """
 
     content_id: UUID
     title: str
@@ -46,6 +56,8 @@ class MatchedActuArticle(BaseModel):
     source_id: UUID
     is_user_source: bool
     published_at: datetime
+    score: float | None = None
+    pillar_scores: dict[str, float] | None = None
 
 
 class MatchedDeepArticle(BaseModel):

@@ -1240,11 +1240,15 @@ class DigestSelector:
 
         # 2. Scoring unifié (réutilise _score_candidates / pillar_engine).
         score_map: dict[UUID, float] = {}
+        # Conservé pour être persisté sur l'article (jauge CTR). Sans ça le
+        # détail par pilier est calculé puis jeté à chaque digest.
+        pillar_map: dict[UUID, dict[str, float]] = {}
         score_inputs = rep_contents + solo_candidates
         if score_inputs:
             try:
                 scored = await self._score_candidates(score_inputs, context, mode=mode)
                 score_map = {c.id: sc for c, sc, _bd, _pillar_scores in scored}
+                pillar_map = {c.id: ps for c, _sc, _bd, ps in scored}
             except Exception:
                 # Dégradation sûre : sans scoring on garde l'ordre run_for_user.
                 logger.exception(
@@ -1322,14 +1326,23 @@ class DigestSelector:
 
         renumbered: list[EditorialSubject] = []
         for new_rank, s in enumerate(ordered, start=1):
-            renumbered.append(
-                s.model_copy(
-                    update={
-                        "rank": new_rank,
-                        "is_a_la_une": s.is_a_la_une and new_rank == 1,
-                    }
-                )
-            )
+            update: dict[str, object] = {
+                "rank": new_rank,
+                "is_a_la_une": s.is_a_la_une and new_rank == 1,
+            }
+            # Le score du représentant est attaché ICI et pas plus haut : les
+            # sujets sont recopiés par cette boucle, donc tout `model_copy`
+            # antérieur serait redroppé.
+            if s.actu_article is not None:
+                content_id = s.actu_article.content_id
+                if content_id in score_map:
+                    update["actu_article"] = s.actu_article.model_copy(
+                        update={
+                            "score": score_map[content_id],
+                            "pillar_scores": pillar_map.get(content_id) or None,
+                        }
+                    )
+            renumbered.append(s.model_copy(update=update))
 
         actu_hits = sum(1 for s in renumbered if s.actu_article is not None)
         deep_hits = sum(1 for s in renumbered if s.deep_article is not None)
