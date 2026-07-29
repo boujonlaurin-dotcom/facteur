@@ -8,6 +8,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/ui/notification_service.dart';
+import '../../alerts/widgets/alert_activation_sheet.dart';
 import '../../my_interests/models/user_interests_state.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../models/smart_search_result.dart';
@@ -252,6 +253,9 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
             .setSourceState(sourceId, InterestState.favorite);
         if (!mounted) return;
 
+        await maybeOfferAlert(context, ref, sourceId: sourceId);
+        if (!mounted) return;
+
         // E3 — preuve inline « Connecté » sans modale pour l'onboarding
         // (inlineProof) ET pour une correspondance vérifiée dans le panneau
         // normal : la carte transformée reste visible, pas de reset de la
@@ -336,6 +340,7 @@ class _SourceAddPanelState extends ConsumerState<SourceAddPanel> {
           NotificationService.showSuccess(
             'Source ajoutee ! Ses contenus apparaitront dans ton feed.',
           );
+          await maybeOfferAlert(context, ref, sourceId: source.id);
         }
       }
       ref.invalidate(trendingSourcesProvider);

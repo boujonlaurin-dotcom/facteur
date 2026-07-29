@@ -17,6 +17,7 @@ import '../../../config/theme.dart';
 import '../../../config/topic_labels.dart';
 import '../../../shared/widgets/fab_nudge_bubble.dart';
 import '../../../shared/widgets/states/friendly_error_view.dart';
+import '../../alerts/providers/alerts_provider.dart';
 import '../../custom_topics/providers/custom_topics_provider.dart';
 import '../../custom_topics/providers/personalization_provider.dart';
 import '../../custom_topics/widgets/entity_add_sheet.dart';
@@ -221,6 +222,7 @@ class _MyInterestsScreenState extends ConsumerState<MyInterestsScreen> {
                 FacteurSpacing.space2,
               ),
             ),
+            const _MyAlertsRow(),
             _PinnedTopicsSection(
               pinned: interests.favorites
                   .whereType<CustomTopicFavoriteRef>()
@@ -726,6 +728,66 @@ class _AddTopicInlineButton extends StatelessWidget {
                 color: colors.textTertiary,
                 fontWeight: FontWeight.w500,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Point d'entrée vers « Mes alertes ».
+///
+/// Le compteur est affiché même à zéro : c'est ce qui fait découvrir le geste
+/// à ceux qui n'ont jamais croisé une source assez rare pour se le voir
+/// proposer.
+class _MyAlertsRow extends ConsumerWidget {
+  const _MyAlertsRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    final alerts = ref.watch(alertsProvider).valueOrNull;
+
+    return InkWell(
+      onTap: () => context.pushNamed(RouteNames.alerts),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          FacteurSpacing.space4,
+          FacteurSpacing.space2,
+          FacteurSpacing.space4,
+          FacteurSpacing.space3,
+        ),
+        child: Row(
+          children: [
+            Icon(
+              PhosphorIcons.bell(PhosphorIconsStyle.regular),
+              size: 18,
+              color: colors.textSecondary,
+            ),
+            const SizedBox(width: FacteurSpacing.space2),
+            Expanded(
+              child: Text(
+                'Mes alertes',
+                style: textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: colors.textPrimary,
+                ),
+              ),
+            ),
+            Text(
+              '${alerts?.activeCount ?? 0} / ${alerts?.cap ?? 5}',
+              style: textTheme.bodySmall?.copyWith(
+                color: colors.textTertiary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
+              size: 14,
+              color: colors.textTertiary,
             ),
           ],
         ),

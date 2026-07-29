@@ -5,7 +5,11 @@ import pytest
 
 from app.models.push_notification import PushDelivery, PushDevice
 from app.models.user import UserProfile
-from app.services.push_governor import check_push_budget
+from app.services.push_governor import (
+    DAILY_BUDGET,
+    WEEKLY_BUDGET,
+    check_push_budget,
+)
 
 NOW = datetime(2026, 7, 18, 12, 0, tzinfo=UTC)
 
@@ -47,6 +51,22 @@ def _delivery(device_id, *, kind, sent_at, status="sent"):
     )
 
 
+def _saturate_day(device_id, count, *, first_kind="daily_digest"):
+    """`count` pushes logiques distincts dans les 24 h glissantes.
+
+    Les `kind` sont distincts (le budget compte des `(target_date, kind)`
+    distincts) et les tests s'expriment en `DAILY_BUDGET`/`WEEKLY_BUDGET` plutôt
+    qu'en nombres en dur : les seuils ont déjà bougé une fois (2/6 → 5/20).
+    """
+    kinds = [first_kind] + [f"source_alert:{i}" for i in range(count - 1)]
+    # Tous au-delà du `RITUAL_COOLDOWN` (4 h) pour que ce soit bien le budget,
+    # et non le cooldown, que les tests observent.
+    return [
+        _delivery(device_id, kind=kind, sent_at=NOW - timedelta(hours=5 + i))
+        for i, kind in enumerate(kinds)
+    ]
+
+
 @pytest.mark.asyncio
 async def test_allows_first_push_of_the_day(db_session):
     user_id, _ = await _seed_user(db_session)
@@ -59,16 +79,9 @@ async def test_allows_first_push_of_the_day(db_session):
 
 
 @pytest.mark.asyncio
-async def test_daily_budget_blocks_third_push_in_24h(db_session):
+async def test_daily_budget_blocks_the_push_over_quota(db_session):
     user_id, (device_id,) = await _seed_user(db_session)
-    db_session.add_all(
-        [
-            _delivery(device_id, kind="daily_digest", sent_at=NOW - timedelta(hours=5)),
-            _delivery(
-                device_id, kind="source_alert", sent_at=NOW - timedelta(hours=10)
-            ),
-        ]
-    )
+    db_session.add_all(_saturate_day(device_id, DAILY_BUDGET))
     await db_session.commit()
 
     decision = await check_push_budget(
@@ -101,14 +114,18 @@ async def test_daily_window_is_sliding_not_calendar(db_session):
 
 
 @pytest.mark.asyncio
-async def test_weekly_budget_blocks_seventh_push(db_session):
+async def test_weekly_budget_blocks_the_push_over_quota(db_session):
     user_id, (device_id,) = await _seed_user(db_session)
+    # Étalés sur les 6 jours précédents (jamais aujourd'hui) : sinon le budget
+    # quotidien mordrait avant l'hebdo et le test ne prouverait rien.
     db_session.add_all(
         [
             _delivery(
-                device_id, kind="daily_digest", sent_at=NOW - timedelta(days=d, hours=6)
+                device_id,
+                kind=f"source_alert:{i}",
+                sent_at=NOW - timedelta(days=1 + i % 6, hours=6),
             )
-            for d in range(1, 7)
+            for i in range(WEEKLY_BUDGET)
         ]
     )
     await db_session.commit()
@@ -128,7 +145,7 @@ async def test_multi_devices_same_logical_push_count_once(db_session):
         db_session.add(_delivery(device_id, kind="daily_digest", sent_at=sent_at))
     await db_session.commit()
 
-    # 3 devices = 1 push logique → le budget quotidien (2) n'est pas atteint.
+    # 3 devices = 1 push logique → le budget quotidien n'est pas atteint.
     decision = await check_push_budget(
         db_session, user_id=user_id, kind="source_alert", now=NOW
     )
@@ -226,13 +243,71 @@ async def test_ritual_kind_exempt_from_cooldown_but_not_from_budgets(db_session)
     )
     assert decision.allowed
 
-    # ... mais les budgets s'appliquent : 2 pushes distincts en 24h → refus.
-    db_session.add(
-        _delivery(device_id, kind="source_alert", sent_at=NOW - timedelta(hours=2))
+    # ... mais les budgets s'appliquent : DAILY_BUDGET pushes distincts → refus.
+    db_session.add_all(
+        _saturate_day(device_id, DAILY_BUDGET - 1, first_kind="source_alert:seed")
     )
     await db_session.commit()
     decision = await check_push_budget(
         db_session, user_id=user_id, kind="daily_digest", now=NOW
+    )
+    assert not decision.allowed
+    assert decision.reason == "daily_budget_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_ritual_companion_passes_despite_recent_ritual(db_session):
+    """Une alerte accompagne la tournée au lieu de lui disputer son créneau."""
+    user_id, (device_id,) = await _seed_user(db_session)
+    db_session.add(
+        _delivery(device_id, kind="daily_digest", sent_at=NOW - timedelta(hours=1))
+    )
+    await db_session.commit()
+
+    refused = await check_push_budget(
+        db_session, user_id=user_id, kind="source_alert:abc", now=NOW
+    )
+    assert refused.reason == "ritual_cooldown"
+
+    decision = await check_push_budget(
+        db_session,
+        user_id=user_id,
+        kind="source_alert:abc",
+        now=NOW,
+        ritual_companion=True,
+    )
+    assert decision.allowed
+
+
+@pytest.mark.asyncio
+async def test_ritual_companion_ignores_upcoming_ritual(db_session):
+    user_id, _ = await _seed_user(db_session)
+    await db_session.commit()
+
+    decision = await check_push_budget(
+        db_session,
+        user_id=user_id,
+        kind="source_alert:abc",
+        now=NOW,
+        next_ritual_at=NOW + timedelta(hours=2),
+        ritual_companion=True,
+    )
+    assert decision.allowed
+
+
+@pytest.mark.asyncio
+async def test_ritual_companion_still_bound_by_daily_budget(db_session):
+    """L'exemption ne porte que sur le cooldown : les budgets tiennent."""
+    user_id, (device_id,) = await _seed_user(db_session)
+    db_session.add_all(_saturate_day(device_id, DAILY_BUDGET))
+    await db_session.commit()
+
+    decision = await check_push_budget(
+        db_session,
+        user_id=user_id,
+        kind="source_alert:over-quota",
+        now=NOW,
+        ritual_companion=True,
     )
     assert not decision.allowed
     assert decision.reason == "daily_budget_exceeded"

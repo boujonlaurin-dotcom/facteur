@@ -11,7 +11,7 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
-import '../../../core/services/widget_service.dart';
+import '../../../core/services/widget_pin_prompt.dart';
 import '../../../core/ui/notification_service.dart';
 import '../providers/user_profile_provider.dart';
 
@@ -122,7 +122,7 @@ class AccountScreen extends ConsumerWidget {
                     const SizedBox(height: FacteurSpacing.space3),
                     InkWell(
                       onTap: () async {
-                        await WidgetService.requestPinWidget();
+                        await WidgetPinPrompt.requestAndReport();
                       },
                       borderRadius: BorderRadius.circular(FacteurRadius.medium),
                       child: Row(

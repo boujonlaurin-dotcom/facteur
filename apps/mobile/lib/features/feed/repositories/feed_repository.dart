@@ -191,8 +191,13 @@ class FeedRepository {
       _defaultViewInflight = future;
       try {
         final result = await future;
-        _defaultViewLastResult = result;
-        _defaultViewLastFetchAt = DateTime.now();
+        // Ne jamais mémoriser une réponse obtenue sans session : la fenêtre de
+        // 5 s propagerait un feed anonyme/dégradé à tous les appelants, y
+        // compris le payload widget (cf. docs/bugs/bug-widget-fiabilite.md, C3).
+        if (_apiClient.hasSession) {
+          _defaultViewLastResult = result;
+          _defaultViewLastFetchAt = DateTime.now();
+        }
         return result;
       } finally {
         // Always clear the in-flight Future, success or failure, so the

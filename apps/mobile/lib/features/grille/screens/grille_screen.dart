@@ -14,6 +14,7 @@ import '../models/grille_models.dart';
 import '../providers/grille_intro_provider.dart';
 import '../providers/grille_provider.dart';
 import '../repositories/grille_repository.dart';
+import '../utils/grille_fit.dart';
 import '../widgets/azerty_keyboard.dart';
 import '../widgets/g_app_bar.dart';
 import '../widgets/grille_button.dart';
@@ -184,17 +185,23 @@ class _GrilleScreenState extends ConsumerState<GrilleScreen> {
           essai: today.nbEssais + 1,
         ),
         Expanded(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: MotGrid(
-                longueur: today.longueur,
-                essaisMax: today.essaisMax,
-                premiereLettre: today.premiereLettre,
-                essais: today.essais,
-                draft: state.draft,
-                revealRow: state.revealRow,
-                shakeNonce: state.invalidNonce,
+          child: LayoutBuilder(
+            builder: (context, constraints) => Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: MotGrid(
+                  longueur: today.longueur,
+                  essaisMax: today.essaisMax,
+                  premiereLettre: today.premiereLettre,
+                  essais: today.essais,
+                  draft: state.draft,
+                  revealRow: state.revealRow,
+                  shakeNonce: state.invalidNonce,
+                  tileSizeOverride: fittedTileSize(
+                    constraints.maxHeight,
+                    today.essaisMax,
+                  ),
+                ),
               ),
             ),
           ),

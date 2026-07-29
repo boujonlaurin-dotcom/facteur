@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_state.dart' show authStateProvider;
 import '../../../core/providers/analytics_provider.dart'
     show analyticsServiceProvider;
+import '../../alerts/models/alert_item.dart';
+import '../../alerts/providers/alerts_provider.dart' show alertsProvider;
 import '../../digest/models/digest_models.dart';
 import '../../digest/models/dual_digest_response.dart';
 import '../../digest/providers/digest_provider.dart'
@@ -103,6 +105,11 @@ const int _kThemeSectionPageLimit = 10;
 /// émettant l'état au fur et à mesure (cf. [_fanOutSectionsProgressive]).
 const int _kPhase2FanoutConcurrency = 3;
 
+/// Attente maximale du catalogue `userSourcesProvider` quand des sections
+/// source doivent être rendues (cf. [FluxContinuNotifier._ensureSourceCatalog]).
+/// Court : au-delà on rend la Tournée sans elles plutôt que de la retarder.
+const Duration _kSourceCatalogWait = Duration(seconds: 2);
+
 /// Usable scroll height (px) of the Flux Continu viewport, threaded from
 /// [FluxContinuScreen] (the only place that can measure it post-layout):
 /// ```
@@ -189,6 +196,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// l'ancien chemin cold tenait implicitement (state sans valeur).
   bool _bootstrapping = false;
 
+  /// True entre la disposition du provider et un éventuel rebuild. Riverpod 2
+  /// n'expose pas `ref.mounted` : ce drapeau (posé par `ref.onDispose`) garde
+  /// les continuations **asynchrones** lancées depuis [build] (cf.
+  /// [_reconcilePlacementThenSync]) de toucher `ref`/`state` après coup.
+  bool _disposed = false;
+
   /// Snapshot of the favorite order we last fetched for. Used by the
   /// userInterestsProvider listener to detect changes and refetch only the
   /// theme sections (cheap) instead of the full tournée.
@@ -197,6 +210,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   @override
   Future<FluxContinuState> build() async {
     _bootstrapping = true;
+    _disposed = false;
+    ref.onDispose(() => _disposed = true);
     _digestRepo = ref.read(digestRepositoryProvider);
     _feedRepo = ref.read(feedRepositoryProvider);
     _fluxRepo = ref.read(fluxContinuRepositoryProvider);
@@ -297,11 +312,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ref.listen<List<String>>(tabOrderPrefsProvider, (prev, next) {
       if (_bootstrapping) return;
       if (!state.hasValue) return;
-      Set<String> themeKeys(List<String>? keys) => {
-            for (final k in keys ?? const <String>[])
-              if (k.startsWith('theme:')) k,
-          };
-      if (setEquals(themeKeys(prev), themeKeys(next))) return;
+      if (setEquals(_themeKeysOf(prev), _themeKeysOf(next))) return;
       state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
     });
 
@@ -325,6 +336,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       prev,
       next,
     ) {
+      if (_bootstrapping) return;
+      if (!state.hasValue) return;
+      if (next.valueOrNull == null) return;
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    });
+
+    // `alertsProvider` est lazy comme `themesFollowedProvider` : ce listen le
+    // déclenche à l'init du notifier et recompose à sa résolution (et à chaque
+    // pose/retrait de cloche) — sinon le rappel « Tes alertes » n'apparaîtrait
+    // qu'au prochain refetch complet de la Tournée.
+    ref.listen<AsyncValue<AlertsState>>(alertsProvider, (prev, next) {
       if (_bootstrapping) return;
       if (!state.hasValue) return;
       if (next.valueOrNull == null) return;
@@ -372,13 +394,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     await _awaitInitialRefresh();
 
     // Réconciliation du placement Essentiel/Flâner (source de vérité DB) —
-    // non-bloquante : elle ne doit pas retarder la DATA. Lancée pendant que
-    // `_bootstrapping` est encore vrai (les listeners prefs sont donc muets) ;
-    // si elle écrit un placement restauré après la fin du bootstrap, les
-    // listeners `tournee_order`/`pinned_tabs` rejoueront le refetch/recompose
-    // qui fait (ré)apparaître la section dans la Tournée. Cf.
-    // [reconcileEssentielPlacement].
-    unawaited(reconcileEssentielPlacement(ref));
+    // non-bloquante : elle ne doit pas retarder la DATA (l'awaiter ajouterait
+    // 2 RTT à tous les cold boots). Son résultat est chaîné explicitement, sans
+    // dépendre des listeners prefs (cf. [_reconcilePlacementThenSync]).
+    unawaited(_reconcilePlacementThenSync());
 
     try {
       return await _fetchAll();
@@ -402,6 +421,51 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // refresh token mort.
     }
   }
+
+  /// Lance [reconcileEssentielPlacement] et **applique son résultat au rendu**,
+  /// sans dépendre des listeners de prefs.
+  ///
+  /// Bug « Sources favorites absentes » (race 1) : la réconciliation (2 GETs)
+  /// se résout presque toujours *pendant* le fan-out, donc pendant que
+  /// `_bootstrapping` est encore vrai — or les listeners `tournee_order` /
+  /// `pinned_tabs` sont muets dans cette fenêtre. L'hydratation DB → prefs qui
+  /// **restaure** l'appartenance Essentiel d'une source (réinstall / nouveau
+  /// device) était donc avalée : la section n'apparaissait qu'au cold boot
+  /// suivant. On compare ici l'avant/après nous-mêmes.
+  ///
+  /// Idempotent vis-à-vis des listeners : si la réconciliation se résout après
+  /// le bootstrap, le listener a déjà lancé le refetch (et posé
+  /// `_lastSourceFavorites`) ⇒ la comparaison ci-dessous est un no-op.
+  Future<void> _reconcilePlacementThenSync() async {
+    final themeKeysBefore = _themeKeysOf(ref.read(tabOrderPrefsProvider));
+    await reconcileEssentielPlacement(ref);
+    if (_disposed || !state.hasValue) return;
+    // Sources : une source restaurée en mode « Essentiel » n'a ni section ni
+    // clé d'ordre ⇒ un recompose ne suffit pas, il faut la fetcher. Le cas ne
+    // se produit que sur un vrai drift (one-shot par device), donc le
+    // chevauchement avec le fan-out en cours reste marginal.
+    final picked = _pickFavoriteSources();
+    if (!_sourceFavoritesEqual(_lastSourceFavorites, picked)) {
+      await _refetchSourcesOnly(picked);
+      return;
+    }
+    // Thèmes : leurs sections sont déjà fetchées (les favoris thème ne
+    // dépendent pas de `pinned_tabs_order_v1`) — seule leur **appartenance** à
+    // la Tournée change ⇒ recompose.
+    if (!setEquals(themeKeysBefore, _themeKeysOf(ref.read(tabOrderPrefsProvider)))) {
+      state = AsyncData(_compose(ref.read(sereinToggleProvider).enabled));
+    }
+  }
+
+  /// Sous-ensemble des clés `theme:` d'un ordre d'onglets Flâner
+  /// (`pinned_tabs_order_v1`) — l'appartenance des thèmes à la Tournée. Partagé
+  /// par le listener `tabOrderPrefsProvider` et [_reconcilePlacementThenSync]
+  /// (fenêtre de bootstrap où ce listener est muet) pour que la règle de
+  /// filtrage reste définie une seule fois.
+  static Set<String> _themeKeysOf(List<String>? keys) => {
+        for (final k in keys ?? const <String>[])
+          if (k.startsWith('theme:')) k,
+      };
 
   Future<FluxContinuState> _fetchAll() async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
@@ -576,6 +640,18 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       state = AsyncData(_compose(isSerene));
     }
 
+    // Bug « Sources favorites absentes » (race 2) : le catalogue
+    // `userSourcesProvider` est **lazy** — s'il n'est pas encore résolu, chaque
+    // favori source est silencieusement droppé du seed ET du fan-out pour tout
+    // le cycle. On force sa résolution ici, **après** l'émission Phase 1 pour ne
+    // pas retarder le haut de page, puis on re-seed les coquilles source.
+    if (await _ensureSourceCatalog(favoriteSources)) {
+      _sources = _reseedShells(_sources, _shellSourceSections(favoriteSources));
+      if (emitProgressive) {
+        state = AsyncData(_compose(isSerene));
+      }
+    }
+
     // Phase 2 — fan-out **progressif et borné** des sections thèmes + sources +
     // suggérées « Choisie pour vous ». On part des listes vides (réinitialisées
     // plus haut) et on les remplit au fur et à mesure : le premier rendu n'est
@@ -732,6 +808,26 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   List<FeedThemeSection> _skeletonSourceSections() =>
       _shellSourceSections(_pickFavoriteSources());
 
+  /// Force la résolution du catalogue `userSourcesProvider` quand des favoris
+  /// source doivent être rendus et qu'il n'est pas encore disponible : sans lui,
+  /// [_shellSourceSections] et le fan-out droppent chaque favori
+  /// (`if (src == null) continue`) pour tout le cycle — la section n'apparaît
+  /// alors qu'au cold boot suivant.
+  ///
+  /// Best-effort : borné à [_kSourceCatalogWait], erreur avalée. Renvoie `true`
+  /// seulement si le catalogue **vient** d'être résolu (⇒ re-seed nécessaire) ;
+  /// no-op (donc `false`) dans le cas nominal où il l'est déjà.
+  Future<bool> _ensureSourceCatalog(List<SourceFavoriteRef> favs) async {
+    if (favs.isEmpty) return false;
+    if (ref.read(userSourcesProvider).hasValue) return false;
+    try {
+      await ref.read(userSourcesProvider.future).timeout(_kSourceCatalogWait);
+    } catch (e) {
+      debugPrint('FluxContinu: userSources catalog unresolved: $e');
+    }
+    return !_disposed && ref.read(userSourcesProvider).hasValue;
+  }
+
   /// Coquilles (en-têtes vides) des sections source pour [favs], dans l'ordre
   /// fourni. Partagé par le squelette et le **seed pré-fan-out** : label/logo/
   /// accent réels (catalogue `userSourcesProvider`), `items` vide. Un favori
@@ -842,11 +938,20 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // garde les défauts, on recompose à l'arrivée de la mesure.
     final usableHeight = ref.read(usableViewportHeightProvider);
 
+    // Cloches « source rare » ayant du neuf non lu. Elles seules justifient le
+    // rappel : une cloche silencieuse n'a rien à annoncer.
+    final alerted =
+        ref.read(alertsProvider).valueOrNull?.withNewContent ??
+            const <AlertItem>[];
+
     final rawOrdered = <FluxSection>[
       // Héros jamais tronqué (PO) : ses 5 articles entrent tous dans `seen` via
       // [_dedupeSectionsInOrder] → les sections aval portant le même contentId
       // les retirent correctement (pas de doublon).
       if (_essentiel != null) _fitHeroSection(_essentiel!, usableHeight),
+      // Rappel d'alertes juste sous le héros — hors de `orderedKeys`, donc hors
+      // du cap de sections : c'est un signal, il ne prend la place d'aucun thème.
+      if (alerted.isNotEmpty) AlertsSection(items: alerted),
       for (final key in orderedKeys)
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
           sectionByKey[key]!,
@@ -1043,6 +1148,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   FluxSection _capSectionToFit(FluxSection s, double usableHeight) {
     if (s is EssentielSection) return s;
+    // Le rappel d'alertes est un signal contextuel de taille fixe (≤3 lignes),
+    // pas une section de contenu qui se dispute la hauteur d'écran.
+    if (s is AlertsSection) return s;
     // Issue #1 — une coquille (placeholder, `totalCount == 0`) doit **réserver**
     // sa hauteur nominale (`coreVisibleCount`). Sans ce court-circuit, le fit
     // rabattrait son compte à 1 (pool vide) et la réserve squelette ne ferait
@@ -1101,6 +1209,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (fitCap == s.coreVisibleCount) return s;
     return switch (s) {
       EssentielSection() => s,
+      AlertsSection() => s,
       DigestTopicSection() => DigestTopicSection(
           kind: s.kind,
           label: s.label,
@@ -1181,6 +1290,8 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
+          // Un swipe porte sur un article ; le rappel d'alertes n'en liste pas.
+          AlertsSection() => s,
           DigestTopicSection(:final topics) => DigestTopicSection(
               kind: s.kind,
               label: s.label,
@@ -1246,6 +1357,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               illustrationAsset: s.illustrationAsset,
             ),
           );
+        case AlertsSection():
+          // Aucun contentId à réserver : le rappel traverse la dédup intact.
+          result.add(s);
         case DigestTopicSection(:final topics):
           final kept = topics
               .where((t) => seen.add(pickTopicLead(t).contentId))
@@ -1328,6 +1442,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
+          // Le compteur d'une cloche vient du serveur (contenus non lus ≤24h) :
+          // il se corrige au prochain `refresh`, pas article par article.
+          AlertsSection() => s,
           DigestTopicSection(:final topics) => DigestTopicSection(
               kind: s.kind,
               label: s.label,
@@ -2408,6 +2525,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     if (grilleIndex < 0) return null;
     final keysBeforeGrille = <String>{
       if (_essentiel != null) sectionKey(_essentiel!),
+      // Comme le héros, le rappel d'alertes vit hors de `orderedKeys` et précède
+      // toujours la Grille : sans lui, le slot serait décalé d'un cran vers le
+      // haut les jours où une cloche a du neuf.
+      kAlertsSectionKey,
       ...orderedKeys.take(grilleIndex).where((key) => key != kTourneeGrilleKey),
     };
     var slot = 0;
@@ -2509,6 +2630,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   Future<void> _refetchSourcesOnly(List<SourceFavoriteRef> picked) async {
     final isSerene = ref.read(sereinToggleProvider).enabled;
     _lastSourceFavorites = picked;
+    // Race 2 (cf. [_ensureSourceCatalog]) : un refetch déclenché avant la
+    // résolution du catalogue dropperait toutes les sections source.
+    await _ensureSourceCatalog(picked);
+    if (_disposed) return;
     _sources = _reseedShells(_sources, _shellSourceSections(picked));
     if (state.valueOrNull != null) {
       state = AsyncData(_compose(isSerene));

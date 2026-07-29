@@ -279,12 +279,24 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// Sliver « Grille du jour » (carte d'entrée de La Grille). Son insertion est
   /// pilotée par `FluxContinuState.grilleSlotIndex`. Wrappé dans un
   /// `KeyedSubtree(_grilleKey)` pour exposer la carte au suivi sticky.
-  SliverToBoxAdapter get _grilleSliver => SliverToBoxAdapter(
+  ///
+  /// [followedByNormalSection] : true en mi-feed (la carte suivante n'a pas de
+  /// marge top propre, donc le bottom padding ici recrée l'écart standard
+  /// inter-sections) ; false en fin de feed (suivie de `CitationDuJourCard`,
+  /// qui porte déjà 24px de marge top — un bottom padding ici doublerait
+  /// l'écart, jugé incorrect par le PO).
+  SliverToBoxAdapter _grilleSliver({required bool followedByNormalSection}) =>
+      SliverToBoxAdapter(
         child: KeyedSubtree(
           key: _grilleKey,
-          child: const Padding(
-            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-            child: GrilleCtaCard(),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              22,
+              16,
+              followedByNormalSection ? 16 : 0,
+            ),
+            child: const GrilleCtaCard(),
           ),
         ),
       );
@@ -1170,6 +1182,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           for (final a in articles) {
             if (a.contentId == contentId) return a;
           }
+        case AlertsSection():
+          // Le rappel d'alertes ne porte que des sources, jamais d'article.
+          break;
         case DigestTopicSection(:final topics):
           for (final t in topics) {
             final lead = pickTopicLead(t);
@@ -1651,6 +1666,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final firstSwipeableSectionIndex = state.sections.indexWhere(
       (section) => switch (section) {
         EssentielSection() => false,
+        AlertsSection() => false,
         DigestTopicSection(:final topics) => topics.any(
             (topic) =>
                 !_pendingFeedback.contains(pickTopicLead(topic).contentId),
@@ -1673,18 +1689,25 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         ref.watch(personalisationCtaShouldShowProvider).valueOrNull ?? false;
     final heroPresent =
         state.sections.isNotEmpty && state.sections.first is EssentielSection;
-    // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de contenu après le
-    // hero. On l'embarque DANS le `KeyedSubtree` de cette section pour que son
-    // ancre de snap inclue l'inline — il n'est plus orphelin « entre deux
-    // snaps ». -1 = pas de cible (aucune section après le hero).
-    final inlineTargetIndex = heroPresent
-        ? (state.sections.length > 1 ? 1 : -1)
-        : (state.sections.isNotEmpty ? 0 : -1);
+    // Cible de l'inline (mode personnalisé) : la 1ʳᵉ section de **contenu** —
+    // ni le hero ni le rappel d'alertes n'en sont. On l'embarque DANS le
+    // `KeyedSubtree` de cette section pour que son ancre de snap inclue l'inline
+    // — il n'est plus orphelin « entre deux snaps ». -1 = pas de cible.
+    final inlineTargetIndex = state.sections.indexWhere(
+      (s) => s is! EssentielSection && s is! AlertsSection,
+    );
+
+    // Un seul indicateur d'attente pour toute la Tournée : la **première**
+    // coquille de section encore non résolue porte le libellé « Ta tournée se
+    // prépare… » (les autres restent des cartes shimmer nues).
+    final firstPreparingIndex = state.sections.indexWhere(
+      (s) => s is FeedThemeSection && s.isPlaceholder,
+    );
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       if (state.grilleSlotIndex == i) {
-        slivers.add(_grilleSliver);
+        slivers.add(_grilleSliver(followedByNormalSection: true));
       }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
@@ -1733,6 +1756,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     tallSections: _tallSections,
                     child: SectionBlock(
                       section: section,
+                      showPreparingLabel: i == firstPreparingIndex,
                       onTapArticle: (a) => _openArticle(context, a),
                       onDismissArticle: _onSwipeDismiss,
                       pendingFeedbackIds: _pendingFeedback,
@@ -1820,7 +1844,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       }
     }
     if (state.grilleSlotIndex == state.sections.length) {
-      slivers.add(_grilleSliver);
+      slivers.add(_grilleSliver(followedByNormalSection: false));
     }
     return slivers;
   }
@@ -2141,9 +2165,13 @@ class _FluxContinuSkeleton extends StatelessWidget {
         );
       }
     } else {
+      var labelPlaced = false;
       for (final section in sections) {
         // Le hero est déjà rendu au-dessus.
         if (section is EssentielSection) continue;
+        // Le rappel d'alertes n'a rien à pré-réserver : il n'existe que si des
+        // cloches ont du neuf, ce que le squelette ne sait pas encore.
+        if (section is AlertsSection) continue;
         final isSource =
             section is FeedThemeSection && section.kind == SectionKind.source;
         children.add(
@@ -2158,7 +2186,13 @@ class _FluxContinuSkeleton extends StatelessWidget {
         // Issue #1 — réserve la **hauteur finale** (coreVisibleCount cartes) avec
         // la même carte squelette que les coquilles de section, pour que la
         // séquence cold-skeleton → Phase 1 → Phase 2 garde une géométrie stable.
-        children.addAll(sectionSkeletonCards(section.coreVisibleCount));
+        // Libellé d'attente unique, porté par la 1ʳᵉ section rendue (parité avec
+        // le placeholder de `SectionBlock`).
+        children.addAll(sectionSkeletonCards(
+          section.coreVisibleCount,
+          firstCardLabel: labelPlaced ? null : kSectionPreparingLabel,
+        ));
+        labelPlaced = true;
         children.add(const SizedBox(height: 16));
       }
     }

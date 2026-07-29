@@ -9,7 +9,7 @@ import hashlib
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.grille_game_state import (
@@ -362,14 +362,24 @@ class GrilleService:
     async def _compute_streak(self, user_id: str) -> int:
         """Jours consécutifs joués en remontant depuis aujourd'hui (Paris).
 
-        Dérivé des `puzzle_date` distincts du joueur — ne touche jamais
+        Dérivé des `puzzle_date` distincts du joueur ayant réellement « joué »
+        (au moins un essai soumis, ou une partie terminée par un autre biais
+        comme `reveal_word`) — `_get_or_create_game` crée une ligne
+        `in_progress`/`attempts=0` dès la simple ouverture de l'écran, ce qui
+        ne doit pas compter comme « joué ». Ne touche jamais
         `UserStreak`/`streak_service` (zone digest). Un « aujourd'hui » non
         encore joué ne casse pas une série acquise la veille.
         """
         rows = (
             await self.db.scalars(
                 select(GrilleGameState.puzzle_date)
-                .where(GrilleGameState.user_id == user_id)
+                .where(
+                    GrilleGameState.user_id == user_id,
+                    or_(
+                        GrilleGameState.attempts > 0,
+                        GrilleGameState.status != STATUS_IN_PROGRESS,
+                    ),
+                )
                 .distinct()
             )
         ).all()

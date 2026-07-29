@@ -1,112 +1,119 @@
-# QA Handoff — Recherche universelle (Story 30.1)
+# QA Handoff — Alerte source rare (story 30.2, Epic 30 PR 2)
 
 > Rempli par l'agent dev. Input de /validate-feature. Story :
-> `docs/stories/core/30.1.recherche-universelle.md`.
+> `docs/stories/core/30.2.alerte-source-rare.md`.
 
 ## Feature développée
 
-La loupe de Flâner devient une **recherche universelle** : un seul champ pour retrouver un
-article, une source (suivie ou à ajouter), un sujet suivi ou un thème. Quand la requête ne
-donne rien, l'écran propose des rattrapages au lieu d'un écran blanc. Le point d'entrée
-migre dans le **header partagé** (visible sur les deux onglets).
+Une cloche « alerte » posable sur une source qui publie **moins d'une fois par
+semaine** : Facteur prévient à chaque parution, par une notification
+**silencieuse** livrée au créneau de l'utilisateur. Plafond de 5 cloches.
+Embarque deux nettoyages PO : le sélecteur de préset Notifications est remplacé
+par le réglage des Alertes, et la notif hebdo « Les Fact·eur·isses adorent cet
+article » est supprimée.
 
 ## PR associée
-À créer (`/go`) vers `main`.
+
+À compléter après ouverture.
 
 ## Écrans impactés
+
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Header partagé (2 onglets) | `/flux-continu` et `/flaner` | Modifié — nouvelle loupe à gauche de l'avatar |
-| Sheet de recherche | modale | Réécrite |
-| Flâner | `/flaner` | Modifié — état vide + bandeau « élargir » |
-| Barre de filtres | `/flaner` et Explorer de L'Essentiel | Modifié — la loupe devient une pill d'état |
-| Ajouter une source | `/settings/sources/add` | Modifié — accepte une requête pré-remplie |
+| Mes alertes | `/settings/alerts` | **Nouveau** |
+| Notifications | `/settings/notifications` | Modifié (section « Rythme » → « Alertes ») |
+| Mes intérêts | `/settings/interests` | Modifié (ligne « Mes alertes · x/5 ») |
+| Fiche source (modale) | overlay | Modifié (bloc « 📯 Activer la cloche ») |
+| Modale d'activation notifs | overlay | Modifié (preset retiré, `ActivationTrigger.alert`) |
+| Tournée du jour | `/` | Modifié (section « Tes alertes » quand du neuf) |
+| Profil | `/settings/profile` | Modifié (bouton QA, visible en beta/debug seulement) |
 
 ## Scénarios de test
 
-### Scénario 1 : Happy path — filtrer sur une source suivie
-1. Depuis Flâner, taper la loupe du header.
-2. Saisir le début du nom d'une source suivie (ex. « media »).
-3. Taper le résultat sous « TES SOURCES ».
+### Scénario 1 : Happy path — poser une cloche sur une source rare
+1. Ouvrir la fiche d'une source qui publie rarement (chip horloge
+   « quelques articles par mois »), déjà suivie.
+2. Section « Réglages de suivi » → le bloc « 📯 Activer la cloche » est **au-dessus**
+   de « Priorité dans ton flux ».
+3. Basculer le switch.
+**Résultat attendu** : switch actif, sous-texte « Cette source publie environ une
+fois par mois. Tu seras prévenu à chaque parution. ». La cloche apparaît dans
+`/settings/alerts` avec le compteur « 1 / 5 ».
 
-**Attendu** : la sheet se ferme, le flux est filtré sur cette source, la barre de filtres
-affiche la chip source active.
+### Scénario 2 : Source trop bavarde
+1. Ouvrir la fiche d'une source quotidienne (ex. un grand quotidien), suivie.
+**Résultat attendu** : le switch est **grisé/inactif**, le sous-texte dit
+« Cette source publie trop souvent pour une alerte. », et une ligne cliquable
+« Suis plutôt ce sujet. » ouvre la feuille d'ajout de sujet.
 
-### Scénario 2 : Source absente du compte → ajout en 1 tap
-1. Ouvrir la recherche, saisir le nom d'une source du catalogue **non suivie**.
-2. Vérifier qu'elle apparaît sous « AJOUTER UNE SOURCE » avec le sous-titre
-   « Pas encore dans tes sources » et un bouton **Ajouter**.
-3. Taper **Ajouter**.
+### Scénario 3 : Plafond de 5 atteint
+1. Poser 5 cloches, puis tenter une 6ᵉ sur une source rare éligible.
+**Résultat attendu** : SnackBar « Tu as déjà 5 alertes. Désactives-en une dans
+Mes alertes. » avec une action « Voir » qui pousse `/settings/alerts`. Le switch
+retombe à off (pas d'optimisme trompeur).
 
-**Attendu** : spinner sur la ligne, toast « … ajoutée à tes sources », sheet fermée, flux
-filtré sur la nouvelle source. La source apparaît ensuite dans Réglages → Sources.
+### Scénario 4 : Mini-sheet post-« Suivre » (moment chaud)
+1. Depuis le catalogue ou une feuille de perspectives, suivre une source rare
+   non encore suivie.
+**Résultat attendu** : après le toast de succès, une feuille basse propose
+« 📯 Ne rate pas sa prochaine parution » / [Activer la cloche] [Plus tard].
+Elle ne doit **jamais** apparaître pour une source bavarde, ni pendant
+l'onboarding (le suivi y est différé au submit).
 
-### Scénario 3 : Source inconnue → pont vers la recherche intelligente
-1. Ouvrir la recherche, saisir un nom absent du catalogue (ex. « gazette de saint-flour »).
-2. Taper « Chercher « … » sur le web ».
+### Scénario 5 : Écran « Mes alertes » — le silence comme preuve
+1. Ouvrir `/settings/alerts` avec au moins une cloche.
+**Résultat attendu** : en-tête « x / 5 alertes actives » ; une carte par cloche
+avec logo + nom, une ligne d'état dérivée de la dernière parution réelle
+(« Rien de neuf depuis 3 semaines, et c'est vérifié. »), le réglage « Quand me
+prévenir » avec « Récap hebdo » **grisé** (V1, aucun producteur derrière), et
+« Désactiver l'alerte ». État vide : explication du geste + « Voir mes sources ».
 
-**Attendu** : navigation vers l'écran **Ajouter une source** avec le champ **déjà rempli**
-et la recherche **déjà lancée** (résultats ou skeleton visibles, pas d'écran d'accueil vide).
+### Scénario 6 : Réglages Notifications
+1. Ouvrir `/settings/notifications`.
+**Résultat attendu** : **plus aucun** sélecteur Minimaliste/Curieux. À la place
+une section « Alertes » → « Mes alertes · x/5 ». La section « Horaire » et le
+toggle « Bonnes nouvelles » sont inchangés. La phrase de description ne mentionne
+plus le vendredi 18:00.
 
-### Scénario 4 : Recherche bredouille → rattrapages
-1. Ouvrir la recherche, saisir un mot-clé sans résultat dans les sources suivies.
-2. Valider au clavier (action « rechercher »).
-
-**Attendu** : Flâner affiche l'état vide 🔍 « Rien sur « … » » avec, dans l'ordre :
-« Élargir à toutes les sources », « Ajouter « … » comme source », « Suivre « … » comme
-sujet », « Revenir au feed ». **Pas** de carte « Pour ne rien rater sur … » en doublon.
-
-### Scénario 5 : Élargissement
-1. Depuis l'état vide, taper « Élargir à toutes les sources ».
-
-**Attendu** : le flux se recharge en incluant les sources non suivies ; la pill de la barre
-de filtres affiche « mot-clé · toutes sources » ; le CTA « Élargir » disparaît de l'état
-vide s'il reste vide.
-
-### Scénario 6 : Récolte maigre
-1. Chercher un mot-clé qui ramène entre 1 et 4 articles.
-
-**Attendu** : un bandeau discret « N résultats dans tes sources » + bouton « Élargir »
-s'intercale sous la barre de filtres. Il disparaît à 5 résultats ou plus, et une fois élargi.
-
-### Scénario 7 : Recherche depuis L'Essentiel
-1. Aller sur l'onglet L'Essentiel.
-2. Taper la loupe du header, saisir un thème (ex. « environnement »), taper le résultat.
-
-**Attendu** : bascule automatique sur l'onglet **Flâner** avec le filtre thème appliqué.
-
-### Scénario 8 : Intention source vs mot-clé
-1. Saisir exactement le nom d'une source suivie (ex. « Mediapart »).
-2. Puis saisir un domaine (ex. « lemonde.fr »).
-
-**Attendu** : dans les deux cas, la section source / « Ajouter une source » passe **devant**
-« ARTICLES », qui est relégué en fin de liste.
-
-### Scénario 9 : Accents et casse
-1. Saisir « ecolo » (sans accent) alors qu'un sujet « Écologie » est suivi.
-
-**Attendu** : le sujet remonte sous « SUJETS SUIVIS ».
-
-### Scénario 10 : État initial et historique
-1. Ouvrir la recherche sans rien saisir.
-
-**Attendu** : recherches récentes (si historique), sources favorites (si favoris), sujets du
-moment. Aucune section de résultats. Le champ prend le focus automatiquement.
+### Scénario 7 : Notification sur téléphone (le point de la demande)
+1. Installer l'APK staging de la branche.
+2. Profil → bloc QA → « Tester une alerte source ».
+**Résultat attendu** : notification **sans son ni vibration**, titre
+`📯 Alerte : … vient de publier`, corps = titre d'article, déplié = corps + la
+ligne de rareté. Tap → ouverture du bon article.
+Vérifier aussi dans les réglages Android que le canal **« Alertes »** existe,
+distinct de « Digest quotidien ».
 
 ## Critères d'acceptation
 
-- [ ] La loupe du header est visible et cliquable sur les **deux** onglets.
-- [ ] La loupe passe en couleur accent quand une recherche est active.
-- [ ] Aucune loupe résiduelle dans la barre de filtres quand aucune recherche n'est active.
-- [ ] Toute recherche bredouille propose au moins un rattrapage (jamais d'écran blanc).
-- [ ] Le pont vers l'ajout de source arrive avec la recherche **déjà lancée**.
-- [ ] Console sans erreur, réseau sans 4xx/5xx inattendu.
+- [ ] La cloche n'est proposée que sur des sources < 1 article/semaine
+- [ ] Plafond de 5 respecté, avec message et chemin de sortie
+- [ ] Désactiver une cloche marche même si la source est devenue bavarde
+- [ ] La notification d'alerte est silencieuse (canal dédié), la tournée reste sonore
+- [ ] `/settings/alerts` rend le silence lisible (dernière parution réelle)
+- [ ] Le sélecteur de préset a disparu partout
+- [ ] Aucune trace de « Les Fact·eur·isses adorent cet article »
 
-## Points d'attention
+## Zones de risque
 
-- Le calcul des résultats est **100 % local** (aucun appel réseau pendant la frappe) : si un
-  résultat attendu manque, vérifier que `userSourcesProvider` / `customTopicsProvider` sont
-  bien chargés avant d'ouvrir la sheet.
-- Une source **mise en sourdine** ne doit jamais être reproposée à l'ajout.
-- ⚠️ Flutter web = canvas : activer la sémantique au boot avant tout `snapshot`
-  (cf. skill `facteur-qa-web`).
+- **Canal Android** : Android ignore tout changement de son/importance sur un
+  canal **existant**. D'où un id neuf (`alerts_channel`). Vérifier sur un device
+  qui avait déjà l'app installée que le nouveau canal apparaît bien.
+- **Purge de la pépite hebdo** : les installations existantes ont déjà une
+  notification planifiée pour le prochain vendredi 18:00. Le code appelle
+  `cancelLegacyCommunityPick()` inconditionnellement dans `_reschedule`, qui
+  tourne à chaque fetch Flux Continu. À vérifier sur un device mis à jour depuis
+  une version antérieure : **aucune** notif ne doit tomber le vendredi 18:00.
+- **Ids de notification** : deux alertes de sources différentes ne doivent pas
+  s'écraser mutuellement dans le tiroir.
+- **Budget partagé** : au plus 1 alerte/jour passe une fois la tournée envoyée.
+  C'est **voulu**. Ne pas le remonter comme un bug.
+
+## Dépendances
+
+- `PUT /api/sources/{source_id}/alert` — body `{enabled: bool}` →
+  `{enabled, active_count, cap}`. Erreurs : 404, 409 `not_followed`,
+  409 `alert_cap_reached`, 422 `source_not_rare`.
+- `GET /api/alerts` → `{cap, active_count, items[]}`.
+- Job serveur `source_alert_push_dispatch` (toutes les 5 min) — **prod/staging
+  seulement**, nécessite Firebase configuré. Le bouton QA ne le sollicite pas.

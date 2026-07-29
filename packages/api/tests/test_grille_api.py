@@ -531,6 +531,32 @@ async def test_streak_resets_on_gap(db_session):
 
 
 @pytest.mark.asyncio
+async def test_streak_excludes_screen_view_without_attempt(db_session):
+    """Une ligne créée par `_get_or_create_game` (écran ouvert, `attempts=0`)
+    ne doit pas compter comme un jour joué."""
+    service = GrilleService(db_session)
+    user_id = uuid4()
+    today = today_paris()
+    # hier : vraie partie jouée
+    await _add_game(
+        db_session,
+        user_id,
+        status=STATUS_SOLVED,
+        attempts=3,
+        on_date=today - timedelta(days=1),
+    )
+    # aujourd'hui : écran simplement ouvert, aucun essai soumis
+    await _add_game(
+        db_session,
+        user_id,
+        status=STATUS_IN_PROGRESS,
+        attempts=0,
+        on_date=today,
+    )
+    assert await service._compute_streak(str(user_id)) == 1
+
+
+@pytest.mark.asyncio
 async def test_streak_zero_when_never_played(db_session):
     service = GrilleService(db_session)
     assert await service._compute_streak(str(uuid4())) == 0

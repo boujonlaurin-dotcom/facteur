@@ -84,6 +84,16 @@ class NudgeRegistry {
       frequency: NudgeFrequency.cooldown,
       cooldown: Duration(days: 30),
     ),
+    // Bandeau « Ajoute le widget » de Flâner. Cooldown 7 j, aligné sur le
+    // bandeau Lettres : on repropose, sans être insistant.
+    const Nudge(
+      id: NudgeIds.widgetCtaFeedBanner,
+      surface: NudgeSurface.feed,
+      placement: NudgePlacement.inlineBanner,
+      priority: NudgePriority.low,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 7),
+    ),
     const Nudge(
       id: NudgeIds.prioritySliderExplainer,
       surface: NudgeSurface.settings,

@@ -21,12 +21,11 @@ void main() {
       expect(copy.body, 'Trump');
       expect(
         copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n"
-        "${PushNotificationService.digestCta}",
+        '• Trump\n\n${PushNotificationService.digestCta}',
       );
     });
 
-    test('variant B caps at 3 titles + "+ N autres" line in bigText', () {
+    test('variant B caps at 2 titles + blank line + CTA in bigText', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième', 'Cinquième'],
@@ -34,48 +33,22 @@ void main() {
       expect(copy.body, 'Trump');
       expect(
         copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille\n"
-        '+ 2 autres !',
+        '• Trump\n• Climat\n\n${PushNotificationService.digestCta}',
       );
     });
 
-    test('variant B with exactly 4 teasers shows "+ 1 autre !" (singular)', () {
-      final copy = PushNotificationService.buildCopy(
-        variant: NotifVariant.variantB,
-        teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
-      );
-      expect(
-        copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille\n"
-        '+ 1 autre !',
-      );
-    });
-
-    test('variant B with exactly 3 teasers keeps the generic CTA', () {
-      final copy = PushNotificationService.buildCopy(
-        variant: NotifVariant.variantB,
-        teasers: ['Trump', 'Climat', 'Marseille'],
-      );
-      expect(
-        copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n• Marseille\n"
-        "${PushNotificationService.digestCta}",
-      );
-    });
-
-    test('variant B with exactly 2 teasers keeps the generic CTA (no rest)', () {
+    test('variant B with exactly 2 teasers renders both bullets', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump', 'Climat'],
       );
       expect(
         copy.bigText,
-        "À la une dans l'Essentiel :\n• Trump\n• Climat\n"
-        "${PushNotificationService.digestCta}",
+        '• Trump\n• Climat\n\n${PushNotificationService.digestCta}',
       );
     });
 
-    test('variant B serene: rest line "+ N autres", header stays serene', () {
+    test('variant B serene keeps the same CTA', () {
       final copy = PushNotificationService.buildCopy(
         variant: NotifVariant.variantB,
         teasers: ['Trump', 'Climat', 'Marseille', 'Quatrième'],
@@ -84,45 +57,7 @@ void main() {
       expect(copy.body, 'Trump');
       expect(
         copy.bigText,
-        'Du calme dans ton actu :\n• Trump\n• Climat\n• Marseille\n+ 1 autre !',
-      );
-    });
-
-    test('variant B intro overrides the default header (server push)', () {
-      final copy = PushNotificationService.buildCopy(
-        variant: NotifVariant.variantB,
-        teasers: ['Trump', 'Climat', 'Marseille'],
-        intro: "À retenir aujourd'hui :",
-      );
-      expect(
-        copy.bigText,
-        "À retenir aujourd'hui :\n• Trump\n• Climat\n• Marseille\n"
-        "${PushNotificationService.digestCta}",
-      );
-    });
-
-    test('variant B empty/absent intro keeps the default header (rétrocompat)',
-        () {
-      for (final intro in [null, '', '   ']) {
-        final copy = PushNotificationService.buildCopy(
-          variant: NotifVariant.variantB,
-          teasers: ['Trump'],
-          intro: intro,
-        );
-        expect(copy.bigText, startsWith("À la une dans l'Essentiel :"));
-      }
-    });
-
-    test('variant B serene with exactly 2 teasers keeps serene CTA', () {
-      final copy = PushNotificationService.buildCopy(
-        variant: NotifVariant.variantB,
-        teasers: ['Trump', 'Climat'],
-        serene: true,
-      );
-      expect(
-        copy.bigText,
-        'Du calme dans ton actu :\n• Trump\n• Climat\n'
-        "${PushNotificationService.digestCtaSerene}",
+        '• Trump\n• Climat\n\n${PushNotificationService.digestCta}',
       );
     });
 
