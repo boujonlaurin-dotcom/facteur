@@ -258,3 +258,135 @@ class TestEntityAffinity:
         assert any(
             c.label == "Parce que tu lis souvent Emmanuel Macron" for c in contribs
         )
+
+
+class TestCustomTopicEntityBranch:
+    """PR1b2 — `canonical_name` matché contre `content.entities`.
+
+    Le pilier ne lisait ni `content.entities` ni `canonical_name` : le pont
+    entité n'existait que dans `layers/user_custom_topics`, une couche de recall
+    qui ne s'applique pas aux surfaces scorées par piliers.
+    """
+
+    @staticmethod
+    def _profile(**overrides):
+        import types
+
+        from app.models.enums import InterestState
+
+        base = dict(
+            topic_name="Kylian Mbappé",
+            slug_parent="",
+            keywords=[],
+            entity_type="PERSON",
+            canonical_name="Kylian Mbappé",
+            priority_multiplier=1.0,
+            state=InterestState.FOLLOWED,
+            is_veille=False,
+        )
+        base.update(overrides)
+        return types.SimpleNamespace(**base)
+
+    def _score(self, content, profile):
+        pillar = PertinencePillar()
+        return pillar._score_custom_topics(
+            content, _context(user_custom_topics=[profile])
+        )
+
+    def test_entity_match_scores_with_multiplier(self):
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+
+        score, contribs = self._score(content, self._profile())
+
+        expected = (
+            ScoringWeights.CUSTOM_TOPIC_BASE_BONUS
+            * 1.0
+            * ScoringWeights.ENTITY_MATCH_MULTIPLIER
+        )
+        assert score == pytest.approx(expected)
+        assert contribs[0].label == "Votre sujet : Kylian Mbappé"
+
+    def test_priority_multiplier_still_applies(self):
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+
+        score, _ = self._score(content, self._profile(priority_multiplier=2.0))
+
+        assert score == pytest.approx(
+            ScoringWeights.CUSTOM_TOPIC_BASE_BONUS
+            * 2.0
+            * ScoringWeights.ENTITY_MATCH_MULTIPLIER
+        )
+
+    def test_no_match_scores_zero(self):
+        content = MockContent(entities=[_entity("Emmanuel Macron")])
+
+        score, contribs = self._score(content, self._profile())
+
+        assert score == 0.0
+        assert contribs == []
+
+    @pytest.mark.parametrize(
+        "stored,followed",
+        [
+            ("kylian mbappé", "Kylian Mbappé"),
+            ("KYLIAN MBAPPÉ", "kylian mbappé"),
+            ("Kylian Mbappé", "  Kylian Mbappé  "),
+        ],
+    )
+    def test_match_is_case_and_whitespace_insensitive(self, stored, followed):
+        content = MockContent(entities=[_entity(stored)])
+
+        score, _ = self._score(content, self._profile(canonical_name=followed))
+
+        assert score > 0
+
+    def test_plain_string_entity_is_tolerated(self):
+        """`iter_entity_names` accepte une entité stockée hors JSON."""
+        content = MockContent(entities=["Kylian Mbappé"])
+
+        score, _ = self._score(content, self._profile())
+
+        assert score > 0
+
+    def test_no_entities_on_content_scores_zero(self):
+        score, contribs = self._score(MockContent(entities=None), self._profile())
+
+        assert score == 0.0
+        assert contribs == []
+
+    def test_profile_without_entity_type_ignores_branch(self):
+        """Un Sujet classique ne doit pas matcher par entité."""
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+
+        score, _ = self._score(
+            content, self._profile(entity_type=None, canonical_name=None)
+        )
+
+        assert score == 0.0
+
+    def test_slug_and_entity_match_counted_once(self):
+        """Garde `if not matched` : pas de double-compte sur un même profil."""
+        content = MockContent(topics=["sport"], entities=[_entity("Kylian Mbappé")])
+
+        score, contribs = self._score(content, self._profile(slug_parent="sport"))
+
+        # Le slug matche d'abord → barème plat, sans la prime entité.
+        assert score == pytest.approx(ScoringWeights.CUSTOM_TOPIC_BASE_BONUS)
+        assert len(contribs) == 1
+
+    def test_best_profile_wins_between_profiles(self):
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+        weak = self._profile(topic_name="Faible", priority_multiplier=1.0)
+        strong = self._profile(topic_name="Fort", priority_multiplier=2.0)
+
+        pillar = PertinencePillar()
+        score, contribs = pillar._score_custom_topics(
+            content, _context(user_custom_topics=[weak, strong])
+        )
+
+        assert contribs[0].label == "Votre sujet : Fort"
+        assert score == pytest.approx(
+            ScoringWeights.CUSTOM_TOPIC_BASE_BONUS
+            * 2.0
+            * ScoringWeights.ENTITY_MATCH_MULTIPLIER
+        )

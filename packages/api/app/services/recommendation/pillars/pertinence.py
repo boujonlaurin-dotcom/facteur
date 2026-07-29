@@ -435,6 +435,18 @@ class PertinencePillar(BasePillar):
         topics Epic 11 (`is_veille` absent) gardent le chemin plat `+25`
         inchangé. On ne retient qu'un seul angle (le meilleur) — pas
         d'empilement non borné.
+
+        Trois façons de matcher un profil, dans l'ordre : `slug_parent` dans
+        `content.topics`, mot-clé au mot près dans titre/description, puis
+        `canonical_name` parmi les entités nommées de l'article
+        (`ENTITY_MATCH_MULTIPLIER`). Les branches sont gardées par
+        `if not matched`, donc un profil qui matche par slug **et** par entité
+        n'est compté qu'une fois, et seul `best_score` survit entre profils.
+
+        ⚠️ À surveiller à la jauge : `_score_entities` (affinité apprise, capée
+        à `ENTITY_AFFINITY_MAX_BONUS`) et la branche entité ci-dessous sont deux
+        signaux **distincts** sur la même entité, qui s'empilent dans un pilier
+        capé à `MAX_PERTINENCE_RAW`.
         """
         if not context.user_custom_topics:
             return 0.0, []
@@ -445,6 +457,11 @@ class PertinencePillar(BasePillar):
 
         title_lower = (content.title or "").lower()
         desc_lower = (content.description or "").lower()
+
+        # Clés canoniques des entités de l'article, parsées au plus une fois
+        # pour tous les profils (hors boucle) et seulement si un abonnement
+        # entité est rencontré.
+        entity_keys: set[str] | None = None
 
         best_score = 0.0
         best_topic_name = ""
@@ -466,6 +483,7 @@ class PertinencePillar(BasePillar):
                 continue
 
             matched = False
+            is_entity_match = False
             if tp.slug_parent in content_topics:
                 matched = True
             if not matched and tp.keywords:
@@ -475,11 +493,30 @@ class PertinencePillar(BasePillar):
                         matched = True
                         break
 
+            # 3e condition — abonnement entité, en miroir de
+            # `layers/user_custom_topics`. Le pilier ne lisait ni
+            # `content.entities` ni `canonical_name` : le pont entité n'existait
+            # que dans une couche de recall legacy qui ne s'applique pas aux
+            # surfaces scorées par piliers (digest, Essentiel).
+            if not matched and tp.entity_type and tp.canonical_name:
+                if entity_keys is None:
+                    entity_keys = {
+                        key
+                        for _display, key in iter_entity_names(
+                            getattr(content, "entities", None)
+                        )
+                    }
+                if tp.canonical_name.strip().lower() in entity_keys:
+                    matched = True
+                    is_entity_match = True
+
             if matched:
                 multiplier = tp.priority_multiplier
                 if tp_state == InterestState.FAVORITE:
                     multiplier = max(multiplier, _FAVORITE_WEIGHT_FLOOR)
                 topic_score = ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * multiplier
+                if is_entity_match:
+                    topic_score *= ScoringWeights.ENTITY_MATCH_MULTIPLIER
                 if topic_score > best_score:
                     best_score = topic_score
                     best_topic_name = tp.topic_name

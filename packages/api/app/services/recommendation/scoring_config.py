@@ -54,6 +54,13 @@ class ScoringWeights:
     # peser autant qu'un TRUSTED_SOURCE (35) à multiplier max 2.0.
     CUSTOM_TOPIC_BASE_BONUS = 25.0
 
+    # Un profil Sujet peut être un **abonnement entité** (`entity_type` +
+    # `canonical_name`, canonicalisés par LLM). Matcher une entité nommée de
+    # l'article est plus précis qu'un mot-clé libre, d'où la prime. Partagé par
+    # la couche legacy (`layers/user_custom_topics`) et le pilier Pertinence :
+    # un seul barème, pas deux.
+    ENTITY_MATCH_MULTIPLIER = 1.5
+
     # --- DIGEST RECENCY BONUSES (Tiered) ---
     # Bonus de fraîcheur hiérarchisés pour l'algorithme de digest
 
