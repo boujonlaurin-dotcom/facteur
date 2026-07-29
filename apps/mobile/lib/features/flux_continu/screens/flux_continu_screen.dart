@@ -1771,6 +1771,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     required FluxContinuNotifier notifier,
   }) {
     final favoriteCount = state.sections.where(_isFavoriteSection).length;
+    final firstPreparingIndex = state.sections.indexWhere(
+      (s) => s is FeedThemeSection && s.isPlaceholder,
+    );
     final firstSwipeableSectionIndex = state.sections.indexWhere(
       (section) => switch (section) {
         EssentielSection() => false,
