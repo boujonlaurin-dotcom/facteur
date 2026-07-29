@@ -139,7 +139,7 @@ def _make_selector(session_maker=None):
     return sel
 
 
-def _make_context(user_id, followed_source_ids, interests=None):
+def _make_context(user_id, followed_source_ids, interests=None, custom_topics=None):
     return DigestContext(
         user_id=user_id,
         user_profile=Mock(),
@@ -154,6 +154,36 @@ def _make_context(user_id, followed_source_ids, interests=None):
         muted_themes=set(),
         muted_topics=set(),
         muted_content_types=set(),
+        user_custom_topics=custom_topics or [],
+    )
+
+
+def _make_topic_profile(
+    topic_name,
+    *,
+    slug_parent="",
+    keywords=None,
+    entity_type=None,
+    canonical_name=None,
+    priority_multiplier=1.0,
+):
+    """Stub `UserTopicProfile`.
+
+    `types.SimpleNamespace` et pas `MagicMock` : `_score_custom_topics` fait
+    `getattr(tp, "is_veille", False)`, et un MagicMock renverrait un Mock
+    truthy qui routerait vers le barème veille.
+    """
+    from app.models.enums import InterestState
+
+    return types.SimpleNamespace(
+        topic_name=topic_name,
+        slug_parent=slug_parent,
+        keywords=keywords or [],
+        entity_type=entity_type,
+        canonical_name=canonical_name,
+        priority_multiplier=priority_multiplier,
+        state=InterestState.FOLLOWED,
+        is_veille=False,
     )
 
 
@@ -542,3 +572,82 @@ def test_legacy_snapshots_without_score_still_parse():
     )
     assert article.score is None
     assert article.pillar_scores is None
+
+
+# ─── Tests: threading user_custom_topics (PR1b) ───────────────────────────────
+
+
+def _scorable(source_id, *, title, description=""):
+    """Content scorable par le pilier Pertinence (titre/description réels)."""
+    c = _make_content(source_id, title=title)
+    c.description = description
+    c.entities = None
+    c.cluster_id = None
+    c.duration_seconds = None
+    return c
+
+
+@pytest.mark.asyncio
+async def test_custom_topics_reach_the_scoring_context():
+    """`_score_candidates` construisait le ScoringContext sans les Sujets.
+
+    La garde `if not context.user_custom_topics: return 0.0, []` avalait donc
+    tout : `_score_custom_topics` n'a jamais tiré sur le digest.
+    """
+    src = uuid4()
+    profile = _make_topic_profile("Intelligence artificielle", keywords=["openai"])
+    selector = _make_selector()
+    context = _make_context(uuid4(), [src], custom_topics=[profile])
+
+    captured = {}
+    real_engine = selector.rec_service.pillar_engine
+    selector.rec_service.pillar_engine = Mock()
+    selector.rec_service.pillar_engine.compute_score = lambda content, ctx: (
+        captured.setdefault("topics", ctx.user_custom_topics),
+        real_engine.compute_score(content, ctx),
+    )[1]
+
+    await selector._score_candidates(
+        [_scorable(src, title="OpenAI annonce un nouveau modèle")], context
+    )
+
+    assert captured["topics"] == [profile]
+
+
+@pytest.mark.asyncio
+async def test_custom_topic_keyword_match_outranks_neutral_article():
+    """Le blast radius assumé de PR1b : la branche slug/keyword à +25 s'active."""
+    src = uuid4()
+    selector = _make_selector()
+    profile = _make_topic_profile("Intelligence artificielle", keywords=["openai"])
+
+    matching = _scorable(src, title="OpenAI annonce un nouveau modèle")
+    neutral = _scorable(src, title="Un tout autre sujet")
+
+    scored = await selector._score_candidates(
+        [matching, neutral],
+        _make_context(uuid4(), [src], custom_topics=[profile]),
+    )
+    by_id = {c.id: score for c, score, _bd, _ps in scored}
+
+    assert by_id[matching.id] > by_id[neutral.id]
+
+    breakdown = next(bd for c, _s, bd, _ps in scored if c.id == matching.id)
+    assert any(
+        b.label == "Votre sujet : Intelligence artificielle" for b in breakdown
+    )
+
+
+@pytest.mark.asyncio
+async def test_no_custom_topics_leaves_scoring_unchanged():
+    """Sans Sujet suivi, aucun bonus ni malus custom-topic n'apparaît."""
+    src = uuid4()
+    selector = _make_selector()
+
+    scored = await selector._score_candidates(
+        [_scorable(src, title="OpenAI annonce un nouveau modèle")],
+        _make_context(uuid4(), [src]),
+    )
+
+    breakdown = scored[0][2]
+    assert not any("Votre sujet" in b.label for b in breakdown)
