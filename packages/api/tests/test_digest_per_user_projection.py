@@ -456,3 +456,89 @@ async def test_polarization_breaks_tie_between_multi_sources():
     )
     order = [s.topic_id for s in res.subjects]
     assert order.index("polar") < order.index("plain")
+
+
+# ─── Tests: persistance des scores (jauge CTR) ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_representative_carries_its_score_and_pillar_scores():
+    """Le score du représentant survit à la boucle de renumérotation.
+
+    C'est la donnée que `scripts/evaluate_feed_ranking.py` croise avec la
+    consommation. Avant cette PR le `pillar_scores` était calculé puis jeté
+    (`score_map` ne gardait que le score final), et le rattacher AVANT la
+    renumérotation ne servait à rien : cette boucle recopie chaque sujet.
+    """
+    srcA, srcB = uuid4(), uuid4()
+    now = datetime.now(UTC)
+    a1 = _make_content(srcA, published_at=now, title="Article A")
+    a2 = _make_content(srcB, published_at=now, title="Article B")
+
+    clusters = [_make_topic_cluster("c1", [a1]), _make_topic_cluster("c2", [a2])]
+    subjects = [_make_subject("c1", a1, rank=1), _make_subject("c2", a2, rank=2)]
+    global_ctx = types.SimpleNamespace(subjects=subjects, cluster_data=[])
+
+    selector = _make_selector()
+    res = await selector._project_editorial_for_user(
+        pipeline=_StubPipeline(),
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=_make_context(uuid4(), {srcA}),
+        mode="pour_vous",
+    )
+
+    for subject in res.subjects:
+        assert subject.actu_article is not None
+        assert subject.actu_article.score is not None
+        assert set(subject.actu_article.pillar_scores) == {
+            "pertinence",
+            "source",
+            "fraicheur",
+            "qualite",
+        }
+
+    # La source suivie doit scorer au-dessus de la non-suivie : le score
+    # persisté est bien celui qui a servi au tri, pas une valeur décorative.
+    by_topic = {s.topic_id: s for s in res.subjects}
+    assert by_topic["c1"].actu_article.score > by_topic["c2"].actu_article.score
+
+
+@pytest.mark.asyncio
+async def test_score_stays_none_when_scoring_fails():
+    """Dégradation sûre : un scoring en échec ne doit pas casser le digest."""
+    src = uuid4()
+    a1 = _make_content(src, published_at=datetime.now(UTC), title="Article A")
+    clusters = [_make_topic_cluster("c1", [a1])]
+    global_ctx = types.SimpleNamespace(
+        subjects=[_make_subject("c1", a1, rank=1)], cluster_data=[]
+    )
+
+    selector = _make_selector()
+    selector._score_candidates = AsyncMock(side_effect=RuntimeError("boom"))
+
+    res = await selector._project_editorial_for_user(
+        pipeline=_StubPipeline(),
+        global_ctx=global_ctx,
+        clusters=clusters,
+        context=_make_context(uuid4(), {src}),
+        mode="pour_vous",
+    )
+
+    assert len(res.subjects) == 1
+    assert res.subjects[0].actu_article.score is None
+    assert res.subjects[0].actu_article.pillar_scores is None
+
+
+def test_legacy_snapshots_without_score_still_parse():
+    """Les digests déjà persistés n'ont ni `score` ni `pillar_scores`."""
+    article = MatchedActuArticle(
+        content_id=uuid4(),
+        title="Legacy",
+        source_name="Source",
+        source_id=uuid4(),
+        is_user_source=False,
+        published_at=datetime.now(UTC),
+    )
+    assert article.score is None
+    assert article.pillar_scores is None

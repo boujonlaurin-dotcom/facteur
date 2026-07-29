@@ -1,0 +1,80 @@
+[
+  {
+    "_comment": "D1 — editorial_v3, 3 sujets + 1 extra, 2 articles consommés.",
+    "digest_id": "D1", "user_id": "U1", "format_version": "editorial_v3",
+    "slot": "actu", "topic_rank": 1, "subject_label": "Réforme des retraites",
+    "rank": 1, "final_score": 82.0,
+    "pillar_scores": {"pertinence": 74.0, "source": 55.0, "fraicheur": 90.0, "qualite": 61.0},
+    "status": "consumed", "topics": ["politics", "economy"], "entities": ["Élisabeth Borne"]
+  },
+  {
+    "digest_id": "D1", "user_id": "U1", "format_version": "editorial_v3",
+    "slot": "actu", "topic_rank": 2, "subject_label": "Sommet climat",
+    "rank": 2, "final_score": 64.0,
+    "pillar_scores": {"pertinence": 41.0, "source": 30.0, "fraicheur": 88.0, "qualite": 52.0},
+    "status": "consumed", "topics": ["environment"], "entities": ["COP30"]
+  },
+  {
+    "digest_id": "D1", "user_id": "U1", "format_version": "editorial_v3",
+    "slot": "actu", "topic_rank": 3, "subject_label": "Ligue 1",
+    "rank": 3, "final_score": 21.0,
+    "pillar_scores": {"pertinence": 12.0, "source": 8.0, "fraicheur": 70.0, "qualite": 33.0},
+    "status": null, "topics": ["sport"], "entities": ["Kylian Mbappé"]
+  },
+  {
+    "_comment": "Extra : jamais scoré ⇒ final_score et pillar_scores absents.",
+    "digest_id": "D1", "user_id": "U1", "format_version": "editorial_v3",
+    "slot": "extra", "topic_rank": 2, "subject_label": "Sommet climat",
+    "rank": 2, "final_score": null, "pillar_scores": {},
+    "status": null, "topics": ["environment"], "entities": ["COP30"]
+  },
+  {
+    "_comment": "D2 — un SEUL article consommé : cas limite leave-one-out.",
+    "digest_id": "D2", "user_id": "U2", "format_version": "editorial_v3",
+    "slot": "actu", "topic_rank": 1, "subject_label": "Réforme des retraites",
+    "rank": 1, "final_score": 77.0,
+    "pillar_scores": {"pertinence": 68.0, "source": 44.0, "fraicheur": 85.0, "qualite": 59.0},
+    "status": "consumed", "topics": ["politics"], "entities": ["Élisabeth Borne"]
+  },
+  {
+    "digest_id": "D2", "user_id": "U2", "format_version": "editorial_v3",
+    "slot": "actu", "topic_rank": 2, "subject_label": "Sommet climat",
+    "rank": 2, "final_score": 55.0,
+    "pillar_scores": {"pertinence": 33.0, "source": 25.0, "fraicheur": 80.0, "qualite": 48.0},
+    "status": null, "topics": ["environment"], "entities": ["COP30"]
+  },
+  {
+    "_comment": "D3 — digest sans aucune consommation : les 94 % de la prod.",
+    "digest_id": "D3", "user_id": "U3", "format_version": "editorial_v3",
+    "slot": "actu", "topic_rank": 1, "subject_label": "Réforme des retraites",
+    "rank": 1, "final_score": 70.0, "pillar_scores": {},
+    "status": null, "topics": ["politics"], "entities": ["Élisabeth Borne"]
+  },
+  {
+    "digest_id": "D3", "user_id": "U3", "format_version": "editorial_v3",
+    "slot": "actu", "topic_rank": 2, "subject_label": "Ligue 1",
+    "rank": 2, "final_score": 30.0, "pillar_scores": {},
+    "status": "saved", "topics": ["sport"], "entities": ["Kylian Mbappé"]
+  },
+  {
+    "_comment": "D4 — legacy flat_v1 : pas de rang de sujet, slot flat.",
+    "digest_id": "D4", "user_id": "U4", "format_version": "flat_v1",
+    "slot": "flat", "topic_rank": null, "subject_label": null,
+    "rank": 1, "final_score": 66.0,
+    "pillar_scores": {"pertinence": 50.0, "source": 40.0, "fraicheur": 75.0, "qualite": 44.0},
+    "status": "consumed", "topics": ["politics"], "entities": ["Élisabeth Borne"]
+  },
+  {
+    "digest_id": "D4", "user_id": "U4", "format_version": "flat_v1",
+    "slot": "flat", "topic_rank": null, "subject_label": null,
+    "rank": 2, "final_score": 40.0, "pillar_scores": {},
+    "status": null, "topics": ["economy"], "entities": []
+  },
+  {
+    "_comment": "D5 — legacy topics_v1 : rang porté par le groupe de topics.",
+    "digest_id": "D5", "user_id": "U5", "format_version": "topics_v1",
+    "slot": "topic", "topic_rank": 1, "subject_label": "Politique",
+    "rank": 1, "final_score": null, "pillar_scores": {},
+    "status": null, "topics": ["politics"], "entities": []
+  }
+]
