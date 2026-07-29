@@ -29,6 +29,19 @@ class StickyTab {
   const StickyTab({required this.label, required this.accent, this.orderKey});
 }
 
+/// Le réordre par drag n'a de sens qu'avec **≥2 onglets déplaçables** (sinon le
+/// seul onglet mobile n'a nulle part où aller, et le clamp le renverrait en
+/// queue). Source unique de vérité de cette règle, partagée par la rangée
+/// d'onglets ([_TabsRowState._reorderEnabled]) et la découvrabilité du geste
+/// côté écran (le hint one-shot). Court-circuite au 2ᵉ onglet réordonnable.
+bool stickyTabsAllowReorder(Iterable<StickyTab> tabs) {
+  var count = 0;
+  for (final t in tabs) {
+    if (t.orderKey != null && ++count >= 2) return true;
+  }
+  return false;
+}
+
 /// Sticky tab bar revealed once the user scrolls past the AppBar threshold.
 ///
 /// Layout per V6 maquette :
@@ -195,16 +208,8 @@ class _TabsRowState extends State<_TabsRow> {
   /// Un onglet est soulevé. Pilote l'atténuation des zones figées.
   bool _dragging = false;
 
-  /// Un réordre n'a de sens qu'avec ≥2 onglets déplaçables (sinon le seul
-  /// onglet mobile n'a nulle part où aller, et le clamp le renverrait en queue).
-  bool get _reorderEnabled {
-    if (widget.onReorder == null) return false;
-    var count = 0;
-    for (final t in widget.tabs) {
-      if (t.orderKey != null && ++count >= 2) return true;
-    }
-    return false;
-  }
+  bool get _reorderEnabled =>
+      widget.onReorder != null && stickyTabsAllowReorder(widget.tabs);
 
   void _setDragging(bool value) {
     if (_dragging == value) return;

@@ -459,11 +459,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// asynchrone) pour ne jamais le montrer deux fois dans la même session.
   void _maybeShowDragHint() {
     if (_dragHintSeen || _showDragHint) return;
-    var reorderable = 0;
-    for (final t in _stickyTabs) {
-      if (t.orderKey != null) reorderable++;
-    }
-    if (reorderable < 2) return;
+    if (!stickyTabsAllowReorder(_stickyTabs)) return;
     _dragHintSeen = true;
     unawaited(
       SharedPreferences.getInstance()
@@ -2569,6 +2565,58 @@ class _StickyHostOverlay extends StatelessWidget {
   }
 }
 
+/// Chrome partagée des pills de découvrabilité (drag des onglets,
+/// pull-to-refresh) : capsule pleine à coins ronds + ombre douce, icône +
+/// libellé. Seuls la couleur de fond/ombre, l'icône et le texte varient.
+class _HintPill extends StatelessWidget {
+  final Widget icon;
+  final String label;
+  final Color background;
+  final Color foreground;
+  final Color shadowColor;
+
+  const _HintPill({
+    required this.icon,
+    required this.label,
+    required this.background,
+    required this.foreground,
+    required this.shadowColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(FacteurRadius.full),
+        boxShadow: [
+          BoxShadow(
+            color: shadowColor,
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: foreground,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Pill de découvrabilité du réordre par drag des onglets. Rendue une seule
 /// fois (cf. [_kDragHintSeenKey]), juste sous la barre sticky.
 class _HeaderDragHint extends StatelessWidget {
@@ -2580,38 +2628,16 @@ class _HeaderDragHint extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: _kStickyBarHeight + 10),
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: colors.textPrimary.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(FacteurRadius.full),
-            boxShadow: const [
-              BoxShadow(
-                color: Color.fromRGBO(0, 0, 0, 0.18),
-                blurRadius: 12,
-                offset: Offset(0, 3),
-              ),
-            ],
+        child: _HintPill(
+          icon: Icon(
+            PhosphorIcons.handGrabbing(PhosphorIconsStyle.bold),
+            size: 14,
+            color: colors.backgroundPrimary,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                PhosphorIcons.handGrabbing(PhosphorIconsStyle.bold),
-                size: 14,
-                color: colors.backgroundPrimary,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Maintiens un onglet pour réorganiser ta tournée',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colors.backgroundPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          label: 'Maintiens un onglet pour réorganiser ta tournée',
+          background: colors.textPrimary.withValues(alpha: 0.92),
+          foreground: colors.backgroundPrimary,
+          shadowColor: const Color.fromRGBO(0, 0, 0, 0.18),
         ),
       ),
     );
@@ -2663,49 +2689,27 @@ class _PullToRefreshHintState extends State<_PullToRefreshHint>
     return Padding(
       padding: const EdgeInsets.only(top: 80),
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: colors.primary.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(FacteurRadius.full),
-            boxShadow: [
-              BoxShadow(
-                color: colors.primary.withValues(alpha: 0.25),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
-              ),
-            ],
+        child: _HintPill(
+          icon: AnimatedBuilder(
+            animation: _bounceController,
+            builder: (context, child) {
+              final t = _bounceController.value;
+              final offset = math.sin(t * math.pi * 2) * 3.0;
+              return Transform.translate(
+                offset: Offset(0, offset),
+                child: child,
+              );
+            },
+            child: Icon(
+              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
+              size: 14,
+              color: Colors.white,
+            ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedBuilder(
-                animation: _bounceController,
-                builder: (context, child) {
-                  final t = _bounceController.value;
-                  final offset = math.sin(t * math.pi * 2) * 3.0;
-                  return Transform.translate(
-                    offset: Offset(0, offset),
-                    child: child,
-                  );
-                },
-                child: Icon(
-                  PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
-                  size: 14,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Tirer pour rafraîchir',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          label: 'Tirer pour rafraîchir',
+          background: colors.primary.withValues(alpha: 0.95),
+          foreground: Colors.white,
+          shadowColor: colors.primary.withValues(alpha: 0.25),
         ),
       ),
     );
