@@ -363,10 +363,10 @@ class ExternalLinks {
   static const String whatsappGroupUrl =
       'https://chat.whatsapp.com/Fq4oKgSDEgc9AmAyZR9uhJ?mode=gi_t';
 
-  /// URL Calendly pour prendre un call qualitatif avec l'équipe (Epic 13).
-  /// TODO(laurin): remplacer par le vrai lien Calendly avant le merge.
-  static const String calendlyUrl =
-      'https://calendly.com/laurin-facteur/feedback';
+  /// Page de réservation Google Agenda pour « un café en visio » avec Django
+  /// et Laurin (Epic 13, story 13.3). Consommée par `CallInviteSheet`.
+  static const String feedbackCallBookingUrl =
+      'https://calendar.app.google/Yy1fLcasYk1uVbVT7';
 }
 
 /// Liens légaux et support — pages statiques servies par le landing facteur.app.

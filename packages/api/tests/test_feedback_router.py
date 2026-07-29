@@ -20,7 +20,6 @@ from app.routers.feedback import (
 )
 from app.schemas.feedback import InviteActionRequest, SentimentRequest
 
-
 # --- classify_segment (fonction pure) ---
 
 
@@ -154,6 +153,23 @@ async def test_get_invite_status_accepted_is_terminal():
 
 
 @pytest.mark.asyncio
+async def test_get_invite_status_already_done_is_terminal():
+    invite = type("I", (), {})()
+    invite.status = "already_done"
+    invite.snoozed_until = None
+    invite.shown_count = 1
+    mock_db = AsyncMock()
+    mock_db.scalar = AsyncMock(return_value=invite)
+    with patch(
+        "app.routers.feedback._eligible_segment",
+        AsyncMock(return_value="active"),
+    ):
+        result = await get_invite_status(db=mock_db, current_user_id=str(uuid4()))
+    assert result.should_show is False
+    assert result.reason == "already_done"
+
+
+@pytest.mark.asyncio
 async def test_get_invite_status_snoozed_blocks():
     invite = type("I", (), {})()
     invite.status = "snoozed"
@@ -238,6 +254,27 @@ async def test_submit_invite_action_accepted():
     )
     assert invite.status == "accepted"
     assert response["status"] == "accepted"
+    assert mock_db.commit.called
+
+
+@pytest.mark.asyncio
+async def test_submit_invite_action_already_done_is_terminal():
+    """« On l'a déjà fait » : terminal, sans snooze (plus jamais sollicité)."""
+    invite = type("I", (), {})()
+    invite.status = "snoozed"
+    invite.shown_count = 1
+    invite.snoozed_until = datetime.utcnow() + timedelta(days=SNOOZE_DAYS)
+    mock_db = AsyncMock()
+    mock_db.scalar = AsyncMock(return_value=invite)
+
+    response = await submit_invite_action(
+        request=InviteActionRequest(action="already_done"),
+        db=mock_db,
+        current_user_id=str(uuid4()),
+    )
+    assert invite.status == "already_done"
+    assert invite.snoozed_until is None
+    assert response["status"] == "already_done"
     assert mock_db.commit.called
 
 

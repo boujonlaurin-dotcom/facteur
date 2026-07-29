@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ton avis compte",
+      "summary": "Django et Laurin t'invitent à un café en visio de 5 minutes pour te demander ce qui te plaît, ou ce que tu aimes moins. L'invitation apparaît vers la fin de ta tournée, avec nos deux visages, et se referme en un geste : « Plus tard » ou « On l'a déjà fait ». Au passage, la carte de fin de tournée a été allégée pour tenir dans l'écran."
+    },
+    {
       "tag": "Objectif du jour",
       "summary": "Tu choisis désormais ton objectif quotidien : dans « Progression », un curseur règle le nombre d'articles à lire jusqu'au bout pour valider ta journée (de 1 à 7). Quand tu l'atteins, le message de félicitation te propose de le réajuster, et le pied de page d'un article terminé passe tout au vert."
     },

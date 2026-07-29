@@ -1,112 +1,88 @@
-# QA Handoff — Recherche universelle (Story 30.1)
+# QA Handoff — Invitation feedback « un café en visio » (Story 13.3)
 
 > Rempli par l'agent dev. Input de /validate-feature. Story :
-> `docs/stories/core/30.1.recherche-universelle.md`.
+> `docs/stories/core/13.3.invitation-feedback-humaine.story.md`.
 
 ## Feature développée
 
-La loupe de Flâner devient une **recherche universelle** : un seul champ pour retrouver un
-article, une source (suivie ou à ajouter), un sujet suivi ou un thème. Quand la requête ne
-donne rien, l'écran propose des rattrapages au lieu d'un écran blanc. Le point d'entrée
-migre dans le **header partagé** (visible sur les deux onglets).
+L'invitation à un call qualitatif (Epic 13) était invisible (enfouie dans la toute
+dernière boîte de la page) et pointait vers un lien Calendly mort. Elle devient une
+**entrée slim posée 2 sections avant la fin de la Tournée**, qui se déploie **une
+seule fois** en modale avec nos deux visages, un ask à « 5 minutes » et trois
+sorties nettes. La carte de fin de tournée est allégée en conséquence.
 
 ## PR associée
 À créer (`/go`) vers `main`.
 
 ## Écrans impactés
+
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Header partagé (2 onglets) | `/flux-continu` et `/flaner` | Modifié — nouvelle loupe à gauche de l'avatar |
-| Sheet de recherche | modale | Réécrite |
-| Flâner | `/flaner` | Modifié — état vide + bandeau « élargir » |
-| Barre de filtres | `/flaner` et Explorer de L'Essentiel | Modifié — la loupe devient une pill d'état |
-| Ajouter une source | `/settings/sources/add` | Modifié — accepte une requête pré-remplie |
+| Tournée du jour (l'Essentiel) | `/flux-continu` | Modifié — nouvelle entrée inline à `sections.length - 3` |
+| Modale d'invitation | bottom sheet | Réécrite (`CallInviteSheet`) |
+| Carte de fin de tournée | `/flux-continu` (bas de page) | Modifié — teaser retiré, micro-vote compacté |
 
-## Scénarios de test
+## Pré-requis de test
 
-### Scénario 1 : Happy path — filtrer sur une source suivie
-1. Depuis Flâner, taper la loupe du header.
-2. Saisir le début du nom d'une source suivie (ex. « media »).
-3. Taper le résultat sous « TES SOURCES ».
+L'entrée n'apparaît que si le backend renvoie `should_show: true` sur
+`GET /feedback/invite` (gating segmenté : `active` / `low_active` / `returning`,
+et ni snooze ni `MAX_SHOWS=2` ni statut terminal en base). Si rien ne s'affiche,
+vérifier/réinitialiser la ligne `feedback_invites` du user de test avant de
+conclure à un bug.
 
-**Attendu** : la sheet se ferme, le flux est filtré sur cette source, la barre de filtres
-affiche la chip source active.
+Le nudge d'auto-ouverture est persisté dans SharedPreferences sous
+`nudge.feedback_call_auto_modal.seen` : le supprimer pour rejouer le scénario 2.
 
-### Scénario 2 : Source absente du compte → ajout en 1 tap
-1. Ouvrir la recherche, saisir le nom d'une source du catalogue **non suivie**.
-2. Vérifier qu'elle apparaît sous « AJOUTER UNE SOURCE » avec le sous-titre
-   « Pas encore dans tes sources » et un bouton **Ajouter**.
-3. Taper **Ajouter**.
+## Scénarios
 
-**Attendu** : spinner sur la ligne, toast « … ajoutée à tes sources », sheet fermée, flux
-filtré sur la nouvelle source. La source apparaît ensuite dans Réglages → Sources.
+### 1. Placement — l'invitation est vue sans aller au bout (le cœur du fix)
+Ouvrir la Tournée, scroller normalement. **Attendu** : l'entrée slim (deux photos
+rondes qui se chevauchent + « Django & Laurin aimeraient t'entendre 5 minutes. » +
+« Prendre un café ») apparaît **avant** la carte « Fin de tournée », pas dedans.
 
-### Scénario 3 : Source inconnue → pont vers la recherche intelligente
-1. Ouvrir la recherche, saisir un nom absent du catalogue (ex. « gazette de saint-flour »).
-2. Taper « Chercher « … » sur le web ».
+### 2. Auto-déploiement, une seule fois
+Premier passage éligible : la modale s'ouvre **seule** quand l'entrée entre dans
+le viewport (pas dès le chargement de la page, alors qu'on est encore en haut).
+La refermer, puis recharger la Tournée. **Attendu** : plus d'auto-ouverture, seule
+l'entrée inline reste ; un tap dessus rouvre la modale.
 
-**Attendu** : navigation vers l'écran **Ajouter une source** avec le champ **déjà rempli**
-et la recherche **déjà lancée** (résultats ou skeleton visibles, pas d'écran d'accueil vide).
+### 3. Contenu de la modale
+**Attendu** : les deux photos (DJANGO / LAURIN) rendues, pas de monogramme de
+repli ; tampon « TON AVIS COMPTE » ; titre « On peut te prendre 5 minutes ? » ;
+signature « Django & Laurin, tes facteurs » ; **trois** boutons distincts :
+« Prendre un café », « Plus tard », « On l'a déjà fait ». Aucun em-dash à l'écran.
 
-### Scénario 4 : Recherche bredouille → rattrapages
-1. Ouvrir la recherche, saisir un mot-clé sans résultat dans les sources suivies.
-2. Valider au clavier (action « rechercher »).
+### 4. Réservation
+Taper « Prendre un café ». **Attendu** : ouverture de
+`https://calendar.app.google/Yy1fLcasYk1uVbVT7` en navigateur externe (pas de
+page d'erreur), et la modale se referme.
 
-**Attendu** : Flâner affiche l'état vide 🔍 « Rien sur « … » » avec, dans l'ordre :
-« Élargir à toutes les sources », « Ajouter « … » comme source », « Suivre « … » comme
-sujet », « Revenir au feed ». **Pas** de carte « Pour ne rien rater sur … » en doublon.
+### 5. Sorties — l'entrée disparaît tout de suite
+Taper « Plus tard » (ou « On l'a déjà fait »). **Attendu** : la modale se ferme
+**et** l'entrée inline disparaît de la Tournée dans la foulée (le statut est
+relu). Recharger : elle ne revient pas.
 
-### Scénario 5 : Élargissement
-1. Depuis l'état vide, taper « Élargir à toutes les sources ».
+### 6. Carte de fin de tournée — pas d'overflow
+Descendre jusqu'à la carte « Fin de tournée ». **Attendu** : tampon « TON AVIS
+COMPTE » + les trois emojis (😴 🙂 🔥), sans plus aucun bloc d'invitation ; la
+boîte tient dans l'écran, aucun bandeau jaune/noir d'overflow. Voter, vérifier la
+bascule vers « Merci pour ton retour ».
 
-**Attendu** : le flux se recharge en incluant les sources non suivies ; la pill de la barre
-de filtres affiche « mot-clé · toutes sources » ; le CTA « Élargir » disparaît de l'état
-vide s'il reste vide.
-
-### Scénario 6 : Récolte maigre
-1. Chercher un mot-clé qui ramène entre 1 et 4 articles.
-
-**Attendu** : un bandeau discret « N résultats dans tes sources » + bouton « Élargir »
-s'intercale sous la barre de filtres. Il disparaît à 5 résultats ou plus, et une fois élargi.
-
-### Scénario 7 : Recherche depuis L'Essentiel
-1. Aller sur l'onglet L'Essentiel.
-2. Taper la loupe du header, saisir un thème (ex. « environnement »), taper le résultat.
-
-**Attendu** : bascule automatique sur l'onglet **Flâner** avec le filtre thème appliqué.
-
-### Scénario 8 : Intention source vs mot-clé
-1. Saisir exactement le nom d'une source suivie (ex. « Mediapart »).
-2. Puis saisir un domaine (ex. « lemonde.fr »).
-
-**Attendu** : dans les deux cas, la section source / « Ajouter une source » passe **devant**
-« ARTICLES », qui est relégué en fin de liste.
-
-### Scénario 9 : Accents et casse
-1. Saisir « ecolo » (sans accent) alors qu'un sujet « Écologie » est suivi.
-
-**Attendu** : le sujet remonte sous « SUJETS SUIVIS ».
-
-### Scénario 10 : État initial et historique
-1. Ouvrir la recherche sans rien saisir.
-
-**Attendu** : recherches récentes (si historique), sources favorites (si favoris), sujets du
-moment. Aucune section de résultats. Le champ prend le focus automatiquement.
+### Cas limites
+- **Tournée courte** (moins de 2 sections) : aucune entrée d'invitation, aucun crash.
+- **User non éligible** : rien ne se rend (ni entrée, ni modale), et aucun appel à
+  `POST /feedback/invite/shown` dans l'onglet réseau.
 
 ## Critères d'acceptation
-
-- [ ] La loupe du header est visible et cliquable sur les **deux** onglets.
-- [ ] La loupe passe en couleur accent quand une recherche est active.
-- [ ] Aucune loupe résiduelle dans la barre de filtres quand aucune recherche n'est active.
-- [ ] Toute recherche bredouille propose au moins un rattrapage (jamais d'écran blanc).
-- [ ] Le pont vers l'ajout de source arrive avec la recherche **déjà lancée**.
+- [ ] L'entrée est atteignable sans scroller jusqu'au tout dernier pixel.
+- [ ] L'auto-ouverture ne se produit **qu'une fois**, et seulement quand l'entrée
+      est visible.
+- [ ] Le lien Google Agenda ouvre une vraie page de réservation.
+- [ ] Les trois sorties font trois choses différentes (`accepted` / `declined` /
+      `already_done` dans l'onglet réseau).
+- [ ] Aucun overflow sur la carte de clôture en 390x844.
 - [ ] Console sans erreur, réseau sans 4xx/5xx inattendu.
 
-## Points d'attention
-
-- Le calcul des résultats est **100 % local** (aucun appel réseau pendant la frappe) : si un
-  résultat attendu manque, vérifier que `userSourcesProvider` / `customTopicsProvider` sont
-  bien chargés avant d'ouvrir la sheet.
-- Une source **mise en sourdine** ne doit jamais être reproposée à l'ajout.
-- ⚠️ Flutter web = canvas : activer la sémantique au boot avant tout `snapshot`
-  (cf. skill `facteur-qa-web`).
+## Notes techniques
+Viewport de test : **390x844**, sémantique activée au boot (cf. skill
+`facteur-qa-web` — Flutter web = canvas).

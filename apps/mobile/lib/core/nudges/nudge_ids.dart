@@ -34,4 +34,8 @@ class NudgeIds {
 
   // Story web.1 — Modal "Ajouter à l'écran d'accueil" sur iOS Safari.
   static const iosAddToHome = 'ios_add_to_home';
+
+  // Story 13.3 — auto-déploiement (une seule fois) de la modale d'invitation
+  // « un café en visio ». Ensuite, seule l'entrée inline subsiste.
+  static const feedbackCallAutoModal = 'feedback_call_auto_modal';
 }

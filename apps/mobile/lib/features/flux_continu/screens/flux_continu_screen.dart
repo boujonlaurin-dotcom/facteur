@@ -34,6 +34,7 @@ import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
+import '../../feedback/widgets/call_invite_entry.dart';
 import '../../feedback/widgets/feedback_closing_card.dart';
 import '../../gamification/providers/streak_activity_provider.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
@@ -1598,8 +1599,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 // « Ton avis compte » est désormais une sous-carte interne de
                 // « Tu es à jour », séparée par un divider : une seule boîte
                 // visuelle mesurée par les ancres de snap. Sa hauteur change en
-                // asynchrone (résolution invite / vote → « Merci ») ⇒ elle
-                // signale ces relayouts pour rafraîchir les ancres de snap.
+                // asynchrone (micro-vote → « Merci » ; l'invitation, elle, vit
+                // désormais plus haut dans la tournée) ⇒ elle signale ces
+                // relayouts pour rafraîchir les ancres de snap.
                 // Enveloppée d'un VisibilityDetector (garde-fou doomscroll,
                 // story 9.8) : la clôture est « atteinte » dès qu'elle est
                 // visible à ≥ 50 %, fire-once (`_closingCardSeen`).
@@ -1680,6 +1682,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final inlineTargetIndex = heroPresent
         ? (state.sections.length > 1 ? 1 : -1)
         : (state.sections.isNotEmpty ? 0 : -1);
+    // Story 13.3 — l'invitation « un café en visio » s'ancre **2 sections avant
+    // la dernière**, pas dans la carte de clôture : au tout dernier pixel de la
+    // page, personne ne la voyait. Jamais sur le hero Essentiel (index 0), et
+    // embarquée dans le `KeyedSubtree` de sa section pour les mêmes raisons de
+    // snap que l'inline ci-dessus.
+    final inviteTargetIndex = state.sections.length < 2
+        ? -1
+        : math.max(1, state.sections.length - 3);
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
@@ -1801,6 +1811,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                               : null,
                     ),
                   ),
+                  // Se rend en `SizedBox.shrink()` si l'utilisateur n'est pas
+                  // éligible (gating segmenté backend).
+                  if (i == inviteTargetIndex) const CallInviteEntry(),
                 ],
               ),
             ),

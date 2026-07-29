@@ -52,7 +52,7 @@ class _SentimentPickerState extends ConsumerState<SentimentPicker> {
 
     if (_selected != null) {
       return Padding(
-        padding: const EdgeInsets.only(top: FacteurSpacing.space3),
+        padding: const EdgeInsets.only(top: FacteurSpacing.space2),
         child: Text(
           'Merci pour ton retour 🙏',
           style: textTheme.bodyMedium?.copyWith(
@@ -64,8 +64,10 @@ class _SentimentPickerState extends ConsumerState<SentimentPicker> {
       );
     }
 
+    // Story 13.3 — resserré : la boîte de clôture dépassait le budget
+    // `section_fit` sur les petits écrans.
     return Padding(
-      padding: const EdgeInsets.only(top: FacteurSpacing.space3),
+      padding: const EdgeInsets.only(top: FacteurSpacing.space2),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -76,7 +78,7 @@ class _SentimentPickerState extends ConsumerState<SentimentPicker> {
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: FacteurSpacing.space2),
+          const SizedBox(height: 6),
           Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -112,17 +114,17 @@ class _EmojiButton extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 30)),
-              const SizedBox(height: 4),
+              Text(emoji, style: const TextStyle(fontSize: 24)),
+              const SizedBox(height: 2),
               Text(
                 label,
                 style: textTheme.labelSmall?.copyWith(

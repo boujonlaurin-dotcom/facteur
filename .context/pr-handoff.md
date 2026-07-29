@@ -1,126 +1,109 @@
-# fix(observability): la métrique de pression du pool DB divisait par les connexions vivantes, pas par la capacité
+# feat(feedback): invitation « un café en visio » visible, humaine et actionnable (story 13.3)
 
-## Résumé
+Base `main`. **Aucune migration.**
 
-L'alerte Sentry [PYTHON-63](https://facteur.sentry.io/issues/PYTHON-63)
-`DB pool pressure CRITICAL: 91.7% (>= 90%)` (`level=fatal`, 2 occurrences depuis le 21/07)
-est un **faux positif**. Le pool n'a jamais été proche de la saturation : la métrique était
-fausse.
+L'invitation à un call qualitatif (Epic 13) ne convertissait pas : **jamais vue**,
+**lien de booking mort**, ton froid, et une carte de clôture qui dépassait l'écran.
+Cette PR la remet en état de marche.
 
-Base `main`. **Aucune migration.** Aucun impact mobile.
+## Ce qui n'allait pas (vérifié dans le code)
 
-## Cause racine
-
-`app/observability/pool_stats.py` calculait :
-
-```python
-usage_pct = checked_out / (size + max(overflow or 0, 0))
-```
-
-Le dénominateur était censé être la capacité (`pool_size + max_overflow` = 10+10 = **20**).
-Mais `pool.overflow()` de SQLAlchemy ne renvoie pas `max_overflow` : c'est `_overflow`, le
-nombre de connexions **vivantes** au-delà de `pool_size` (initialisé à `-pool_size`).
-
-Le dénominateur suivait donc les connexions vivantes, pas la capacité. En injectant
-`checkedout() = maxsize - qsize + _overflow` (source SQLAlchemy 2.0.25), la formule se
-réduit à `usage_pct = 1 - checked_in / (size + overflow)` : **elle ne dépendait que du
-nombre de connexions idle en file**, et saturait à 100 % dès que la file se vidait.
-
-Mesuré sur un vrai `QueuePool(pool_size=10, max_overflow=10)` :
-
-| checked_out | AVANT | APRÈS |
+| # | Symptôme | Cause racine |
 |---|---|---|
-| 9 / 20 | **90,0 %** → page `fatal` | 45,0 % |
-| 10 / 20 | **100,0 %** → `saturated` | 50,0 % |
-| 11 / 20 (l'événement réel) | **100,0 %** | 55,0 % |
-| 18 / 20 | 100,0 % | 90,0 % → page `fatal` |
-| 20 / 20 | 100,0 % | 100,0 % → `saturated` |
+| 1 | Invitation jamais vue | Le teaser vivait dans la **toute dernière boîte de la page** (`ClosingCardV18.secondary`), sous le vote emoji et sous `DailyCompletionRecap`. Il fallait scroller jusqu'au bout **puis** taper pour révéler la modale. |
+| 2 | 0 RDV pris | `ExternalLinks.calendlyUrl` était un placeholder jamais remplacé, avec son `TODO(laurin)`. Lien mort. |
+| 3 | Ton froid | Avatar = `CircleAvatar('👋')`, copy signée « Laurin » seul, ask à « 15 min ». |
+| 4 | Carte trop haute | La résolution de l'invite ajoutait Divider + teaser (~+90 px) dans une boîte déjà chargée → hors budget `section_fit`. |
+| 5 | Deux boutons redondants | « 15 min, je suis curieux » et « J'ai un truc précis à te dire » appelaient **tous les deux** `_accept`. |
+| 6 | Compteur d'affichages faussé | `markInviteShown()` partait au **build** de la carte de clôture : le cap `MAX_SHOWS=2` se consommait sur des affichages que personne n'avait vus. |
 
-Le seuil de page était donc franchi dès **9 connexions sorties sur 20** (45 % de charge
-réelle), puis restait bloqué à 100 %.
+## Ce que fait la PR
 
-`91,7 % = 11/12` ⇒ `overflow=2`, `checked_in=1`, `checked_out=11` → charge réelle
-**11/20 = 55 %**, avec 9 connexions d'overflow libres.
+**Placement (le vrai fix du #1).** L'invitation quitte la carte de clôture et
+devient une entrée slim (`CallInviteEntry`) ancrée **2 sections avant la fin** de
+la Tournée : `inviteTargetIndex = max(1, sections.length - 3)`, jamais sur le hero
+Essentiel. Elle est rendue **dans le `KeyedSubtree` de sa section** (pattern de
+`MyInterestsIntro`) : un sliver autonome serait orphelin entre deux ancres de snap.
+Le micro-vote emoji, lui, reste en fin de Tournée (c'est une note *sur* la tournée).
 
-**Corollaire** : le « 100 % » de **PYTHON-5M** (25/06) était très probablement le même
-artefact. Le fix d'alors n'a pas « lâché » — il n'y avait rien à corriger côté capacité.
-Ses mitigations ne sont **pas** revert.
+**Auto-déploiement une fois.** À la première exposition **réellement visible**
+(`VisibilityDetector` ≥ 50 %, pas au build), la modale s'ouvre seule, gardée par
+`NudgeIds.feedbackCallAutoModal` (`frequency: once`). Ensuite, seule l'entrée
+inline subsiste et le tap la rouvre. `markInviteShown()` migre sur cette même
+garde de visibilité (fix #6).
 
-## Conséquence indirecte — le watchdog d'auto-remédiation
+**Modale humaine.** `FounderCollage` (nos deux vraies photos) + tampon
+« TON AVIS COMPTE » + copy dans le ton « Nous soutenir », signée « Django &
+Laurin, tes facteurs ». Ask ramené de 15 min à « un café en visio, 5 minutes ».
+Toute la copy vit dans un `FeedbackCallCopy` unique (modèle `SoutienCopy`), zéro
+em-dash. Titre unique tous segments, deux corps seulement (`active` vs
+« Tu ouvres parfois Facteur » pour `low_active`/`returning`).
 
-`.github/workflows/pool-saturation-watchdog.yml` sonde `/api/health/pool` **toutes les
-5 minutes** et déclenche sa branche « saturation confirmée » si `status == "saturated"` ou
-`usage_pct > 90`. Il s'appuyait donc sur le même signal faux. Il n'a pas encore déclenché
-(aucune issue ouverte — la double sonde à 30 s a filtré les pics), mais l'en-tête du workflow
-prévoit de remplacer la branche dry-run par la mutation Railway `serviceInstanceRedeploy`
-après 24 h sans faux positif. **Un redeploy automatique du backend aurait pu être armé sur un
-seuil atteint à 45 % de charge réelle.** Ce correctif désamorce le risque sans toucher au
-workflow, qui consomme `read_pool_stats`.
+**Trois sorties nettes** (fin du #5) : « Prendre un café » (`accepted` + ouverture
+du **vrai** lien Google Agenda), « Plus tard » (`declined`, snooze 21 j), et
+**« On l'a déjà fait »** (`already_done`, nouveau statut terminal côté backend).
+Après une sortie, `inviteStatusProvider` est invalidé : l'entrée disparaît tout de
+suite au lieu de laisser traîner un CTA qu'on vient d'écarter.
 
-## Changements
+**Carte de clôture compactée** (#4) : le départ de l'invitation libère ~125 px, et
+le micro-vote est resserré (emoji 30 → 24, gaps et paddings réduits) pour ~45 px de
+plus. `FeedbackClosingCard` redevient un `StatelessWidget` ; le tampon dupliqué
+entre carte et modale est extrait en `FeedbackStamp`.
 
-- `app/observability/pool_stats.py` — capacité lue via `pool._max_overflow` (pas
-  d'accesseur public ; stable SQLAlchemy 1.4→2.0) ; expose `capacity` et `max_overflow` ;
-  `usage_pct = checked_out / capacity` ; `saturated = checked_out >= capacity`. `overflow`
-  reste exposé pour le diagnostic mais sort du dénominateur.
-- `app/observability/pool_stats.py` — **garde-fou anti-silence** : si le pool est dimensionné
-  mais que la capacité est illisible (attribut privé renommé par une future version de
-  SQLAlchemy, ou `max_overflow < 0`), on loggue `pool_capacity_unreadable` en `error`. Sans
-  ça, `usage_pct` disparaîtrait, la sonde prendrait sa branche « NullPool » et **cesserait
-  d'alerter silencieusement** — le pire mode de défaillance pour une métrique d'alerte.
-- `app/workers/scheduler.py` — les `capture_message` n'interpolent plus de chiffre variable
-  dans le texte (Sentry groupe par message : `usage_pct` dans le texte crée **une issue par
-  valeur**). Les compteurs partent dans le contexte Sentry `db_pool`, via un helper local
-  qui dédoublonne les deux branches d'alerte.
-- `app/main.py` — le log `db_pool_pressure_high` de `/api/health/pool` expose désormais
-  `capacity` (le dénominateur réel) en plus d'`overflow`, qui avait induit en erreur.
-- Docs : `docs/bugs/bug-pool-pressure-metric-false-positive.md` (neuf) + encart de
-  correction en tête de `docs/maintenance/maintenance-saturation-pool-db-nocturne.md`.
+**Funnel analytics** (il n'y en avait aucun) : `feedback_invite_shown` /
+`_opened` (origin `auto`|`tap`) / `_booked` / `_snoozed` / `_already_done`, avec
+`segment`, en `_logEvent` + `_capturePostHog`.
 
-**Seuils inchangés** (warn 70 %, page 90 %) : ils portent désormais sur la capacité réelle,
-soit 14 et 18 connexions sorties. Le pic observé (11) reste silencieux — c'est voulu.
+## Backend
 
-**Aucun changement de `pool_size`/`max_overflow`** : le pic réel est 11/20. Interdit sans
-preuve métrique (`docs/bugs/bug-infinite-load-requests.md`).
+Nouvelle action terminale `already_done` dans `submit_invite_action`, ajoutée au
+set des statuts terminaux de `get_invite_status`, autorisée par le pattern du
+schéma. Gating inchangé (`classify_segment`, `SNOOZE_DAYS`, `MAX_SHOWS`) : le
+problème n'était pas le gating.
 
-Clés ajoutées uniquement (`capacity`, `max_overflow`) → `/api/health/pool` gagne des champs,
-rien ne casse.
+**Aucune migration Alembic** : `FeedbackInvite.status` est un `String(20)` libre,
+pas une enum PG. 1 head, inchangé.
 
-## Tests
+## Vérification
 
-`packages/api/tests/test_pool_observability.py` :
+- `pytest tests/test_feedback_router.py` → **22 passed** (2 tests ajoutés :
+  `already_done` terminal côté GET et côté POST, sans snooze résiduel).
+- Suite backend complète : 1996 passed. Le 1 failed + 554 errors sont tous des
+  `OperationalError`/`InterfaceError` sur `localhost:54322` (DB de test locale
+  éteinte), faux négatif documenté, aucun lié à cette story.
+- `ruff check` / `ruff format` OK sur les 4 fichiers Python touchés.
+- `flutter analyze` → **0 erreur**. `flutter test` → **1857 passed / 27 failed**,
+  soit exactement la baseline pré-existante du repo. Run ciblé
+  `feedback` + `flux_continu` + `soutien` → **496 passed**, aucun échec.
+- 14 tests sur la feature, dont 4 nouveaux sur `CallInviteEntry` (non éligible =
+  rien rendu ; entrée + `markInviteShown` sur visibilité ; auto-ouverture **une
+  seule fois** ; tap rouvre).
+- Passe `simplify` : `_trackFeedbackInvite` prend un `extra` (les 4 wrappers
+  d'event redeviennent des one-liners) et les 3 sorties passent par un seul
+  `trackFeedbackInviteAction(action)` piloté par la table
+  action → event ; `TERMINAL_ACTIONS` / `TERMINAL_STATUSES` remplacent les
+  tuples de statuts recopiés dans le routeur ; `entryCta` fusionné dans
+  `ctaBook`. Tests re-passés après coup.
 
-- `test_read_pool_stats_does_not_page_on_engaged_overflow` — rejoue l'événement du 25/07
-  (`size=10, overflow=2, checked_out=11`) et exige 55 %, sous le seuil de page.
-- `test_read_pool_stats_capacity_matches_real_queuepool` — **le garde-fou qui manquait** :
-  construit un vrai `QueuePool` avec les kwargs de prod et vérifie le ratio à 9 puis 20
-  connexions sorties. Les fakes ne protégeaient pas contre une mécompréhension de l'API
-  SQLAlchemy, qui est l'origine exacte du bug.
-- `test_read_pool_stats_logs_when_sized_pool_has_unreadable_capacity` — supprime
-  `_max_overflow` pour simuler un renommage SQLAlchemy et exige le log `error`.
-- `test_read_pool_stats_nullpool_stays_quiet` — NullPool ne doit pas déclencher ce log.
-- `test_read_pool_stats_unbounded_overflow_has_no_usage_pct` — `max_overflow < 0`.
-- `test_read_pool_stats_ok_with_negative_overflow` — attendu corrigé 50 % → 25 %.
+### Gotcha noté pour la suite
 
-Suite backend complète : `1992 passed, 1 failed, 547 errors` — l'échec
-(`test_essentiel_endpoint.py::test_get_essentiel_uses_user_context_from_router`) et les 547
-erreurs sont dus à l'absence de Postgres local sur le port 54322, et sont **reproduits à
-l'identique sur `origin/main`** (vérifié via worktree).
+`addPostFrameCallback` posé **depuis** le callback de `VisibilityDetector` ne se
+rejoue jamais (aucune frame supplémentaire n'est planifiée) : rien ne partait, y
+compris en test. `Future.microtask` sort de la passe de rendu sans dépendre d'une
+frame.
 
-## ⚠️ Après merge (actions PO)
+### Reste à faire avant merge
 
-1. Le texte du message Sentry change → **nouveau groupe d'issue**. Résoudre **PYTHON-63**
-   en « faux positif — métrique corrigée ».
-2. Surveiller 1 semaine les logs `db_pool_probe` (info, 5 min) pour établir le p95 réel de
-   `checked_out` avant toute autre action.
+**Non joué faute d'environnement** (Docker indisponible sur la machine, donc pas
+de DB de test locale sur `localhost:54322` ni d'API locale à interroger) :
 
-## Suivi identifié (hors périmètre, non prouvé par cette alerte)
+- `uvicorn` + `curl` sur `POST /feedback/invite/action {"action":"already_done"}`
+  puis `GET /feedback/invite`. Couvert en tests unitaires (2 tests dédiés), pas
+  en bout-en-bout HTTP.
+- Passe Playwright (`facteur-qa-web`, 390x844) : entrée visible sans scroller
+  jusqu'au bout, auto-ouverture unique, photos rendues, ouverture du lien Google
+  Agenda, carte de clôture sans overflow. Scénarios détaillés dans
+  `.context/qa-handoff.md` → lancer `/validate-feature` depuis une machine avec
+  Docker.
 
-- `app/services/push_dispatcher.py` — transaction ouverte pendant les envois FCM
-  (`await asyncio.to_thread`) avec `idle_in_transaction_session_timeout = 10 s` : un envoi
-  lent peut tuer la transaction et faire perdre les écritures `status='sent'`.
-  **Bug de correction en soi**, à traiter séparément.
-- `app/services/recommendation_service.py` — jusqu'à 3 connexions simultanées par
-  `/api/feed`.
-- `app/services/grille_selector.py` — `asyncio.gather` sur la **même** `AsyncSession`.
-- `app/workers/classification_worker.py` — engine `NullPool` séparé, invisible de la sonde.
+Story : `docs/stories/core/13.3.invitation-feedback-humaine.story.md`
