@@ -1,6 +1,8 @@
 {
   "unreleased": [
     {
+      "tag": "Nous soutenir",
+      "summary": "L'offre de soutien met désormais en avant le geste plutôt qu'un tarif : plus de montant affiché, un cadrage « soutiens une info libre, sans pub ni actionnaire »."
       "tag": "Ma Tournée",
       "summary": "Tes sources favorites ne manquent plus à l'appel : leur section apparaît dès l'ouverture, même après une réinstallation ou sur un nouvel appareil. Et pendant que ta tournée se prépare, les blocs en attente respirent et l'annoncent clairement."
       "tag": "Widget d'accueil",
