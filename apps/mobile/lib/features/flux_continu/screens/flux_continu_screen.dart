@@ -16,6 +16,7 @@ import 'package:go_router/go_router.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
@@ -54,7 +55,9 @@ import '../providers/pending_feed_section_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
-    show tourneeOrderPrefsProvider;
+    show isTourneeReorderableKey, tourneeOrderPrefsProvider;
+import '../providers/tournee_reorder_persistence.dart'
+    show persistTourneeEssentielReorder, reorderTourneeTabKeys;
 import '../services/auto_grow_nudge_scheduler.dart';
 import '../services/tournee_progress_service.dart'
     show TourneeProgressService;
@@ -85,6 +88,9 @@ const double _kStickyThreshold = 60.0;
 /// track (4) + refresh strip (2). **Must mirror the real sticky bar height** —
 /// it feeds the snap framing AND the fit budget ([usableViewportHeightProvider]).
 const double _kStickyBarHeight = 50.0;
+
+/// Flag one-shot du hint « maintiens un onglet pour réorganiser ta tournée ».
+const String _kDragHintSeenKey = 'tournee_header_drag_hint_seen_v1';
 
 /// px. Anti-crop safety inset for section-top snap anchors. Each snap `top` is
 /// pulled up by this much so a section poses a hair **below** the sticky header
@@ -276,6 +282,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   // [_syncStickyEntries]).
   final List<GlobalKey> _stickyEntryKeys = [];
 
+  /// Derniers descripteurs d'onglets produits par [_syncStickyEntries], alignés
+  /// sur [_stickyEntryKeys]. Sert de référentiel au remappage index → clé
+  /// d'ordre lors d'un réordre par drag ([_onHeaderReorder]).
+  List<StickyTab> _stickyTabs = const [];
+
+  /// Un onglet du header est soulevé. Gèle l'auto-align de la rangée et le
+  /// suivi de section active : sans ça, un scroll résiduel recentrerait les
+  /// onglets sous le doigt en plein drag.
+  bool _headerDragging = false;
+
   /// Sliver « Grille du jour » (carte d'entrée de La Grille). Son insertion est
   /// pilotée par `FluxContinuState.grilleSlotIndex`. Wrappé dans un
   /// `KeyedSubtree(_grilleKey)` pour exposer la carte au suivi sticky.
@@ -357,6 +373,17 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
 
+  // Hint one-shot « maintiens un onglet pour réorganiser ». Affiché à la 1ʳᵉ
+  // révélation du header sticky comportant au moins deux onglets déplaçables,
+  // puis jamais plus (flag SharedPreferences). Rendu en overlay sous la barre
+  // sticky, donc sans impact sur `_kStickyBarHeight` ni sur les budgets de fit.
+  bool _showDragHint = false;
+
+  /// Pessimiste tant que les prefs ne sont pas lues : pas de hint sur un cold
+  /// boot où l'utilisateur l'a déjà vu.
+  bool _dragHintSeen = true;
+  Timer? _dragHintTimer;
+
   /// Story 9.8 — horodatages du dernier passage en arrière-plan et du dernier
   /// refresh au foreground, pour le cooldown anti-refresh-intempestif
   /// (cf. [shouldRefreshEssentielOnForeground]).
@@ -414,6 +441,40 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       const Duration(seconds: 60),
       (_) => unawaited(_maybeTriggerAutoGrow()),
     );
+    unawaited(_loadDragHintSeen());
+  }
+
+  Future<void> _loadDragHintSeen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      _dragHintSeen = prefs.getBool(_kDragHintSeenKey) ?? false;
+    } catch (_) {
+      // Pas de prefs (tests sans mock) → on reste silencieux.
+    }
+  }
+
+  /// Révèle une fois le hint de réorganisation, si le header expose au moins
+  /// deux onglets déplaçables. Marque le flag immédiatement (avant l'écriture
+  /// asynchrone) pour ne jamais le montrer deux fois dans la même session.
+  void _maybeShowDragHint() {
+    if (_dragHintSeen || _showDragHint) return;
+    var reorderable = 0;
+    for (final t in _stickyTabs) {
+      if (t.orderKey != null) reorderable++;
+    }
+    if (reorderable < 2) return;
+    _dragHintSeen = true;
+    unawaited(
+      SharedPreferences.getInstance()
+          .then((prefs) => prefs.setBool(_kDragHintSeenKey, true))
+          .catchError((Object _) => false),
+    );
+    setState(() => _showDragHint = true);
+    _dragHintTimer?.cancel();
+    _dragHintTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (mounted) setState(() => _showDragHint = false);
+    });
   }
 
   @override
@@ -429,6 +490,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     _activeIndex.dispose();
     _tallSections.dispose();
     _pullHintTimer?.cancel();
+    _dragHintTimer?.cancel();
     _autoGrowTimer?.cancel();
     super.dispose();
   }
@@ -459,6 +521,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final showSticky = currentScroll > _kStickyThreshold;
     if (_stickyVisible.value != showSticky) {
       _stickyVisible.value = showSticky;
+      if (showSticky) _maybeShowDragHint();
     }
     _updateActiveSection();
 
@@ -502,6 +565,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   void _updateActiveSection() {
     if (_stickyEntryKeys.isEmpty) return;
+    if (_headerDragging) return;
     // Active = sticky entry that occupies the most visible area below the
     // sticky bar. The previous heuristic ("last section whose top has crossed
     // stickyBar + 200px lookahead") switched late on long sections because it
@@ -730,6 +794,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   }
 
   void _alignTabsToActive(int index) {
+    // Gelé pendant un drag d'onglet : l'auto-align se battrait avec
+    // l'auto-scroll aux bords du `ReorderableListView`.
+    if (_headerDragging) return;
     if (!_tabsScroll.hasClients) return;
     void doScroll() {
       if (!_tabsScroll.hasClients) return;
@@ -1444,6 +1511,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 tabs: stickyTabs,
                 onTapTab: _scrollToSection,
                 tabsController: _tabsScroll,
+                onReorder: _onHeaderReorder,
+                onDragStart: () => _headerDragging = true,
+                onDragEnd: () => _headerDragging = false,
               ),
             // Pull-to-refresh discoverability pill.
             Positioned(
@@ -1461,6 +1531,24 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 ),
               ),
             ),
+            // Hint one-shot de réorganisation, posé sous la barre sticky (en
+            // overlay : ne consomme aucune hauteur de layout).
+            if (!isSkeleton && !isPastEdition)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 280),
+                      opacity: _showDragHint ? 1.0 : 0.0,
+                      child: const _HeaderDragHint(),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1503,9 +1591,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         add(_grilleKey, _motDuJourTab);
       }
       final section = state.sections[i];
+      final key = sectionKey(section);
       add(
         _sectionKeys[i],
-        StickyTab(label: section.label, accent: section.accent),
+        StickyTab(
+          label: section.label,
+          accent: section.accent,
+          // Seules les vraies sections de la Tournée sont déplaçables ; le
+          // héros Essentiel, les alertes et les sujets Flâner restent figés.
+          orderKey: isTourneeReorderableKey(key) ? key : null,
+        ),
       );
       // Destination de snap dédiée juste après le hero (entrée virtuelle,
       // sans section réelle — retourne -1 dans _sectionIndexForStickyIndex).
@@ -1524,7 +1619,22 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     _stickyEntryKeys
       ..clear()
       ..addAll(keys);
+    _stickyTabs = tabs;
     return tabs;
+  }
+
+  /// Réordre déclenché par le drag d'un onglet du header. Le remappage
+  /// index → clé (et la contrainte des zones figées) vit dans
+  /// [reorderTourneeTabKeys] ; la persistance est celle, partagée, de la sheet
+  /// « Composer ma Tournée ».
+  void _onHeaderReorder(int oldIndex, int newIndex) {
+    final visibleKeys = reorderTourneeTabKeys(
+      [for (final t in _stickyTabs) t.orderKey],
+      oldIndex,
+      newIndex,
+    );
+    if (visibleKeys == null) return;
+    unawaited(persistTourneeEssentielReorder(ref, visibleKeys));
   }
 
   Widget _buildContent(BuildContext context, FluxContinuState state) {
@@ -2410,6 +2520,9 @@ class _StickyHostOverlay extends StatelessWidget {
   final List<StickyTab> tabs;
   final ValueChanged<int> onTapTab;
   final ScrollController tabsController;
+  final void Function(int oldIndex, int newIndex) onReorder;
+  final VoidCallback onDragStart;
+  final VoidCallback onDragEnd;
 
   const _StickyHostOverlay({
     required this.stickyVisible,
@@ -2417,6 +2530,9 @@ class _StickyHostOverlay extends StatelessWidget {
     required this.tabs,
     required this.onTapTab,
     required this.tabsController,
+    required this.onReorder,
+    required this.onDragStart,
+    required this.onDragEnd,
   });
 
   @override
@@ -2442,9 +2558,61 @@ class _StickyHostOverlay extends StatelessWidget {
               onTapTab: onTapTab,
               tabsController: tabsController,
               showFilterBar: false,
+              onReorder: onReorder,
+              onDragStart: onDragStart,
+              onDragEnd: onDragEnd,
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Pill de découvrabilité du réordre par drag des onglets. Rendue une seule
+/// fois (cf. [_kDragHintSeenKey]), juste sous la barre sticky.
+class _HeaderDragHint extends StatelessWidget {
+  const _HeaderDragHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(top: _kStickyBarHeight + 10),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: colors.textPrimary.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(FacteurRadius.full),
+            boxShadow: const [
+              BoxShadow(
+                color: Color.fromRGBO(0, 0, 0, 0.18),
+                blurRadius: 12,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIcons.handGrabbing(PhosphorIconsStyle.bold),
+                size: 14,
+                color: colors.backgroundPrimary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Maintiens un onglet pour réorganiser ta tournée',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colors.backgroundPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

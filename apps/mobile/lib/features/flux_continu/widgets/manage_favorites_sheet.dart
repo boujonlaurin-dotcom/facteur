@@ -14,7 +14,6 @@ import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/providers/tab_order_prefs_provider.dart';
 import '../../feed/widgets/favorite_topic_tabs.dart' show kMaxFavoriteTabs;
 import '../../my_interests/models/user_interests_state.dart';
-import '../../my_interests/models/user_sources_state.dart';
 import '../../my_interests/providers/user_interests_provider.dart';
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/models/source_model.dart';
@@ -25,6 +24,7 @@ import '../../veille/providers/veille_active_config_provider.dart';
 import '../../veille/providers/veille_themes_provider.dart';
 import '../providers/flux_continu_provider.dart' show fluxContinuProvider;
 import '../providers/tournee_order_prefs_provider.dart' hide applyOrder;
+import '../providers/tournee_reorder_persistence.dart';
 import '../providers/tournee_smart_arrangement_provider.dart';
 import '../utils/theme_color_mapping.dart';
 import 'choice_tile.dart';
@@ -373,35 +373,15 @@ class _ManageFavoritesContentState
   /// Garde-fou des réordres : ne pas réécrire l'ordre tant que les données
   /// d'appartenance (intérêts + sources) ne sont pas chargées — sinon un favori
   /// non matérialisé serait élagué de l'ordre (cf. `mergeVisibleReorder`).
-  bool get _membershipDataReady =>
-      ref.read(userInterestsProvider).valueOrNull != null &&
-      ref.read(userSourcesStateProvider).valueOrNull != null;
+  bool get _membershipDataReady => tourneeMembershipDataReady(ref);
 
-  Future<void> _persistEssentielReorder(List<_FavItem> ordered) async {
-    if (!_membershipDataReady) return;
-
-    // Réordre non destructif : on ne permute que les clés rendues ; toute clé
-    // d'ordre non rendue cette frame (catalogue en cours, source absente du
-    // catalogue, clé masquée) est préservée à sa position. Seul `_onRemove`
-    // retire une clé.
-    final prevOrder = ref.read(tourneeOrderPrefsProvider).order;
-    final renderedKeys = ordered.map((e) => e.key).toList();
-    await ref
-        .read(tourneeOrderPrefsProvider.notifier)
-        .setOrder(mergeVisibleReorder(prevOrder, renderedKeys));
-    final themeRefs = <FavoriteRef>[
-      for (final e in ordered)
-        if (e.kind == _FavKind.theme) ThemeFavoriteRef(slug: e.id),
-    ];
-    final sourceIds = [
-      for (final e in ordered)
-        if (e.kind == _FavKind.source) e.id,
-    ];
-    await Future.wait([
-      _syncThemePositions(themeRefs),
-      _syncSourcePositionsMerged(sourceIds, essentiel: true),
-    ]);
-  }
+  /// Délègue au helper partagé — même séquence que le drag des onglets du
+  /// header sticky (cf. `tournee_reorder_persistence.dart`), zéro duplication.
+  Future<void> _persistEssentielReorder(List<_FavItem> ordered) =>
+      persistTourneeEssentielReorder(
+        ref,
+        [for (final e in ordered) e.key],
+      );
 
   Future<void> _persistFlanerReorder(List<_FavItem> ordered) async {
     // Même garde-fou + réordre non destructif que côté Essentiel (cf.
@@ -424,26 +404,8 @@ class _ManageFavoritesContentState
     ];
     await Future.wait([
       _syncTopicPositions(topicIds),
-      _syncSourcePositionsMerged(sourceIds, essentiel: false),
+      syncSourcePositionsMerged(ref, sourceIds, essentiel: false),
     ]);
-  }
-
-  /// Réordonne les `ThemeFavoriteRef` serveur en préservant veille/custom-topics.
-  Future<void> _syncThemePositions(List<FavoriteRef> themeRefs) async {
-    final interests = ref.read(userInterestsProvider).valueOrNull;
-    if (interests == null) return;
-    final themeSlots = interests.favorites.whereType<ThemeFavoriteRef>().length;
-    if (themeRefs.length != themeSlots) return;
-    var i = 0;
-    final merged = [
-      for (final f in interests.favorites)
-        f is ThemeFavoriteRef ? themeRefs[i++] : f,
-    ];
-    try {
-      await ref.read(userInterestsProvider.notifier).reorderFavorites(merged);
-    } catch (_) {
-      // best-effort.
-    }
   }
 
   /// Réordonne les `CustomTopicFavoriteRef` serveur en préservant thèmes/veille.
@@ -464,40 +426,6 @@ class _ManageFavoritesContentState
       await ref.read(userInterestsProvider.notifier).reorderFavorites(merged);
     } catch (_) {
       // best-effort.
-    }
-  }
-
-  /// Réassigne les positions serveur des sources favorites **sans jamais
-  /// perdre** celles de l'autre section : `reorderFavorites` remplace toute la
-  /// liste, donc on fusionne le sous-ensemble réordonné avec l'autre mode.
-  Future<void> _syncSourcePositionsMerged(
-    List<String> reorderedIds, {
-    required bool essentiel,
-  }) async {
-    final sourcesState = ref.read(userSourcesStateProvider).valueOrNull;
-    if (sourcesState == null) return;
-    final tournee = ref.read(tourneeOrderPrefsProvider);
-    bool isEssentiel(String id) => tournee.sourceIsEssentiel(id);
-    final reorderedSet = reorderedIds.toSet();
-    final others = [
-      for (final f in [
-        ...sourcesState.favorites,
-      ]..sort((a, b) => a.position.compareTo(b.position)))
-        if ((essentiel ? !isEssentiel(f.sourceId) : isEssentiel(f.sourceId)) &&
-            !reorderedSet.contains(f.sourceId))
-          f.sourceId,
-    ];
-    final fullIds = essentiel
-        ? [...reorderedIds, ...others]
-        : [...others, ...reorderedIds];
-    final refs = [
-      for (var i = 0; i < fullIds.length; i++)
-        SourceFavoriteRef(sourceId: fullIds[i], position: i),
-    ];
-    try {
-      await ref.read(userSourcesStateProvider.notifier).reorderFavorites(refs);
-    } catch (_) {
-      // best-effort : l'ordre prefs reste appliqué.
     }
   }
 
