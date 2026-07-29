@@ -12,6 +12,8 @@ import '../../../config/topic_labels.dart';
 import '../../../features/detail/screens/content_detail_screen.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../../widgets/design/facteur_button.dart';
+import '../../alerts/models/alert_item.dart';
+import '../../alerts/widgets/alert_toggle_row.dart';
 import '../../feed/models/content_model.dart';
 import '../../flux_continu/utils/theme_color_mapping.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
@@ -1653,6 +1655,8 @@ class _FsSettings extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _FsAlertToggle(source: source),
+            const SizedBox(height: 16),
             Text(
               'Priorité dans ton flux',
               style: textTheme.labelMedium?.copyWith(
@@ -1678,6 +1682,32 @@ class _FsSettings extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Adaptateur de la rangée d'alerte partagée pour la fiche source.
+///
+/// L'ancienne implémentation vivait ici et portait le gate de rareté (switch
+/// grisé + « Cette source publie trop souvent pour une alerte. »). Les alertes
+/// v2 ont supprimé ce veto : tout le rendu est désormais dans
+/// [AlertToggleRow], commun à la fiche source et à la fiche sujet, et ce
+/// widget ne fait que lui passer le profil déjà chargé par la fiche pour le
+/// chip de fréquence — aucun appel réseau supplémentaire.
+class _FsAlertToggle extends ConsumerWidget {
+  final Source source;
+  const _FsAlertToggle({required this.source});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(sourceProfileProvider(source.id)).valueOrNull;
+    return AlertToggleRow(
+      targetId: source.id,
+      kind: AlertKind.source,
+      cadencePerWeek: profile == null
+          ? 0
+          : cadencePerWeek(profile.articles30d, profile.oldestContentAt),
+      hasProfile: profile != null,
     );
   }
 }

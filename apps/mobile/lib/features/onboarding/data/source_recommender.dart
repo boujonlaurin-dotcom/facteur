@@ -27,6 +27,11 @@ enum RecommendationTagType {
 
   /// Raccroche la reco à une source aimée au swipe ("Similaire à {nom}")
   similar,
+
+  /// Source qui publie moins d'une fois par semaine (story 30.2). Mention
+  /// légère : l'onboarding ne propose aucune activation de cloche à ce stade,
+  /// il installe juste l'idée que la rareté est une qualité.
+  rare,
 }
 
 /// A visual tag badge on a recommendation card.
@@ -611,6 +616,20 @@ class SourceRecommender {
         const RecommendationTag(
           label: 'Peu anxiogène',
           type: RecommendationTagType.serein,
+        ),
+      );
+    }
+
+    // Rare (story 30.2) : mention légère, sans activation. On ne dispose ici
+    // que d'`articles30d` (pas de `oldest_content_at`) : la fenêtre de 30 j
+    // n'est donc pas clampée sur l'âge de la source, et une source fraîche
+    // pourrait être étiquetée « rare » à tort. Acceptable pour un badge
+    // informatif ; la cloche, elle, repasse par `isRareSource` + le serveur.
+    if (source.articles30d >= 1 && source.articles30d < 4) {
+      tags.add(
+        const RecommendationTag(
+          label: 'rare',
+          type: RecommendationTagType.rare,
         ),
       );
     }

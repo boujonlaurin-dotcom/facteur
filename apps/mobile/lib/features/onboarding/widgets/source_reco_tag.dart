@@ -27,13 +27,15 @@ class SourceRecoTag extends StatelessWidget {
       RecommendationTagType.fiable => '✓ ',
       RecommendationTagType.serein => '☀ ',
       RecommendationTagType.similar => '≈ ',
+      RecommendationTagType.rare => '📯 ',
     };
 
     final highlighted = switch (tag.type) {
       RecommendationTagType.specialist ||
       RecommendationTagType.similar ||
       RecommendationTagType.fiable ||
-      RecommendationTagType.antiBruit => true,
+      RecommendationTagType.antiBruit ||
+      RecommendationTagType.rare => true,
       _ => false,
     };
 

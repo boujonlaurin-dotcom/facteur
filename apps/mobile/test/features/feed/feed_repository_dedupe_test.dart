@@ -47,6 +47,7 @@ void main() {
     final api = _MockApiClient();
     final dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(true);
 
     int calls = 0;
     when(() => dio.get<dynamic>(any(),
@@ -81,6 +82,7 @@ void main() {
     final api = _MockApiClient();
     final dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(true);
 
     int calls = 0;
     when(() => dio.get<dynamic>(any(),
@@ -100,10 +102,42 @@ void main() {
     expect(calls, 1, reason: 'follow-up within window must reuse cached result');
   });
 
+  // Régression C3 (docs/bugs/bug-widget-fiabilite.md) : au cold boot depuis le
+  // widget, la 1ère requête pouvait partir sans session et revenir dégradée.
+  // Mémorisée, elle était ensuite servie pendant 5 s à tous les appelants — y
+  // compris au payload widget.
+  test('une réponse obtenue sans session n\'est jamais mémorisée', () async {
+    final api = _MockApiClient();
+    final dio = _MockDio();
+    when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(false);
+
+    int calls = 0;
+    when(() => dio.get<dynamic>(any(),
+        queryParameters: any(named: 'queryParameters'))).thenAnswer(
+      (_) async {
+        calls += 1;
+        return _resp(_samplePayload());
+      },
+    );
+
+    final repo = FeedRepository(api);
+    await repo.getFeedWithRaw();
+    expect(calls, 1);
+
+    await repo.getFeedWithRaw();
+    expect(
+      calls,
+      2,
+      reason: 'sans session, la fenêtre de 5 s ne doit rien propager',
+    );
+  });
+
   test('forceFresh bypasses the dedupe window (pull-to-refresh)', () async {
     final api = _MockApiClient();
     final dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(true);
 
     int calls = 0;
     when(() => dio.get<dynamic>(any(),
@@ -128,6 +162,7 @@ void main() {
     final api = _MockApiClient();
     final dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(true);
 
     int calls = 0;
     when(() => dio.get<dynamic>(any(),
@@ -148,6 +183,7 @@ void main() {
     final api = _MockApiClient();
     final dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(true);
 
     int calls = 0;
     when(() => dio.get<dynamic>(any(),
@@ -169,6 +205,7 @@ void main() {
     final api = _MockApiClient();
     final dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(true);
 
     int calls = 0;
     when(() => dio.get<dynamic>(any(),
@@ -199,6 +236,7 @@ void main() {
     final api = _MockApiClient();
     final dio = _MockDio();
     when(() => api.dio).thenReturn(dio);
+    when(() => api.hasSession).thenReturn(true);
 
     int calls = 0;
     when(() => dio.get<dynamic>(any(),

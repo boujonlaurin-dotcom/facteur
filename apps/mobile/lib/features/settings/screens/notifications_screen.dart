@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/api/notification_preferences_api_service.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../notifications/widgets/preset_selector.dart';
+import '../../alerts/providers/alerts_provider.dart';
 import '../../notifications/widgets/time_slot_selector.dart';
 import '../providers/notifications_settings_provider.dart';
 
@@ -49,25 +51,9 @@ class NotificationsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: FacteurSpacing.space4),
             if (settings.pushEnabled) ...[
-              _SectionHeader(title: 'Rythme'),
+              _SectionHeader(title: 'Alertes'),
               const SizedBox(height: FacteurSpacing.space3),
-              PresetSelector(
-                value: settings.preset,
-                onChanged: (preset) {
-                  final from = settings.preset;
-                  unawaited(notifier.setPreset(preset));
-                  if (from != preset) {
-                    unawaited(
-                      ref
-                          .read(analyticsServiceProvider)
-                          .trackNotifSettingsChanged(
-                            fromPreset: from,
-                            toPreset: preset,
-                          ),
-                    );
-                  }
-                },
-              ),
+              const _AlertsRow(),
               const SizedBox(height: FacteurSpacing.space6),
               _SectionHeader(title: 'Horaire'),
               const SizedBox(height: FacteurSpacing.space3),
@@ -77,7 +63,7 @@ class NotificationsScreen extends ConsumerWidget {
               ),
               const SizedBox(height: FacteurSpacing.space4),
               Text(
-                _scheduleDescription(settings.preset, settings.timeSlot),
+                _scheduleDescription(settings.timeSlot),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.textTertiary,
                       fontStyle: FontStyle.italic,
@@ -100,13 +86,80 @@ class NotificationsScreen extends ConsumerWidget {
     );
   }
 
-  String _scheduleDescription(NotifPreset preset, NotifTimeSlot slot) {
+  String _scheduleDescription(NotifTimeSlot slot) {
     final hour = slot == NotifTimeSlot.morning ? '07:30' : '19:00';
-    if (preset == NotifPreset.curieux) {
-      return "Tu reçois ton récap chaque jour à $hour, "
-          "et la pépite des Fact·eur·isses le vendredi à 18:00.";
-    }
-    return "Tu reçois ton récap chaque jour à $hour. Rien d'autre.";
+    // « Rien d'autre » ne tient plus depuis que les alertes existent : elles
+    // partent dans la même passe. Autant le dire, c'est justement l'argument.
+    return "Tu reçois ton récap chaque jour à $hour. "
+        "Tes alertes arrivent au même moment, sans bruit.";
+  }
+}
+
+/// Accès à l'écran « Mes alertes » — le réglage qui a remplacé le sélecteur
+/// de rythme (le préset ne pilotait plus que la pépite hebdo, supprimée).
+///
+/// Le compteur « x/5 » est affiché dès que la liste est chargée ; en cours de
+/// chargement ou en erreur on n'affiche rien plutôt qu'un compte faux.
+class _AlertsRow extends ConsumerWidget {
+  const _AlertsRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.facteurColors;
+    final theme = Theme.of(context);
+    final countLabel = ref.watch(alertsProvider).maybeWhen(
+          data: (alerts) => '${alerts.activeCount}/${alerts.cap}',
+          orElse: () => '',
+        );
+
+    return Material(
+      color: colors.surface,
+      borderRadius: BorderRadius.circular(FacteurRadius.large),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(FacteurRadius.large),
+        onTap: () => context.pushNamed(RouteNames.alerts),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(FacteurRadius.large),
+            border: Border.all(color: colors.surfaceElevated),
+          ),
+          padding: const EdgeInsets.all(FacteurSpacing.space4),
+          child: Row(
+            children: [
+              Icon(Icons.notifications_none, color: colors.primary, size: 24),
+              const SizedBox(width: FacteurSpacing.space4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Mes alertes',
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Être prévenu quand une source rare publie.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: colors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              if (countLabel.isNotEmpty) ...[
+                Text(
+                  countLabel,
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: colors.textTertiary),
+                ),
+                const SizedBox(width: FacteurSpacing.space2),
+              ],
+              Icon(Icons.chevron_right, color: colors.textTertiary, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

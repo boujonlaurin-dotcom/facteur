@@ -180,7 +180,8 @@ void main() {
   );
 
   test(
-    'refreshForWidget (unfiltered) refreshes the visible feed with fresh items',
+    'refreshForWidget (unfiltered) leaves the visible feed alone — it refreshes '
+    'the widget, not the screen under the finger',
     () async {
       var call = 0;
       when(
@@ -216,10 +217,21 @@ void main() {
 
       await notifier.refreshForWidget();
 
+      // Le `state = AsyncData(...)` d'avant s'exécutait juste après le
+      // `router.go('/flaner')` du deep-link : l'état visible était remplacé
+      // pendant que FlanerScreen se montait (« le bouton refresh plante
+      // Flâner »). Cf. docs/bugs/bug-widget-fiabilite.md (C4).
       expect(
         container.read(feedProvider).value!.items.map((c) => c.id),
+        ['old'],
+        reason: 'refreshForWidget must never mutate the visible feed state',
+      );
+
+      // Le snapshot non filtré, lui, a bien été rafraîchi (c'est ce qui part
+      // vers le widget).
+      expect(
+        notifier.globalItems.map((c) => c.id),
         ['fresh-1', 'fresh-2'],
-        reason: 'unfiltered widget refresh mirrors the fresh page in-app too',
       );
     },
   );
@@ -265,4 +277,88 @@ void main() {
       expect(state.value!.items.map((c) => c.id), ['a', 'b']);
     },
   );
+
+  // ────────────────────────────────────────────────────────────
+  // C5 — profondeur du payload widget
+  // ────────────────────────────────────────────────────────────
+  //
+  // Le widget était alimenté par `state.items`, qui rétrécit au fil de la
+  // lecture (overlay `_consumedContentIds`). Après quelques articles lus il ne
+  // restait que ~9 lignes sur l'écran d'accueil, et rien ne reconstituait la
+  // profondeur. Cf. docs/bugs/bug-widget-fiabilite.md (C5).
+  group('buffer widget (mergeIntoWidgetBuffer)', () {
+    late FeedNotifier notifier;
+
+    setUp(() async {
+      when(
+        () => mockFeedRepo.getFeed(
+          page: any(named: 'page'),
+          limit: any(named: 'limit'),
+          contentType: any(named: 'contentType'),
+          savedOnly: any(named: 'savedOnly'),
+          mode: any(named: 'mode'),
+          theme: any(named: 'theme'),
+          topic: any(named: 'topic'),
+          hasNote: any(named: 'hasNote'),
+          sourceId: any(named: 'sourceId'),
+          entity: any(named: 'entity'),
+          keyword: any(named: 'keyword'),
+          includeUnfollowed: any(named: 'includeUnfollowed'),
+          serein: any(named: 'serein'),
+          personalized: any(named: 'personalized'),
+          followedOnly: any(named: 'followedOnly'),
+          forceFresh: any(named: 'forceFresh'),
+        ),
+      ).thenAnswer((_) async => resp(const []));
+
+      notifier = container.read(feedProvider.notifier);
+      await container.read(feedProvider.future);
+    });
+
+    test('ne rétrécit pas quand la liste visible rétrécit (lecture in-app)',
+        () {
+      final full = [
+        makeContent('a'),
+        makeContent('b'),
+        makeContent('c'),
+        makeContent('d'),
+      ];
+      expect(notifier.mergeIntoWidgetBuffer(full).length, 4);
+
+      // L'utilisateur lit a et b → `state.items` n'en contient plus que 2.
+      final afterReading = [makeContent('c'), makeContent('d')];
+      final merged = notifier.mergeIntoWidgetBuffer(afterReading);
+
+      expect(merged.length, 4, reason: 'le widget ne perd pas de profondeur');
+      expect(merged.map((c) => c.id), ['c', 'd', 'a', 'b']);
+    });
+
+    test('les entrées fraîches passent en tête, dédupliquées par id', () {
+      notifier.mergeIntoWidgetBuffer([makeContent('old1'), makeContent('old2')]);
+      final merged = notifier.mergeIntoWidgetBuffer([
+        makeContent('new1'),
+        makeContent('old1'),
+      ]);
+      expect(merged.map((c) => c.id), ['new1', 'old1', 'old2']);
+    });
+
+    test('cape à 80 en évinçant les plus anciennes', () {
+      notifier.mergeIntoWidgetBuffer(
+        List.generate(80, (i) => makeContent('old$i')),
+      );
+      final merged = notifier.mergeIntoWidgetBuffer(
+        List.generate(10, (i) => makeContent('new$i')),
+      );
+      expect(merged.length, 80);
+      expect(merged.take(10).map((c) => c.id),
+          List.generate(10, (i) => 'new$i'));
+      expect(merged.map((c) => c.id), isNot(contains('old79')));
+    });
+
+    test('une page vide préserve le buffer', () {
+      notifier.mergeIntoWidgetBuffer([makeContent('a'), makeContent('b')]);
+      final merged = notifier.mergeIntoWidgetBuffer(const []);
+      expect(merged.map((c) => c.id), ['a', 'b']);
+    });
+  });
 }

@@ -79,6 +79,7 @@ from app.database import close_db, get_db, init_db, text
 from app.middleware.request_context import RequestContextMiddleware
 from app.routers import (
     admin_cohorts,
+    alerts,
     analytics,
     app_update,
     auth,
@@ -513,6 +514,7 @@ app.include_router(
     tags=["NotificationPreferences"],
 )
 app.include_router(push_devices.router, prefix="/api/devices", tags=["PushDevices"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(
     personalization.router,
     prefix="/api/users/personalization",

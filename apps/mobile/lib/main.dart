@@ -23,6 +23,8 @@ import 'core/services/deep_link_service.dart';
 import 'core/services/posthog_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/services/server_push_service.dart';
+import 'core/services/widget_background_refresh.dart';
+import 'core/services/widget_service.dart';
 import 'core/errors/user_facing_error_notifier.dart';
 import 'core/ui/notification_service.dart';
 import 'features/feed/services/completed_reads_store.dart';
@@ -411,6 +413,12 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
     unawaited(
       HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback),
     );
+    // Seed empty payload + broadcast an update so a widget the user just
+    // pinned never stays blank until the next feed push. Idempotent (no-op
+    // when a payload already exists).
+    unawaited(WidgetService.initWidgetIfNeeded());
+    // Rafraîchissement app fermée (WorkManager, ~1 h). Annulé au logout.
+    unawaited(WidgetBackgroundRefresh.register());
   } catch (e) {
     debugPrint('Main: Home Widget init failed (non-critical): $e');
   }

@@ -51,14 +51,15 @@ const double kRegularCardHeight = 146;
 const double kLastCardBottomMargin = 12;
 
 /// Banner height (px) for a section **without** a blurb (theme / source):
-/// `minHeight 48` + vertical margin (2+4). Post-compaction (banner moins
-/// proéminent) — doit matcher la hauteur rendue par `SectionBanner` sinon le
-/// fit ne profite pas du gain de place.
-const double kBannerHeightNoBlurb = 54;
+/// `minHeight 46` + vertical margin (2+4). Post-compaction (banner moins
+/// proéminent), le `minHeight` a été relevé 40 → 46 pour aérer le tiret
+/// d'accent en haut de section — doit matcher la hauteur rendue par
+/// `SectionBanner` sinon le fit ne profite pas du gain de place.
+const double kBannerHeightNoBlurb = 52;
 
 /// Banner height (px) for a section **with** a blurb (Actus du jour, Bonnes
-/// Nouvelles, veille): `minHeight 76` + vertical margin (2+4). Post-compaction.
-const double kBannerHeightWithBlurb = 82;
+/// Nouvelles, veille): `minHeight 70` + vertical margin (2+4). Post-compaction.
+const double kBannerHeightWithBlurb = 76;
 
 /// Footer height (px): le CTA « Tout lire » a disparu (le banner de section
 /// est devenu cliquable) — il ne reste que le spacing de fin de section

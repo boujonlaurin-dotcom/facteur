@@ -6,7 +6,7 @@ import '../../../core/api/providers.dart';
 import '../models/flux_continu_models.dart';
 
 /// Résultat de `GET /api/essentiel` : les articles transversaux + le delta
-/// « N nouveaux depuis ce matin » (`new_since_this_morning`, borné côté
+/// « N nouveaux articles » (`new_since_this_morning`, borné côté
 /// backend). `newSinceMorning == 0` ⇒ pas de pastille sur le héros.
 typedef EssentielFetchResult = ({
   List<EssentielArticle> articles,

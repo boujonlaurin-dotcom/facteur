@@ -22,6 +22,10 @@ from app.models.enums import InterestState
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
+from app.schemas.alert import (
+    SourceAlertToggleResponse,
+    UpdateSourceAlertRequest,
+)
 from app.schemas.content import ContentResponse
 from app.schemas.source import (
     CoverageResponse,
@@ -60,6 +64,10 @@ from app.services.premium_curated_sources import (
 from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
+)
+from app.services.source_alert_producer import (
+    ALERT_CAP,
+    count_active_alerts,
 )
 from app.services.source_recommendation_gate import (
     is_quality_catalog,
@@ -1113,6 +1121,66 @@ async def update_source_subscription(
     FEED_CACHE.invalidate(UUID(user_id))
     SOURCES_CACHE.invalidate(UUID(user_id))
     return result
+
+
+@router.put("/{source_id}/alert", response_model=SourceAlertToggleResponse)
+async def update_source_alert(
+    source_id: UUID,
+    data: UpdateSourceAlertRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SourceAlertToggleResponse:
+    """Pose ou retire la cloche « alerte » sur une source suivie.
+
+    Alertes v2 : plus de gate de rareté — n'importe quelle source suivie est
+    éligible, le bruit se règle par `filtered` (1 alerte/jour, la mieux scorée)
+    et se prévient par le devis de cadence affiché côté client. Ne restent que
+    les refus structurels : source inconnue, source non suivie, plafond atteint.
+    """
+    uid = UUID(user_id)
+    source_exists = (
+        await db.execute(select(Source.id).where(Source.id == source_id))
+    ).first()
+    if source_exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+
+    user_source = (
+        await db.execute(
+            select(UserSource).where(
+                UserSource.user_id == uid,
+                UserSource.source_id == source_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
+        )
+    ).scalar_one_or_none()
+    if user_source is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "not_followed"},
+        )
+
+    if data.enabled and user_source.notify is not True:
+        active_count = await count_active_alerts(db, user_id=uid)
+        if active_count >= ALERT_CAP:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "alert_cap_reached", "cap": ALERT_CAP},
+            )
+
+    user_source.notify = data.enabled
+    user_source.notify_filtered = data.filtered if data.enabled else None
+    await db.commit()
+    FEED_CACHE.invalidate(uid)
+    SOURCES_CACHE.invalidate(uid)
+
+    return SourceAlertToggleResponse(
+        enabled=data.enabled,
+        filtered=data.enabled and data.filtered,
+        active_count=await count_active_alerts(db, user_id=uid),
+        cap=ALERT_CAP,
+    )
 
 
 @router.post("/{source_id}/trust")

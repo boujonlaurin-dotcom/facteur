@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -183,6 +184,11 @@ class UserSource(Base):
     __tablename__ = "user_sources"
     __table_args__ = (
         UniqueConstraint("user_id", "source_id", name="uq_user_sources_user_source"),
+        Index(
+            "ix_user_sources_notify_source",
+            "source_id",
+            postgresql_where=text("notify IS TRUE"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -224,6 +230,12 @@ class UserSource(Base):
     # Placement Essentiel/Flâner durable (source de vérité DB, resync par device).
     # true = Essentiel, false = Flâner, NULL = jamais placé / legacy (backfill device).
     essentiel_mode: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Cloche « alerte » (Epic 30) : true = prévenir à la parution.
+    # NULL = legacy / jamais posée, lu partout comme `notify IS TRUE`.
+    notify: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Mode filtré (alertes v2) : true = seulement la parution la mieux scorée,
+    # 1 max par jour. NULL/false = toutes les parutions.
+    notify_filtered: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Relations
     source: Mapped["Source"] = relationship(back_populates="user_sources")

@@ -28,9 +28,16 @@ enum NotifVariant { variantA, variantB, variantC }
 /// `pendingNotificationRequests`). Garder stable pour permettre `cancel(id)`.
 class _NotifIds {
   static const dailyDigest = 0;
+
+  /// Legacy — la pépite communauté hebdo n'est plus planifiée, mais l'ID reste
+  /// réservé le temps que les installs existantes purgent la notif déjà posée.
   static const weeklyCommunityPick = 1;
   static const dailyGoodNews = 2;
   static const veilleDelivery = 3;
+
+  /// Base des alertes source rare : l'ID réel vaut `sourceAlertBase + hash`,
+  /// jamais une valeur fixe (cf. `_showAlert`).
+  static const sourceAlertBase = 1000;
 }
 
 /// Notifications locales, y compris l'affichage au premier plan des pushes FCM.
@@ -150,25 +157,13 @@ class PushNotificationService {
   static const String defaultTitle = 'Facteur';
   static const String defaultBody = "Ton récap du jour t'attend quand tu veux.";
 
-  /// En-têtes du bigText de la notif digest (variante B), selon le mode.
-  static const String digestHeader = "À la une dans l'Essentiel :";
-  static const String digestHeaderSerene = 'Du calme dans ton actu :';
-
-  /// Ligne CTA finale du bigText digest, selon le mode.
-  static const String digestCta =
-      "Pour le reste, viens faire un tour sur l'app !";
-  static const String digestCtaSerene =
-      "Le reste t'attend tranquillement dans l'app.";
+  /// Ligne CTA finale du bigText digest.
+  static const String digestCta = 'La suite dans Facteur !';
 
   /// Variante C — déclenchée manuellement par l'éditorial (hors v1).
   static const String calmTitle = 'Facteur';
   static const String calmBody =
       "Rien d'important dans l'actu aujourd'hui. Belle journée !";
-
-  /// Pépite communauté hebdo (vendredi 18:00, préset Curieux).
-  static const String communityTitle = 'Facteur';
-  static const String communityBody =
-      "Les Fact·eur·isses adorent cet article. Jette-y un œil quand tu as 2 min !";
 
   /// Bonnes nouvelles du jour — canal opt-in indépendant du digest principal.
   static const String goodNewsTitle = '🌱 Vos bonnes nouvelles du jour';
@@ -184,11 +179,9 @@ class PushNotificationService {
   ///
   /// - [variantB] requiert au moins un teaser dans [teasers]. Le titre complet
   ///   du premier teaser est utilisé pour le body collapsed (l'OS l'ellipsise
-  ///   sur une ligne) ; les 3 premiers titres sont rendus en bullets dans le
-  ///   bigText Android, suivis d'une ligne CTA renvoyant vers l'app.
-  /// - [serene] bascule l'en-tête et le CTA sur un ton apaisé (mode Serein).
-  /// - [intro] (push serveur « coup d'œil », `data['intro']`) remplace
-  ///   l'en-tête par défaut du bigText quand il est fourni non vide.
+  ///   sur une ligne) ; les 2 premiers titres sont rendus en bullets dans le
+  ///   bigText Android, suivis d'une ligne vide puis d'une ligne CTA renvoyant
+  ///   vers l'app.
   static ({String title, String body, String bigText}) buildCopy({
     required NotifVariant variant,
     List<String>? teasers,
@@ -199,30 +192,19 @@ class PushNotificationService {
       case NotifVariant.variantA:
         return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
       case NotifVariant.variantB:
-        final all = (teasers ?? const <String>[])
+        final cleaned = (teasers ?? const <String>[])
             .map((t) => t.trim())
             .where((t) => t.isNotEmpty)
+            .take(2)
             .toList();
-        final cleaned = all.take(3).toList();
         if (cleaned.isEmpty) {
           return (title: defaultTitle, body: defaultBody, bigText: defaultBody);
         }
-        final trimmedIntro = intro?.trim();
-        final header = (trimmedIntro != null && trimmedIntro.isNotEmpty)
-            ? trimmedIntro
-            : (serene ? digestHeaderSerene : digestHeader);
-        // Nombre d'articles « à la une » non rendus en bullets : la ligne CTA
-        // les annonce (« + N autres ! »). Pile 1-2 teasers → aucun reste →
-        // on garde le CTA générique (apaisé ou non).
-        final remaining = all.length - cleaned.length;
-        final cta = remaining > 0
-            ? '+ $remaining ${remaining > 1 ? 'autres' : 'autre'} !'
-            : (serene ? digestCtaSerene : digestCta);
         final bullets = cleaned.map((t) => '• $t').join('\n');
         return (
           title: defaultTitle,
           body: cleaned.first,
-          bigText: '$header\n$bullets\n$cta',
+          bigText: '$bullets\n\n$digestCta',
         );
       case NotifVariant.variantC:
         return (title: calmTitle, body: calmBody, bigText: calmBody);
@@ -319,61 +301,6 @@ class PushNotificationService {
     );
 
     return _isScheduled(_NotifIds.dailyDigest);
-  }
-
-  /// Planifie la pépite communauté tous les vendredis à 18:00 (préset Curieux).
-  ///
-  /// [articleId] est joint au payload pour permettre l'ouverture directe de
-  /// l'article au tap. Si null, l'app retombe sur le digest.
-  Future<bool> scheduleWeeklyCommunityPick({String? articleId}) async {
-    final scheduledDate = _nextInstanceOfWeekday(
-      weekday: DateTime.friday,
-      time: const TimeOfDay(hour: 18, minute: 0),
-    );
-
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    final canUseExact =
-        (await androidPlugin?.canScheduleExactNotifications()) ?? true;
-    final scheduleMode = canUseExact
-        ? AndroidScheduleMode.exactAllowWhileIdle
-        : AndroidScheduleMode.inexactAllowWhileIdle;
-
-    final androidDetails = AndroidNotificationDetails(
-      'community_channel',
-      'Pépite communauté',
-      channelDescription: 'Recommandation hebdomadaire des Fact·eur·isses',
-      importance: Importance.high,
-      priority: Priority.high,
-      icon: '@drawable/ic_stat_facteur',
-      color: const Color(0xFFD35400),
-      styleInformation: BigTextStyleInformation(
-        communityBody,
-        contentTitle: communityTitle,
-      ),
-    );
-    const iosDetails = DarwinNotificationDetails();
-
-    await _plugin.zonedSchedule(
-      id: _NotifIds.weeklyCommunityPick,
-      title: communityTitle,
-      body: communityBody,
-      scheduledDate: scheduledDate,
-      notificationDetails: NotificationDetails(
-        android: androidDetails,
-        iOS: iosDetails,
-      ),
-      androidScheduleMode: scheduleMode,
-      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-      payload:
-          articleId != null ? 'route:/article/$articleId' : 'route:/digest',
-    );
-
-    debugPrint(
-      'PushNotificationService: weekly community scheduled @ $scheduledDate',
-    );
-
-    return _isScheduled(_NotifIds.weeklyCommunityPick);
   }
 
   /// Planifie le push « Bonnes nouvelles du jour » — canal séparé du digest
@@ -541,8 +468,6 @@ class PushNotificationService {
       'notificationsEnabled': notificationsEnabled,
       'exactAlarmsGranted': exactAlarmsGranted,
       'digestScheduled': pending.any((n) => n.id == _NotifIds.dailyDigest),
-      'communityScheduled':
-          pending.any((n) => n.id == _NotifIds.weeklyCommunityPick),
       'pendingCount': pending.length,
     };
   }
@@ -551,7 +476,12 @@ class PushNotificationService {
     await _plugin.cancel(id: _NotifIds.dailyDigest);
   }
 
-  Future<void> cancelWeeklyCommunityPick() async {
+  /// Purge la pépite communauté hebdo, retirée du produit.
+  ///
+  /// Supprimer le code de planification n'annule PAS la notif déjà posée : les
+  /// installs existantes ont un slot armé pour le prochain vendredi 18:00 et
+  /// continueraient de sonner. Ce `cancel` est le seul chemin qui les nettoie.
+  Future<void> cancelLegacyCommunityPick() async {
     await _plugin.cancel(id: _NotifIds.weeklyCommunityPick);
   }
 
@@ -571,6 +501,13 @@ class PushNotificationService {
         teasers.isEmpty &&
         dataTitle == null &&
         dataBody == null) {
+      return;
+    }
+
+    // Alertes source et sujet (stories 30.2/30.3) : canal et ID dédiés, jamais
+    // le canal digest — elles doivent arriver sans son ni vibration.
+    if (data['kind'] == 'source_alert' || data['kind'] == 'topic_alert') {
+      await _showAlert(data, notification: notification);
       return;
     }
 
@@ -616,6 +553,95 @@ class PushNotificationService {
       ),
       payload: 'route:$route',
     );
+  }
+
+  /// Rend une alerte (source ou sujet) à partir du `data` du push.
+  ///
+  /// Chemin de rendu UNIQUE, partagé par [showRemoteNotification] et les
+  /// boutons QA : ceux-ci ne valent que s'ils empruntent exactement le même
+  /// code qu'un vrai push. Le serveur duplique title/body dans `data`
+  /// (cf. `_send_fcm` dans push_dispatcher.py), d'où la lecture prioritaire de
+  /// `data` avec repli sur le bloc `notification` FCM.
+  Future<void> _showAlert(
+    Map<String, dynamic> data, {
+    RemoteNotification? notification,
+  }) async {
+    final title = data['title'] as String? ?? notification?.title ?? '';
+    final body = data['body'] as String? ?? notification?.body ?? '';
+    final bigText = data['big_text'] as String? ?? body;
+    final route = data['route'] as String? ?? '/digest';
+
+    final androidDetails = AndroidNotificationDetails(
+      // Canal NEUF et non une variante silencieuse de `digest_channel` :
+      // Android fige son/importance à la création d'un canal et ignore toute
+      // modification ultérieure sur un ID existant — le silence n'est
+      // obtenable qu'avec un ID de canal jamais utilisé.
+      'alerts_channel',
+      'Alertes',
+      channelDescription: 'Alertes des sources et sujets que tu suis.',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      playSound: false,
+      enableVibration: false,
+      icon: '@drawable/ic_stat_facteur',
+      color: const Color(0xFFD35400),
+      styleInformation: BigTextStyleInformation(bigText, contentTitle: title),
+    );
+    const iosDetails = DarwinNotificationDetails();
+
+    await _plugin.show(
+      // ID stable par cible (et non par message) : deux cibles différentes
+      // cohabitent dans le tiroir, tandis qu'une seconde alerte de la MÊME
+      // cible remplace la précédente au lieu de l'empiler.
+      id: _NotifIds.sourceAlertBase +
+          ((data['source_id'] ?? data['topic_id']) as String? ?? '')
+                  .hashCode
+                  .abs() %
+              1000,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      payload: 'route:$route',
+    );
+  }
+
+  /// Injecte localement le payload EXACT qu'enverrait FCM pour une alerte
+  /// source. Valide le canal silencieux, la copy, l'id de notification et le
+  /// deep-link au tap. Ne valide PAS le transport FCM ni le producteur serveur.
+  Future<void> showTestSourceAlert() async {
+    const contentId = '00000000-0000-4000-8000-0000000000a1';
+    const body = "Le pantouflage discret d'un ex-ministre";
+    await _showAlert(const {
+      'route': '/article/$contentId',
+      'kind': 'source_alert',
+      'source_id': '00000000-0000-4000-8000-0000000000b2',
+      'source_name': 'Le Canard Enchaîné',
+      'content_id': contentId,
+      'channel': 'alerts',
+      'big_text': '$body\nPublie environ une fois par mois',
+      'title': 'Alerte : Le Canard Enchaîné vient de publier',
+      'body': body,
+    });
+  }
+
+  /// Pendant sujet du bouton QA ci-dessus — même canal, même rendu.
+  Future<void> showTestTopicAlert() async {
+    const contentId = '00000000-0000-4000-8000-0000000000a2';
+    const body = 'La finale se jouera sans son meilleur buteur';
+    await _showAlert(const {
+      'route': '/article/$contentId',
+      'kind': 'topic_alert',
+      'topic_id': '00000000-0000-4000-8000-0000000000b3',
+      'topic_name': 'Ligue 1',
+      'content_id': contentId,
+      'channel': 'alerts',
+      'big_text': '$body\nPublie environ 2 fois par semaine',
+      'title': 'Alerte : Ligue 1',
+      'body': body,
+    });
   }
 
   /// Décode `data['teasers']` (JSON liste de titres) de façon défensive :
@@ -668,17 +694,6 @@ class PushNotificationService {
       time.minute,
     );
     if (!scheduled.isAfter(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
-    }
-    return scheduled;
-  }
-
-  tz.TZDateTime _nextInstanceOfWeekday({
-    required int weekday,
-    required TimeOfDay time,
-  }) {
-    var scheduled = _nextInstanceOf(time);
-    while (scheduled.weekday != weekday) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
     return scheduled;

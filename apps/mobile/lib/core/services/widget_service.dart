@@ -11,6 +11,21 @@ import '../../features/digest/models/digest_models.dart';
 import '../../features/feed/models/content_model.dart';
 import '../../features/gamification/models/streak_model.dart';
 
+/// Outcome of [WidgetService.requestPinWidget]. The three failure modes used to
+/// be indistinguishable (everything was swallowed into a `debugPrint`), which
+/// is why the « Ajouter un Widget » button looked dead.
+enum WidgetPinResult {
+  /// Android accepted the request — the launcher shows its confirmation dialog.
+  requested,
+
+  /// Launcher / OS version does not support programmatic pinning (API < 26 or
+  /// a launcher that opted out). The user has to add the widget manually.
+  unsupported,
+
+  /// The platform call threw. Genuine bug territory.
+  failed,
+}
+
 /// Service to push the unified Facteur feed (Essentiel + Flux) to the home
 /// screen widgets.
 ///
@@ -35,6 +50,41 @@ class WidgetService {
   // pinned independently by the user — both must be updated on every push.
   static const _androidNameLight = 'FacteurWidgetLight';
   static const _androidNameDark = 'FacteurWidgetDark';
+
+  /// Fully-qualified receiver names, derived from the Gradle **namespace**
+  /// (`android/app/build.gradle.kts` → `namespace = "com.example.facteur"`),
+  /// NOT from the applicationId.
+  ///
+  /// The trap: `HomeWidgetPlugin.kt` resolves a bare [androidName] as
+  /// `"${context.packageName}.$className"`, and `context.packageName` is the
+  /// **applicationId** — `com.example.facteur.staging` on the `beta` flavor,
+  /// `facteur.app` on `playstore`. Neither matches the namespace the receivers
+  /// actually live in, so every call threw `ClassNotFoundException` and no
+  /// `ACTION_APPWIDGET_UPDATE` was ever broadcast. Passing
+  /// `qualifiedAndroidName` bypasses that concatenation entirely.
+  ///
+  /// If the namespace ever changes, these must follow — guarded by
+  /// `test/core/services/widget_service_test.dart`, which reads the namespace
+  /// straight out of `build.gradle.kts`.
+  static const androidNamespace = 'com.example.facteur';
+  static const _qualifiedLight = '$androidNamespace.$_androidNameLight';
+  static const _qualifiedDark = '$androidNamespace.$_androidNameDark';
+
+  /// Broadcast `ACTION_APPWIDGET_UPDATE` to both receivers. Always pass the
+  /// qualified name; `androidName` is kept as a fallback for any plugin
+  /// version that would not honour the qualified one.
+  static Future<void> _pushUpdate() {
+    return Future.wait([
+      HomeWidget.updateWidget(
+        androidName: _androidNameLight,
+        qualifiedAndroidName: _qualifiedLight,
+      ),
+      HomeWidget.updateWidget(
+        androidName: _androidNameDark,
+        qualifiedAndroidName: _qualifiedDark,
+      ),
+    ]);
+  }
 
   static const _maxEssentiel = 5;
   static const _maxFeedArticles = 80;
@@ -100,12 +150,49 @@ class WidgetService {
         await _rewriteMergedPayload();
       }
 
-      await Future.wait([
-        HomeWidget.updateWidget(androidName: _androidNameLight),
-        HomeWidget.updateWidget(androidName: _androidNameDark),
-      ]);
+      await _pushUpdate();
     } catch (e) {
       debugPrint('WidgetService: updateWidget failed: $e');
+    }
+  }
+
+  /// Fusionne des lignes Flux fraîches **par-dessus** le cache existant, au
+  /// lieu de le remplacer, puis pousse le widget.
+  ///
+  /// Réservé au rafraîchissement de fond, qui ne récupère qu'une page (20
+  /// articles) : un `updateWidget(feedItems:)` classique ferait retomber le
+  /// payload de 80 à 20 lignes, soit exactement le symptôme « 9 articles »
+  /// qu'on vient de corriger. Union dédupliquée par `id`, frais en tête,
+  /// capée à [_maxFeedArticles], rangs réindexés.
+  static Future<void> updateWidgetMergingFlux(List<Content> freshItems) async {
+    try {
+      if (freshItems.isEmpty) return;
+      final fresh = await _buildFeedArticleList(freshItems);
+      final cachedJson =
+          await HomeWidget.getWidgetData<String>('feed_articles_json') ?? '[]';
+      final cached = _decodeList(cachedJson);
+
+      final merged = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      for (final entry in [...fresh, ...cached]) {
+        if (merged.length >= _maxFeedArticles) break;
+        final id = (entry['id'] as String?) ?? '';
+        if (id.isEmpty || !seen.add(id)) continue;
+        merged.add({...entry, 'rank': merged.length + 1});
+      }
+
+      await HomeWidget.saveWidgetData(
+        'feed_articles_json',
+        jsonEncode(merged),
+      );
+      await HomeWidget.saveWidgetData(
+        'articles_updated_at',
+        '${DateTime.now().millisecondsSinceEpoch}',
+      );
+      await _rewriteMergedPayload();
+      await _pushUpdate();
+    } catch (e) {
+      debugPrint('WidgetService: updateWidgetMergingFlux failed: $e');
     }
   }
 
@@ -129,10 +216,7 @@ class WidgetService {
         jsonEncode(<dynamic>[]),
       );
       await HomeWidget.saveWidgetData('digest_status', 'none');
-      await Future.wait([
-        HomeWidget.updateWidget(androidName: _androidNameLight),
-        HomeWidget.updateWidget(androidName: _androidNameDark),
-      ]);
+      await _pushUpdate();
     } catch (e) {
       debugPrint('WidgetService: initWidgetIfNeeded failed: $e');
     }
@@ -149,10 +233,7 @@ class WidgetService {
       await HomeWidget.saveWidgetData('digest_status', 'none');
       await HomeWidget.saveWidgetData('digest_progress', '0/0');
       await HomeWidget.saveWidgetData('streak', '0');
-      await Future.wait([
-        HomeWidget.updateWidget(androidName: _androidNameLight),
-        HomeWidget.updateWidget(androidName: _androidNameDark),
-      ]);
+      await _pushUpdate();
     } catch (e) {
       debugPrint('WidgetService: clear failed: $e');
     }
@@ -161,11 +242,43 @@ class WidgetService {
   /// Request Android to pin one of the two widgets to the home screen. We pin
   /// the Clair variant by default — the user can later swap it with Sombre
   /// from the launcher if they prefer.
-  static Future<void> requestPinWidget() async {
+  ///
+  /// Returns a typed outcome so the caller can tell the user what happened:
+  /// a silent failure here is exactly what made the CTA look broken.
+  static Future<WidgetPinResult> requestPinWidget() async {
     try {
-      await HomeWidget.requestPinWidget(androidName: _androidNameLight);
+      final supported = await HomeWidget.isRequestPinWidgetSupported();
+      if (supported != true) return WidgetPinResult.unsupported;
+      await HomeWidget.requestPinWidget(
+        androidName: _androidNameLight,
+        qualifiedAndroidName: _qualifiedLight,
+      );
+      return WidgetPinResult.requested;
     } catch (e) {
       debugPrint('WidgetService: requestPinWidget failed: $e');
+      return WidgetPinResult.failed;
+    }
+  }
+
+  /// `true` when at least one Facteur widget is currently pinned on the home
+  /// screen. Drives the « Ajouter le widget » banner (hidden once pinned).
+  ///
+  /// Unlike [updateWidget], this path is NOT affected by the applicationId ≠
+  /// namespace trap: the plugin enumerates providers via
+  /// `getInstalledProvidersForPackage(context.packageName)` instead of
+  /// resolving a class name. Returns `null` when the platform call fails, so
+  /// callers can distinguish « not pinned » from « unknown ».
+  static Future<bool?> isWidgetPinned() async {
+    try {
+      final installed = await HomeWidget.getInstalledWidgets();
+      return installed.any((w) {
+        final name = w.androidClassName ?? '';
+        return name.endsWith(_androidNameLight) ||
+            name.endsWith(_androidNameDark);
+      });
+    } catch (e) {
+      debugPrint('WidgetService: isWidgetPinned failed: $e');
+      return null;
     }
   }
 
@@ -212,6 +325,13 @@ class WidgetService {
       'widget_articles_json',
       jsonEncode(merged),
     );
+    // Diagnostic « le widget n'affiche que 9 articles » : on persiste la
+    // profondeur réelle du payload plutôt que de la déduire de l'écran.
+    await HomeWidget.saveWidgetData<int>(
+      'widget_last_push_count',
+      merged.length,
+    );
+    debugPrint('WidgetService: pushed ${merged.length} rows to widget');
   }
 
   static List<Map<String, dynamic>> _decodeList(String raw) {
@@ -282,10 +402,7 @@ class WidgetService {
       article.thumbnailUrl,
       'widget_thumbnail_$rank.jpg',
     );
-    final logoPath = await _downloadIfPresent(
-      article.source?.logoUrl,
-      'widget_logo_$rank.png',
-    );
+    final logoPath = await _cachedLogo(article.source?.logoUrl);
 
     return {
       'id': article.contentId,
@@ -324,10 +441,7 @@ class WidgetService {
     required Content item,
     required int rank,
   }) async {
-    final logoPath = await _downloadIfPresent(
-      item.source.logoUrl,
-      'widget_feed_logo_$rank.png',
-    );
+    final logoPath = await _cachedLogo(item.source.logoUrl);
 
     final topicSlug = item.topics.isNotEmpty ? item.topics.first : '';
     final topicLabel = topicSlugToLabel[topicSlug] ?? '';
@@ -443,6 +557,49 @@ class WidgetService {
     return digest.items
         .where((i) => i.isRead || i.isDismissed || i.isSaved)
         .length;
+  }
+
+  /// Logo de source, mis en cache **par URL** et non par rang.
+  ///
+  /// Deux raisons de ne plus indexer par rang (`widget_feed_logo_$rank.png`) :
+  ///  - le fichier du rang N était réécrit à chaque push, donc une entrée de
+  ///    payload conservée d'un push précédent pointait vers les octets d'une
+  ///    *autre* source (visible dès qu'on fusionne au lieu de remplacer) ;
+  ///  - chaque push re-téléchargeait jusqu'à 80 logos identiques. Un logo ne
+  ///    change pas : s'il est déjà sur le disque, on le réutilise.
+  ///
+  /// Single-flight par URL : [_buildFeedArticleList] sérialise les 80 lignes
+  /// via `Future.wait`, donc les N articles d'une même source arrivaient ici
+  /// en parallèle et lançaient N sondes — voire N téléchargements concurrents
+  /// écrivant *le même* fichier. On partage la première future par URL.
+  static final Map<String, Future<String?>> _logoInflight = {};
+
+  static Future<String?> _cachedLogo(String? url) {
+    if (url == null || url.isEmpty) return Future.value(null);
+    return _logoInflight[url] ??= _resolveLogo(url).then((path) {
+      // Une URL qui n'a rien donné doit pouvoir être retentée au push suivant ;
+      // un chemin résolu, lui, reste valable pour la durée du process.
+      if (path == null) _logoInflight.remove(url);
+      return path;
+    }).catchError((Object e) {
+      _logoInflight.remove(url);
+      debugPrint('WidgetService: logo resolve failed ($url): $e');
+      return null;
+    });
+  }
+
+  static Future<String?> _resolveLogo(String url) async {
+    final name = 'widget_logo_${url.hashCode.toRadixString(16)}.png';
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final file = File('${dir.path}/$name');
+      if (await file.exists() && await file.length() > 0) {
+        return file.path;
+      }
+    } catch (e) {
+      debugPrint('WidgetService: logo cache probe failed ($url): $e');
+    }
+    return _downloadIfPresent(url, name);
   }
 
   /// Download an image to local storage and return the file path.
