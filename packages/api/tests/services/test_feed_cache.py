@@ -281,3 +281,171 @@ def test_personalized_variant_uses_personalized_ttl(
     # Past the personalized TTL.
     fake_now[0] += 20.0
     assert cache.get(user, variant="p|theme=tech") is None
+
+
+# --- Content-scoped invalidation ------------------------------------------
+
+
+def test_invalidate_content_purges_only_matching_variants(
+    cache: FeedPageCache, feed_cache_payload
+) -> None:
+    user = uuid4()
+    target, other = uuid4(), uuid4()
+    cache.put(user, feed_cache_payload(target, other), variant="p|theme=tech")
+    cache.put(user, feed_cache_payload(other), variant="p|theme=science")
+    cache.put(user, feed_cache_payload(target), variant=None)
+
+    cache.invalidate_content(user, target)
+
+    assert cache.get(user, variant="p|theme=tech") is None
+    assert cache.get(user, variant=None) is None
+    assert cache.get(user, variant="p|theme=science") == feed_cache_payload(other)
+    assert cache.stats()["invalidations"] == 1
+
+
+def test_invalidate_content_unknown_id_is_noop(
+    cache: FeedPageCache, feed_cache_payload
+) -> None:
+    """No variant mentions the id ⇒ nothing purged, nothing counted."""
+    user = uuid4()
+    kept = feed_cache_payload(uuid4())
+    cache.put(user, kept, variant="p|theme=tech")
+
+    cache.invalidate_content(user, uuid4())
+
+    assert cache.get(user, variant="p|theme=tech") == kept
+    assert cache.stats()["invalidations"] == 0
+
+
+def test_invalidate_content_does_not_touch_other_users(
+    cache: FeedPageCache, feed_cache_payload
+) -> None:
+    a, b = uuid4(), uuid4()
+    target = uuid4()
+    cache.put(a, feed_cache_payload(target), variant="p|theme=tech")
+    cache.put(b, feed_cache_payload(target), variant="p|theme=tech")
+
+    cache.invalidate_content(a, target)
+
+    assert cache.get(a, variant="p|theme=tech") is None
+    assert cache.get(b, variant="p|theme=tech") == feed_cache_payload(target)
+
+
+def test_invalidate_content_global_purges_every_user(
+    cache: FeedPageCache, feed_cache_payload
+) -> None:
+    """`report_not_serene` flips `is_serene` for everyone — so must the purge."""
+    a, b, c = uuid4(), uuid4(), uuid4()
+    target = uuid4()
+    cache.put(a, feed_cache_payload(target), variant="p|sr=1")
+    cache.put(b, feed_cache_payload(target), variant="p|sr=1")
+    kept = feed_cache_payload(uuid4())
+    cache.put(c, kept, variant="p|sr=1")
+
+    cache.invalidate_content_global(target)
+
+    assert cache.get(a, variant="p|sr=1") is None
+    assert cache.get(b, variant="p|sr=1") is None
+    assert cache.get(c, variant="p|sr=1") == kept
+    assert cache.stats()["invalidations"] == 1
+
+
+# --- Generations (write-during-compute) ------------------------------------
+
+
+def test_put_with_stale_generation_is_dropped(cache: FeedPageCache) -> None:
+    """The bug this fixes: a 1.5-5 s compute whose `put` lands after an
+    invalidation used to resurrect the evicted payload — a hidden article
+    reappearing until the TTL expired."""
+    user = uuid4()
+    generation = cache.generation(user)
+
+    cache.invalidate(user)  # write lands mid-compute
+    cache.put(user, b"stale", variant="p|theme=tech", generation=generation)
+
+    assert cache.get(user, variant="p|theme=tech") is None
+
+
+def test_put_with_current_generation_is_stored(cache: FeedPageCache) -> None:
+    user = uuid4()
+    generation = cache.generation(user)
+    cache.put(user, b"fresh", variant="p|theme=tech", generation=generation)
+    assert cache.get(user, variant="p|theme=tech") == b"fresh"
+
+
+def test_put_without_generation_is_unconditional(cache: FeedPageCache) -> None:
+    """Omitting the generation keeps the unconditional write — only test
+    seeding does that; the endpoint always passes one."""
+    user = uuid4()
+    cache.invalidate(user)
+    cache.put(user, b"x", variant="p|theme=tech")
+    assert cache.get(user, variant="p|theme=tech") == b"x"
+
+
+def test_content_scoped_invalidation_also_bumps_generation(
+    cache: FeedPageCache,
+) -> None:
+    """Even when it purges nothing: on a cache miss there is no entry to scan,
+    yet the in-flight compute holds the pre-write payload."""
+    user = uuid4()
+    generation = cache.generation(user)
+
+    cache.invalidate_content(user, uuid4())  # nothing cached to purge
+    cache.put(user, b"stale", variant="p|theme=tech", generation=generation)
+
+    assert cache.get(user, variant="p|theme=tech") is None
+
+
+def test_global_invalidation_bumps_generation_for_unknown_users(
+    cache: FeedPageCache,
+) -> None:
+    """A user with no cached entry still has their in-flight compute dropped."""
+    user = uuid4()
+    generation = cache.generation(user)
+
+    cache.invalidate_content_global(uuid4())
+    cache.put(user, b"stale", variant="p|sr=1", generation=generation)
+
+    assert cache.get(user, variant="p|sr=1") is None
+
+
+def test_generations_are_per_user(cache: FeedPageCache) -> None:
+    """One user's write must not drop another user's in-flight compute."""
+    a, b = uuid4(), uuid4()
+    generation_b = cache.generation(b)
+
+    cache.invalidate(a)
+    cache.put(b, b"fresh", variant="p|theme=tech", generation=generation_b)
+
+    assert cache.get(b, variant="p|theme=tech") == b"fresh"
+
+
+def test_clear_resets_generations(cache: FeedPageCache) -> None:
+    """The singleton survives across tests; a counter left high would silently
+    drop the next test's `put`."""
+    user = uuid4()
+    cache.invalidate(user)
+    cache.clear()
+    assert cache.generation(user) == (0, 0)
+
+
+# --- Single-flight guards --------------------------------------------------
+
+
+def test_invalidate_keeps_locks_alive(cache: FeedPageCache) -> None:
+    """Anti-regression: dropping a held `Lock` would let a later request
+    create a fresh one and break single-flight (thundering herd)."""
+    user = uuid4()
+    lock = cache.lock(user, variant="p|theme=tech")
+    cache.put(user, b"x", variant="p|theme=tech")
+
+    cache.invalidate(user)
+    cache.invalidate_content(user, uuid4())
+    cache.invalidate_content_global(uuid4())
+
+    assert cache.lock(user, variant="p|theme=tech") is lock
+
+
+def test_stats_exposes_uptime(cache: FeedPageCache) -> None:
+    """Counters are cumulative — readers need a time base to take a delta."""
+    assert cache.stats()["uptime_seconds"] >= 0.0

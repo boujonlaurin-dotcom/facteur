@@ -271,6 +271,13 @@ class ContentService:
         """
         Ajuste les poids des sous-thèmes utilisateur en fonction d'un signal explicite.
         Réutilisé par like (+0.15) et bookmark (+0.05).
+
+        ⚠️ Ces poids alimentent le scoring de **toutes** les sections du feed.
+        Tout endpoint dont le chemin arrive ici doit donc appeler
+        `FEED_CACHE.invalidate(user_id)` (purge complète) et surtout pas
+        `invalidate_content` — un classement périmé subsisterait partout
+        ailleurs. Le partage des rôles est épinglé par
+        `tests/routers/test_feed_cache_invalidation_sites.py`.
         """
         from sqlalchemy.orm import selectinload
 

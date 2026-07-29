@@ -39,6 +39,23 @@ Design
   `FEED_CACHE.invalidate(user_id)`, which purges **all** variants for that
   user (default + every personalized section). Stale-but-correct is
   acceptable for passive reads (blink); inconsistent-after-write is not.
+- **Content-scoped eviction** — a write that changes *one article's* display
+  state without touching the ranking inputs (`UserSubtopic.weight`,
+  `UserEntityAffinity.affinity`) calls `invalidate_content(user_id,
+  content_id)` instead: only the variants whose payload mentions that id are
+  purged. This is what keeps the cache alive under the dominant write,
+  `POST /contents/{id}/status` in `SEEN` (fired on every scroll) — a full
+  `invalidate` there annihilated the ~12 Tournée sections after three
+  scrolled articles. Writes that *do* adjust weights (like, save, hide,
+  feedback, note upsert, the CONSUMED transition) keep the full purge: a
+  scoped one would leave a stale **ranking** everywhere else.
+- **Generations** — `put()` from a compute that started before an
+  invalidation is dropped instead of resurrecting the evicted payload.
+  `_compute_feed` takes 1.5-5 s under the single-flight lock; an
+  `invalidate` landing inside that window used to be overwritten by the
+  unconditional `put()`, so a hidden article could reappear until the TTL
+  expired. Callers capture `generation(user_id)` **before** computing and
+  hand it back to `put()`.
 - **Default-view key scope** = the *default* mobile view only:
   `offset == 0` + `limit == 20` + no filter (mode/theme/topic/source/entity
   /keyword) + `serein == False` + `saved_only == False` + not personalized.
@@ -118,9 +135,18 @@ class FeedPageCache:
         )
         self._entries: dict[_CacheKey, _Entry] = {}
         self._locks: dict[_CacheKey, asyncio.Lock] = {}
+        # Monotonic invalidation counters. Per-user + one global (bumped by
+        # `invalidate_content_global`, whose blast radius is every user —
+        # including users with no entry yet, hence not expressible per-user).
+        # A global-only counter would let any user's write drop every *other*
+        # user's in-flight `put()`, which the per-scroll SEEN write would fire
+        # constantly — exactly the cache defeat this change removes.
+        self._generations: dict[UUID, int] = {}
+        self._global_generation = 0
         self._hits = 0
         self._misses = 0
         self._invalidations = 0
+        self._started_at = time.monotonic()
         self._last_flush_at = time.monotonic()
 
     @property
@@ -182,14 +208,30 @@ class FeedPageCache:
         self._maybe_flush_telemetry(now)
         return entry.payload
 
-    def put(self, user_id: UUID, payload: bytes, variant: str | None = None) -> None:
+    def generation(self, user_id: UUID) -> tuple[int, int]:
+        """Current invalidation generation for `user_id`, as `(per_user,
+        global)`. Capture it **before** a long compute and hand it to
+        `put()`. Cf. *Generations* in the module docstring."""
+        return (self._generations.get(user_id, 0), self._global_generation)
+
+    def put(
+        self,
+        user_id: UUID,
+        payload: bytes,
+        variant: str | None = None,
+        *,
+        generation: tuple[int, int] | None = None,
+    ) -> None:
         """Store `payload` for `(user_id, variant)` with the variant's TTL.
 
-        No-op when the relevant TTL class is disabled (default view when
-        `FEED_CACHE_TTL_SECONDS=0`, personalized when
-        `FEED_CACHE_PERSONALIZED_TTL_SECONDS=0`)."""
+        No-op when the relevant TTL class is disabled, or when `generation`
+        is stale — the entry was invalidated while the caller was computing
+        this payload. Only test seeding omits `generation`; every production
+        caller passes one."""
         ttl = self._ttl_for(variant)
         if ttl <= 0:
+            return
+        if generation is not None and generation != self.generation(user_id):
             return
         self._entries[(user_id, variant)] = _Entry(
             expires_at=time.monotonic() + ttl,
@@ -199,16 +241,62 @@ class FeedPageCache:
     def invalidate(self, user_id: UUID) -> None:
         """Drop **all** cached variants for `user_id` (default + personalized).
 
-        Called by every write endpoint. A single call counts as one
-        invalidation regardless of how many variants it purged."""
-        keys = [key for key in self._entries if key[0] == user_id]
+        Called by every write endpoint that can change the *ranking*."""
+        self._purge(user_id=user_id)
+
+    def invalidate_content(self, user_id: UUID, content_id: UUID) -> None:
+        """Drop only the variants of `user_id` whose payload mentions
+        `content_id` — for writes that change one article's display state
+        without touching the ranking. Cf. *Content-scoped eviction* in the
+        module docstring."""
+        self._purge(user_id=user_id, needle=str(content_id).encode())
+
+    def invalidate_content_global(self, content_id: UUID) -> None:
+        """Drop the variants of **every** user whose payload mentions
+        `content_id`.
+
+        For writes whose effect is cross-user: `report_not_serene` flips
+        `Content.is_serene=False` for everyone, so purging only the reporter
+        would keep serving the article to the other users' serein sections.
+
+        Unlike `invalidate_content`, the scan is not narrowed to one user, so
+        it costs ~13 µs per cached entry across the whole cache (~16 ms at
+        100 DAU). Acceptable because the trigger is a rare user report; if
+        that ever changes, narrow it to serein variants."""
+        self._purge(needle=str(content_id).encode())
+
+    def _purge(
+        self, *, user_id: UUID | None = None, needle: bytes | None = None
+    ) -> None:
+        """Drop the entries matching both optional narrowings and bump the
+        matching generation. One call == one counted invalidation, and only
+        when it purged something.
+
+        `_locks` is deliberately left untouched: dropping a `Lock` that
+        in-flight waiters hold would let a later request create a fresh one
+        and break single-flight — the thundering herd this cache exists to
+        prevent. Pinned by `test_invalidate_keeps_locks_alive`."""
+        keys = [
+            key
+            for key, entry in self._entries.items()
+            if (user_id is None or key[0] == user_id)
+            and (needle is None or needle in entry.payload)
+        ]
         for key in keys:
             del self._entries[key]
+        # Bumped even when nothing was purged: the entry being invalidated may
+        # be mid-compute (cache miss ⇒ no entry to scan), and that `put()` is
+        # exactly what must be dropped.
+        if user_id is None:
+            self._global_generation += 1
+        else:
+            self._generations[user_id] = self._generations.get(user_id, 0) + 1
         if keys:
             self._invalidations += 1
 
     def stats(self) -> dict[str, int | float]:
-        """Snapshot for tests / health endpoint."""
+        """Snapshot for tests / health endpoint. `uptime_seconds` is the time
+        base for reading the cumulative counters as a delta."""
         total = self._hits + self._misses
         return {
             "hits": self._hits,
@@ -218,6 +306,7 @@ class FeedPageCache:
             "hit_rate": (self._hits / total) if total else 0.0,
             "ttl_seconds": self._ttl,
             "personalized_ttl_seconds": self._personalized_ttl,
+            "uptime_seconds": round(time.monotonic() - self._started_at, 1),
         }
 
     def reset_stats(self) -> None:
@@ -225,12 +314,20 @@ class FeedPageCache:
         self._hits = 0
         self._misses = 0
         self._invalidations = 0
+        self._started_at = time.monotonic()
         self._last_flush_at = time.monotonic()
 
     def clear(self) -> None:
-        """Test helper."""
+        """Test helper.
+
+        Also resets generations: the singleton survives across tests, so a
+        counter left high by one test would silently drop the `put()` of the
+        next one (heisenbug on test order). Safe here only because no
+        compute is in flight between tests."""
         self._entries.clear()
         self._locks.clear()
+        self._generations.clear()
+        self._global_generation = 0
 
     def _maybe_flush_telemetry(self, now: float) -> None:
         if now - self._last_flush_at < 60.0:

@@ -1,6 +1,7 @@
 """Test configuration and fixtures for API tests."""
 
 from contextlib import asynccontextmanager
+from datetime import UTC
 from uuid import uuid4
 
 import pytest
@@ -43,12 +44,77 @@ def _reset_feed_cache():
     # an explicit reset a test that populates it for `user_uuid=X` can
     # silently feed its cached payload to the next test that reuses the
     # same UUID (heisenbugs). Clearing before AND after also guards
-    # against test-ordering flakes.
+    # against test-ordering flakes. `clear()` also resets the invalidation
+    # generations — a counter left high by one test would silently drop the
+    # next test's `put()`.
     FEED_CACHE.clear()
     FEED_CACHE.reset_stats()
     yield
     FEED_CACHE.clear()
     FEED_CACHE.reset_stats()
+
+
+@pytest.fixture
+def feed_cache_payload():
+    """Build a cached-feed payload mentioning the given content ids.
+
+    `FeedPageCache.invalidate_content` matches by scanning the serialized
+    payload for `str(content_id)`, so the shape of this string *is* the
+    contract under test — hence one definition shared by the unit tests
+    (`tests/services/test_feed_cache.py`) and the endpoint tests
+    (`tests/routers/test_feed_cache_invalidation_sites.py`) rather than a
+    copy in each. The real serialization is pinned separately by
+    `test_cached_payload_item_ids_match_str_uuid`.
+    """
+
+    def _build(*content_ids) -> bytes:
+        items = ", ".join(f'{{"id": "{cid}"}}' for cid in content_ids)
+        return f'{{"items": [{items}]}}'.encode()
+
+    return _build
+
+
+@pytest.fixture
+def feed_response_factory():
+    """Build a minimal real `FeedResponse` (n items, one source).
+
+    `FeedResponse` / `FeedItemResponse` are required-field-heavy, so one
+    factory keeps the log tests and the serialization-invariant test from
+    breaking apart when a field is added.
+    """
+    from datetime import datetime
+
+    from app.models.enums import ContentType
+    from app.schemas.content import SourceMini
+    from app.schemas.feed import FeedItemResponse, FeedResponse, PaginationMeta
+
+    def _build(*, items: int = 3, content_ids: list | None = None):
+        ids = (
+            content_ids if content_ids is not None else [uuid4() for _ in range(items)]
+        )
+        source = SourceMini(
+            id=uuid4(), name="Test Source", logo_url=None, type="article", theme="tech"
+        )
+        return FeedResponse(
+            items=[
+                FeedItemResponse(
+                    id=content_id,
+                    title=f"Article {i}",
+                    url=f"https://example.com/{i}",
+                    thumbnail_url=None,
+                    content_type=ContentType.ARTICLE,
+                    duration_seconds=None,
+                    published_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+                    source=source,
+                )
+                for i, content_id in enumerate(ids)
+            ],
+            pagination=PaginationMeta(
+                page=1, per_page=12, total=len(ids), has_next=False
+            ),
+        )
+
+    return _build
 
 
 @pytest.fixture(autouse=True)
