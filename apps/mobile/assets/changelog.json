@@ -1,16 +1,8 @@
 {
   "unreleased": [
     {
-      "tag": "Nous soutenir",
-      "summary": "L'offre de soutien met désormais en avant le geste plutôt qu'un tarif : plus de montant affiché, un cadrage « soutiens une info libre, sans pub ni actionnaire »."
-      "tag": "Ma Tournée",
-      "summary": "Tes sources favorites ne manquent plus à l'appel : leur section apparaît dès l'ouverture, même après une réinstallation ou sur un nouvel appareil. Et pendant que ta tournée se prépare, les blocs en attente respirent et l'annoncent clairement."
-      "tag": "Widget d'accueil",
-      "summary": "Le widget Facteur se met enfin à jour quand il faut : après chaque passage dans l'app, au tap sur son bouton refresh, et même app fermée. Il garde jusqu'à 80 articles au lieu de se vider à mesure que tu lis, et l'ouvrir avant ta tournée du matin ne te déconnecte plus. Un nouveau bandeau dans Flâner te propose de l'ajouter à ton écran d'accueil en un tap."
-    },
-    {
-      "tag": "Alertes",
-      "summary": "Pose une alerte sur n'importe quelle source ou n'importe quel sujet que tu suis. Avant de l'activer, Facteur t'annonce franchement le rythme : « environ 12 alertes par semaine », par exemple. Si c'est trop, coche « seulement les plus marquantes » et tu n'en recevras qu'une par jour, la plus pertinente pour toi. Cinq alertes maximum, toujours en silence, dans ta tournée. Le réglage est aussi devenu plus simple à trouver : « Notifications et alertes », directement dans les Réglages."
+      "tag": "Ton avis compte",
+      "summary": "Django et Laurin t'invitent à un café en visio de 5 minutes pour te demander ce qui te plaît, ou ce que tu aimes moins. L'invitation apparaît vers la fin de ta tournée, avec nos deux visages, et se referme en un geste : « Plus tard » ou « On l'a déjà fait ». Au passage, la carte de fin de tournée a été allégée pour tenir dans l'écran."
     },
     {
       "tag": "Objectif du jour",

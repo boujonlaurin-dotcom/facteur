@@ -13,11 +13,15 @@ const _djangoAsset = 'assets/images/founders/django.jpg';
 /// Collage des deux fondateurs pour l'écran Soutien : photos légèrement
 /// rotées, clip organique (radii asymétriques), étiquette mono sous chacune.
 class FounderCollage extends StatelessWidget {
-  const FounderCollage({super.key});
+  /// Côté des photos. 128 sur l'écran Soutien (pleine page) ; réduit dans une
+  /// bottom sheet où le collage n'est qu'une amorce (cf. `CallInviteSheet`).
+  final double photoSize;
+
+  const FounderCollage({super.key, this.photoSize = 128});
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -25,21 +29,25 @@ class FounderCollage extends StatelessWidget {
           asset: _djangoAsset,
           label: 'DJANGO',
           rotation: -0.05,
-          borderRadius: BorderRadius.only(
+          size: photoSize,
+          borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(48),
             topRight: Radius.circular(16),
             bottomLeft: Radius.circular(20),
             bottomRight: Radius.circular(44),
           ),
         ),
-        SizedBox(width: FacteurSpacing.space4),
+        const SizedBox(width: FacteurSpacing.space4),
         Padding(
-          padding: EdgeInsets.only(bottom: 18),
+          // Décalage vertical proportionnel : le collage garde son décentrage
+          // quelle que soit la taille des photos.
+          padding: EdgeInsets.only(bottom: photoSize * 0.14),
           child: _FounderPolaroid(
             asset: _laurinAsset,
             label: 'LAURIN',
             rotation: 0.06,
-            borderRadius: BorderRadius.only(
+            size: photoSize,
+            borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(18),
               topRight: Radius.circular(46),
               bottomLeft: Radius.circular(42),
@@ -56,12 +64,14 @@ class _FounderPolaroid extends StatelessWidget {
   final String asset;
   final String label;
   final double rotation;
+  final double size;
   final BorderRadius borderRadius;
 
   const _FounderPolaroid({
     required this.asset,
     required this.label,
     required this.rotation,
+    required this.size,
     required this.borderRadius,
   });
 
@@ -75,7 +85,7 @@ class _FounderPolaroid extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: borderRadius,
-            child: FounderPhoto(asset: asset, size: 128),
+            child: FounderPhoto(asset: asset, size: size),
           ),
           const SizedBox(height: FacteurSpacing.space2),
           Text(
