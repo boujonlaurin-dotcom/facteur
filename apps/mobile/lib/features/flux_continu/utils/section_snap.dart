@@ -42,23 +42,19 @@ const double kFastDownwardVelocity = 900.0;
 /// La **force / vitesse** du tir vers la cible. Plus haut ⇒ snap plus rapide et
 /// « net » (claque vers la section) ; plus bas ⇒ plus lent et mou. C'est le
 /// premier levier pour la « vitesse de switch ».
-const double kSnapStiffness = 900.0;
+const double kSnapStiffness = 700.0;
 
 /// L'**amortissement**. Plus haut ⇒ aucune oscillation, arrivée « posée » et
 /// smooth (mais trop haut = traînant) ; plus bas ⇒ vif, voire un léger rebond.
 /// À monter avec [kSnapStiffness] pour rester net sans wobble.
-/// Baissé à 36 (ex-40) pour retirer un peu d'« amorti » en fin de geste : le
-/// système reste **suramorti** (`c² = 1296 > 4mk = 108`, aucun wobble), mais la
-/// racine lente passe de ≈ 17.7 s⁻¹ à ≈ 25.5 s⁻¹. Ne pas descendre sous ≈ 30
-/// avec cette raideur : en dessous on entre en zone de rebond.
-const double kSnapDamping = 36.0;
+const double kSnapDamping = 40.0;
 
 /// L'**inertie** de la masse animée. Plus haut ⇒ démarrage plus pesant / lent ;
 /// plus bas ⇒ réaction plus immédiate. À laisser ≈ 0.5 sauf besoin précis.
 const double kSnapMass = 0.03;
 
-/// Ressort de pose du snap, assemblé depuis les 3 leviers ci-dessus. Pose
-/// visible (~180-250ms) sans wobble — le snap fait partie de la décélération
+/// Ressort de pose du snap, assemblé depuis les 3 leviers ci-dessus. Visible
+/// « pose » (~250-350ms) sans wobble — le snap fait partie de la décélération
 /// du fling, pas d'une seconde animation.
 const SpringDescription kSnapSpring = SpringDescription(
   mass: kSnapMass,
