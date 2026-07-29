@@ -114,7 +114,7 @@ class PaywallSheet extends StatelessWidget {
               },
             ),
             const SizedBox(height: FacteurSpacing.space4),
-            const PriceRow(note: '· ${SoutienCopy.wallPriceNote}'),
+            const PriceRow(note: SoutienCopy.wallPriceNote),
             const SizedBox(height: FacteurSpacing.space4),
             const CheckoutCtaButton(
               label: SoutienCopy.wallCta,

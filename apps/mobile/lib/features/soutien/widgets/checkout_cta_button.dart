@@ -9,7 +9,6 @@ import '../../../config/routes.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../shared/widgets/buttons/primary_button.dart';
 import '../providers/checkout_link_provider.dart';
-import '../soutien_copy.dart';
 
 /// CTA « Reçois ton lien … » : envoie le lien de checkout par email puis
 /// navigue vers la confirmation « lien envoyé ».
@@ -42,11 +41,8 @@ class CheckoutCtaButton extends ConsumerWidget {
     final navigator = popBeforePush ? Navigator.of(context) : null;
     try {
       await ref.read(checkoutLinkProvider.notifier).sendLink();
-    } on CheckoutRateLimitedException {
-      NotificationService.showError(SoutienCopy.linkSentRateLimited);
-      return;
-    } catch (_) {
-      NotificationService.showError(SoutienCopy.sendLinkError);
+    } catch (e) {
+      NotificationService.showError(checkoutErrorMessage(e));
       return;
     }
     navigator?.pop();
