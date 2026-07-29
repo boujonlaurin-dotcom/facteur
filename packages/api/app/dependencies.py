@@ -47,6 +47,11 @@ async def _check_email_confirmed_with_retry(
     Handles connection pool timeouts and stale connections gracefully.
     Uses in-memory TTL cache to reduce database load during traffic spikes.
 
+    Une session **anonyme** (story 31.1 : onboarding sans compte) n'a jamais
+    d'`email_confirmed_at` — elle est autorisée sur `is_anonymous`. Le cache
+    positif n'a pas besoin d'être invalidé à la conversion anonyme → confirmé :
+    il n'encode qu'un « autorisé », et la conversion ne fait qu'élargir l'accès.
+
     Args:
         user_id: The Supabase user ID
         max_retries: Maximum number of retry attempts
@@ -83,14 +88,17 @@ async def _check_email_confirmed_with_retry(
                 result = await asyncio.wait_for(
                     session.execute(
                         text(
-                            "SELECT email_confirmed_at FROM auth.users WHERE id = :uid"
+                            "SELECT email_confirmed_at, is_anonymous "
+                            "FROM auth.users WHERE id = :uid"
                         ),
                         {"uid": user_id},
                     ),
                     timeout=timeout,
                 )
                 row = result.fetchone()
-                is_confirmed = row is not None and row[0] is not None
+                is_confirmed = row is not None and (
+                    row[0] is not None or row[1] is True
+                )
 
                 # Cache positif uniquement (cf. note en tête de module).
                 if is_confirmed:
@@ -225,7 +233,14 @@ async def get_current_user_id(
 
         is_email_confirmed = email_confirmed_at is not None or email_verified is True
 
-        if not is_email_confirmed:
+        # Story 31.1 — onboarding sans compte : une session anonyme Supabase n'a
+        # par construction ni email ni `email_confirmed_at`. Elle porte le claim
+        # `is_anonymous` et doit accéder aux endpoints d'onboarding (sources,
+        # sous-sujets, profil) sous son propre `user_id`, que la conversion en
+        # compte conserve tel quel.
+        is_anonymous = payload.get("is_anonymous") is True
+
+        if not is_email_confirmed and not is_anonymous:
             # On vérifie le provider pour ne pas bloquer les logins sociaux qui pourraient
             # avoir une structure différente ou être confirmés d'office
             app_metadata = payload.get("app_metadata", {})

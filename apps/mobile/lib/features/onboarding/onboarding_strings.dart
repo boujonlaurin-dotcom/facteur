@@ -307,11 +307,26 @@ class OnboardingStrings {
       'Indique quels sujets tu veux le plus voir apparaitre dans ton feed.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
+  static const String customTopicAddedHint =
+      'Vous permettra de mettre en avant le sujet dans vos actus, et de définir des alertes si vous le souhaitez !';
 
   // Finalize
   static const String finalizeTitle = 'Ton essentiel est prêt.';
   static const String finalizeSubtitle = 'Voici un résumé de tes choix.';
   static const String finalizeButton = 'Créer mon essentiel';
+
+  // Finalize — création du compte depuis une session anonyme (story 31.1)
+  static const String finalizeAccountTitle = 'Ta tournée est prête.';
+  static const String finalizeAccountSubtitle =
+      'Il ne reste qu\'une adresse à laisser pour qu\'on sache où la déposer chaque matin.';
+  static const String finalizeAccountEmailHint = 'Ton adresse email';
+  static const String finalizeAccountPasswordHint = 'Ton mot de passe';
+  static const String finalizeAccountButton = 'Recevoir ma tournée';
+  static const String finalizeAccountAlreadyHave = 'J\'ai déjà un compte';
+  static const String finalizeAccountEmailInvalid =
+      'Cette adresse ne semble pas valide.';
+  static const String finalizeAccountPasswordTooShort =
+      'Ton mot de passe doit faire au moins 6 caractères.';
 
   // Reactions: Objective (Q1)
   static const String r1NoiseTitle = 'Trop de bruit tue le signal.';

@@ -22,6 +22,8 @@ List<SectionRecap> buildClosingRecap({
       EssentielSection(:final articles) => articles
           .where((a) => a.isRead || consumedIds.contains(a.contentId))
           .length,
+      // Le rappel d'alertes n'expose aucun article : rien à compter comme lu.
+      AlertsSection() => 0,
       DigestTopicSection(:final topics) => topics
           .expand((t) => t.articles)
           .where((a) => a.isRead || consumedIds.contains(a.contentId))

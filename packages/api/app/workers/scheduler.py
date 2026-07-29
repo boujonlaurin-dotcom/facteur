@@ -13,6 +13,7 @@ from app.jobs.digest_generation_job import (
     run_digest_generation,
 )
 from app.jobs.promote_sources_job import promote_evaluated_sources
+from app.jobs.purge_anonymous_users import purge_anonymous_users
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_coverage_themes import (
     recompute_source_coverage_themes,
@@ -20,6 +21,10 @@ from app.jobs.recompute_source_coverage_themes import (
 from app.jobs.recompute_source_language import recompute_source_language
 from app.jobs.rescue_failed_sources_job import run_rescue_failed_sources
 from app.services.observability.cost_budget import log_budget_projection
+from app.services.push_alert_dispatcher import (
+    dispatch_source_alerts,
+    dispatch_topic_alerts,
+)
 from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.workers.rss_sync import sync_all_sources
@@ -551,6 +556,19 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Purge des sessions anonymes abandonnées (story 31.1 : l'onboarding sans
+    # compte crée une ligne `auth.users` par install). 4h15 Paris, juste après
+    # purge_deleted_users pour ne pas croiser ses suppressions de profils.
+    scheduler.add_job(
+        purge_anonymous_users,
+        trigger=CronTrigger(hour=4, minute=15, timezone=_PARIS_TZ),
+        id="purge_anonymous_users",
+        name="Purge abandoned anonymous sessions (>30d)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Recalcul `sources.language` à partir des Content des 30 derniers jours
     # (3h30 Paris, après storage_cleanup pour partir d'un pool nettoyé).
     scheduler.add_job(
@@ -657,6 +675,30 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Alertes source (Epic 30) — même cadence que la tournée : elles partent
+    # dans la même fenêtre, silencieusement, sous le même gouverneur.
+    scheduler.add_job(
+        dispatch_source_alerts,
+        trigger=IntervalTrigger(minutes=5),
+        id="source_alert_push_dispatch",
+        name="Source alert push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Alertes sujet (alertes v2) — passe séparée, mêmes garanties. Le gouverneur
+    # (budget partagé par utilisateur) arbitre entre les deux familles.
+    scheduler.add_job(
+        dispatch_topic_alerts,
+        trigger=IntervalTrigger(minutes=5),
+        id="topic_alert_push_dispatch",
+        name="Topic alert push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Garde-fou file de classification (30 min) — alerte Sentry si le plus
     # vieux pending dépasse le seuil (défaut 12 h). 2e couche par-dessus le
     # superviseur `_on_task_done` du worker : détecte l'angle-mort même si la
@@ -680,6 +722,7 @@ def start_scheduler() -> None:
             "digest_watchdog",
             "storage_cleanup",
             "purge_deleted_users",
+            "purge_anonymous_users",
             "recompute_source_language",
             "rescue_failed_sources",
             "recompute_source_coverage_themes",
@@ -687,6 +730,8 @@ def start_scheduler() -> None:
             "zombie_session_sweeper",
             "pool_health_probe",
             "daily_essentiel_push_dispatch",
+            "source_alert_push_dispatch",
+            "topic_alert_push_dispatch",
             "classification_queue_health_check",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,

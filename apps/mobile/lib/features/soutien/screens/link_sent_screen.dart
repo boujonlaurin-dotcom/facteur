@@ -65,10 +65,8 @@ class _LinkSentScreenState extends ConsumerState<LinkSentScreen>
     try {
       await ref.read(checkoutLinkProvider.notifier).sendLink(resend: true);
       NotificationService.showSuccess(SoutienCopy.linkSentResendSuccess);
-    } on CheckoutRateLimitedException {
-      NotificationService.showError(SoutienCopy.linkSentRateLimited);
-    } catch (_) {
-      NotificationService.showError(SoutienCopy.sendLinkError);
+    } catch (e) {
+      NotificationService.showError(checkoutErrorMessage(e));
     }
   }
 

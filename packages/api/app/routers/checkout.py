@@ -195,9 +195,19 @@ async def start_passwordless(
 
 
 async def _supabase_admin_get_user_email(user_id: str) -> str | None:
-    """Retourne l'email Supabase de ce user_id, ou None s'il est introuvable."""
+    """Retourne l'email Supabase de ce user_id, ou None s'il est introuvable.
+
+    Les deux chemins qui renvoient None (config admin absente, ou appel admin
+    non-200 — typiquement une `SUPABASE_SERVICE_ROLE_KEY` manquante/rotée sur le
+    service prod) sont remontés à Sentry : sans ça, l'échec est « avalé » en un
+    404 générique côté `send_link` et reste invisible.
+    """
     settings = get_settings()
     if not (settings.supabase_url and settings.supabase_service_role_key):
+        logger.warning("checkout.supabase_admin_config_missing")
+        sentry_sdk.capture_message(
+            "checkout.supabase_admin_config_missing", level="warning"
+        )
         return None
 
     url = f"{settings.supabase_url}/auth/v1/admin/users/{user_id}"
@@ -208,6 +218,14 @@ async def _supabase_admin_get_user_email(user_id: str) -> str | None:
     async with httpx.AsyncClient(verify=certifi.where(), timeout=10.0) as client:
         resp = await client.get(url, headers=headers)
     if resp.status_code != 200:
+        logger.warning(
+            "checkout.supabase_admin_get_user_email_failed",
+            status=resp.status_code,
+            body=resp.text[:500],
+        )
+        sentry_sdk.capture_message(
+            "checkout.supabase_admin_get_user_email_failed", level="warning"
+        )
         return None
     return resp.json().get("email") or None
 
@@ -220,6 +238,10 @@ async def _supabase_send_magic_link(email: str, redirect_to: str) -> None:
     """
     settings = get_settings()
     if not (settings.supabase_url and settings.supabase_anon_key):
+        logger.warning("checkout.supabase_auth_config_missing")
+        sentry_sdk.capture_message(
+            "checkout.supabase_auth_config_missing", level="warning"
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Supabase auth config missing",
@@ -270,6 +292,13 @@ async def send_link(
     """
     email = await _supabase_admin_get_user_email(user_id)
     if not email:
+        # Cause racine déjà remontée par `_supabase_admin_get_user_email`
+        # (config absente / appel admin non-200) ; on trace aussi le point de
+        # sortie 404 côté endpoint, avec le user_id, pour la corrélation.
+        logger.warning("checkout.send_link_user_email_not_found", user_id=user_id)
+        sentry_sdk.capture_message(
+            "checkout.send_link_user_email_not_found", level="warning"
+        )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User email not found",

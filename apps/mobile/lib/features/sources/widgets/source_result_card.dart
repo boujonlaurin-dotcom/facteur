@@ -12,6 +12,10 @@ class SourceResultCard extends StatelessWidget {
   final VoidCallback onPreview;
   final bool isAdded;
 
+  /// Ajout en cours : le bouton affiche un spinner et devient non cliquable
+  /// (empêche les double-taps le temps de l'appel réseau).
+  final bool isAdding;
+
   /// Mode preuve (onboarding) : à l'ajout, la carte se transforme en bloc
   /// « Connecté » avec les derniers articles, au lieu d'ouvrir la modal.
   final bool showProof;
@@ -22,6 +26,7 @@ class SourceResultCard extends StatelessWidget {
     required this.onAdd,
     required this.onPreview,
     this.isAdded = false,
+    this.isAdding = false,
     this.showProof = false,
   });
 
@@ -286,21 +291,33 @@ class SourceResultCard extends StatelessWidget {
                       ),
                     )
                   : ElevatedButton(
-                      onPressed: onAdd,
+                      onPressed: isAdding ? null : onAdd,
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         backgroundColor: colors.primary,
                         foregroundColor: colors.textPrimary,
+                        disabledBackgroundColor:
+                            colors.primary.withValues(alpha: 0.6),
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: Text(
-                        _addCtaLabel(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: isAdding
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    colors.textPrimary),
+                              ),
+                            )
+                          : Text(
+                              _addCtaLabel(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                     ),
             ),
           ],

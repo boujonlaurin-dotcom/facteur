@@ -12,7 +12,8 @@ seule fois** en modale avec nos deux visages, un ask à « 5 minutes » et trois
 sorties nettes. La carte de fin de tournée est allégée en conséquence.
 
 ## PR associée
-À créer (`/go`) vers `main`.
+
+À compléter après ouverture.
 
 ## Écrans impactés
 
