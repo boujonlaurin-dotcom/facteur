@@ -2215,6 +2215,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    time_spent_seconds=action_state.get("time_spent_seconds", 0),
                     completed_at=action_state.get("completed_at"),
                 )
             )
@@ -2358,6 +2359,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    time_spent_seconds=action_state.get("time_spent_seconds", 0),
                     completed_at=action_state.get("completed_at"),
                     read_at=action_state.get("read_at"),
                 )
@@ -2389,6 +2391,7 @@ class DigestService:
                         is_saved=action_state["is_saved"],
                         is_liked=action_state["is_liked"],
                         is_dismissed=action_state["is_dismissed"],
+                        time_spent_seconds=action_state.get("time_spent_seconds", 0),
                         completed_at=action_state.get("completed_at"),
                     )
                 )
@@ -2610,6 +2613,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    time_spent_seconds=action_state.get("time_spent_seconds", 0),
                     completed_at=action_state.get("completed_at"),
                     read_at=action_state.get("read_at"),
                 )
@@ -2640,6 +2644,7 @@ class DigestService:
                         is_saved=action_state["is_saved"],
                         is_liked=action_state["is_liked"],
                         is_dismissed=action_state["is_dismissed"],
+                        time_spent_seconds=action_state.get("time_spent_seconds", 0),
                         completed_at=action_state.get("completed_at"),
                     )
                 )
@@ -2712,6 +2717,7 @@ class DigestService:
             "is_saved": status.is_saved,
             "is_liked": status.is_liked,
             "is_dismissed": status.is_hidden,
+            "time_spent_seconds": status.time_spent_seconds or 0,
             "completed_at": status.completed_at,
         }
 
@@ -2742,6 +2748,7 @@ class DigestService:
                 "is_liked": status.is_liked,
                 "is_dismissed": status.is_hidden,
                 "read_at": status.seen_at,
+                "time_spent_seconds": status.time_spent_seconds or 0,
                 "completed_at": status.completed_at,
             }
             for status in statuses

@@ -35,11 +35,12 @@ class FluxArticleVM {
   final int? durationSeconds;
   final DateTime? publishedAt;
   final bool isFollowedSource;
-  final bool isRead;
 
-  /// « Lu jusqu'au bout » — adossé à `completedAt`, distinct de [isRead] que le
-  /// seuil d'ouverture d'1 s suffit à déclencher.
-  final bool isCompleted;
+  /// État de lecture serveur-truth (avant fusion session), source unique dont
+  /// dérivent [hasBeenRead] et [isCompleted]. Porte la 3ᵉ marche « Ouvert »
+  /// quand le temps passé est connu (chemin `Content`) ; retombe sur « Lu en
+  /// partie » quand il ne l'est pas (chemin `DigestItem`).
+  final ReadState readState;
 
   const FluxArticleVM({
     required this.contentId,
@@ -52,11 +53,14 @@ class FluxArticleVM {
     this.durationSeconds,
     this.publishedAt,
     this.isFollowedSource = false,
-    this.isRead = false,
-    this.isCompleted = false,
+    this.readState = ReadState.unread,
   });
 
-  bool get hasBeenRead => isRead;
+  bool get hasBeenRead => readState != ReadState.unread;
+
+  /// « Lu jusqu'au bout » — distinct de [hasBeenRead] que le seuil d'ouverture
+  /// d'1 s suffit à déclencher.
+  bool get isCompleted => readState == ReadState.completed;
 
   factory FluxArticleVM.from(Object article) {
     if (article is DigestItem) {
@@ -74,11 +78,17 @@ class FluxArticleVM {
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
-        isRead: article.isRead,
-        // `DigestItem` n'a pas de getter `isCompleted` : freezed exigerait un
-        // `const DigestItem._();` que la classe n'a pas. Inliné plutôt que
-        // régénéré.
-        isCompleted: article.completedAt != null,
+        // Le modèle mobile `DigestItem` (freezed) ne parse pas encore
+        // `time_spent_seconds` (câblage déféré, cf. story 30.4) → signal inconnu :
+        // `deriveReadState` retombe sur « Lu en partie » (0.6), jamais « Ouvert ».
+        readState: deriveReadState(
+          isConsumed: article.isRead,
+          readingProgress: 0,
+          isVideo: article.contentType == ContentType.youtube ||
+              article.contentType == ContentType.video,
+          timeSpentSeconds: null,
+          isCompleted: article.completedAt != null,
+        ),
       );
     }
     if (article is Content) {
@@ -93,9 +103,7 @@ class FluxArticleVM {
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
-        isRead: article.status == ContentStatus.consumed ||
-            article.readingProgress > 0,
-        isCompleted: article.isCompleted,
+        readState: article.readState,
       );
     }
     throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -163,13 +171,18 @@ class _FluxContinuArticleCardState
     final wasConsumedThisSession = ref.watch(
       consumedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
     );
-    final hasBeenRead = vm.hasBeenRead || wasConsumedThisSession;
     // Complétée pendant la session : la carte reflète l'état sans attendre un
     // refetch du feed.
     final completedThisSession = ref.watch(
       completedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
     );
-    final isCompleted = vm.isCompleted || completedThisSession;
+    final readState = effectiveReadState(
+      vm.readState,
+      consumedThisSession: wasConsumedThisSession,
+      completedThisSession: completedThisSession,
+    );
+    final hasBeenRead = readState != ReadState.unread;
+    final isCompleted = readState == ReadState.completed;
     final colors = context.facteurColors;
     final spec = ref.watch(displayModeSpecProvider);
     // Reclaim the thumb slot when the network image fails — avoids the
@@ -185,7 +198,7 @@ class _FluxContinuArticleCardState
     Widget card = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Opacity(
-        opacity: hasBeenRead ? 0.6 : 1.0,
+        opacity: opacityForReadState(readState),
         child: Stack(
           children: [
             // `animate: false` au montage : le filet d'une carte déjà aboutie
@@ -234,7 +247,7 @@ class _FluxContinuArticleCardState
                 right: 4,
                 child: ReadStateMark(
                   color: colors.success,
-                  isCompleted: isCompleted,
+                  state: readState,
                 ),
               ),
           ],

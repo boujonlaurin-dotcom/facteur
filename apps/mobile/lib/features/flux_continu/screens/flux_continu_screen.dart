@@ -1912,7 +1912,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
     // Un seul indicateur d'attente pour toute la Tournée : la **première**
     // coquille de section encore non résolue porte le libellé « Ta tournée se
-    // prépare… » (les autres restent des cartes shimmer nues). -1 = aucune.
+    // prépare… » (les autres restent des cartes shimmer nues).
     final firstPreparingIndex = state.sections.indexWhere(
       (s) => s is FeedThemeSection && s.isPlaceholder,
     );
