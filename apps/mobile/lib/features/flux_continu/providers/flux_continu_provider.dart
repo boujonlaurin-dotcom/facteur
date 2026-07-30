@@ -1618,17 +1618,55 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     await ref.read(tourneeProgressServiceProvider).markEssentielViewedToday();
   }
 
-  /// Pull-to-refresh: refetch all upstream calls from scratch.
+  /// Budget maximal d'un pull-to-refresh. Un appel nominal se résout bien en
+  /// dessous ; ce plafond coupe le pire cas (chaque appel Dio = 30s timeout +
+  /// [RetryInterceptor] `[1s, 3s]` ⇒ ~94s) qui faisait tourner le
+  /// [RefreshIndicator] > 20s. Vit **uniquement** sur le chemin [refresh] :
+  /// [_fetchAll] (build/cold-boot) et les retries globaux restent intacts.
+  static const _kRefreshBudget = Duration(seconds: 8);
+
+  /// Pull-to-refresh: refetch all upstream calls from scratch, borné à
+  /// [_kRefreshBudget].
   ///
   /// Crucially we do NOT bounce through [AsyncLoading] — doing so would
   /// tear down the [RefreshIndicator] mid-pull (the screen renders the
   /// loading skeleton in place of the scroll view), making the gesture
   /// feel broken. Keeping the previous data mounted lets the native
   /// indicator stay visible until the refetch resolves.
-  Future<void> refresh() async {
-    final next = await AsyncValue.guard(_fetchAll);
+  ///
+  /// Renvoie un record léger permettant à l'écran de distinguer « rien de neuf »
+  /// (`succeeded=true`, `newSinceMorning==0`) d'un refresh borné/échoué
+  /// (`succeeded=false` — on ne redirige alors PAS vers Flâner, ce serait
+  /// masquer un souci de perf). En cas de timeout/erreur **avec** un état déjà
+  /// monté, on **conserve** les données précédentes (le spinner s'arrête net,
+  /// feed inchangé, pas d'écran d'erreur). Le [_fetchAll] abandonné continue en
+  /// arrière-plan (Dart n'a pas d'annulation sans `CancelToken`) : ses futures
+  /// Dio sont avalées par [_safe] (inoffensif) et son cache write final finit
+  /// par s'exécuter avec du contenu frais — seul le spinner est borné, pas le
+  /// travail sous-jacent.
+  Future<({bool succeeded, int newSinceMorning})> refresh() async {
+    final next =
+        await AsyncValue.guard(() => _fetchAll().timeout(_kRefreshBudget));
+    if (next.hasError) {
+      // Refresh borné (timeout) ou échoué. Si on a déjà des données montées, on
+      // les garde (contrat « keep previous data mounted ») ; sinon on remonte
+      // l'erreur comme aujourd'hui (cold-boot sans donnée à préserver).
+      if (!state.hasValue) state = next;
+      return (succeeded: false, newSinceMorning: 0);
+    }
     state = next;
+    final value = next.value;
+    return (
+      succeeded: true,
+      newSinceMorning: value == null ? 0 : _newSinceMorningOf(value),
+    );
   }
+
+  /// `new_since_this_morning` porté par l'[EssentielSection] d'un état, 0 si
+  /// absente. Signal non-fragile consommé par l'escalade « rien de neuf ».
+  int _newSinceMorningOf(FluxContinuState value) =>
+      value.sections.whereType<EssentielSection>().firstOrNull?.newSinceMorning ??
+      0;
 
   /// Builds the v3 "L'Essentiel du jour" hi-fi section from the 5 articles
   /// returned by `GET /api/essentiel`. Returns `null` when the endpoint hasn't
