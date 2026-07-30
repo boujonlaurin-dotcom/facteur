@@ -435,12 +435,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   _ScrollNudgeTarget? _activeScrollNudgeTarget;
   // Passé à true une fois affiché ou tapé → ne réapparaît plus sur cet article.
   bool _scrollNudgeSpent = false;
-  // Résultat du cooldown 24 h (NudgeService.canShow), résolu à l'armement.
-  bool _scrollNudgeCooldownOk = false;
+  // Résultat du cooldown 24 h (NudgeService.canShow) **par cible** : la cible
+  // peut changer en cours de route (les perspectives arrivent avant le « pas de
+  // recul »), et vérifier le cooldown d'un id pour en afficher un autre était
+  // le bug d'identifiant de `markShown`.
+  final Map<String, bool> _scrollNudgeCooldownById = {};
+  // Ids dont la vérification asynchrone est en vol (anti-doublon).
+  final Set<String> _scrollNudgeCooldownPending = {};
+  // Le délai anti-pop est écoulé — armé en initState, donc en parallèle du
+  // réseau et non en série derrière lui.
+  bool _scrollNudgeArmDelayElapsed = false;
   // markShown() n'est appelé qu'une fois (au premier affichage réel).
   bool _scrollNudgeShownRecorded = false;
-  // L'armement différé n'est planifié qu'une fois par article.
-  bool _scrollNudgeArmScheduled = false;
   Timer? _scrollNudgeArmTimer;
   Timer? _scrollNudgeAutoHideTimer;
 
@@ -538,6 +544,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _fetchPerspectives();
       }
     }
+
+    // Délai anti-pop du nudge de scroll : démarré ici (et non après le fetch
+    // des perspectives) pour qu'il s'écoule en parallèle du réseau. La
+    // visibilité reste conditionnée à une cible montée + son cooldown 24 h.
+    _armScrollNudgeDelay();
 
     // Bookmark bounce animation (triggered on first note character)
     _bookmarkBounceController = AnimationController(
@@ -1160,34 +1171,42 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return null;
   }
 
-  /// Planifie (une seule fois par article) l'armement différé du nudge :
-  /// attend `_kScrollNudgeArmDelay` (anti-pop instantané) puis résout le
-  /// cooldown 24 h avant d'autoriser l'affichage. Appelé dès qu'une cible
-  /// devient plausible (arrivée des perspectives, résolution du contenu).
-  void _maybeArmScrollNudge() {
-    if (_scrollNudgeArmScheduled) return;
-    final target = _resolveScrollNudgeTarget();
-    if (target == null) return;
-    _scrollNudgeArmScheduled = true;
-    _scrollNudgeArmTimer = Timer(_kScrollNudgeArmDelay, () async {
+  /// Démarre le délai anti-pop du nudge. Appelé en `initState` (et au retour
+  /// en haut de l'article) et **pas** après le fetch des perspectives : les
+  /// 1,5 s s'écoulent alors en parallèle du réseau au lieu de s'y ajouter.
+  void _armScrollNudgeDelay() {
+    _scrollNudgeArmTimer?.cancel();
+    _scrollNudgeArmTimer = Timer(_kScrollNudgeArmDelay, () {
       if (!mounted) return;
-      // Cooldown par-nudge uniquement (NudgeService, pas le coordinator) : on
-      // veut « 1×/24 h par cible », sans le budget global de session.
-      final ok = await ref.read(nudgeServiceProvider).canShow(target.id);
-      if (!mounted) return;
-      _scrollNudgeCooldownOk = ok;
+      _scrollNudgeArmDelayElapsed = true;
       _updateScrollNudgeVisibility();
     });
+  }
+
+  /// Résout (une fois par cible) le cooldown 24 h de [id], puis re-évalue la
+  /// visibilité. Cooldown par-nudge uniquement (NudgeService, pas le
+  /// coordinator) : « 1×/24 h par cible », sans le budget global de session.
+  void _ensureScrollNudgeCooldown(String id) {
+    if (_scrollNudgeCooldownById.containsKey(id) ||
+        !_scrollNudgeCooldownPending.add(id)) {
+      return;
+    }
+    () async {
+      final ok = await ref.read(nudgeServiceProvider).canShow(id);
+      _scrollNudgeCooldownPending.remove(id);
+      if (!mounted) return;
+      _scrollNudgeCooldownById[id] = ok;
+      _updateScrollNudgeVisibility();
+    }();
   }
 
   /// Calcul pur des conditions d'affichage du nudge de scroll. Aucune
   /// mutation d'état ici — voir [_updateScrollNudgeVisibility]. Résout et
   /// mémorise la cible courante dans `_activeScrollNudgeTarget`.
   bool _computeShouldShowScrollNudge() {
-    // Armé (cooldown 24 h résolu à l'armement), pas déjà consommé sur cet
-    // article. `_scrollNudgeCooldownOk` ne peut passer true qu'après le délai
-    // d'armement → il porte à lui seul l'état « armé + éligible ».
-    if (!_scrollNudgeCooldownOk || _scrollNudgeSpent) return false;
+    // Délai anti-pop écoulé, pas déjà consommé sur cet article. Le cooldown
+    // 24 h est vérifié plus bas, sur la cible réellement résolue.
+    if (!_scrollNudgeArmDelayElapsed || _scrollNudgeSpent) return false;
     // Le nudge n'a de sens que pendant la lecture scrollable normale : dès que
     // la WebView a pris le relais visuel, ou que le CTA a été tapé (révélation
     // en cours), la destination n'est plus pertinente.
@@ -1202,6 +1221,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final target = _resolveScrollNudgeTarget();
     if (target == null) return false;
     _activeScrollNudgeTarget = target;
+
+    // Cooldown de LA cible courante — pas de celle connue à l'armement. Le
+    // premier passage lance la vérification et rappellera cette méthode.
+    final cooldownOk = _scrollNudgeCooldownById[target.id];
+    if (cooldownOk == null) {
+      _ensureScrollNudgeCooldown(target.id);
+      return false;
+    }
+    if (!cooldownOk) return false;
 
     // Destination hors écran (assez bas pour valoir un scroll). Si la clé n'est
     // pas encore montée (premier frame après fetch, ou carte non rendue dans la
@@ -1337,7 +1365,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Retour en haut de l'article : ré-arme le nudge de scroll (le cooldown
     // 24 h déjà posé le maintiendra masqué s'il a été montré aujourd'hui).
     _resetScrollNudge();
-    _maybeArmScrollNudge();
+    _armScrollNudgeDelay();
   }
 
   /// Remet à zéro l'état du nudge de scroll (armement, cooldown, auto-hide) et
@@ -1346,9 +1374,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollNudgeArmTimer?.cancel();
     _scrollNudgeAutoHideTimer?.cancel();
     _scrollNudgeSpent = false;
-    _scrollNudgeCooldownOk = false;
+    _scrollNudgeArmDelayElapsed = false;
+    _scrollNudgeCooldownById.clear();
+    _scrollNudgeCooldownPending.clear();
     _scrollNudgeShownRecorded = false;
-    _scrollNudgeArmScheduled = false;
     _showScrollNudge.value = false;
   }
 
@@ -2263,9 +2292,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _schedulePerspectivesPartialRefetch(content.id);
         }
         _maybeTriggerPerspectivesCta();
-        // Une cible de nudge (pas de recul ou perspectives) est désormais
-        // plausible : planifie l'armement différé (1,5 s + cooldown).
-        _maybeArmScrollNudge();
         // `PerspectivesInlineSection`/`_perspectivesKey` ne sont montés qu'au
         // prochain frame après ce `setState` — sans ce callback, un
         // utilisateur déjà en haut et immobile ne verrait jamais le nudge

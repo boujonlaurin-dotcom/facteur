@@ -165,6 +165,13 @@ class EssentielArticle {
   final String? theme;
   final String sectionLabel;
   final int perspectiveCount;
+
+  /// Nombre de rédactions couvrant le sujet d'origine — pilote la pastille de
+  /// couverture (seuil [kCoverageChipMinSources]).
+  final int sourceCount;
+
+  /// Logos des rédactions qui couvrent le sujet, tronqués à 3 par le backend.
+  final List<SourceMini> perspectiveSources;
   final int rank;
   final bool isRead;
   final bool isSaved;
@@ -199,6 +206,8 @@ class EssentielArticle {
     this.kind = SectionKind.theme,
     this.theme,
     this.perspectiveCount = 0,
+    this.sourceCount = 0,
+    this.perspectiveSources = const [],
     this.isRead = false,
     this.isSaved = false,
     this.isLiked = false,
@@ -239,6 +248,11 @@ class EssentielArticle {
       theme: json['theme'] as String?,
       sectionLabel: (json['section_label'] as String?) ?? '',
       perspectiveCount: (json['perspective_count'] as num?)?.toInt() ?? 0,
+      sourceCount: (json['source_count'] as num?)?.toInt() ?? 0,
+      perspectiveSources: [
+        for (final raw in (json['perspective_sources'] as List?) ?? const [])
+          if (raw is Map) SourceMini.fromJson(raw.cast<String, dynamic>()),
+      ],
       rank: (json['rank'] as num?)?.toInt() ?? 0,
       isRead: (json['is_read'] as bool?) ?? false,
       isSaved: (json['is_saved'] as bool?) ?? false,
@@ -265,6 +279,8 @@ class EssentielArticle {
     'theme': theme,
     'section_label': sectionLabel,
     'perspective_count': perspectiveCount,
+    'source_count': sourceCount,
+    'perspective_sources': [for (final s in perspectiveSources) s.toJson()],
     'rank': rank,
     'is_read': isRead,
     'is_saved': isSaved,
