@@ -157,6 +157,17 @@ bool shouldRefreshEssentielOnForeground({
   return true;
 }
 
+/// Un seul indicateur d'attente pour toute la Tournée : la **première** coquille
+/// de section encore non résolue porte le libellé « Ta tournée se prépare… »
+/// (les autres restent des cartes shimmer nues). `-1` = aucune coquille.
+///
+/// Extrait de `build` pour être testable sans monter l'écran (Supabase, Hive et
+/// GoRouter y sont requis) : la déclaration inline avait été supprimée par
+/// erreur lors d'une résolution de conflit, cassant tout build mobile.
+@visibleForTesting
+int firstPreparingSectionIndex(List<FluxSection> sections) =>
+    sections.indexWhere((s) => s is FeedThemeSection && s.isPlaceholder);
+
 /// Fenêtre pendant laquelle un **re-pull** explicite à vide compte comme « tout
 /// de suite après » le précédent → escalade vers la redirection auto Flâner.
 const Duration essentielRePullWindow = Duration(seconds: 45);
@@ -1909,13 +1920,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final inviteTargetIndex = state.sections.length < 2
         ? -1
         : math.max(1, state.sections.length - 3);
-
-    // Un seul indicateur d'attente pour toute la Tournée : la **première**
-    // coquille de section encore non résolue porte le libellé « Ta tournée se
-    // prépare… » (les autres restent des cartes shimmer nues).
-    final firstPreparingIndex = state.sections.indexWhere(
-      (s) => s is FeedThemeSection && s.isPlaceholder,
-    );
+    final firstPreparingIndex = firstPreparingSectionIndex(state.sections);
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
