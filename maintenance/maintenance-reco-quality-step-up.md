@@ -93,8 +93,62 @@ en amont du réglage fin, pas dans la finesse de la taxonomie.
 ## PR1 — rebrancher les signaux existants
 
 **Zéro migration** : les 3 tables (`user_entity_affinity`, `user_interests`,
-`user_topic_profiles`) ont déjà les colonnes. **4 commits indépendamment
-révocables.**
+`user_topic_profiles`) ont déjà les colonnes. Commits indépendamment
+révocables.
+
+> **État : livrée.** 7 commits. Le plan en prévoyait 4 ; trois se sont ajoutés
+> en cours de route, chacun parce que le câblage prévu aurait été inopérant ou
+> invisible sans lui. Ils sont marqués **(hors plan)** ci-dessous.
+
+| # | Commit | Objet |
+|---|---|---|
+| 1 | `PR1a` | affinité entités nourrie depuis l'Essentiel + route feedback |
+| 2 | `PR1a'` | **(hors plan)** purge du cache feed sur les actions du digest |
+| 3 | `PR1b1` | threading `user_custom_topics` → `ScoringContext` du digest |
+| 4 | `PR1b2` | branche entité dans le pilier + collapse du parser dupliqué |
+| 5 | `PR1c` | decay de `user_interests.weight` |
+| 6 | `PR1e1` | libellés de sujets resynchronisés + **(hors plan)** fix veille |
+| 7 | `PR1e2` | raisons de sélection (2 branches mortes) + **(hors plan)** `changelog.json` |
+
+### Ce que la mise en œuvre a corrigé du plan
+
+Trois écarts valent d'être écrits, parce qu'ils changent le diagnostic :
+
+1. **Le plan sous-estimait (a) : nourrir l'affinité ne suffisait pas.**
+   `POST /digest/{id}/action` n'invalidait **rien** dans `FEED_CACHE`, alors que
+   la règle « une écriture qui touche `UserSubtopic.weight` /
+   `UserEntityAffinity.affinity` purge tout » est explicite et déjà épinglée
+   pour les routes `/contents/*` équivalentes. Un LIKE depuis l'Essentiel
+   écrivait donc le signal derrière un classement caché périmé — le même motif
+   « écrit mais pas branché » que PR1 corrige ailleurs. D'où le commit 2.
+2. **(e1) était un défaut de réutilisation, pas un dict à éditer.**
+   `SLUG_TO_LABEL` existait déjà, canonique et complète (51/51), utilisée par 5
+   modules. Le correctif est donc une **suppression** de la copie périmée, pas
+   une reprise à la main. Et cette copie servait de **liste de slugs valides**
+   dans `veille/feed_filter` (`frozenset(SUBTOPIC_LABELS)`) : la veille
+   neutralisait des `topic_id` parfaitement valides — dont `energy`, `politics`,
+   `usa`, `justice`, `europe`, `tech` — tout en laissant passer 32 fantômes.
+   Effet de bord non anticipé par le plan, corrigé dans le même commit.
+3. **(e2) portait sur deux branches mortes, pas une.**
+   `digest_service._determine_top_reason` avait le même préfixe fantôme, et
+   était en plus inatteignable (`"Thème" in "Sous-thème : …"` est vrai et testé
+   avant). Le test qui couvrait la branche de `digest_selector` **pinnait le
+   libellé fantôme** `"Sous-thème : AI"` : le code mort a survécu à sa propre
+   couverture. C'est le mécanisme à retenir, plus que le fix.
+
+### Deux trouvailles à arbitrer (PO)
+
+- **`DIGEST_SPORT_PENALTY = −80` écrase le signal Sujet.** Un match custom-topic
+  vaut +25 brut (~+16 après normalisation) : un Sujet suivi qui *est* un sportif
+  (« Mbappé ») reste structurellement invisible dans le digest, câblage ou pas.
+  Découvert en écrivant les tests de (b1). Non traité.
+- **`changelog.json` était cassé sur `main` depuis la PR #1029** : une entrée
+  insérée sans son `},{`. `loadReleased()` décode le document entier et le
+  provider traite l'erreur comme « liste vide » ⇒ **toutes les notes de version
+  in-app étaient mortes, en silence**. 2e occurrence pour ce fichier. Réparé et
+  gardé par 3 tests sur le vrai asset. À noter : **la CI ne lance pas
+  `flutter test`**, elle n'aurait donc pas attrapé #1029 et n'attrapera pas la
+  prochaine — le filet ne tient que par l'étape VERIFY locale.
 
 ### (a) Nourrir l'affinité entités depuis l'Essentiel
 
