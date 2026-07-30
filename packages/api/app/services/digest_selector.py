@@ -1695,12 +1695,17 @@ class DigestSelector:
                 if b.label == "À la une":
                     return "À la une"
 
-        # 1. Sous-thème matché (le plus précis) — ex: "Thème : AI"
+        # 1. Sujet matché (le plus précis) — ex: "Thème : IA"
+        #
+        # Cette branche testait `"Sous-thème : "`, un préfixe que **plus aucun
+        # pilier n'émet** : `_score_subtopics` produit "Sujet suivi : …" (poids
+        # appris > 1) ou "Sujet : …". Elle était donc morte et toutes les raisons
+        # du digest retombaient sur le thème large (cas 2 ci-dessous).
         if breakdown:
             for b in breakdown:
-                if b.label.startswith("Sous-thème : "):
-                    topic = b.label.removeprefix("Sous-thème : ")
-                    return f"Thème : {topic}"
+                for prefix in ("Sujet suivi : ", "Sujet : "):
+                    if b.label.startswith(prefix):
+                        return f"Thème : {b.label.removeprefix(prefix)}"
 
         # 2. Thème article ML ou thème source — ex: "Thème : Environnement"
         theme = None

@@ -2060,6 +2060,22 @@ class DigestService:
         positive.sort(key=lambda x: x.points, reverse=True)
         top = positive[0]
 
+        # Le sujet précis d'abord : `_score_subtopics` émet "Sujet suivi : …" /
+        # "Sujet : …". La branche qui suivait testait `"Sous-thème"`, préfixe
+        # qu'aucun pilier n'émet plus — et elle était de toute façon
+        # inatteignable, puisque `"Thème" in "Sous-thème : …"` est vrai et
+        # arrivait avant. Les raisons du digest tombaient donc sur "Vos
+        # intérêts : …" avec un thème large, ou sur le label brut.
+        for prefix in ("Sujet suivi : ", "Sujet : "):
+            if top.label.startswith(prefix):
+                topics = [
+                    b.label.removeprefix(p)
+                    for b in positive
+                    for p in ("Sujet suivi : ", "Sujet : ")
+                    if b.label.startswith(p)
+                ][:2]
+                return f"Vos centres d'intérêt : {', '.join(topics)}"
+
         # Format based on top reason type
         if "Thème" in top.label:
             theme = top.label.split(": ")[1] if ": " in top.label else ""
@@ -2080,19 +2096,6 @@ class DigestService:
                 f"Renforcé par vos j'aime : {', '.join(topics)}"
                 if topics
                 else "Renforcé par vos j'aime"
-            )
-        elif "Sous-thème" in top.label:
-            topics = [
-                parts[1]
-                for b in positive
-                if "Sous-thème" in b.label
-                for parts in [b.label.split(": ", 1)]
-                if len(parts) > 1
-            ][:2]
-            return (
-                f"Vos centres d'intérêt : {', '.join(topics)}"
-                if topics
-                else "Vos centres d'intérêt"
             )
         else:
             return top.label
