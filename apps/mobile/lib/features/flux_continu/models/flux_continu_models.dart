@@ -171,6 +171,10 @@ class EssentielArticle {
   final bool isLiked;
   final bool isDismissed;
 
+  /// Temps passé cumulé (s) — départage « Ouvert » de « Lu en partie » sur la
+  /// carte héros. `null` = signal absent (payload plus ancien).
+  final int? timeSpentSeconds;
+
   /// « Lu jusqu'au bout ». Servi par `/api/essentiel`, distinct de [isRead] que
   /// le seuil d'ouverture d'1 s suffit à déclencher.
   final DateTime? completedAt;
@@ -199,11 +203,22 @@ class EssentielArticle {
     this.isSaved = false,
     this.isLiked = false,
     this.isDismissed = false,
+    this.timeSpentSeconds,
     this.completedAt,
     this.isFollowedSource = false,
     this.isFollowedTopic = false,
     this.isActuDuJour = false,
   });
+
+  /// État de lecture serveur-truth (avant fusion session), miroir de
+  /// [Content.readState] — l'Essentiel n'a que des articles (jamais vidéo).
+  ReadState get readState => deriveReadState(
+        isConsumed: isRead,
+        readingProgress: 0,
+        isVideo: false,
+        timeSpentSeconds: timeSpentSeconds,
+        isCompleted: completedAt != null,
+      );
 
   factory EssentielArticle.fromJson(Map<String, dynamic> json) {
     final source =
@@ -229,6 +244,7 @@ class EssentielArticle {
       isSaved: (json['is_saved'] as bool?) ?? false,
       isLiked: (json['is_liked'] as bool?) ?? false,
       isDismissed: (json['is_dismissed'] as bool?) ?? false,
+      timeSpentSeconds: json['time_spent_seconds'] as int?,
       completedAt: DateTime.tryParse(json['completed_at'] as String? ?? ''),
       isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
       isFollowedTopic: (json['is_followed_topic'] as bool?) ?? false,
@@ -254,6 +270,7 @@ class EssentielArticle {
     'is_saved': isSaved,
     'is_liked': isLiked,
     'is_dismissed': isDismissed,
+    'time_spent_seconds': timeSpentSeconds,
     'completed_at': completedAt?.toIso8601String(),
     'is_followed_source': isFollowedSource,
     'is_followed_topic': isFollowedTopic,

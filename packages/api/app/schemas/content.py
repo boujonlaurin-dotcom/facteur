@@ -116,6 +116,10 @@ class ContentResponse(BaseModel):
     content_quality: str | None = None  # In-App Reading: 'full', 'partial', 'none'
     recommendation_reason: RecommendationReason | None = None
     reading_progress: int = 0
+    # Temps passé cumulé (s) — départage « Ouvert » (< 5 s) de « Lu en partie »
+    # côté carte. Défaut 0 : sûr quand aucun `UserContentStatus` (item non ouvert
+    # → l'UI le lit comme « non lu » via `status`).
+    time_spent_seconds: int = 0
     completed_at: datetime | None = None
     note_text: str | None = None
     note_updated_at: datetime | None = None

@@ -157,6 +157,47 @@ bool shouldRefreshEssentielOnForeground({
   return true;
 }
 
+/// Fenêtre pendant laquelle un **re-pull** explicite à vide compte comme « tout
+/// de suite après » le précédent → escalade vers la redirection auto Flâner.
+const Duration essentielRePullWindow = Duration(seconds: 45);
+
+/// Escalade « rien de neuf » d'un pull-to-refresh explicite de L'Essentiel.
+enum EssentielEmptyPullAction {
+  /// Nouveauté, ou refresh borné/échoué : aucun hint, on reset l'escalade.
+  none,
+
+  /// 1er pull à vide : SnackBar + CTA « Flâner », pas de redirection.
+  hint,
+
+  /// Re-pull à vide rapproché (< [essentielRePullWindow]) : bascule auto Flâner.
+  redirect,
+}
+
+/// Décision pure de l'escalade « rien de neuf » sur un pull-to-refresh
+/// **explicite** (décidée avec le PO). Testable sans monter l'écran
+/// (cf. [shouldRefreshEssentielOnForeground]).
+///
+/// - On n'escalade QUE sur un refresh réussi ET sans nouveauté : un refresh
+///   borné/échoué (`succeeded == false`) ne redirige jamais — ce serait masquer
+///   un souci de perf. Un `newSinceMorning > 0` remet l'escalade à zéro.
+/// - Un 1er pull à vide → [EssentielEmptyPullAction.hint] ; un re-pull dans la
+///   [rePullWindow] → [EssentielEmptyPullAction.redirect].
+@visibleForTesting
+EssentielEmptyPullAction essentielEmptyPullAction({
+  required bool succeeded,
+  required int newSinceMorning,
+  required DateTime? lastEmptyPullAt,
+  required DateTime now,
+  Duration rePullWindow = essentielRePullWindow,
+}) {
+  if (!succeeded || newSinceMorning > 0) return EssentielEmptyPullAction.none;
+  final repulledFast = lastEmptyPullAt != null &&
+      now.difference(lastEmptyPullAt) <= rePullWindow;
+  return repulledFast
+      ? EssentielEmptyPullAction.redirect
+      : EssentielEmptyPullAction.hint;
+}
+
 /// Comptabilité de la session Essentiel pour le garde-fou doomscroll (story
 /// 9.8). Chrono **foreground** (suspendu en arrière-plan) + flag de complétion
 /// de la carte de clôture, avec émission fire-once. Pur et à horloge injectée
@@ -390,6 +431,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// (cf. [shouldRefreshEssentielOnForeground]).
   DateTime? _backgroundedAt;
   DateTime? _lastForegroundRefreshAt;
+
+  /// Escalade « rien de neuf » → Flâner (décidée avec le PO). Horodatage du
+  /// dernier pull explicite à vide : un 1er pull à vide affiche un SnackBar +
+  /// CTA « Flâner », un **re-pull** rapproché (dans [essentielRePullWindow])
+  /// bascule automatiquement vers l'onglet Flâner. Un refresh avec nouveauté ou
+  /// borné/échoué le remet à `null`. L'auto-redirect ne se déclenche jamais sur
+  /// le refresh foreground (réservé au geste explicite).
+  DateTime? _lastEmptyPullAt;
 
   /// Story 9.8 — instrumentation « garde-fou doomscroll ». Durée foreground de
   /// la session Essentiel + complétion de la carte de clôture, émises une fois
@@ -863,11 +912,35 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     if (_pendingFeedback.isNotEmpty) {
       setState(_pendingFeedback.clear);
     }
-    await ref.read(fluxContinuProvider.notifier).refresh();
+    final outcome = await ref.read(fluxContinuProvider.notifier).refresh();
+    final now = DateTime.now();
     // Un refresh explicite réarme le cooldown foreground : pas de double refetch
     // si l'app repasse en arrière-plan puis revient juste après.
-    _lastForegroundRefreshAt = DateTime.now();
+    _lastForegroundRefreshAt = now;
     if (!mounted) return;
+    // Escalade « rien de neuf » → Flâner (décidée avec le PO). Décision pure
+    // déléguée à [essentielEmptyPullAction] (testable sans monter l'écran).
+    final action = essentielEmptyPullAction(
+      succeeded: outcome.succeeded,
+      newSinceMorning: outcome.newSinceMorning,
+      lastEmptyPullAt: _lastEmptyPullAt,
+      now: now,
+    );
+    switch (action) {
+      case EssentielEmptyPullAction.redirect:
+        // Re-pull à vide rapproché → bascule auto vers Flâner (contenu frais).
+        // Return early : pas de scroll-to-top, on change d'onglet.
+        _lastEmptyPullAt = null;
+        context.go(RoutePaths.flaner);
+        return;
+      case EssentielEmptyPullAction.hint:
+        // 1er pull à vide → SnackBar + CTA « Flâner » (aucune redirection).
+        _lastEmptyPullAt = now;
+        _showRienDeNeufFlanerSnackBar();
+      case EssentielEmptyPullAction.none:
+        // Nouveauté ou refresh borné/échoué → reset de l'escalade.
+        _lastEmptyPullAt = null;
+    }
     if (_scroll.hasClients) {
       unawaited(
         _scroll.animateTo(
@@ -954,7 +1027,31 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       return;
     }
     _lastForegroundRefreshAt = now;
-    unawaited(ref.read(fluxContinuProvider.notifier).refresh());
+    // Refresh auto au retour premier plan : à vide → SnackBar « Flâner »
+    // uniquement (jamais de redirection auto — réservée au re-pull explicite),
+    // et **sans** toucher le compteur d'escalade. Déjà cooldown-gaté par
+    // [shouldRefreshEssentielOnForeground], donc pas de spam.
+    unawaited(
+      ref.read(fluxContinuProvider.notifier).refresh().then((outcome) {
+        if (!mounted) return;
+        if (outcome.succeeded && outcome.newSinceMorning == 0) {
+          _showRienDeNeufFlanerSnackBar();
+        }
+      }),
+    );
+  }
+
+  /// SnackBar « rien de neuf » + CTA « Flâner » de L'Essentiel. Les deux chemins
+  /// de refresh (pull explicite et retour premier plan) l'affichent à l'identique
+  /// ; l'appelant garantit `mounted` au préalable.
+  void _showRienDeNeufFlanerSnackBar() {
+    NotificationService.showInfo(
+      'Rien de neuf dans ton Essentiel pour l\'instant.',
+      actionLabel: 'Flâner',
+      icon: PhosphorIcons.compass(),
+      onAction: () => context.go(RoutePaths.flaner),
+      context: context,
+    );
   }
 
   /// Opens the dedicated full-page view for a [FeedThemeSection]. The
@@ -1824,6 +1921,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final inviteTargetIndex = anchorSectionCount < 2
         ? -1
         : math.max(1, anchorSectionCount - 3);
+
+    // Un seul indicateur d'attente pour toute la Tournée : la **première**
+    // coquille de section encore non résolue porte le libellé « Ta tournée se
+    // prépare… » (les autres restent des cartes shimmer nues).
+    final firstPreparingIndex = state.sections.indexWhere(
+      (s) => s is FeedThemeSection && s.isPlaceholder,
+    );
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {

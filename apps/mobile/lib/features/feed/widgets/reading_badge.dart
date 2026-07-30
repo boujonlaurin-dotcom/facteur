@@ -6,29 +6,29 @@ import '../models/content_model.dart';
 
 /// Badge d'état de lecture sur les cartes article.
 ///
-/// Deux états seulement — « Lu » (ouvert) et « Lu jusqu'au bout » (complété) —
-/// adossés à `completedAt` et non plus à `readingProgress`, qui est plafonné à
-/// 25 pour ~90 % du catalogue et affichait donc « Parcouru » sur des lectures
-/// pourtant menées à leur terme.
-///
-/// Le niveau « Parcouru » (icône `eye`, gris) a été retiré : ce n'est pas un
-/// accomplissement, et le nommer revient à commenter la lecture superficielle
-/// de l'utilisateur. L'opacité de la carte suffit à le signaler.
+/// Trois marches sur un spectre d'engagement (cf. [ReadState]) — « Ouvert »,
+/// « Lu en partie » et « Lu jusqu'au bout ». Piloté par [readState] quand la
+/// carte le fournit (état serveur fusionné avec la session), sinon retombe sur
+/// `content.readState`.
 class ReadingBadge extends StatelessWidget {
   final Content content;
 
-  const ReadingBadge({super.key, required this.content});
+  /// État effectif (fusion session incluse). `null` → dérivé de [content].
+  final ReadState? readState;
+
+  const ReadingBadge({super.key, required this.content, this.readState});
 
   @override
   Widget build(BuildContext context) {
-    final label = content.readingLabel;
+    final state = readState ?? content.readState;
+    final label = readingLabelForState(state, isVideo: content.isVideo);
     if (label == null) return const SizedBox.shrink();
 
     final colors = context.facteurColors;
 
     final Color bgColor = colors.success;
     const Color fgColor = Colors.white;
-    final IconData icon = content.isCompleted
+    final IconData icon = state == ReadState.completed
         ? PhosphorIcons.checks(PhosphorIconsStyle.bold)
         : PhosphorIcons.checkCircle(PhosphorIconsStyle.fill);
 
