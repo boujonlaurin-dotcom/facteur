@@ -221,7 +221,6 @@ class SectionBlock extends StatelessWidget {
   }
 
   List<Widget> _buildCards() {
-    final isEssentiel = section.kind == SectionKind.essentiel;
     switch (section) {
       case EssentielSection():
         // build() short-circuits to EssentielHiFiCard before reaching
@@ -252,11 +251,10 @@ class SectionBlock extends StatelessWidget {
             else
               FluxContinuArticleCard(
                 article: pickTopicLead(visible[i]),
-                isEssentiel: isEssentiel,
                 allowImageOnTop: imageAllowed.contains(
                   pickTopicLead(visible[i]).contentId,
                 ),
-                pressReviewCount: visible[i].perspectiveCount,
+                sourceCount: visible[i].sourceCount,
                 perspectiveSources: visible[i].perspectiveSources,
                 divergenceLevel: visible[i].divergenceLevel,
                 onTap: () => onTapArticle(pickTopicLead(visible[i])),

@@ -5,7 +5,6 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
 import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
@@ -19,6 +18,7 @@ import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../../sources/models/source_model.dart';
 import 'auto_grow_candidate.dart';
+import 'coverage_chip.dart';
 
 /// Unified view-model that hides the DigestItem vs Content split from the
 /// rendering layer. Both types carry the fields needed to display a Flux
@@ -30,7 +30,6 @@ class FluxArticleVM {
   final String? thumbnailUrl;
   final String sourceName;
   final String? sourceLogoUrl;
-  final String? themeLabel;
   final ContentType contentType;
   final int? durationSeconds;
   final DateTime? publishedAt;
@@ -49,7 +48,6 @@ class FluxArticleVM {
     required this.contentType,
     this.thumbnailUrl,
     this.sourceLogoUrl,
-    this.themeLabel,
     this.durationSeconds,
     this.publishedAt,
     this.isFollowedSource = false,
@@ -70,10 +68,6 @@ class FluxArticleVM {
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source?.name ?? 'Inconnu',
         sourceLogoUrl: article.source?.logoUrl,
-        themeLabel:
-            (article.source?.theme != null && article.source!.theme!.isNotEmpty)
-                ? getTopicLabel(article.source!.theme!)
-                : null,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
@@ -98,7 +92,6 @@ class FluxArticleVM {
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source.name,
         sourceLogoUrl: article.source.logoUrl,
-        themeLabel: article.progressionTopic,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
@@ -116,8 +109,8 @@ class FluxArticleVM {
 /// - 12px padding inside a 12-radius surface card, soft shadow.
 /// - Head row : title (4-line ellipsis, DM Sans 18 w600) + 72×72 thumb on
 ///   the right (radius 10).
-/// - Footer row (single-line) : source dot + name · theme pill · clock·time
-///   · optional press-review trailing (Essentiel sections only).
+/// - Footer row (single-line) : source dot + name · clock·time
+///   · pastille de couverture optionnelle (sujet couvert par ≥ 2 rédactions).
 class FluxContinuArticleCard extends ConsumerStatefulWidget {
   final Object article;
   final VoidCallback? onTap;
@@ -127,8 +120,9 @@ class FluxContinuArticleCard extends ConsumerStatefulWidget {
   final GlobalKey? nudgeAnchor;
   final VoidCallback? onSwipeConversion;
   final VoidCallback? onLongPressConversion;
-  final bool isEssentiel;
-  final int pressReviewCount;
+  /// Nombre de rédactions couvrant le sujet — pilote la pastille de couverture
+  /// du footer (seuil [kCoverageChipMinSources]).
+  final int sourceCount;
   final List<SourceMini> perspectiveSources;
   final String? divergenceLevel;
 
@@ -149,8 +143,7 @@ class FluxContinuArticleCard extends ConsumerStatefulWidget {
     this.nudgeAnchor,
     this.onSwipeConversion,
     this.onLongPressConversion,
-    this.isEssentiel = false,
-    this.pressReviewCount = 0,
+    this.sourceCount = 0,
     this.perspectiveSources = const [],
     this.divergenceLevel,
     this.allowImageOnTop = true,
@@ -404,8 +397,8 @@ class _FluxContinuArticleCardState
     return _Footer(
       vm: vm,
       colors: colors,
-      showPressReview: widget.isEssentiel && widget.pressReviewCount > 0,
-      pressReviewCount: widget.pressReviewCount,
+      showCoverage: widget.sourceCount >= kCoverageChipMinSources,
+      sourceCount: widget.sourceCount,
       perspectiveSources: widget.perspectiveSources,
       divergenceLevel: widget.divergenceLevel,
     );
@@ -559,16 +552,16 @@ class _VideoPlayBadge extends StatelessWidget {
 class _Footer extends StatelessWidget {
   final FluxArticleVM vm;
   final FacteurColors colors;
-  final bool showPressReview;
-  final int pressReviewCount;
+  final bool showCoverage;
+  final int sourceCount;
   final List<SourceMini> perspectiveSources;
   final String? divergenceLevel;
 
   const _Footer({
     required this.vm,
     required this.colors,
-    required this.showPressReview,
-    required this.pressReviewCount,
+    required this.showCoverage,
+    required this.sourceCount,
     required this.perspectiveSources,
     this.divergenceLevel,
   });
@@ -587,7 +580,7 @@ class _Footer extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        _SourceDot(
+        SourceDot(
           name: vm.sourceName,
           logoUrl: vm.sourceLogoUrl,
           accent: colors.primary,
@@ -620,17 +613,6 @@ class _Footer extends StatelessWidget {
             ),
           ),
         ],
-        // Pastille de thème (macro-thème ML granulaire, sinon thème source en
-        // fallback via `progressionTopic`) : rétablie après son retrait
-        // temporaire en Story 10.1. Le VM la calcule toujours ; masquée si vide.
-        if (vm.themeLabel != null && vm.themeLabel!.trim().isNotEmpty) ...[
-          const SizedBox(width: 6),
-          _ThemePill(
-            key: const Key('flux-theme-pill'),
-            label: vm.themeLabel!,
-            colors: colors,
-          ),
-        ],
         const SizedBox(width: 6),
         separator,
         const SizedBox(width: 6),
@@ -645,17 +627,18 @@ class _Footer extends StatelessWidget {
             height: 1.4,
           ),
         ),
-        if (showPressReview || divergenceLevel != null) const Spacer(),
+        if (showCoverage || divergenceLevel != null) const Spacer(),
         if (divergenceLevel != null) ...[
           DivergenceInlineBadge(
             divergenceLevel: divergenceLevel,
             iconOnly: true,
           ),
-          if (showPressReview) const SizedBox(width: 6),
+          if (showCoverage) const SizedBox(width: 6),
         ],
-        if (showPressReview)
-          _PressReviewChip(
-            count: pressReviewCount,
+        if (showCoverage)
+          CoverageChip(
+            key: const Key('flux-coverage-chip'),
+            sourceCount: sourceCount,
             sources: perspectiveSources,
             colors: colors,
           ),
@@ -671,163 +654,3 @@ class _Footer extends StatelessWidget {
         .trim();
   }
 }
-
-/// Source identity dot — logo when [logoUrl] is provided, initial otherwise.
-class _SourceDot extends StatelessWidget {
-  final String name;
-  final String? logoUrl;
-  final Color accent;
-  final Color ringColor;
-  final double size;
-
-  const _SourceDot({
-    required this.name,
-    required this.logoUrl,
-    required this.accent,
-    required this.ringColor,
-    required this.size,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasLogo = logoUrl != null && logoUrl!.trim().isNotEmpty;
-    final initial = _Initial(name: name, fontSize: size * 0.55);
-    return Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: accent,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: ringColor, spreadRadius: 1.5, blurRadius: 0),
-        ],
-      ),
-      child: hasLogo
-          ? ClipOval(
-              child: FacteurImage(
-                imageUrl: logoUrl!,
-                width: size,
-                height: size,
-                placeholder: (_) => initial,
-                errorWidget: (_) => initial,
-              ),
-            )
-          : initial,
-    );
-  }
-}
-
-class _Initial extends StatelessWidget {
-  final String name;
-  final double fontSize;
-
-  const _Initial({required this.name, required this.fontSize});
-
-  @override
-  Widget build(BuildContext context) {
-    final trimmed = name.trim();
-    final initial =
-        trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
-    return Text(
-      initial,
-      style: GoogleFonts.dmSans(
-        fontSize: fontSize,
-        fontWeight: FontWeight.w700,
-        color: Colors.white,
-        height: 1.0,
-      ),
-    );
-  }
-}
-
-/// Trailing for Essentiel cards: stacks up to 3 source logos with a 4-px
-/// overlap, followed by a "+N" count chip.
-class _PressReviewChip extends StatelessWidget {
-  final int count;
-  final List<SourceMini> sources;
-  final FacteurColors colors;
-
-  const _PressReviewChip({
-    required this.count,
-    required this.sources,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const dotSize = 12.0;
-    const overlap = 4.0;
-    final visibleCount = sources.length < 3 ? sources.length : 3;
-    final stackWidth = visibleCount == 0
-        ? 0.0
-        : dotSize + (visibleCount - 1) * (dotSize - overlap);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (visibleCount > 0)
-          SizedBox(
-            width: stackWidth,
-            height: dotSize,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                for (var i = 0; i < visibleCount; i++)
-                  Positioned(
-                    left: i * (dotSize - overlap),
-                    child: _SourceDot(
-                      name: sources[i].name,
-                      logoUrl: sources[i].logoUrl,
-                      accent: colors.primary,
-                      ringColor: colors.surface,
-                      size: dotSize,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        if (visibleCount > 0) const SizedBox(width: 6),
-        Text(
-          '+$count',
-          style: GoogleFonts.dmSans(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: colors.textSecondary,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Pastille de thème compacte affichée dans le footer de carte (source ·
-/// thème · heure). Style discret : fond très léger, texte secondaire.
-class _ThemePill extends StatelessWidget {
-  final String label;
-  final FacteurColors colors;
-
-  const _ThemePill({super.key, required this.label, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: colors.textPrimary.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.dmSans(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-          height: 1.4,
-          color: colors.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
