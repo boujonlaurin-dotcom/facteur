@@ -97,8 +97,11 @@ void main() {
     expect(updated[1].items[0].status, ContentStatus.consumed);
   });
 
-  testWidgets('ReadingBadge renders "Lu" with green check for consumed status',
+  testWidgets(
+      'ReadingBadge renders "Lu en partie" for consumed status without time signal',
       (tester) async {
+    // Sans time_spent (carrousel : payload sans le signal), consommé retombe sur
+    // « Lu en partie », jamais « Ouvert ».
     final consumed = mkContent('a', ContentStatus.consumed);
     await tester.pumpWidget(
       MaterialApp(
@@ -106,7 +109,21 @@ void main() {
         home: Scaffold(body: ReadingBadge(content: consumed)),
       ),
     );
-    expect(find.text('Lu'), findsOneWidget);
+    expect(find.text('Lu en partie'), findsOneWidget);
+  });
+
+  testWidgets('ReadingBadge renders "Ouvert" for opened readState',
+      (tester) async {
+    final consumed = mkContent('a', ContentStatus.consumed);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: FacteurTheme.lightTheme,
+        home: Scaffold(
+          body: ReadingBadge(content: consumed, readState: ReadState.opened),
+        ),
+      ),
+    );
+    expect(find.text('Ouvert'), findsOneWidget);
   });
 
   test('silent revalidation merge preserves consumed status from current state',

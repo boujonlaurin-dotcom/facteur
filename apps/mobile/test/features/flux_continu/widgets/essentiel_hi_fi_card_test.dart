@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
@@ -163,15 +164,15 @@ void main() {
         findsOneWidget,
       );
       expect(
-        tester
-            .widget<ReadStateMark>(find.byType(ReadStateMark))
-            .isCompleted,
-        isTrue,
+        tester.widget<ReadStateMark>(find.byType(ReadStateMark)).state,
+        ReadState.completed,
       );
     });
 
-    testWidgets('une tuile seulement ouverte reste strictement inchangée',
+    testWidgets('une tuile lue sans temps connu → « Lu en partie »',
         (tester) async {
+      // isRead sans completedAt ni time_spent → spectre retombe sur
+      // partiallyRead (coche pleine simple, 0.6), jamais « Ouvert ».
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1, isRead: true)],
@@ -189,10 +190,8 @@ void main() {
         findsNothing,
       );
       expect(
-        tester
-            .widget<ReadStateMark>(find.byType(ReadStateMark))
-            .isCompleted,
-        isFalse,
+        tester.widget<ReadStateMark>(find.byType(ReadStateMark)).state,
+        ReadState.partiallyRead,
       );
     });
 

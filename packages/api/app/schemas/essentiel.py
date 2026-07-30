@@ -60,6 +60,8 @@ class EssentielArticle(BaseModel):
     is_liked: bool = False
     is_dismissed: bool = False
     read_at: datetime | None = None
+    # Temps passé cumulé (s) — départage « Ouvert » (< 5 s) de « Lu en partie ».
+    time_spent_seconds: int = 0
     # Lecture aboutie (fin d'article atteinte), pas seulement ouverte : c'est ce
     # qui permet à la carte héros de la Tournée d'afficher le filet de complétion.
     completed_at: datetime | None = None

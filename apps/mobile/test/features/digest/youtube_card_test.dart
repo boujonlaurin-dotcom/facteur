@@ -24,6 +24,7 @@ void main() {
     ContentType contentType = ContentType.youtube,
     ContentStatus status = ContentStatus.unseen,
     int readingProgress = 0,
+    int? timeSpentSeconds,
     Source? source,
     DateTime? completedAt,
   }) {
@@ -36,6 +37,7 @@ void main() {
       source: source ?? mockSource,
       status: status,
       readingProgress: readingProgress,
+      timeSpentSeconds: timeSpentSeconds,
       completedAt: completedAt,
     );
   }
@@ -104,9 +106,11 @@ void main() {
       expect(c.readingLabel, 'Vu en partie');
     });
 
-    test('returns null below 25% progress when seen', () {
+    test('progress > 0 below 25% (time unknown) → "Vu en partie"', () {
+      // Spectre unifié : progress > 0 compte comme ouvert ; sans time_spent
+      // connu on ne descend jamais à « Ouvert » → « Vu en partie ».
       final c = makeContent(readingProgress: 10, status: ContentStatus.seen);
-      expect(c.readingLabel, isNull);
+      expect(c.readingLabel, 'Vu en partie');
     });
 
     test('returns "Vu en partie" when consumed via timer but no progress', () {
@@ -159,34 +163,46 @@ void main() {
       expect(c.readingLabel, 'Lu jusqu\'au bout');
     });
 
-    test('returns "Lu" at mid progress without a completion stamp', () {
+    test('mid progress, time unknown → "Lu en partie"', () {
       final c = makeContent(
         contentType: ContentType.article,
         readingProgress: 50,
         status: ContentStatus.seen,
         source: mockArticleSource,
       );
-      expect(c.readingLabel, 'Lu');
+      expect(c.readingLabel, 'Lu en partie');
     });
 
-    test('returns "Lu" at low progress — « Parcouru » a été retiré', () {
+    test('consumed via timer, time < 5s → "Ouvert"', () {
       final c = makeContent(
         contentType: ContentType.article,
-        readingProgress: 15,
-        status: ContentStatus.seen,
+        readingProgress: 0,
+        status: ContentStatus.consumed,
+        timeSpentSeconds: 2,
         source: mockArticleSource,
       );
-      expect(c.readingLabel, 'Lu');
+      expect(c.readingLabel, 'Ouvert');
     });
 
-    test('returns "Lu" when consumed via timer with 0 scroll', () {
+    test('consumed via timer, time ≥ 5s → "Lu en partie"', () {
+      final c = makeContent(
+        contentType: ContentType.article,
+        readingProgress: 0,
+        status: ContentStatus.consumed,
+        timeSpentSeconds: 30,
+        source: mockArticleSource,
+      );
+      expect(c.readingLabel, 'Lu en partie');
+    });
+
+    test('consumed via timer, time unknown → "Lu en partie" (jamais Ouvert)', () {
       final c = makeContent(
         contentType: ContentType.article,
         readingProgress: 0,
         status: ContentStatus.consumed,
         source: mockArticleSource,
       );
-      expect(c.readingLabel, 'Lu');
+      expect(c.readingLabel, 'Lu en partie');
     });
   });
 }
