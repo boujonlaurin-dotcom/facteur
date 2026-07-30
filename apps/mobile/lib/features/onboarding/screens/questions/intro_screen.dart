@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../config/theme.dart';
+import '../../../../config/routes.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../onboarding_strings.dart';
 
@@ -168,6 +170,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             ),
             child: const Text(OnboardingStrings.welcomeStartButton),
           ),
+          TextButton(
+            onPressed: () => context.go(RoutePaths.login),
+            child: const Text(OnboardingStrings.welcomeAlreadyHaveAccount),
+          ),
           const SizedBox(height: FacteurSpacing.space4),
         ],
       ),
@@ -265,6 +271,16 @@ class IntroScreen2 extends ConsumerWidget {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 TextSpan(text: OnboardingStrings.intro2SubtitlePart6),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold6,
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart7),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitleBold7,
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                TextSpan(text: OnboardingStrings.intro2SubtitlePart8),
               ],
             ),
             textAlign: TextAlign.center,

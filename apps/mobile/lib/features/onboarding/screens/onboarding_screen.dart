@@ -161,7 +161,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              ref.read(authStateProvider.notifier).setNeedsOnboarding(false);
+              // Différé au frame suivant : `setNeedsOnboarding` notifie le
+              // `refreshListenable` de GoRouter, qui recalcule `redirect` et
+              // remplace la route onboarding. Le déclencher dans la même
+              // frame que le `pop()` du dialog fait courir GoRouter contre le
+              // Navigator encore en train de fermer le dialog → crash.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                ref.read(authStateProvider.notifier).setNeedsOnboarding(false);
+              });
             },
             child: const Text('Quitter'),
           ),
