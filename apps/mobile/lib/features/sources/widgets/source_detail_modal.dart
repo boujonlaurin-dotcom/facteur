@@ -33,6 +33,35 @@ const String _nnbsp = ' ';
 typedef SourceArticleOpener =
     void Function(BuildContext context, Content article);
 
+/// Zone de préhension pleine largeur (barre visuelle 40x4 centrée dans une
+/// bande de 32px de haut). Partagée par la fiche source et sa sous-sheet
+/// « Échelle de fiabilité » : dans les deux cas c'est la seule bande qui
+/// échappe au `SingleChildScrollView` du contenu, donc la seule où le
+/// drag-to-dismiss natif de `showModalBottomSheet` est fiable — elle doit
+/// être assez grande pour qu'un pouce l'attrape sans viser la barre au pixel
+/// près.
+class _SheetDragHandle extends StatelessWidget {
+  const _SheetDragHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Container(
+      width: double.infinity,
+      height: 32,
+      alignment: Alignment.center,
+      child: Container(
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: colors.textTertiary.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+  }
+}
+
 /// Fiche source v2 — présentation du média d'abord, évaluation repliée.
 ///
 /// Ordre des sections (haut → bas) :
@@ -105,18 +134,7 @@ class SourceDetailModal extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Drag handle
-            Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 2),
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.textTertiary.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+            const _SheetDragHandle(),
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.only(bottom: 28),
@@ -772,19 +790,7 @@ class _FsEvalState extends State<_FsEval> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 10, bottom: 2),
-                  child: Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: colors.textTertiary.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                ),
+                const _SheetDragHandle(),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                   child: Column(
