@@ -75,12 +75,8 @@ def test_followed_default_unchanged_from_legacy():
     pillar = PertinencePillar()
     content = _content_with_theme("tech")
 
-    high_score, _ = pillar._score_behavioral(
-        content, _context(weight=2.0, state=None)
-    )
-    low_score, _ = pillar._score_behavioral(
-        content, _context(weight=0.5, state=None)
-    )
+    high_score, _ = pillar._score_behavioral(content, _context(weight=2.0, state=None))
+    low_score, _ = pillar._score_behavioral(content, _context(weight=0.5, state=None))
     neutral_score, _ = pillar._score_behavioral(
         content, _context(weight=1.0, state=None)
     )

@@ -221,3 +221,99 @@ async def test_adjust_entity_affinity_negative_clamps_lower(db_session, test_sou
 
     rows = await _affinity_rows(db_session, user_id)
     assert rows["emmanuel macron"].affinity == pytest.approx(0.1)
+
+
+# ---------------------------------------------------------------------------
+# PR1 (a) — l'Essentiel nourrit l'affinité entités (DB réelle)
+#
+# `DigestService.apply_action` appelait `_adjust_subtopic_weights` sans son
+# miroir entités : la surface phare n'alimentait donc jamais l'affinité, ce qui
+# expliquait un levier numériquement inerte en prod (max 1,59 sur 871 lignes).
+# On vérifie ici le câblage bout-en-bout, avec le même delta que le subtopic.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "action_name,expected_delta",
+    [
+        ("SAVE", 0.05),  # BOOKMARK_TOPIC_BOOST
+        ("LIKE", 0.15),  # LIKE_TOPIC_BOOST
+    ],
+)
+@pytest.mark.asyncio
+async def test_digest_action_feeds_entity_affinity(
+    db_session, test_source, action_name, expected_delta
+):
+    """SAVE / LIKE depuis l'Essentiel créent la ligne d'affinité entités."""
+    from app.schemas.digest import DigestAction
+    from app.services.digest_service import DigestService
+
+    user_id, content_id = await _seed_user_and_content(
+        db_session,
+        test_source,
+        [_entity_json("Emmanuel Macron"), _entity_json("OpenAI", "ORG")],
+    )
+
+    await DigestService(db_session).apply_action(
+        digest_id=uuid4(),
+        user_id=user_id,
+        content_id=content_id,
+        action=getattr(DigestAction, action_name),
+    )
+    await db_session.commit()
+
+    rows = await _affinity_rows(db_session, user_id)
+    assert set(rows) == {"emmanuel macron", "openai"}
+    assert rows["emmanuel macron"].affinity == pytest.approx(1.0 + expected_delta)
+    assert rows["emmanuel macron"].interaction_count == 1
+
+
+@pytest.mark.asyncio
+async def test_digest_unlike_decrements_entity_affinity(db_session, test_source):
+    """UNLIKE reprend exactement ce que LIKE a donné (delta symétrique)."""
+    from app.schemas.digest import DigestAction
+    from app.services.digest_service import DigestService
+
+    user_id, content_id = await _seed_user_and_content(
+        db_session, test_source, [_entity_json("Emmanuel Macron")]
+    )
+    service = DigestService(db_session)
+
+    await service.apply_action(
+        digest_id=uuid4(),
+        user_id=user_id,
+        content_id=content_id,
+        action=DigestAction.LIKE,
+    )
+    await service.apply_action(
+        digest_id=uuid4(),
+        user_id=user_id,
+        content_id=content_id,
+        action=DigestAction.UNLIKE,
+    )
+    await db_session.commit()
+
+    rows = await _affinity_rows(db_session, user_id)
+    assert rows["emmanuel macron"].affinity == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio
+async def test_digest_read_feeds_entity_affinity(db_session, test_source):
+    """READ applique READ_TOPIC_BOOST (signal implicite le plus faible)."""
+    from app.schemas.digest import DigestAction
+    from app.services.digest_service import DigestService
+
+    user_id, content_id = await _seed_user_and_content(
+        db_session, test_source, [_entity_json("Emmanuel Macron")]
+    )
+
+    await DigestService(db_session).apply_action(
+        digest_id=uuid4(),
+        user_id=user_id,
+        content_id=content_id,
+        action=DigestAction.READ,
+    )
+    await db_session.commit()
+
+    rows = await _affinity_rows(db_session, user_id)
+    assert rows["emmanuel macron"].affinity == pytest.approx(1.03)

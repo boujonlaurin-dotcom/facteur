@@ -40,6 +40,7 @@ from app.services.community_recommendation_service import (
     CommunityRecommendationService,
 )
 from app.services.digest_service import DigestService, read_digest_or_fallback
+from app.services.feed_cache import FEED_CACHE
 from app.utils.time import today_paris
 
 logger = structlog.get_logger()
@@ -313,6 +314,18 @@ async def apply_digest_action(
             content_id=request.content_id,
             action=request.action,
         )
+
+        # Les actions apprenantes ajustent `UserSubtopic.weight` /
+        # `UserEntityAffinity.affinity` : elles rebalancent le classement de
+        # **toutes** les sections, donc purge complète (jamais
+        # `invalidate_content`, qui laisserait un ordre périmé partout
+        # ailleurs). Même règle que les routes `/contents/*` équivalentes,
+        # épinglée par `tests/routers/test_feed_cache_invalidation_sites.py`.
+        # UNDO ne touche que l'état d'affichage d'un article → purge ciblée.
+        if request.action == DigestAction.UNDO:
+            FEED_CACHE.invalidate_content(user_uuid, request.content_id)
+        else:
+            FEED_CACHE.invalidate(user_uuid)
 
         elapsed = time.monotonic() - start
         logger.info(

@@ -293,6 +293,45 @@ async def test_note_upsert_purges_everything(auth_client, article, user_id, seed
     _assert_full(user_id)
 
 
+# --- Digest actions --------------------------------------------------------
+#
+# `POST /digest/{id}/action` ajuste les mêmes poids que ses équivalents
+# `/contents/*` (subtopics, et depuis PR1a l'affinité entités) mais ne purgeait
+# rien : le signal partait en base derrière un classement caché périmé.
+
+
+@pytest.mark.parametrize("action", ["read", "save", "like", "unlike"])
+@pytest.mark.asyncio
+async def test_digest_learning_action_purges_everything(
+    auth_client, article, user_id, seed_cache, action
+):
+    seed_cache(user_id, article.id)
+
+    resp = await auth_client.post(
+        f"/api/digest/{uuid4()}/action",
+        json={"content_id": str(article.id), "action": action},
+    )
+
+    assert resp.status_code == 200, resp.text
+    _assert_full(user_id)
+
+
+@pytest.mark.asyncio
+async def test_digest_undo_purges_only_matching_sections(
+    auth_client, article, user_id, seed_cache
+):
+    """UNDO ne remet aucun poids : seul l'affichage d'un article change."""
+    seed_cache(user_id, article.id)
+
+    resp = await auth_client.post(
+        f"/api/digest/{uuid4()}/action",
+        json={"content_id": str(article.id), "action": "undo"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    _assert_targeted(user_id)
+
+
 # --- Cross-user ------------------------------------------------------------
 
 
