@@ -7,6 +7,8 @@ Strictement read-only : pas de pipeline LLM au request time. Réutilise la
 chaîne de fallback de `/api/digest` via `read_digest_or_fallback`.
 """
 
+import asyncio
+import contextlib
 import time
 from datetime import date
 from uuid import UUID
@@ -14,16 +16,28 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, safe_async_session
 from app.dependencies import get_current_user_id
+from app.models.content import UserContentStatus
+from app.models.enums import ContentStatus
 from app.schemas.essentiel import EssentielResponse
+from app.schemas.feed import CarouselInfo, CarouselItemBadge
 from app.services.digest_service import DigestService, read_digest_or_fallback
 from app.services.essentiel_service import (
     ESSENTIEL_MIN_ARTICLES,
     build_essentiel_response_with_supplements,
     fetch_user_essentiel_context,
+)
+from app.services.recommendation.carousel_catalog import (
+    MAX_CAROUSEL_ITEMS,
+    CarouselBuildContext,
+)
+from app.services.recommendation.carousel_selection_service import (
+    build_phase_b,
+    pick_essentiel_type,
 )
 from app.utils.time import today_paris
 
@@ -40,6 +54,90 @@ def _preparing_response() -> JSONResponse:
             "message": "Votre essentiel est en cours de préparation...",
         },
     )
+
+
+# Nombre min d'items du carrousel Essentiel APRÈS retrait des 5 articles déjà
+# affichés dans la carte — en-deçà, on n'attache pas de carrousel (évite un
+# scroller à 1 item).
+_MIN_ESSENTIEL_CAROUSEL_ITEMS = 2
+
+
+async def _enrich_essentiel_carousel(
+    db: AsyncSession,
+    user_uuid: UUID,
+    response: EssentielResponse,
+    effective_date: date,
+) -> EssentielResponse:
+    """Attache le carrousel semi-éditorialisé du jour à la réponse Essentiel.
+
+    Story 32.1 — mutualise la Phase B des carrousels de Flâner via le catalogue
+    partagé. Le type mis en avant est choisi de façon déterministe (rotation
+    date-seedée sur `(user, date_paris)`) ; Flâner retire ce même type le même
+    jour → complémentarité cross-surface sans état DB.
+
+    Fail-open : toute exception laisse `response` inchangée (le carrousel est une
+    surface purement additive, il ne peut jamais casser le chargement de
+    l'Essentiel). Skip hors édition du jour (rewind J-7 en lecture seule).
+    """
+    if effective_date != today_paris():
+        return response
+
+    try:
+        consumed_ids = set(
+            (
+                await db.execute(
+                    select(UserContentStatus.content_id).where(
+                        UserContentStatus.user_id == user_uuid,
+                        UserContentStatus.status == ContentStatus.CONSUMED,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        ctx = CarouselBuildContext(
+            session=db,
+            session_maker=safe_async_session,
+            user_id=user_uuid,
+            consumed_ids=consumed_ids,
+        )
+        contents = await build_phase_b(ctx)
+        essentiel_type = pick_essentiel_type(
+            user_uuid, effective_date, set(contents.keys())
+        )
+        content = contents.get(essentiel_type) if essentiel_type else None
+        if content is None:
+            return response
+
+        # Ne pas re-servir les 5 articles déjà affichés dans la carte Essentiel.
+        shown_ids = {a.content_id for a in response.articles}
+        content = content.excluding(shown_ids, MAX_CAROUSEL_ITEMS)
+        if len(content.items) < _MIN_ESSENTIEL_CAROUSEL_ITEMS:
+            return response
+
+        response.carousel = CarouselInfo(
+            carousel_type=content.carousel_type,
+            title=content.title,
+            emoji=content.emoji,
+            position=0,  # slot dédié côté mobile ; non pertinent pour l'Essentiel
+            items=content.items,
+            badges=[CarouselItemBadge(**b) for b in content.badges],
+        )
+    except Exception:
+        logger.exception("essentiel_carousel_enrichment_failed")
+        # Mirror `_enrich_community_carousel` (digest.py) : handler fail-open →
+        # get_db ne voit jamais le raise, donc on rollback nous-mêmes la session
+        # potentiellement salie. Rollback borné : sur une conn tuée par Supabase,
+        # asyncpg peut hang indéfiniment (statement_timeout ne couvre pas ROLLBACK)
+        # → sur timeout, invalidate force le drop de la conn morte du pool.
+        try:
+            await asyncio.wait_for(db.rollback(), timeout=2.0)
+        except (TimeoutError, Exception) as rb_exc:
+            logger.debug("essentiel_carousel_rollback_failed", error=str(rb_exc))
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(db.invalidate(), timeout=1.0)
+
+    return response
 
 
 @router.get("", response_model=EssentielResponse)
@@ -100,6 +198,10 @@ async def get_essentiel(
     # atteint 3 articles, on signale au client que l'essentiel se prépare.
     if len(response.articles) < ESSENTIEL_MIN_ARTICLES:
         return _preparing_response()
+
+    # Carrousel semi-éditorialisé du jour (Story 32.1) — mutualisé avec Flâner.
+    # Additif et fail-open : n'altère jamais les 5 articles ni le code de statut.
+    response = await _enrich_essentiel_carousel(db, user_uuid, response, effective_date)
 
     logger.info(
         "essentiel_retrieved",

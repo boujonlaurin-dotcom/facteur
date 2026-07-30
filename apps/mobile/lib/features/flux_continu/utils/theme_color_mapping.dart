@@ -70,6 +70,8 @@ String sectionEmoji(FluxSection section) {
       return _kSectionEmojiFallback;
     case AlertsSection():
       return '📯';
+    case CarouselSection(:final data):
+      return data.emoji;
     case DigestTopicSection():
       return section.kind == SectionKind.bonnes
           ? '🌱'

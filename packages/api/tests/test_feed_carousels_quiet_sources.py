@@ -17,6 +17,23 @@ from app.models.source import Source, UserSource
 from app.services.recommendation_service import RecommendationService
 
 
+@pytest.fixture(autouse=True)
+def _no_essentiel_reservation():
+    """Story 32.1 — ces tests vérifient la CONSTRUCTION Phase B de Flâner.
+
+    La réservation d'un type pour la carte Essentiel du jour
+    (`pick_essentiel_type`) est une préoccupation orthogonale, couverte par des
+    tests dédiés (`test_carousel_selection.py`). On la neutralise ici : le type
+    réservé dépend d'un `md5(user_id|date)` sur un `user_id` aléatoire, donc sans
+    ce patch un scénario mono-type serait vidé de façon flaky.
+    """
+    with patch(
+        "app.services.recommendation_service.pick_essentiel_type",
+        return_value=None,
+    ):
+        yield
+
+
 def _now():
     return datetime.datetime.now(datetime.UTC)
 

@@ -152,6 +152,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   // celle-ci reprend les topics du digest sous le nouveau nom.
   FluxSection? _actusDuJour;
   FluxSection? _bonnes;
+  // Story 32.1 — carrousel semi-éditorialisé du jour servi par `/api/essentiel`
+  // (`carousel`), mutualisé avec Flâner. `null` hors édition du jour ou si aucun
+  // type n'est éligible. Inséré hors-cap en fin de `_compose` (comme les
+  // alertes). Non caché (surface additive, live, today-only).
+  FeedCarouselData? _essentielCarousel;
   // Up to [_kMaxFavoriteSections] theme/topic sections, ordered to mirror
   // `userInterestsProvider.favorites`. Empty when the user has no favorites
   // — the tournée then collapses to digest only.
@@ -486,9 +491,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         // dépendance à la persistance DB de la préférence au moment du refetch.
         () async =>
             (await _essentielRepo.fetch(serein: isSerene)) ??
-            (articles: const <EssentielArticle>[], newSinceMorning: 0),
+            (
+              articles: const <EssentielArticle>[],
+              newSinceMorning: 0,
+              carousel: null,
+            ),
         'fetchEssentiel',
-        fallback: (articles: const <EssentielArticle>[], newSinceMorning: 0),
+        fallback: (
+          articles: const <EssentielArticle>[],
+          newSinceMorning: 0,
+          carousel: null,
+        ),
       ),
     ]);
     final dual = results[0] as DualDigestResponse?;
@@ -505,6 +518,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       isSerene: isSerene,
       fetchThemes: true,
       newSinceMorning: newSinceMorning,
+      essentielCarousel: essentielResult?.carousel,
     );
     if (dual != null) {
       unawaited(
@@ -546,7 +560,14 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     required bool isSerene,
     required bool fetchThemes,
     int newSinceMorning = 0,
+    // Story 32.1 — carrousel du jour (null hors chemin live/aujourd'hui, ex.
+    // hydratation depuis cache). Additif : ne change rien quand absent.
+    FeedCarouselData? essentielCarousel,
   }) async {
+    // Story 32.1 — mémorise le carrousel du jour pour `_compose` (inséré
+    // hors-cap en fin de Tournée). Réinitialisé à chaque payload : un refetch
+    // sans carrousel (édition passée / plus d'éligible) le retire proprement.
+    _essentielCarousel = essentielCarousel;
     // PR2 — la section "Essentiel" du haut du feed est désormais alimentée
     // par GET /api/essentiel (5 articles transversaux). Si l'endpoint n'a
     // rien servi (preparing/erreur), on ne rend pas la section : le digest
@@ -955,6 +976,13 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final key in orderedKeys)
         if (key != kTourneeGrilleKey && sectionByKey[key] != null)
           sectionByKey[key]!,
+      // Story 32.1 — carrousel du jour inséré directement (comme AlertsSection),
+      // en toute fin de Tournée (après les Cartes Suggérées, avant la clôture).
+      // Hors de `orderedKeys` donc hors du cap de sections, et non déplaçable.
+      // Auto-porté : traverse dédup/fit intact (cf. _capSectionToFit /
+      // _dedupeSectionsInOrder). Présent uniquement quand le backend l'a servi
+      // (édition du jour + type éligible).
+      if (_essentielCarousel != null) CarouselSection(data: _essentielCarousel!),
     ];
     // Dédup réel (ordre dépriorisé) en capturant les retirés par section, puis
     // réinjection (backfill) des sections favorites maigres **affichées**.
@@ -1151,6 +1179,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // Le rappel d'alertes est un signal contextuel de taille fixe (≤3 lignes),
     // pas une section de contenu qui se dispute la hauteur d'écran.
     if (s is AlertsSection) return s;
+    // La carte carrousel est auto-portée (PageView à hauteur fixe) : elle
+    // échappe au fit vertical (Story 32.1), comme le rappel d'alertes.
+    if (s is CarouselSection) return s;
     // Issue #1 — une coquille (placeholder, `totalCount == 0`) doit **réserver**
     // sa hauteur nominale (`coreVisibleCount`). Sans ce court-circuit, le fit
     // rabattrait son compte à 1 (pool vide) et la réserve squelette ne ferait
@@ -1210,6 +1241,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return switch (s) {
       EssentielSection() => s,
       AlertsSection() => s,
+      CarouselSection() => s,
       DigestTopicSection() => DigestTopicSection(
           kind: s.kind,
           label: s.label,
@@ -1292,6 +1324,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
             ),
           // Un swipe porte sur un article ; le rappel d'alertes n'en liste pas.
           AlertsSection() => s,
+          // Le carrousel est un scroller horizontal auto-porté : le swipe
+          // vertical de dismiss ne s'y applique pas (traversée intacte).
+          CarouselSection() => s,
           DigestTopicSection(:final topics) => DigestTopicSection(
               kind: s.kind,
               label: s.label,
@@ -1359,6 +1394,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           );
         case AlertsSection():
           // Aucun contentId à réserver : le rappel traverse la dédup intact.
+          result.add(s);
+        case CarouselSection():
+          // Carte auto-portée (Story 32.1) : elle traverse la dédup intacte et
+          // ne réserve pas ses ids (backend a déjà exclu les 5 de l'Essentiel ;
+          // un rare doublon avec un thème vertical est assumé, hors-cap).
           result.add(s);
         case DigestTopicSection(:final topics):
           final kept = topics
@@ -1445,6 +1485,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
           // Le compteur d'une cloche vient du serveur (contenus non lus ≤24h) :
           // il se corrige au prochain `refresh`, pas article par article.
           AlertsSection() => s,
+          // Le carrousel reflète l'état « lu » de ses items au prochain refresh
+          // (comme le rappel d'alertes) — pas de mutation article par article.
+          CarouselSection() => s,
           DigestTopicSection(:final topics) => DigestTopicSection(
               kind: s.kind,
               label: s.label,

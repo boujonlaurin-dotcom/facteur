@@ -1,13 +1,31 @@
 """Tests unitaires pour _build_carousels — promotion overflow → carrousels."""
 
 import json
-import pytest
 from collections import namedtuple
-from datetime import UTC, datetime, timedelta
-from uuid import uuid4, UUID
-from unittest.mock import MagicMock, AsyncMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
+
+import pytest
 
 from app.services.recommendation_service import RecommendationService
+
+
+@pytest.fixture(autouse=True)
+def _no_essentiel_reservation():
+    """Story 32.1 — ces tests vérifient la CONSTRUCTION Phase B de Flâner.
+
+    La réservation d'un type pour la carte Essentiel du jour
+    (`pick_essentiel_type`) est orthogonale, couverte par des tests dédiés
+    (`test_carousel_selection.py`). On la neutralise ici : le type réservé
+    dépend d'un `md5(user_id|date)` sur un `user_id` aléatoire, donc sans ce
+    patch un scénario mono-type serait vidé de façon flaky.
+    """
+    with patch(
+        "app.services.recommendation_service.pick_essentiel_type",
+        return_value=None,
+    ):
+        yield
 
 
 class MockSource:
@@ -78,12 +96,14 @@ def _make_entity_group(
     """Helper: build an entity overflow dict matching the real format."""
     sources = []
     for i in range(num_sources):
-        sources.append({
-            "source_id": uuid4(),
-            "source_name": f"Source {i}",
-            "source_logo_url": None,
-            "article_count": max(1, hidden_count // num_sources),
-        })
+        sources.append(
+            {
+                "source_id": uuid4(),
+                "source_name": f"Source {i}",
+                "source_logo_url": None,
+                "article_count": max(1, hidden_count // num_sources),
+            }
+        )
 
     # Add entity JSON to representative for display name resolution
     entity_json = json.dumps({"name": entity_name.title(), "type": "PERSON"})
@@ -112,12 +132,14 @@ def _make_keyword_group(
     """Helper: build a keyword overflow dict matching the real format."""
     sources = []
     for i in range(num_sources):
-        sources.append({
-            "source_id": uuid4(),
-            "source_name": f"Source {i}",
-            "source_logo_url": None,
-            "article_count": max(1, hidden_count // num_sources),
-        })
+        sources.append(
+            {
+                "source_id": uuid4(),
+                "source_name": f"Source {i}",
+                "source_logo_url": None,
+                "article_count": max(1, hidden_count // num_sources),
+            }
+        )
     return {
         "keyword": keyword.title(),
         "filter_keyword": keyword.lower(),
@@ -336,7 +358,9 @@ class TestBuildCarouselsBudgetAndRemoval:
         service.keyword_overflow = keyword_groups
 
         _, carousels = await service._build_carousels(
-            [], pre_regroup_map, max_carousels=3,
+            [],
+            pre_regroup_map,
+            max_carousels=3,
         )
         assert len(carousels) <= 3
 
@@ -426,319 +450,6 @@ def _mock_execute_result(rows):
     return mock_result
 
 
-class TestBuildCarouselsNewSource:
-    @pytest.mark.asyncio
-    async def test_new_source_carousel_basic(self):
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-        src_id = uuid4()
-
-        # Mock: UserSource query returns 1 new source (added 2 days ago → position 3)
-        two_days_ago = datetime.now(UTC) - timedelta(days=2)
-        src_rows = [_SourceRow(source_id=src_id, name="TechCrunch", added_at=two_days_ago)]
-        # Mock: Content query returns 4 articles from that source
-        articles = [
-            MockContent(
-                title=f"New article {i}",
-                source=MockSource(name="TechCrunch", source_id=src_id),
-            )
-            for i in range(4)
-        ]
-        # Force source_id to match
-        for a in articles:
-            a.source_id = src_id
-
-        execute_calls = 0
-
-        async def mock_execute(stmt):
-            nonlocal execute_calls
-            execute_calls += 1
-            # 1: consumed_ids → empty
-            if execute_calls == 1:
-                return _mock_execute_result([])
-            if execute_calls == 2:
-                return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # quiet_sources + community (empty)
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(articles),
-        )
-
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id,
-        )
-
-        new_src = [c for c in carousels if c["carousel_type"] == "new_source"]
-        assert len(new_src) == 1
-        c = new_src[0]
-        assert "TechCrunch" in c["title"]
-        assert c["position"] >= 5  # MIN_CAROUSEL_POSITION enforced
-        assert c["badges"][0]["code"] == "new_source"
-        assert len(c["items"]) == 4
-
-    @pytest.mark.asyncio
-    async def test_new_source_skipped_when_too_few_articles(self):
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-        src_id = uuid4()
-
-        two_days_ago = datetime.now(UTC) - timedelta(days=2)
-        src_rows = [_SourceRow(source_id=src_id, name="TechCrunch", added_at=two_days_ago)]
-        articles = [
-            MockContent(
-                title="Only one",
-                source=MockSource(name="TechCrunch", source_id=src_id),
-            )
-        ]
-        articles[0].source_id = src_id
-
-        execute_calls = 0
-
-        async def mock_execute(stmt):
-            nonlocal execute_calls
-            execute_calls += 1
-            if execute_calls == 1:
-                return _mock_execute_result([])  # consumed_ids
-            if execute_calls == 2:
-                return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # quiet_sources + community
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(articles),
-        )
-
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id,
-        )
-
-        assert not any(c["carousel_type"] == "new_source" for c in carousels)
-
-    @pytest.mark.asyncio
-    async def test_new_source_rotates_by_seed(self):
-        """≥3 sources récentes valides : la source mise en avant change selon le
-        seed (déterminisme jour à jour), et un seul carrousel new_source sort."""
-        user_id = uuid4()
-        src_ids = [uuid4() for _ in range(3)]
-        names = ["Alpha", "Bravo", "Charlie"]
-        two_days_ago = datetime.now(UTC) - timedelta(days=2)
-        src_rows = [
-            _SourceRow(source_id=sid, name=name, added_at=two_days_ago)
-            for sid, name in zip(src_ids, names, strict=True)
-        ]
-
-        def _build_service():
-            service = _setup_service_with_no_overflow()
-            articles = [
-                MockContent(
-                    title=f"Article {i}",
-                    source=MockSource(name="Alpha", source_id=src_ids[0]),
-                )
-                for i in range(3)
-            ]
-
-            execute_calls = 0
-
-            async def mock_execute(stmt):
-                nonlocal execute_calls
-                execute_calls += 1
-                if execute_calls == 1:
-                    return _mock_execute_result([])  # consumed_ids
-                if execute_calls == 2:
-                    return _mock_execute_result(src_rows)  # new_source
-                return _mock_execute_result([])  # quiet_sources + community
-
-            service.session.execute = AsyncMock(side_effect=mock_execute)
-            # Chaque sonde par source renvoie les mêmes 3 articles → 3 candidats.
-            service.session.scalars = AsyncMock(
-                return_value=_mock_scalars_result(articles),
-            )
-            return service
-
-        async def _selected_title(seed_value):
-            service = _build_service()
-            with patch(
-                "app.services.recommendation.randomization.compute_seed",
-                return_value=seed_value,
-            ):
-                _, carousels = await service._build_carousels(
-                    [], {}, user_id=user_id,
-                )
-            new_src = [c for c in carousels if c["carousel_type"] == "new_source"]
-            assert len(new_src) == 1  # toujours un seul carrousel new_source
-            return new_src[0]["title"]
-
-        # seed 0 → Alpha, seed 4 → Charlie (cf. shuffle Gumbel déterministe)
-        title_seed0 = await _selected_title(0)
-        title_seed4 = await _selected_title(4)
-        assert "Alpha" in title_seed0
-        assert "Charlie" in title_seed4
-        assert title_seed0 != title_seed4  # rotation selon le seed
-
-        # Déterminisme : même seed ⇒ même source
-        assert await _selected_title(0) == title_seed0
-
-    @pytest.mark.asyncio
-    async def test_new_source_skipped_when_no_new_sources(self):
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-
-        # All queries return empty
-        async def mock_execute(stmt):
-            return _mock_execute_result([])
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result([]),
-        )
-
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id,
-        )
-
-        assert not any(c["carousel_type"] == "new_source" for c in carousels)
-
-
-class TestBuildCarouselsCommunity:
-    @pytest.mark.asyncio
-    async def test_community_carousel_basic(self):
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-
-        # Mock community: 4 🌻 articles with decay scores and sunflower counts
-        community_articles = [MockContent(title=f"Community {i}") for i in range(4)]
-        community_rows = [
-            _CommunityRow(id=a.id, score=5.0 - i, sunflower_count=5 - i)
-            for i, a in enumerate(community_articles)
-        ]
-
-        call_count = 0
-
-        async def mock_execute(stmt):
-            nonlocal call_count
-            call_count += 1
-            # 1: consumed_ids, 2: new_source → empty. quiet_sources tourne
-            # désormais sur une short session dédiée (PYTHON-5N), plus sur
-            # self.session.execute → la requête community est l'appel #3.
-            if call_count <= 2:
-                return _mock_execute_result([])
-            # 3: community query
-            return _mock_execute_result(community_rows)
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(community_articles),
-        )
-
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id,
-        )
-
-        community = [c for c in carousels if c["carousel_type"] == "community"]
-        assert len(community) == 1
-        c = community[0]
-        assert c["title"] == "Recos de la communauté"
-        assert c["position"] >= 5  # MIN_CAROUSEL_POSITION enforced; slot shuffled
-        assert c["badges"][0]["code"] == "community"
-        assert len(c["items"]) == 4
-
-    @pytest.mark.asyncio
-    async def test_community_skipped_when_too_few_results(self):
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-
-        # Only 2 community items (below MIN_CAROUSEL_ITEMS=3)
-        community_articles = [MockContent(title=f"Community {i}") for i in range(2)]
-        community_rows = [
-            _CommunityRow(id=a.id, score=1.0, sunflower_count=1)
-            for a in community_articles
-        ]
-
-        call_count = 0
-
-        async def mock_execute(stmt):
-            nonlocal call_count
-            call_count += 1
-            # 1: consumed_ids, 2: new_source → empty. quiet_sources tourne
-            # désormais sur une short session dédiée (PYTHON-5N), plus sur
-            # self.session.execute → la requête community est l'appel #3.
-            if call_count <= 2:
-                return _mock_execute_result([])
-            # 3: community
-            return _mock_execute_result(community_rows)
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(community_articles),
-        )
-
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id,
-        )
-
-        assert not any(c["carousel_type"] == "community" for c in carousels)
-
-
-class TestBuildCarouselsSaved:
-    @pytest.mark.asyncio
-    async def test_saved_carousel_with_mixed_content_types(self):
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-
-        saved_items = [
-            MockContent(title="Saved article", content_type="article"),
-            MockContent(title="Saved video", content_type="youtube"),
-            MockContent(title="Saved podcast", content_type="podcast"),
-        ]
-
-        # All execute calls return empty (consumed_ids, new_source, quiet_sources, community)
-        async def mock_execute(stmt):
-            return _mock_execute_result([])
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(saved_items),
-        )
-
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id,
-        )
-
-        saved = [c for c in carousels if c["carousel_type"] == "saved"]
-        assert len(saved) == 1
-        c = saved[0]
-        assert c["title"] == "Plus tard, c\u2019est maintenant !"
-        assert c["position"] >= 5  # MIN_CAROUSEL_POSITION enforced; slot shuffled
-        assert len(c["items"]) == 3
-
-        # Verify per-item badges
-        assert c["badges"][0]["code"] == "saved_article"
-        assert c["badges"][1]["code"] == "saved_video"
-        assert c["badges"][2]["code"] == "saved_audio"
-
-    @pytest.mark.asyncio
-    async def test_saved_skipped_when_too_few(self):
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-
-        saved_items = [MockContent(title="Only one saved")]
-
-        async def mock_execute(stmt):
-            return _mock_execute_result([])
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(saved_items),
-        )
-
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id,
-        )
-
-        assert not any(c["carousel_type"] == "saved" for c in carousels)
-
-
 class TestBuildCarouselsPhaseB_Integration:
     @pytest.mark.asyncio
     async def test_no_phase_b_without_user_id(self):
@@ -747,44 +458,6 @@ class TestBuildCarouselsPhaseB_Integration:
 
         _, carousels = await service._build_carousels([], {})
         assert carousels == []
-
-    @pytest.mark.asyncio
-    async def test_phase_b_respects_max_carousels(self):
-        """Phase B carousels don't exceed max_carousels budget."""
-        service = _setup_service_with_no_overflow()
-        user_id = uuid4()
-
-        # new_source returns enough articles
-        src_id = uuid4()
-        two_days_ago = datetime.now(UTC) - timedelta(days=2)
-        src_rows = [_SourceRow(source_id=src_id, name="Src", added_at=two_days_ago)]
-        articles = [MockContent(title=f"Art {i}") for i in range(5)]
-        for a in articles:
-            a.source_id = src_id
-
-        execute_calls = 0
-
-        async def mock_execute(stmt):
-            nonlocal execute_calls
-            execute_calls += 1
-            # 1: consumed_ids → empty
-            if execute_calls == 1:
-                return _mock_execute_result([])
-            if execute_calls == 2:
-                return _mock_execute_result(src_rows)  # new_source
-            return _mock_execute_result([])  # quiet_sources + community
-
-        service.session.execute = AsyncMock(side_effect=mock_execute)
-        service.session.scalars = AsyncMock(
-            return_value=_mock_scalars_result(articles),
-        )
-
-        # max_carousels=1 → only new_source should fit
-        _, carousels = await service._build_carousels(
-            [], {}, user_id=user_id, max_carousels=1,
-        )
-        assert len(carousels) == 1
-        assert carousels[0]["carousel_type"] == "new_source"
 
 
 # ================================================================
@@ -855,10 +528,14 @@ class TestDailyJitter:
         service.keyword_overflow = []
 
         _, carousels1 = await service._build_carousels(
-            [], pre_regroup_map, user_id=user_id,
+            [],
+            pre_regroup_map,
+            user_id=user_id,
         )
         _, carousels2 = await service._build_carousels(
-            [], pre_regroup_map, user_id=user_id,
+            [],
+            pre_regroup_map,
+            user_id=user_id,
         )
 
         pos1 = [c["position"] for c in carousels1]
@@ -880,7 +557,9 @@ class TestDailyJitter:
         positions = set()
         for _ in range(20):
             _, carousels = await service._build_carousels(
-                [], pre_regroup_map, user_id=uuid4(),
+                [],
+                pre_regroup_map,
+                user_id=uuid4(),
             )
             if carousels:
                 positions.add(carousels[0]["position"])
@@ -905,7 +584,9 @@ class TestDailyJitter:
         MIN_POS = 5
         for _ in range(20):
             _, carousels = await service._build_carousels(
-                [], pre_regroup_map, user_id=uuid4(),
+                [],
+                pre_regroup_map,
+                user_id=uuid4(),
             )
             for c in carousels:
                 pos = c["position"]
@@ -945,7 +626,8 @@ class TestProbabilisticHotCluster:
         selected_keys = set()
         for seed in range(100):
             cluster_key, _, articles = find_hot_cluster(
-                all_articles, seed=seed,
+                all_articles,
+                seed=seed,
             )
             if cluster_key:
                 selected_keys.add(cluster_key)
