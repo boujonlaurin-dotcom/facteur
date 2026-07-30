@@ -1813,6 +1813,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         ? -1
         : math.max(1, state.sections.length - 3);
 
+    // Un seul indicateur d'attente pour toute la Tournée : la **première**
+    // coquille de section encore non résolue porte le libellé « Ta tournée se
+    // prépare… » (les autres restent des cartes shimmer nues).
+    final firstPreparingIndex = state.sections.indexWhere(
+      (s) => s is FeedThemeSection && s.isPlaceholder,
+    );
+
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       if (state.grilleSlotIndex == i) {
