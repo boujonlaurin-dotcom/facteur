@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:facteur/core/auth/auth_state.dart' as app_auth;
 import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/digest/models/dual_digest_response.dart';
@@ -1635,6 +1637,127 @@ void main() {
       );
     });
   });
+
+  group('FluxContinuNotifier — refresh borné + record', () {
+    EssentielArticle essArticle(String id, {int rank = 1}) => EssentielArticle(
+          contentId: id,
+          title: 'Essentiel $id',
+          url: 'https://x.test/$id',
+          publishedAt: DateTime(2026, 1, 1),
+          sourceName: 'Source',
+          sourceLetter: 'S',
+          sectionLabel: 'Tech',
+          rank: rank,
+        );
+
+    ProviderContainer makeRefreshContainer(
+      _ControllableEssentielRepository essentiel,
+    ) {
+      return ProviderContainer(
+        overrides: [
+          digestRepositoryProvider.overrideWithValue(digestRepo),
+          feedRepositoryProvider.overrideWithValue(feedRepo),
+          fluxContinuRepositoryProvider.overrideWithValue(fluxRepo),
+          essentielRepositoryProvider.overrideWithValue(essentiel),
+          grilleRepositoryProvider.overrideWithValue(_NoGrilleRepository()),
+          userInterestsProvider.overrideWith(
+            () => _StubUserInterestsNotifier(_interestsState()),
+          ),
+          sereinToggleProvider
+              .overrideWith((ref) => SereinToggleNotifier(ref, null)),
+          displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
+        ],
+      );
+    }
+
+    test('refresh réussi → succeeded=true + newSinceMorning remonté', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final essentiel = _ControllableEssentielRepository(
+        articles: [essArticle('a'), essArticle('b', rank: 2), essArticle('c', rank: 3)],
+        newSinceMorning: 3,
+      );
+      final container = makeRefreshContainer(essentiel);
+      addTearDown(container.dispose);
+
+      final baseline = await settle(container);
+      expect(
+        baseline.sections.whereType<EssentielSection>().single.newSinceMorning,
+        3,
+      );
+
+      final outcome =
+          await container.read(fluxContinuProvider.notifier).refresh();
+      expect(outcome.succeeded, isTrue);
+      expect(outcome.newSinceMorning, 3);
+    });
+
+    test(
+      'refresh borné (repo qui hang) → Future résolu ~budget, état conservé, '
+      'succeeded=false',
+      () async {
+        SharedPreferences.setMockInitialValues(<String, Object>{});
+        final essentiel = _ControllableEssentielRepository(
+          articles: [essArticle('a'), essArticle('b', rank: 2), essArticle('c', rank: 3)],
+          newSinceMorning: 2,
+        );
+        final container = makeRefreshContainer(essentiel);
+        addTearDown(container.dispose);
+
+        final baseline = await settle(container);
+        expect(baseline.sections.whereType<EssentielSection>(), isNotEmpty);
+
+        // À partir de maintenant l'endpoint essentiel « pend » indéfiniment :
+        // seul le budget de [refresh] doit dénouer l'attente.
+        essentiel.hang = true;
+
+        ({bool succeeded, int newSinceMorning})? outcome;
+        fakeAsync((async) {
+          container
+              .read(fluxContinuProvider.notifier)
+              .refresh()
+              .then((v) => outcome = v);
+          // En deçà du budget (8s), rien n'est résolu.
+          async.elapse(const Duration(seconds: 7));
+          expect(outcome, isNull);
+          // Passé le budget, le refresh se dénoue (timeout interne).
+          async.elapse(const Duration(seconds: 2));
+          async.flushMicrotasks();
+        });
+
+        expect(outcome, isNotNull);
+        expect(outcome!.succeeded, isFalse);
+        // Contrat « keep previous data mounted » : l'état affiché est inchangé.
+        expect(
+          identical(
+            container.read(fluxContinuProvider).requireValue,
+            baseline,
+          ),
+          isTrue,
+        );
+      },
+    );
+  });
+}
+
+/// EssentielRepository pilotable : renvoie une liste fixe, ou « pend »
+/// indéfiniment quand [hang] est vrai — pour exercer la borne de [refresh].
+class _ControllableEssentielRepository implements EssentielRepository {
+  _ControllableEssentielRepository({
+    required this.articles,
+    this.newSinceMorning = 0,
+  });
+
+  final List<EssentielArticle> articles;
+  final int newSinceMorning;
+  bool hang = false;
+
+  @override
+  Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) {
+    if (hang) return Completer<EssentielFetchResult?>().future;
+    return Future.value(
+      (articles: articles, newSinceMorning: newSinceMorning),
+    );
+  }
 }
 
 /// Stub EssentielRepository centré sur un [EssentielArticle] précis (dont les

@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/theme.dart';
 import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../feed/models/content_model.dart';
 import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/animated_feed_card.dart';
 import '../../detail/content_preview_mapper.dart';
@@ -55,11 +56,15 @@ class EssentielHiFiCard extends ConsumerWidget {
     final accent = colors.sectionEssentiel;
     final spec = ref.watch(displayModeSpecProvider);
 
-    // Un seul point de lecture du provider : le booléen descend ensuite dans
-    // les tuiles, qui restent des `StatelessWidget`.
+    // Un seul point de lecture des providers de session : l'état dérivé descend
+    // ensuite dans les tuiles, qui restent des `StatelessWidget`.
     final completedIds = ref.watch(completedContentIdsProvider);
-    bool isCompleted(EssentielArticle a) =>
-        a.completedAt != null || completedIds.contains(a.contentId);
+    final consumedIds = ref.watch(consumedContentIdsProvider);
+    ReadState readStateFor(EssentielArticle a) => effectiveReadState(
+          a.readState,
+          consumedThisSession: consumedIds.contains(a.contentId),
+          completedThisSession: completedIds.contains(a.contentId),
+        );
 
     final lead = articles.isNotEmpty ? articles.first : null;
     final remaining = articles.length > 1
@@ -142,7 +147,7 @@ class EssentielHiFiCard extends ConsumerWidget {
                 article: lead,
                 accent: accent,
                 spec: spec,
-                isCompleted: isCompleted(lead),
+                readState: readStateFor(lead),
                 onTap: () => onTapArticle(lead),
               ),
             for (final a in remaining) ...[
@@ -154,7 +159,7 @@ class EssentielHiFiCard extends ConsumerWidget {
               _MediumTile(
                 article: a,
                 spec: spec,
-                isCompleted: isCompleted(a),
+                readState: readStateFor(a),
                 onTap: () => onTapArticle(a),
               ),
             ],
@@ -645,9 +650,9 @@ class _LeadTile extends StatelessWidget {
   final Color accent;
   final DisplayModeSpec spec;
 
-  /// Lu jusqu'au bout : double coche + filet vert au bord gauche. Descendu par
-  /// la carte plutôt que relu ici — un seul point de lecture du provider.
-  final bool isCompleted;
+  /// État de lecture effectif (fusion session incluse). Descendu par la carte
+  /// plutôt que relu ici — un seul point de lecture des providers.
+  final ReadState readState;
 
   final VoidCallback onTap;
 
@@ -656,7 +661,7 @@ class _LeadTile extends StatelessWidget {
     required this.accent,
     required this.spec,
     required this.onTap,
-    required this.isCompleted,
+    required this.readState,
   });
 
   @override
@@ -674,13 +679,14 @@ class _LeadTile extends StatelessWidget {
           child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),
-        // Lu : grise la tuile (0.6) + coche verte, comme les autres sections
+        // Lu : grise la tuile (0.8 « Ouvert » / 0.6 lu, cf. opacityForReadState)
+        // + coche verte, comme les autres sections
         // (cf. flux_continu_article_card.dart). Le badge est inclus dans
         // l'Opacity pour s'estomper de concert avec le contenu.
         child: Opacity(
-          opacity: article.isRead ? 0.6 : 1.0,
+          opacity: opacityForReadState(readState),
           child: AnimatedFeedCard(
-            isCompleted: isCompleted,
+            isCompleted: readState == ReadState.completed,
             animate: false,
             child: Stack(
             children: [
@@ -724,13 +730,13 @@ class _LeadTile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (article.isRead)
+              if (readState != ReadState.unread)
                 Positioned(
                   top: 8,
                   right: 8,
                   child: ReadStateMark(
                     color: colors.success,
-                    isCompleted: isCompleted,
+                    state: readState,
                   ),
                 ),
             ],
@@ -747,14 +753,14 @@ class _LeadTile extends StatelessWidget {
 class _MediumTile extends StatelessWidget {
   final EssentielArticle article;
   final DisplayModeSpec spec;
-  final bool isCompleted;
+  final ReadState readState;
   final VoidCallback onTap;
 
   const _MediumTile({
     required this.article,
     required this.spec,
     required this.onTap,
-    required this.isCompleted,
+    required this.readState,
   });
 
   @override
@@ -771,11 +777,11 @@ class _MediumTile extends StatelessWidget {
           child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
-        // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
+        // Lu : grise la tuile (0.8/0.6) + petite coche verte (cf. _LeadTile).
         child: Opacity(
-          opacity: article.isRead ? 0.6 : 1.0,
+          opacity: opacityForReadState(readState),
           child: AnimatedFeedCard(
-            isCompleted: isCompleted,
+            isCompleted: readState == ReadState.completed,
             animate: false,
             child: Stack(
             children: [
@@ -798,7 +804,8 @@ class _MediumTile extends StatelessWidget {
                         ),
                         // Réserve l'espace de la coche pour qu'elle ne
                         // chevauche pas la source ellipsée.
-                        if (article.isRead) const SizedBox(width: 22),
+                        if (readState != ReadState.unread)
+                          const SizedBox(width: 22),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -817,13 +824,13 @@ class _MediumTile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (article.isRead)
+              if (readState != ReadState.unread)
                 Positioned(
                   top: 0,
                   right: 0,
                   child: ReadStateMark(
                     color: colors.success,
-                    isCompleted: isCompleted,
+                    state: readState,
                     size: 18,
                   ),
                 ),

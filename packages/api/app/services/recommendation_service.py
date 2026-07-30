@@ -452,6 +452,7 @@ class RecommendationService:
                 content.hidden_reason = st.hidden_reason
                 content.status = st.status
                 content.reading_progress = st.reading_progress
+                content.time_spent_seconds = st.time_spent_seconds
                 content.completed_at = st.completed_at
                 content.note_text = st.note_text
                 content.note_updated_at = st.note_updated_at
@@ -1057,6 +1058,7 @@ class RecommendationService:
             content.is_hidden = st.is_hidden if st else False
             content.hidden_reason = st.hidden_reason if st else None
             content.status = st.status if st else ContentStatus.UNSEEN
+            content.time_spent_seconds = st.time_spent_seconds if st else 0
             content.completed_at = st.completed_at if st else None
             if followed_source_ids is not None:
                 content.is_followed_source = content.source_id in followed_source_ids
