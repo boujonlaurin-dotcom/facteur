@@ -151,19 +151,30 @@ class _FeedCardState extends ConsumerState<FeedCard>
     final colors = context.facteurColors;
     final textTheme = Theme.of(context).textTheme;
 
-    final isConsumed = widget.content.status == ContentStatus.consumed;
     final isVideo = widget.content.contentType == ContentType.youtube || widget.content.contentType == ContentType.video;
 
-    final hasBeenRead = isConsumed || widget.content.readingProgress > 0;
-    // Complété pendant la session : la carte reflète l'état sans refetch.
-    final isCompleted = widget.content.isCompleted ||
-        ref.watch(
-          completedContentIdsProvider.select(
-            (ids) => ids.contains(widget.content.id),
-          ),
-        );
+    // État serveur fusionné avec l'état de session : consommé/complété cette
+    // session se reflète sans attendre un refetch. Un consommé de session sans
+    // `time_spent` synchronisé reste au minimum « Ouvert » (cf.
+    // effectiveReadState).
+    final consumedThisSession = ref.watch(
+      consumedContentIdsProvider.select(
+        (ids) => ids.contains(widget.content.id),
+      ),
+    );
+    final completedThisSession = ref.watch(
+      completedContentIdsProvider.select(
+        (ids) => ids.contains(widget.content.id),
+      ),
+    );
+    final readState = effectiveReadState(
+      widget.content.readState,
+      consumedThisSession: consumedThisSession,
+      completedThisSession: completedThisSession,
+    );
+    final isCompleted = readState == ReadState.completed;
     final card = Opacity(
-      opacity: hasBeenRead ? 0.6 : 1.0,
+      opacity: opacityForReadState(readState),
       child: Stack(
         fit: widget.expandContent ? StackFit.expand : StackFit.loose,
         children: [
@@ -549,11 +560,11 @@ class _FeedCardState extends ConsumerState<FeedCard>
                 ),
               ),
             ),
-          if (isConsumed || widget.content.readingProgress > 0)
+          if (readState != ReadState.unread)
             Positioned(
               top: 12,
               right: 12,
-              child: ReadingBadge(content: widget.content),
+              child: ReadingBadge(content: widget.content, readState: readState),
             ),
         ],
       ),
