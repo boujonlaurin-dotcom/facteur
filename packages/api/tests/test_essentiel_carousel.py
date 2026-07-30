@@ -81,16 +81,11 @@ def _empty_response() -> EssentielResponse:
 @pytest.mark.asyncio
 async def test_enrich_attaches_carousel_when_eligible(db_session):
     user_id = uuid4()
+    # Seul `saved` est éligible → la rotation tombe forcément dessus.
     await _seed_saved(db_session, user_id, n=3)
     response = _empty_response()
 
-    with patch(
-        "app.routers.essentiel.pick_essentiel_type",
-        return_value="saved",
-    ):
-        out = await _enrich_essentiel_carousel(
-            db_session, user_id, response, today_paris()
-        )
+    out = await _enrich_essentiel_carousel(db_session, user_id, response, today_paris())
 
     assert out.carousel is not None
     assert out.carousel.carousel_type == "saved"
@@ -115,9 +110,7 @@ async def test_enrich_none_when_no_eligible_type(db_session):
     user_id = uuid4()
     # Aucune donnée Phase B → build_phase_b vide → pas de carrousel.
     response = _empty_response()
-    out = await _enrich_essentiel_carousel(
-        db_session, user_id, response, today_paris()
-    )
+    out = await _enrich_essentiel_carousel(db_session, user_id, response, today_paris())
     assert out.carousel is None
 
 
@@ -129,7 +122,7 @@ async def test_enrich_fails_open_on_exception(db_session):
     response = _empty_response()
 
     with patch(
-        "app.routers.essentiel.build_phase_b",
+        "app.routers.essentiel.select_essentiel_carousel",
         side_effect=RuntimeError("boom"),
     ):
         out = await _enrich_essentiel_carousel(

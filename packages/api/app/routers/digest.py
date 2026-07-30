@@ -14,7 +14,6 @@ See docs/maintenance/maintenance-digest-readonly-hotpath.md.
 """
 
 import asyncio
-import contextlib
 import time
 from datetime import date, timedelta
 from uuid import UUID
@@ -26,7 +25,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db, safe_async_session
+from app.database import get_db, safe_async_session, safe_fail_open_rollback
 from app.dependencies import get_current_user_id
 from app.models.daily_digest import DailyDigest
 from app.schemas.digest import (
@@ -167,16 +166,8 @@ async def _enrich_community_carousel(
         logger.exception("community_carousel_enrichment_failed")
         # Round 6 — mirror D3 (PR #437 community.py). Handler is fail-open so
         # get_db never sees the raise and cannot rollback a dirty session.
-        # Bound the rollback: on a Supabase-killed connection, asyncpg can
-        # hang indefinitely waiting for a server ACK that never comes
-        # (statement_timeout doesn't apply to ROLLBACK). On timeout, force
-        # invalidate so the dead conn is dropped from the pool.
-        try:
-            await asyncio.wait_for(db.rollback(), timeout=2.0)
-        except (TimeoutError, Exception) as rb_exc:
-            logger.debug("community_carousel_rollback_failed", error=str(rb_exc))
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(db.invalidate(), timeout=1.0)
+        # Bounded rollback+invalidate extracted to a shared helper (Story 32.1).
+        await safe_fail_open_rollback(db)
 
     return digest
 

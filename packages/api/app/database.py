@@ -1,8 +1,9 @@
 """Configuration de la base de données avec SQLAlchemy async."""
 
+import asyncio
 import time
 from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -272,6 +273,26 @@ async def safe_async_session(
                     error=str(exc),
                     exc_type=type(exc).__name__,
                 )
+
+
+async def safe_fail_open_rollback(db: AsyncSession) -> None:
+    """Rollback borné pour un handler **fail-open** sur une session `get_db`.
+
+    Un enrichissement additif (carrousel digest/essentiel) qui échoue attrape son
+    exception → `get_db` ne voit jamais le raise et ne peut donc pas rollback la
+    session potentiellement salie. On le fait ici, borné : sur une connexion tuée
+    par Supabase, asyncpg peut hang indéfiniment sur le ROLLBACK (que
+    `statement_timeout` ne couvre pas) → au timeout, `invalidate()` force le drop
+    de la connexion morte du pool. Extrait pour partager la logique entre
+    `digest._enrich_community_carousel` et `essentiel._enrich_essentiel_carousel`
+    (cf. incident 2026-04-28, long_session_checkout).
+    """
+    try:
+        await asyncio.wait_for(db.rollback(), timeout=2.0)
+    except (TimeoutError, Exception) as exc:
+        logger.debug("fail_open_rollback_failed", error=str(exc))
+        with suppress(Exception):
+            await asyncio.wait_for(db.invalidate(), timeout=1.0)
 
 
 # Round 3 fix (docs/bugs/bug-infinite-load-requests.md — Sentry PYTHON-4/5/6) :

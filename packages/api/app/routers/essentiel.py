@@ -7,8 +7,6 @@ Strictement read-only : pas de pipeline LLM au request time. Réutilise la
 chaîne de fallback de `/api/digest` via `read_digest_or_fallback`.
 """
 
-import asyncio
-import contextlib
 import time
 from datetime import date
 from uuid import UUID
@@ -16,15 +14,11 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db, safe_async_session
+from app.database import get_db, safe_async_session, safe_fail_open_rollback
 from app.dependencies import get_current_user_id
-from app.models.content import UserContentStatus
-from app.models.enums import ContentStatus
 from app.schemas.essentiel import EssentielResponse
-from app.schemas.feed import CarouselInfo, CarouselItemBadge
 from app.services.digest_service import DigestService, read_digest_or_fallback
 from app.services.essentiel_service import (
     ESSENTIEL_MIN_ARTICLES,
@@ -34,10 +28,10 @@ from app.services.essentiel_service import (
 from app.services.recommendation.carousel_catalog import (
     MAX_CAROUSEL_ITEMS,
     CarouselBuildContext,
+    fetch_consumed_ids,
 )
 from app.services.recommendation.carousel_selection_service import (
-    build_phase_b,
-    pick_essentiel_type,
+    select_essentiel_carousel,
 )
 from app.utils.time import today_paris
 
@@ -83,29 +77,16 @@ async def _enrich_essentiel_carousel(
         return response
 
     try:
-        consumed_ids = set(
-            (
-                await db.execute(
-                    select(UserContentStatus.content_id).where(
-                        UserContentStatus.user_id == user_uuid,
-                        UserContentStatus.status == ContentStatus.CONSUMED,
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
+        consumed_ids = await fetch_consumed_ids(db, user_uuid)
         ctx = CarouselBuildContext(
             session=db,
             session_maker=safe_async_session,
             user_id=user_uuid,
             consumed_ids=consumed_ids,
         )
-        contents = await build_phase_b(ctx)
-        essentiel_type = pick_essentiel_type(
-            user_uuid, effective_date, set(contents.keys())
-        )
-        content = contents.get(essentiel_type) if essentiel_type else None
+        # Construit paresseusement le SEUL carrousel du jour (rotation date-seedée),
+        # sans bâtir les 3 types perdants → endpoint sensible à la latence.
+        content = await select_essentiel_carousel(ctx, effective_date)
         if content is None:
             return response
 
@@ -115,27 +96,12 @@ async def _enrich_essentiel_carousel(
         if len(content.items) < _MIN_ESSENTIEL_CAROUSEL_ITEMS:
             return response
 
-        response.carousel = CarouselInfo(
-            carousel_type=content.carousel_type,
-            title=content.title,
-            emoji=content.emoji,
-            position=0,  # slot dédié côté mobile ; non pertinent pour l'Essentiel
-            items=content.items,
-            badges=[CarouselItemBadge(**b) for b in content.badges],
-        )
+        # position=0 : slot dédié côté mobile, non pertinent pour l'Essentiel.
+        response.carousel = content.to_carousel_info(0)
     except Exception:
         logger.exception("essentiel_carousel_enrichment_failed")
-        # Mirror `_enrich_community_carousel` (digest.py) : handler fail-open →
-        # get_db ne voit jamais le raise, donc on rollback nous-mêmes la session
-        # potentiellement salie. Rollback borné : sur une conn tuée par Supabase,
-        # asyncpg peut hang indéfiniment (statement_timeout ne couvre pas ROLLBACK)
-        # → sur timeout, invalidate force le drop de la conn morte du pool.
-        try:
-            await asyncio.wait_for(db.rollback(), timeout=2.0)
-        except (TimeoutError, Exception) as rb_exc:
-            logger.debug("essentiel_carousel_rollback_failed", error=str(rb_exc))
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(db.invalidate(), timeout=1.0)
+        # Fail-open : rollback borné partagé (cf. `_enrich_community_carousel`).
+        await safe_fail_open_rollback(db)
 
     return response
 

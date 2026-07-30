@@ -22,6 +22,7 @@ from app.services.recommendation.carousel_catalog import (
     MIN_ITEMS_BY_CODE,
     PHASE_B_ORDER,
     CarouselBuildContext,
+    fetch_consumed_ids,
 )
 from app.services.recommendation.carousel_selection_service import (
     build_phase_b,
@@ -1432,22 +1433,11 @@ class RecommendationService:
         used_group_keys: set[str] = set()  # Prevent same group in hot + deep
         today = datetime.date.today()
 
-        # T2: Fetch consumed content IDs to exclude from carousels
+        # T2: Fetch consumed content IDs to exclude from carousels (règle partagée
+        # avec l'Essentiel — cf. `carousel_catalog.fetch_consumed_ids`).
         consumed_ids: set[UUID] = set()
         if user_id is not None:
-            consumed_rows = (
-                (
-                    await self.session.execute(
-                        select(UserContentStatus.content_id).where(
-                            UserContentStatus.user_id == user_id,
-                            UserContentStatus.status == ContentStatus.CONSUMED,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            consumed_ids = set(consumed_rows)
+            consumed_ids = await fetch_consumed_ids(self.session, user_id)
 
         # Daily seed for deterministic randomization (stable within a day per user)
         daily_seed: int | None = None
@@ -1678,7 +1668,7 @@ class RecommendationService:
             # Le seed de rotation est daté en heure de Paris (comme l'Essentiel)
             # pour que les deux surfaces choisissent le même type près de minuit.
             essentiel_type = pick_essentiel_type(
-                user_id, today_paris(), set(phase_b_contents.keys())
+                user_id, today_paris(), phase_b_contents
             )
             logger.info(
                 "carousels_phase_b_built",

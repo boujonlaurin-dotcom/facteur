@@ -16,8 +16,15 @@ import pytest
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, SourceType
 from app.models.source import Source
-from app.services.recommendation.carousel_catalog import PHASE_B_ORDER
-from app.services.recommendation.carousel_selection_service import pick_essentiel_type
+from app.services.recommendation.carousel_catalog import (
+    PHASE_B_ORDER,
+    CarouselBuildContext,
+)
+from app.services.recommendation.carousel_selection_service import (
+    build_phase_b,
+    pick_essentiel_type,
+    select_essentiel_carousel,
+)
 from app.services.recommendation_service import RecommendationService
 
 _DATE = datetime.date(2026, 7, 30)
@@ -201,3 +208,23 @@ async def test_flaner_no_reservation_serves_both(db_session, fake_session_maker)
     ):
         types = await _flaner_types(db_session, fake_session_maker, user_id)
     assert {"saved", "community"} <= types
+
+
+@pytest.mark.asyncio
+async def test_select_essentiel_carousel_matches_pick(db_session, fake_session_maker):
+    """La construction paresseuse de l'Essentiel (`select_essentiel_carousel`)
+    choisit le MÊME type que le couple Flâner `build_phase_b` + `pick_essentiel_type`
+    — parité qui garantit la complémentarité cross-surface."""
+    user_id = uuid4()
+    await _seed_saved_and_community(db_session, user_id)
+    ctx = CarouselBuildContext(
+        session=db_session,
+        session_maker=fake_session_maker,
+        user_id=user_id,
+        consumed_ids=set(),
+    )
+    full = await build_phase_b(ctx)
+    expected = pick_essentiel_type(user_id, _DATE, full)
+    lazy = await select_essentiel_carousel(ctx, _DATE)
+    assert lazy is not None
+    assert lazy.carousel_type == expected

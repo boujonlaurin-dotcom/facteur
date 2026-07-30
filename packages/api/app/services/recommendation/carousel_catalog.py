@@ -31,6 +31,9 @@ from app.database import SessionMaker
 from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, InterestState
 from app.models.source import Source, UserSource
+
+# Sérialisation vers le schéma API partagé (même mapping que routers/feed.py).
+from app.schemas.feed import CarouselInfo, CarouselItemBadge
 from app.services.community_recommendation_service import (
     CommunityRecommendationService,
 )
@@ -48,10 +51,6 @@ FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
 MIN_CAROUSEL_ITEMS = 3  # community / saved
 MIN_DISPLAY_ITEMS = 2  # quiet_sources / new_source
 MAX_CAROUSEL_ITEMS = 5
-
-# Ordre métier stable (dérivé de `_CAROUSEL_BASE_POSITIONS`) : pilote la priorité
-# d'éligibilité ET la rotation date-seedée du type mis en avant dans l'Essentiel.
-PHASE_B_ORDER: tuple[str, ...] = ("quiet_sources", "saved", "new_source", "community")
 
 
 @dataclass
@@ -82,6 +81,19 @@ class CarouselContent:
             badges=[p[1] for p in pairs],
         )
 
+    def to_carousel_info(self, position: int) -> CarouselInfo:
+        """Sérialise en `CarouselInfo` (schéma API). Même mapping que
+        `routers/feed.py` : les `Content` sont validés en `FeedItemResponse` via
+        `from_attributes`, les badges convertis en `CarouselItemBadge`."""
+        return CarouselInfo(
+            carousel_type=self.carousel_type,
+            title=self.title,
+            emoji=self.emoji,
+            position=position,
+            items=self.items,
+            badges=[CarouselItemBadge(**b) for b in self.badges],
+        )
+
 
 @dataclass
 class CarouselBuildContext:
@@ -91,6 +103,28 @@ class CarouselBuildContext:
     session_maker: SessionMaker
     user_id: UUID
     consumed_ids: set[UUID]
+
+
+async def fetch_consumed_ids(session: AsyncSession, user_id: UUID) -> set[UUID]:
+    """Articles déjà consommés par l'utilisateur — exclus de tous les carrousels.
+
+    Règle unique partagée par Flâner (`_build_carousels`) et l'Essentiel
+    (`_enrich_essentiel_carousel`) : l'ensemble éligible est **surface-indépendant**
+    (exclusion `consumed` seulement), condition de la complémentarité déterministe.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(UserContentStatus.content_id).where(
+                    UserContentStatus.user_id == user_id,
+                    UserContentStatus.status == ContentStatus.CONSUMED,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return set(rows)
 
 
 async def build_new_source(ctx: CarouselBuildContext) -> CarouselContent | None:
@@ -127,7 +161,7 @@ async def build_new_source(ctx: CarouselBuildContext) -> CarouselContent | None:
         exclusions = []
         if ctx.consumed_ids:
             exclusions.append(Content.id.notin_(ctx.consumed_ids))
-        src_articles = list(
+        items = list(
             (
                 await session.scalars(
                     select(Content)
@@ -142,7 +176,6 @@ async def build_new_source(ctx: CarouselBuildContext) -> CarouselContent | None:
                 )
             ).all()
         )
-        items = src_articles[:MAX_CAROUSEL_ITEMS]
         if len(items) < MIN_NEW_SOURCE_ITEMS:
             continue
         # Cooldown post-add 6 h — laisse les articles remonter dans le main feed
@@ -280,7 +313,7 @@ async def build_community(ctx: CarouselBuildContext) -> CarouselContent | None:
 
 async def build_saved(ctx: CarouselBuildContext) -> CarouselContent | None:
     """« Plus tard, c'est maintenant ! » — articles sauvegardés non consommés."""
-    saved_articles = list(
+    items = list(
         (
             await ctx.session.scalars(
                 select(Content)
@@ -307,7 +340,6 @@ async def build_saved(ctx: CarouselBuildContext) -> CarouselContent | None:
         ).all()
     )
 
-    items = saved_articles[:MAX_CAROUSEL_ITEMS]
     if len(items) < MIN_CAROUSEL_ITEMS:
         return None
 
@@ -368,3 +400,8 @@ PHASE_B_SPECS: tuple[CarouselSpec, ...] = (
 MIN_ITEMS_BY_CODE: dict[str, int] = {
     spec.code: spec.min_items for spec in PHASE_B_SPECS
 }
+
+# Ordre métier stable (dérivé du registre → une seule source de vérité) : pilote
+# la priorité d'éligibilité de Flâner ET la rotation date-seedée du type mis en
+# avant dans l'Essentiel (`carousel_selection_service`).
+PHASE_B_ORDER: tuple[str, ...] = tuple(spec.code for spec in PHASE_B_SPECS)
