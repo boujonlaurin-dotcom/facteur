@@ -143,6 +143,22 @@ class ScoringWeights:
     SUBTOPIC_POSITION_FACTOR = 0.6
     SUBTOPIC_DECAY = 0.98
 
+    # --- DECAY DES SIGNAUX APPRIS (famille de 3, un job/jour chacun) ---
+    # `SUBTOPIC_DECAY` (ci-dessus, `user_subtopics.weight`),
+    # `ENTITY_AFFINITY_DECAY` (plus bas, `user_entity_affinity.affinity`) et
+    # `INTEREST_WEIGHT_DECAY` (`user_interests.weight`). Les trois ramènent d'un
+    # cran vers le neutre 1.0, dans les deux sens.
+    #
+    # `user_interests.weight` était le seul des trois **sans decay** : +0,05 par
+    # lecture (`_adjust_interest_weight`), cap 3,0, et rien ne redescendait. En
+    # prod : 724 lignes / 126 users, 32 au cap. Une ligne au cap vaut
+    # `50 × (3,0 − 1,0)` = 100 pts bruts, soit 62 % du pilier pertinence — chez
+    # les comptes les plus anciens, l'âge du compte battait la pertinence du
+    # jour. À 0,98, la demi-vie de l'excédent au-dessus du neutre est de ~34 j :
+    # une ligne au cap redescend à 2,0 après ~34 j sans lecture, alors qu'une
+    # lecture active la rattrape en ~2 j.
+    INTEREST_WEIGHT_DECAY = 0.98
+
     # Bonus de précision : si article a match thème ET sous-thème
     # Réduit de 20→18.
     SUBTOPIC_PRECISION_BONUS = 18.0
