@@ -23,6 +23,7 @@ import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/theme_color_mapping.dart';
 import 'auto_grow_candidate.dart';
+import 'coverage_chip.dart';
 import 'edition_timeline_sheet.dart';
 import 'ephemeral_rattraper_label.dart';
 import 'weather_condition_icon.dart';
@@ -802,6 +803,15 @@ class _MediumTile extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (article.sourceCount >=
+                            kCoverageChipMinSources) ...[
+                          const SizedBox(width: 8),
+                          CoverageChip(
+                            sourceCount: article.sourceCount,
+                            sources: article.perspectiveSources,
+                            colors: colors,
+                          ),
+                        ],
                         // Réserve l'espace de la coche pour qu'elle ne
                         // chevauche pas la source ellipsée.
                         if (readState != ReadState.unread)
@@ -924,6 +934,15 @@ class _SourceRow extends StatelessWidget {
             style: FacteurTypography.labelSmall(colors.textTertiary),
           ),
         ),
+        if (article.sourceCount >= kCoverageChipMinSources) ...[
+          const Spacer(),
+          CoverageChip(
+            key: const Key('essentiel-coverage-chip'),
+            sourceCount: article.sourceCount,
+            sources: article.perspectiveSources,
+            colors: colors,
+          ),
+        ],
       ],
     );
   }
