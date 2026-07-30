@@ -172,14 +172,22 @@ class PertinencePillar(BasePillar):
     ) -> tuple[float, list[PillarContribution]]:
         """Bonus log-calibré pour les clusters multi-sources.
 
-        `cluster_source_counts` est rempli en mode thématique personnalisé ;
-        sinon (cold start, autres surfaces) on n'a aucun coût ni effet.
-        """
-        cluster_id = getattr(content, "cluster_id", None)
-        if cluster_id is None or not context.cluster_source_counts:
-            return 0.0, []
+        Deux sources d'alimentation :
+        - Chemin `topics` (topic_selector) : `context.coverage_source_count`
+          porte le count du cluster courant (contexte construit par cluster).
+          Aucune dépendance à `content.cluster_id` (NULL à ~99 % en base) ni
+          mutation d'attribut ORM.
+        - Chemin dict (`cluster_source_counts` keyé par `content.cluster_id`) :
+          conservé pour les surfaces où `content.cluster_id` est renseigné.
 
-        source_count = context.cluster_source_counts.get(cluster_id, 1)
+        Sinon (cold start, autres surfaces) : aucun coût ni effet.
+        """
+        source_count = context.coverage_source_count
+        if source_count is None:
+            cluster_id = getattr(content, "cluster_id", None)
+            if cluster_id is None or not context.cluster_source_counts:
+                return 0.0, []
+            source_count = context.cluster_source_counts.get(cluster_id, 1)
         bonus = compute_coverage_score(source_count)
         if bonus <= 0:
             return 0.0, []

@@ -479,6 +479,43 @@ class TestScoreAndSelectArticles:
         assert len(articles) == 1
         assert articles[0].is_followed_source is True
 
+    def test_coverage_bonus_multi_source_cluster(self):
+        """Cluster ≥3 sources distinctes → contribution 'Couvert par N sources'.
+
+        Câblage digest : le count du cluster est porté sur le ScoringContext,
+        sans dépendre de content.cluster_id (NULL en base). Vérifie que le bonus
+        de couverture apparaît dans le breakdown des articles sélectionnés.
+        """
+        selector = TopicSelector()
+        sources = [make_source() for _ in range(3)]
+        contents = [make_content(source=s) for s in sources]
+        cluster = make_cluster(contents)  # 3 domaines distincts
+        assert len(cluster.source_domains) == 3
+
+        context = make_context()
+        trending_ctx = make_trending_context()
+
+        articles = selector._score_and_select_articles(cluster, context, trending_ctx)
+        labels = [b.label for art in articles for b in art.breakdown]
+        assert any(lbl == "Couvert par 3 sources" for lbl in labels)
+
+    def test_no_coverage_bonus_mono_source_cluster(self):
+        """Cluster mono-source (scoop) → aucune contribution de couverture."""
+        selector = TopicSelector()
+        src = make_source()
+        # Même source → source_domains == 1
+        content = make_content(source=src)
+        cluster = make_cluster([content])
+        assert len(cluster.source_domains) == 1
+
+        context = make_context()
+        trending_ctx = make_trending_context()
+
+        articles = selector._score_and_select_articles(cluster, context, trending_ctx)
+        labels = [b.label for art in articles for b in art.breakdown]
+        assert not any(lbl.startswith("Couvert") for lbl in labels)
+        assert not any(lbl == "Sujet relayé" for lbl in labels)
+
     def test_returns_scored_articles(self):
         """Each result should be a ScoredArticle with breakdown."""
         selector = TopicSelector()
