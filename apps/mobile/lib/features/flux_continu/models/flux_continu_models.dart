@@ -25,7 +25,7 @@ const int kThemeFewFollowedSources = 6; // < 6 = « peu de sources »
 /// réutilisant le payload [FeedThemeSection] (champs `sourceId`/`sourceLogoUrl`).
 /// `alerts` (6ème kind) porte le rappel des cloches « alerte source rare » ayant
 /// du neuf : une carte compacte, pas un flux d'articles (cf. [AlertsSection]).
-enum SectionKind { essentiel, bonnes, theme, veille, source, alerts }
+enum SectionKind { essentiel, bonnes, theme, veille, source, alerts, carousel }
 
 /// Origine d'une section de la Tournée du jour (Story 22.3).
 ///
@@ -98,6 +98,7 @@ String sectionKey(FluxSection section) {
   return switch (section) {
     EssentielSection() => 'essentiel_v3',
     AlertsSection() => kAlertsSectionKey,
+    CarouselSection() => kCarouselSectionKey,
     DigestTopicSection() => section.kind.name,
     FeedThemeSection(
       :final kind,
@@ -367,6 +368,33 @@ class AlertsSection extends FluxSection {
   int get totalCount => items.length;
 }
 
+/// Clé stable de la carte carrousel du jour (Story 32.1). Constante (comme
+/// [kAlertsSectionKey]) : la carte vit hors de l'ordre configurable de la
+/// Tournée, insérée directement dans `_compose`.
+const String kCarouselSectionKey = 'carousel';
+
+/// Carte carrousel semi-éditorialisé du jour (Story 32.1), mutualisée avec
+/// Flâner. Un seul type par jour (rotation date-seedée côté backend), servi par
+/// `GET /api/essentiel` (champ `carousel`).
+///
+/// Comme [AlertsSection], c'est une carte **auto-portée** (taille fixe) : elle
+/// vit hors du cap de sections et échappe au fit (`_capSectionToFit`). Rendue
+/// par `FeedCarousel` (PageView paginé + dots).
+class CarouselSection extends FluxSection {
+  final FeedCarouselData data;
+
+  CarouselSection({required this.data})
+      : super(
+          kind: SectionKind.carousel,
+          label: data.title,
+          accent: const Color(0xFFB0470A),
+          coreVisibleCount: data.items.length,
+        );
+
+  @override
+  int get totalCount => data.items.length;
+}
+
 /// Section backed by `digest.topics` (Essentiel, Bonnes Nouvelles). One
 /// card per topic — the lead article is selected via [pickTopicLead].
 class DigestTopicSection extends FluxSection {
@@ -549,6 +577,12 @@ Set<String> renderedContentIds(List<FluxSection> sections) {
       case AlertsSection():
         // Le rappel ne rend aucun article : il n'a rien à retirer de l'Explorer.
         break;
+      case CarouselSection(:final data):
+        // Les articles du carrousel sont bien rendus : on les retire de
+        // l'Explorer aval pour éviter un doublon vertical sous la carte.
+        for (final item in data.items) {
+          seen.add(item.id);
+        }
       case DigestTopicSection(:final topics):
         for (final topic in topics) {
           if (topic.articles.isEmpty) continue;
@@ -573,7 +607,12 @@ FluxSection? nextSectionAfter(List<FluxSection> sections, String currentKey) {
   final ordered = sections
       .whereType<FluxSection>()
       .where((s) {
-        if (s is EssentielSection || s is AlertsSection) return false;
+        // La carte carrousel n'a pas de page dédiée (comme Essentiel/Alertes).
+        if (s is EssentielSection ||
+            s is AlertsSection ||
+            s is CarouselSection) {
+          return false;
+        }
         return true;
       })
       .toList(growable: false);

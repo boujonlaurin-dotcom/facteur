@@ -5,6 +5,10 @@
       "summary": "Chaque carte te dit maintenant combien de rédactions traitent le sujet : « 3 sources », avec leurs logos. C'est le signal qui explique pourquoi un article arrive dans ta tournée, et l'entrée naturelle vers « Comparer les angles ». Au passage, la petite pastille de sous-thème quitte le bas de carte : moins de bruit, plus de sens."
     },
     {
+      "tag": "Pourquoi cet article",
+      "summary": "Les raisons affichées sous tes articles disent enfin le sujet précis plutôt que le grand thème : « Énergie » au lieu de « Energy », « États-Unis » au lieu de « Usa », et le sujet que tu suis vraiment au lieu de la catégorie qui l'englobe."
+    },
+    {
       "tag": "Ma Tournée",
       "summary": "Réorganise ta tournée sans quitter ta lecture : maintiens un onglet du bandeau en haut de l'écran, puis fais-le glisser à sa nouvelle place. Ton Essentiel reste en tête, le Mot du jour et la citation gardent la leur."
     },

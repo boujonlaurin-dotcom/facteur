@@ -134,6 +134,49 @@ async def decay_user_entity_affinity() -> None:
         )
 
 
+async def decay_user_interest_weights() -> None:
+    """Apply the daily O(1) decay to all learned theme interest weights.
+
+    Troisième et dernier membre de la famille de decay, aligné sur
+    `decay_user_subtopic_weights` et `decay_user_entity_affinity`.
+    `user_interests.weight` était le seul signal appris **sans** decay : il
+    montait de +0,05 par lecture jusqu'au cap 3,0 et ne redescendait jamais.
+
+    Décay **symétrique** (`weight != 1.0`, pas `weight > 1.0`), comme ses deux
+    sœurs : les lignes sous 1.0 remontent aussi vers le neutre, ce qui efface
+    progressivement le malus de `_score_behavioral`. C'est assumé — un signal
+    négatif appris il y a des mois ne doit pas être plus permanent qu'un signal
+    positif. Idempotent (no-op sur les lignes déjà à 1.0).
+    """
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    UPDATE user_interests
+                    SET weight = 1.0 + (weight - 1.0) * :decay
+                    WHERE weight != 1.0
+                    """
+                ),
+                {"decay": ScoringWeights.INTEREST_WEIGHT_DECAY},
+            )
+            await session.commit()
+            logger.info(
+                "interest_weight_decay_completed",
+                decay=ScoringWeights.INTEREST_WEIGHT_DECAY,
+                rowcount=getattr(result, "rowcount", None),
+            )
+    except Exception as exc:
+        logger.error(
+            "interest_weight_decay_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+
+
 async def _digest_watchdog() -> None:
     """Watchdog 8h15 : vérifie la couverture digest et relance si nécessaire.
 
@@ -513,6 +556,23 @@ def start_scheduler() -> None:
         ),
         id="entity_affinity_decay",
         name="Entity Affinity Decay",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Daily learned-interest-weight decay (06h50 Paris) — 3e membre de la
+    # famille. Même fenêtre que ses deux sœurs, donc avant le digest (07h30).
+    scheduler.add_job(
+        decay_user_interest_weights,
+        trigger=CronTrigger(
+            hour=SUBTOPIC_DECAY_HOUR_PARIS,
+            minute=SUBTOPIC_DECAY_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
+        id="interest_weight_decay",
+        name="Interest Weight Decay",
         replace_existing=True,
         misfire_grace_time=14400,
         coalesce=True,

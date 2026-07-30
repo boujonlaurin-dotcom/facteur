@@ -1398,7 +1398,7 @@ class DigestService:
             status.is_hidden = False
             # Increment regular streak via StreakService
             await self.streak_service.increment_consumption(str(user_id))
-            # Feedback: reinforce theme + subtopic weights
+            # Feedback: reinforce theme + subtopic weights + named entities
             from app.services.content_service import ContentService
             from app.services.recommendation.scoring_config import ScoringWeights
 
@@ -1407,12 +1407,15 @@ class DigestService:
             await content_service._adjust_subtopic_weights(
                 user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
             )
+            await content_service._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
+            )
 
         elif action == DigestAction.SAVE:
             status.is_saved = True
             status.saved_at = datetime.utcnow()
             status.is_hidden = False
-            # Reinforce subtopic weights on bookmark
+            # Reinforce subtopic weights + named entities on bookmark
             from app.services.content_service import ContentService
 
             content_service = ContentService(self.session)
@@ -1421,11 +1424,14 @@ class DigestService:
             await content_service._adjust_subtopic_weights(
                 user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
             )
+            await content_service._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+            )
 
         elif action == DigestAction.LIKE:
             status.is_liked = True
             status.liked_at = datetime.utcnow()
-            # Reinforce subtopic weights via ContentService
+            # Reinforce subtopic weights + named entities via ContentService
             from app.services.content_service import ContentService
 
             content_service = ContentService(self.session)
@@ -1434,17 +1440,23 @@ class DigestService:
             await content_service._adjust_subtopic_weights(
                 user_id, content_id, ScoringWeights.LIKE_TOPIC_BOOST
             )
+            await content_service._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.LIKE_TOPIC_BOOST
+            )
 
         elif action == DigestAction.UNLIKE:
             status.is_liked = False
             status.liked_at = None
-            # Reverse subtopic weight adjustment
+            # Reverse subtopic weight + entity affinity adjustment
             from app.services.content_service import ContentService
 
             content_service = ContentService(self.session)
             from app.services.recommendation.scoring_config import ScoringWeights
 
             await content_service._adjust_subtopic_weights(
+                user_id, content_id, -ScoringWeights.LIKE_TOPIC_BOOST
+            )
+            await content_service._adjust_entity_affinity(
                 user_id, content_id, -ScoringWeights.LIKE_TOPIC_BOOST
             )
 
@@ -2048,6 +2060,22 @@ class DigestService:
         positive.sort(key=lambda x: x.points, reverse=True)
         top = positive[0]
 
+        # Le sujet précis d'abord : `_score_subtopics` émet "Sujet suivi : …" /
+        # "Sujet : …". La branche qui suivait testait `"Sous-thème"`, préfixe
+        # qu'aucun pilier n'émet plus — et elle était de toute façon
+        # inatteignable, puisque `"Thème" in "Sous-thème : …"` est vrai et
+        # arrivait avant. Les raisons du digest tombaient donc sur "Vos
+        # intérêts : …" avec un thème large, ou sur le label brut.
+        for prefix in ("Sujet suivi : ", "Sujet : "):
+            if top.label.startswith(prefix):
+                topics = [
+                    b.label.removeprefix(p)
+                    for b in positive
+                    for p in ("Sujet suivi : ", "Sujet : ")
+                    if b.label.startswith(p)
+                ][:2]
+                return f"Vos centres d'intérêt : {', '.join(topics)}"
+
         # Format based on top reason type
         if "Thème" in top.label:
             theme = top.label.split(": ")[1] if ": " in top.label else ""
@@ -2068,19 +2096,6 @@ class DigestService:
                 f"Renforcé par vos j'aime : {', '.join(topics)}"
                 if topics
                 else "Renforcé par vos j'aime"
-            )
-        elif "Sous-thème" in top.label:
-            topics = [
-                parts[1]
-                for b in positive
-                if "Sous-thème" in b.label
-                for parts in [b.label.split(": ", 1)]
-                if len(parts) > 1
-            ][:2]
-            return (
-                f"Vos centres d'intérêt : {', '.join(topics)}"
-                if topics
-                else "Vos centres d'intérêt"
             )
         else:
             return top.label

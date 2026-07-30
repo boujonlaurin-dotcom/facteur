@@ -455,7 +455,7 @@ async def submit_article_feedback(
         )
         await db.execute(stmt)
 
-        # Adjust subtopic weights based on sentiment
+        # Adjust subtopic weights + entity affinity based on sentiment
         service = ContentService(db)
         delta = (
             ScoringWeights.LIKE_TOPIC_BOOST
@@ -463,6 +463,7 @@ async def submit_article_feedback(
             else ScoringWeights.DISMISS_TOPIC_PENALTY
         )
         await service._adjust_subtopic_weights(user_uuid, content_id, delta)
+        await service._adjust_entity_affinity(user_uuid, content_id, delta)
 
         await db.commit()
         FEED_CACHE.invalidate(user_uuid)

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -171,5 +174,57 @@ void main() {
     expect(release.version, '2.0.0');
     expect(release.entries.single.tag, 'X');
     expect(release.entries.single.summary, 'Y');
+  });
+
+  // ─── Garde-fou sur l'asset réel ─────────────────────────────────────────
+  //
+  // `assets/changelog.json` a été livré cassé deux fois (dernière : PR #1029,
+  // une entrée insérée sans son `},{`, ce qui fusionnait deux entrées). Comme
+  // `loadReleased` fait un `json.decode` du document entier et que le provider
+  // traite l'erreur comme « liste vide », la panne est **silencieuse** : plus
+  // aucune note de version, sans un log. Les tests ci-dessus ne tournaient que
+  // sur un payload en dur, donc ne voyaient rien. Ceux-ci lisent le vrai
+  // fichier.
+  group('assets/changelog.json (fichier réel)', () {
+    Map<String, dynamic> decodeAsset() {
+      final raw = File('assets/changelog.json').readAsStringSync();
+      return json.decode(raw) as Map<String, dynamic>;
+    }
+
+    test('est un JSON valide', () {
+      expect(decodeAsset, returnsNormally);
+    });
+
+    test('chaque entrée a exactement un tag et un summary non vides', () {
+      final decoded = decodeAsset();
+      final blocks = <String, dynamic>{
+        'unreleased': decoded['unreleased'],
+        'released': decoded['released'],
+      };
+
+      for (final entry in (blocks['unreleased'] as List<dynamic>)) {
+        final map = entry as Map<String, dynamic>;
+        expect(map.keys.toSet(), {'tag', 'summary'},
+            reason: 'entrée unreleased malformée : $map');
+        expect((map['tag'] as String).trim(), isNotEmpty);
+        expect((map['summary'] as String).trim(), isNotEmpty);
+      }
+
+      for (final release in (blocks['released'] as List<dynamic>)) {
+        final map = release as Map<String, dynamic>;
+        expect(map.containsKey('version'), isTrue);
+        for (final entry in (map['entries'] as List<dynamic>)) {
+          final e = entry as Map<String, dynamic>;
+          expect(e.keys.toSet(), {'tag', 'summary'},
+              reason: 'entrée released malformée : $e');
+        }
+      }
+    });
+
+    test("pas d'em-dash dans la copy user-facing", () {
+      final raw = File('assets/changelog.json').readAsStringSync();
+      expect(raw.contains('\u2014'), isFalse,
+          reason: 'le tiret cadratin est proscrit dans la copy user-facing');
+    });
   });
 }

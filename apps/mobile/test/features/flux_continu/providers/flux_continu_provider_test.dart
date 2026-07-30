@@ -69,7 +69,7 @@ class _FakeAuthNotifier extends StateNotifier<app_auth.AuthState>
 class _StubEssentielRepository implements EssentielRepository {
   @override
   Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
-      (articles: const <EssentielArticle>[], newSinceMorning: 0);
+      (articles: const <EssentielArticle>[], newSinceMorning: 0, carousel: null);
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -1543,7 +1543,8 @@ void main() {
         final essentielRepo = _MockEssentielRepository();
         when(() => essentielRepo.fetch(serein: any(named: 'serein')))
             .thenAnswer(
-          (_) async => (articles: const <EssentielArticle>[], newSinceMorning: 0),
+          (_) async =>
+              (articles: const <EssentielArticle>[], newSinceMorning: 0, carousel: null),
         );
 
         final container = ProviderContainer(
@@ -1755,7 +1756,7 @@ class _ControllableEssentielRepository implements EssentielRepository {
   Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) {
     if (hang) return Completer<EssentielFetchResult?>().future;
     return Future.value(
-      (articles: articles, newSinceMorning: newSinceMorning),
+      (articles: articles, newSinceMorning: newSinceMorning, carousel: null),
     );
   }
 }
@@ -1794,6 +1795,7 @@ class _OneArticleEssentielRepository implements EssentielRepository {
           ),
         ],
         newSinceMorning: 0,
+        carousel: null,
       );
 }
 
@@ -1804,5 +1806,5 @@ class _FixedEssentielRepository implements EssentielRepository {
 
   @override
   Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
-      (articles: _articles, newSinceMorning: 0);
+      (articles: _articles, newSinceMorning: 0, carousel: null);
 }

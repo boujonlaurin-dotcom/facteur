@@ -421,10 +421,11 @@ class _DeepDiveListHost extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final flux = ref.watch(fluxContinuProvider).valueOrNull;
-    // Le rappel d'alertes n'est pas une destination de lecture : une ligne
-    // « Tes alertes, 0 article » n'aurait rien à ouvrir.
+    // Ni le rappel d'alertes ni la carte carrousel (Story 32.1) ne sont des
+    // destinations de lecture : ce sont des cartes auto-portées sans page dédiée
+    // (cf. `nextSectionAfter`), donc pas de ligne « ouvrir la section » ici.
     final sections = (flux?.sections ?? const <FluxSection>[])
-        .where((s) => s is! AlertsSection)
+        .where((s) => s is! AlertsSection && s is! CarouselSection)
         .toList(growable: false);
     if (sections.isEmpty) return const SizedBox.shrink();
     return SectionDeepDiveList(

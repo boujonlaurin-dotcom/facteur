@@ -9,7 +9,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from sqlalchemy import case, desc, func, literal, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -18,6 +18,17 @@ from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus, ContentType, FeedFilterMode, InterestState
 from app.models.source import Source, UserSource
 from app.models.user import UserProfile, UserSubtopic
+from app.services.recommendation.carousel_catalog import (
+    MIN_ITEMS_BY_CODE,
+    PHASE_B_ORDER,
+    CarouselBuildContext,
+    fetch_consumed_ids,
+)
+from app.services.recommendation.carousel_selection_service import (
+    build_phase_b,
+    pick_essentiel_type,
+)
+from app.utils.time import today_paris
 
 logger = structlog.get_logger()
 FOLLOWED_SOURCE_STATES = (InterestState.FOLLOWED, InterestState.FAVORITE)
@@ -1422,22 +1433,11 @@ class RecommendationService:
         used_group_keys: set[str] = set()  # Prevent same group in hot + deep
         today = datetime.date.today()
 
-        # T2: Fetch consumed content IDs to exclude from carousels
+        # T2: Fetch consumed content IDs to exclude from carousels (règle partagée
+        # avec l'Essentiel — cf. `carousel_catalog.fetch_consumed_ids`).
         consumed_ids: set[UUID] = set()
         if user_id is not None:
-            consumed_rows = (
-                (
-                    await self.session.execute(
-                        select(UserContentStatus.content_id).where(
-                            UserContentStatus.user_id == user_id,
-                            UserContentStatus.status == ContentStatus.CONSUMED,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            consumed_ids = set(consumed_rows)
+            consumed_ids = await fetch_consumed_ids(self.session, user_id)
 
         # Daily seed for deterministic randomization (stable within a day per user)
         daily_seed: int | None = None
@@ -1651,423 +1651,57 @@ class RecommendationService:
             budget_remaining=max_carousels - len(carousels),
         )
         if user_id is not None:
-            # --- new_source: articles from THE most recently added source (T3) ---
-            if len(carousels) < max_carousels:
-                MIN_NEW_SOURCE_ITEMS = 2  # T3B: lowered from 3
-                seven_days_ago = datetime.datetime.now(
-                    datetime.UTC
-                ) - datetime.timedelta(days=7)
-                new_src_rows = (
-                    await self.session.execute(
-                        select(
-                            UserSource.source_id,
-                            Source.name,
-                            UserSource.added_at,
-                        )
-                        .join(Source, Source.id == UserSource.source_id)
-                        .where(
-                            UserSource.user_id == user_id,
-                            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
-                            UserSource.added_at > seven_days_ago,
-                        )
-                        .order_by(UserSource.added_at.desc())  # T3A: most recent first
-                    )
-                ).all()
-
-                logger.info(
-                    "carousel_new_source_query",
-                    new_sources_found=len(new_src_rows),
-                    source_names=[r.name for r in new_src_rows[:5]],
-                )
-                # Rotation jour à jour : au lieu de s'arrêter à la première
-                # source valide (toujours la plus récente → carrousel figé), on
-                # collecte TOUTES les sources récentes valides puis on en tire UNE
-                # seedée par le jour. Variété jour à jour, stable dans la journée.
-                # Borne de coût : on ne sonde que les 8 sources les plus récentes
-                # (1 requête article par source).
-                MAX_NEW_SOURCE_PROBES = 8
-                now = datetime.datetime.now(datetime.UTC)
-                candidates: list[tuple[object, list[Content]]] = []
-                for src_row in new_src_rows[:MAX_NEW_SOURCE_PROBES]:
-                    # T2: exclude promoted + consumed articles
-                    exclusions = []
-                    if promoted_ids:
-                        exclusions.append(Content.id.notin_(promoted_ids))
-                    if consumed_ids:
-                        exclusions.append(Content.id.notin_(consumed_ids))
-                    src_articles = list(
-                        (
-                            await self.session.scalars(
-                                select(Content)
-                                .options(selectinload(Content.source))
-                                .where(
-                                    Content.source_id == src_row.source_id,
-                                    Content.published_at > seven_days_ago,
-                                    *exclusions,
-                                )
-                                .order_by(Content.published_at.desc())
-                                .limit(MAX_CAROUSEL_ITEMS)
-                            )
-                        ).all()
-                    )
-
-                    items = src_articles[:MAX_CAROUSEL_ITEMS]
-                    if len(items) < MIN_NEW_SOURCE_ITEMS:
-                        continue
-
-                    # Cooldown post-add 6 h — laisse les articles de la source
-                    # remonter naturellement dans le main feed avant de pousser
-                    # un carrousel "Récemment ajouté".
-                    source_age_seconds = (now - src_row.added_at).total_seconds()
-                    if source_age_seconds < 6 * 3600:
-                        continue
-
-                    candidates.append((src_row, items, source_age_seconds))
-
-                if candidates:
-                    from app.services.recommendation.randomization import (
-                        compute_seed,
-                        seeded_shuffle,
-                    )
-
-                    seed = compute_seed(str(user_id), "daily")
-                    src_row, items, source_age_seconds = seeded_shuffle(
-                        candidates, seed
-                    )[0]
-
-                    position = self._jitter_carousel_position(
-                        "new_source", user_id, today
-                    )
-
-                    logger.info(
-                        "carousel_new_source_selected",
-                        source_name=src_row.name,
-                        article_count=len(items),
-                        position=position,
-                        source_age_hours=round(source_age_seconds / 3600, 1),
-                        candidate_count=len(candidates),
-                    )
-                    badge = {
-                        "code": "new_source",
-                        "label": "Nouvelle source",
-                        "emoji": "\U0001f195",
+            # Phase B unifiée (Story 32.1) : les 4 carrousels DB-driven
+            # (`quiet_sources`/`saved`/`new_source`/`community`) sont construits
+            # par le catalogue partagé avec l'Essentiel. Chaque build n'exclut
+            # QUE les articles *consommés* → l'ensemble éligible est
+            # surface-indépendant. Le type mis en avant dans l'Essentiel du jour
+            # est retiré ici pour garantir la complémentarité cross-surface sans
+            # état DB (cf. carousel_selection_service.pick_essentiel_type).
+            ctx = CarouselBuildContext(
+                session=self.session,
+                session_maker=self._session_maker,
+                user_id=user_id,
+                consumed_ids=consumed_ids,
+            )
+            phase_b_contents = await build_phase_b(ctx)
+            # Le seed de rotation est daté en heure de Paris (comme l'Essentiel)
+            # pour que les deux surfaces choisissent le même type près de minuit.
+            essentiel_type = pick_essentiel_type(
+                user_id, today_paris(), phase_b_contents
+            )
+            logger.info(
+                "carousels_phase_b_built",
+                eligible=sorted(phase_b_contents.keys()),
+                essentiel_type=essentiel_type,
+            )
+            for code in PHASE_B_ORDER:
+                if len(carousels) >= max_carousels:
+                    break
+                if code == essentiel_type:
+                    continue  # réservé à la carte Essentiel du jour
+                content = phase_b_contents.get(code)
+                if content is None:
+                    continue
+                # Post-filtre Flâner : retire les articles déjà promus en Phase A
+                # ou dans un carrousel Phase B précédent (dédup intra-feed).
+                filtered = content.excluding(promoted_ids, MAX_CAROUSEL_ITEMS)
+                if len(filtered.items) < MIN_ITEMS_BY_CODE[code]:
+                    continue
+                carousels.append(
+                    {
+                        "carousel_type": filtered.carousel_type,
+                        "title": filtered.title,
+                        "emoji": filtered.emoji,
+                        "position": self._jitter_carousel_position(
+                            code, user_id, today
+                        ),
+                        "items": filtered.items,
+                        "badges": filtered.badges,
                     }
-                    carousels.append(
-                        {
-                            "carousel_type": "new_source",
-                            "title": f"Récemment ajouté : {src_row.name}",
-                            "emoji": "\U0001f195",
-                            "position": position,
-                            "items": items,
-                            "badges": [badge] * len(items),
-                        }
-                    )
-                    for item in items:
-                        promoted_ids.add(item.id)
-
-            # --- quiet_sources: latest article from followed low-volume sources ---
-            if len(carousels) < max_carousels:
-                QUIET_SOURCE_MAX_RECENT = 3  # < 3 articles in 30 days = "quiet"
-                now = datetime.datetime.now(datetime.UTC)
-                thirty_days_ago = now - datetime.timedelta(days=30)
-                sixty_days_ago = now - datetime.timedelta(days=60)
-
-                # PYTHON-5N fix : l'ancien agrégat `outerjoin(Content) + GROUP BY
-                # + HAVING count() < 3` matérialisait TOUTES les lignes 30j par
-                # source juste pour les compter (1721ms / 5775 lignes sur un user
-                # à 62 sources) → dérapait vers le statement_timeout 30s → 500.
-                # On sonde désormais via LATERAL ... LIMIT 3 (court-circuit dès la
-                # 3ᵉ ligne par source, Index-Only Scan → 198ms / ~186 lignes), sur
-                # une short session capée 8s/5s plutôt que `self.session` (cap 30s).
-                # Tout le bloc est gardé par un try/except : le carrousel est
-                # optionnel, donc un QueryCanceled / erreur DB le SKIP au lieu de
-                # remonter en 500.
-                quiet_articles: list[Content] = []
-                quiet_source_ids: list[UUID] = []
-                try:
-                    probe = (
-                        select(Content.id)
-                        .where(
-                            Content.source_id == UserSource.source_id,
-                            Content.published_at >= thirty_days_ago,
-                        )
-                        .limit(QUIET_SOURCE_MAX_RECENT)
-                        .lateral()
-                    )
-                    quiet_ids_stmt = (
-                        select(UserSource.source_id)
-                        .select_from(UserSource)
-                        .join(Source, Source.id == UserSource.source_id)
-                        .join(probe, literal(True))
-                        .where(
-                            UserSource.user_id == user_id,
-                            UserSource.state.in_(FOLLOWED_SOURCE_STATES),
-                            Source.is_active.is_(True),
-                        )
-                        .group_by(UserSource.source_id)
-                        .having(func.count() < QUIET_SOURCE_MAX_RECENT)
-                    )
-                    async with self._session_maker(
-                        statement_timeout_ms=8_000, idle_in_tx_timeout_ms=5_000
-                    ) as quiet_s:
-                        quiet_source_ids = list(
-                            (await quiet_s.scalars(quiet_ids_stmt)).all()
-                        )
-                        if quiet_source_ids:
-                            latest_per_source = (
-                                select(Content)
-                                .options(selectinload(Content.source))
-                                .where(
-                                    Content.source_id.in_(quiet_source_ids),
-                                    Content.published_at >= sixty_days_ago,
-                                    Content.id.notin_(promoted_ids | consumed_ids),
-                                )
-                                .distinct(Content.source_id)
-                                .order_by(
-                                    Content.source_id,
-                                    Content.published_at.desc(),
-                                )
-                            )
-                            quiet_articles = list(
-                                (await quiet_s.scalars(latest_per_source)).all()
-                            )
-                    # Round-robin au fil des refresh : au lieu de toujours
-                    # garder les 5 articles les plus récents (mêmes sources
-                    # discrètes en boucle), on shuffle déterministe seedé à
-                    # l'heure sur TOUT le pool avant de couper à 5. Granularité
-                    # "hourly" = varie au fil des refresh, stable dans la fenêtre
-                    # de cache feed 30 s.
-                    from app.services.recommendation.randomization import (
-                        compute_seed,
-                        seeded_shuffle,
-                    )
-
-                    seed = compute_seed(str(user_id), "hourly")
-                    quiet_articles = seeded_shuffle(quiet_articles, seed)[
-                        :MAX_CAROUSEL_ITEMS
-                    ]
-                except Exception as exc:
-                    logger.warning(
-                        "carousel_quiet_sources_skipped",
-                        error=str(exc),
-                        exc_type=type(exc).__name__,
-                    )
-                    quiet_articles = []
-                    quiet_source_ids = []
-
-                logger.info(
-                    "carousel_quiet_sources_query",
-                    quiet_sources_found=len(quiet_source_ids),
-                    articles_found=len(quiet_articles),
-                    min_required=MIN_DISPLAY_ITEMS,
                 )
-                if len(quiet_articles) >= MIN_DISPLAY_ITEMS:
-                    badges = [
-                        {
-                            "code": "quiet_source",
-                            "label": a.source.name,
-                            "emoji": "\U0001f50d",
-                        }
-                        for a in quiet_articles
-                    ]
-                    carousels.append(
-                        {
-                            "carousel_type": "quiet_sources",
-                            "title": "Tes sources discrètes",
-                            "emoji": "\U0001f92b",
-                            "position": self._jitter_carousel_position(
-                                "quiet_sources", user_id, today
-                            ),
-                            "items": quiet_articles,
-                            "badges": badges,
-                        }
-                    )
-                    for item in quiet_articles:
-                        promoted_ids.add(item.id)
-
-            # --- community: 🌻 sunflower recommendations with decay scoring ---
-            if len(carousels) < max_carousels:
-                seven_days_ago = datetime.datetime.now(
-                    datetime.UTC
-                ) - datetime.timedelta(days=7)
-                exclusion = Content.id.notin_(promoted_ids) if promoted_ids else True
-                consumed_excl = (
-                    Content.id.notin_(consumed_ids) if consumed_ids else True
-                )
-
-                # Decay formula: score = SUM(1 / (1 + hours_since / 48))
-                hours_since = (
-                    func.extract(
-                        "epoch",
-                        datetime.datetime.now(datetime.UTC)
-                        - UserContentStatus.liked_at,
-                    )
-                    / 3600.0
-                )
-                decay_weight = 1.0 / (1.0 + hours_since / 48.0)
-
-                community_rows = (
-                    await self.session.execute(
-                        select(
-                            Content.id,
-                            func.sum(decay_weight).label("score"),
-                            func.count(UserContentStatus.id).label("sunflower_count"),
-                        )
-                        .join(
-                            UserContentStatus,
-                            UserContentStatus.content_id == Content.id,
-                        )
-                        .where(
-                            UserContentStatus.is_liked.is_(True),
-                            UserContentStatus.liked_at >= seven_days_ago,
-                            exclusion,
-                            consumed_excl,
-                        )
-                        .group_by(Content.id)
-                        .having(func.count(UserContentStatus.id) >= 1)
-                        .order_by(func.sum(decay_weight).desc())
-                        .limit(MAX_CAROUSEL_ITEMS)
-                    )
-                ).all()
-
-                logger.info(
-                    "carousel_community_query",
-                    community_found=len(community_rows),
-                    min_required=MIN_CAROUSEL_ITEMS,
-                    scores=[round(float(r.score), 2) for r in community_rows[:5]],
-                )
-                if len(community_rows) >= MIN_CAROUSEL_ITEMS:
-                    community_ids = [r.id for r in community_rows]
-                    count_map = {r.id: int(r.sunflower_count) for r in community_rows}
-
-                    community_contents = list(
-                        (
-                            await self.session.scalars(
-                                select(Content)
-                                .options(selectinload(Content.source))
-                                .where(Content.id.in_(community_ids))
-                            )
-                        ).all()
-                    )
-                    id_order = {cid: i for i, cid in enumerate(community_ids)}
-                    items = sorted(
-                        community_contents,
-                        key=lambda c: id_order.get(c.id, 99),
-                    )
-
-                    # Badges: show 🌻 count if >= 2
-                    badges = []
-                    for item in items:
-                        sf_count = count_map.get(item.id, 0)
-                        label = (
-                            f"\U0001f33b {sf_count}"
-                            if sf_count >= 2
-                            else "Reco communauté"
-                        )
-                        badges.append(
-                            {
-                                "code": "community",
-                                "label": label,
-                                "emoji": "\U0001f33b",
-                            }
-                        )
-
-                    carousels.append(
-                        {
-                            "carousel_type": "community",
-                            "title": "Recos de la communauté",
-                            "emoji": "\U0001f33b",
-                            "position": self._jitter_carousel_position(
-                                "community", user_id, today
-                            ),
-                            "items": items,
-                            "badges": badges,
-                        }
-                    )
-                    for item in items:
-                        promoted_ids.add(item.id)
-
-            # --- saved: user's saved but unconsumed articles ---
-            if len(carousels) < max_carousels:
-                saved_articles = list(
-                    (
-                        await self.session.scalars(
-                            select(Content)
-                            .options(selectinload(Content.source))
-                            .join(
-                                UserContentStatus,
-                                UserContentStatus.content_id == Content.id,
-                            )
-                            .where(
-                                UserContentStatus.user_id == user_id,
-                                UserContentStatus.is_saved.is_(True),
-                                UserContentStatus.status != ContentStatus.CONSUMED,
-                            )
-                            .order_by(
-                                desc(
-                                    func.coalesce(
-                                        UserContentStatus.saved_at,
-                                        UserContentStatus.created_at,
-                                    )
-                                )
-                            )
-                            .limit(MAX_CAROUSEL_ITEMS)
-                        )
-                    ).all()
-                )
-
-                items = [a for a in saved_articles if a.id not in promoted_ids][
-                    :MAX_CAROUSEL_ITEMS
-                ]
-                logger.info(
-                    "carousel_saved_query",
-                    raw_count=len(saved_articles),
-                    after_exclusion=len(items),
-                    min_required=MIN_CAROUSEL_ITEMS,
-                )
-                if len(items) >= MIN_CAROUSEL_ITEMS:
-                    badges = []
-                    for item in items:
-                        ct = item.content_type
-                        if ct == ContentType.YOUTUBE:
-                            badges.append(
-                                {
-                                    "code": "saved_video",
-                                    "label": "Vidéo sauvegardée",
-                                    "emoji": "\U0001f4cc",
-                                }
-                            )
-                        elif ct == ContentType.PODCAST:
-                            badges.append(
-                                {
-                                    "code": "saved_audio",
-                                    "label": "Audio sauvegardé",
-                                    "emoji": "\U0001f4cc",
-                                }
-                            )
-                        else:
-                            badges.append(
-                                {
-                                    "code": "saved_article",
-                                    "label": "Article sauvegardé",
-                                    "emoji": "\U0001f4cc",
-                                }
-                            )
-
-                    carousels.append(
-                        {
-                            "carousel_type": "saved",
-                            "title": "Plus tard, c\u2019est maintenant !",
-                            "emoji": "\U0001f4cc",
-                            "position": self._jitter_carousel_position(
-                                "saved", user_id, today
-                            ),
-                            "items": items,
-                            "badges": badges,
-                        }
-                    )
-                    for item in items:
-                        promoted_ids.add(item.id)
+                for item in filtered.items:
+                    promoted_ids.add(item.id)
 
         # Remove promoted articles from the main feed
         if promoted_ids:

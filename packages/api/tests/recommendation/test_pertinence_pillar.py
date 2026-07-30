@@ -167,7 +167,9 @@ class TestSubtopicPositionWeighting:
             1.0 + ScoringWeights.SUBTOPIC_POSITION_FACTOR
         )
         assert score == pytest.approx(expected)
-        assert contributions[0].label == "Sujet : IA, Tech"
+        # `tech` rendait « Tech » via une table de libellés périmée ; le libellé
+        # canonique est « Technologie ». `ai` garde sa forme courte.
+        assert contributions[0].label == "Sujet : IA, Technologie"
 
 
 class TestEntityAffinity:
@@ -258,3 +260,199 @@ class TestEntityAffinity:
         assert any(
             c.label == "Parce que tu lis souvent Emmanuel Macron" for c in contribs
         )
+
+
+class TestCustomTopicEntityBranch:
+    """PR1b2 — `canonical_name` matché contre `content.entities`.
+
+    Le pilier ne lisait ni `content.entities` ni `canonical_name` : le pont
+    entité n'existait que dans `layers/user_custom_topics`, une couche de recall
+    qui ne s'applique pas aux surfaces scorées par piliers.
+    """
+
+    @staticmethod
+    def _profile(**overrides):
+        import types
+
+        from app.models.enums import InterestState
+
+        base = dict(
+            topic_name="Kylian Mbappé",
+            slug_parent="",
+            keywords=[],
+            entity_type="PERSON",
+            canonical_name="Kylian Mbappé",
+            priority_multiplier=1.0,
+            state=InterestState.FOLLOWED,
+            is_veille=False,
+        )
+        base.update(overrides)
+        return types.SimpleNamespace(**base)
+
+    def _score(self, content, profile):
+        pillar = PertinencePillar()
+        return pillar._score_custom_topics(
+            content, _context(user_custom_topics=[profile])
+        )
+
+    def test_entity_match_scores_with_multiplier(self):
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+
+        score, contribs = self._score(content, self._profile())
+
+        expected = (
+            ScoringWeights.CUSTOM_TOPIC_BASE_BONUS
+            * 1.0
+            * ScoringWeights.ENTITY_MATCH_MULTIPLIER
+        )
+        assert score == pytest.approx(expected)
+        assert contribs[0].label == "Votre sujet : Kylian Mbappé"
+
+    def test_priority_multiplier_still_applies(self):
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+
+        score, _ = self._score(content, self._profile(priority_multiplier=2.0))
+
+        assert score == pytest.approx(
+            ScoringWeights.CUSTOM_TOPIC_BASE_BONUS
+            * 2.0
+            * ScoringWeights.ENTITY_MATCH_MULTIPLIER
+        )
+
+    def test_no_match_scores_zero(self):
+        content = MockContent(entities=[_entity("Emmanuel Macron")])
+
+        score, contribs = self._score(content, self._profile())
+
+        assert score == 0.0
+        assert contribs == []
+
+    @pytest.mark.parametrize(
+        "stored,followed",
+        [
+            ("kylian mbappé", "Kylian Mbappé"),
+            ("KYLIAN MBAPPÉ", "kylian mbappé"),
+            ("Kylian Mbappé", "  Kylian Mbappé  "),
+        ],
+    )
+    def test_match_is_case_and_whitespace_insensitive(self, stored, followed):
+        content = MockContent(entities=[_entity(stored)])
+
+        score, _ = self._score(content, self._profile(canonical_name=followed))
+
+        assert score > 0
+
+    def test_plain_string_entity_is_tolerated(self):
+        """`iter_entity_names` accepte une entité stockée hors JSON."""
+        content = MockContent(entities=["Kylian Mbappé"])
+
+        score, _ = self._score(content, self._profile())
+
+        assert score > 0
+
+    def test_no_entities_on_content_scores_zero(self):
+        score, contribs = self._score(MockContent(entities=None), self._profile())
+
+        assert score == 0.0
+        assert contribs == []
+
+    def test_profile_without_entity_type_ignores_branch(self):
+        """Un Sujet classique ne doit pas matcher par entité."""
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+
+        score, _ = self._score(
+            content, self._profile(entity_type=None, canonical_name=None)
+        )
+
+        assert score == 0.0
+
+    def test_slug_and_entity_match_counted_once(self):
+        """Garde `if not matched` : pas de double-compte sur un même profil."""
+        content = MockContent(topics=["sport"], entities=[_entity("Kylian Mbappé")])
+
+        score, contribs = self._score(content, self._profile(slug_parent="sport"))
+
+        # Le slug matche d'abord → barème plat, sans la prime entité.
+        assert score == pytest.approx(ScoringWeights.CUSTOM_TOPIC_BASE_BONUS)
+        assert len(contribs) == 1
+
+    def test_best_profile_wins_between_profiles(self):
+        content = MockContent(entities=[_entity("Kylian Mbappé")])
+        weak = self._profile(topic_name="Faible", priority_multiplier=1.0)
+        strong = self._profile(topic_name="Fort", priority_multiplier=2.0)
+
+        pillar = PertinencePillar()
+        score, contribs = pillar._score_custom_topics(
+            content, _context(user_custom_topics=[weak, strong])
+        )
+
+        assert contribs[0].label == "Votre sujet : Fort"
+        assert score == pytest.approx(
+            ScoringWeights.CUSTOM_TOPIC_BASE_BONUS
+            * 2.0
+            * ScoringWeights.ENTITY_MATCH_MULTIPLIER
+        )
+
+
+class TestSubtopicLabelInvariant:
+    """PR1e — garde-fou contre la re-dérive de la table de libellés.
+
+    Le pilier portait sa propre copie (`SUBTOPIC_LABELS`, 50 entrées) d'une
+    taxonomie à 51 slugs : 32 clés fantômes et 33 slugs valides sans libellé,
+    donc un `.capitalize()` anglais dans des raisons françaises. Elle est
+    supprimée au profit de `SLUG_TO_LABEL` ; ces tests interdisent qu'une
+    nouvelle divergence passe en silence.
+    """
+
+    def test_every_valid_slug_has_a_french_label(self):
+        from app.services.ml.classification_service import (
+            SLUG_TO_LABEL,
+            VALID_TOPIC_SLUGS,
+        )
+
+        assert VALID_TOPIC_SLUGS - set(SLUG_TO_LABEL) == set()
+
+    def test_no_label_for_an_unknown_slug(self):
+        from app.services.ml.classification_service import (
+            SLUG_TO_LABEL,
+            VALID_TOPIC_SLUGS,
+        )
+
+        assert set(SLUG_TO_LABEL) - VALID_TOPIC_SLUGS == set()
+
+    @pytest.mark.parametrize(
+        "slug,expected",
+        [
+            ("energy", "Énergie"),
+            ("politics", "Politique"),
+            ("usa", "États-Unis"),
+            ("environment", "Environnement"),
+            ("inequality", "Inégalités sociales"),
+            ("middleeast", "Moyen-Orient"),
+        ],
+    )
+    def test_most_followed_slugs_render_in_french(self, slug, expected):
+        """Ces slugs rendaient « Energy », « Politics », « Usa »…"""
+        from app.services.recommendation.pillars.pertinence import _subtopic_label
+
+        assert _subtopic_label(slug) == expected
+
+    def test_unknown_slug_still_falls_back(self):
+        from app.services.recommendation.pillars.pertinence import _subtopic_label
+
+        assert _subtopic_label("slug-inexistant") == "Slug-inexistant"
+
+    def test_short_label_overrides_are_valid_slugs(self):
+        """La liste d'exceptions courtes ne doit pas devenir une 2e taxonomie."""
+        from app.services.ml.classification_service import VALID_TOPIC_SLUGS
+        from app.services.recommendation.pillars.pertinence import (
+            _SHORT_SUBTOPIC_LABELS,
+        )
+
+        assert set(_SHORT_SUBTOPIC_LABELS) <= VALID_TOPIC_SLUGS
+
+    def test_short_label_wins_over_canonical(self):
+        from app.services.recommendation.pillars.pertinence import _subtopic_label
+
+        assert _subtopic_label("ai") == "IA"
+        assert _subtopic_label("space") == "Spatial"

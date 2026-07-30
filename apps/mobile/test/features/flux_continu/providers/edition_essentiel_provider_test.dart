@@ -29,7 +29,7 @@ class _FakeEssentielRepository implements EssentielRepository {
     final key = date == null ? 'today' : editionDayKey(date);
     final articles = byDay[key];
     if (articles == null) return null;
-    return (articles: articles, newSinceMorning: 0);
+    return (articles: articles, newSinceMorning: 0, carousel: null);
   }
 }
 

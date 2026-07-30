@@ -54,6 +54,13 @@ class ScoringWeights:
     # peser autant qu'un TRUSTED_SOURCE (35) à multiplier max 2.0.
     CUSTOM_TOPIC_BASE_BONUS = 25.0
 
+    # Un profil Sujet peut être un **abonnement entité** (`entity_type` +
+    # `canonical_name`, canonicalisés par LLM). Matcher une entité nommée de
+    # l'article est plus précis qu'un mot-clé libre, d'où la prime. Partagé par
+    # la couche legacy (`layers/user_custom_topics`) et le pilier Pertinence :
+    # un seul barème, pas deux.
+    ENTITY_MATCH_MULTIPLIER = 1.5
+
     # --- DIGEST RECENCY BONUSES (Tiered) ---
     # Bonus de fraîcheur hiérarchisés pour l'algorithme de digest
 
@@ -135,6 +142,22 @@ class ScoringWeights:
     TOPIC_MAX_MATCHES = 2  # Max 90pts (2 x 45)
     SUBTOPIC_POSITION_FACTOR = 0.6
     SUBTOPIC_DECAY = 0.98
+
+    # --- DECAY DES SIGNAUX APPRIS (famille de 3, un job/jour chacun) ---
+    # `SUBTOPIC_DECAY` (ci-dessus, `user_subtopics.weight`),
+    # `ENTITY_AFFINITY_DECAY` (plus bas, `user_entity_affinity.affinity`) et
+    # `INTEREST_WEIGHT_DECAY` (`user_interests.weight`). Les trois ramènent d'un
+    # cran vers le neutre 1.0, dans les deux sens.
+    #
+    # `user_interests.weight` était le seul des trois **sans decay** : +0,05 par
+    # lecture (`_adjust_interest_weight`), cap 3,0, et rien ne redescendait. En
+    # prod : 724 lignes / 126 users, 32 au cap. Une ligne au cap vaut
+    # `50 × (3,0 − 1,0)` = 100 pts bruts, soit 62 % du pilier pertinence — chez
+    # les comptes les plus anciens, l'âge du compte battait la pertinence du
+    # jour. À 0,98, la demi-vie de l'excédent au-dessus du neutre est de ~34 j :
+    # une ligne au cap redescend à 2,0 après ~34 j sans lecture, alors qu'une
+    # lecture active la rattrape en ~2 j.
+    INTEREST_WEIGHT_DECAY = 0.98
 
     # Bonus de précision : si article a match thème ET sous-thème
     # Réduit de 20→18.

@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, safe_async_session, safe_fail_open_rollback
 from app.dependencies import get_current_user_id
 from app.schemas.essentiel import EssentielResponse
 from app.services.digest_service import DigestService, read_digest_or_fallback
@@ -24,6 +24,14 @@ from app.services.essentiel_service import (
     ESSENTIEL_MIN_ARTICLES,
     build_essentiel_response_with_supplements,
     fetch_user_essentiel_context,
+)
+from app.services.recommendation.carousel_catalog import (
+    MAX_CAROUSEL_ITEMS,
+    CarouselBuildContext,
+    fetch_consumed_ids,
+)
+from app.services.recommendation.carousel_selection_service import (
+    select_essentiel_carousel,
 )
 from app.utils.time import today_paris
 
@@ -40,6 +48,62 @@ def _preparing_response() -> JSONResponse:
             "message": "Votre essentiel est en cours de préparation...",
         },
     )
+
+
+# Nombre min d'items du carrousel Essentiel APRÈS retrait des 5 articles déjà
+# affichés dans la carte — en-deçà, on n'attache pas de carrousel (évite un
+# scroller à 1 item).
+_MIN_ESSENTIEL_CAROUSEL_ITEMS = 2
+
+
+async def _enrich_essentiel_carousel(
+    db: AsyncSession,
+    user_uuid: UUID,
+    response: EssentielResponse,
+    effective_date: date,
+) -> EssentielResponse:
+    """Attache le carrousel semi-éditorialisé du jour à la réponse Essentiel.
+
+    Story 32.1 — mutualise la Phase B des carrousels de Flâner via le catalogue
+    partagé. Le type mis en avant est choisi de façon déterministe (rotation
+    date-seedée sur `(user, date_paris)`) ; Flâner retire ce même type le même
+    jour → complémentarité cross-surface sans état DB.
+
+    Fail-open : toute exception laisse `response` inchangée (le carrousel est une
+    surface purement additive, il ne peut jamais casser le chargement de
+    l'Essentiel). Skip hors édition du jour (rewind J-7 en lecture seule).
+    """
+    if effective_date != today_paris():
+        return response
+
+    try:
+        consumed_ids = await fetch_consumed_ids(db, user_uuid)
+        ctx = CarouselBuildContext(
+            session=db,
+            session_maker=safe_async_session,
+            user_id=user_uuid,
+            consumed_ids=consumed_ids,
+        )
+        # Construit paresseusement le SEUL carrousel du jour (rotation date-seedée),
+        # sans bâtir les 3 types perdants → endpoint sensible à la latence.
+        content = await select_essentiel_carousel(ctx, effective_date)
+        if content is None:
+            return response
+
+        # Ne pas re-servir les 5 articles déjà affichés dans la carte Essentiel.
+        shown_ids = {a.content_id for a in response.articles}
+        content = content.excluding(shown_ids, MAX_CAROUSEL_ITEMS)
+        if len(content.items) < _MIN_ESSENTIEL_CAROUSEL_ITEMS:
+            return response
+
+        # position=0 : slot dédié côté mobile, non pertinent pour l'Essentiel.
+        response.carousel = content.to_carousel_info(0)
+    except Exception:
+        logger.exception("essentiel_carousel_enrichment_failed")
+        # Fail-open : rollback borné partagé (cf. `_enrich_community_carousel`).
+        await safe_fail_open_rollback(db)
+
+    return response
 
 
 @router.get("", response_model=EssentielResponse)
@@ -100,6 +164,10 @@ async def get_essentiel(
     # atteint 3 articles, on signale au client que l'essentiel se prépare.
     if len(response.articles) < ESSENTIEL_MIN_ARTICLES:
         return _preparing_response()
+
+    # Carrousel semi-éditorialisé du jour (Story 32.1) — mutualisé avec Flâner.
+    # Additif et fail-open : n'altère jamais les 5 articles ni le code de statut.
+    response = await _enrich_essentiel_carousel(db, user_uuid, response, effective_date)
 
     logger.info(
         "essentiel_retrieved",

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../config/theme.dart';
+import '../../feed/widgets/feed_carousel.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'alerts_section_card.dart';
@@ -136,6 +137,21 @@ class SectionBlock extends StatelessWidget {
         ],
       );
     }
+    // Carte carrousel du jour (Story 32.1) — scroller horizontal auto-porté
+    // (PageView + dots), sans banner ni shell de section, comme AlertsSection.
+    // `onTapArticle` du SectionBlock accepte un Object ; on lui passe le Content.
+    if (section is CarouselSection) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FeedCarousel(
+            data: section.data,
+            onArticleTap: (content) => onTapArticle(content),
+          ),
+          const SizedBox(height: 16),
+        ],
+      );
+    }
     final cards = _buildCards();
     // Section source sans article récent (≤72h) mais avec des cartes plus
     // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
@@ -228,6 +244,9 @@ class SectionBlock extends StatelessWidget {
         return const [];
       case AlertsSection():
         // Idem : build() court-circuite sur AlertsSectionCard.
+        return const [];
+      case CarouselSection():
+        // Idem : build() court-circuite sur FeedCarousel avant _buildCards.
         return const [];
       case DigestTopicSection(:final topics, :final coreVisibleCount):
         final visible = topics.take(coreVisibleCount).toList();

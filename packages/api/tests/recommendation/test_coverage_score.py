@@ -18,9 +18,7 @@ def test_log2_progression():
     assert compute_coverage_score(3) == pytest.approx(
         ScoringWeights.COVERAGE_BASE * math.log2(3)
     )
-    assert compute_coverage_score(4) == pytest.approx(
-        ScoringWeights.COVERAGE_BASE * 2
-    )
+    assert compute_coverage_score(4) == pytest.approx(ScoringWeights.COVERAGE_BASE * 2)
 
 
 def test_capped_at_max():

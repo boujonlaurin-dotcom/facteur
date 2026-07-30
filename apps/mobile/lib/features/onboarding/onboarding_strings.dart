@@ -16,25 +16,30 @@ class OnboardingStrings {
   // Welcome Screen (ex-Intro 1)
   static const String welcomeTitle = 'Bienvenue sur Facteur !';
   static const String welcomeSubtitle =
-      "L'information devrait t'aider à comprendre le monde.\n\nPas nous submerger.";
+      "L'information devrait nous aider à comprendre le monde.";
   static const String welcomeManifestoButton = 'Lire notre Manifeste';
   static const String welcomeStartButton = 'Commencer';
+  static const String welcomeAlreadyHaveAccount = 'J\'ai déjà un compte';
 
   // Intro Screen 2
-  static const String intro2Title = 'Ton hub d\'infos fiables.';
+  static const String intro2Title = 'Ton espace de transparence.';
   static const String intro2Subtitle =
-      'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et médias de qualité.';
-  static const String intro2SubtitlePart1 = 'Facteur est une app Open-Source pour ';
-  static const String intro2SubtitleBold1 = 'retrouver le plaisir de s\'informer';
-  static const String intro2SubtitlePart2 = '. Un espace de ';
-  static const String intro2SubtitleBold2 = 'confiance';
-  static const String intro2SubtitlePart3 = ', qui mêle ';
-  static const String intro2SubtitleBold3 = 'transparence';
-  static const String intro2SubtitlePart4 = ', ';
-  static const String intro2SubtitleBold4 = 'contrôle';
-  static const String intro2SubtitlePart5 = ' et ';
-  static const String intro2SubtitleBold5 = 'médias de qualité';
-  static const String intro2SubtitlePart6 = '.';
+      'Facteur est une app Open source et indépendante, pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et médias de qualité.';
+  static const String intro2SubtitlePart1 = 'Facteur est une app ';
+  static const String intro2SubtitleBold1 = 'Open source';
+  static const String intro2SubtitlePart2 = ' et ';
+  static const String intro2SubtitleBold2 = 'indépendante';
+  static const String intro2SubtitlePart3 = ', pour ';
+  static const String intro2SubtitleBold3 = 'retrouver le plaisir de s\'informer';
+  static const String intro2SubtitlePart4 = '.\n\nUn espace de ';
+  static const String intro2SubtitleBold4 = 'confiance';
+  static const String intro2SubtitlePart5 = ', qui mêle ';
+  static const String intro2SubtitleBold5 = 'transparence';
+  static const String intro2SubtitlePart6 = ', ';
+  static const String intro2SubtitleBold6 = 'contrôle';
+  static const String intro2SubtitlePart7 = ' et ';
+  static const String intro2SubtitleBold7 = 'médias de qualité';
+  static const String intro2SubtitlePart8 = '.';
   static const String intro2Button = 'Découvrir Facteur';
 
   // Media Concentration

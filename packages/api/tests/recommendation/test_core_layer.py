@@ -1,6 +1,7 @@
 """
 Tests unitaires pour CoreLayer - Theme Matching (Phase 1 + Phase 2 diversité)
 """
+
 import pytest
 from datetime import datetime, timedelta
 from uuid import uuid4
@@ -13,6 +14,7 @@ from app.services.recommendation.scoring_config import ScoringWeights
 
 class MockSource:
     """Mock Source pour les tests."""
+
     def __init__(self, theme: str = None, id=None, secondary_themes=None):
         self.theme = theme
         self.id = id or uuid4()
@@ -21,6 +23,7 @@ class MockSource:
 
 class MockContent:
     """Mock Content pour les tests."""
+
     def __init__(
         self,
         source_theme: str = None,
@@ -31,18 +34,25 @@ class MockContent:
     ):
         self.id = uuid4()
         self.theme = theme  # Article-level ML theme
-        self.source = MockSource(
-            theme=source_theme, id=source_id,
-            secondary_themes=secondary_themes
-        ) if source_theme is not None else None
-        self.source_id = source_id if source_id else (self.source.id if self.source else None)
+        self.source = (
+            MockSource(
+                theme=source_theme, id=source_id, secondary_themes=secondary_themes
+            )
+            if source_theme is not None
+            else None
+        )
+        self.source_id = (
+            source_id if source_id else (self.source.id if self.source else None)
+        )
         self.published_at = published_at or datetime.now()
 
 
 class TestCoreLayerThemeMatching:
     """Tests pour le matching de thèmes dans CoreLayer."""
 
-    def create_context(self, user_interests=None, followed_sources=None, custom_sources=None):
+    def create_context(
+        self, user_interests=None, followed_sources=None, custom_sources=None
+    ):
         """Helper pour créer un ScoringContext de test."""
         user_profile = MagicMock()
         user_profile.id = uuid4()
@@ -55,7 +65,7 @@ class TestCoreLayerThemeMatching:
             user_prefs={},
             now=datetime.now(),
             user_subtopics=set(),
-            custom_source_ids=set(custom_sources or [])
+            custom_source_ids=set(custom_sources or []),
         )
 
     def test_theme_match_with_aligned_taxonomy(self):
@@ -130,8 +140,16 @@ class TestCoreLayerThemeMatching:
 
     def test_all_valid_themes_matching(self):
         """Test exhaustif de tous les thèmes valides."""
-        valid_themes = ["tech", "society", "environment", "economy",
-                       "politics", "culture", "science", "international"]
+        valid_themes = [
+            "tech",
+            "society",
+            "environment",
+            "economy",
+            "politics",
+            "culture",
+            "science",
+            "international",
+        ]
 
         layer = CoreLayer()
 
@@ -143,7 +161,9 @@ class TestCoreLayerThemeMatching:
 
             assert score >= ScoringWeights.THEME_MATCH, f"Theme {theme} should match"
             reasons = context.reasons.get(content.id, [])
-            theme_reasons = [r for r in reasons if f"Thème: {theme}" in r.get("details", "")]
+            theme_reasons = [
+                r for r in reasons if f"Thème: {theme}" in r.get("details", "")
+            ]
             assert len(theme_reasons) == 1, f"Theme {theme} should have a reason"
 
     def test_theme_match_with_followed_source(self):
@@ -151,8 +171,7 @@ class TestCoreLayerThemeMatching:
         source_id = uuid4()
         content = MockContent(source_theme="tech", source_id=source_id)
         context = self.create_context(
-            user_interests={"tech"},
-            followed_sources={source_id}
+            user_interests={"tech"}, followed_sources={source_id}
         )
         layer = CoreLayer()
 
@@ -199,7 +218,9 @@ class TestCoreLayerThemeMatching:
 class TestCoreLayerSecondaryThemes:
     """Tests Phase 1: Secondary theme matching."""
 
-    def create_context(self, user_interests=None, followed_sources=None, custom_sources=None):
+    def create_context(
+        self, user_interests=None, followed_sources=None, custom_sources=None
+    ):
         user_profile = MagicMock()
         user_profile.id = uuid4()
         return ScoringContext(
@@ -210,31 +231,33 @@ class TestCoreLayerSecondaryThemes:
             user_prefs={},
             now=datetime.now(),
             user_subtopics=set(),
-            custom_source_ids=set(custom_sources or [])
+            custom_source_ids=set(custom_sources or []),
         )
 
     def test_secondary_theme_match(self):
         """Source international avec secondary tech → match tech users à 70%."""
         content = MockContent(
-            source_theme="international",
-            secondary_themes=["tech", "economy"]
+            source_theme="international", secondary_themes=["tech", "economy"]
         )
         context = self.create_context(user_interests={"tech"})
         layer = CoreLayer()
 
         score = layer.score(content, context)
 
-        expected_secondary = ScoringWeights.THEME_MATCH * ScoringWeights.SECONDARY_THEME_FACTOR
+        expected_secondary = (
+            ScoringWeights.THEME_MATCH * ScoringWeights.SECONDARY_THEME_FACTOR
+        )
         reasons = context.reasons.get(content.id, [])
         secondary_reasons = [r for r in reasons if "secondaire" in r.get("details", "")]
         assert len(secondary_reasons) == 1
-        assert secondary_reasons[0]["score_contribution"] == pytest.approx(expected_secondary)
+        assert secondary_reasons[0]["score_contribution"] == pytest.approx(
+            expected_secondary
+        )
 
     def test_primary_takes_precedence_over_secondary(self):
         """Le thème principal doit avoir priorité sur le secondaire."""
         content = MockContent(
-            source_theme="tech",
-            secondary_themes=["science", "economy"]
+            source_theme="tech", secondary_themes=["science", "economy"]
         )
         context = self.create_context(user_interests={"tech", "science"})
         layer = CoreLayer()
@@ -276,7 +299,7 @@ class TestCoreLayerSecondaryThemes:
         """Même si plusieurs secondaires matchent, un seul bonus est donné."""
         content = MockContent(
             source_theme="international",
-            secondary_themes=["tech", "science", "economy"]
+            secondary_themes=["tech", "science", "economy"],
         )
         context = self.create_context(user_interests={"tech", "science", "economy"})
         layer = CoreLayer()
@@ -291,7 +314,9 @@ class TestCoreLayerSecondaryThemes:
 class TestCoreLayerContentTheme:
     """Tests Phase 2: Article-level content.theme matching."""
 
-    def create_context(self, user_interests=None, followed_sources=None, custom_sources=None):
+    def create_context(
+        self, user_interests=None, followed_sources=None, custom_sources=None
+    ):
         user_profile = MagicMock()
         user_profile.id = uuid4()
         return ScoringContext(
@@ -302,7 +327,7 @@ class TestCoreLayerContentTheme:
             user_prefs={},
             now=datetime.now(),
             user_subtopics=set(),
-            custom_source_ids=set(custom_sources or [])
+            custom_source_ids=set(custom_sources or []),
         )
 
     def test_content_theme_takes_precedence(self):
@@ -314,9 +339,13 @@ class TestCoreLayerContentTheme:
         score = layer.score(content, context)
 
         reasons = context.reasons.get(content.id, [])
-        article_theme_reasons = [r for r in reasons if "Thème article" in r.get("details", "")]
+        article_theme_reasons = [
+            r for r in reasons if "Thème article" in r.get("details", "")
+        ]
         assert len(article_theme_reasons) == 1
-        assert article_theme_reasons[0]["score_contribution"] == ScoringWeights.THEME_MATCH
+        assert (
+            article_theme_reasons[0]["score_contribution"] == ScoringWeights.THEME_MATCH
+        )
 
     def test_content_theme_none_falls_to_source(self):
         """content.theme=None → fallback vers source.theme."""
@@ -327,15 +356,15 @@ class TestCoreLayerContentTheme:
         score = layer.score(content, context)
 
         reasons = context.reasons.get(content.id, [])
-        source_theme_reasons = [r for r in reasons if r.get("details", "") == "Thème: tech"]
+        source_theme_reasons = [
+            r for r in reasons if r.get("details", "") == "Thème: tech"
+        ]
         assert len(source_theme_reasons) == 1
 
     def test_content_theme_mismatch_falls_to_secondary(self):
         """content.theme="culture" (non matché) → fallback secondary "tech"."""
         content = MockContent(
-            source_theme="international",
-            secondary_themes=["tech"],
-            theme="culture"
+            source_theme="international", secondary_themes=["tech"], theme="culture"
         )
         context = self.create_context(user_interests={"tech"})
         layer = CoreLayer()
@@ -362,9 +391,7 @@ class TestCoreLayerContentTheme:
         """content.theme (tier 1) > source.theme (tier 2) > secondary (tier 3)."""
         # Tous les tiers matchent, seul tier 1 doit être retenu
         content = MockContent(
-            source_theme="science",
-            secondary_themes=["economy"],
-            theme="tech"
+            source_theme="science", secondary_themes=["economy"], theme="tech"
         )
         context = self.create_context(user_interests={"tech", "science", "economy"})
         layer = CoreLayer()
