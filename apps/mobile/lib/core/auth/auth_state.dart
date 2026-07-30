@@ -453,8 +453,14 @@ class AuthStateNotifier extends StateNotifier<AuthState>
               ) ==
               true;
 
-      // Capturer AVANT la mise à jour du state pour détecter les transitions
-      final bool isNewSignIn = state.user == null && user != null;
+      // Capturer AVANT la mise à jour du state pour détecter les transitions.
+      // Comparer par id (pas juste null → non-null) : une session anonyme a
+      // déjà un `state.user` non-null, donc se connecter à un compte réel
+      // depuis l'anonyme (CTA « J'ai déjà un compte ») ne doit pas être
+      // ignoré ici — sinon `needsOnboarding` reste bloqué sur la valeur de
+      // l'anonyme (toujours `true`) et le vrai statut DB n'est jamais relu.
+      final bool isNewSignIn =
+          user != null && state.user?.id != user.id;
       _noteRealAccount(user);
 
       state = state.copyWith(

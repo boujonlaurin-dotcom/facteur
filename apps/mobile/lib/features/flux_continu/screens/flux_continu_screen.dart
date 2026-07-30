@@ -1357,6 +1357,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         case AlertsSection():
           // Le rappel d'alertes ne porte que des sources, jamais d'article.
           break;
+        case CarouselSection(:final data):
+          for (final c in data.items) {
+            if (c.id == contentId) return c;
+          }
         case DigestTopicSection(:final topics):
           for (final t in topics) {
             final lead = pickTopicLead(t);
@@ -1883,6 +1887,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       (section) => switch (section) {
         EssentielSection() => false,
         AlertsSection() => false,
+        CarouselSection() => false,
         DigestTopicSection(:final topics) => topics.any(
             (topic) =>
                 !_pendingFeedback.contains(pickTopicLead(topic).contentId),
@@ -1917,10 +1922,23 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // page, personne ne la voyait. Jamais sur le hero Essentiel (index 0), et
     // embarquée dans le `KeyedSubtree` de sa section pour les mêmes raisons de
     // snap que l'inline ci-dessus.
-    final inviteTargetIndex = state.sections.length < 2
+    // Story 32.1 — la carte carrousel de fin (hors-cap, non déplaçable) ne doit
+    // pas décaler l'ancre : on l'exclut du décompte pour garder l'invitation ~2
+    // sections de CONTENU avant la fin, comme avant l'ajout du carrousel.
+    final anchorSectionCount =
+        state.sections.isNotEmpty && state.sections.last is CarouselSection
+        ? state.sections.length - 1
+        : state.sections.length;
+    final inviteTargetIndex = anchorSectionCount < 2
         ? -1
-        : math.max(1, state.sections.length - 3);
-    final firstPreparingIndex = firstPreparingSectionIndex(state.sections);
+        : math.max(1, anchorSectionCount - 3);
+
+    // Un seul indicateur d'attente pour toute la Tournée : la **première**
+    // coquille de section encore non résolue porte le libellé « Ta tournée se
+    // prépare… » (les autres restent des cartes shimmer nues).
+    final firstPreparingIndex = state.sections.indexWhere(
+      (s) => s is FeedThemeSection && s.isPlaceholder,
+    );
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
@@ -2393,6 +2411,9 @@ class _FluxContinuSkeleton extends StatelessWidget {
         // Le rappel d'alertes n'a rien à pré-réserver : il n'existe que si des
         // cloches ont du neuf, ce que le squelette ne sait pas encore.
         if (section is AlertsSection) continue;
+        // La carte carrousel est auto-portée (pas de banner/skeleton) et
+        // n'apparaît qu'avec les vraies données de l'Essentiel — jamais en boot.
+        if (section is CarouselSection) continue;
         final isSource =
             section is FeedThemeSection && section.kind == SectionKind.source;
         children.add(

@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.content import SourceMini
+from app.schemas.feed import CarouselInfo
 
 
 class EssentielKind(StrEnum):
@@ -95,6 +96,14 @@ class EssentielResponse(BaseModel):
         description=(
             "Nb d'articles frais (sources suivies + thèmes appréciés riches) "
             "publiés depuis la génération du digest du jour, borné pour l'affichage."
+        ),
+    )
+    carousel: CarouselInfo | None = Field(
+        default=None,
+        description=(
+            "Carrousel semi-éditorialisé du jour (Story 32.1), mutualisé avec "
+            "Flâner. Rotation déterministe date-seedée ; présent uniquement sur "
+            "l'édition du jour. Champ additif (rétro-compat clients anciens)."
         ),
     )
 
