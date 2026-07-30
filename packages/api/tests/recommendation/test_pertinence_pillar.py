@@ -167,7 +167,9 @@ class TestSubtopicPositionWeighting:
             1.0 + ScoringWeights.SUBTOPIC_POSITION_FACTOR
         )
         assert score == pytest.approx(expected)
-        assert contributions[0].label == "Sujet : IA, Tech"
+        # `tech` rendait « Tech » via une table de libellés périmée ; le libellé
+        # canonique est « Technologie ». `ai` garde sa forme courte.
+        assert contributions[0].label == "Sujet : IA, Technologie"
 
 
 class TestEntityAffinity:
@@ -390,3 +392,67 @@ class TestCustomTopicEntityBranch:
             * 2.0
             * ScoringWeights.ENTITY_MATCH_MULTIPLIER
         )
+
+
+class TestSubtopicLabelInvariant:
+    """PR1e — garde-fou contre la re-dérive de la table de libellés.
+
+    Le pilier portait sa propre copie (`SUBTOPIC_LABELS`, 50 entrées) d'une
+    taxonomie à 51 slugs : 32 clés fantômes et 33 slugs valides sans libellé,
+    donc un `.capitalize()` anglais dans des raisons françaises. Elle est
+    supprimée au profit de `SLUG_TO_LABEL` ; ces tests interdisent qu'une
+    nouvelle divergence passe en silence.
+    """
+
+    def test_every_valid_slug_has_a_french_label(self):
+        from app.services.ml.classification_service import (
+            SLUG_TO_LABEL,
+            VALID_TOPIC_SLUGS,
+        )
+
+        assert VALID_TOPIC_SLUGS - set(SLUG_TO_LABEL) == set()
+
+    def test_no_label_for_an_unknown_slug(self):
+        from app.services.ml.classification_service import (
+            SLUG_TO_LABEL,
+            VALID_TOPIC_SLUGS,
+        )
+
+        assert set(SLUG_TO_LABEL) - VALID_TOPIC_SLUGS == set()
+
+    @pytest.mark.parametrize(
+        "slug,expected",
+        [
+            ("energy", "Énergie"),
+            ("politics", "Politique"),
+            ("usa", "États-Unis"),
+            ("environment", "Environnement"),
+            ("inequality", "Inégalités sociales"),
+            ("middleeast", "Moyen-Orient"),
+        ],
+    )
+    def test_most_followed_slugs_render_in_french(self, slug, expected):
+        """Ces slugs rendaient « Energy », « Politics », « Usa »…"""
+        from app.services.recommendation.pillars.pertinence import _subtopic_label
+
+        assert _subtopic_label(slug) == expected
+
+    def test_unknown_slug_still_falls_back(self):
+        from app.services.recommendation.pillars.pertinence import _subtopic_label
+
+        assert _subtopic_label("slug-inexistant") == "Slug-inexistant"
+
+    def test_short_label_overrides_are_valid_slugs(self):
+        """La liste d'exceptions courtes ne doit pas devenir une 2e taxonomie."""
+        from app.services.ml.classification_service import VALID_TOPIC_SLUGS
+        from app.services.recommendation.pillars.pertinence import (
+            _SHORT_SUBTOPIC_LABELS,
+        )
+
+        assert set(_SHORT_SUBTOPIC_LABELS) <= VALID_TOPIC_SLUGS
+
+    def test_short_label_wins_over_canonical(self):
+        from app.services.recommendation.pillars.pertinence import _subtopic_label
+
+        assert _subtopic_label("ai") == "IA"
+        assert _subtopic_label("space") == "Spatial"

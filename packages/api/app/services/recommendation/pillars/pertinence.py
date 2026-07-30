@@ -6,6 +6,7 @@ Consolide : CoreLayer (theme), ArticleTopicLayer, BehavioralLayer,
 
 from app.models.content import Content
 from app.models.enums import ContentType, InterestState
+from app.services.ml.classification_service import SLUG_TO_LABEL
 from app.services.recommendation.helpers import (
     compute_coverage_score,
     iter_entity_names,
@@ -35,67 +36,44 @@ THEME_LABELS = {
     "culture_ideas": "Culture & Idées",
 }
 
-# Mapping 50 sous-thèmes slugs -> Français
-SUBTOPIC_LABELS = {
-    "ai": "IA",
-    "llm": "LLM",
-    "crypto": "Crypto",
-    "web3": "Web3",
-    "space": "Spatial",
-    "biotech": "Biotech",
-    "quantum": "Quantique",
-    "cybersecurity": "Cybersécurité",
-    "robotics": "Robotique",
-    "gaming": "Gaming",
-    "cleantech": "Cleantech",
-    "data-privacy": "Données",
-    "social-justice": "Justice sociale",
-    "feminism": "Féminisme",
-    "lgbtq": "LGBTQ+",
-    "immigration": "Immigration",
-    "health": "Santé",
-    "education": "Éducation",
-    "urbanism": "Urbanisme",
-    "housing": "Logement",
-    "work-reform": "Travail",
-    "justice-system": "Justice",
-    "climate": "Climat",
-    "biodiversity": "Biodiversité",
-    "energy-transition": "Transition énergétique",
-    "pollution": "Pollution",
-    "circular-economy": "Économie circulaire",
-    "agriculture": "Agriculture",
-    "oceans": "Océans",
-    "forests": "Forêts",
-    "macro": "Macro-économie",
-    "finance": "Finance",
-    "startups": "Startups",
-    "venture-capital": "VC",
-    "labor-market": "Emploi",
-    "inflation": "Inflation",
-    "trade": "Commerce",
-    "taxation": "Fiscalité",
-    "elections": "Élections",
-    "institutions": "Institutions",
-    "local-politics": "Politique locale",
-    "activism": "Activisme",
-    "democracy": "Démocratie",
-    "philosophy": "Philosophie",
-    "art": "Art",
-    "cinema": "Cinéma",
-    "media-critics": "Critique des médias",
-    "fundamental-research": "Recherche",
-    "applied-science": "Sciences appliquées",
-    "geopolitics": "Géopolitique",
-}
-
 
 def _theme_label(slug: str) -> str:
     return THEME_LABELS.get(slug.lower().strip(), slug.capitalize())
 
 
+# Forme courte pour les 4 slugs dont le libellé canonique est trop long pour
+# une ligne de raison (« Sujet : … », affichée sous la carte). `SLUG_TO_LABEL`
+# est écrit pour les prompts LLM et les sélecteurs de sujets, où la verbosité
+# aide ; ici elle coûte. Tout le reste vient de la table canonique, et
+# l'invariant de test impose que ces clés soient des slugs valides — c'est une
+# liste d'exceptions assumée, pas une seconde taxonomie.
+_SHORT_SUBTOPIC_LABELS = {
+    "ai": "IA",
+    "feminism": "Féminisme",
+    "gaming": "Gaming",
+    "space": "Spatial",
+}
+
+
 def _subtopic_label(slug: str) -> str:
-    return SUBTOPIC_LABELS.get(slug.lower().strip(), slug.capitalize())
+    """Libellé français d'un slug de la taxonomie.
+
+    S'appuie sur `SLUG_TO_LABEL`, la table canonique déjà partagée par
+    `topic_selector`, `custom_topics`, `topic_enrichment` et `user_service`, et
+    qui couvre exactement `VALID_TOPIC_SLUGS` (invariant testé).
+
+    Il y avait ici un `SUBTOPIC_LABELS` local, copie dérivée d'une ancienne
+    taxonomie : 50 entrées dont **32 slugs fantômes** (`llm`, `crypto`,
+    `energy-transition`…) et **33 slugs valides sans libellé**. Le `.capitalize()`
+    de repli tombait donc sur les slugs les plus suivis et rendait des raisons
+    anglaises dans une UI française : `energy` (83 abonnés) → « Energy »,
+    `politics` (75) → « Politics », `usa` (70) → « Usa », `environment` (63),
+    `inequality` (54), plus `justice`, `europe`, `tech`.
+    """
+    key = slug.lower().strip()
+    if key in _SHORT_SUBTOPIC_LABELS:
+        return _SHORT_SUBTOPIC_LABELS[key]
+    return SLUG_TO_LABEL.get(key, slug.capitalize())
 
 
 def _get_effective_theme(content: Content, user_interests: set[str]) -> str | None:
