@@ -39,7 +39,9 @@ class _Content:
         self.cluster_id = cluster_id
 
 
-def _context(*, cluster_source_counts=None, user_interests=None):
+def _context(
+    *, cluster_source_counts=None, user_interests=None, coverage_source_count=None
+):
     return ScoringContext(
         user_profile=MagicMock(id=uuid4()),
         user_interests=set(user_interests or []),
@@ -48,6 +50,7 @@ def _context(*, cluster_source_counts=None, user_interests=None):
         user_prefs={},
         now=datetime.now(),
         cluster_source_counts=cluster_source_counts or {},
+        coverage_source_count=coverage_source_count,
     )
 
 
@@ -101,6 +104,52 @@ def test_small_cluster_gets_relayed_label():
 
     pillar = PertinencePillar()
     raw, contribs = pillar.compute_raw(content, ctx)
+
+    contrib = next(c for c in contribs if c.label == "Sujet relayé")
+    assert contrib.points == ScoringWeights.COVERAGE_BASE
+
+
+def test_context_carried_count_gives_bonus_without_cluster_id():
+    """Chemin `topics` : `coverage_source_count` suffit, même content.cluster_id NULL.
+
+    C'est le cœur du câblage digest : `contents.cluster_id` est NULL à ~99 %
+    en base, donc le bonus ne doit PAS dépendre de cet attribut.
+    """
+    content = _Content(cluster_id=None)
+    ctx = _context(coverage_source_count=3)
+
+    pillar = PertinencePillar()
+    raw, contribs = pillar.compute_raw(content, ctx)
+
+    coverage_contribs = [c for c in contribs if c.label.startswith("Couvert")]
+    assert len(coverage_contribs) == 1
+    expected = compute_coverage_score(3)
+    assert coverage_contribs[0].points == expected
+    assert raw == expected
+
+
+def test_context_carried_mono_source_no_bonus():
+    """`coverage_source_count == 1` (cluster mono-source) → aucun bonus."""
+    content = _Content(cluster_id=None)
+    ctx = _context(coverage_source_count=1)
+
+    pillar = PertinencePillar()
+    raw, contribs = pillar.compute_raw(content, ctx)
+
+    assert not any(c.label.startswith("Couvert") for c in contribs)
+    assert not any(c.label == "Sujet relayé" for c in contribs)
+    assert raw == 0.0
+
+
+def test_context_carried_count_takes_priority_over_dict():
+    """`coverage_source_count` prime sur `cluster_source_counts` quand renseigné."""
+    cid = uuid4()
+    content = _Content(cluster_id=cid)
+    # dict dirait 5, mais le count porté par le contexte (2) doit gagner.
+    ctx = _context(coverage_source_count=2, cluster_source_counts={cid: 5})
+
+    pillar = PertinencePillar()
+    _, contribs = pillar.compute_raw(content, ctx)
 
     contrib = next(c for c in contribs if c.label == "Sujet relayé")
     assert contrib.points == ScoringWeights.COVERAGE_BASE
