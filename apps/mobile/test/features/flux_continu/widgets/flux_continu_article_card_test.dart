@@ -12,9 +12,17 @@ import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
+import 'package:timeago/timeago.dart' as timeago;
 import 'package:visibility_detector/visibility_detector.dart';
 
-Content _content({String? sourceTheme}) => Content(
+import 'package:facteur/core/utils/fr_compact_messages.dart';
+
+Content _content({
+  String? sourceTheme,
+  String sourceName = 'Le Monde',
+  DateTime? publishedAt,
+}) =>
+    Content(
       id: 'c-1',
       title: 'Titre article Flux',
       url: 'https://example.com/1',
@@ -22,12 +30,12 @@ Content _content({String? sourceTheme}) => Content(
       // FacteurThumbnail éventuelle vient de l'aperçu flottant.
       description: 'Un chapô pour l\'aperçu.',
       contentType: ContentType.article,
-      publishedAt: DateTime(2026, 7, 10),
+      publishedAt: publishedAt ?? DateTime(2026, 7, 10),
       // Pas de topics ML → `progressionTopic` retombe sur le thème source, le
       // fallback qui garde une pastille utile quand la classif est en retard.
       source: Source(
         id: 's-1',
-        name: 'Le Monde',
+        name: sourceName,
         type: SourceType.article,
         theme: sourceTheme,
       ),
@@ -46,6 +54,9 @@ Widget _wrap(Widget child) => ProviderScope(
 void main() {
   setUpAll(() {
     GoogleFonts.config.allowRuntimeFetching = false;
+    // Sans ça `timeago` retombe sur l'anglais long (« 3 months ago ») et le
+    // footer mesuré n'a plus rien à voir avec celui de l'app (« 2 h »).
+    timeago.setLocaleMessages('fr_short', FrCompactMessages());
     VisibilityDetectorController.instance.updateInterval = Duration.zero;
   });
 
@@ -138,4 +149,37 @@ void main() {
     expect(find.text('Tech & Innovation'), findsNothing);
   });
 
+  testWidgets(
+      'footer tient en 390 px avec un nom de source long, la puce de '
+      'couverture et le badge de divergence (budget horizontal)',
+      (tester) async {
+    // Le viewport mobile de référence du design system. Un dépassement de la
+    // Row du footer lèverait une FlutterError « RenderFlex overflowed » que
+    // le framework de test remonte via takeException.
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(_wrap(
+      FluxContinuArticleCard(
+        article: _content(
+          sourceName: 'Le Monde Diplomatique',
+          publishedAt: DateTime.now().subtract(const Duration(hours: 2)),
+        ),
+        sourceCount: 3,
+        divergenceLevel: 'high',
+        perspectiveSources: const [
+          SourceMini(name: 'Le Monde'),
+          SourceMini(name: 'Libération'),
+          SourceMini(name: 'Le Figaro'),
+        ],
+      ),
+    ));
+
+    // Un dépassement lèverait « RenderFlex overflowed » ; c'est le nom de
+    // source qui doit céder en premier (ellipse), jamais la puce.
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(const Key('flux-coverage-chip')), findsOneWidget);
+    expect(find.text('3 sources'), findsOneWidget);
+  });
 }

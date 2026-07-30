@@ -577,71 +577,88 @@ class _Footer extends StatelessWidget {
       ),
     );
 
+    // Deux groupes : l'identité (qui flexe) et le trailing (taille fixe).
+    // Un `Spacer` au même niveau que le `Flexible` du nom se partagerait
+    // l'espace libre à 50/50 — un nom long ne rétrécissait alors que jusqu'à sa
+    // moitié et le trailing débordait. Ici l'`Expanded` pousse le trailing à
+    // droite ET absorbe toute la contrainte, donc le nom s'ellipse en premier.
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        SourceDot(
-          name: vm.sourceName,
-          logoUrl: vm.sourceLogoUrl,
-          accent: colors.primary,
-          ringColor: colors.surface,
-          size: 14,
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            vm.sourceName,
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: colors.textSecondary,
-              height: 1.4,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              SourceDot(
+                name: vm.sourceName,
+                logoUrl: vm.sourceLogoUrl,
+                accent: colors.primary,
+                ringColor: colors.surface,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  vm.sourceName,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textSecondary,
+                    height: 1.4,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (!vm.isFollowedSource) ...[
+                const SizedBox(width: 3),
+                Text(
+                  '+',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textTertiary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 6),
+              separator,
+              const SizedBox(width: 6),
+              Icon(
+                PhosphorIconsRegular.clock,
+                size: 12,
+                color: colors.textTertiary,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                _publishedAtShort(vm.publishedAt),
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: colors.textTertiary,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
         ),
-        if (!vm.isFollowedSource) ...[
-          const SizedBox(width: 3),
-          Text(
-            '+',
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: colors.textTertiary,
-              height: 1.4,
-            ),
-          ),
-        ],
-        const SizedBox(width: 6),
-        separator,
-        const SizedBox(width: 6),
-        Icon(PhosphorIconsRegular.clock, size: 12, color: colors.textTertiary),
-        const SizedBox(width: 3),
-        Text(
-          _publishedAtShort(vm.publishedAt),
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: colors.textTertiary,
-            height: 1.4,
-          ),
-        ),
-        if (showCoverage || divergenceLevel != null) const Spacer(),
         if (divergenceLevel != null) ...[
+          const SizedBox(width: 6),
           DivergenceInlineBadge(
             divergenceLevel: divergenceLevel,
             iconOnly: true,
           ),
-          if (showCoverage) const SizedBox(width: 6),
         ],
-        if (showCoverage)
+        if (showCoverage) ...[
+          const SizedBox(width: 6),
           CoverageChip(
             key: const Key('flux-coverage-chip'),
             sourceCount: sourceCount,
             sources: perspectiveSources,
             colors: colors,
           ),
+        ],
       ],
     );
   }

@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/models/weather_location.dart';
@@ -85,6 +86,8 @@ EssentielArticle _article({
   bool isActuDuJour = false,
   bool isRead = false,
   DateTime? completedAt,
+  int sourceCount = 0,
+  List<SourceMini> perspectiveSources = const [],
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
@@ -100,6 +103,8 @@ EssentielArticle _article({
     isActuDuJour: isActuDuJour,
     isRead: isRead,
     completedAt: completedAt,
+    sourceCount: sourceCount,
+    perspectiveSources: perspectiveSources,
   );
 }
 
@@ -275,6 +280,48 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(find.byType(FacteurThumbnail), findsNothing);
+    });
+
+
+    testWidgets(
+        'la puce de couverture est rendue sur les tuiles couvertes (>= 2 '
+        'sources) et ne fait pas déborder le 390 px', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const covered = [
+        SourceMini(name: 'Le Monde'),
+        SourceMini(name: 'Libération'),
+        SourceMini(name: 'Le Figaro'),
+      ];
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(
+              rank: 1,
+              source: 'Le Monde Diplomatique',
+              sourceCount: 4,
+              perspectiveSources: covered,
+            ),
+            _article(
+              rank: 2,
+              source: 'Le Monde Diplomatique',
+              sourceCount: 3,
+              perspectiveSources: covered,
+            ),
+            // Sous le seuil : aucune puce.
+            _article(rank: 3, sourceCount: 1),
+          ],
+          onTapArticle: (_) {},
+        ),
+      ));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('4 sources'), findsOneWidget);
+      expect(find.text('3 sources'), findsOneWidget);
+      expect(find.text('1 source'), findsNothing);
     });
 
     testWidgets('renders up to 5 articles (lead + 2 mediums + 2 lights)',
