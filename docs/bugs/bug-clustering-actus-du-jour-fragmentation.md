@@ -390,6 +390,19 @@ La précision reste parfaite : Gaza, Ukraine et Iran restent séparés malgré �
 régression « Texas ». Performance : **0,45 s pour 2 200 articles** (1,4 s pour 4 400), une fois par
 cycle et non plus une fois par utilisateur.
 
+### Réserve importante sur la portée du Lot A
+
+Le digest de production est généré en format **`editorial`**
+(`digest_generation_job.py:983`), qui passe par `editorial/pipeline.py` et **non** par
+`TopicSelector`. Son pool vient de `_get_global_candidates()` : les **200 articles les plus
+récents** — déjà user-agnostique, mais soit environ 2 h de publication seulement.
+
+Conséquence : sur ce chemin, **le Lot B agit** (la pipeline appelle `build_topic_clusters`)
+mais **le Lot A n'a probablement aucun effet**, et la pastille « N sources » — pilotée par
+`perspective_count` via `PerspectiveService` — n'a pas été touchée. Le cap à 200 par récence
+est vraisemblablement le facteur limitant réel de ce chemin, et n'est pas corrigé ici.
+À vérifier et chiffrer : cf. `.context/handoff-clustering-verification.md` §3.1.
+
 ### Non livré
 
 - **Lot C (observabilité)** : seul le log `global_trending_context_built` a été enrichi du KPI
