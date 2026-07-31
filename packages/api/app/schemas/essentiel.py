@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.content import SourceMini
+from app.schemas.feed import CarouselInfo
 
 
 class EssentielKind(StrEnum):
@@ -54,12 +55,23 @@ class EssentielArticle(BaseModel):
     )
     section_label: str = Field(..., description="Libellé du topic d'origine")
     perspective_count: int = 0
+    # Couverture multi-sources du sujet d'origine — pilote la pastille
+    # « N sources » de la carte (seuil mobile : >= 2).
+    source_count: int = 0
+    # Tronqué à `PERSPECTIVE_SOURCES_CAP` à l'émission : la carte n'affiche que
+    # 3 avatars et chaque entrée porte un logo qui déclenche une requête image.
+    perspective_sources: list[dict] = Field(default_factory=list)
     rank: int = Field(..., ge=1, le=5, description="Position dans l'essentiel (1..5)")
     is_read: bool = False
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
     read_at: datetime | None = None
+    # Temps passé cumulé (s) — départage « Ouvert » (< 5 s) de « Lu en partie ».
+    time_spent_seconds: int = 0
+    # Lecture aboutie (fin d'article atteinte), pas seulement ouverte : c'est ce
+    # qui permet à la carte héros de la Tournée d'afficher le filet de complétion.
+    completed_at: datetime | None = None
     # Signaux user-aware pour affichage mobile (badges "Tu suis", pastille "Actu du jour").
     is_followed_source: bool = False
     is_followed_topic: bool = False
@@ -90,6 +102,14 @@ class EssentielResponse(BaseModel):
         description=(
             "Nb d'articles frais (sources suivies + thèmes appréciés riches) "
             "publiés depuis la génération du digest du jour, borné pour l'affichage."
+        ),
+    )
+    carousel: CarouselInfo | None = Field(
+        default=None,
+        description=(
+            "Carrousel semi-éditorialisé du jour (Story 32.1), mutualisé avec "
+            "Flâner. Rotation déterministe date-seedée ; présent uniquement sur "
+            "l'édition du jour. Champ additif (rétro-compat clients anciens)."
         ),
     )
 

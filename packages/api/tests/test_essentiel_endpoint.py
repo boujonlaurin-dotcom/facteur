@@ -27,6 +27,7 @@ from app.services.essentiel_service import (
     _W_UNE,
     ESSENTIEL_MAX_ARTICLES,
     ESSENTIEL_MIN_ARTICLES,
+    PERSPECTIVE_SOURCES_CAP,
     EssentielUserContext,
     _perspective_score,
     _score_article,
@@ -1609,3 +1610,37 @@ def test_une_and_trending_can_cumulate_when_both_set():
     score = _score_article(topic, topic.articles[0], EssentielUserContext())
 
     assert score == pytest.approx(_W_TRENDING + _W_UNE - 0.5)
+
+
+def test_coverage_is_propagated_and_perspective_sources_capped():
+    """La couverture du sujet remonte telle quelle ; les logos sont tronqués.
+
+    Contrainte PO : ne pas alourdir l'ouverture de l'Essentiel. La carte
+    n'affiche que 3 avatars, chacun déclenchant une requête image.
+    """
+    topic = _make_topic(rank=1, label="Climat", n_articles=1)
+    topic = topic.model_copy(
+        update={
+            "source_count": 7,
+            "perspective_sources": [
+                {"name": f"S{i}", "domain": f"s{i}.fr", "logo_url": None}
+                for i in range(6)
+            ],
+        }
+    )
+
+    response = build_essentiel_response(_make_digest([topic]))
+
+    article = response.articles[0]
+    assert article.source_count == 7
+    assert len(article.perspective_sources) == PERSPECTIVE_SOURCES_CAP
+    assert article.perspective_sources[0]["name"] == "S0"
+
+
+def test_topic_without_perspective_sources_emits_empty_list():
+    topic = _make_topic(rank=1, label="Climat", n_articles=1)
+
+    article = build_essentiel_response(_make_digest([topic])).articles[0]
+
+    assert article.perspective_sources == []
+    assert article.source_count == 0

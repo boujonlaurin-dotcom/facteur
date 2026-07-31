@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -17,7 +19,27 @@ class StickyTab {
   final String label;
   final Color accent;
 
-  const StickyTab({required this.label, required this.accent});
+  /// Clé d'ordre Tournée (`theme:`/`source:`/`essentiel`/`bonnes`/`veille`)
+  /// quand l'onglet correspond à une section **réordonnable** ; `null` sinon
+  /// (carte héros Essentiel, Mot du jour, Citation, Fin de tournée, « Pour
+  /// toi », alertes). Non-null ⇒ l'onglet peut être soulevé au long-press dans
+  /// le header et sert de clé pour la persistance de l'ordre.
+  final String? orderKey;
+
+  const StickyTab({required this.label, required this.accent, this.orderKey});
+}
+
+/// Le réordre par drag n'a de sens qu'avec **≥2 onglets déplaçables** (sinon le
+/// seul onglet mobile n'a nulle part où aller, et le clamp le renverrait en
+/// queue). Source unique de vérité de cette règle, partagée par la rangée
+/// d'onglets ([_TabsRowState._reorderEnabled]) et la découvrabilité du geste
+/// côté écran (le hint one-shot). Court-circuite au 2ᵉ onglet réordonnable.
+bool stickyTabsAllowReorder(Iterable<StickyTab> tabs) {
+  var count = 0;
+  for (final t in tabs) {
+    if (t.orderKey != null && ++count >= 2) return true;
+  }
+  return false;
 }
 
 /// Sticky tab bar revealed once the user scrolls past the AppBar threshold.
@@ -33,7 +55,7 @@ class StickyTab {
 ///   current / upcoming), driven by [activeIndex], so the bar reads as discrete
 ///   « pages » matching the section snap rather than a continuous gauge,
 /// - when [showFilterBar] is true (Explorer mode), [FeedFilterBar] is
-///   inserted below the tabs so the filter chips morph in under the same
+///   inserted below the tabs so the favorite-topic tabs sit under the same
 ///   parchment surface rather than swapping the whole sticky.
 class StickyTabBar extends StatelessWidget {
   final List<StickyTab> tabs;
@@ -42,6 +64,17 @@ class StickyTabBar extends StatelessWidget {
   final ScrollController? tabsController;
   final bool showFilterBar;
 
+  /// Réordre par drag long-press d'un onglet. `null` ⇒ rangée non réordonnable
+  /// (comportement historique). Reçoit les index bruts de
+  /// `ReorderableListView` (`newIndex` exprimé dans l'espace d'insertion) ; le
+  /// remappage vers les clés d'ordre est fait par l'appelant.
+  final void Function(int oldIndex, int newIndex)? onReorder;
+
+  /// Bornes du drag, pour geler l'auto-align et le suivi de section actif tant
+  /// qu'un onglet est soulevé.
+  final VoidCallback? onDragStart;
+  final VoidCallback? onDragEnd;
+
   const StickyTabBar({
     super.key,
     required this.tabs,
@@ -49,6 +82,9 @@ class StickyTabBar extends StatelessWidget {
     required this.onTapTab,
     this.tabsController,
     this.showFilterBar = false,
+    this.onReorder,
+    this.onDragStart,
+    this.onDragEnd,
   });
 
   @override
@@ -67,6 +103,9 @@ class StickyTabBar extends StatelessWidget {
             activeIndex: activeIndex,
             onTapTab: onTapTab,
             controller: tabsController,
+            onReorder: onReorder,
+            onDragStart: onDragStart,
+            onDragEnd: onDragEnd,
           ),
           SizedBox(
             height: 4,
@@ -136,42 +175,184 @@ class _FeedRefreshIndicatorStrip extends ConsumerWidget {
   }
 }
 
-class _TabsRow extends StatelessWidget {
+/// Rangée d'onglets horizontale. Quand [onReorder] est fourni **et** qu'au
+/// moins deux onglets portent une `orderKey`, la rangée devient un
+/// `ReorderableListView` horizontal : un long-press (~900 ms) sur un onglet
+/// réordonnable le soulève, le glissement le repositionne. Les onglets figés
+/// (héros, Mot du jour, Citation, Fin de tournée) ne portent pas de listener de
+/// drag — ils sont donc non saisissables « gratuitement » et servent de bornes.
+class _TabsRow extends StatefulWidget {
   final List<StickyTab> tabs;
   final int activeIndex;
   final ValueChanged<int> onTapTab;
   final ScrollController? controller;
+  final void Function(int oldIndex, int newIndex)? onReorder;
+  final VoidCallback? onDragStart;
+  final VoidCallback? onDragEnd;
 
   const _TabsRow({
     required this.tabs,
     required this.activeIndex,
     required this.onTapTab,
     this.controller,
+    this.onReorder,
+    this.onDragStart,
+    this.onDragEnd,
   });
 
   @override
+  State<_TabsRow> createState() => _TabsRowState();
+}
+
+class _TabsRowState extends State<_TabsRow> {
+  /// Un onglet est soulevé. Pilote l'atténuation des zones figées.
+  bool _dragging = false;
+
+  bool get _reorderEnabled =>
+      widget.onReorder != null && stickyTabsAllowReorder(widget.tabs);
+
+  void _setDragging(bool value) {
+    if (_dragging == value) return;
+    setState(() => _dragging = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Compaction « cartes ≤ écran » : rangée d'onglets 48→44 (sync avec
+    // `_kStickyBarHeight` côté écran, qui alimente budget de fit ET snap).
+    const height = 44.0;
+    // Padding latéral 12 - 1 : l'espacement inter-onglets (ex-`separatorBuilder`
+    // de 2px) est désormais porté par chaque item (1px de chaque côté), car
+    // `ReorderableListView` n'accepte pas de séparateurs.
+    const padding = EdgeInsets.fromLTRB(11, 2, 11, 6);
+
+    if (!_reorderEnabled) {
+      return SizedBox(
+        height: height,
+        child: ListView.builder(
+          controller: widget.controller,
+          scrollDirection: Axis.horizontal,
+          padding: padding,
+          itemCount: widget.tabs.length,
+          itemBuilder: (context, i) => _buildTab(i, draggable: false),
+        ),
+      );
+    }
+
     return SizedBox(
-      // Compaction « cartes ≤ écran » : rangée d'onglets 48→44 (sync avec
-      // `_kStickyBarHeight` côté écran, qui alimente budget de fit ET snap).
-      height: 44,
-      child: ListView.separated(
-        controller: controller,
+      height: height,
+      child: ReorderableListView.builder(
+        scrollController: widget.controller,
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
-        itemCount: tabs.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 2),
-        itemBuilder: (context, i) {
-          return _Tab(
-            tab: tabs[i],
-            isActive: i == activeIndex,
-            isDone: i < activeIndex,
-            onTap: () => onTapTab(i),
-          );
+        padding: padding,
+        // Les poignées par défaut rendraient *tous* les onglets déplaçables ;
+        // on pose le listener nous-mêmes, uniquement sur les réordonnables.
+        buildDefaultDragHandles: false,
+        proxyDecorator: _proxyDecorator,
+        itemCount: widget.tabs.length,
+        onReorderStart: (_) {
+          HapticFeedback.mediumImpact();
+          _setDragging(true);
+          widget.onDragStart?.call();
         },
+        onReorderEnd: (_) {
+          HapticFeedback.selectionClick();
+          _setDragging(false);
+          widget.onDragEnd?.call();
+        },
+        onReorder: (oldIndex, newIndex) =>
+            widget.onReorder!(oldIndex, newIndex),
+        itemBuilder: (context, i) => _buildTab(i, draggable: true),
       ),
     );
   }
+
+  Widget _buildTab(int i, {required bool draggable}) {
+    final tab = widget.tabs[i];
+    final reorderable = draggable && tab.orderKey != null;
+    Widget child = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 1),
+      child: _Tab(
+        tab: tab,
+        isActive: i == widget.activeIndex,
+        isDone: i < widget.activeIndex,
+        onTap: () => widget.onTapTab(i),
+      ),
+    );
+    if (_dragging && !reorderable) {
+      // Zones figées atténuées pendant le drag : lisible sans icône cadenas
+      // (minimalisme du « moment de fermeture »).
+      child = Opacity(opacity: 0.5, child: child);
+    }
+    return KeyedSubtree(
+      // Clé stable : la clé d'ordre pour les réordonnables (invariante au
+      // déplacement), la position + le libellé pour les onglets figés.
+      key: ValueKey(tab.orderKey ?? 'fixed:$i:${tab.label}'),
+      child: reorderable
+          ? _LongPressReorderListener(index: i, child: child)
+          : child,
+    );
+  }
+
+  /// Proxy « soulevé » : léger agrandissement + ombre portée + fond opaque,
+  /// pour que l'onglet se détache du backdrop parchemin pendant le drag.
+  Widget _proxyDecorator(Widget child, int index, Animation<double> animation) {
+    final colors = context.facteurColors;
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, inner) {
+        // Mêmes courbe / amplitude que le `_DragProxy` de la sheet
+        // « Composer ma Tournée » : le soulèvement se lit pareil aux deux
+        // points d'entrée.
+        final t = Curves.easeInOut.transform(animation.value.clamp(0.0, 1.0));
+        return Transform.scale(
+          scale: 1 + 0.03 * t,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Color.lerp(
+                Colors.transparent,
+                colors.backgroundPrimary,
+                t,
+              ),
+              borderRadius: const BorderRadius.all(
+                Radius.circular(FacteurRadius.small),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Color.fromRGBO(0, 0, 0, 0.18 * t),
+                  blurRadius: 12 * t,
+                  offset: Offset(0, 4 * t),
+                ),
+              ],
+            ),
+            // Le proxy est rendu dans l'Overlay, hors de l'arbre Material de
+            // la page : sans ce Material, l'InkWell de `_Tab` casse.
+            child: Material(type: MaterialType.transparency, child: inner),
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+/// `ReorderableDragStartListener` à délai long (~900 ms) : le défaut de
+/// `ReorderableDelayedDragStartListener` est de 500 ms et non paramétrable, ce
+/// qui entre en concurrence avec le scroll horizontal de la rangée. Le
+/// `DelayedMultiDragGestureRecognizer` annule aussi au moindre mouvement
+/// pendant le hold ⇒ un swipe reste un scroll, un tap reste une navigation.
+class _LongPressReorderListener extends ReorderableDragStartListener {
+  const _LongPressReorderListener({
+    required super.child,
+    required super.index,
+  });
+
+  @override
+  MultiDragGestureRecognizer createRecognizer() =>
+      DelayedMultiDragGestureRecognizer(
+        debugOwner: this,
+        delay: const Duration(milliseconds: 900),
+      );
 }
 
 class _Tab extends StatelessWidget {

@@ -22,16 +22,24 @@ ignore jusqu'au passage hebdo :
    wrapper est légitime. ``search_internal_perspectives`` bascule sur ce wrapper
    (même PR) pour que l'expression indexée matche.
 2. ``ix_contents_entities_trgm`` — GIN sur ``content_entities_text(entities)`` avec
-   l'opclass **``extensions.gin_trgm_ops``**. Le baseline crée pg_trgm ``WITH
-   SCHEMA extensions`` ; l'opclass DOIT être qualifiée car ``extensions`` n'est
-   pas dans le ``search_path`` des connexions (vérifié : ``gin_trgm_ops`` nu ⇒
-   « operator class does not exist »).
+   l'opclass ``gin_trgm_ops`` **qualifiée par le schéma réel de pg_trgm**, résolu
+   au runtime. Elle DOIT être qualifiée car le schéma d'extension n'est pas dans
+   le ``search_path`` des connexions (vérifié : ``gin_trgm_ops`` nu ⇒ « operator
+   class does not exist ») — mais le schéma varie selon l'âge de la base : le
+   baseline crée pg_trgm ``WITH SCHEMA extensions`` (CI, base neuve) alors que la
+   base Supabase partagée, plus ancienne, l'a en ``public``. Coder ``extensions``
+   en dur faisait échouer la migration en prod (« operator class
+   extensions.gin_trgm_ops does not exist ») après le commit de la fonction par
+   l'``autocommit_block()`` — état partiellement appliqué, ``alembic_version``
+   inchangé.
 
 Rollout (recommandé) : construire l'index une fois via Supabase — d'abord la
 fonction, puis ``CREATE INDEX CONCURRENTLY`` (~30-90 s, non bloquant pour
 l'ingestion) — AVANT merge, puis cette migration ``IF NOT EXISTS`` est un no-op
 rapide au boot des deux services Railway.
 """
+
+import sqlalchemy as sa
 
 from alembic import op
 
@@ -40,6 +48,25 @@ revision: str = "pt01_contents_entities_trgm"
 down_revision: str | None = "181c618da382"
 branch_labels: str | None = None
 depends_on: str | None = None
+
+
+def _trgm_schema() -> str:
+    """Schéma réel de l'extension pg_trgm (``extensions`` en CI, ``public`` en prod).
+
+    Le fallback ``public`` ne sert qu'au cas dégénéré « extension absente » : le
+    ``CREATE INDEX`` échouera alors franchement, ce qui est le bon comportement.
+    """
+    return (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT extnamespace::regnamespace::text "
+                "FROM pg_extension WHERE extname = 'pg_trgm'"
+            )
+        )
+        .scalar()
+        or "public"
+    )
 
 
 def upgrade() -> None:
@@ -56,15 +83,36 @@ def upgrade() -> None:
         AS $func$ SELECT array_to_string($1, ' ') $func$
         """
     )
-    # 2) Index GIN trigram. CREATE INDEX CONCURRENTLY ne peut pas tourner dans
-    #    la transaction Alembic (env.py enveloppe tout dans un seul begin) →
-    #    bloc autocommit. IF NOT EXISTS : no-op si déjà bâti hors-bande.
+    # 2) Index GIN trigram. Le schéma de l'opclass est résolu AVANT le bloc
+    #    autocommit (op.get_bind() y reste utilisable, mais on garde la lecture
+    #    dans la transaction principale).
+    ns = _trgm_schema()
+    # Un CREATE INDEX CONCURRENTLY interrompu (healthcheck Railway qui tue le
+    # conteneur pendant la construction) laisse un index INVALID, que le
+    # `IF NOT EXISTS` du rejeu suivant ignorerait silencieusement — la migration
+    # s'estampillerait alors comme réussie sur un index inutilisable. On le
+    # balaie donc avant de reconstruire.
+    invalid = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                "SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+                "WHERE c.relname = 'ix_contents_entities_trgm' AND NOT i.indisvalid"
+            )
+        )
+        .scalar()
+    )
+    # CREATE INDEX CONCURRENTLY ne peut pas tourner dans la transaction Alembic
+    # (env.py enveloppe tout dans un seul begin) → bloc autocommit.
+    # IF NOT EXISTS : no-op si déjà bâti hors-bande.
     with op.get_context().autocommit_block():
+        if invalid:
+            op.execute("DROP INDEX CONCURRENTLY IF EXISTS ix_contents_entities_trgm")
         op.execute(
             "CREATE INDEX CONCURRENTLY IF NOT EXISTS ix_contents_entities_trgm "
             "ON public.contents "
             "USING gin (public.content_entities_text(entities) "
-            "extensions.gin_trgm_ops)"
+            f"{ns}.gin_trgm_ops)"
         )
 
 

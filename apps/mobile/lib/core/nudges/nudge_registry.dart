@@ -84,6 +84,16 @@ class NudgeRegistry {
       frequency: NudgeFrequency.cooldown,
       cooldown: Duration(days: 30),
     ),
+    // Bandeau « Ajoute le widget » de Flâner. Cooldown 7 j, aligné sur le
+    // bandeau Lettres : on repropose, sans être insistant.
+    const Nudge(
+      id: NudgeIds.widgetCtaFeedBanner,
+      surface: NudgeSurface.feed,
+      placement: NudgePlacement.inlineBanner,
+      priority: NudgePriority.low,
+      frequency: NudgeFrequency.cooldown,
+      cooldown: Duration(days: 7),
+    ),
     const Nudge(
       id: NudgeIds.prioritySliderExplainer,
       surface: NudgeSurface.settings,
@@ -157,6 +167,17 @@ class NudgeRegistry {
       priority: NudgePriority.high,
       frequency: NudgeFrequency.cooldown,
       cooldown: Duration(days: 7),
+    ),
+
+    // Story 13.3 — la modale « un café en visio » se déploie seule une fois,
+    // à la première exposition éligible. Le re-ciblage (snooze / cap
+    // d'affichages) reste piloté par le backend, pas par ce nudge.
+    const Nudge(
+      id: NudgeIds.feedbackCallAutoModal,
+      surface: NudgeSurface.digest,
+      placement: NudgePlacement.bottomSheet,
+      priority: NudgePriority.normal,
+      frequency: NudgeFrequency.once,
     ),
   ];
 }

@@ -112,6 +112,13 @@ class Settings(BaseSettings):
     # Admin endpoints shared secret (Story 14.1)
     admin_api_token: str = ""
 
+    # Health-metrics shared secret (header `X-Health-Token`). Fail-**open**
+    # when empty, unlike `admin_api_token` : les sondes santé doivent rester
+    # lisibles sur staging sans configuration. Le poser en prod ferme les
+    # endpoints dont la réponse est un proxy d'activité utilisateur
+    # (`/api/health/feed-cache` : `size` ≈ nombre d'users actifs).
+    health_metrics_token: str = ""
+
     # YouTube Data API v3
     youtube_api_key: str = ""
 

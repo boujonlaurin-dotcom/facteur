@@ -16,6 +16,7 @@ import 'package:go_router/go_router.dart';
 import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
@@ -34,6 +35,7 @@ import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
 import '../../feed/widgets/feedback_inline.dart';
+import '../../feedback/widgets/call_invite_entry.dart';
 import '../../feedback/widgets/feedback_closing_card.dart';
 import '../../gamification/providers/streak_activity_provider.dart';
 import '../../lettres/widgets/lettres_notification_banner.dart';
@@ -54,7 +56,9 @@ import '../providers/pending_feed_section_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/tournee_order_prefs_provider.dart'
-    show tourneeOrderPrefsProvider;
+    show isTourneeReorderableKey, tourneeOrderPrefsProvider;
+import '../providers/tournee_reorder_persistence.dart'
+    show persistTourneeEssentielReorder, reorderTourneeTabKeys;
 import '../services/auto_grow_nudge_scheduler.dart';
 import '../services/tournee_progress_service.dart'
     show TourneeProgressService;
@@ -85,6 +89,9 @@ const double _kStickyThreshold = 60.0;
 /// track (4) + refresh strip (2). **Must mirror the real sticky bar height** —
 /// it feeds the snap framing AND the fit budget ([usableViewportHeightProvider]).
 const double _kStickyBarHeight = 50.0;
+
+/// Flag one-shot du hint « maintiens un onglet pour réorganiser ta tournée ».
+const String _kDragHintSeenKey = 'tournee_header_drag_hint_seen_v1';
 
 /// px. Anti-crop safety inset for section-top snap anchors. Each snap `top` is
 /// pulled up by this much so a section poses a hair **below** the sticky header
@@ -148,6 +155,58 @@ bool shouldRefreshEssentielOnForeground({
     return false;
   }
   return true;
+}
+
+/// Un seul indicateur d'attente pour toute la Tournée : la **première** coquille
+/// de section encore non résolue porte le libellé « Ta tournée se prépare… »
+/// (les autres restent des cartes shimmer nues). `-1` = aucune coquille.
+///
+/// Extrait de `build` pour être testable sans monter l'écran (Supabase, Hive et
+/// GoRouter y sont requis) : la déclaration inline avait été supprimée par
+/// erreur lors d'une résolution de conflit, cassant tout build mobile.
+@visibleForTesting
+int firstPreparingSectionIndex(List<FluxSection> sections) =>
+    sections.indexWhere((s) => s is FeedThemeSection && s.isPlaceholder);
+
+/// Fenêtre pendant laquelle un **re-pull** explicite à vide compte comme « tout
+/// de suite après » le précédent → escalade vers la redirection auto Flâner.
+const Duration essentielRePullWindow = Duration(seconds: 45);
+
+/// Escalade « rien de neuf » d'un pull-to-refresh explicite de L'Essentiel.
+enum EssentielEmptyPullAction {
+  /// Nouveauté, ou refresh borné/échoué : aucun hint, on reset l'escalade.
+  none,
+
+  /// 1er pull à vide : SnackBar + CTA « Flâner », pas de redirection.
+  hint,
+
+  /// Re-pull à vide rapproché (< [essentielRePullWindow]) : bascule auto Flâner.
+  redirect,
+}
+
+/// Décision pure de l'escalade « rien de neuf » sur un pull-to-refresh
+/// **explicite** (décidée avec le PO). Testable sans monter l'écran
+/// (cf. [shouldRefreshEssentielOnForeground]).
+///
+/// - On n'escalade QUE sur un refresh réussi ET sans nouveauté : un refresh
+///   borné/échoué (`succeeded == false`) ne redirige jamais — ce serait masquer
+///   un souci de perf. Un `newSinceMorning > 0` remet l'escalade à zéro.
+/// - Un 1er pull à vide → [EssentielEmptyPullAction.hint] ; un re-pull dans la
+///   [rePullWindow] → [EssentielEmptyPullAction.redirect].
+@visibleForTesting
+EssentielEmptyPullAction essentielEmptyPullAction({
+  required bool succeeded,
+  required int newSinceMorning,
+  required DateTime? lastEmptyPullAt,
+  required DateTime now,
+  Duration rePullWindow = essentielRePullWindow,
+}) {
+  if (!succeeded || newSinceMorning > 0) return EssentielEmptyPullAction.none;
+  final repulledFast = lastEmptyPullAt != null &&
+      now.difference(lastEmptyPullAt) <= rePullWindow;
+  return repulledFast
+      ? EssentielEmptyPullAction.redirect
+      : EssentielEmptyPullAction.hint;
 }
 
 /// Comptabilité de la session Essentiel pour le garde-fou doomscroll (story
@@ -276,15 +335,37 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   // [_syncStickyEntries]).
   final List<GlobalKey> _stickyEntryKeys = [];
 
+  /// Derniers descripteurs d'onglets produits par [_syncStickyEntries], alignés
+  /// sur [_stickyEntryKeys]. Sert de référentiel au remappage index → clé
+  /// d'ordre lors d'un réordre par drag ([_onHeaderReorder]).
+  List<StickyTab> _stickyTabs = const [];
+
+  /// Un onglet du header est soulevé. Gèle l'auto-align de la rangée et le
+  /// suivi de section active : sans ça, un scroll résiduel recentrerait les
+  /// onglets sous le doigt en plein drag.
+  bool _headerDragging = false;
+
   /// Sliver « Grille du jour » (carte d'entrée de La Grille). Son insertion est
   /// pilotée par `FluxContinuState.grilleSlotIndex`. Wrappé dans un
   /// `KeyedSubtree(_grilleKey)` pour exposer la carte au suivi sticky.
-  SliverToBoxAdapter get _grilleSliver => SliverToBoxAdapter(
+  ///
+  /// [followedByNormalSection] : true en mi-feed (la carte suivante n'a pas de
+  /// marge top propre, donc le bottom padding ici recrée l'écart standard
+  /// inter-sections) ; false en fin de feed (suivie de `CitationDuJourCard`,
+  /// qui porte déjà 24px de marge top — un bottom padding ici doublerait
+  /// l'écart, jugé incorrect par le PO).
+  SliverToBoxAdapter _grilleSliver({required bool followedByNormalSection}) =>
+      SliverToBoxAdapter(
         child: KeyedSubtree(
           key: _grilleKey,
-          child: const Padding(
-            padding: EdgeInsets.fromLTRB(16, 22, 16, 0),
-            child: GrilleCtaCard(),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              22,
+              16,
+              followedByNormalSection ? 16 : 0,
+            ),
+            child: const GrilleCtaCard(),
           ),
         ),
       );
@@ -345,11 +426,30 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   DateTime? _lastPullHintAt;
   Timer? _pullHintTimer;
 
+  // Hint one-shot « maintiens un onglet pour réorganiser ». Affiché à la 1ʳᵉ
+  // révélation du header sticky comportant au moins deux onglets déplaçables,
+  // puis jamais plus (flag SharedPreferences). Rendu en overlay sous la barre
+  // sticky, donc sans impact sur `_kStickyBarHeight` ni sur les budgets de fit.
+  bool _showDragHint = false;
+
+  /// Pessimiste tant que les prefs ne sont pas lues : pas de hint sur un cold
+  /// boot où l'utilisateur l'a déjà vu.
+  bool _dragHintSeen = true;
+  Timer? _dragHintTimer;
+
   /// Story 9.8 — horodatages du dernier passage en arrière-plan et du dernier
   /// refresh au foreground, pour le cooldown anti-refresh-intempestif
   /// (cf. [shouldRefreshEssentielOnForeground]).
   DateTime? _backgroundedAt;
   DateTime? _lastForegroundRefreshAt;
+
+  /// Escalade « rien de neuf » → Flâner (décidée avec le PO). Horodatage du
+  /// dernier pull explicite à vide : un 1er pull à vide affiche un SnackBar +
+  /// CTA « Flâner », un **re-pull** rapproché (dans [essentielRePullWindow])
+  /// bascule automatiquement vers l'onglet Flâner. Un refresh avec nouveauté ou
+  /// borné/échoué le remet à `null`. L'auto-redirect ne se déclenche jamais sur
+  /// le refresh foreground (réservé au geste explicite).
+  DateTime? _lastEmptyPullAt;
 
   /// Story 9.8 — instrumentation « garde-fou doomscroll ». Durée foreground de
   /// la session Essentiel + complétion de la carte de clôture, émises une fois
@@ -402,6 +502,36 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       const Duration(seconds: 60),
       (_) => unawaited(_maybeTriggerAutoGrow()),
     );
+    unawaited(_loadDragHintSeen());
+  }
+
+  Future<void> _loadDragHintSeen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      _dragHintSeen = prefs.getBool(_kDragHintSeenKey) ?? false;
+    } catch (_) {
+      // Pas de prefs (tests sans mock) → on reste silencieux.
+    }
+  }
+
+  /// Révèle une fois le hint de réorganisation, si le header expose au moins
+  /// deux onglets déplaçables. Marque le flag immédiatement (avant l'écriture
+  /// asynchrone) pour ne jamais le montrer deux fois dans la même session.
+  void _maybeShowDragHint() {
+    if (_dragHintSeen || _showDragHint) return;
+    if (!stickyTabsAllowReorder(_stickyTabs)) return;
+    _dragHintSeen = true;
+    unawaited(
+      SharedPreferences.getInstance()
+          .then((prefs) => prefs.setBool(_kDragHintSeenKey, true))
+          .catchError((Object _) => false),
+    );
+    setState(() => _showDragHint = true);
+    _dragHintTimer?.cancel();
+    _dragHintTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (mounted) setState(() => _showDragHint = false);
+    });
   }
 
   @override
@@ -417,6 +547,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     _activeIndex.dispose();
     _tallSections.dispose();
     _pullHintTimer?.cancel();
+    _dragHintTimer?.cancel();
     _autoGrowTimer?.cancel();
     super.dispose();
   }
@@ -447,6 +578,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final showSticky = currentScroll > _kStickyThreshold;
     if (_stickyVisible.value != showSticky) {
       _stickyVisible.value = showSticky;
+      if (showSticky) _maybeShowDragHint();
     }
     _updateActiveSection();
 
@@ -490,6 +622,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   void _updateActiveSection() {
     if (_stickyEntryKeys.isEmpty) return;
+    if (_headerDragging) return;
     // Active = sticky entry that occupies the most visible area below the
     // sticky bar. The previous heuristic ("last section whose top has crossed
     // stickyBar + 200px lookahead") switched late on long sections because it
@@ -718,6 +851,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   }
 
   void _alignTabsToActive(int index) {
+    // Gelé pendant un drag d'onglet : l'auto-align se battrait avec
+    // l'auto-scroll aux bords du `ReorderableListView`.
+    if (_headerDragging) return;
     if (!_tabsScroll.hasClients) return;
     void doScroll() {
       if (!_tabsScroll.hasClients) return;
@@ -787,11 +923,35 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     if (_pendingFeedback.isNotEmpty) {
       setState(_pendingFeedback.clear);
     }
-    await ref.read(fluxContinuProvider.notifier).refresh();
+    final outcome = await ref.read(fluxContinuProvider.notifier).refresh();
+    final now = DateTime.now();
     // Un refresh explicite réarme le cooldown foreground : pas de double refetch
     // si l'app repasse en arrière-plan puis revient juste après.
-    _lastForegroundRefreshAt = DateTime.now();
+    _lastForegroundRefreshAt = now;
     if (!mounted) return;
+    // Escalade « rien de neuf » → Flâner (décidée avec le PO). Décision pure
+    // déléguée à [essentielEmptyPullAction] (testable sans monter l'écran).
+    final action = essentielEmptyPullAction(
+      succeeded: outcome.succeeded,
+      newSinceMorning: outcome.newSinceMorning,
+      lastEmptyPullAt: _lastEmptyPullAt,
+      now: now,
+    );
+    switch (action) {
+      case EssentielEmptyPullAction.redirect:
+        // Re-pull à vide rapproché → bascule auto vers Flâner (contenu frais).
+        // Return early : pas de scroll-to-top, on change d'onglet.
+        _lastEmptyPullAt = null;
+        context.go(RoutePaths.flaner);
+        return;
+      case EssentielEmptyPullAction.hint:
+        // 1er pull à vide → SnackBar + CTA « Flâner » (aucune redirection).
+        _lastEmptyPullAt = now;
+        _showRienDeNeufFlanerSnackBar();
+      case EssentielEmptyPullAction.none:
+        // Nouveauté ou refresh borné/échoué → reset de l'escalade.
+        _lastEmptyPullAt = null;
+    }
     if (_scroll.hasClients) {
       unawaited(
         _scroll.animateTo(
@@ -878,7 +1038,31 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       return;
     }
     _lastForegroundRefreshAt = now;
-    unawaited(ref.read(fluxContinuProvider.notifier).refresh());
+    // Refresh auto au retour premier plan : à vide → SnackBar « Flâner »
+    // uniquement (jamais de redirection auto — réservée au re-pull explicite),
+    // et **sans** toucher le compteur d'escalade. Déjà cooldown-gaté par
+    // [shouldRefreshEssentielOnForeground], donc pas de spam.
+    unawaited(
+      ref.read(fluxContinuProvider.notifier).refresh().then((outcome) {
+        if (!mounted) return;
+        if (outcome.succeeded && outcome.newSinceMorning == 0) {
+          _showRienDeNeufFlanerSnackBar();
+        }
+      }),
+    );
+  }
+
+  /// SnackBar « rien de neuf » + CTA « Flâner » de L'Essentiel. Les deux chemins
+  /// de refresh (pull explicite et retour premier plan) l'affichent à l'identique
+  /// ; l'appelant garantit `mounted` au préalable.
+  void _showRienDeNeufFlanerSnackBar() {
+    NotificationService.showInfo(
+      'Rien de neuf dans ton Essentiel pour l\'instant.',
+      actionLabel: 'Flâner',
+      icon: PhosphorIcons.compass(),
+      onAction: () => context.go(RoutePaths.flaner),
+      context: context,
+    );
   }
 
   /// Opens the dedicated full-page view for a [FeedThemeSection]. The
@@ -1170,6 +1354,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
           for (final a in articles) {
             if (a.contentId == contentId) return a;
           }
+        case AlertsSection():
+          // Le rappel d'alertes ne porte que des sources, jamais d'article.
+          break;
+        case CarouselSection(:final data):
+          for (final c in data.items) {
+            if (c.id == contentId) return c;
+          }
         case DigestTopicSection(:final topics):
           for (final t in topics) {
             final lead = pickTopicLead(t);
@@ -1429,6 +1620,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 tabs: stickyTabs,
                 onTapTab: _scrollToSection,
                 tabsController: _tabsScroll,
+                onReorder: _onHeaderReorder,
+                onDragStart: () => _headerDragging = true,
+                onDragEnd: () => _headerDragging = false,
               ),
             // Pull-to-refresh discoverability pill.
             Positioned(
@@ -1446,6 +1640,24 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 ),
               ),
             ),
+            // Hint one-shot de réorganisation, posé sous la barre sticky (en
+            // overlay : ne consomme aucune hauteur de layout).
+            if (!isSkeleton && !isPastEdition)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  bottom: false,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      duration: const Duration(milliseconds: 280),
+                      opacity: _showDragHint ? 1.0 : 0.0,
+                      child: const _HeaderDragHint(),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -1488,9 +1700,16 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         add(_grilleKey, _motDuJourTab);
       }
       final section = state.sections[i];
+      final key = sectionKey(section);
       add(
         _sectionKeys[i],
-        StickyTab(label: section.label, accent: section.accent),
+        StickyTab(
+          label: section.label,
+          accent: section.accent,
+          // Seules les vraies sections de la Tournée sont déplaçables ; le
+          // héros Essentiel, les alertes et les sujets Flâner restent figés.
+          orderKey: isTourneeReorderableKey(key) ? key : null,
+        ),
       );
       // Destination de snap dédiée juste après le hero (entrée virtuelle,
       // sans section réelle — retourne -1 dans _sectionIndexForStickyIndex).
@@ -1509,7 +1728,22 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     _stickyEntryKeys
       ..clear()
       ..addAll(keys);
+    _stickyTabs = tabs;
     return tabs;
+  }
+
+  /// Réordre déclenché par le drag d'un onglet du header. Le remappage
+  /// index → clé (et la contrainte des zones figées) vit dans
+  /// [reorderTourneeTabKeys] ; la persistance est celle, partagée, de la sheet
+  /// « Composer ma Tournée ».
+  void _onHeaderReorder(int oldIndex, int newIndex) {
+    final visibleKeys = reorderTourneeTabKeys(
+      [for (final t in _stickyTabs) t.orderKey],
+      oldIndex,
+      newIndex,
+    );
+    if (visibleKeys == null) return;
+    unawaited(persistTourneeEssentielReorder(ref, visibleKeys));
   }
 
   Widget _buildContent(BuildContext context, FluxContinuState state) {
@@ -1598,8 +1832,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                 // « Ton avis compte » est désormais une sous-carte interne de
                 // « Tu es à jour », séparée par un divider : une seule boîte
                 // visuelle mesurée par les ancres de snap. Sa hauteur change en
-                // asynchrone (résolution invite / vote → « Merci ») ⇒ elle
-                // signale ces relayouts pour rafraîchir les ancres de snap.
+                // asynchrone (micro-vote → « Merci » ; l'invitation, elle, vit
+                // désormais plus haut dans la tournée) ⇒ elle signale ces
+                // relayouts pour rafraîchir les ancres de snap.
                 // Enveloppée d'un VisibilityDetector (garde-fou doomscroll,
                 // story 9.8) : la clôture est « atteinte » dès qu'elle est
                 // visible à ≥ 50 %, fire-once (`_closingCardSeen`).
@@ -1651,6 +1886,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final firstSwipeableSectionIndex = state.sections.indexWhere(
       (section) => switch (section) {
         EssentielSection() => false,
+        AlertsSection() => false,
+        CarouselSection() => false,
         DigestTopicSection(:final topics) => topics.any(
             (topic) =>
                 !_pendingFeedback.contains(pickTopicLead(topic).contentId),
@@ -1680,11 +1917,33 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final inlineTargetIndex = heroPresent
         ? (state.sections.length > 1 ? 1 : -1)
         : (state.sections.isNotEmpty ? 0 : -1);
+    // Story 13.3 — l'invitation « un café en visio » s'ancre **2 sections avant
+    // la dernière**, pas dans la carte de clôture : au tout dernier pixel de la
+    // page, personne ne la voyait. Jamais sur le hero Essentiel (index 0), et
+    // embarquée dans le `KeyedSubtree` de sa section pour les mêmes raisons de
+    // snap que l'inline ci-dessus.
+    // Story 32.1 — la carte carrousel de fin (hors-cap, non déplaçable) ne doit
+    // pas décaler l'ancre : on l'exclut du décompte pour garder l'invitation ~2
+    // sections de CONTENU avant la fin, comme avant l'ajout du carrousel.
+    final anchorSectionCount =
+        state.sections.isNotEmpty && state.sections.last is CarouselSection
+        ? state.sections.length - 1
+        : state.sections.length;
+    final inviteTargetIndex = anchorSectionCount < 2
+        ? -1
+        : math.max(1, anchorSectionCount - 3);
+
+    // Un seul indicateur d'attente pour toute la Tournée : la **première**
+    // coquille de section encore non résolue porte le libellé « Ta tournée se
+    // prépare… » (les autres restent des cartes shimmer nues).
+    final firstPreparingIndex = state.sections.indexWhere(
+      (s) => s is FeedThemeSection && s.isPlaceholder,
+    );
 
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       if (state.grilleSlotIndex == i) {
-        slivers.add(_grilleSliver);
+        slivers.add(_grilleSliver(followedByNormalSection: true));
       }
       final section = state.sections[i];
       final isFavorite = _isFavoriteSection(section);
@@ -1733,6 +1992,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     tallSections: _tallSections,
                     child: SectionBlock(
                       section: section,
+                      showPreparingLabel: i == firstPreparingIndex,
                       onTapArticle: (a) => _openArticle(context, a),
                       onDismissArticle: _onSwipeDismiss,
                       pendingFeedbackIds: _pendingFeedback,
@@ -1801,6 +2061,9 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                               : null,
                     ),
                   ),
+                  // Se rend en `SizedBox.shrink()` si l'utilisateur n'est pas
+                  // éligible (gating segmenté backend).
+                  if (i == inviteTargetIndex) const CallInviteEntry(),
                 ],
               ),
             ),
@@ -1820,7 +2083,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       }
     }
     if (state.grilleSlotIndex == state.sections.length) {
-      slivers.add(_grilleSliver);
+      slivers.add(_grilleSliver(followedByNormalSection: false));
     }
     return slivers;
   }
@@ -2141,9 +2404,16 @@ class _FluxContinuSkeleton extends StatelessWidget {
         );
       }
     } else {
+      var labelPlaced = false;
       for (final section in sections) {
         // Le hero est déjà rendu au-dessus.
         if (section is EssentielSection) continue;
+        // Le rappel d'alertes n'a rien à pré-réserver : il n'existe que si des
+        // cloches ont du neuf, ce que le squelette ne sait pas encore.
+        if (section is AlertsSection) continue;
+        // La carte carrousel est auto-portée (pas de banner/skeleton) et
+        // n'apparaît qu'avec les vraies données de l'Essentiel — jamais en boot.
+        if (section is CarouselSection) continue;
         final isSource =
             section is FeedThemeSection && section.kind == SectionKind.source;
         children.add(
@@ -2158,7 +2428,13 @@ class _FluxContinuSkeleton extends StatelessWidget {
         // Issue #1 — réserve la **hauteur finale** (coreVisibleCount cartes) avec
         // la même carte squelette que les coquilles de section, pour que la
         // séquence cold-skeleton → Phase 1 → Phase 2 garde une géométrie stable.
-        children.addAll(sectionSkeletonCards(section.coreVisibleCount));
+        // Libellé d'attente unique, porté par la 1ʳᵉ section rendue (parité avec
+        // le placeholder de `SectionBlock`).
+        children.addAll(sectionSkeletonCards(
+          section.coreVisibleCount,
+          firstCardLabel: labelPlaced ? null : kSectionPreparingLabel,
+        ));
+        labelPlaced = true;
         children.add(const SizedBox(height: 16));
       }
     }
@@ -2376,6 +2652,9 @@ class _StickyHostOverlay extends StatelessWidget {
   final List<StickyTab> tabs;
   final ValueChanged<int> onTapTab;
   final ScrollController tabsController;
+  final void Function(int oldIndex, int newIndex) onReorder;
+  final VoidCallback onDragStart;
+  final VoidCallback onDragEnd;
 
   const _StickyHostOverlay({
     required this.stickyVisible,
@@ -2383,6 +2662,9 @@ class _StickyHostOverlay extends StatelessWidget {
     required this.tabs,
     required this.onTapTab,
     required this.tabsController,
+    required this.onReorder,
+    required this.onDragStart,
+    required this.onDragEnd,
   });
 
   @override
@@ -2408,9 +2690,91 @@ class _StickyHostOverlay extends StatelessWidget {
               onTapTab: onTapTab,
               tabsController: tabsController,
               showFilterBar: false,
+              onReorder: onReorder,
+              onDragStart: onDragStart,
+              onDragEnd: onDragEnd,
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Chrome partagée des pills de découvrabilité (drag des onglets,
+/// pull-to-refresh) : capsule pleine à coins ronds + ombre douce, icône +
+/// libellé. Seuls la couleur de fond/ombre, l'icône et le texte varient.
+class _HintPill extends StatelessWidget {
+  final Widget icon;
+  final String label;
+  final Color background;
+  final Color foreground;
+  final Color shadowColor;
+
+  const _HintPill({
+    required this.icon,
+    required this.label,
+    required this.background,
+    required this.foreground,
+    required this.shadowColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(FacteurRadius.full),
+        boxShadow: [
+          BoxShadow(
+            color: shadowColor,
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: foreground,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pill de découvrabilité du réordre par drag des onglets. Rendue une seule
+/// fois (cf. [_kDragHintSeenKey]), juste sous la barre sticky.
+class _HeaderDragHint extends StatelessWidget {
+  const _HeaderDragHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    return Padding(
+      padding: const EdgeInsets.only(top: _kStickyBarHeight + 10),
+      child: Center(
+        child: _HintPill(
+          icon: Icon(
+            PhosphorIcons.handGrabbing(PhosphorIconsStyle.bold),
+            size: 14,
+            color: colors.backgroundPrimary,
+          ),
+          label: 'Maintiens un onglet pour réorganiser ta tournée',
+          background: colors.textPrimary.withValues(alpha: 0.92),
+          foreground: colors.backgroundPrimary,
+          shadowColor: const Color.fromRGBO(0, 0, 0, 0.18),
+        ),
       ),
     );
   }
@@ -2461,49 +2825,27 @@ class _PullToRefreshHintState extends State<_PullToRefreshHint>
     return Padding(
       padding: const EdgeInsets.only(top: 80),
       child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: colors.primary.withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(FacteurRadius.full),
-            boxShadow: [
-              BoxShadow(
-                color: colors.primary.withValues(alpha: 0.25),
-                blurRadius: 12,
-                offset: const Offset(0, 3),
-              ),
-            ],
+        child: _HintPill(
+          icon: AnimatedBuilder(
+            animation: _bounceController,
+            builder: (context, child) {
+              final t = _bounceController.value;
+              final offset = math.sin(t * math.pi * 2) * 3.0;
+              return Transform.translate(
+                offset: Offset(0, offset),
+                child: child,
+              );
+            },
+            child: Icon(
+              PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
+              size: 14,
+              color: Colors.white,
+            ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedBuilder(
-                animation: _bounceController,
-                builder: (context, child) {
-                  final t = _bounceController.value;
-                  final offset = math.sin(t * math.pi * 2) * 3.0;
-                  return Transform.translate(
-                    offset: Offset(0, offset),
-                    child: child,
-                  );
-                },
-                child: Icon(
-                  PhosphorIcons.arrowDown(PhosphorIconsStyle.bold),
-                  size: 14,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Tirer pour rafraîchir',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          label: 'Tirer pour rafraîchir',
+          background: colors.primary.withValues(alpha: 0.95),
+          foreground: Colors.white,
+          shadowColor: colors.primary.withValues(alpha: 0.25),
         ),
       ),
     );

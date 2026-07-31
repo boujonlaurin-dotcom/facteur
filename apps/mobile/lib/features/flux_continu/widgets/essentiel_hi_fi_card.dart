@@ -4,10 +4,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../feed/models/content_model.dart';
+import '../../feed/services/read_sync_service.dart';
+import '../../feed/widgets/animated_feed_card.dart';
 import '../../detail/content_preview_mapper.dart';
 import '../../tour/tour_anchors.dart';
 import '../../settings/models/display_mode_spec.dart';
@@ -20,6 +23,7 @@ import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/theme_color_mapping.dart';
 import 'auto_grow_candidate.dart';
+import 'coverage_chip.dart';
 import 'edition_timeline_sheet.dart';
 import 'ephemeral_rattraper_label.dart';
 import 'weather_condition_icon.dart';
@@ -36,7 +40,7 @@ class EssentielHiFiCard extends ConsumerWidget {
   final void Function(EssentielArticle article) onTapArticle;
 
   /// Nb d'articles frais publiés depuis ce matin (`new_since_this_morning`).
-  /// `> 0` ⇒ pastille « N nouveaux depuis ce matin » près du titre du héros,
+  /// `> 0` ⇒ pastille « N nouveaux articles » près du titre du héros,
   /// masquée à `0`. Alimente « L'Essentiel vivant » (surface dynamique).
   final int newSinceMorning;
 
@@ -52,6 +56,16 @@ class EssentielHiFiCard extends ConsumerWidget {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     final accent = colors.sectionEssentiel;
     final spec = ref.watch(displayModeSpecProvider);
+
+    // Un seul point de lecture des providers de session : l'état dérivé descend
+    // ensuite dans les tuiles, qui restent des `StatelessWidget`.
+    final completedIds = ref.watch(completedContentIdsProvider);
+    final consumedIds = ref.watch(consumedContentIdsProvider);
+    ReadState readStateFor(EssentielArticle a) => effectiveReadState(
+          a.readState,
+          consumedThisSession: consumedIds.contains(a.contentId),
+          completedThisSession: completedIds.contains(a.contentId),
+        );
 
     final lead = articles.isNotEmpty ? articles.first : null;
     final remaining = articles.length > 1
@@ -134,6 +148,7 @@ class EssentielHiFiCard extends ConsumerWidget {
                 article: lead,
                 accent: accent,
                 spec: spec,
+                readState: readStateFor(lead),
                 onTap: () => onTapArticle(lead),
               ),
             for (final a in remaining) ...[
@@ -142,7 +157,12 @@ class EssentielHiFiCard extends ConsumerWidget {
               const SizedBox(height: 6),
               const _Hairline(),
               const SizedBox(height: 6),
-              _MediumTile(article: a, spec: spec, onTap: () => onTapArticle(a)),
+              _MediumTile(
+                article: a,
+                spec: spec,
+                readState: readStateFor(a),
+                onTap: () => onTapArticle(a),
+              ),
             ],
           ],
         ),
@@ -172,7 +192,7 @@ class _Header extends StatelessWidget {
   final Widget? rewind;
 
   /// Nb d'articles frais depuis ce matin (borné backend). `> 0` ⇒ pastille
-  /// « N nouveaux depuis ce matin » au-dessus du sous-titre, masquée à `0`.
+  /// « N nouveaux articles » au-dessus du sous-titre, masquée à `0`.
   final int newSinceMorning;
 
   const _Header({
@@ -256,7 +276,7 @@ class _HeaderAccentDash extends StatelessWidget {
   }
 }
 
-/// Pastille « N nouveaux depuis ce matin » (« L'Essentiel vivant »). Rendue
+/// Pastille « N nouveaux articles » (« L'Essentiel vivant »). Rendue
 /// près du titre du héros quand du contenu frais est arrivé depuis le digest
 /// du matin ; masquée à `0`. Réutilise le traitement arrondi/accent du
 /// [_HeaderAccentDash] et les chiffres `courierPrime` des tampons de date.
@@ -270,7 +290,8 @@ class _NewSinceMorningPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final numberLabel = count >= 9 ? '9+' : '$count';
-    final noun = count == 1 ? 'nouveau' : 'nouveaux';
+    final articlesLabel = count == 1 ? 'article' : 'articles';
+    final adjective = count == 1 ? 'nouvel' : 'nouveaux';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -292,7 +313,7 @@ class _NewSinceMorningPill extends StatelessWidget {
           ),
           const SizedBox(width: 5),
           Text(
-            '$noun depuis ce matin',
+            '$adjective $articlesLabel',
             style: FacteurTypography.bodySmall(accent).copyWith(
               fontSize: 11,
               fontWeight: FontWeight.w600,
@@ -362,7 +383,7 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
         key: const ValueKey('weather'),
         behavior: HitTestBehavior.opaque,
         onTap: () => showWeatherDetailSheet(context),
-        child: _WeatherBadge(forecast: forecast),
+        child: _WeatherBadge(forecast: forecast, accent: widget.accent),
       );
     } else {
       child = GestureDetector(
@@ -421,8 +442,9 @@ class _HeaderBadgeState extends ConsumerState<_HeaderBadge> {
 /// discret signalant qu'un tap ouvre la modal détaillée 5 jours.
 class _WeatherBadge extends StatefulWidget {
   final WeatherForecast forecast;
+  final Color accent;
 
-  const _WeatherBadge({required this.forecast});
+  const _WeatherBadge({required this.forecast, required this.accent});
 
   @override
   State<_WeatherBadge> createState() => _WeatherBadgeState();
@@ -471,12 +493,29 @@ class _WeatherBadgeState extends State<_WeatherBadge>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        WeatherConditionIcon(
-          condition: widget.forecast.condition,
-          size: 88,
-          badgeSize: 30,
-          emojiSize: 18,
-          badgeInset: 4,
+        // Halo doux teinté accent derrière l'illustration météo : au repos, il
+        // fait « léviter » l'icône et signale que le badge est tappable (ouvre
+        // la modal 5 jours). Le BoxShadow se dessine à partir de la forme du
+        // conteneur même avec un remplissage transparent → glow diffus, sans
+        // contour dur.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: widget.accent.withValues(alpha: 0.14),
+                blurRadius: 18,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: WeatherConditionIcon(
+            condition: widget.forecast.condition,
+            size: 88,
+            badgeSize: 30,
+            emojiSize: 18,
+            badgeInset: 4,
+          ),
         ),
         const SizedBox(height: 2),
         ScaleTransition(
@@ -611,6 +650,11 @@ class _LeadTile extends StatelessWidget {
   final EssentielArticle article;
   final Color accent;
   final DisplayModeSpec spec;
+
+  /// État de lecture effectif (fusion session incluse). Descendu par la carte
+  /// plutôt que relu ici — un seul point de lecture des providers.
+  final ReadState readState;
+
   final VoidCallback onTap;
 
   const _LeadTile({
@@ -618,6 +662,7 @@ class _LeadTile extends StatelessWidget {
     required this.accent,
     required this.spec,
     required this.onTap,
+    required this.readState,
   });
 
   @override
@@ -635,12 +680,16 @@ class _LeadTile extends StatelessWidget {
           child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.medium),
-        // Lu : grise la tuile (0.6) + coche verte, comme les autres sections
+        // Lu : grise la tuile (0.8 « Ouvert » / 0.6 lu, cf. opacityForReadState)
+        // + coche verte, comme les autres sections
         // (cf. flux_continu_article_card.dart). Le badge est inclus dans
         // l'Opacity pour s'estomper de concert avec le contenu.
         child: Opacity(
-          opacity: article.isRead ? 0.6 : 1.0,
-          child: Stack(
+          opacity: opacityForReadState(readState),
+          child: AnimatedFeedCard(
+            isCompleted: readState == ReadState.completed,
+            animate: false,
+            child: Stack(
             children: [
               Container(
                 // Compaction passe 2 (validée UX) : padding héro 12→10. Plancher
@@ -682,13 +731,17 @@ class _LeadTile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (article.isRead)
+              if (readState != ReadState.unread)
                 Positioned(
                   top: 8,
                   right: 8,
-                  child: _ReadCheckBadge(color: colors.success),
+                  child: ReadStateMark(
+                    color: colors.success,
+                    state: readState,
+                  ),
                 ),
             ],
+          ),
           ),
         ),
           ),
@@ -701,12 +754,14 @@ class _LeadTile extends StatelessWidget {
 class _MediumTile extends StatelessWidget {
   final EssentielArticle article;
   final DisplayModeSpec spec;
+  final ReadState readState;
   final VoidCallback onTap;
 
   const _MediumTile({
     required this.article,
     required this.spec,
     required this.onTap,
+    required this.readState,
   });
 
   @override
@@ -723,10 +778,13 @@ class _MediumTile extends StatelessWidget {
           child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(FacteurRadius.small),
-        // Lu : grise la tuile (0.6) + petite coche verte (cf. _LeadTile).
+        // Lu : grise la tuile (0.8/0.6) + petite coche verte (cf. _LeadTile).
         child: Opacity(
-          opacity: article.isRead ? 0.6 : 1.0,
-          child: Stack(
+          opacity: opacityForReadState(readState),
+          child: AnimatedFeedCard(
+            isCompleted: readState == ReadState.completed,
+            animate: false,
+            child: Stack(
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 2),
@@ -745,9 +803,19 @@ class _MediumTile extends StatelessWidget {
                             ),
                           ),
                         ),
+                        if (article.sourceCount >=
+                            kCoverageChipMinSources) ...[
+                          const SizedBox(width: 8),
+                          CoverageChip(
+                            sourceCount: article.sourceCount,
+                            sources: article.perspectiveSources,
+                            colors: colors,
+                          ),
+                        ],
                         // Réserve l'espace de la coche pour qu'elle ne
                         // chevauche pas la source ellipsée.
-                        if (article.isRead) const SizedBox(width: 22),
+                        if (readState != ReadState.unread)
+                          const SizedBox(width: 22),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -766,13 +834,18 @@ class _MediumTile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (article.isRead)
+              if (readState != ReadState.unread)
                 Positioned(
                   top: 0,
                   right: 0,
-                  child: _ReadCheckBadge(color: colors.success, size: 18),
+                  child: ReadStateMark(
+                    color: colors.success,
+                    state: readState,
+                    size: 18,
+                  ),
                 ),
             ],
+          ),
           ),
         ),
           ),
@@ -861,43 +934,16 @@ class _SourceRow extends StatelessWidget {
             style: FacteurTypography.labelSmall(colors.textTertiary),
           ),
         ),
-      ],
-    );
-  }
-}
-
-/// Coche « lu » verte, reproduite à l'identique du motif de
-/// `flux_continu_article_card.dart` pour une cohérence visuelle entre la carte
-/// Essentiel et les cartes des autres sections. [size] permet une coche plus
-/// compacte sur les tuiles médiums.
-class _ReadCheckBadge extends StatelessWidget {
-  final Color color;
-  final double size;
-
-  const _ReadCheckBadge({required this.color, this.size = 22});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
+        if (article.sourceCount >= kCoverageChipMinSources) ...[
+          const Spacer(),
+          CoverageChip(
+            key: const Key('essentiel-coverage-chip'),
+            sourceCount: article.sourceCount,
+            sources: article.perspectiveSources,
+            colors: colors,
           ),
         ],
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        PhosphorIcons.check(PhosphorIconsStyle.bold),
-        size: size * 0.55,
-        color: Colors.white,
-      ),
+      ],
     );
   }
 }

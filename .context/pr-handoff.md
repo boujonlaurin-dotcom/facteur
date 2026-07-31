@@ -1,47 +1,56 @@
-# feat(tournee): suggestions garanties + quota visible + CTA carte + instrumentation (story 22.6)
+# feat(reco): allumer le bonus de pluralité (couverture multi-sources) sur le digest
 
-Story 22.6 (PR 2), base `main`. Rend la Tournée « vivante » : un accent quotidien
-de 4-5 sections « Choisie pour vous » **garanti pour tous** (même 8+ favoris), un
-quota de 3 suggestions visibles sous le cap pour les comptes personnalisés, un CTA
-direct sur la carte, et l'instrumentation PostHog. **Aucune migration** (additif,
-expand-safe, 1 head Alembic). Invariant 22.3 conservé (jamais hors univers suivi).
+Base `main`. **Aucune migration.** Backend-only (0 fichier mobile).
 
-> PR 1 (`promoteSuggestion` fiabilisé) vit dans un autre workspace ; cette PR
-> suppose la même signature `promoteSuggestion(section)` et ajoute seulement un
-> `origin` **optionnel** (défaut `card`) → rebase non cassante.
+## Résumé
 
-## A. Backend — plancher de suggestions
+Le pilier Pertinence calcule un bonus log-calibré pour les clusters multi-sources
+(`2→+12, 3→+19, 4→+24, cap 30`) mais c'était **du code mort partout** : aucun call
+site ne passait le count au `ScoringContext`, et la garde `content.cluster_id`
+tombait sur NULL pour ~99 % des candidats (`contents.cluster_id` NULL à 99 % en
+base — 298 / 29 414 sur 14j, uuid4 régénéré par run). Cette PR allume le signal
+**pour la première fois**, sur le chemin `topics` (cœur digest).
 
-- `scoring_config.py` : `TOURNEE_SUGGEST_FLOOR = 4` ; `TOURNEE_SUGGEST_SUBCAP` 8 → 5.
-- `routers/users.py` `_arrange_tournee` : `sub_cap = min(SUBCAP, max(remaining, FLOOR))` ;
-  suppression de l'early-return `remaining <= 0` (gate `_smart_arrangement_enabled` conservé).
-  Effet : 0 favori → 5, 7 favoris → 4, 8+ favoris → 4. Pool pauvre → sert moins, jamais d'invention.
+Doc : `docs/maintenance/maintenance-coverage-pillar-wiring.md`.
 
-## B. Mobile — quota visible ≥3 sous le cap
+## Approche — sûre, sans mutation ORM ni migration
 
-- `flux_continu_provider.dart` `_orderedTourneeKeys` : insertion additive à la frontière du cap ;
-  `quota = min(kTourneeSuggestQuota=3, suggestions visibles)`, favoris tronqués à `cap - quota`
-  **sans permutation**, puis les `quota` premières suggestions en queue. No-op non-personnalisé.
+Le count du cluster est porté **directement sur le `ScoringContext`** (construit par
+cluster dans `_score_and_select_articles`, donc `len(cluster.source_domains)`
+s'applique à tous ses contents), et non via une mutation de `content.cluster_id` —
+muter cet attribut ORM sur des `Content` attachés à la session risquerait un
+autoflush vers la **DB prod partagée** (la colonne même que le pipeline peuple avec
+des uuid4 par-run).
 
-## C. Mobile — CTA « Ajouter à mon Essentiel »
+- `ScoringContext.coverage_source_count: int | None` — nouveau champ optionnel.
+- `_score_coverage` — fast-path context-carried (prioritaire), fallback dict
+  `cluster_source_counts` inchangé.
+- `topic_selector` — `_build_scoring_context(..., coverage_source_count=len(cluster.source_domains))`.
 
-- `section_block.dart` : `onPromoteSuggestion` + `_PromoteSuggestionButton` (spinner, anti
-  double-tap, SnackBar « Ajouté à ton Essentiel »). Banner (badge + info-tap → sheet) inchangé.
-- `flux_continu_screen.dart` : câble `promoteSuggestion(section, origin: 'card')` ; la sheet
-  passe `origin: 'sheet'`.
+## Périmètre / discipline (GO PO Laurin)
 
-## D. Instrumentation PostHog
+- **Chemin `topics` seulement.** Tournée/curation + flat éditorial reportés (le flat
+  `_project_editorial_for_user` double-compterait avec `subject_importance`).
+- **`COVERAGE_CAP=30` inchangé** — levier unique = allumage du signal ; le cap est un
+  2e levier reporté (de toute façon `max_src=4` en prod ⇒ plafond effectif +24).
+- **0 migration, 0 mutation ORM.** Commit isolé/révocable.
 
-- `analytics_service.dart` : `trackSuggestionImpression` / `Promoted` / `Dismissed`.
-- Impressions dédupliquées **1/section/jour, persistées** (SharedPreferences `suggestion_impressions_v1`,
-  purge des jours passés). Émission au premier build de la section suggérée.
+## Tests
 
-## Vérification
+- `tests/recommendation/test_pertinence_coverage.py` : +3 cas context-carried
+  (bonus sans `cluster_id`, mono-source = 0, priorité sur dict).
+- `tests/test_topic_selector.py` : +2 cas d'intégration (cluster ≥3 sources →
+  « Couvert par 3 sources » dans le breakdown ; mono-source → rien).
+- Suite reco + digest : **119 passed**, 0 régression. `alembic heads` = 1 head
+  (`sa02_alerts_v2`).
 
-- Backend : `pytest` — 37 tests top-themes/suggester/users OK ; 1 head Alembic (`181c618da382`).
-- Mobile : `flutter test` — 453 tests flux_continu OK, 29 section_block, 14 analytics ;
-  `flutter analyze` 0 erreur (5 warnings pré-existants `dio.post` hors périmètre).
-- Changelog in-app : entrée « Ma Tournée » ajoutée (impact visible).
+## Mesure post-merge (jauge)
 
-Story : `docs/stories/core/22.6.tournee-suggestions-garanties-cta.md`.
-QA handoff : `.context/qa-handoff.md`.
+`by_pillar_band["pertinence"]` (`scripts/evaluate_feed_ranking.py`). **Forward-only**
+⇒ bandes vides avant date de merge, fenêtre d'observation ≥7j. **Puissance faible**
+(~13 clusters ≥3 src / 14j) : absence de mouvement CTR ≠ preuve d'inefficacité.
+
+## Hors périmètre
+
+Aucun changement mobile, aucune migration, cap inchangé, Tournée/curation/flat non
+touchés.

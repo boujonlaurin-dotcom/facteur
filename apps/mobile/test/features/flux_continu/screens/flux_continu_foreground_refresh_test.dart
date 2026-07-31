@@ -79,4 +79,72 @@ void main() {
       );
     });
   });
+
+  group('essentielEmptyPullAction', () {
+    final now = DateTime(2026, 7, 30, 9);
+
+    test('refresh borné/échoué → aucune escalade (jamais de redirection)', () {
+      // On ne redirige pas sur un `succeeded == false` : ce serait masquer un
+      // souci de perf plutôt qu'un manque de nouveauté.
+      expect(
+        essentielEmptyPullAction(
+          succeeded: false,
+          newSinceMorning: 0,
+          lastEmptyPullAt: now.subtract(const Duration(seconds: 5)),
+          now: now,
+        ),
+        EssentielEmptyPullAction.none,
+      );
+    });
+
+    test('nouveauté (newSinceMorning > 0) → reset, aucune escalade', () {
+      expect(
+        essentielEmptyPullAction(
+          succeeded: true,
+          newSinceMorning: 2,
+          lastEmptyPullAt: now.subtract(const Duration(seconds: 5)),
+          now: now,
+        ),
+        EssentielEmptyPullAction.none,
+      );
+    });
+
+    test('1er pull à vide → hint (SnackBar + CTA, pas de redirection)', () {
+      expect(
+        essentielEmptyPullAction(
+          succeeded: true,
+          newSinceMorning: 0,
+          lastEmptyPullAt: null,
+          now: now,
+        ),
+        EssentielEmptyPullAction.hint,
+      );
+    });
+
+    test('re-pull à vide rapproché (< fenêtre) → redirection auto', () {
+      expect(
+        essentielEmptyPullAction(
+          succeeded: true,
+          newSinceMorning: 0,
+          lastEmptyPullAt: now.subtract(essentielRePullWindow -
+              const Duration(seconds: 1)),
+          now: now,
+        ),
+        EssentielEmptyPullAction.redirect,
+      );
+    });
+
+    test('pull à vide hors fenêtre → hint (l\'escalade s\'est refroidie)', () {
+      expect(
+        essentielEmptyPullAction(
+          succeeded: true,
+          newSinceMorning: 0,
+          lastEmptyPullAt: now.subtract(essentielRePullWindow +
+              const Duration(seconds: 1)),
+          now: now,
+        ),
+        EssentielEmptyPullAction.hint,
+      );
+    });
+  });
 }

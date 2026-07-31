@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../alerts/models/alert_item.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 
@@ -22,7 +23,9 @@ const int kThemeFewFollowedSources = 6; // < 6 = « peu de sources »
 /// PR « Sources dans la Tournée » : `source` ajouté comme 5ème kind — une
 /// source favorite rendue comme section premium (hero logo + top-3 classé),
 /// réutilisant le payload [FeedThemeSection] (champs `sourceId`/`sourceLogoUrl`).
-enum SectionKind { essentiel, bonnes, theme, veille, source }
+/// `alerts` (6ème kind) porte le rappel des cloches « alerte source rare » ayant
+/// du neuf : une carte compacte, pas un flux d'articles (cf. [AlertsSection]).
+enum SectionKind { essentiel, bonnes, theme, veille, source, alerts, carousel }
 
 /// Origine d'une section de la Tournée du jour (Story 22.3).
 ///
@@ -94,6 +97,8 @@ class SuggestionReason {
 String sectionKey(FluxSection section) {
   return switch (section) {
     EssentielSection() => 'essentiel_v3',
+    AlertsSection() => kAlertsSectionKey,
+    CarouselSection() => kCarouselSectionKey,
     DigestTopicSection() => section.kind.name,
     FeedThemeSection(
       :final kind,
@@ -160,11 +165,27 @@ class EssentielArticle {
   final String? theme;
   final String sectionLabel;
   final int perspectiveCount;
+
+  /// Nombre de rédactions couvrant le sujet d'origine — pilote la pastille de
+  /// couverture (seuil [kCoverageChipMinSources]).
+  final int sourceCount;
+
+  /// Logos des rédactions qui couvrent le sujet, tronqués à 3 par le backend.
+  final List<SourceMini> perspectiveSources;
   final int rank;
   final bool isRead;
   final bool isSaved;
   final bool isLiked;
   final bool isDismissed;
+
+  /// Temps passé cumulé (s) — départage « Ouvert » de « Lu en partie » sur la
+  /// carte héros. `null` = signal absent (payload plus ancien).
+  final int? timeSpentSeconds;
+
+  /// « Lu jusqu'au bout ». Servi par `/api/essentiel`, distinct de [isRead] que
+  /// le seuil d'ouverture d'1 s suffit à déclencher.
+  final DateTime? completedAt;
+
   // Signaux user-aware servis par /api/essentiel pour rendre la personnalisation
   // et l'Actu du jour visibles côté carte (pastille, badges, avatar accent).
   final bool isFollowedSource;
@@ -185,14 +206,28 @@ class EssentielArticle {
     this.kind = SectionKind.theme,
     this.theme,
     this.perspectiveCount = 0,
+    this.sourceCount = 0,
+    this.perspectiveSources = const [],
     this.isRead = false,
     this.isSaved = false,
     this.isLiked = false,
     this.isDismissed = false,
+    this.timeSpentSeconds,
+    this.completedAt,
     this.isFollowedSource = false,
     this.isFollowedTopic = false,
     this.isActuDuJour = false,
   });
+
+  /// État de lecture serveur-truth (avant fusion session), miroir de
+  /// [Content.readState] — l'Essentiel n'a que des articles (jamais vidéo).
+  ReadState get readState => deriveReadState(
+        isConsumed: isRead,
+        readingProgress: 0,
+        isVideo: false,
+        timeSpentSeconds: timeSpentSeconds,
+        isCompleted: completedAt != null,
+      );
 
   factory EssentielArticle.fromJson(Map<String, dynamic> json) {
     final source =
@@ -213,11 +248,18 @@ class EssentielArticle {
       theme: json['theme'] as String?,
       sectionLabel: (json['section_label'] as String?) ?? '',
       perspectiveCount: (json['perspective_count'] as num?)?.toInt() ?? 0,
+      sourceCount: (json['source_count'] as num?)?.toInt() ?? 0,
+      perspectiveSources: [
+        for (final raw in (json['perspective_sources'] as List?) ?? const [])
+          if (raw is Map) SourceMini.fromJson(raw.cast<String, dynamic>()),
+      ],
       rank: (json['rank'] as num?)?.toInt() ?? 0,
       isRead: (json['is_read'] as bool?) ?? false,
       isSaved: (json['is_saved'] as bool?) ?? false,
       isLiked: (json['is_liked'] as bool?) ?? false,
       isDismissed: (json['is_dismissed'] as bool?) ?? false,
+      timeSpentSeconds: json['time_spent_seconds'] as int?,
+      completedAt: DateTime.tryParse(json['completed_at'] as String? ?? ''),
       isFollowedSource: (json['is_followed_source'] as bool?) ?? false,
       isFollowedTopic: (json['is_followed_topic'] as bool?) ?? false,
       isActuDuJour: (json['is_actu_du_jour'] as bool?) ?? false,
@@ -237,11 +279,15 @@ class EssentielArticle {
     'theme': theme,
     'section_label': sectionLabel,
     'perspective_count': perspectiveCount,
+    'source_count': sourceCount,
+    'perspective_sources': [for (final s in perspectiveSources) s.toJson()],
     'rank': rank,
     'is_read': isRead,
     'is_saved': isSaved,
     'is_liked': isLiked,
     'is_dismissed': isDismissed,
+    'time_spent_seconds': timeSpentSeconds,
+    'completed_at': completedAt?.toIso8601String(),
     'is_followed_source': isFollowedSource,
     'is_followed_topic': isFollowedTopic,
     'is_actu_du_jour': isActuDuJour,
@@ -286,6 +332,67 @@ class EssentielSection extends FluxSection {
 
   @override
   int get totalCount => articles.length;
+}
+
+/// Clé stable de la section « Tes alertes ». Constante (et non `kind.name`)
+/// parce que le provider en a besoin hors de toute instance : la section vit
+/// sous le héros, en dehors de l'ordre configurable, et le calcul du slot de La
+/// Grille doit savoir qu'elle précède toujours la Grille.
+const String kAlertsSectionKey = 'alerts';
+
+/// Nombre maximum de cloches listées dans la carte de la Tournée. Au-delà, le
+/// lien de pied renvoie vers « Mes alertes » plutôt que d'allonger un rappel qui
+/// doit rester lisible d'un coup d'œil.
+const int kAlertsSectionMaxRows = 3;
+
+/// Rappel « alerte source rare » : les cloches qui ont du neuf non lu, en une
+/// carte compacte sous le héros.
+///
+/// Ce n'est pas une section de contenu — elle ne fait pas concurrence aux
+/// thèmes/sources pour la place à l'écran : elle vit hors de l'ordre
+/// configurable de la Tournée (donc hors du cap de sections) et échappe au fit
+/// (taille fixe, cf. `_capSectionToFit`). Rendue par `AlertsSectionCard`.
+class AlertsSection extends FluxSection {
+  final List<AlertItem> items;
+
+  AlertsSection({
+    required this.items,
+    super.label = 'Tes alertes',
+    super.accent = const Color(0xFF9C6F19),
+  }) : super(
+          kind: SectionKind.alerts,
+          coreVisibleCount: items.length.clamp(0, kAlertsSectionMaxRows),
+        );
+
+  @override
+  int get totalCount => items.length;
+}
+
+/// Clé stable de la carte carrousel du jour (Story 32.1). Constante (comme
+/// [kAlertsSectionKey]) : la carte vit hors de l'ordre configurable de la
+/// Tournée, insérée directement dans `_compose`.
+const String kCarouselSectionKey = 'carousel';
+
+/// Carte carrousel semi-éditorialisé du jour (Story 32.1), mutualisée avec
+/// Flâner. Un seul type par jour (rotation date-seedée côté backend), servi par
+/// `GET /api/essentiel` (champ `carousel`).
+///
+/// Comme [AlertsSection], c'est une carte **auto-portée** (taille fixe) : elle
+/// vit hors du cap de sections et échappe au fit (`_capSectionToFit`). Rendue
+/// par `FeedCarousel` (PageView paginé + dots).
+class CarouselSection extends FluxSection {
+  final FeedCarouselData data;
+
+  CarouselSection({required this.data})
+      : super(
+          kind: SectionKind.carousel,
+          label: data.title,
+          accent: const Color(0xFFB0470A),
+          coreVisibleCount: data.items.length,
+        );
+
+  @override
+  int get totalCount => data.items.length;
 }
 
 /// Section backed by `digest.topics` (Essentiel, Bonnes Nouvelles). One
@@ -467,6 +574,15 @@ Set<String> renderedContentIds(List<FluxSection> sections) {
         for (final article in articles) {
           seen.add(article.contentId);
         }
+      case AlertsSection():
+        // Le rappel ne rend aucun article : il n'a rien à retirer de l'Explorer.
+        break;
+      case CarouselSection(:final data):
+        // Les articles du carrousel sont bien rendus : on les retire de
+        // l'Explorer aval pour éviter un doublon vertical sous la carte.
+        for (final item in data.items) {
+          seen.add(item.id);
+        }
       case DigestTopicSection(:final topics):
         for (final topic in topics) {
           if (topic.articles.isEmpty) continue;
@@ -482,15 +598,21 @@ Set<String> renderedContentIds(List<FluxSection> sections) {
 }
 
 /// Returns the section that follows [currentKey] in [sections] (the ordered
-/// Tournée du jour list), ignoring `EssentielSection` (no "Voir + de") and the
-/// current section itself. Returns `null` when the current section is the
-/// last one — used by the theme/digest detail screens to decide whether to
-/// show the "Sujet suivant" CTA or fall back to "Retour à la Tournée".
+/// Tournée du jour list), ignoring `EssentielSection` / `AlertsSection` (no
+/// "Voir + de" — ni l'un ni l'autre n'a de page dédiée) and the current section
+/// itself. Returns `null` when the current section is the last one — used by
+/// the theme/digest detail screens to decide whether to show the "Sujet
+/// suivant" CTA or fall back to "Retour à la Tournée".
 FluxSection? nextSectionAfter(List<FluxSection> sections, String currentKey) {
   final ordered = sections
       .whereType<FluxSection>()
       .where((s) {
-        if (s is EssentielSection) return false;
+        // La carte carrousel n'a pas de page dédiée (comme Essentiel/Alertes).
+        if (s is EssentielSection ||
+            s is AlertsSection ||
+            s is CarouselSection) {
+          return false;
+        }
         return true;
       })
       .toList(growable: false);

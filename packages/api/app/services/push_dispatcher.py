@@ -1,4 +1,10 @@
-"""Server-side daily Essentiel push dispatcher."""
+"""Server-side daily Essentiel push dispatcher.
+
+`firebase_configured`, `send_fcm`, `is_due` et `get_or_create_delivery` sont
+publics parce que `push_alert_dispatcher` (alertes source rare) les réutilise
+tels quels : même garde Firebase, même transport, même créneau utilisateur,
+même insertion idempotente.
+"""
 
 import asyncio
 import base64
@@ -16,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import safe_async_session
+from app.models.analytics import AnalyticsEvent
 from app.models.daily_digest import DailyDigest
 from app.models.push_notification import PushDelivery, PushDevice
 from app.models.user_notification_preferences import UserNotificationPreferences
@@ -24,6 +31,9 @@ from app.services.essentiel_service import (
     build_essentiel_response,
     fetch_user_essentiel_context,
 )
+from app.services.posthog_client import get_posthog_client
+from app.services.push_composer import compose_daily_digest
+from app.services.push_governor import check_push_budget
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -37,7 +47,7 @@ RETRY_DELAY = timedelta(minutes=5)
 PushSender = Callable[[str, str, str, dict[str, str]], Any]
 
 
-def _firebase_configured() -> bool:
+def firebase_configured() -> bool:
     return bool(
         settings.firebase_service_account_json
         or settings.firebase_service_account_base64
@@ -61,7 +71,7 @@ def _firebase_app():
         return firebase_admin.initialize_app(credentials.Certificate(json.loads(raw)))
 
 
-def _send_fcm(token: str, title: str, body: str, data: dict[str, str]) -> str:
+def send_fcm(token: str, title: str, body: str, data: dict[str, str]) -> str:
     app = _firebase_app()
     if app is None:
         raise RuntimeError("firebase_not_configured")
@@ -99,14 +109,14 @@ def _send_fcm(token: str, title: str, body: str, data: dict[str, str]) -> str:
     )
 
 
-def _is_due(local_now: datetime, time_slot: str) -> bool:
+def is_due(local_now: datetime, time_slot: str) -> bool:
     local_time = local_now.time().replace(tzinfo=None)
     if time_slot == "morning":
         return MORNING_TIME <= local_time <= MORNING_CUTOFF
     return local_time >= EVENING_TIME
 
 
-def _is_invalid_token_error(exc: Exception) -> bool:
+def is_invalid_token_error(exc: Exception) -> bool:
     return type(exc).__name__ in {
         "UnregisteredError",
         "SenderIdMismatchError",
@@ -114,19 +124,26 @@ def _is_invalid_token_error(exc: Exception) -> bool:
     }
 
 
-async def _get_or_create_delivery(
+async def get_or_create_delivery(
     session: AsyncSession,
     *,
     device_id,
     target_date: date,
     now: datetime,
+    kind: str = PUSH_KIND,
 ) -> PushDelivery:
+    """Ligne de livraison idempotente pour `(device, target_date, kind)`.
+
+    Partagée avec `push_alert_dispatcher`, qui passe un `kind` porteur de la
+    source pour que deux alertes du même jour ne se télescopent pas sur la
+    contrainte d'unicité.
+    """
     await session.execute(
         pg_insert(PushDelivery)
         .values(
             device_id=device_id,
             target_date=target_date,
-            kind=PUSH_KIND,
+            kind=kind,
             status="pending",
             attempt_count=0,
             next_attempt_at=now,
@@ -140,7 +157,7 @@ async def _get_or_create_delivery(
         select(PushDelivery).where(
             PushDelivery.device_id == device_id,
             PushDelivery.target_date == target_date,
-            PushDelivery.kind == PUSH_KIND,
+            PushDelivery.kind == kind,
         )
     )
     assert delivery is not None
@@ -171,15 +188,21 @@ async def _build_exact_essentiel(session: AsyncSession, user_id, target_date: da
 async def dispatch_daily_essentiel_pushes(
     *,
     now: datetime | None = None,
-    sender: PushSender = _send_fcm,
+    sender: PushSender = send_fcm,
 ) -> dict[str, int]:
     """Send due pushes once per device/day, retrying morning gaps until noon."""
-    if sender is _send_fcm and not _firebase_configured():
+    metrics = {
+        "sent": 0,
+        "retried": 0,
+        "skipped": 0,
+        "governed": 0,
+        "invalid_tokens": 0,
+    }
+    if sender is send_fcm and not firebase_configured():
         logger.info("push_dispatch_disabled", reason="firebase_not_configured")
-        return {"sent": 0, "retried": 0, "skipped": 0, "invalid_tokens": 0}
+        return metrics
 
     utc_now = (now or datetime.now(UTC)).astimezone(UTC)
-    metrics = {"sent": 0, "retried": 0, "skipped": 0, "invalid_tokens": 0}
 
     async with safe_async_session() as session:
         rows = (
@@ -198,6 +221,8 @@ async def dispatch_daily_essentiel_pushes(
         ).all()
 
         digest_cache: dict[tuple[Any, date], Any] = {}
+        governor_cache: dict[tuple[Any, date], Any] = {}
+        composed_cache: dict[tuple[Any, date], Any] = {}
         for device, prefs in rows:
             try:
                 local_now = utc_now.astimezone(ZoneInfo(prefs.timezone))
@@ -208,11 +233,11 @@ async def dispatch_daily_essentiel_pushes(
                     timezone=prefs.timezone,
                 )
                 continue
-            if not _is_due(local_now, prefs.time_slot):
+            if not is_due(local_now, prefs.time_slot):
                 continue
 
             target_date = local_now.date()
-            delivery = await _get_or_create_delivery(
+            delivery = await get_or_create_delivery(
                 session,
                 device_id=device.device_id,
                 target_date=target_date,
@@ -243,29 +268,54 @@ async def dispatch_daily_essentiel_pushes(
                     metrics["retried"] += 1
                 continue
 
-            teasers = [article.title for article in essentiel.articles[:2]]
-            body = teasers[0]
+            # Décision et composition stables par (user, target_date) dans un
+            # run : mutualisées entre les devices d'un même utilisateur (le
+            # gouverneur exclut déjà le push logique courant de ses budgets).
+            if cache_key not in governor_cache:
+                governor_cache[cache_key] = await check_push_budget(
+                    session,
+                    user_id=device.user_id,
+                    kind=PUSH_KIND,
+                    now=utc_now,
+                    target_date=target_date,
+                )
+            decision = governor_cache[cache_key]
+            if not decision.allowed:
+                delivery.status = "skipped"
+                delivery.skipped_at = utc_now
+                delivery.error_code = decision.reason
+                metrics["governed"] += 1
+                logger.info(
+                    "push_governed",
+                    device_id=str(device.device_id),
+                    reason=decision.reason,
+                )
+                get_posthog_client().capture(
+                    device.user_id,
+                    "push_suppressed",
+                    {"kind": PUSH_KIND, "reason": decision.reason},
+                )
+                continue
+
+            if cache_key not in composed_cache:
+                composed_cache[cache_key] = compose_daily_digest(essentiel, target_date)
+            composed = composed_cache[cache_key]
             delivery.attempt_count += 1
             delivery.last_attempt_at = utc_now
             try:
                 await asyncio.to_thread(
                     sender,
                     device.fcm_token,
-                    "Facteur",
-                    body,
-                    {
-                        "route": "/digest",
-                        "target_date": target_date.isoformat(),
-                        "kind": PUSH_KIND,
-                        "teasers": json.dumps(teasers, ensure_ascii=False),
-                    },
+                    composed.title,
+                    composed.body,
+                    {**composed.data, "sent_at": utc_now.isoformat()},
                 )
             except Exception as exc:
                 delivery.status = "failed"
                 delivery.next_attempt_at = utc_now + RETRY_DELAY
                 delivery.error_code = type(exc).__name__
                 delivery.error_message = str(exc)[:1000]
-                if _is_invalid_token_error(exc):
+                if is_invalid_token_error(exc):
                     device.revoked_at = utc_now
                     metrics["invalid_tokens"] += 1
                 else:
@@ -282,6 +332,24 @@ async def dispatch_daily_essentiel_pushes(
                 delivery.error_code = None
                 delivery.error_message = None
                 metrics["sent"] += 1
+                # Ajout direct (sans AnalyticsService.log_event, qui commit
+                # immédiatement) : un commit mid-loop expirerait les objets ORM
+                # de la boucle. Persisté par le commit final.
+                session.add(
+                    AnalyticsEvent(
+                        user_id=device.user_id,
+                        event_type="push_sent",
+                        event_data={
+                            "kind": PUSH_KIND,
+                            "target_date": target_date.isoformat(),
+                        },
+                    )
+                )
+                get_posthog_client().capture(
+                    device.user_id,
+                    "push_sent",
+                    {"kind": PUSH_KIND, "target_date": target_date.isoformat()},
+                )
 
         await session.commit()
 

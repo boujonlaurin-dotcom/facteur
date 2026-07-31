@@ -52,7 +52,7 @@ void main() {
       );
       expect(find.text("M'en informer"), findsOneWidget);
       expect(find.text('Plus tard'), findsOneWidget);
-      expect(find.text('Définis ton rythme'), findsNothing);
+      expect(find.text('À quel moment ?'), findsNothing);
       expect(find.text('🌱 Bonnes nouvelles du jour'), findsNothing);
     },
   );
@@ -65,7 +65,27 @@ void main() {
 
       expect(find.text("Mieux s'informer, à son rythme"), findsOneWidget);
       expect(find.text('Activer ton Facteur'), findsOneWidget);
-      expect(find.text('Définis ton rythme'), findsOneWidget);
+      // Le digest est le seul trigger à proposer l'horaire et le canal
+      // Bonnes nouvelles.
+      expect(find.text('À quel moment ?'), findsOneWidget);
+      expect(find.text('🌱 Bonnes nouvelles du jour'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'trigger=alert → copy cloche, ni horaire ni "Bonnes nouvelles"',
+    (tester) async {
+      await tester.pumpWidget(_wrapModal(ActivationTrigger.alert));
+      await tester.pump();
+
+      expect(
+        find.text('Te prévenir quand cette source publie ?'),
+        findsOneWidget,
+      );
+      expect(find.text('Activer la cloche'), findsOneWidget);
+      expect(find.text('Plus tard'), findsOneWidget);
+      expect(find.text('À quel moment ?'), findsNothing);
+      expect(find.text('🌱 Bonnes nouvelles du jour'), findsNothing);
     },
   );
 }

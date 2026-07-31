@@ -10,6 +10,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 import '../../features/auth/utils/auth_error_messages.dart';
 import '../services/posthog_service.dart';
 import '../services/server_push_service.dart';
+import '../services/widget_background_refresh.dart';
 import '../services/widget_service.dart';
 import 'session_refresher.dart';
 
@@ -63,6 +64,13 @@ class AuthState {
   });
 
   bool get isAuthenticated => user != null;
+
+  /// Session anonyme Supabase (story 31.1 : onboarding sans compte).
+  ///
+  /// Reste `true` entre la conversion en compte et la confirmation de l'email —
+  /// c'est Supabase qui bascule le flag à la confirmation. Le pivot « la
+  /// conversion a eu lieu » est donc [pendingEmailConfirmation], pas ce getter.
+  bool get isAnonymous => user?.isAnonymous ?? false;
 
   /// Vérifie si l'email de l'utilisateur est confirmé.
   /// Les connexions via providers sociaux sont considérées comme confirmées d'office.
@@ -135,6 +143,22 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
   late final SupabaseClient _supabase;
 
+  /// Box Hive des préférences d'auth (persistance cross-restart).
+  static const String _authPrefsBox = 'auth_prefs';
+
+  /// Story 31.1 — posée dès qu'un choix d'authentification explicite a eu lieu
+  /// (sign-in, sign-up, conversion, sign-out). Sans elle, un utilisateur qui se
+  /// déconnecte se retrouverait au reboot suivant dans une session anonyme et
+  /// un onboarding vierge.
+  static const String _anonAutoSignInDisabledKey = 'anon_auto_signin_disabled';
+
+  /// Story 31.1 — email en attente de confirmation, persisté pour survivre à un
+  /// kill/relaunch entre la conversion du compte anonyme et le clic dans le
+  /// mail. `is_anonymous` reste `true` sur cette fenêtre : c'est cette clé, et
+  /// elle seule, qui distingue « pas encore de compte » de « compte créé,
+  /// adresse à confirmer ».
+  static const String _pendingEmailConfirmationKey = 'pending_email_confirmation';
+
   /// Timestamp of the last forceUnconfirmed set. Used to debounce
   /// repeated 403s and avoid redirect loops.
   DateTime? _lastForceUnconfirmedAt;
@@ -169,7 +193,7 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       });
 
       // 1. Charger la préférence de persistence
-      final box = await Hive.openBox<dynamic>('auth_prefs');
+      final box = await Hive.openBox<dynamic>(_authPrefsBox);
       final rememberMe = box.get('remember_me', defaultValue: true) as bool;
       debugPrint('AuthStateNotifier: rememberMe preference is $rememberMe');
 
@@ -265,6 +289,20 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         );
       }
 
+      // 5b. Story 31.1 — aucune session : premier lancement (ou clear-data). On
+      // ouvre une session ANONYME plutôt que d'envoyer l'utilisateur sur /login.
+      // Il découvre le produit et remplit son questionnaire d'abord ; le compte
+      // se crée à l'étape `finalize`, sur le MÊME `user.id`, donc rien de ce
+      // qu'il a configuré n'est perdu. En cas d'échec (réseau, anonymous
+      // sign-ins désactivés côté Supabase), on retombe simplement sur /login.
+      if (session == null) {
+        session = await _maybeStartAnonymousSession(box);
+      }
+
+      // 5c. Restaurer l'email en attente de confirmation : l'app a pu être tuée
+      // entre la conversion du compte anonyme et le clic dans le mail.
+      final pendingEmail = await _restorePendingEmailConfirmation(box, session);
+
       // 6. Mettre à jour l'état initial AVEC la session restaurée (le refresh
       // tourne en arrière-plan). Plus de gate bloquant : l'utilisateur voit la
       // structure immédiatement.
@@ -275,7 +313,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         user: session?.user,
         isLoading: false,
         forceUnconfirmed: false,
+        pendingEmailConfirmation: pendingEmail,
       );
+      _noteRealAccount(session?.user);
 
       debugPrint(
         'AuthStateNotifier: Initial state set. Authenticated: ${state.isAuthenticated}',
@@ -291,6 +331,85 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       debugPrint('AuthStateNotifier ERROR: $e');
       state = state.copyWith(isLoading: false, error: e.toString());
     }
+  }
+
+  /// Ouvre une session anonyme Supabase, sauf si un choix d'auth explicite a
+  /// déjà eu lieu sur cet appareil (cf. [_anonAutoSignInDisabledKey]).
+  /// Retourne `null` sur refus ou sur échec — l'appelant retombe alors sur le
+  /// parcours historique (`/login`).
+  Future<Session?> _maybeStartAnonymousSession(Box<dynamic> box) async {
+    final disabled =
+        box.get(_anonAutoSignInDisabledKey, defaultValue: false) as bool;
+    if (disabled) {
+      debugPrint('AuthStateNotifier: Anonymous auto sign-in disabled.');
+      return null;
+    }
+
+    try {
+      debugPrint('AuthStateNotifier: Starting anonymous session...');
+      final response = await _supabase.auth.signInAnonymously().timeout(
+            const Duration(seconds: 8),
+          );
+      debugPrint('AuthStateNotifier: ✅ Anonymous session started.');
+      unawaited(PostHogService().capture(event: 'anonymous_session_started'));
+      return response.session;
+    } catch (e) {
+      debugPrint('AuthStateNotifier: Anonymous sign-in failed: $e');
+      unawaited(
+        Sentry.captureException(
+          e,
+          withScope: (scope) =>
+              scope.setTag('auth_event', 'anonymous_signin_failed'),
+        ),
+      );
+      return null;
+    }
+  }
+
+  /// Relit l'email en attente de confirmation persisté à la conversion. Purge
+  /// la clé si la session courante est déjà confirmée (ou absente) — sinon un
+  /// utilisateur confirmé de longue date serait renvoyé sur /emailConfirmation.
+  Future<String?> _restorePendingEmailConfirmation(
+    Box<dynamic> box,
+    Session? session,
+  ) async {
+    final stored = box.get(_pendingEmailConfirmationKey) as String?;
+    if (stored == null) return null;
+
+    final user = session?.user;
+    final stillPending = user != null && user.emailConfirmedAt == null;
+    if (!stillPending) {
+      await box.delete(_pendingEmailConfirmationKey);
+      return null;
+    }
+    debugPrint('AuthStateNotifier: Restored pending email confirmation.');
+    return stored;
+  }
+
+  /// Coupe l'auto sign-in anonyme : appelé à tout choix d'auth explicite.
+  Future<void> _disableAnonymousAutoSignIn() async {
+    final box = await Hive.openBox<dynamic>(_authPrefsBox);
+    await box.put(_anonAutoSignInDisabledKey, true);
+  }
+
+  /// Choke point : dès qu'un vrai compte est observé sur cet appareil, l'auto
+  /// sign-in anonyme est coupé définitivement.
+  ///
+  /// Indispensable au-delà des chemins explicites (email, conversion, signOut) :
+  /// un login OAuth ou une session simplement expirée passeraient sinon entre
+  /// les mailles, et l'utilisateur historique se réveillerait un matin dans un
+  /// onboarding anonyme vierge au lieu de son écran de connexion.
+  void _noteRealAccount(User? user) {
+    if (user == null || user.isAnonymous || _realAccountNoted) return;
+    _realAccountNoted = true; // le listener refire à chaque rotation de JWT
+    unawaited(_disableAnonymousAutoSignIn());
+  }
+
+  bool _realAccountNoted = false;
+
+  Future<void> _clearPersistedPendingEmail() async {
+    final box = await Hive.openBox<dynamic>(_authPrefsBox);
+    await box.delete(_pendingEmailConfirmationKey);
   }
 
   void _setupAuthListener() {
@@ -334,8 +453,15 @@ class AuthStateNotifier extends StateNotifier<AuthState>
               ) ==
               true;
 
-      // Capturer AVANT la mise à jour du state pour détecter les transitions
-      final bool isNewSignIn = state.user == null && user != null;
+      // Capturer AVANT la mise à jour du state pour détecter les transitions.
+      // Comparer par id (pas juste null → non-null) : une session anonyme a
+      // déjà un `state.user` non-null, donc se connecter à un compte réel
+      // depuis l'anonyme (CTA « J'ai déjà un compte ») ne doit pas être
+      // ignoré ici — sinon `needsOnboarding` reste bloqué sur la valeur de
+      // l'anonyme (toujours `true`) et le vrai statut DB n'est jamais relu.
+      final bool isNewSignIn =
+          user != null && state.user?.id != user.id;
+      _noteRealAccount(user);
 
       state = state.copyWith(
         user: user,
@@ -398,8 +524,12 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     final signedOutUserId = state.user?.id;
     await ServerPushService.instance.revokeCurrentDevice();
     await _supabase.auth.signOut();
-    final box = await Hive.openBox<dynamic>('auth_prefs');
+    final box = await Hive.openBox<dynamic>(_authPrefsBox);
     await box.delete('remember_me'); // Reset preference on sign out
+    // Story 31.1 — un signOut est un choix explicite : on ne re-bascule jamais
+    // cet appareil en session anonyme au prochain cold boot.
+    await box.put(_anonAutoSignInDisabledKey, true);
+    await box.delete(_pendingEmailConfirmationKey);
 
     // Vider le cache du profil utilisateur (pour que le prochain user ne soit pas considéré comme "onboardé" par erreur)
     final profileBox = await Hive.openBox<dynamic>('user_profile');
@@ -421,6 +551,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     // Wipe the home-screen widget so the next account on the same device
     // never briefly sees the previous user's digest.
     await WidgetService.clear();
+    // Le job de fond doit mourir avec la session : sinon il continue de
+    // réécrire le widget avec le flux du compte précédent.
+    await WidgetBackgroundRefresh.cancel();
 
     // Reset onboarding navigation state — otherwise a fresh signup on the
     // same device inherits saved section/question and skips Section 1.
@@ -496,6 +629,16 @@ class AuthStateNotifier extends StateNotifier<AuthState>
           needsOnboarding: !cachedCompleted,
           onboardingStatusKnown: true,
         );
+      } else if (state.isAnonymous) {
+        // Story 31.1 — cache vide + session anonyme : aucun profil ne peut
+        // exister (il n'est écrit qu'à la conclusion de l'onboarding). On
+        // tranche sans attendre la DB pour qu'un premier lancement ne reste
+        // jamais coincé sur le splash. La requête ci-dessous corrigera si
+        // besoin (cas d'un anonyme converti dont le cache local a été purgé).
+        state = state.copyWith(
+          needsOnboarding: true,
+          onboardingStatusKnown: true,
+        );
       }
 
       // 2. Vérifier avec la base de données (source de vérité)
@@ -550,8 +693,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
     try {
       // Sauvegarder la préférence de persistence
-      final box = await Hive.openBox<dynamic>('auth_prefs');
+      final box = await Hive.openBox<dynamic>(_authPrefsBox);
       await box.put('remember_me', rememberMe);
+      await box.put(_anonAutoSignInDisabledKey, true);
 
       await _supabase.auth.signInWithPassword(email: email, password: password);
       state = state.copyWith(isLoading: false);
@@ -588,23 +732,18 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
-      // Sur natif, on cible une page web statique (hébergée à côté du build
-      // Flutter web) qui tente d'ouvrir le scheme `io.supabase.facteur://`
-      // puis offre un fallback bouton — les schemes custom seuls sont
-      // bloqués par certains clients mail / browsers Android/iOS.
-      final redirectUrl = kIsWeb
-          ? Uri(
-              scheme: Uri.base.scheme,
-              host: Uri.base.host,
-              path: Uri.base.path,
-            ).toString()
-          : 'https://boujonlaurin-dotcom.github.io/facteur/email-confirmation.html';
-
+      await _disableAnonymousAutoSignIn();
       await _supabase.auth.signUp(
         email: email,
         password: password,
-        emailRedirectTo: redirectUrl,
+        emailRedirectTo: _emailConfirmationRedirectUrl(),
         data: {'first_name': firstName, 'last_name': lastName},
+      );
+      unawaited(
+        PostHogService().capture(
+          event: 'account_created',
+          properties: {'from_anonymous': false},
+        ),
       );
       // Signaler que l'email de confirmation a été envoyé
       state = state.copyWith(isLoading: false, pendingEmailConfirmation: email);
@@ -624,6 +763,82 @@ class AuthStateNotifier extends StateNotifier<AuthState>
         // DEBUG: Afficher l'erreur brute
         error: 'Une erreur est survenue',
       );
+    }
+  }
+
+  /// Cible du lien de confirmation d'email. Sur natif, on vise une page web
+  /// statique (hébergée à côté du build Flutter web) qui tente d'ouvrir le
+  /// scheme `io.supabase.facteur://` puis offre un fallback bouton — les
+  /// schemes custom seuls sont bloqués par certains clients mail / browsers
+  /// Android/iOS.
+  String _emailConfirmationRedirectUrl() => kIsWeb
+      ? Uri(
+          scheme: Uri.base.scheme,
+          host: Uri.base.host,
+          path: Uri.base.path,
+        ).toString()
+      : 'https://boujonlaurin-dotcom.github.io/facteur/email-confirmation.html';
+
+  /// Story 31.1 — convertit la session **anonyme** courante en compte réel.
+  ///
+  /// Supabase conserve le même `user.id` : le profil, les sources et les thèmes
+  /// écrits pendant l'onboarding restent attachés. On ne vide donc **aucune**
+  /// box locale ici (contrairement à [signOut], qui purge `onboarding` et
+  /// `user_profile`).
+  ///
+  /// Deux appels distincts : le mot de passe s'applique immédiatement, l'email
+  /// demande une confirmation. Tant qu'elle n'a pas eu lieu, `is_anonymous`
+  /// reste `true` côté Supabase — d'où la persistance de
+  /// [_pendingEmailConfirmationKey], seul marqueur fiable de « compte créé ».
+  ///
+  /// Retourne `true` si la conversion a abouti ; l'erreur éventuelle est
+  /// exposée via `state.error`.
+  Future<bool> convertAnonymousToAccount({
+    required String email,
+    required String password,
+  }) async {
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      await _supabase.auth.updateUser(UserAttributes(password: password));
+      await _supabase.auth.updateUser(
+        UserAttributes(email: email),
+        emailRedirectTo: _emailConfirmationRedirectUrl(),
+      );
+
+      await _disableAnonymousAutoSignIn();
+      final box = await Hive.openBox<dynamic>(_authPrefsBox);
+      await box.put(_pendingEmailConfirmationKey, email);
+
+      // `$identify` ne part qu'une fois `is_anonymous` retombé (donc à la
+      // confirmation de l'adresse) : cet event est le marqueur d'activation
+      // « un compte a été créé », comparable à la baseline install → $identify.
+      unawaited(
+        PostHogService().capture(
+          event: 'account_created',
+          properties: {'from_anonymous': true},
+        ),
+      );
+
+      state = state.copyWith(
+        isLoading: false,
+        pendingEmailConfirmation: email,
+      );
+      return true;
+    } on AuthException catch (e) {
+      debugPrint('AuthStateNotifier: Anonymous conversion failed: ${e.message}');
+      state = state.copyWith(
+        isLoading: false,
+        error: AuthErrorMessages.translate(e.message),
+      );
+      return false;
+    } catch (e) {
+      debugPrint('AuthStateNotifier: Anonymous conversion unknown error: $e');
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Une erreur est survenue',
+      );
+      return false;
     }
   }
 
@@ -885,8 +1100,12 @@ class AuthStateNotifier extends StateNotifier<AuthState>
       state = state.copyWith(
         user: freshUser,
         forceUnconfirmed: isNowConfirmed ? false : state.forceUnconfirmed,
+        clearPendingEmail: isNowConfirmed,
       );
       if (isNowConfirmed) {
+        // L'adresse est confirmée : le marqueur de conversion anonyme a fait
+        // son office, on le retire pour ne pas re-router vers /emailConfirmation.
+        await _clearPersistedPendingEmail();
         await _checkOnboardingStatus();
       }
       return isNowConfirmed;

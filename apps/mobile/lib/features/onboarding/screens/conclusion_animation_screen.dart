@@ -8,6 +8,7 @@ import '../../../config/theme.dart';
 import '../../../config/routes.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
+import '../../../core/providers/analytics_provider.dart';
 import '../../../shared/strings/loader_error_strings.dart';
 import '../../../shared/widgets/states/laurin_fallback_view.dart';
 import '../providers/conclusion_live_feed_provider.dart';
@@ -87,8 +88,20 @@ class _ConclusionAnimationScreenState
   Future<void> _completeOnboarding() async {
     // Capture la liste des customs échoués AVANT clearSavedData pour pouvoir
     // afficher le résumé utilisateur ("tu pourras les réajouter").
+    final onboardingState = ref.read(onboardingProvider);
     final failedCustomTopics = List<String>.from(
-      ref.read(onboardingProvider).failedCustomTopics,
+      onboardingState.failedCustomTopics,
+    );
+
+    // Fin du funnel (story 31.1) : émis ici et pas à `finalize`, quand le profil
+    // est réellement enregistré côté API.
+    unawaited(
+      ref.read(analyticsServiceProvider).trackOnboardingStep(
+            event: 'onboarding_completed',
+            stepName: onboardingState.currentStepName,
+            stepIndex: onboardingState.globalQuestionIndex,
+            totalSteps: onboardingState.totalSteps,
+          ),
     );
 
     // Effacer les données locales temporaires

@@ -13,6 +13,7 @@ from app.jobs.digest_generation_job import (
     run_digest_generation,
 )
 from app.jobs.promote_sources_job import promote_evaluated_sources
+from app.jobs.purge_anonymous_users import purge_anonymous_users
 from app.jobs.purge_deleted_users import purge_deleted_users
 from app.jobs.recompute_source_coverage_themes import (
     recompute_source_coverage_themes,
@@ -20,6 +21,10 @@ from app.jobs.recompute_source_coverage_themes import (
 from app.jobs.recompute_source_language import recompute_source_language
 from app.jobs.rescue_failed_sources_job import run_rescue_failed_sources
 from app.services.observability.cost_budget import log_budget_projection
+from app.services.push_alert_dispatcher import (
+    dispatch_source_alerts,
+    dispatch_topic_alerts,
+)
 from app.services.push_dispatcher import dispatch_daily_essentiel_pushes
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.workers.rss_sync import sync_all_sources
@@ -123,6 +128,49 @@ async def decay_user_entity_affinity() -> None:
     except Exception as exc:
         logger.error(
             "entity_affinity_decay_failed",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            exc_info=True,
+        )
+
+
+async def decay_user_interest_weights() -> None:
+    """Apply the daily O(1) decay to all learned theme interest weights.
+
+    Troisième et dernier membre de la famille de decay, aligné sur
+    `decay_user_subtopic_weights` et `decay_user_entity_affinity`.
+    `user_interests.weight` était le seul signal appris **sans** decay : il
+    montait de +0,05 par lecture jusqu'au cap 3,0 et ne redescendait jamais.
+
+    Décay **symétrique** (`weight != 1.0`, pas `weight > 1.0`), comme ses deux
+    sœurs : les lignes sous 1.0 remontent aussi vers le neutre, ce qui efface
+    progressivement le malus de `_score_behavioral`. C'est assumé — un signal
+    négatif appris il y a des mois ne doit pas être plus permanent qu'un signal
+    positif. Idempotent (no-op sur les lignes déjà à 1.0).
+    """
+    from app.database import safe_async_session
+
+    try:
+        async with safe_async_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    UPDATE user_interests
+                    SET weight = 1.0 + (weight - 1.0) * :decay
+                    WHERE weight != 1.0
+                    """
+                ),
+                {"decay": ScoringWeights.INTEREST_WEIGHT_DECAY},
+            )
+            await session.commit()
+            logger.info(
+                "interest_weight_decay_completed",
+                decay=ScoringWeights.INTEREST_WEIGHT_DECAY,
+                rowcount=getattr(result, "rowcount", None),
+            )
+    except Exception as exc:
+        logger.error(
+            "interest_weight_decay_failed",
             error=str(exc),
             error_type=type(exc).__name__,
             exc_info=True,
@@ -297,6 +345,12 @@ async def _pool_health_probe() -> None:
       (early warning sans bruit sur les pics transitoires du rituel matinal).
     - **page** (`pool_page_threshold_pct`, défaut 90 %) : alerte Sentry
       `level=fatal` immédiate, dès la première sonde (saturation imminente).
+
+    Les seuils portent sur la **capacité** du pool (`pool_size + max_overflow`
+    = 20 en prod), soit 14 et 18 connexions sorties. Avant le correctif
+    PYTHON-63 le dénominateur suivait les connexions vivantes, ce qui faisait
+    pager dès 9 connexions sur 20 (cf.
+    docs/bugs/bug-pool-pressure-metric-false-positive.md).
     """
     global _pool_warn_streak
     import sentry_sdk
@@ -326,6 +380,17 @@ async def _pool_health_probe() -> None:
         # (page >= warn par construction), puis on choisit la sévérité.
         _pool_warn_streak += 1
 
+        def alert(message: str, level: str, **extra: object) -> None:
+            """Alerte Sentry avec les compteurs en contexte.
+
+            Le message ne doit porter AUCUN chiffre variable : Sentry groupe
+            les `capture_message` par texte, donc y interpoler `usage_pct`
+            créerait une issue par valeur mesurée.
+            """
+            with sentry_sdk.push_scope() as scope:
+                scope.set_context("db_pool", {**stats, **extra})
+                sentry_sdk.capture_message(message, level=level)
+
         if usage_pct >= page_threshold:
             logger.error(
                 "db_pool_pressure_critical",
@@ -334,9 +399,9 @@ async def _pool_health_probe() -> None:
                 threshold=page_threshold,
                 **stats,
             )
-            sentry_sdk.capture_message(
-                f"DB pool pressure CRITICAL: {usage_pct}% (>= {page_threshold}%)",
-                level="fatal",
+            alert(
+                f"DB pool pressure CRITICAL (>= {page_threshold}% of capacity)",
+                "fatal",
             )
         elif _pool_warn_streak >= settings.pool_warn_sustained_probes:
             logger.warning(
@@ -347,10 +412,10 @@ async def _pool_health_probe() -> None:
                 sustained_probes=_pool_warn_streak,
                 **stats,
             )
-            sentry_sdk.capture_message(
-                f"DB pool pressure sustained: {usage_pct}% (>= "
-                f"{warn_threshold}% for {_pool_warn_streak} consecutive probes)",
-                level="warning",
+            alert(
+                f"DB pool pressure sustained (>= {warn_threshold}% of capacity)",
+                "warning",
+                sustained_probes=_pool_warn_streak,
             )
         else:
             # Seuil franchi mais pas encore soutenu : on garde la trace en
@@ -497,6 +562,23 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Daily learned-interest-weight decay (06h50 Paris) — 3e membre de la
+    # famille. Même fenêtre que ses deux sœurs, donc avant le digest (07h30).
+    scheduler.add_job(
+        decay_user_interest_weights,
+        trigger=CronTrigger(
+            hour=SUBTOPIC_DECAY_HOUR_PARIS,
+            minute=SUBTOPIC_DECAY_MINUTE_PARIS,
+            timezone=_PARIS_TZ,
+        ),
+        id="interest_weight_decay",
+        name="Interest Weight Decay",
+        replace_existing=True,
+        misfire_grace_time=14400,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Watchdog 08h15 — vérifie la couverture et relance si < 90%.
     # Doit tourner *après* le cron principal (07h30) pour avoir une chance
     # de constater la couverture réelle avant de relancer.
@@ -529,6 +611,19 @@ def start_scheduler() -> None:
         trigger=CronTrigger(hour=4, minute=0, timezone=_PARIS_TZ),
         id="purge_deleted_users",
         name="Purge soft-deleted users (>30d)",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Purge des sessions anonymes abandonnées (story 31.1 : l'onboarding sans
+    # compte crée une ligne `auth.users` par install). 4h15 Paris, juste après
+    # purge_deleted_users pour ne pas croiser ses suppressions de profils.
+    scheduler.add_job(
+        purge_anonymous_users,
+        trigger=CronTrigger(hour=4, minute=15, timezone=_PARIS_TZ),
+        id="purge_anonymous_users",
+        name="Purge abandoned anonymous sessions (>30d)",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
@@ -640,6 +735,30 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Alertes source (Epic 30) — même cadence que la tournée : elles partent
+    # dans la même fenêtre, silencieusement, sous le même gouverneur.
+    scheduler.add_job(
+        dispatch_source_alerts,
+        trigger=IntervalTrigger(minutes=5),
+        id="source_alert_push_dispatch",
+        name="Source alert push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Alertes sujet (alertes v2) — passe séparée, mêmes garanties. Le gouverneur
+    # (budget partagé par utilisateur) arbitre entre les deux familles.
+    scheduler.add_job(
+        dispatch_topic_alerts,
+        trigger=IntervalTrigger(minutes=5),
+        id="topic_alert_push_dispatch",
+        name="Topic alert push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Garde-fou file de classification (30 min) — alerte Sentry si le plus
     # vieux pending dépasse le seuil (défaut 12 h). 2e couche par-dessus le
     # superviseur `_on_task_done` du worker : détecte l'angle-mort même si la
@@ -663,6 +782,7 @@ def start_scheduler() -> None:
             "digest_watchdog",
             "storage_cleanup",
             "purge_deleted_users",
+            "purge_anonymous_users",
             "recompute_source_language",
             "rescue_failed_sources",
             "recompute_source_coverage_themes",
@@ -670,6 +790,8 @@ def start_scheduler() -> None:
             "zombie_session_sweeper",
             "pool_health_probe",
             "daily_essentiel_push_dispatch",
+            "source_alert_push_dispatch",
+            "topic_alert_push_dispatch",
             "classification_queue_health_check",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,

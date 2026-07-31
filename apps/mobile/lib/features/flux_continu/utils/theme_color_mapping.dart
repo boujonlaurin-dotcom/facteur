@@ -62,11 +62,16 @@ const String _kSectionEmojiFallback = '📰';
 
 /// Emoji d'une section de la Tournée du jour pour le deep-dive du rituel.
 /// Couvre l'éditorial (Essentiel/Actus → 📰, Bonnes Nouvelles → 🌱, Veille →
-/// 🔭) **et** les sections thématiques/sujets (via le slug, [themeEmoji]).
+/// 🔭, alertes → 📯) **et** les sections thématiques/sujets (via le slug,
+/// [themeEmoji]).
 String sectionEmoji(FluxSection section) {
   switch (section) {
     case EssentielSection():
       return _kSectionEmojiFallback;
+    case AlertsSection():
+      return '📯';
+    case CarouselSection(:final data):
+      return data.emoji;
     case DigestTopicSection():
       return section.kind == SectionKind.bonnes
           ? '🌱'

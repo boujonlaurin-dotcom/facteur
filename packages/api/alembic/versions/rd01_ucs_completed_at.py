@@ -17,7 +17,6 @@ Create Date: 2026-07-24
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
 from alembic import op
 
 revision: str = "rd01_ucs_completed_at"
@@ -27,26 +26,27 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "user_content_status",
-        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+    # Rejouable (IF NOT EXISTS) : la DB Supabase est partagée staging↔prod et le
+    # Dockerfile rejoue `alembic upgrade head` au boot des deux services.
+    op.execute(
+        "ALTER TABLE user_content_status ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ"
     )
-    op.add_column(
-        "user_content_status",
-        sa.Column("completion_source", sa.String(length=12), nullable=True),
+    op.execute(
+        "ALTER TABLE user_content_status "
+        "ADD COLUMN IF NOT EXISTS completion_source VARCHAR(12)"
     )
     # Partial index — only completed rows are indexed, so the cost stays
     # negligible while the derived daily counter reads it directly.
-    op.create_index(
-        "ix_ucs_user_completed_at",
-        "user_content_status",
-        ["user_id", "completed_at"],
-        unique=False,
-        postgresql_where=sa.text("completed_at IS NOT NULL"),
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_ucs_user_completed_at "
+        "ON user_content_status (user_id, completed_at) "
+        "WHERE completed_at IS NOT NULL"
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_ucs_user_completed_at", table_name="user_content_status")
-    op.drop_column("user_content_status", "completion_source")
-    op.drop_column("user_content_status", "completed_at")
+    op.execute("DROP INDEX IF EXISTS ix_ucs_user_completed_at")
+    op.execute(
+        "ALTER TABLE user_content_status DROP COLUMN IF EXISTS completion_source"
+    )
+    op.execute("ALTER TABLE user_content_status DROP COLUMN IF EXISTS completed_at")

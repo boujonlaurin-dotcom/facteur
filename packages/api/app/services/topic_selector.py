@@ -372,8 +372,15 @@ class TopicSelector:
 
         return topic_groups
 
-    def _build_scoring_context(self, context: DigestContext) -> ScoringContext:
-        """Convert DigestContext to ScoringContext for pillar engine."""
+    def _build_scoring_context(
+        self, context: DigestContext, coverage_source_count: int | None = None
+    ) -> ScoringContext:
+        """Convert DigestContext to ScoringContext for pillar engine.
+
+        `coverage_source_count` porte le nombre de sources distinctes du cluster
+        courant (chemin `topics`) pour alimenter le bonus de couverture
+        multi-sources du pilier Pertinence, sans dépendre de `content.cluster_id`.
+        """
         return ScoringContext(
             user_profile=context.user_profile,
             user_interests=context.user_interests,
@@ -390,6 +397,7 @@ class TopicSelector:
             custom_source_ids=context.custom_source_ids,
             source_affinity_scores=context.source_affinity_scores,
             source_priority_multipliers=context.source_priority_multipliers,
+            coverage_source_count=coverage_source_count,
         )
 
     def _score_and_select_articles(
@@ -404,7 +412,11 @@ class TopicSelector:
         puis applique les bonus digest-spécifiques (trending/une) en post-pilier.
         """
         max_articles = ScoringWeights.TOPIC_MAX_ARTICLES
-        scoring_context = self._build_scoring_context(context)
+        # Bonus de couverture multi-sources : on porte le count du cluster
+        # entier sur le contexte (tous ses contents partagent ce cluster).
+        scoring_context = self._build_scoring_context(
+            context, coverage_source_count=len(cluster.source_domains)
+        )
 
         # Post-pillar digest bonuses (normalized to 0-100 scale)
         TRENDING_BONUS = 15.0  # ~45/300 from old scale

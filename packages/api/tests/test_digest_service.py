@@ -1367,3 +1367,82 @@ async def test_topics_response_propagates_read_at(service, mock_session):
     assert len(response.topics) == 1
     assert response.topics[0].articles[0].is_read is True
     assert response.topics[0].articles[0].read_at == read_at
+
+
+# ─── Tests: _determine_top_reason (PR1e2) ─────────────────────────────────────
+
+
+class TestDetermineTopReason:
+    """La branche « Sous-thème » était doublement morte.
+
+    Aucun pilier n'émet ce préfixe (`_score_subtopics` produit "Sujet : …" /
+    "Sujet suivi : …"), **et** elle était inatteignable de toute façon puisque
+    `"Thème" in "Sous-thème : …"` est vrai et testé avant.
+    """
+
+    @pytest.mark.parametrize("label", ["Sujet : IA", "Sujet suivi : IA"])
+    def test_precise_subject_becomes_the_reason(self, service, label):
+        from app.schemas.digest import DigestScoreBreakdown
+
+        reason = service._determine_top_reason(
+            [DigestScoreBreakdown(label=label, points=45.0, is_positive=True)]
+        )
+
+        assert reason == "Vos centres d'intérêt : IA"
+
+    def test_subject_wins_over_a_broad_theme(self, service):
+        """Le sujet précis passe devant « Thème : … », même à points égaux."""
+        from app.schemas.digest import DigestScoreBreakdown
+
+        reason = service._determine_top_reason(
+            [
+                DigestScoreBreakdown(label="Sujet : IA", points=50.0, is_positive=True),
+                DigestScoreBreakdown(
+                    label="Thème : Tech & Innovation",
+                    points=50.0,
+                    is_positive=True,
+                ),
+            ]
+        )
+
+        assert reason == "Vos centres d'intérêt : IA"
+
+    def test_at_most_two_subjects_are_listed(self, service):
+        from app.schemas.digest import DigestScoreBreakdown
+
+        reason = service._determine_top_reason(
+            [
+                DigestScoreBreakdown(
+                    label=f"Sujet : S{i}", points=50.0 - i, is_positive=True
+                )
+                for i in range(4)
+            ]
+        )
+
+        assert reason == "Vos centres d'intérêt : S0, S1"
+
+    def test_broad_theme_still_reads_as_before(self, service):
+        from app.schemas.digest import DigestScoreBreakdown
+
+        reason = service._determine_top_reason(
+            [
+                DigestScoreBreakdown(
+                    label="Thème : Environnement", points=50.0, is_positive=True
+                )
+            ]
+        )
+
+        assert reason == "Vos intérêts : Environnement"
+
+    def test_negative_contributions_are_ignored(self, service):
+        from app.schemas.digest import DigestScoreBreakdown
+
+        reason = service._determine_top_reason(
+            [
+                DigestScoreBreakdown(
+                    label="Sujet masqué : IA", points=-30.0, is_positive=False
+                )
+            ]
+        )
+
+        assert reason == "Sélectionné pour vous"

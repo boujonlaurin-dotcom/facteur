@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/auth/auth_state.dart';
@@ -12,6 +14,7 @@ import '../../gamification/providers/streak_provider.dart';
 import '../../flux_continu/services/flux_continu_cache_service.dart';
 import '../models/content_model.dart';
 import '../providers/feed_provider.dart';
+import 'completed_reads_store.dart';
 import 'feed_cache_service.dart';
 
 const articleReadThreshold = Duration(seconds: 1);
@@ -39,6 +42,22 @@ enum CompletionSource {
       orElse: () => CompletionSource.inApp,
     );
   }
+}
+
+/// Vrai pour les échecs de connectivité — le cas **nominal** de cette file
+/// (lire dans le métro), qu'il ne faut donc pas remonter : les noyer sous le
+/// bruit rendrait le signal inutile.
+bool isOfflineError(Object error) {
+  if (error is DioException) {
+    return error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.receiveTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.connectionError;
+  }
+  // `SocketException` n'est pas référençable ici (`dart:io` casse le build
+  // web) ; le type nu remonte de toute façon rarement jusqu'ici, Dio
+  // l'enveloppant presque toujours.
+  return error.runtimeType.toString() == 'SocketException';
 }
 
 bool shouldCommitReadOnBackground({
@@ -125,8 +144,20 @@ class PendingReadQueue {
       try {
         await sync(entry.value);
         await remove(entry.key);
-      } catch (_) {
-        // Keep the durable entry for the next cold-start/foreground retry.
+      } catch (e, st) {
+        // Keep the durable entry for the next cold-start/foreground retry —
+        // sémantique inchangée. Mais un échec durable (contrat cassé, 4xx)
+        // laissait la file grossir sans le moindre signal, et c'est cette file
+        // qui alimente le compteur de lectures abouties.
+        if (!isOfflineError(e)) {
+          unawaited(
+            Sentry.captureException(
+              e,
+              stackTrace: st,
+              withScope: (scope) => scope.setTag('op', 'read_sync_flush'),
+            ),
+          );
+        }
       }
     }
   }
@@ -180,8 +211,21 @@ final consumedContentIdsProvider = StateProvider<Set<String>>(
   (ref) => <String>{},
 );
 
-/// Articles lus **jusqu'au bout** pendant la session — permet aux cartes de
-/// refléter la complétion sans attendre un refetch.
+final completedReadsStoreProvider = Provider<CompletedReadsStore?>((ref) {
+  return CompletedReadsStore.tryFromHive();
+});
+
+/// Articles lus **jusqu'au bout** — permet aux cartes de refléter la complétion
+/// sans attendre un refetch.
+///
+/// Alimenté par [ReadSyncService.hydrateCompletedReads] depuis
+/// [CompletedReadsStore] : sans ça le filet de complétion disparaissait au
+/// premier cold start, alors qu'une lecture aboutie est définitive.
+///
+/// Hydratation **poussée** et non `ref.watch(readSyncUserIdProvider)` : ce
+/// dernier remonte jusqu'à `Supabase.instance`, et toutes les cartes watchent
+/// ce provider — les faire dépendre de l'init Supabase casserait chaque test
+/// de widget qui monte une carte, pour un gain nul en production.
 final completedContentIdsProvider = StateProvider<Set<String>>(
   (ref) => <String>{},
 );
@@ -249,6 +293,9 @@ class ReadSyncService {
     if (completedIds.state.contains(contentId)) return false;
 
     await queue.enqueue(userId, contentId, extra: {'source': source.wireValue});
+    // Durabilité d'abord (même ordre que `markConsumed`) : le registre survit
+    // au kill de l'app, contrairement au provider qui n'existe qu'en mémoire.
+    await ref.read(completedReadsStoreProvider)?.add(userId, contentId);
     completedIds.state = {...completedIds.state, contentId};
     unawaited(flushCompletionsForUser(userId));
     return true;
@@ -285,9 +332,27 @@ class ReadSyncService {
     }
   }
 
+  /// Recharge les complétions durables de l'utilisateur courant dans
+  /// [completedContentIdsProvider]. Appelée au démarrage et à chaque connexion :
+  /// c'est ce qui fait survivre le filet de complétion au kill de l'app.
+  void hydrateCompletedReads() {
+    final userId = ref.read(readSyncUserIdProvider);
+    if (userId == null) return;
+    final stored = ref.read(completedReadsStoreProvider)?.idsForUser(userId);
+    if (stored == null || stored.isEmpty) return;
+    final completedIds = ref.read(completedContentIdsProvider.notifier);
+    // Sortie sèche si le registre n'apporte rien : la méthode est appelée à
+    // chaque build de `FacteurApp`, et réassigner un `Set` neuf changerait son
+    // identité à chaque fois — donc rebâtirait toutes les cartes qui watchent
+    // ce provider, à contenu identique.
+    if (stored.every(completedIds.state.contains)) return;
+    completedIds.state = {...completedIds.state, ...stored};
+  }
+
   Future<void> flushCurrentUser() async {
     final userId = ref.read(readSyncUserIdProvider);
     if (userId == null) return;
+    hydrateCompletedReads();
     await flushForUser(userId);
     await flushCompletionsForUser(userId);
   }

@@ -19,6 +19,11 @@ class FeedbackInviteStatus(BaseModel):
 
 
 class InviteActionRequest(BaseModel):
-    """Action de l'utilisateur sur la modal d'invitation."""
+    """Action de l'utilisateur sur la modal d'invitation.
 
-    action: str = Field(..., pattern=r"^(accepted|declined)$")
+    - "accepted" : a cliqué pour réserver un créneau (terminal).
+    - "declined" : "Plus tard" (snooze, puis terminal après MAX_SHOWS).
+    - "already_done" : "On l'a déjà fait" (terminal, plus jamais sollicité).
+    """
+
+    action: str = Field(..., pattern=r"^(accepted|declined|already_done)$")

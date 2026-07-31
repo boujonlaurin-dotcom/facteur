@@ -22,6 +22,16 @@ List<SectionRecap> buildClosingRecap({
       EssentielSection(:final articles) => articles
           .where((a) => a.isRead || consumedIds.contains(a.contentId))
           .length,
+      // Le rappel d'alertes n'expose aucun article : rien à compter comme lu.
+      AlertsSection() => 0,
+      CarouselSection(:final data) => data.items
+          .where(
+            (c) =>
+                c.status == ContentStatus.consumed ||
+                c.readingProgress > 0 ||
+                consumedIds.contains(c.id),
+          )
+          .length,
       DigestTopicSection(:final topics) => topics
           .expand((t) => t.articles)
           .where((a) => a.isRead || consumedIds.contains(a.contentId))

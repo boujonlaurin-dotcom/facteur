@@ -391,4 +391,43 @@ void main() {
       expect(r.breakdown, isEmpty);
     });
   });
+
+  group('EssentielArticle — couverture multi-sources', () {
+    test('parses source_count + perspective_sources', () {
+      final a = EssentielArticle.fromJson({
+        'content_id': 'c-1',
+        'title': 'Titre',
+        'url': 'https://example.com',
+        'published_at': '2026-07-30T08:00:00Z',
+        'source': {'name': 'Le Monde'},
+        'source_letter': 'L',
+        'section_label': 'Climat',
+        'rank': 1,
+        'source_count': 4,
+        'perspective_sources': [
+          {'name': 'Le Monde', 'domain': 'lemonde.fr', 'bias_stance': 'center'},
+          {'name': 'Libération', 'logo_url': 'https://x/l.png'},
+        ],
+      });
+      expect(a.sourceCount, 4);
+      expect(a.perspectiveSources, hasLength(2));
+      expect(a.perspectiveSources.first.name, 'Le Monde');
+      expect(a.perspectiveSources[1].logoUrl, 'https://x/l.png');
+    });
+
+    test('retro-compat : un snapshot Hive sans les champs parse en défauts', () {
+      final a = EssentielArticle.fromJson({
+        'content_id': 'c-1',
+        'title': 'Titre',
+        'url': 'https://example.com',
+        'published_at': '2026-07-30T08:00:00Z',
+        'source': {'name': 'Le Monde'},
+        'source_letter': 'L',
+        'section_label': 'Climat',
+        'rank': 1,
+      });
+      expect(a.sourceCount, 0);
+      expect(a.perspectiveSources, isEmpty);
+    });
+  });
 }

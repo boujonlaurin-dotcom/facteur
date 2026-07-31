@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -252,8 +253,15 @@ async def get_personalized_feed(
     composite `(user, variant)` (TTL `FEED_CACHE_PERSONALIZED_TTL_SECONDS`,
     60s), avec le même pattern single-flight. Coupe le recompute du pipeline
     piliers sur les ~10 appels parallèles du cold-open.
+
+    Chaque requête émet un log `feed_request` (hit/miss/bypass + durée) —
+    `feed_total` n'était émis que par `_compute_feed`, donc jamais sur un
+    hit : le hit rate était invisible. `items` n'est renseigné que sur
+    miss/bypass, où la réponse est déjà désérialisée ; le compter sur un hit
+    imposerait un `json.loads` du payload sur le chemin rapide.
     """
     user_uuid = UUID(current_user_id)
+    started_at = time.perf_counter()
 
     # Resolve cache eligibility + the key variant. `variant is None` ⇒ the
     # default page-1 view (R5). A non-None variant ⇒ a personalized Tournée
@@ -302,10 +310,28 @@ async def get_personalized_feed(
             limit=limit,
         )
 
+    # La classe seulement : le variant complet (thème, topic, source, limit)
+    # est du bruit à ce volume.
+    variant_class = (
+        "none"
+        if not cache_eligible
+        else ("default" if cache_variant is None else "personalized")
+    )
+
+    def _emit(cache: str, items: int | None = None) -> None:
+        logger.info(
+            "feed_request",
+            cache=cache,
+            variant_class=variant_class,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 1),
+            items=items,
+        )
+
     if cache_eligible:
         # Fast path: cached and fresh → no DB work, no Pydantic.
         cached = FEED_CACHE.get(user_uuid, cache_variant)
         if cached is not None:
+            _emit("hit")
             return Response(content=cached, media_type="application/json")
 
         # Single-flight: serialize concurrent first-misses for the same
@@ -314,7 +340,12 @@ async def get_personalized_feed(
         async with FEED_CACHE.lock(user_uuid, cache_variant):
             cached = FEED_CACHE.get(user_uuid, cache_variant)
             if cached is not None:
+                _emit("hit")
                 return Response(content=cached, media_type="application/json")
+            # Capturée juste AVANT le compute (1,5-5 s) : une invalidation
+            # arrivant dans cette fenêtre change la génération et le `put`
+            # est droppé, au lieu de ressusciter le payload évincé.
+            generation = FEED_CACHE.generation(user_uuid)
             response = await _compute_feed(
                 db=db,
                 user_uuid=user_uuid,
@@ -335,7 +366,8 @@ async def get_personalized_feed(
                 followed_only=followed_only,
             )
             payload = json.dumps(response.model_dump(mode="json")).encode("utf-8")
-            FEED_CACHE.put(user_uuid, payload, cache_variant)
+            FEED_CACHE.put(user_uuid, payload, cache_variant, generation=generation)
+            _emit("miss", len(response.items))
             return Response(content=payload, media_type="application/json")
 
     response = await _compute_feed(
@@ -357,6 +389,7 @@ async def get_personalized_feed(
         personalized=personalized,
         followed_only=followed_only,
     )
+    _emit("bypass", len(response.items))
     return response
 
 

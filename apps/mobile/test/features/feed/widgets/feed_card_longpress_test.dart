@@ -4,6 +4,7 @@ import 'package:facteur/features/feed/widgets/feed_card.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -24,7 +25,9 @@ Widget _carousel({
   required void Function() onLongPressStart,
   required void Function() onMoveUpdate,
 }) {
-  return MaterialApp(
+  // `FeedCard` watche les complétions → `ProviderScope` obligatoire.
+  return ProviderScope(
+    child: MaterialApp(
     theme: ThemeData(extensions: [FacteurPalettes.light]),
     home: Scaffold(
       body: Center(
@@ -46,6 +49,7 @@ Widget _carousel({
           ),
         ),
       ),
+    ),
     ),
   );
 }

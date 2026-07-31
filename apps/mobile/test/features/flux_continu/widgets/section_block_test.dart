@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -86,6 +87,7 @@ FeedThemeSection _themeSection({
   bool hasMore = false,
   bool withThumbnails = false,
   int followedSourceCount = 0,
+  bool isPlaceholder = false,
 }) {
   return FeedThemeSection(
     kind: SectionKind.theme,
@@ -102,6 +104,7 @@ FeedThemeSection _themeSection({
     ),
     hasMore: hasMore,
     followedSourceCount: followedSourceCount,
+    isPlaceholder: isPlaceholder,
   );
 }
 
@@ -148,6 +151,41 @@ void main() {
     // Les cartes sont enveloppées d'un VisibilityDetector (nudge auto-grow) —
     // sans intervalle nul, son timer interne reste pendant au teardown du test.
     VisibilityDetectorController.instance.updateInterval = Duration.zero;
+  });
+
+  group('SectionBlock — coquille en attente (shimmer + libellé unique)', () {
+    testWidgets(
+        'coquille : N cartes shimmer, libellé d\'attente seulement si demandé',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 0, isPlaceholder: true),
+          onTapArticle: (_) {},
+          showPreparingLabel: true,
+        ),
+      ));
+
+      // Coquille ⇒ pas d'empty-state (« Étoffer »), mais la hauteur réservée.
+      expect(find.byType(SectionSkeletonCard), findsNWidgets(3));
+      expect(find.byType(Shimmer), findsNWidgets(3));
+      expect(find.byType(FluxContinuArticleCard), findsNothing);
+      expect(find.textContaining('Rien de neuf récemment'), findsNothing);
+      // Un seul libellé, porté par la 1ʳᵉ carte (aucune hauteur propre).
+      expect(find.text(kSectionPreparingLabel), findsOneWidget);
+    });
+
+    testWidgets('coquille sans showPreparingLabel : aucun libellé',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _themeSection(items: 0, isPlaceholder: true),
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(find.byType(SectionSkeletonCard), findsNWidgets(3));
+      expect(find.text(kSectionPreparingLabel), findsNothing);
+    });
   });
 
   group('SectionBlock — section source (PR Sources dans la Tournée)', () {
@@ -457,8 +495,9 @@ void main() {
         ),
       ));
 
-      expect(find.text('Tout lire'), findsOneWidget);
-      await tester.tap(find.text('Tout lire'));
+      // Le CTA porte le volume promis, borné [3, 9] : 5 sujets ⇒ « (5+) ».
+      expect(find.text('Tout lire (5+)'), findsOneWidget);
+      await tester.tap(find.text('Tout lire (5+)'));
       await tester.pumpAndSettle();
       expect(opened, isTrue);
     });
@@ -472,7 +511,30 @@ void main() {
         ),
       ));
 
-      expect(find.text('Tout lire'), findsOneWidget);
+      expect(find.text('Tout lire (3+)'), findsOneWidget);
+    });
+
+    testWidgets('le compte annoncé est borné [3, 9] (snapshot client only)',
+        (tester) async {
+      // Plancher : 1 article ⇒ « (3+) » (on ne promet jamais moins de 3).
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 1),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+      expect(find.text('Tout lire (3+)'), findsOneWidget);
+
+      // Plafond : 20 articles ⇒ « (9+) », le « + » assume la pagination.
+      await tester.pumpWidget(_wrap(
+        SectionBlock(
+          section: _sourceSection(items: 20),
+          onTapArticle: (_) {},
+          onSeeAll: () {},
+        ),
+      ));
+      expect(find.text('Tout lire (9+)'), findsOneWidget);
     });
 
     testWidgets('section source vide (empty-state) : pas de « Tout lire › » '
@@ -485,7 +547,7 @@ void main() {
         ),
       ));
 
-      expect(find.text('Tout lire'), findsNothing);
+      expect(find.textContaining('Tout lire'), findsNothing);
       expect(find.text('Voir toute la curation'), findsOneWidget);
     });
 
@@ -529,8 +591,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Ajouter plus de sources'), findsNothing);
-      expect(find.text('Tout lire'), findsOneWidget);
-      await tester.tap(find.text('Tout lire'));
+      // 7 articles ⇒ « (7+) » (sous la borne haute 9).
+      expect(find.text('Tout lire (7+)'), findsOneWidget);
+      await tester.tap(find.text('Tout lire (7+)'));
       await tester.pumpAndSettle();
       expect(opened, isTrue);
     });

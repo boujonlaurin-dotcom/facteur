@@ -187,6 +187,10 @@ class DigestContext:
     subscribed_source_ids: set[UUID] = field(default_factory=set)
     # PR2: learned positive affinity per named entity {entity_canonical: affinity}
     user_entity_affinity: dict[str, float] = field(default_factory=dict)
+    # PR1b: profils Sujets (Epic 11) + abonnements entités. Le Feed et la Veille
+    # les passaient déjà au ScoringContext ; le digest ne les chargeait pas, donc
+    # la garde de `_score_custom_topics` renvoyait 0 à chaque scoring digest.
+    user_custom_topics: list[Any] = field(default_factory=list)
 
 
 @dataclass
@@ -713,6 +717,19 @@ class DigestSelector:
 
         user_entity_affinity = await _load_entity_affinity_safe(self.session, user_id)
 
+        # PR1b: profils Sujets (Epic 11) + abonnements entités. Même requête que
+        # le Feed (`recommendation_service`) : les lignes portent déjà
+        # `entity_type` / `canonical_name`, rien à changer côté chargement.
+        from app.models.user_topic_profile import UserTopicProfile
+
+        user_custom_topics = list(
+            (
+                await self.session.scalars(
+                    select(UserTopicProfile).where(UserTopicProfile.user_id == user_id)
+                )
+            ).all()
+        )
+
         # Construire les sets d'intérêts et poids
         user_interests = set()
         user_interest_weights = {}
@@ -802,6 +819,7 @@ class DigestSelector:
             source_priority_multipliers=source_priority_multipliers,
             subscribed_source_ids=subscribed_source_ids,
             user_entity_affinity=user_entity_affinity,
+            user_custom_topics=user_custom_topics,
         )
 
     async def _get_candidates(
@@ -1240,11 +1258,15 @@ class DigestSelector:
 
         # 2. Scoring unifié (réutilise _score_candidates / pillar_engine).
         score_map: dict[UUID, float] = {}
+        # Conservé pour être persisté sur l'article (jauge CTR). Sans ça le
+        # détail par pilier est calculé puis jeté à chaque digest.
+        pillar_map: dict[UUID, dict[str, float]] = {}
         score_inputs = rep_contents + solo_candidates
         if score_inputs:
             try:
                 scored = await self._score_candidates(score_inputs, context, mode=mode)
                 score_map = {c.id: sc for c, sc, _bd, _pillar_scores in scored}
+                pillar_map = {c.id: ps for c, _sc, _bd, ps in scored}
             except Exception:
                 # Dégradation sûre : sans scoring on garde l'ordre run_for_user.
                 logger.exception(
@@ -1322,14 +1344,23 @@ class DigestSelector:
 
         renumbered: list[EditorialSubject] = []
         for new_rank, s in enumerate(ordered, start=1):
-            renumbered.append(
-                s.model_copy(
-                    update={
-                        "rank": new_rank,
-                        "is_a_la_une": s.is_a_la_une and new_rank == 1,
-                    }
-                )
-            )
+            update: dict[str, object] = {
+                "rank": new_rank,
+                "is_a_la_une": s.is_a_la_une and new_rank == 1,
+            }
+            # Le score du représentant est attaché ICI et pas plus haut : les
+            # sujets sont recopiés par cette boucle, donc tout `model_copy`
+            # antérieur serait redroppé.
+            if s.actu_article is not None:
+                content_id = s.actu_article.content_id
+                if content_id in score_map:
+                    update["actu_article"] = s.actu_article.model_copy(
+                        update={
+                            "score": score_map[content_id],
+                            "pillar_scores": pillar_map.get(content_id) or None,
+                        }
+                    )
+            renumbered.append(s.model_copy(update=update))
 
         actu_hits = sum(1 for s in renumbered if s.actu_article is not None)
         deep_hits = sum(1 for s in renumbered if s.deep_article is not None)
@@ -1388,6 +1419,7 @@ class DigestSelector:
             user_subtopics=context.user_subtopics,
             user_subtopic_weights=context.user_subtopic_weights,
             user_entity_affinity=context.user_entity_affinity,
+            user_custom_topics=context.user_custom_topics,
             muted_sources=context.muted_sources,
             muted_themes=context.muted_themes,
             muted_topics=context.muted_topics,
@@ -1663,12 +1695,17 @@ class DigestSelector:
                 if b.label == "À la une":
                     return "À la une"
 
-        # 1. Sous-thème matché (le plus précis) — ex: "Thème : AI"
+        # 1. Sujet matché (le plus précis) — ex: "Thème : IA"
+        #
+        # Cette branche testait `"Sous-thème : "`, un préfixe que **plus aucun
+        # pilier n'émet** : `_score_subtopics` produit "Sujet suivi : …" (poids
+        # appris > 1) ou "Sujet : …". Elle était donc morte et toutes les raisons
+        # du digest retombaient sur le thème large (cas 2 ci-dessous).
         if breakdown:
             for b in breakdown:
-                if b.label.startswith("Sous-thème : "):
-                    topic = b.label.removeprefix("Sous-thème : ")
-                    return f"Thème : {topic}"
+                for prefix in ("Sujet suivi : ", "Sujet : "):
+                    if b.label.startswith(prefix):
+                        return f"Thème : {b.label.removeprefix(prefix)}"
 
         # 2. Thème article ML ou thème source — ex: "Thème : Environnement"
         theme = None

@@ -29,13 +29,13 @@ from app.models.veille import (
     VeilleStatus,
     VeilleTopic,
 )
+from app.services.ml.classification_service import VALID_TOPIC_SLUGS
 from app.services.recommendation.filter_presets import (
     apply_serein_filter,
     load_serein_preferences,
 )
 from app.services.recommendation.helpers.diversification import diversify
 from app.services.recommendation.helpers.keyword_match import matches_word_boundary
-from app.services.recommendation.pillars.pertinence import SUBTOPIC_LABELS
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import PillarScoringEngine
 from app.services.veille.scoring_context import build_veille_scoring_context
@@ -146,7 +146,13 @@ async def load_veille_filters(
     # suggestions LLM) est neutralisé en "" : il sort du prédicat SQL, de
     # `matched_on` et de `user_subtopics` (le floor redevient honnête). Sa grappe
     # de mots-clés survit (custom-topic `slug_parent=""` côté scoring_context).
-    canon = frozenset(SUBTOPIC_LABELS)
+    # La canonicité se lit sur `VALID_TOPIC_SLUGS`, pas sur les clés d'une table
+    # de libellés : ce test portait sur l'ancien `SUBTOPIC_LABELS` du pilier
+    # Pertinence, dérivé d'une taxonomie périmée. Il neutralisait donc des
+    # `topic_id` parfaitement valides — et parmi les plus suivis (`energy`,
+    # `politics`, `usa`, `justice`, `europe`, `tech`) — tout en laissant passer
+    # 32 slugs fantômes.
+    canon = VALID_TOPIC_SLUGS
     angles = [
         VeilleAngle(
             topic_id=topic_id if (topic_id or "").lower().strip() in canon else "",

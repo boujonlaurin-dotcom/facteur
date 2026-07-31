@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
+import 'package:facteur/features/digest/models/digest_models.dart';
+import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
@@ -19,6 +21,8 @@ import 'package:facteur/features/gamification/models/streak_activity_model.dart'
 import 'package:facteur/features/gamification/providers/streak_activity_provider.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
+import 'package:facteur/shared/widgets/completion_stamp.dart' show kStampGreen;
+import 'package:facteur/shared/widgets/read_state_mark.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -81,6 +85,9 @@ EssentielArticle _article({
   String source = 'Le Monde',
   bool isActuDuJour = false,
   bool isRead = false,
+  DateTime? completedAt,
+  int sourceCount = 0,
+  List<SourceMini> perspectiveSources = const [],
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
@@ -95,6 +102,9 @@ EssentielArticle _article({
     perspectiveCount: 3,
     isActuDuJour: isActuDuJour,
     isRead: isRead,
+    completedAt: completedAt,
+    sourceCount: sourceCount,
+    perspectiveSources: perspectiveSources,
   );
 }
 
@@ -130,6 +140,64 @@ void main() {
         reason: 'Vague 2 hotfix: gray "ÉDITION DU [day]" banner removed.',
       );
       expect(find.text('Titre 1'), findsOneWidget);
+    });
+
+    testWidgets('la tuile lead affiche le filet et la double coche quand '
+        'l\'article est lu jusqu\'au bout', (tester) async {
+      // Impossible avant : la copie locale de la pastille codait `check` en
+      // dur, et `AnimatedFeedCard` n'était monté nulle part.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(
+              rank: 1,
+              isRead: true,
+              completedAt: DateTime(2026, 5, 23, 9),
+            ),
+          ],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).color == kStampGreen,
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<ReadStateMark>(find.byType(ReadStateMark)).state,
+        ReadState.completed,
+      );
+    });
+
+    testWidgets('une tuile lue sans temps connu → « Lu en partie »',
+        (tester) async {
+      // isRead sans completedAt ni time_spent → spectre retombe sur
+      // partiallyRead (coche pleine simple, 0.6), jamais « Ouvert ».
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1, isRead: true)],
+          onTapArticle: (_) {},
+        ),
+      ));
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Container &&
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).color == kStampGreen,
+        ),
+        findsNothing,
+      );
+      expect(
+        tester.widget<ReadStateMark>(find.byType(ReadStateMark)).state,
+        ReadState.partiallyRead,
+      );
     });
 
     testWidgets('tap on the lead fires onTapArticle with the right article',
@@ -212,6 +280,48 @@ void main() {
       await gesture.up();
       await tester.pumpAndSettle();
       expect(find.byType(FacteurThumbnail), findsNothing);
+    });
+
+
+    testWidgets(
+        'la puce de couverture est rendue sur les tuiles couvertes (>= 2 '
+        'sources) et ne fait pas déborder le 390 px', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const covered = [
+        SourceMini(name: 'Le Monde'),
+        SourceMini(name: 'Libération'),
+        SourceMini(name: 'Le Figaro'),
+      ];
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(
+              rank: 1,
+              source: 'Le Monde Diplomatique',
+              sourceCount: 4,
+              perspectiveSources: covered,
+            ),
+            _article(
+              rank: 2,
+              source: 'Le Monde Diplomatique',
+              sourceCount: 3,
+              perspectiveSources: covered,
+            ),
+            // Sous le seuil : aucune puce.
+            _article(rank: 3, sourceCount: 1),
+          ],
+          onTapArticle: (_) {},
+        ),
+      ));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('4 sources'), findsOneWidget);
+      expect(find.text('3 sources'), findsOneWidget);
+      expect(find.text('1 source'), findsNothing);
     });
 
     testWidgets('renders up to 5 articles (lead + 2 mediums + 2 lights)',
@@ -535,7 +645,7 @@ void main() {
       }
     });
 
-    testWidgets('pastille « N nouveaux depuis ce matin » rendue quand > 0',
+    testWidgets('pastille « N nouveaux articles » rendue quand > 0',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
@@ -546,10 +656,10 @@ void main() {
       ));
 
       expect(find.text('3'), findsOneWidget);
-      expect(find.textContaining('nouveaux depuis ce matin'), findsOneWidget);
+      expect(find.textContaining('nouveaux articles'), findsOneWidget);
     });
 
-    testWidgets('1 nouveau → libellé singulier', (tester) async {
+    testWidgets('1 nouvel → libellé singulier', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
@@ -559,7 +669,7 @@ void main() {
       ));
 
       expect(find.text('1'), findsOneWidget);
-      expect(find.textContaining('nouveau depuis ce matin'), findsOneWidget);
+      expect(find.text('nouvel article'), findsOneWidget);
     });
 
     testWidgets('pastille masquée quand delta == 0', (tester) async {
@@ -570,7 +680,8 @@ void main() {
         ),
       ));
 
-      expect(find.textContaining('depuis ce matin'), findsNothing);
+      expect(find.textContaining('nouveaux article'), findsNothing);
+      expect(find.textContaining('nouvel article'), findsNothing);
     });
 
     testWidgets('delta au plafond (9) affiche « 9+ »', (tester) async {
@@ -583,7 +694,7 @@ void main() {
       ));
 
       expect(find.text('9+'), findsOneWidget);
-      expect(find.textContaining('nouveaux depuis ce matin'), findsOneWidget);
+      expect(find.textContaining('nouveaux articles'), findsOneWidget);
     });
   });
 }

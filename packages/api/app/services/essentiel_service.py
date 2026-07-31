@@ -680,6 +680,12 @@ def _pick_transversal_articles(
     return picked
 
 
+# Cap d'émission des sources de perspective : la carte n'en rend que 3 et
+# chaque entrée porte un `logo_url` (une requête image chacune). Le pipeline
+# en produit jusqu'à 6 — sans ce cap, l'écran d'ouverture en chargerait 30.
+PERSPECTIVE_SOURCES_CAP = 3
+
+
 def _to_essentiel_article(
     topic: DigestTopic,
     article: DigestTopicArticle,
@@ -699,12 +705,16 @@ def _to_essentiel_article(
         theme=topic.theme,
         section_label=topic.label,
         perspective_count=topic.perspective_count,
+        source_count=topic.source_count,
+        perspective_sources=(topic.perspective_sources or [])[:PERSPECTIVE_SOURCES_CAP],
         rank=rank,
         is_read=article.is_read,
         is_saved=article.is_saved,
         is_liked=article.is_liked,
         is_dismissed=article.is_dismissed,
         read_at=article.read_at,
+        time_spent_seconds=article.time_spent_seconds,
+        completed_at=article.completed_at,
         is_followed_source=_is_followed_source(article, ctx),
         is_followed_topic=_is_followed_topic(topic, ctx),
         is_actu_du_jour=_is_actu_du_jour(topic, article),
@@ -762,6 +772,8 @@ def _content_to_essentiel_article(
         theme=content.theme,
         section_label=content.source.name,
         perspective_count=0,
+        source_count=0,
+        perspective_sources=[],
         rank=rank,
         is_followed_source=True,
         is_followed_topic=bool(content.theme and content.theme in ctx.topic_weights),

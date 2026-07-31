@@ -10,27 +10,13 @@ Score = CUSTOM_TOPIC_BASE_BONUS * priority_multiplier (max 1 match per article).
 Entity matches get a 1.5x multiplier bonus (precise match).
 """
 
-import json
-
 from app.models.content import Content
-from app.services.recommendation.helpers import matches_word_boundary
+from app.services.recommendation.helpers import (
+    iter_entity_names,
+    matches_word_boundary,
+)
 from app.services.recommendation.scoring_config import ScoringWeights
 from app.services.recommendation.scoring_engine import BaseScoringLayer, ScoringContext
-
-ENTITY_MATCH_MULTIPLIER = 1.5
-
-
-def _parse_content_entities(content: Content) -> list[dict]:
-    """Parse JSON-string entities from Content.entities array."""
-    if not content.entities:
-        return []
-    parsed: list[dict] = []
-    for raw in content.entities:
-        try:
-            parsed.append(json.loads(raw))
-        except (json.JSONDecodeError, TypeError):
-            continue
-    return parsed
 
 
 class UserCustomTopicLayer(BaseScoringLayer):
@@ -52,8 +38,11 @@ class UserCustomTopicLayer(BaseScoringLayer):
         title_lower = (content.title or "").lower()
         desc_lower = (content.description or "").lower()
 
-        # Lazy-parse entities only if needed
-        _content_entities: list[dict] | None = None
+        # Lazy-parse entities only if needed. `iter_entity_names` est la
+        # primitive partagée write/read (mute, affinité, pilier Pertinence) :
+        # elle tolère aussi une entité stockée en clair, ce que le parse JSON
+        # local ici laissait tomber en silence.
+        _entity_keys: set[str] | None = None
 
         best_score = 0.0
         best_topic_name = ""
@@ -83,22 +72,19 @@ class UserCustomTopicLayer(BaseScoringLayer):
                 and topic_profile.entity_type is not None
                 and topic_profile.canonical_name is not None
             ):
-                if _content_entities is None:
-                    _content_entities = _parse_content_entities(content)
-                canonical_lower = topic_profile.canonical_name.lower()
-                for entity in _content_entities:
-                    entity_name = entity.get("name", "")
-                    if (
-                        isinstance(entity_name, str)
-                        and entity_name.lower() == canonical_lower
-                    ):
-                        matched = True
-                        match_type = f"entity:{topic_profile.canonical_name}"
-                        break
+                if _entity_keys is None:
+                    _entity_keys = {
+                        key for _display, key in iter_entity_names(content.entities)
+                    }
+                if topic_profile.canonical_name.strip().lower() in _entity_keys:
+                    matched = True
+                    match_type = f"entity:{topic_profile.canonical_name}"
 
             if matched:
                 multiplier = (
-                    ENTITY_MATCH_MULTIPLIER if match_type.startswith("entity:") else 1.0
+                    ScoringWeights.ENTITY_MATCH_MULTIPLIER
+                    if match_type.startswith("entity:")
+                    else 1.0
                 )
                 topic_score = (
                     ScoringWeights.CUSTOM_TOPIC_BASE_BONUS

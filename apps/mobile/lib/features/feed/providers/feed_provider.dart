@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
@@ -70,6 +71,10 @@ final feedUndoSnapshotProvider = StateProvider<FeedSnapshot?>((ref) => null);
 /// l'UI (chips, tabs, badge du funnel) puisse réagir **dès le tap** sans
 /// attendre la fin du refresh réseau. Les setters du [FeedNotifier] poussent
 /// ici avant `await refresh()`.
+/// Dimension de filtrage active du feed. Mutuellement exclusives : chaque
+/// setter de [FeedNotifier] annule les autres.
+enum FeedFilterKind { keyword, source, theme, topic, entity }
+
 class FeedFilterSelection {
   final String? sourceId;
   final String? topic;
@@ -77,12 +82,19 @@ class FeedFilterSelection {
   final String? entity;
   final String? keyword;
 
+  /// Recherche élargie aux sources non suivies (story 30.1). Fait partie de la
+  /// sélection — et pas seulement de l'état interne du notifier — parce que
+  /// l'UI doit se redessiner quand seul ce drapeau change (même mot-clé, mais
+  /// périmètre différent).
+  final bool includeUnfollowed;
+
   const FeedFilterSelection({
     this.sourceId,
     this.topic,
     this.theme,
     this.entity,
     this.keyword,
+    this.includeUnfollowed = false,
   });
 
   static const empty = FeedFilterSelection();
@@ -94,6 +106,23 @@ class FeedFilterSelection {
     return c;
   }
 
+  /// Vrai dès qu'**un** filtre est posé, quel qu'il soit. Distinct de
+  /// [activeCount], qui ne compte que source + mot-clé (badge du funnel).
+  bool get hasAnyFilter => activeKind != null;
+
+  /// Nature du filtre actif — les dimensions sont mutuellement exclusives
+  /// (chaque setter du notifier annule les autres). `null` = flux non filtré.
+  FeedFilterKind? get activeKind {
+    if (keyword != null && keyword!.trim().isNotEmpty) {
+      return FeedFilterKind.keyword;
+    }
+    if (sourceId != null) return FeedFilterKind.source;
+    if (theme != null) return FeedFilterKind.theme;
+    if (entity != null) return FeedFilterKind.entity;
+    if (topic != null) return FeedFilterKind.topic;
+    return null;
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -102,10 +131,12 @@ class FeedFilterSelection {
           topic == other.topic &&
           theme == other.theme &&
           entity == other.entity &&
-          keyword == other.keyword;
+          keyword == other.keyword &&
+          includeUnfollowed == other.includeUnfollowed;
 
   @override
-  int get hashCode => Object.hash(sourceId, topic, theme, entity, keyword);
+  int get hashCode =>
+      Object.hash(sourceId, topic, theme, entity, keyword, includeUnfollowed);
 }
 
 final feedFilterSelectionProvider = StateProvider<FeedFilterSelection>(
@@ -192,7 +223,25 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
 
   Timer? _widgetPushDebounce;
   String? _lastWidgetPushSignature;
+  DateTime? _lastWidgetPushAt;
   static const Duration _widgetPushDelay = Duration(seconds: 1);
+
+  /// Buffer dédié au payload widget, **découplé** de la liste visible de
+  /// Flâner.
+  ///
+  /// Le widget était alimenté par `state.items`, qui *rétrécit* au fil de la
+  /// lecture (overlay `_consumedContentIds`) : après quelques articles lus, il
+  /// ne restait que ~9 lignes sur l'écran d'accueil, et rien ne reconstituait
+  /// la profondeur. Le buffer est alimenté en **union** (dédup par id, les
+  /// arrivées fraîches en tête) et ne perd jamais d'entrée autrement que par
+  /// éviction au-delà de [_widgetFluxCap].
+  /// Cf. docs/bugs/bug-widget-fiabilite.md (C5).
+  final List<Content> _widgetBuffer = [];
+
+  /// Péremption du payload widget : au-delà, on re-pousse même à signature
+  /// identique (l'utilisateur voit au moins des horodatages rafraîchis et le
+  /// widget ne peut pas geler indéfiniment sur un cache figé).
+  static const Duration _widgetPushMaxAge = Duration(hours: 6);
 
   // Cap mirrored to the Kotlin RemoteViewsFactory's MAX_ROWS_FLUX. The
   // widget runs without thumbnails in Flux, so 80 rows fit well under the
@@ -202,6 +251,17 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   // prefetch chain bounded even if the backend keeps reporting hasNext.
   static const int _widgetPrefetchMaxPages = 4;
   bool _widgetDepthFillInProgress = false;
+
+  /// Silence entre deux chaînes de remplissage de profondeur.
+  ///
+  /// Nécessaire depuis que `!_hasNext` n'est plus un motif d'abandon : un
+  /// compte qui n'a tout simplement pas 80 articles disponibles ne verra
+  /// **jamais** son buffer atteindre [_widgetFluxCap], et sans ce garde il
+  /// relancerait jusqu'à [_widgetPrefetchMaxPages] appels `/api/feed/` à
+  /// chaque build du feed et à chaque retour de premier plan — exactement
+  /// l'amplification documentée dans `docs/bugs/bug-infinite-load-requests.md`.
+  static const Duration _widgetDepthFillCooldown = Duration(minutes: 30);
+  DateTime? _lastWidgetDepthFillAt;
 
   bool get isLoadingMore => _isLoadingMore;
   bool get hasNext => _hasNext;
@@ -253,10 +313,12 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
         _resetFiltersToEmpty(syncSelectionProvider: true);
         _setSelectionOwner(null);
         FeedRepository.clearDefaultViewCache();
+        _resetWidgetBuffer();
       } else if (selectionOwner != null && selectionOwner != authGate.userId) {
         _resetFiltersToEmpty(syncSelectionProvider: true);
         _setSelectionOwner(authGate.userId);
         FeedRepository.clearDefaultViewCache();
+        _resetWidgetBuffer();
       }
       return FeedState(items: []);
     }
@@ -265,6 +327,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       FeedRepository.clearDefaultViewCache();
       _resetFiltersToEmpty(syncSelectionProvider: true);
       _setSelectionOwner(authGate.userId);
+      _resetWidgetBuffer();
     } else {
       if (selectionOwner == null) {
         _setSelectionOwner(authGate.userId);
@@ -429,11 +492,34 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   /// SharedPreferences si le contenu est identique.
   Future<void> ensureWidgetFresh({bool stale = false}) async {
     final items = state.value?.items ?? const <Content>[];
-    if (items.isNotEmpty) {
+    if (items.isNotEmpty || _widgetBuffer.isNotEmpty) {
       _scheduleWidgetPush(items);
     }
+    // Profondeur : si le buffer n'a jamais atteint 80 (widget « 9 articles »),
+    // chaque reprise d'app est une occasion de la reconstituer.
+    if (_isUnfiltered && _widgetBuffer.length < _widgetFluxCap) {
+      unawaited(_prefetchForWidget(items));
+    }
     if (stale) {
-      await refresh();
+      // Best-effort, jamais fatal. Ce `refresh()` est appelé en
+      // fire-and-forget depuis `app.dart` (`didChangeAppLifecycleState`) : une
+      // erreur async qui remonte ici n'a aucun handler et finit en crash
+      // *unhandled* via `PlatformDispatcher.onError` — c'est Sentry FLUTTER-1E
+      // (401 au retour de premier plan). Rafraîchir le widget ne justifie
+      // jamais de tuer l'app.
+      try {
+        await refresh();
+      } catch (e, st) {
+        // ignore: avoid_print
+        print('FeedNotifier: ensureWidgetFresh refresh failed (ignored): $e');
+        unawaited(
+          Sentry.captureException(
+            e,
+            stackTrace: st,
+            withScope: (scope) => scope.level = SentryLevel.warning,
+          ),
+        );
+      }
     }
   }
 
@@ -449,22 +535,21 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   /// last push or a Flâner filter is active in-app. Callers on the [force]
   /// path are responsible for passing the canonical *unfiltered* items.
   void _scheduleWidgetPush(List<Content> items, {bool force = false}) {
-    if (!force &&
-        (_selectedFilter != null ||
-            _selectedTheme != null ||
-            _selectedTopic != null ||
-            _selectedSourceId != null ||
-            _selectedEntity != null ||
-            _selectedKeyword != null)) {
-      return;
-    }
-    final slice = items.take(_widgetFluxCap).toList(growable: false);
+    if (!force && !_isUnfiltered) return;
+    final slice = mergeIntoWidgetBuffer(items);
     if (slice.isEmpty) return;
-    final signature = '${slice.length}|${slice.first.id}|${slice.last.id}';
-    if (!force && signature == _lastWidgetPushSignature) return;
+    // Signature sur **tous** les ids : l'ancienne (`len|first|last`) ne voyait
+    // pas un réordonnancement du milieu et gelait le widget, tout en laissant
+    // passer un rétrécissement (len change) sans jamais le réparer.
+    final signature = '${slice.length}|${slice.map((c) => c.id).join(',')}';
+    final lastAt = _lastWidgetPushAt;
+    final expired =
+        lastAt == null || DateTime.now().difference(lastAt) >= _widgetPushMaxAge;
+    if (!force && !expired && signature == _lastWidgetPushSignature) return;
     _widgetPushDebounce?.cancel();
     void push() {
       _lastWidgetPushSignature = signature;
+      _lastWidgetPushAt = DateTime.now();
       WidgetService.updateWidget(feedItems: slice);
     }
 
@@ -477,21 +562,71 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
+  /// Fusionne [incoming] dans [_widgetBuffer] : entrées fraîches en tête (dans
+  /// leur ordre), puis le reste du buffer précédent non déjà présent, capé à
+  /// [_widgetFluxCap]. Retourne le buffer résultant.
+  ///
+  /// Conséquence voulue : un article lu dans l'app disparaît de `state.items`
+  /// mais **reste** dans le widget jusqu'à être évincé par du contenu plus
+  /// récent. Le compteur du widget ne descend plus quand on lit.
+  @visibleForTesting
+  List<Content> mergeIntoWidgetBuffer(List<Content> incoming) {
+    final merged = <Content>[];
+    final seen = <String>{};
+    for (final c in incoming) {
+      if (merged.length >= _widgetFluxCap) break;
+      if (seen.add(c.id)) merged.add(c);
+    }
+    for (final c in _widgetBuffer) {
+      if (merged.length >= _widgetFluxCap) break;
+      if (seen.add(c.id)) merged.add(c);
+    }
+    _widgetBuffer
+      ..clear()
+      ..addAll(merged);
+    return List<Content>.unmodifiable(merged);
+  }
+
+  /// Vide le buffer widget (logout / changement d'utilisateur) : le compte
+  /// suivant ne doit jamais hériter du flux du précédent.
+  void _resetWidgetBuffer() {
+    _widgetBuffer.clear();
+    _lastWidgetPushSignature = null;
+    _lastWidgetPushAt = null;
+    _lastWidgetDepthFillAt = null;
+  }
+
   /// Prefetch additional pages purely to feed the widget. Calls the repository
   /// directly so the in-app feed state (`state.value.items`, `_hasNext`, `_page`)
   /// is never mutated — pages 2-3 fetched here only land in the widget payload.
   ///
   /// Aborts silently if a filter becomes active mid-flight or if the chain is
-  /// already running. Bounded by [_widgetPrefetchMaxPages] and [_widgetFluxCap].
-  Future<void> _prefetchForWidget(List<Content> initialItems) async {
+  /// already running. Bounded by [_widgetPrefetchMaxPages], [_widgetFluxCap] et
+  /// [_widgetDepthFillCooldown] — sauf [force] (geste utilisateur explicite).
+  Future<void> _prefetchForWidget(
+    List<Content> initialItems, {
+    bool force = false,
+  }) async {
     if (!_isUnfiltered) return;
     if (_widgetDepthFillInProgress) return;
-    if (initialItems.length >= _widgetFluxCap) return;
-    if (!_hasNext) return;
+    // On raisonne sur le buffer widget, pas sur la page qu'on vient de
+    // recevoir : c'est lui qui doit atteindre 80. `_hasNext` n'est PLUS un
+    // motif d'abandon — il décrit la pagination *visible* de Flâner, qui peut
+    // être épuisée alors que le widget n'a que 9 lignes. Les vraies bornes
+    // restent [_widgetPrefetchMaxPages] et [_widgetFluxCap].
+    final seeded = mergeIntoWidgetBuffer(initialItems);
+    if (seeded.length >= _widgetFluxCap) return;
+    final lastFill = _lastWidgetDepthFillAt;
+    if (!force &&
+        lastFill != null &&
+        DateTime.now().difference(lastFill) < _widgetDepthFillCooldown) {
+      return;
+    }
 
     _widgetDepthFillInProgress = true;
+    _lastWidgetDepthFillAt = DateTime.now();
     try {
-      final buffer = List<Content>.from(initialItems);
+      final buffer = List<Content>.from(seeded);
       final existingIds = Set<String>.from(buffer.map((c) => c.id));
       final repository = ref.read(feedRepositoryProvider);
       final isSerein = ref.read(sereinToggleProvider).enabled;
@@ -612,6 +747,21 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     await refresh();
   }
 
+  /// Vide **toutes** les dimensions de filtrage en un seul refresh.
+  ///
+  /// Enchaîner `setTopic(null)` + `setTheme(null)` + … marchait par accident
+  /// (chaque setter annule déjà les autres, donc les suivants sortaient en
+  /// no-op), mais obligeait chaque appelant à connaître la liste des
+  /// dimensions — d'où la dérive documentée dans `feed_filter_bar.dart`
+  /// (« on remet aussi `setSource(null)` — oublié historiquement »).
+  Future<void> clearFilters() async {
+    final selection = ref.read(feedFilterSelectionProvider);
+    if (!selection.hasAnyFilter && _selectedFilter == null) return;
+    _resetFiltersToEmpty(syncSelectionProvider: false);
+    _syncSelectionProvider();
+    await refresh();
+  }
+
   Future<void> setSource(String? sourceId) async {
     if (_selectedSourceId == sourceId) return;
     _selectedSourceId = sourceId;
@@ -636,7 +786,11 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     _selectedTheme = selection.theme;
     _selectedEntity = selection.entity;
     _selectedKeyword = selection.keyword;
-    _includeUnfollowed = false;
+    // Le périmètre élargi fait partie de la sélection restaurée : sans ça, un
+    // rebuild du notifier (changement d'auth, invalidation) rétrécissait
+    // silencieusement une recherche « toutes sources » aux seules sources
+    // suivies, en gardant le mot-clé affiché.
+    _includeUnfollowed = selection.includeUnfollowed;
   }
 
   void _resetFiltersToEmpty({required bool syncSelectionProvider}) {
@@ -670,6 +824,7 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       theme: _selectedTheme,
       entity: _selectedEntity,
       keyword: _selectedKeyword,
+      includeUnfollowed: _includeUnfollowed,
     );
   }
 
@@ -897,19 +1052,19 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
       );
       unfiltered = response.items;
 
-      // When no filter is active in-app, mirror the fresh page into the
-      // on-screen feed and the unfiltered snapshot so the app and the widget
-      // stay consistent. Under an active filter we must NOT touch the visible
-      // (filtered) state — only the widget payload is refreshed.
+      // Le snapshot non filtré est mis à jour, mais **jamais** `state`.
+      //
+      // Le `state = AsyncData(...)` d'avant s'exécutait juste après le
+      // `router.go('/flaner')` du deep-link : l'état visible était remplacé
+      // pendant que `FlanerScreen` se montait, ce qui donnait le « le bouton
+      // refresh plante Flâner ». Un tap sur le widget rafraîchit le *widget*,
+      // pas l'écran sous le doigt — Flâner garde son scroll et son état.
+      // Cf. docs/bugs/bug-widget-fiabilite.md (C4).
       if (_isUnfiltered && unfiltered.isNotEmpty) {
         final overlaid =
             _overlayConsumed(unfiltered, state.value?.carousels ?? const []);
         unfiltered = overlaid.items;
         _globalItems = overlaid.items;
-        _hasNext = response.pagination.hasNext && response.items.isNotEmpty;
-        state = AsyncData(
-          FeedState(items: overlaid.items, carousels: overlaid.carousels),
-        );
       }
     } catch (e) {
       // Network failure: fall back to the last known unfiltered feed so the
@@ -922,7 +1077,9 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     final toPush = unfiltered.isNotEmpty ? unfiltered : _globalItems;
     if (toPush.isEmpty) return;
     _scheduleWidgetPush(toPush, force: true);
-    unawaited(_prefetchForWidget(toPush));
+    // `force` : geste explicite de l'utilisateur, il court-circuite le cooldown
+    // de profondeur (qui ne vise que les déclenchements ambiants).
+    unawaited(_prefetchForWidget(toPush, force: true));
   }
 
   /// Refresh feed: mark visible articles (cards + carousel items qui sont

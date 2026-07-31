@@ -5,18 +5,20 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
-import '../../../config/topic_labels.dart';
+import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
 import '../../digest/models/digest_models.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/services/read_sync_service.dart';
+import '../../feed/widgets/animated_feed_card.dart';
 import '../../feed/widgets/swipe_to_open_card.dart';
 import '../../settings/models/display_mode_spec.dart';
 import '../../settings/providers/display_mode_provider.dart';
 import '../../sources/models/source_model.dart';
 import 'auto_grow_candidate.dart';
+import 'coverage_chip.dart';
 
 /// Unified view-model that hides the DigestItem vs Content split from the
 /// rendering layer. Both types carry the fields needed to display a Flux
@@ -28,16 +30,16 @@ class FluxArticleVM {
   final String? thumbnailUrl;
   final String sourceName;
   final String? sourceLogoUrl;
-  final String? themeLabel;
   final ContentType contentType;
   final int? durationSeconds;
   final DateTime? publishedAt;
   final bool isFollowedSource;
-  final bool isRead;
 
-  /// « Lu jusqu'au bout » — adossé à `completedAt`, distinct de [isRead] que le
-  /// seuil d'ouverture d'1 s suffit à déclencher.
-  final bool isCompleted;
+  /// État de lecture serveur-truth (avant fusion session), source unique dont
+  /// dérivent [hasBeenRead] et [isCompleted]. Porte la 3ᵉ marche « Ouvert »
+  /// quand le temps passé est connu (chemin `Content`) ; retombe sur « Lu en
+  /// partie » quand il ne l'est pas (chemin `DigestItem`).
+  final ReadState readState;
 
   const FluxArticleVM({
     required this.contentId,
@@ -46,15 +48,17 @@ class FluxArticleVM {
     required this.contentType,
     this.thumbnailUrl,
     this.sourceLogoUrl,
-    this.themeLabel,
     this.durationSeconds,
     this.publishedAt,
     this.isFollowedSource = false,
-    this.isRead = false,
-    this.isCompleted = false,
+    this.readState = ReadState.unread,
   });
 
-  bool get hasBeenRead => isRead;
+  bool get hasBeenRead => readState != ReadState.unread;
+
+  /// « Lu jusqu'au bout » — distinct de [hasBeenRead] que le seuil d'ouverture
+  /// d'1 s suffit à déclencher.
+  bool get isCompleted => readState == ReadState.completed;
 
   factory FluxArticleVM.from(Object article) {
     if (article is DigestItem) {
@@ -64,15 +68,21 @@ class FluxArticleVM {
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source?.name ?? 'Inconnu',
         sourceLogoUrl: article.source?.logoUrl,
-        themeLabel:
-            (article.source?.theme != null && article.source!.theme!.isNotEmpty)
-                ? getTopicLabel(article.source!.theme!)
-                : null,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
-        isRead: article.isRead,
+        // Le modèle mobile `DigestItem` (freezed) ne parse pas encore
+        // `time_spent_seconds` (câblage déféré, cf. story 30.4) → signal inconnu :
+        // `deriveReadState` retombe sur « Lu en partie » (0.6), jamais « Ouvert ».
+        readState: deriveReadState(
+          isConsumed: article.isRead,
+          readingProgress: 0,
+          isVideo: article.contentType == ContentType.youtube ||
+              article.contentType == ContentType.video,
+          timeSpentSeconds: null,
+          isCompleted: article.completedAt != null,
+        ),
       );
     }
     if (article is Content) {
@@ -82,14 +92,11 @@ class FluxArticleVM {
         thumbnailUrl: article.thumbnailUrl,
         sourceName: article.source.name,
         sourceLogoUrl: article.source.logoUrl,
-        themeLabel: article.progressionTopic,
         contentType: article.contentType,
         durationSeconds: article.durationSeconds,
         publishedAt: article.publishedAt,
         isFollowedSource: article.isFollowedSource,
-        isRead: article.status == ContentStatus.consumed ||
-            article.readingProgress > 0,
-        isCompleted: article.isCompleted,
+        readState: article.readState,
       );
     }
     throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -102,8 +109,8 @@ class FluxArticleVM {
 /// - 12px padding inside a 12-radius surface card, soft shadow.
 /// - Head row : title (4-line ellipsis, DM Sans 18 w600) + 72×72 thumb on
 ///   the right (radius 10).
-/// - Footer row (single-line) : source dot + name · theme pill · clock·time
-///   · optional press-review trailing (Essentiel sections only).
+/// - Footer row (single-line) : source dot + name · clock·time
+///   · pastille de couverture optionnelle (sujet couvert par ≥ 2 rédactions).
 class FluxContinuArticleCard extends ConsumerStatefulWidget {
   final Object article;
   final VoidCallback? onTap;
@@ -113,8 +120,9 @@ class FluxContinuArticleCard extends ConsumerStatefulWidget {
   final GlobalKey? nudgeAnchor;
   final VoidCallback? onSwipeConversion;
   final VoidCallback? onLongPressConversion;
-  final bool isEssentiel;
-  final int pressReviewCount;
+  /// Nombre de rédactions couvrant le sujet — pilote la pastille de couverture
+  /// du footer (seuil [kCoverageChipMinSources]).
+  final int sourceCount;
   final List<SourceMini> perspectiveSources;
   final String? divergenceLevel;
 
@@ -135,8 +143,7 @@ class FluxContinuArticleCard extends ConsumerStatefulWidget {
     this.nudgeAnchor,
     this.onSwipeConversion,
     this.onLongPressConversion,
-    this.isEssentiel = false,
-    this.pressReviewCount = 0,
+    this.sourceCount = 0,
     this.perspectiveSources = const [],
     this.divergenceLevel,
     this.allowImageOnTop = true,
@@ -157,12 +164,18 @@ class _FluxContinuArticleCardState
     final wasConsumedThisSession = ref.watch(
       consumedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
     );
-    final hasBeenRead = vm.hasBeenRead || wasConsumedThisSession;
     // Complétée pendant la session : la carte reflète l'état sans attendre un
     // refetch du feed.
     final completedThisSession = ref.watch(
       completedContentIdsProvider.select((ids) => ids.contains(vm.contentId)),
     );
+    final readState = effectiveReadState(
+      vm.readState,
+      consumedThisSession: wasConsumedThisSession,
+      completedThisSession: completedThisSession,
+    );
+    final hasBeenRead = readState != ReadState.unread;
+    final isCompleted = readState == ReadState.completed;
     final colors = context.facteurColors;
     final spec = ref.watch(displayModeSpecProvider);
     // Reclaim the thumb slot when the network image fails — avoids the
@@ -178,10 +191,16 @@ class _FluxContinuArticleCardState
     Widget card = Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Opacity(
-        opacity: hasBeenRead ? 0.6 : 1.0,
+        opacity: opacityForReadState(readState),
         child: Stack(
           children: [
-            Material(
+            // `animate: false` au montage : le filet d'une carte déjà aboutie
+            // est peint d'emblée (c'est un état). `didUpdateWidget` anime la
+            // seule transition qui est un événement — le retour d'article.
+            AnimatedFeedCard(
+              isCompleted: isCompleted,
+              animate: false,
+              child: Material(
               color: colors.surface,
               borderRadius: cardRadius,
               elevation: 0,
@@ -214,13 +233,14 @@ class _FluxContinuArticleCardState
                 ),
               ),
             ),
+            ),
             if (hasBeenRead)
               Positioned(
                 top: 4,
                 right: 4,
-                child: _ReadCheckBadge(
+                child: ReadStateMark(
                   color: colors.success,
-                  isCompleted: vm.isCompleted || completedThisSession,
+                  state: readState,
                 ),
               ),
           ],
@@ -377,8 +397,8 @@ class _FluxContinuArticleCardState
     return _Footer(
       vm: vm,
       colors: colors,
-      showPressReview: widget.isEssentiel && widget.pressReviewCount > 0,
-      pressReviewCount: widget.pressReviewCount,
+      showCoverage: widget.sourceCount >= kCoverageChipMinSources,
+      sourceCount: widget.sourceCount,
       perspectiveSources: widget.perspectiveSources,
       divergenceLevel: widget.divergenceLevel,
     );
@@ -425,6 +445,10 @@ Content articleToContent(Object article) {
       isPaid: article.isPaid,
       isSaved: article.isSaved,
       isLiked: article.isLiked,
+      // Sans ça l'écran de détail ouvert depuis une carte du flux rejouait la
+      // complétion (haptique + POST + `article_finished`) sur un article déjà
+      // terminé.
+      completedAt: article.completedAt,
     );
   }
   throw ArgumentError('Unsupported article type: ${article.runtimeType}');
@@ -528,16 +552,16 @@ class _VideoPlayBadge extends StatelessWidget {
 class _Footer extends StatelessWidget {
   final FluxArticleVM vm;
   final FacteurColors colors;
-  final bool showPressReview;
-  final int pressReviewCount;
+  final bool showCoverage;
+  final int sourceCount;
   final List<SourceMini> perspectiveSources;
   final String? divergenceLevel;
 
   const _Footer({
     required this.vm,
     required this.colors,
-    required this.showPressReview,
-    required this.pressReviewCount,
+    required this.showCoverage,
+    required this.sourceCount,
     required this.perspectiveSources,
     this.divergenceLevel,
   });
@@ -553,81 +577,88 @@ class _Footer extends StatelessWidget {
       ),
     );
 
+    // Deux groupes : l'identité (qui flexe) et le trailing (taille fixe).
+    // Un `Spacer` au même niveau que le `Flexible` du nom se partagerait
+    // l'espace libre à 50/50 — un nom long ne rétrécissait alors que jusqu'à sa
+    // moitié et le trailing débordait. Ici l'`Expanded` pousse le trailing à
+    // droite ET absorbe toute la contrainte, donc le nom s'ellipse en premier.
     return Row(
       mainAxisSize: MainAxisSize.max,
       children: [
-        _SourceDot(
-          name: vm.sourceName,
-          logoUrl: vm.sourceLogoUrl,
-          accent: colors.primary,
-          ringColor: colors.surface,
-          size: 14,
-        ),
-        const SizedBox(width: 6),
-        Flexible(
-          child: Text(
-            vm.sourceName,
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: colors.textSecondary,
-              height: 1.4,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              SourceDot(
+                name: vm.sourceName,
+                logoUrl: vm.sourceLogoUrl,
+                accent: colors.primary,
+                ringColor: colors.surface,
+                size: 14,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  vm.sourceName,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textSecondary,
+                    height: 1.4,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (!vm.isFollowedSource) ...[
+                const SizedBox(width: 3),
+                Text(
+                  '+',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: colors.textTertiary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 6),
+              separator,
+              const SizedBox(width: 6),
+              Icon(
+                PhosphorIconsRegular.clock,
+                size: 12,
+                color: colors.textTertiary,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                _publishedAtShort(vm.publishedAt),
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: colors.textTertiary,
+                  height: 1.4,
+                ),
+              ),
+            ],
           ),
         ),
-        if (!vm.isFollowedSource) ...[
-          const SizedBox(width: 3),
-          Text(
-            '+',
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: colors.textTertiary,
-              height: 1.4,
-            ),
-          ),
-        ],
-        // Pastille de thème (macro-thème ML granulaire, sinon thème source en
-        // fallback via `progressionTopic`) : rétablie après son retrait
-        // temporaire en Story 10.1. Le VM la calcule toujours ; masquée si vide.
-        if (vm.themeLabel != null && vm.themeLabel!.trim().isNotEmpty) ...[
-          const SizedBox(width: 6),
-          _ThemePill(
-            key: const Key('flux-theme-pill'),
-            label: vm.themeLabel!,
-            colors: colors,
-          ),
-        ],
-        const SizedBox(width: 6),
-        separator,
-        const SizedBox(width: 6),
-        Icon(PhosphorIconsRegular.clock, size: 12, color: colors.textTertiary),
-        const SizedBox(width: 3),
-        Text(
-          _publishedAtShort(vm.publishedAt),
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: colors.textTertiary,
-            height: 1.4,
-          ),
-        ),
-        if (showPressReview || divergenceLevel != null) const Spacer(),
         if (divergenceLevel != null) ...[
+          const SizedBox(width: 6),
           DivergenceInlineBadge(
             divergenceLevel: divergenceLevel,
             iconOnly: true,
           ),
-          if (showPressReview) const SizedBox(width: 6),
         ],
-        if (showPressReview)
-          _PressReviewChip(
-            count: pressReviewCount,
+        if (showCoverage) ...[
+          const SizedBox(width: 6),
+          CoverageChip(
+            key: const Key('flux-coverage-chip'),
+            sourceCount: sourceCount,
             sources: perspectiveSources,
             colors: colors,
           ),
+        ],
       ],
     );
   }
@@ -638,201 +669,5 @@ class _Footer extends StatelessWidget {
         .format(date, locale: 'fr_short')
         .replaceAll('il y a ', '')
         .trim();
-  }
-}
-
-/// Source identity dot — logo when [logoUrl] is provided, initial otherwise.
-class _SourceDot extends StatelessWidget {
-  final String name;
-  final String? logoUrl;
-  final Color accent;
-  final Color ringColor;
-  final double size;
-
-  const _SourceDot({
-    required this.name,
-    required this.logoUrl,
-    required this.accent,
-    required this.ringColor,
-    required this.size,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasLogo = logoUrl != null && logoUrl!.trim().isNotEmpty;
-    final initial = _Initial(name: name, fontSize: size * 0.55);
-    return Container(
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: accent,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: ringColor, spreadRadius: 1.5, blurRadius: 0),
-        ],
-      ),
-      child: hasLogo
-          ? ClipOval(
-              child: FacteurImage(
-                imageUrl: logoUrl!,
-                width: size,
-                height: size,
-                placeholder: (_) => initial,
-                errorWidget: (_) => initial,
-              ),
-            )
-          : initial,
-    );
-  }
-}
-
-class _Initial extends StatelessWidget {
-  final String name;
-  final double fontSize;
-
-  const _Initial({required this.name, required this.fontSize});
-
-  @override
-  Widget build(BuildContext context) {
-    final trimmed = name.trim();
-    final initial =
-        trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
-    return Text(
-      initial,
-      style: GoogleFonts.dmSans(
-        fontSize: fontSize,
-        fontWeight: FontWeight.w700,
-        color: Colors.white,
-        height: 1.0,
-      ),
-    );
-  }
-}
-
-/// Trailing for Essentiel cards: stacks up to 3 source logos with a 4-px
-/// overlap, followed by a "+N" count chip.
-class _PressReviewChip extends StatelessWidget {
-  final int count;
-  final List<SourceMini> sources;
-  final FacteurColors colors;
-
-  const _PressReviewChip({
-    required this.count,
-    required this.sources,
-    required this.colors,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const dotSize = 12.0;
-    const overlap = 4.0;
-    final visibleCount = sources.length < 3 ? sources.length : 3;
-    final stackWidth = visibleCount == 0
-        ? 0.0
-        : dotSize + (visibleCount - 1) * (dotSize - overlap);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (visibleCount > 0)
-          SizedBox(
-            width: stackWidth,
-            height: dotSize,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                for (var i = 0; i < visibleCount; i++)
-                  Positioned(
-                    left: i * (dotSize - overlap),
-                    child: _SourceDot(
-                      name: sources[i].name,
-                      logoUrl: sources[i].logoUrl,
-                      accent: colors.primary,
-                      ringColor: colors.surface,
-                      size: dotSize,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        if (visibleCount > 0) const SizedBox(width: 6),
-        Text(
-          '+$count',
-          style: GoogleFonts.dmSans(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-            color: colors.textSecondary,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Pastille de thème compacte affichée dans le footer de carte (source ·
-/// thème · heure). Style discret : fond très léger, texte secondaire.
-class _ThemePill extends StatelessWidget {
-  final String label;
-  final FacteurColors colors;
-
-  const _ThemePill({super.key, required this.label, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: colors.textPrimary.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: GoogleFonts.dmSans(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.2,
-          height: 1.4,
-          color: colors.textSecondary,
-        ),
-      ),
-    );
-  }
-}
-
-class _ReadCheckBadge extends StatelessWidget {
-  final Color color;
-
-  /// Double check quand l'article a été lu jusqu'au bout, simple check quand il
-  /// a seulement été ouvert (ce que le seuil d'1 s suffit à déclencher).
-  final bool isCompleted;
-
-  const _ReadCheckBadge({required this.color, this.isCompleted = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Icon(
-        isCompleted
-            ? PhosphorIcons.checks(PhosphorIconsStyle.bold)
-            : PhosphorIcons.check(PhosphorIconsStyle.bold),
-        size: 12,
-        color: Colors.white,
-      ),
-    );
   }
 }

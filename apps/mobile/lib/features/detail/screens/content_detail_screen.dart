@@ -22,7 +22,6 @@ import '../../../core/api/api_client.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/services/analytics_service.dart';
 import '../../../shared/widgets/fab_nudge_bubble.dart';
-import '../../../shared/widgets/completion_stamp.dart';
 import '../../../shared/widgets/glass_pill.dart';
 import '../../../shared/widgets/navigation/swipe_back_page.dart';
 import '../../feed/models/content_model.dart';
@@ -32,6 +31,10 @@ import '../../../config/routes.dart';
 import '../../feed/repositories/feed_repository.dart';
 import '../../feed/services/read_sync_service.dart';
 import '../../feed/widgets/perspectives_bottom_sheet.dart';
+import '../../gamification/providers/gamification_preference_provider.dart';
+import '../../gamification/providers/streak_provider.dart';
+import '../../lettres/widgets/progress_toast.dart';
+import '../models/article_completion_latch.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
 import '../../sources/providers/sources_providers.dart';
@@ -286,7 +289,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// contrainte de layout et non de sémantique. Or la WebView est justement le
   /// chemin nominal — ~90 % du catalogue est du contenu partiel.
   final ValueNotifier<bool> _articleCompleted = ValueNotifier<bool>(false);
-  CompletionSource? _completionSource;
+
+  /// Sépare l'état connu à l'ouverture de l'événement de cette session (cf.
+  /// [ArticleCompletionLatch]). [_articleCompleted] ne porte plus que
+  /// l'événement ; l'affichage lit `_completion.completed`.
+  final ArticleCompletionLatch _completion = ArticleCompletionLatch();
 
   /// Résolu en `initState` — jamais via `ref` depuis `dispose()`.
   AnalyticsService? _analytics;
@@ -428,12 +435,18 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   _ScrollNudgeTarget? _activeScrollNudgeTarget;
   // Passé à true une fois affiché ou tapé → ne réapparaît plus sur cet article.
   bool _scrollNudgeSpent = false;
-  // Résultat du cooldown 24 h (NudgeService.canShow), résolu à l'armement.
-  bool _scrollNudgeCooldownOk = false;
+  // Résultat du cooldown 24 h (NudgeService.canShow) **par cible** : la cible
+  // peut changer en cours de route (les perspectives arrivent avant le « pas de
+  // recul »), et vérifier le cooldown d'un id pour en afficher un autre était
+  // le bug d'identifiant de `markShown`.
+  final Map<String, bool> _scrollNudgeCooldownById = {};
+  // Ids dont la vérification asynchrone est en vol (anti-doublon).
+  final Set<String> _scrollNudgeCooldownPending = {};
+  // Le délai anti-pop est écoulé — armé en initState, donc en parallèle du
+  // réseau et non en série derrière lui.
+  bool _scrollNudgeArmDelayElapsed = false;
   // markShown() n'est appelé qu'une fois (au premier affichage réel).
   bool _scrollNudgeShownRecorded = false;
-  // L'armement différé n'est planifié qu'une fois par article.
-  bool _scrollNudgeArmScheduled = false;
   Timer? _scrollNudgeArmTimer;
   Timer? _scrollNudgeAutoHideTimer;
 
@@ -520,6 +533,8 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (_content != null) {
         _isConsumed = _content!.status == ContentStatus.consumed ||
             ref.read(consumedContentIdsProvider).contains(_content!.id);
+        // Source d'amorçage n°1 : l'état porté par la carte d'où l'on vient.
+        _completion.seed(prior: _content!.isCompleted);
       }
       // Always fetch fresh content to accept latest metadata/status/theme
       _fetchContent();
@@ -529,6 +544,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _fetchPerspectives();
       }
     }
+
+    // Délai anti-pop du nudge de scroll : démarré ici (et non après le fetch
+    // des perspectives) pour qu'il s'écoule en parallèle du réseau. La
+    // visibilité reste conditionnée à une cible montée + son cooldown 24 h.
+    _armScrollNudgeDelay();
 
     // Bookmark bounce animation (triggered on first note character)
     _bookmarkBounceController = AnimationController(
@@ -598,6 +618,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     );
     _footerPermanent.addListener(_onFooterPermanentChanged);
     _articleCompleted.addListener(_onArticleCompletedChanged);
+
+    // Source d'amorçage n°2 : le registre local des complétions. Ne dépend pas
+    // de `_content`, donc couvre aussi les deep links et les notifications —
+    // et s'exécute **avant** que le listener ci-dessus puisse être déclenché.
+    // C'est cette ligne qui ferme la course.
+    _completion.seed(
+      prior: ref.read(completedContentIdsProvider).contains(widget.contentId),
+    );
 
     // Résolu UNE fois, ici. `ref.read` dans `dispose()` levait, l'exception
     // était avalée par le catch fourre-tout, et `article_read` /
@@ -1016,11 +1044,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Latch one-shot de la complétion. Appelé depuis le listener de scroll, donc
   /// gardé par un test booléen en tête : pas d'allocation, pas de `setState`.
   void _latchCompleted(CompletionSource source) {
-    if (_articleCompleted.value) return;
-    if (_isExternal) return;
-    final article = _content;
-    if (article == null) return;
-    _completionSource = source;
+    if (_content == null) return;
+    // `ArticleCompletionLatch` refuse de se fermer si l'article était **déjà**
+    // terminé à l'ouverture : le notifier ne bascule alors jamais, donc le
+    // listener ne peut pas rejouer haptique + POST + `article_finished`.
+    if (!_completion.latch(source, isExternal: _isExternal)) return;
     _articleCompleted.value = true;
   }
 
@@ -1043,9 +1071,17 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     if (!_articleCompleted.value) return;
     final article = _content;
     if (article == null) return;
-    final source = _completionSource ?? CompletionSource.inApp;
+    final source = _completion.source ?? CompletionSource.inApp;
 
-    HapticFeedback.lightImpact();
+    // Toast « X/Y lu jusqu'au bout » à chaque complétion neuve — le PO inverse
+    // le garde-fou §4 (« aucun X/Y ») pour rendre l'objectif du jour palpable.
+    // Le latch garantit qu'une réouverture ne rejoue pas cet événement.
+    final showedToast = _maybeShowCompletionToast();
+    // Le toast `micro` joue déjà `selectionClick()` : ne pas doubler l'haptique
+    // (garde-fou §12). Sans toast (gamification off ou série inconnue), on garde
+    // l'haptique d'atterrissage.
+    if (!showedToast) HapticFeedback.lightImpact();
+
     unawaited(ref.read(readSyncServiceProvider).markCompleted(article.id, source));
     _analytics?.trackArticleFinished(
       contentId: article.id,
@@ -1061,6 +1097,41 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       articleCharCount:
           plainTextLength(article.htmlContent ?? article.description),
     );
+  }
+
+  /// Affiche le toast `micro` « X/Y lu jusqu'au bout » à la complétion. Renvoie
+  /// `true` si un toast a bien été montré (l'appelant saute alors l'haptique de
+  /// complétion pour éviter le double-buzz — le toast joue déjà `selectionClick`).
+  ///
+  /// Gaté par la préférence gamification (même gate que `DailyCompletionRecap`,
+  /// garde-fou §14). Compteur **optimiste** : `streakProvider` est dérivé serveur
+  /// et rafraîchi en asynchrone → on anticipe la complétion courante
+  /// (`dailyCompleted + 1`, borné par l'objectif). Série inconnue ⇒ pas de toast.
+  bool _maybeShowCompletionToast() {
+    if (!mounted) return false;
+    if (ref.read(gamificationPreferenceProvider).valueOrNull != true) {
+      return false;
+    }
+    final streak = ref.read(streakProvider).valueOrNull;
+    if (streak == null) return false;
+    final total = streak.dailyGoal;
+    final current = math.min(streak.dailyCompleted + 1, total);
+    showProgressToast(
+      context,
+      level: ProgressToastLevel.micro,
+      current: current,
+      total: total,
+      label: 'lu jusqu\'au bout',
+      accentColor: context.facteurColors.success,
+      // À l'objectif atteint (`current >= total`) : proposer d'ouvrir l'écran
+      // Progression pour régler la cible. Sinon aucun CTA (toast neutre).
+      onGoalCta: current >= total
+          ? () {
+              if (mounted) context.push(RoutePaths.lettres);
+            }
+          : null,
+    );
+    return true;
   }
 
   String get _completionRenderMode {
@@ -1100,34 +1171,42 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     return null;
   }
 
-  /// Planifie (une seule fois par article) l'armement différé du nudge :
-  /// attend `_kScrollNudgeArmDelay` (anti-pop instantané) puis résout le
-  /// cooldown 24 h avant d'autoriser l'affichage. Appelé dès qu'une cible
-  /// devient plausible (arrivée des perspectives, résolution du contenu).
-  void _maybeArmScrollNudge() {
-    if (_scrollNudgeArmScheduled) return;
-    final target = _resolveScrollNudgeTarget();
-    if (target == null) return;
-    _scrollNudgeArmScheduled = true;
-    _scrollNudgeArmTimer = Timer(_kScrollNudgeArmDelay, () async {
+  /// Démarre le délai anti-pop du nudge. Appelé en `initState` (et au retour
+  /// en haut de l'article) et **pas** après le fetch des perspectives : les
+  /// 1,5 s s'écoulent alors en parallèle du réseau au lieu de s'y ajouter.
+  void _armScrollNudgeDelay() {
+    _scrollNudgeArmTimer?.cancel();
+    _scrollNudgeArmTimer = Timer(_kScrollNudgeArmDelay, () {
       if (!mounted) return;
-      // Cooldown par-nudge uniquement (NudgeService, pas le coordinator) : on
-      // veut « 1×/24 h par cible », sans le budget global de session.
-      final ok = await ref.read(nudgeServiceProvider).canShow(target.id);
-      if (!mounted) return;
-      _scrollNudgeCooldownOk = ok;
+      _scrollNudgeArmDelayElapsed = true;
       _updateScrollNudgeVisibility();
     });
+  }
+
+  /// Résout (une fois par cible) le cooldown 24 h de [id], puis re-évalue la
+  /// visibilité. Cooldown par-nudge uniquement (NudgeService, pas le
+  /// coordinator) : « 1×/24 h par cible », sans le budget global de session.
+  void _ensureScrollNudgeCooldown(String id) {
+    if (_scrollNudgeCooldownById.containsKey(id) ||
+        !_scrollNudgeCooldownPending.add(id)) {
+      return;
+    }
+    () async {
+      final ok = await ref.read(nudgeServiceProvider).canShow(id);
+      _scrollNudgeCooldownPending.remove(id);
+      if (!mounted) return;
+      _scrollNudgeCooldownById[id] = ok;
+      _updateScrollNudgeVisibility();
+    }();
   }
 
   /// Calcul pur des conditions d'affichage du nudge de scroll. Aucune
   /// mutation d'état ici — voir [_updateScrollNudgeVisibility]. Résout et
   /// mémorise la cible courante dans `_activeScrollNudgeTarget`.
   bool _computeShouldShowScrollNudge() {
-    // Armé (cooldown 24 h résolu à l'armement), pas déjà consommé sur cet
-    // article. `_scrollNudgeCooldownOk` ne peut passer true qu'après le délai
-    // d'armement → il porte à lui seul l'état « armé + éligible ».
-    if (!_scrollNudgeCooldownOk || _scrollNudgeSpent) return false;
+    // Délai anti-pop écoulé, pas déjà consommé sur cet article. Le cooldown
+    // 24 h est vérifié plus bas, sur la cible réellement résolue.
+    if (!_scrollNudgeArmDelayElapsed || _scrollNudgeSpent) return false;
     // Le nudge n'a de sens que pendant la lecture scrollable normale : dès que
     // la WebView a pris le relais visuel, ou que le CTA a été tapé (révélation
     // en cours), la destination n'est plus pertinente.
@@ -1142,6 +1221,15 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     final target = _resolveScrollNudgeTarget();
     if (target == null) return false;
     _activeScrollNudgeTarget = target;
+
+    // Cooldown de LA cible courante — pas de celle connue à l'armement. Le
+    // premier passage lance la vérification et rappellera cette méthode.
+    final cooldownOk = _scrollNudgeCooldownById[target.id];
+    if (cooldownOk == null) {
+      _ensureScrollNudgeCooldown(target.id);
+      return false;
+    }
+    if (!cooldownOk) return false;
 
     // Destination hors écran (assez bas pour valoir un scroll). Si la clé n'est
     // pas encore montée (premier frame après fetch, ou carte non rendue dans la
@@ -1277,7 +1365,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Retour en haut de l'article : ré-arme le nudge de scroll (le cooldown
     // 24 h déjà posé le maintiendra masqué s'il a été montré aujourd'hui).
     _resetScrollNudge();
-    _maybeArmScrollNudge();
+    _armScrollNudgeDelay();
   }
 
   /// Remet à zéro l'état du nudge de scroll (armement, cooldown, auto-hide) et
@@ -1286,9 +1374,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _scrollNudgeArmTimer?.cancel();
     _scrollNudgeAutoHideTimer?.cancel();
     _scrollNudgeSpent = false;
-    _scrollNudgeCooldownOk = false;
+    _scrollNudgeArmDelayElapsed = false;
+    _scrollNudgeCooldownById.clear();
+    _scrollNudgeCooldownPending.clear();
     _scrollNudgeShownRecorded = false;
-    _scrollNudgeArmScheduled = false;
     _showScrollNudge.value = false;
   }
 
@@ -1534,6 +1623,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
             _contentResolved = true;
             _isConsumed = _content!.status == ContentStatus.consumed ||
                 ref.read(consumedContentIdsProvider).contains(_content!.id);
+            // Source d'amorçage n°3 : la vérité serveur. Tardive, mais
+            // inoffensive — `seed` ne fait que bloquer.
+            _completion.seed(prior: merged.isCompleted);
           });
           // « Ouvrir = Lu » : redémarre le timer dès que le contenu est résolu
           // si on ne l'a pas encore marqué Lu (cas où _content était null au
@@ -2200,9 +2292,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           _schedulePerspectivesPartialRefetch(content.id);
         }
         _maybeTriggerPerspectivesCta();
-        // Une cible de nudge (pas de recul ou perspectives) est désormais
-        // plausible : planifie l'armement différé (1,5 s + cooldown).
-        _maybeArmScrollNudge();
         // `PerspectivesInlineSection`/`_perspectivesKey` ne sont montés qu'au
         // prochain frame après ce `setState` — sans ce callback, un
         // utilisateur déjà en haut et immobile ne verrait jamais le nudge
@@ -2767,7 +2856,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     // Pill « verre » flottant, détaché des bords (marges + safe area gérées par
     // le Padding du Column parent). Rebord statique (cf. GlassPill) → aucun swap
     // au scroll, le logo de source ne se re-monte plus (fin de la vibration).
-    final footerContent = GlassPill(
+    //
+    // Article terminé → le pill se lave d'une teinte `success` (décision PO :
+    // « footer tout en vert »). Le `ValueListenableBuilder` sur
+    // `_articleCompleted` évite un `setState` dans le listener de scroll.
+    final footerContent = ValueListenableBuilder<bool>(
+      valueListenable: _articleCompleted,
+      builder: (context, _, __) => GlassPill(
+      fillTint: _completion.completed
+          ? colors.success.withValues(alpha: 0.14)
+          : null,
       shadowOffset: const Offset(0, -4),
       borderRadius: const BorderRadius.only(
         topLeft: Radius.circular(_kFrameRadius),
@@ -2783,24 +2881,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Le cachet « LU JUSQU'AU BOUT » vit dans le pied de page et non
-            // dans le flux de l'article : c'est le seul emplacement qui marche
-            // dans les quatre modes de rendu — impossible d'injecter quoi que
-            // ce soit dans le DOM de l'éditeur en WebView, qui est pourtant le
-            // chemin nominal.
-            ValueListenableBuilder<bool>(
-              valueListenable: _articleCompleted,
-              builder: (context, completed, _) {
-                if (!completed) return const SizedBox.shrink();
-                return const Padding(
-                  padding: EdgeInsets.only(bottom: 10),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: CompletionStamp(animate: true),
-                  ),
-                );
-              },
-            ),
             Row(
           children: [
             // CTA — sized to content for articles (laisse de la place aux 3
@@ -2813,22 +2893,24 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                 child: isArticle
                     ? ValueListenableBuilder<bool>(
                         valueListenable: _footerPermanent,
-                        builder: (context, permanent, _) =>
-                            ValueListenableBuilder<bool>(
-                          valueListenable: _articleCompleted,
-                          builder: (context, completed, _) {
+                        builder: (context, permanent, _) {
+                          // Le footer parent (`footerContent`) se reconstruit
+                          // déjà sur `_articleCompleted` : inutile de le réécouter
+                          // ici, on lit directement l'état de complétion.
+                          final completed = _completion.completed;
                           final isWebViewMode =
                               _ctaTapped || _isWebViewActive;
                           // Primary orange ONLY when the user has reached the
                           // bottom of the article (footer locked permanent) AND
                           // the WebView hasn't been revealed yet.
                           //
-                          // Une fois l'article terminé, le pied de page porte
-                          // l'état « succès » (cachet vert) : l'action « Lire
-                          // sur … » se retire alors en `secondary` pour ne plus
-                          // concurrencer cet état. Un bouton d'action ne prend
-                          // jamais le vert, qui signifie « déjà fait » partout
-                          // ailleurs dans le produit.
+                          // Une fois l'article terminé, tout le pied de page
+                          // porte l'état « succès » (cachet + teinte vert) :
+                          // l'action « Lire sur … » passe elle aussi au vert
+                          // `success` pour un footer validé cohérent. La règle
+                          // antérieure (« un bouton d'action ne prend jamais le
+                          // vert ») est explicitement levée par le PO pour cette
+                          // itération (story 30.2).
                           final usePrimary =
                               permanent && !isWebViewMode && !completed;
                           final useSecondary = completed;
@@ -2881,7 +2963,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             return FilledButton(
                               onPressed: _onReadOnSiteTap,
                               style: FilledButton.styleFrom(
-                                backgroundColor: colors.secondary,
+                                backgroundColor: colors.success,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
@@ -2955,7 +3037,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
                             child: Row(children: children),
                           );
                           },
-                        ),
                       )
                     : _buildExternalCtaButton(context, content),
               ),
@@ -3071,7 +3152,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ],
         ),
       ),
+      ),
     );
+
+    // Le cachet « LU JUSQU'AU BOUT » a été retiré du reader (décision PO) : posé
+    // en overlay à fond transparent, il se superposait au carrousel Perspectives
+    // qui défile sous le footer. Le signal de complétion est désormais porté par
+    // le lavis `success` du pill (point B) et la barre de progression épaissie
+    // (point C). Le cachet reste utilisé ailleurs (`DailyCompletionRecap`).
 
     return ValueListenableBuilder<double>(
       valueListenable: _footerOffset,
@@ -3413,32 +3501,37 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
         final clamped = progress.clamp(0.0, 1.0);
-        // Grey→primary lerp, but opacity stays capped so the bar reads discreet
-        // even at full progress (15% at start → ~50% max at end).
-        final alpha = 0.15 + (clamped * 0.35);
-        // Article terminé : la barre vire au vert « succès ». Elle est
-        // l'instrument de mesure de la lecture, elle porte donc l'état — pas
-        // le bouton d'action.
-        final target =
-            _articleCompleted.value ? kStampGreen : colors.primary;
+        final completed = _completion.completed;
+        // Grey→target lerp. Article terminé : la barre devient le signal de
+        // complétion principal (elle remplace le cachet retiré du reader) — vert
+        // `success` plein et opacité relevée. Sinon elle reste discrète : opacité
+        // capée (15% au départ → ~50% en fin de lecture).
+        final alpha = completed ? 0.9 : 0.15 + (clamped * 0.35);
+        // Article terminé : la barre vire au vert « succès » (`colors.success`,
+        // le vert « lu » du produit). Elle est l'instrument de mesure de la
+        // lecture, elle porte donc l'état — pas le bouton d'action.
+        final target = completed ? colors.success : colors.primary;
         final barColor = Color.lerp(
           Colors.grey.shade400,
           target,
           clamped,
         )!
             .withValues(alpha: alpha);
+        // Complétion → barre plus épaisse (6 px) pour asseoir le signal
+        // « success » qui remplace le cachet ; sinon fine (3,5 px) et discrète.
+        final barHeight = completed ? 6.0 : 3.5;
         // Alimente la barre directement depuis `clamped` (déjà lissé par frame
         // par le scroll natif). Le `TweenAnimationBuilder` 300 ms était relancé
         // à CHAQUE frame de scroll → re-raster inutile. En mode WebView la
         // progression arrive throttlée (~300 ms) : la barre « step » au lieu
-        // d'interpoler, coût cosmétique négligeable sur 3,5 px semi-transparents.
+        // d'interpoler, coût cosmétique négligeable.
         return SizedBox(
-          height: 3.5,
+          height: barHeight,
           child: LinearProgressIndicator(
             value: clamped,
             backgroundColor: Colors.transparent,
             valueColor: AlwaysStoppedAnimation<Color>(barColor),
-            minHeight: 3.5,
+            minHeight: barHeight,
           ),
         );
       },

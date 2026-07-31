@@ -16,25 +16,30 @@ class OnboardingStrings {
   // Welcome Screen (ex-Intro 1)
   static const String welcomeTitle = 'Bienvenue sur Facteur !';
   static const String welcomeSubtitle =
-      "L'information devrait t'aider à comprendre le monde.\n\nPas nous submerger.";
+      "L'information devrait nous aider à comprendre le monde.";
   static const String welcomeManifestoButton = 'Lire notre Manifeste';
   static const String welcomeStartButton = 'Commencer';
+  static const String welcomeAlreadyHaveAccount = 'J\'ai déjà un compte';
 
   // Intro Screen 2
-  static const String intro2Title = 'Ton hub d\'infos fiables.';
+  static const String intro2Title = 'Ton espace de transparence.';
   static const String intro2Subtitle =
-      'Facteur est une app Open-Source pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et médias de qualité.';
-  static const String intro2SubtitlePart1 = 'Facteur est une app Open-Source pour ';
-  static const String intro2SubtitleBold1 = 'retrouver le plaisir de s\'informer';
-  static const String intro2SubtitlePart2 = '. Un espace de ';
-  static const String intro2SubtitleBold2 = 'confiance';
-  static const String intro2SubtitlePart3 = ', qui mêle ';
-  static const String intro2SubtitleBold3 = 'transparence';
-  static const String intro2SubtitlePart4 = ', ';
-  static const String intro2SubtitleBold4 = 'contrôle';
-  static const String intro2SubtitlePart5 = ' et ';
-  static const String intro2SubtitleBold5 = 'médias de qualité';
-  static const String intro2SubtitlePart6 = '.';
+      'Facteur est une app Open source et indépendante, pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et médias de qualité.';
+  static const String intro2SubtitlePart1 = 'Facteur est une app ';
+  static const String intro2SubtitleBold1 = 'Open source';
+  static const String intro2SubtitlePart2 = ' et ';
+  static const String intro2SubtitleBold2 = 'indépendante';
+  static const String intro2SubtitlePart3 = ', pour ';
+  static const String intro2SubtitleBold3 = 'retrouver le plaisir de s\'informer';
+  static const String intro2SubtitlePart4 = '.\n\nUn espace de ';
+  static const String intro2SubtitleBold4 = 'confiance';
+  static const String intro2SubtitlePart5 = ', qui mêle ';
+  static const String intro2SubtitleBold5 = 'transparence';
+  static const String intro2SubtitlePart6 = ', ';
+  static const String intro2SubtitleBold6 = 'contrôle';
+  static const String intro2SubtitlePart7 = ' et ';
+  static const String intro2SubtitleBold7 = 'médias de qualité';
+  static const String intro2SubtitlePart8 = '.';
   static const String intro2Button = 'Découvrir Facteur';
 
   // Media Concentration
@@ -307,11 +312,26 @@ class OnboardingStrings {
       'Indique quels sujets tu veux le plus voir apparaitre dans ton feed.';
   static const String addCustomTopicHint = 'Ajouter un sujet';
   static const String maxCustomTopicsReached = 'Maximum 3 sujets par thème';
+  static const String customTopicAddedHint =
+      'Vous permettra de mettre en avant le sujet dans vos actus, et de définir des alertes si vous le souhaitez !';
 
   // Finalize
   static const String finalizeTitle = 'Ton essentiel est prêt.';
   static const String finalizeSubtitle = 'Voici un résumé de tes choix.';
   static const String finalizeButton = 'Créer mon essentiel';
+
+  // Finalize — création du compte depuis une session anonyme (story 31.1)
+  static const String finalizeAccountTitle = 'Ta tournée est prête.';
+  static const String finalizeAccountSubtitle =
+      'Il ne reste qu\'une adresse à laisser pour qu\'on sache où la déposer chaque matin.';
+  static const String finalizeAccountEmailHint = 'Ton adresse email';
+  static const String finalizeAccountPasswordHint = 'Ton mot de passe';
+  static const String finalizeAccountButton = 'Recevoir ma tournée';
+  static const String finalizeAccountAlreadyHave = 'J\'ai déjà un compte';
+  static const String finalizeAccountEmailInvalid =
+      'Cette adresse ne semble pas valide.';
+  static const String finalizeAccountPasswordTooShort =
+      'Ton mot de passe doit faire au moins 6 caractères.';
 
   // Reactions: Objective (Q1)
   static const String r1NoiseTitle = 'Trop de bruit tue le signal.';

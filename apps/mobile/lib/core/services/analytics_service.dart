@@ -346,6 +346,26 @@ class AnalyticsService {
     await _capturePostHog('onboarding_sources_registered', props);
   }
 
+  /// Étape d'onboarding vue ou franchie (story 31.1).
+  ///
+  /// Avant, une seule des treize étapes émettait un event : impossible de dire
+  /// où le parcours se perd. `stepName` est une clé stable (snake case), pas une
+  /// chaîne d'UI ; `stepIndex` est l'index global, monotone dans le parcours.
+  /// PostHog uniquement : c'est un funnel, pas une donnée produit à stocker.
+  Future<void> trackOnboardingStep({
+    required String event,
+    required String stepName,
+    required int stepIndex,
+    required int totalSteps,
+  }) async {
+    await _capturePostHog(event, {
+      'session_id': _sessionId,
+      'step_name': stepName,
+      'step_index': stepIndex,
+      'total_steps': totalSteps,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Sprint 2 — feature-by-feature events (PR1)
   // ──────────────────────────────────────────────────────────────
@@ -438,6 +458,55 @@ class AnalyticsService {
     await _logEvent('app_feedback_opened', props);
     await _capturePostHog('app_feedback_opened', props);
   }
+
+  // ─── Invitation « un café en visio » (Epic 13, story 13.3) ───
+  // Funnel complet : shown (entrée inline vue) → opened (modale, auto ou tap)
+  // → booked / snoozed / already_done. `segment` = classification backend
+  // ("active" | "low_active" | "returning").
+
+  /// Nom d'event de sortie du funnel, par action envoyée au backend.
+  static const _feedbackInviteExitEvents = {
+    'accepted': 'feedback_invite_booked',
+    'declined': 'feedback_invite_snoozed',
+    'already_done': 'feedback_invite_already_done',
+  };
+
+  Future<void> _trackFeedbackInvite(
+    String event,
+    String? segment, {
+    Map<String, dynamic> extra = const {},
+  }) async {
+    final props = <String, dynamic>{
+      'session_id': _sessionId,
+      if (segment != null) 'segment': segment,
+      ...extra,
+    };
+    await _logEvent(event, props);
+    await _capturePostHog(event, props);
+  }
+
+  /// L'entrée inline est réellement entrée dans le viewport.
+  Future<void> trackFeedbackInviteShown({String? segment}) =>
+      _trackFeedbackInvite('feedback_invite_shown', segment);
+
+  /// origin: 'auto' (auto-déploiement une fois) | 'tap' (entrée inline).
+  Future<void> trackFeedbackInviteOpened({
+    String? segment,
+    required String origin,
+  }) =>
+      _trackFeedbackInvite(
+        'feedback_invite_opened',
+        segment,
+        extra: {'origin': origin},
+      );
+
+  /// Sortie du funnel. `action` = celle envoyée au backend
+  /// ("accepted" | "declined" | "already_done").
+  Future<void> trackFeedbackInviteAction(String action, {String? segment}) =>
+      _trackFeedbackInvite(
+        _feedbackInviteExitEvents[action] ?? 'feedback_invite_$action',
+        segment,
+      );
 
   /// origin: 'digest' | 'feed' | 'settings'
   Future<void> trackArticleFeedbackSubmitted({
@@ -571,6 +640,69 @@ class AnalyticsService {
       'is_curated': isCurated,
       'source_layer': sourceLayer,
     });
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Story 30.1 — Recherche universelle.
+  // Funnel visé : search_opened → search_result_selected (succès) vs
+  // search_submitted_empty (impasse) → search_broadened /
+  // search_add_source_bridged (rattrapages).
+  // ──────────────────────────────────────────────────────────────
+
+  /// [origin] : `header` (loupe du header partagé) ou `filter_bar` (pill de
+  /// recherche active). [tab] : `essentiel` ou `flaner`.
+  Future<void> trackSearchOpened({
+    required String origin,
+    required String tab,
+  }) async {
+    final props = {'origin': origin, 'tab': tab};
+    await _logEvent('search_opened', props);
+    await _capturePostHog('search_opened', props);
+  }
+
+  /// [resultType] : `article` · `source` · `catalog_source` · `topic` ·
+  /// `entity` · `theme` · `add_source`. [rank] est l'index du résultat dans sa
+  /// section (0-based) — mesure si les bons résultats remontent assez haut.
+  Future<void> trackSearchResultSelected({
+    required String resultType,
+    required int rank,
+    required int queryLength,
+  }) async {
+    final props = {
+      'result_type': resultType,
+      'rank': rank,
+      'query_length': queryLength,
+    };
+    await _logEvent('search_result_selected', props);
+    await _capturePostHog('search_result_selected', props);
+  }
+
+  /// Recherche mot-clé n'ayant ramené aucun article — l'impasse qu'on cherche
+  /// à faire disparaître. [broadened] indique si la recherche portait déjà sur
+  /// toutes les sources (vs les seules sources suivies).
+  Future<void> trackSearchSubmittedEmpty({
+    required int queryLength,
+    required bool broadened,
+  }) async {
+    final props = {'query_length': queryLength, 'broadened': broadened};
+    await _logEvent('search_submitted_empty', props);
+    await _capturePostHog('search_submitted_empty', props);
+  }
+
+  /// Passage de la recherche au flow d'ajout de source. [bridgeCase] :
+  /// `catalog_follow` (ajout en 1 tap depuis le catalogue) ou `smart_search`
+  /// (bascule vers `AddSourceScreen` pré-rempli).
+  Future<void> trackSearchAddSourceBridged({required String bridgeCase}) async {
+    final props = {'case': bridgeCase};
+    await _logEvent('search_add_source_bridged', props);
+    await _capturePostHog('search_add_source_bridged', props);
+  }
+
+  /// Tap sur « élargir à toutes les sources » (`includeUnfollowed`).
+  Future<void> trackSearchBroadened({required int resultCount}) async {
+    final props = {'result_count': resultCount};
+    await _logEvent('search_broadened', props);
+    await _capturePostHog('search_broadened', props);
   }
 
   // ──────────────────────────────────────────────────────────────
@@ -739,14 +871,6 @@ class AnalyticsService {
     await _capturePostHog('modal_notif_shown', props);
   }
 
-  Future<void> trackModalNotifPresetChanged({
-    required NotifPreset preset,
-  }) async {
-    final props = <String, dynamic>{'preset': preset.wire};
-    await _logEvent('modal_notif_preset_changed', props);
-    await _capturePostHog('modal_notif_preset_changed', props);
-  }
-
   Future<void> trackModalNotifTimeChanged({
     required NotifTimeSlot timeSlot,
   }) async {
@@ -826,18 +950,6 @@ class AnalyticsService {
     };
     await _logEvent('notif_opened', props);
     await _capturePostHog('notif_opened', props);
-  }
-
-  Future<void> trackNotifSettingsChanged({
-    required NotifPreset fromPreset,
-    required NotifPreset toPreset,
-  }) async {
-    final props = <String, dynamic>{
-      'from_preset': fromPreset.wire,
-      'to_preset': toPreset.wire,
-    };
-    await _logEvent('notif_settings_changed', props);
-    await _capturePostHog('notif_settings_changed', props);
   }
 
   Future<void> trackNotifDisabled({required String source}) async {

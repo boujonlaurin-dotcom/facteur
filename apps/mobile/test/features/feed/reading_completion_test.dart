@@ -62,16 +62,12 @@ void main() {
       },
     );
 
-    test('« Parcouru » a disparu — deux états seulement', () {
-      expect(
-        content(readingProgress: 5, status: ContentStatus.seen).readingLabel,
-        'Lu',
-      );
-    });
-
     test('un article jamais ouvert n\'a aucun libellé', () {
       expect(content().readingLabel, isNull);
     });
+
+    // Spectre complet (opened / partiallyRead / completed), opacité et fusion
+    // session : cf. read_state_spectrum_test.dart (sans dépendance écran).
   });
 
   group('Content.fromJson', () {

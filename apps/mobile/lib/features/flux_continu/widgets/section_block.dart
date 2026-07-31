@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 
+import '../../../config/theme.dart';
+import '../../feed/widgets/feed_carousel.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
+import 'alerts_section_card.dart';
 import 'essentiel_hi_fi_card.dart';
 import 'etoffer_theme_footer.dart';
 import 'flux_continu_article_card.dart';
@@ -70,6 +74,12 @@ class SectionBlock extends StatelessWidget {
   /// anti double-tap localement).
   final Future<void> Function()? onPromoteSuggestion;
 
+  /// Rend le libellé d'attente (« Ta tournée se prépare… ») en tête des cartes
+  /// squelette de cette section. Réservé à la **première** coquille non résolue
+  /// de la page (câblé par `flux_continu_screen`) : un seul indicateur pour
+  /// toute la Tournée, comme le veut le minimalisme du design system.
+  final bool showPreparingLabel;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -90,6 +100,7 @@ class SectionBlock extends StatelessWidget {
     this.onSeeAll,
     this.onTapSuggestionInfo,
     this.onPromoteSuggestion,
+    this.showPreparingLabel = false,
   });
 
   @override
@@ -115,11 +126,33 @@ class SectionBlock extends StatelessWidget {
         ),
       );
     }
+    // Le rappel d'alertes porte son propre titre et ses propres lignes : pas de
+    // banner ni de cartes d'article, donc pas de shell de section non plus.
+    if (section is AlertsSection) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AlertsSectionCard(section: section),
+          const SizedBox(height: 16),
+        ],
+      );
+    }
+    // Carte carrousel du jour (Story 32.1) — scroller horizontal auto-porté
+    // (PageView + dots), sans banner ni shell de section, comme AlertsSection.
+    // `onTapArticle` du SectionBlock accepte un Object ; on lui passe le Content.
+    if (section is CarouselSection) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FeedCarousel(
+            data: section.data,
+            onArticleTap: (content) => onTapArticle(content),
+          ),
+          const SizedBox(height: 16),
+        ],
+      );
+    }
     final cards = _buildCards();
-    final hiddenCount = (section.totalCount - section.coreVisibleCount).clamp(
-      0,
-      999,
-    );
     // Section source sans article récent (≤72h) mais avec des cartes plus
     // anciennes (repli 30 j backend) → on signale « Pas d'article récent. » dans
     // la blurb du banner. L'empty-state (aucun article même vieux) reste géré
@@ -152,7 +185,6 @@ class SectionBlock extends StatelessWidget {
           onTapFavorite: onTapFavorite,
           onTapSettings: onTapSettings,
           onTap: onSeeAll,
-          hiddenCount: hiddenCount,
           // Story 22.3 — badge « Choisie pour vous » sur les sections suggérées.
           suggested: isSuggested,
           onTapInfo: onTapSuggestionInfo,
@@ -205,11 +237,16 @@ class SectionBlock extends StatelessWidget {
   }
 
   List<Widget> _buildCards() {
-    final isEssentiel = section.kind == SectionKind.essentiel;
     switch (section) {
       case EssentielSection():
         // build() short-circuits to EssentielHiFiCard before reaching
         // _buildCards, so this branch is unreachable in practice.
+        return const [];
+      case AlertsSection():
+        // Idem : build() court-circuite sur AlertsSectionCard.
+        return const [];
+      case CarouselSection():
+        // Idem : build() court-circuite sur FeedCarousel avant _buildCards.
         return const [];
       case DigestTopicSection(:final topics, :final coreVisibleCount):
         final visible = topics.take(coreVisibleCount).toList();
@@ -233,11 +270,10 @@ class SectionBlock extends StatelessWidget {
             else
               FluxContinuArticleCard(
                 article: pickTopicLead(visible[i]),
-                isEssentiel: isEssentiel,
                 allowImageOnTop: imageAllowed.contains(
                   pickTopicLead(visible[i]).contentId,
                 ),
-                pressReviewCount: visible[i].perspectiveCount,
+                sourceCount: visible[i].sourceCount,
                 perspectiveSources: visible[i].perspectiveSources,
                 divergenceLevel: visible[i].divergenceLevel,
                 onTap: () => onTapArticle(pickTopicLead(visible[i])),
@@ -278,7 +314,13 @@ class SectionBlock extends StatelessWidget {
         // ci-dessous, réservés aux sections **résolues** vides
         // (`isPlaceholder == false && items.isEmpty`).
         if (isPlaceholder) {
-          return sectionSkeletonCards(coreVisibleCount);
+          return sectionSkeletonCards(
+            coreVisibleCount,
+            // Le libellé vit **dans** la 1ʳᵉ carte squelette : il ne consomme
+            // aucune hauteur propre, donc l'invariant de géométrie stable
+            // (remplacement sur place, zéro décalage) tient toujours.
+            firstCardLabel: showPreparingLabel ? kSectionPreparingLabel : null,
+          );
         }
         // Story 23.4 — la section veille reste visible même vide : on rend un
         // placeholder + CTA réglages au lieu de cartes.
@@ -448,10 +490,18 @@ class SectionBlock extends StatelessWidget {
     // (padded par défaut) → c'est cette hauteur fantôme, pas la marge, qui
     // éloignait « Tout lire › » de sa section. On la collapse au contenu réel.
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+    // Typo du DS (DM Sans via `labelMedium`) : le `TextStyle` brut précédent
+    // n'avait pas de `fontFamily` → rendu dans la police système, hors DS. La
+    // couleur reste portée par `foregroundColor` (texte + chevron).
+    textStyle: FacteurTypography.labelMedium(const Color(0xFF5D5B5A)),
   );
 
   Widget _seeAllFooter() {
+    // Volume promis par la page dédiée, borné [3, 9] : le compte vient du
+    // snapshot client (`totalCount`, déjà en mémoire), jamais d'une requête —
+    // ce CTA ne doit rien coûter au chargement. Le « + » assume la borne haute
+    // (la page dédiée pagine au-delà).
+    final count = section.totalCount.clamp(3, 9);
     return Container(
       // Marges resserrées : le CTA colle au bas de la dernière carte (qui porte
       // déjà 12px de padding bas). `kSeeAllFooterHeight` reflète la hauteur
@@ -461,12 +511,12 @@ class SectionBlock extends StatelessWidget {
       child: TextButton(
         onPressed: onSeeAll,
         style: _seeAllFooterStyle,
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Tout lire'),
-            SizedBox(width: 2),
-            Icon(Icons.chevron_right_rounded, size: 16),
+            Text('Tout lire ($count+)'),
+            const SizedBox(width: 2),
+            const Icon(Icons.chevron_right_rounded, size: 16),
           ],
         ),
       ),
@@ -622,28 +672,70 @@ class _FavoriteEmptyState extends StatelessWidget {
 /// les sections suivantes. Calquée visuellement sur `ExploreDiscoverySkeleton`.
 /// Publique pour être réutilisée par le squelette cold-start
 /// (`_FluxContinuSkeleton`) → hauteur stable de bout en bout.
+///
+/// Le bloc respire (shimmer) : sans animation, les coquilles grises se lisent
+/// comme un état vide définitif alors que le fan-out des sections thème/source
+/// dure plusieurs secondes sous l'unique worker uvicorn.
 class SectionSkeletonCard extends StatelessWidget {
-  const SectionSkeletonCard({super.key});
+  /// Libellé d'attente rendu **dans** la carte (cf. [kSectionPreparingLabel]).
+  /// `null` = carte nue. Porté par la carte plutôt que par un widget au-dessus
+  /// pour ne consommer aucune hauteur propre (géométrie stable).
+  final String? label;
+
+  const SectionSkeletonCard({super.key, this.label});
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    // Mêmes teintes que `_MetaShimmer` (rituel matinal) — le sweep est porté par
+    // le **fond** seul : le libellé est posé par-dessus, hors du ShaderMask, qui
+    // sinon écraserait sa couleur.
+    final base = colors.textTertiary.withValues(alpha: 0.10);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Container(
+      child: SizedBox(
         height: 134,
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.03),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Shimmer.fromColors(
+              baseColor: base,
+              highlightColor: colors.textTertiary.withValues(alpha: 0.04),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: base,
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: Colors.black.withValues(alpha: 0.04)),
+                ),
+              ),
+            ),
+            if (label != null)
+              Center(
+                child: Text(
+                  label!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                      ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
+/// Libellé d'attente unique de la Tournée, rendu dans la 1ʳᵉ carte squelette
+/// non résolue (cf. `SectionBlock.showPreparingLabel`).
+const String kSectionPreparingLabel = 'Ta tournée se prépare…';
+
 /// Issue #1 — [count] cartes squelette réservant la hauteur finale d'une
 /// section. Partagé par le placeholder de [SectionBlock] et le cold-skeleton
 /// (`_FluxContinuSkeleton`) pour garantir la même géométrie de bout en bout.
-List<Widget> sectionSkeletonCards(int count) => [
-  for (var i = 0; i < count; i++) const SectionSkeletonCard(),
+/// [firstCardLabel] pose le libellé d'attente sur la première carte seulement.
+List<Widget> sectionSkeletonCards(int count, {String? firstCardLabel}) => [
+  for (var i = 0; i < count; i++)
+    SectionSkeletonCard(label: i == 0 ? firstCardLabel : null),
 ];

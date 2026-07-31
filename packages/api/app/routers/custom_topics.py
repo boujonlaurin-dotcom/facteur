@@ -26,6 +26,17 @@ from app.models.content import Content, UserContentStatus
 from app.models.enums import ContentStatus
 from app.models.user import UserSubtopic
 from app.models.user_topic_profile import UserTopicProfile
+from app.schemas.alert import (
+    AlertToggleResponse,
+    TopicFrequencyResponse,
+    UpdateAlertRequest,
+)
+from app.services.alert_cadence import (
+    ALERT_CAP,
+    cadence_per_week,
+    cadence_phrase,
+    is_noisy,
+)
 from app.services.feed_cache import FEED_CACHE
 from app.services.ml.classification_service import (
     SLUG_TO_LABEL,
@@ -33,6 +44,11 @@ from app.services.ml.classification_service import (
     VALID_TOPIC_SLUGS,
 )
 from app.services.ml.topic_enrichment_service import get_topic_enrichment_service
+from app.services.source_alert_producer import (
+    FOLLOWED_SOURCE_STATES,
+    count_active_alerts,
+)
+from app.services.topic_alert_producer import topic_frequency_stats
 from app.services.user_service import UserService
 
 logger = structlog.get_logger()
@@ -512,6 +528,85 @@ async def update_topic(
     )
 
     return _topic_to_response(topic)
+
+
+async def _load_owned_topic(
+    db: AsyncSession, topic_id: UUID, user_uuid: UUID
+) -> UserTopicProfile:
+    topic = await db.scalar(
+        select(UserTopicProfile).where(
+            UserTopicProfile.id == topic_id,
+            UserTopicProfile.user_id == user_uuid,
+        )
+    )
+    if not topic:
+        raise HTTPException(status_code=404, detail="Topic non trouvé")
+    return topic
+
+
+@router.get("/{topic_id}/frequency", response_model=TopicFrequencyResponse)
+async def get_topic_frequency(
+    topic_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+) -> TopicFrequencyResponse:
+    """Devis de bruit du sujet, lu à l'ouverture de la fiche.
+
+    Endpoint dédié plutôt qu'un champ de la liste : la cadence coûte une
+    agrégation par sujet, et la liste en affiche des dizaines.
+    """
+    topic = await _load_owned_topic(db, topic_id, UUID(current_user_id))
+    now = datetime.now(UTC)
+    articles_30d, oldest_match_at = await topic_frequency_stats(
+        db, profile=topic, now=now
+    )
+    return TopicFrequencyResponse(
+        articles_30d=articles_30d,
+        cadence_per_week=cadence_per_week(articles_30d, oldest_match_at, now),
+        cadence_phrase=cadence_phrase(articles_30d, oldest_match_at, now),
+        noisy=is_noisy(articles_30d, oldest_match_at, now),
+    )
+
+
+@router.put("/{topic_id}/alert", response_model=AlertToggleResponse)
+async def update_topic_alert(
+    topic_id: UUID,
+    data: UpdateAlertRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+) -> AlertToggleResponse:
+    """Pose ou retire la cloche « alerte » sur un sujet suivi.
+
+    Miroir exact du toggle source : mêmes codes d'erreur, même plafond — qui
+    est **partagé** entre les deux familles (5 cloches en tout, pas 5 par
+    type). Désactiver reste toujours possible, sans vérification.
+    """
+    user_uuid = UUID(current_user_id)
+    topic = await _load_owned_topic(db, topic_id, user_uuid)
+    if topic.state not in FOLLOWED_SOURCE_STATES:
+        raise HTTPException(status_code=409, detail={"error": "not_followed"})
+
+    if (
+        data.enabled
+        and topic.notify is not True
+        and await count_active_alerts(db, user_id=user_uuid) >= ALERT_CAP
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "alert_cap_reached", "cap": ALERT_CAP},
+        )
+
+    topic.notify = data.enabled
+    topic.notify_filtered = data.filtered if data.enabled else None
+    await db.commit()
+    FEED_CACHE.invalidate(user_uuid)
+
+    return AlertToggleResponse(
+        enabled=data.enabled,
+        filtered=data.enabled and data.filtered,
+        active_count=await count_active_alerts(db, user_id=user_uuid),
+        cap=ALERT_CAP,
+    )
 
 
 @router.delete("/{topic_id}", status_code=200)

@@ -294,23 +294,23 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
   }
 
   /// Re-push the Essentiel side of the widget on explicit demand — the home
-  /// screen widget's refresh button.
+  /// screen widget's refresh button. Depuis la **mémoire seule**,
+  /// volontairement sans réseau.
   ///
-  /// The Flux-side `refresh()` never rebuilds the Essentiel cache
-  /// (`articles_json`), so a degenerate/empty Essentiel payload can only be
-  /// repaired here. When the digest isn't in memory yet — precisely the state
-  /// that leaves the widget's Essentiel side empty (`articles_json = []`) — we
-  /// load it first so the refresh actually rebuilds it instead of re-pushing
-  /// `null`. Silent on failure: the Flux side of the refresh still proceeds.
+  /// Ce chemin appelait `_loadBothDigests()` quand le cache était vide, soit
+  /// jusqu'à 5 retries × 45 s de timeout (~80 s de chaîne réseau) déclenchés
+  /// par un simple tap sur le bouton refresh du widget — et, en passant,
+  /// `sereinToggleProvider.initFromApi()` pouvait basculer le toggle Serein
+  /// sous l'utilisateur, ce que `feedProvider` et `digestProvider` watchent
+  /// (rebuild complet du feed). Cf. docs/bugs/bug-widget-fiabilite.md (C4).
+  ///
+  /// Si rien n'est en mémoire, on ne fait rien : le Flux, lui, est rafraîchi
+  /// par `FeedNotifier.refreshForWidget()`, et l'Essentiel sera re-poussé au
+  /// prochain chargement normal.
   Future<void> syncWidgetFromRefresh() async {
     try {
-      if (_normalDigest == null) {
-        // _loadBothDigests() already re-pushes the widget on success, so no
-        // extra _syncWidget() is needed on the cold-cache path.
-        await _loadBothDigests();
-      } else {
-        _syncWidget();
-      }
+      if (_normalDigest == null) return;
+      _syncWidget();
     } catch (e) {
       // ignore: avoid_print
       print('DigestNotifier: syncWidgetFromRefresh failed: $e');

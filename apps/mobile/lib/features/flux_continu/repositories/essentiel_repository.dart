@@ -3,14 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/providers.dart';
+import '../../feed/models/content_model.dart';
 import '../models/flux_continu_models.dart';
 
 /// Résultat de `GET /api/essentiel` : les articles transversaux + le delta
-/// « N nouveaux depuis ce matin » (`new_since_this_morning`, borné côté
-/// backend). `newSinceMorning == 0` ⇒ pas de pastille sur le héros.
+/// « N nouveaux articles » (`new_since_this_morning`, borné côté backend) +
+/// le carrousel semi-éditorialisé du jour (Story 32.1, `carousel`, `null` hors
+/// édition du jour ou si aucun type éligible). `newSinceMorning == 0` ⇒ pas de
+/// pastille sur le héros.
 typedef EssentielFetchResult = ({
   List<EssentielArticle> articles,
   int newSinceMorning,
+  FeedCarouselData? carousel,
 });
 
 /// `GET /api/essentiel` — Story 9.1/9.2.
@@ -59,9 +63,15 @@ class EssentielRepository {
           .whereType<Map<String, dynamic>>()
           .map(EssentielArticle.fromJson)
           .toList(growable: false);
+      // Story 32.1 — carrousel du jour (additif, peut être absent/null).
+      final rawCarousel = data['carousel'];
+      final carousel = rawCarousel is Map<String, dynamic>
+          ? FeedCarouselData.fromJson(rawCarousel)
+          : null;
       return (
         articles: articles,
         newSinceMorning: (data['new_since_this_morning'] as int?) ?? 0,
+        carousel: carousel,
       );
     } on DioException catch (e) {
       // ignore: avoid_print

@@ -6,6 +6,7 @@ Consolide : CoreLayer (theme), ArticleTopicLayer, BehavioralLayer,
 
 from app.models.content import Content
 from app.models.enums import ContentType, InterestState
+from app.services.ml.classification_service import SLUG_TO_LABEL
 from app.services.recommendation.helpers import (
     compute_coverage_score,
     iter_entity_names,
@@ -35,67 +36,44 @@ THEME_LABELS = {
     "culture_ideas": "Culture & Idées",
 }
 
-# Mapping 50 sous-thèmes slugs -> Français
-SUBTOPIC_LABELS = {
-    "ai": "IA",
-    "llm": "LLM",
-    "crypto": "Crypto",
-    "web3": "Web3",
-    "space": "Spatial",
-    "biotech": "Biotech",
-    "quantum": "Quantique",
-    "cybersecurity": "Cybersécurité",
-    "robotics": "Robotique",
-    "gaming": "Gaming",
-    "cleantech": "Cleantech",
-    "data-privacy": "Données",
-    "social-justice": "Justice sociale",
-    "feminism": "Féminisme",
-    "lgbtq": "LGBTQ+",
-    "immigration": "Immigration",
-    "health": "Santé",
-    "education": "Éducation",
-    "urbanism": "Urbanisme",
-    "housing": "Logement",
-    "work-reform": "Travail",
-    "justice-system": "Justice",
-    "climate": "Climat",
-    "biodiversity": "Biodiversité",
-    "energy-transition": "Transition énergétique",
-    "pollution": "Pollution",
-    "circular-economy": "Économie circulaire",
-    "agriculture": "Agriculture",
-    "oceans": "Océans",
-    "forests": "Forêts",
-    "macro": "Macro-économie",
-    "finance": "Finance",
-    "startups": "Startups",
-    "venture-capital": "VC",
-    "labor-market": "Emploi",
-    "inflation": "Inflation",
-    "trade": "Commerce",
-    "taxation": "Fiscalité",
-    "elections": "Élections",
-    "institutions": "Institutions",
-    "local-politics": "Politique locale",
-    "activism": "Activisme",
-    "democracy": "Démocratie",
-    "philosophy": "Philosophie",
-    "art": "Art",
-    "cinema": "Cinéma",
-    "media-critics": "Critique des médias",
-    "fundamental-research": "Recherche",
-    "applied-science": "Sciences appliquées",
-    "geopolitics": "Géopolitique",
-}
-
 
 def _theme_label(slug: str) -> str:
     return THEME_LABELS.get(slug.lower().strip(), slug.capitalize())
 
 
+# Forme courte pour les 4 slugs dont le libellé canonique est trop long pour
+# une ligne de raison (« Sujet : … », affichée sous la carte). `SLUG_TO_LABEL`
+# est écrit pour les prompts LLM et les sélecteurs de sujets, où la verbosité
+# aide ; ici elle coûte. Tout le reste vient de la table canonique, et
+# l'invariant de test impose que ces clés soient des slugs valides — c'est une
+# liste d'exceptions assumée, pas une seconde taxonomie.
+_SHORT_SUBTOPIC_LABELS = {
+    "ai": "IA",
+    "feminism": "Féminisme",
+    "gaming": "Gaming",
+    "space": "Spatial",
+}
+
+
 def _subtopic_label(slug: str) -> str:
-    return SUBTOPIC_LABELS.get(slug.lower().strip(), slug.capitalize())
+    """Libellé français d'un slug de la taxonomie.
+
+    S'appuie sur `SLUG_TO_LABEL`, la table canonique déjà partagée par
+    `topic_selector`, `custom_topics`, `topic_enrichment` et `user_service`, et
+    qui couvre exactement `VALID_TOPIC_SLUGS` (invariant testé).
+
+    Il y avait ici un `SUBTOPIC_LABELS` local, copie dérivée d'une ancienne
+    taxonomie : 50 entrées dont **32 slugs fantômes** (`llm`, `crypto`,
+    `energy-transition`…) et **33 slugs valides sans libellé**. Le `.capitalize()`
+    de repli tombait donc sur les slugs les plus suivis et rendait des raisons
+    anglaises dans une UI française : `energy` (83 abonnés) → « Energy »,
+    `politics` (75) → « Politics », `usa` (70) → « Usa », `environment` (63),
+    `inequality` (54), plus `justice`, `europe`, `tech`.
+    """
+    key = slug.lower().strip()
+    if key in _SHORT_SUBTOPIC_LABELS:
+        return _SHORT_SUBTOPIC_LABELS[key]
+    return SLUG_TO_LABEL.get(key, slug.capitalize())
 
 
 def _get_effective_theme(content: Content, user_interests: set[str]) -> str | None:
@@ -194,14 +172,22 @@ class PertinencePillar(BasePillar):
     ) -> tuple[float, list[PillarContribution]]:
         """Bonus log-calibré pour les clusters multi-sources.
 
-        `cluster_source_counts` est rempli en mode thématique personnalisé ;
-        sinon (cold start, autres surfaces) on n'a aucun coût ni effet.
-        """
-        cluster_id = getattr(content, "cluster_id", None)
-        if cluster_id is None or not context.cluster_source_counts:
-            return 0.0, []
+        Deux sources d'alimentation :
+        - Chemin `topics` (topic_selector) : `context.coverage_source_count`
+          porte le count du cluster courant (contexte construit par cluster).
+          Aucune dépendance à `content.cluster_id` (NULL à ~99 % en base) ni
+          mutation d'attribut ORM.
+        - Chemin dict (`cluster_source_counts` keyé par `content.cluster_id`) :
+          conservé pour les surfaces où `content.cluster_id` est renseigné.
 
-        source_count = context.cluster_source_counts.get(cluster_id, 1)
+        Sinon (cold start, autres surfaces) : aucun coût ni effet.
+        """
+        source_count = context.coverage_source_count
+        if source_count is None:
+            cluster_id = getattr(content, "cluster_id", None)
+            if cluster_id is None or not context.cluster_source_counts:
+                return 0.0, []
+            source_count = context.cluster_source_counts.get(cluster_id, 1)
         bonus = compute_coverage_score(source_count)
         if bonus <= 0:
             return 0.0, []
@@ -435,6 +421,18 @@ class PertinencePillar(BasePillar):
         topics Epic 11 (`is_veille` absent) gardent le chemin plat `+25`
         inchangé. On ne retient qu'un seul angle (le meilleur) — pas
         d'empilement non borné.
+
+        Trois façons de matcher un profil, dans l'ordre : `slug_parent` dans
+        `content.topics`, mot-clé au mot près dans titre/description, puis
+        `canonical_name` parmi les entités nommées de l'article
+        (`ENTITY_MATCH_MULTIPLIER`). Les branches sont gardées par
+        `if not matched`, donc un profil qui matche par slug **et** par entité
+        n'est compté qu'une fois, et seul `best_score` survit entre profils.
+
+        ⚠️ À surveiller à la jauge : `_score_entities` (affinité apprise, capée
+        à `ENTITY_AFFINITY_MAX_BONUS`) et la branche entité ci-dessous sont deux
+        signaux **distincts** sur la même entité, qui s'empilent dans un pilier
+        capé à `MAX_PERTINENCE_RAW`.
         """
         if not context.user_custom_topics:
             return 0.0, []
@@ -445,6 +443,11 @@ class PertinencePillar(BasePillar):
 
         title_lower = (content.title or "").lower()
         desc_lower = (content.description or "").lower()
+
+        # Clés canoniques des entités de l'article, parsées au plus une fois
+        # pour tous les profils (hors boucle) et seulement si un abonnement
+        # entité est rencontré.
+        entity_keys: set[str] | None = None
 
         best_score = 0.0
         best_topic_name = ""
@@ -466,6 +469,7 @@ class PertinencePillar(BasePillar):
                 continue
 
             matched = False
+            is_entity_match = False
             if tp.slug_parent in content_topics:
                 matched = True
             if not matched and tp.keywords:
@@ -475,11 +479,30 @@ class PertinencePillar(BasePillar):
                         matched = True
                         break
 
+            # 3e condition — abonnement entité, en miroir de
+            # `layers/user_custom_topics`. Le pilier ne lisait ni
+            # `content.entities` ni `canonical_name` : le pont entité n'existait
+            # que dans une couche de recall legacy qui ne s'applique pas aux
+            # surfaces scorées par piliers (digest, Essentiel).
+            if not matched and tp.entity_type and tp.canonical_name:
+                if entity_keys is None:
+                    entity_keys = {
+                        key
+                        for _display, key in iter_entity_names(
+                            getattr(content, "entities", None)
+                        )
+                    }
+                if tp.canonical_name.strip().lower() in entity_keys:
+                    matched = True
+                    is_entity_match = True
+
             if matched:
                 multiplier = tp.priority_multiplier
                 if tp_state == InterestState.FAVORITE:
                     multiplier = max(multiplier, _FAVORITE_WEIGHT_FLOOR)
                 topic_score = ScoringWeights.CUSTOM_TOPIC_BASE_BONUS * multiplier
+                if is_entity_match:
+                    topic_score *= ScoringWeights.ENTITY_MATCH_MULTIPLIER
                 if topic_score > best_score:
                     best_score = topic_score
                     best_topic_name = tp.topic_name

@@ -17,6 +17,10 @@ class NudgeIds {
   static const feedBadgeLongpress = 'feed_badge_longpress';
   static const feedPreviewLongpress = 'feed_preview_longpress';
   static const personalisationCta = 'personalisation_cta';
+  // Bandeau « Ajoute le widget » en tête de Flâner. Distinct de
+  // [widgetPinAndroid], qui décrit la feuille du bas côté Essentiel : surface,
+  // placement et fréquence diffèrent, seule l'intention est voisine.
+  static const widgetCtaFeedBanner = 'widget_cta_feed_banner';
   // ID kept after the slider→picker migration so users who already dismissed
   // the explainer don't see it pop again.
   static const prioritySliderExplainer = 'priority_slider_explainer';
@@ -34,4 +38,8 @@ class NudgeIds {
 
   // Story web.1 — Modal "Ajouter à l'écran d'accueil" sur iOS Safari.
   static const iosAddToHome = 'ios_add_to_home';
+
+  // Story 13.3 — auto-déploiement (une seule fois) de la modale d'invitation
+  // « un café en visio ». Ensuite, seule l'entrée inline subsiste.
+  static const feedbackCallAutoModal = 'feedback_call_auto_modal';
 }

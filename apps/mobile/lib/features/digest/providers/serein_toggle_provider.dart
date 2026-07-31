@@ -100,11 +100,14 @@ class SereinToggleNotifier extends StateNotifier<SereinToggleState> {
   }
 
   /// Persist the onboarding "serein" choice locally so it survives the very
-  /// first cold start (before /digest/both is ever hit). The server already
-  /// persisted it via save_onboarding, so this only writes the local mirror and
-  /// does not mark the reconciliation done — a later server sync still applies.
+  /// first cold start (before /digest/both is ever hit). This is an explicit
+  /// user choice, so it also freezes any later server reconciliation (like
+  /// [toggle]): the first /digest/both after onboarding must never overwrite it
+  /// with a preference the server may not have committed yet (the
+  /// save_onboarding purge→reinsert window, or a delayed read).
   void commitFromOnboarding(bool enabled) {
     state = state.copyWith(enabled: enabled, isLoading: false);
+    _serverReconciled = true;
     _persistLocal(enabled);
   }
 

@@ -26,6 +26,15 @@ const double kSectionEdgeMargin = 160.0;
 /// rewind (more sections stay snapped on the way up); lower ⇒ easier to escape.
 const double kFastUpwardVelocity = 1400.0;
 
+/// px/s. Seuil « geste rapide » **en descente**. En dessous, un scroll qui
+/// atterrit dans l'intérieur d'une section plus haute que l'écran reste en
+/// lecture libre (on suit le doigt). Au-dessus, l'intention lue est « passer à
+/// la suite » : le snap reprend la main et vise le **haut de la section
+/// suivante**, en ignorant le point de repos intermédiaire (bas de la carte
+/// courante) — sinon une carte longue exige deux gestes. Plus haut ⇒ plus
+/// difficile de sauter une carte longue ; plus bas ⇒ snap plus mordant.
+const double kFastDownwardVelocity = 900.0;
+
 // ── Réglages du ressort de snap (le « grain » du switch vers une section) ──
 // Le snap est un [ScrollSpringSimulation] : on tune ces 3 leviers à l'œil pour
 // le rendre à la fois smooth ET net. Repères :
@@ -66,7 +75,9 @@ typedef SectionFrame = ({double top, double bottom});
 ///
 /// The feel: the reader is **free** while a section fully fills the viewport
 /// (its top is above the sticky header *and* its bottom is below the footer —
-/// no edge shows). Once an edge crosses into the viewport the scroll **snaps**,
+/// no edge shows) **and** their gesture is slow: a downward fling past
+/// [kFastDownwardVelocity] reads as "passer à la suite" and snaps to the next
+/// section top. Once an edge crosses into the viewport the scroll **snaps**,
 /// with a hard **one-step cap**: whatever the fling's strength, the commit
 /// target is always the frame **adjacent to the finger-lift position**
 /// ([currentPixels]) in the travel direction — never bracketed around where the
@@ -119,12 +130,20 @@ double? resolveSnapTarget({
   final freeUpwardEscape = dir < 0 && velocity.abs() >= kFastUpwardVelocity;
   if (freeUpwardEscape) return null;
 
+  // DOWN-only "passer à la suite": a vigorous downward fling reads as an intent
+  // to leave the current section, even a tall one. It disables the free-reading
+  // gate below and targets section **tops** only — so a card taller than the
+  // screen is cleared in a single gesture instead of two. See
+  // [kFastDownwardVelocity].
+  final isFastDown = dir > 0 && velocity.abs() >= kFastDownwardVelocity;
+
   // Free reading: the landing rests inside a section that fully fills the
   // viewport (a tall section's open interior). No edge shows ⇒ leave it free —
-  // but only on descent/idle (`dir >= 0`). On a slow upward scroll we fall
-  // through to the snap logic so the section above re-frames under the header
-  // instead of drifting (the fix for the "too permissive" rewind).
-  if (dir >= 0) {
+  // but only on a *slow* descent/idle (`dir >= 0 && !isFastDown`). On a slow
+  // upward scroll we fall through to the snap logic so the section above
+  // re-frames under the header instead of drifting (the fix for the "too
+  // permissive" rewind).
+  if (dir >= 0 && !isFastDown) {
     for (final f in frames) {
       if (f.bottom > f.top + kSnapEpsilon &&
           naturalLanding > f.top + kSnapEpsilon &&
@@ -137,6 +156,18 @@ double? resolveSnapTarget({
   // Every framing offset is a snap point: each section top, plus the bottom of
   // each tall section (rest on its last cards). Sorted ascending.
   final points = snapPointsOf(frames);
+
+  // Geste rapide en descente : viser le **haut de la section suivante**, en
+  // ignorant le point de repos intermédiaire (bas de la section courante) —
+  // sinon une carte plus haute que l'écran exige deux gestes. Placé avant le
+  // deadband : un fling ≥ [kFastDownwardVelocity] dépasse de toute façon la
+  // marge, et la règle reste lisible sans en dépendre. Toujours **un cran**,
+  // mesuré en sections au lieu de frames.
+  if (isFastDown) {
+    final tops = [for (final f in frames) f.top]..sort();
+    final next = _firstStrictlyAfter(tops, currentPixels);
+    return _commit(next ?? _nearest(points, currentPixels), currentPixels);
+  }
 
   // Deadband (« marge »): how far the fling's inertia carries past the lift
   // point. A small overshoot — or no direction at all — re-frames the section

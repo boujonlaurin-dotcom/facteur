@@ -223,6 +223,55 @@ void main() {
       );
       expect(service.pendingRoute(), isNull);
     });
+
+    // Régression C4 : au cold start, le routeur consommait `pendingRoute()` et
+    // jetait `action.refresh`. `_onRefreshRequested` n'était jamais appelé →
+    // le bouton refresh du widget était un no-op littéral quand l'app était
+    // tuée. Cf. docs/bugs/bug-widget-fiabilite.md.
+    test('pendingAction carries the refresh flag through a cold start', () {
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+
+      service.seedPending(Uri.parse('io.supabase.facteur://feed?refresh=1'));
+
+      final action = service.pendingAction();
+      expect(action, isNotNull);
+      expect(action!.refresh, isTrue);
+      expect(DeepLinkService.navigableRouteFor(action), '/flaner');
+    });
+
+    test('pendingAction has refresh=false on a plain feed link', () {
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+
+      service.seedPending(Uri.parse('io.supabase.facteur://feed'));
+      expect(service.pendingAction()!.refresh, isFalse);
+    });
+
+    test('replayRefreshIfRequested fires the callback only when refresh=1',
+        () {
+      var calls = 0;
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+      service.bind(
+        router: GoRouter(routes: [
+          GoRoute(path: '/', builder: (_, __) => const SizedBox.shrink()),
+        ]),
+        onRefreshRequested: () => calls++,
+      );
+
+      service.replayRefreshIfRequested(
+        DeepLinkService.parse(Uri.parse('io.supabase.facteur://feed')),
+      );
+      expect(calls, 0);
+
+      service.replayRefreshIfRequested(
+        DeepLinkService.parse(
+          Uri.parse('io.supabase.facteur://feed?refresh=1'),
+        ),
+      );
+      expect(calls, 1);
+    });
   });
 
   // Regression: a widget article tap must open the reader by STACKING (push),

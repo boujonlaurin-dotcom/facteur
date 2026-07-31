@@ -22,6 +22,10 @@ from app.models.enums import InterestState
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.source import Source, UserSource
 from app.models.user import UserInterest
+from app.schemas.alert import (
+    SourceAlertToggleResponse,
+    UpdateSourceAlertRequest,
+)
 from app.schemas.content import ContentResponse
 from app.schemas.source import (
     CoverageResponse,
@@ -61,6 +65,11 @@ from app.services.search.smart_source_search import (
     SmartSourceSearchService,
     mark_search_abandoned,
 )
+from app.services.source_alert_producer import (
+    ALERT_CAP,
+    count_active_alerts,
+)
+from app.services.source_freshness import freshness_verdicts
 from app.services.source_recommendation_gate import (
     is_quality_catalog,
     passes_safety_gate,
@@ -275,6 +284,34 @@ def _source_matches_theme(slug: str):
         | (Source.secondary_themes.any(slug))
         | (Source.coverage_themes.any(slug))
     )
+
+
+# Borne du fetch élargi des surfaces poussées par thème : on récupère large
+# (au-delà de `limit`) pour pouvoir écarter les feeds morts et déclasser les
+# cadences lentes avant de couper. Large devant le nombre de sources par thème.
+_FRESHNESS_SCAN_LIMIT = 40
+
+
+async def _apply_freshness(
+    db: AsyncSession, sources: list[Source], limit: int
+) -> list[Source]:
+    """Filtre les feeds morts et déclasse les sources lentes, puis coupe à `limit`.
+
+    Ordre : sources fraîches d'abord, puis déclassées (cadence lente sans article
+    récent), chaque groupe conservant l'ordre alphabétique d'entrée. Les sources
+    exclues (feed considéré mort, cf. `source_freshness`) ne sont jamais renvoyées.
+    """
+    if not sources:
+        return []
+    verdicts = await freshness_verdicts(db, sources)
+    fresh: list[Source] = []
+    downgraded: list[Source] = []
+    for s in sources:
+        verdict = verdicts[s.id]
+        if verdict.excluded:
+            continue
+        (downgraded if verdict.downgraded else fresh).append(s)
+    return (fresh + downgraded)[:limit]
 
 
 def _source_to_response(
@@ -503,6 +540,11 @@ async def get_sources_by_theme(
     groups: list[ThemeSourceGroup] = []
     total = 0
 
+    # Fenêtre de fetch élargie : on récupère plus large que `limit` pour pouvoir
+    # écarter les feeds morts (0 article récent) et déclasser les cadences lentes
+    # via `source_freshness`, avant de couper à `limit`.
+    scan_limit = min(limit * 4, _FRESHNESS_SCAN_LIMIT)
+
     # Curées
     stmt_curated = (
         select(Source)
@@ -510,10 +552,10 @@ async def get_sources_by_theme(
         .where(Source.is_curated.is_(True))
         .where(_source_matches_theme(slug))
         .order_by(Source.name)
-        .limit(limit)
+        .limit(scan_limit)
     )
     result = await db.execute(stmt_curated)
-    curated_sources = result.scalars().all()
+    curated_sources = await _apply_freshness(db, result.scalars().all(), limit)
     curated_responses = [
         _source_to_response(s, trusted_ids=trusted_ids) for s in curated_sources
     ]
@@ -531,10 +573,12 @@ async def get_sources_by_theme(
             .where(Source.is_curated.is_(False))
             .where(_source_matches_theme(slug))
             .order_by(Source.name)
-            .limit(remaining)
+            .limit(scan_limit)
         )
         result = await db.execute(stmt_candidates)
-        candidate_sources = result.scalars().all()
+        candidate_sources = await _apply_freshness(
+            db, result.scalars().all(), remaining
+        )
         candidate_responses = [
             _source_to_response(s, trusted_ids=trusted_ids) for s in candidate_sources
         ]
@@ -637,10 +681,13 @@ async def suggest_sources_for_theme(
     pepite_sources = await pepite_service.get_theme_pepite_sources(
         slug, exclude_ids=trusted_ids
     )
+    pepite_verdicts = await freshness_verdicts(db, pepite_sources)
     for s in pepite_sources:
         if len(suggestions) >= cap:
             break
         if not passes_safety_gate(s):
+            continue
+        if pepite_verdicts[s.id].excluded:
             continue
         suggestions.append(
             ThemeSuggestionItem(
@@ -661,12 +708,16 @@ async def suggest_sources_for_theme(
             .limit(_QUALITY_CATALOG_SCAN_LIMIT)
         )
         result = await db.execute(stmt_catalog)
-        for s in result.scalars().all():
+        catalog_sources = result.scalars().all()
+        catalog_verdicts = await freshness_verdicts(db, catalog_sources)
+        for s in catalog_sources:
             if len(suggestions) >= cap:
                 break
             if s.id in trusted_ids or s.id in seen_ids:
                 continue
             if not is_quality_catalog(s):
+                continue
+            if catalog_verdicts[s.id].excluded:
                 continue
             suggestions.append(
                 ThemeSuggestionItem(
@@ -1113,6 +1164,66 @@ async def update_source_subscription(
     FEED_CACHE.invalidate(UUID(user_id))
     SOURCES_CACHE.invalidate(UUID(user_id))
     return result
+
+
+@router.put("/{source_id}/alert", response_model=SourceAlertToggleResponse)
+async def update_source_alert(
+    source_id: UUID,
+    data: UpdateSourceAlertRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> SourceAlertToggleResponse:
+    """Pose ou retire la cloche « alerte » sur une source suivie.
+
+    Alertes v2 : plus de gate de rareté — n'importe quelle source suivie est
+    éligible, le bruit se règle par `filtered` (1 alerte/jour, la mieux scorée)
+    et se prévient par le devis de cadence affiché côté client. Ne restent que
+    les refus structurels : source inconnue, source non suivie, plafond atteint.
+    """
+    uid = UUID(user_id)
+    source_exists = (
+        await db.execute(select(Source.id).where(Source.id == source_id))
+    ).first()
+    if source_exists is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Source not found"
+        )
+
+    user_source = (
+        await db.execute(
+            select(UserSource).where(
+                UserSource.user_id == uid,
+                UserSource.source_id == source_id,
+                UserSource.state.in_(FOLLOWED_SOURCE_STATES),
+            )
+        )
+    ).scalar_one_or_none()
+    if user_source is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "not_followed"},
+        )
+
+    if data.enabled and user_source.notify is not True:
+        active_count = await count_active_alerts(db, user_id=uid)
+        if active_count >= ALERT_CAP:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"error": "alert_cap_reached", "cap": ALERT_CAP},
+            )
+
+    user_source.notify = data.enabled
+    user_source.notify_filtered = data.filtered if data.enabled else None
+    await db.commit()
+    FEED_CACHE.invalidate(uid)
+    SOURCES_CACHE.invalidate(uid)
+
+    return SourceAlertToggleResponse(
+        enabled=data.enabled,
+        filtered=data.enabled and data.filtered,
+        active_count=await count_active_alerts(db, user_id=uid),
+        cap=ALERT_CAP,
+    )
 
 
 @router.post("/{source_id}/trust")

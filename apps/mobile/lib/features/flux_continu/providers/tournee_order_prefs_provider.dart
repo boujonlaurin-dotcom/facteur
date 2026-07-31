@@ -73,6 +73,22 @@ const String kTourneeGrilleKey = 'grille';
 /// Clé de la veille (singleton à V1) — alignée sur la branche `'veille'` de `sectionKey`.
 const String kTourneeVeilleKey = 'veille';
 
+/// `true` ssi [key] désigne une section **réordonnable** de la Tournée, au sens
+/// « l'utilisateur peut la déplacer ». Source unique de vérité partagée par la
+/// sheet « Composer ma Tournée » et le drag des onglets du header sticky.
+///
+/// Sont exclus :
+/// - `essentiel_v3` (carte hi-fi héros, toujours 1ʳᵉ),
+/// - `grille` (Mot du jour, épinglé après les Actus par `grilleSlotIndex`),
+/// - `alerts` et tout onglet virtuel (Citation, Fin de tournée, « Pour toi »),
+/// - `topic:` (sujets personnalisés — Flâner uniquement, hors Tournée).
+bool isTourneeReorderableKey(String key) =>
+    key == kTourneeActusKey ||
+    key == kTourneeBonnesKey ||
+    key == kTourneeVeilleKey ||
+    key.startsWith('theme:') ||
+    key.startsWith('source:');
+
 /// État de l'ordre Tournée : la liste ordonnée de clés + les clés masquées +
 /// le flag « Tournée customisée » (cf. doc de la library).
 class TourneeOrderState {

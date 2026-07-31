@@ -903,21 +903,56 @@ class TestGenerateReasonTrending:
         )
         assert reason == "À la une"
 
-    def test_no_trending_falls_through_to_subtopic(self, selector):
-        """Sans trending/une, le comportement existant est préservé."""
+    @pytest.mark.parametrize("label", ["Sujet : IA", "Sujet suivi : IA"])
+    def test_no_trending_falls_through_to_subtopic(self, selector, label):
+        """Sans trending/une, le sujet précis gagne.
+
+        Ce test pinnait « Sous-thème : AI », un libellé qu'**aucun pilier
+        n'émet** : c'est précisément pour ça que la branche est restée morte sans
+        être vue. `_score_subtopics` produit "Sujet : …" ou, si le poids appris
+        est > 1, "Sujet suivi : …".
+        """
+        source = make_source(name="Test", theme="tech")
+        content = make_content(source=source)
+
+        breakdown = [
+            DigestScoreBreakdown(label=label, points=45.0, is_positive=True),
+        ]
+
+        reason = selector._generate_reason(
+            content, defaultdict(int), defaultdict(int), breakdown
+        )
+        assert reason == "Thème : IA"
+
+    def test_subtopic_wins_over_the_broad_theme(self, selector):
+        """Le sujet précis doit battre le thème de la source (« Tech »)."""
+        source = make_source(name="Test", theme="tech")
+        content = make_content(source=source)
+
+        breakdown = [
+            DigestScoreBreakdown(label="Sujet : IA", points=45.0, is_positive=True),
+        ]
+
+        reason = selector._generate_reason(
+            content, defaultdict(int), defaultdict(int), breakdown
+        )
+        assert reason == "Thème : IA"
+
+    def test_masked_subtopic_is_not_read_as_a_reason(self, selector):
+        """« Sujet masqué : … » (pénalité) ne doit pas devenir une raison."""
         source = make_source(name="Test", theme="tech")
         content = make_content(source=source)
 
         breakdown = [
             DigestScoreBreakdown(
-                label="Sous-thème : AI", points=45.0, is_positive=True
+                label="Sujet masqué : IA", points=-30.0, is_positive=False
             ),
         ]
 
         reason = selector._generate_reason(
             content, defaultdict(int), defaultdict(int), breakdown
         )
-        assert reason == "Thème : AI"
+        assert reason == "Thème : Tech & Innovation"
 
 
 # ─── Helpers: pillar engine ──────────────────────────────────────────────────

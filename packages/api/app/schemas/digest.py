@@ -74,6 +74,8 @@ class DigestTopicArticle(BaseModel):
     is_liked: bool = False
     is_dismissed: bool = False
     read_at: datetime | None = None
+    # Temps passé cumulé (s) — départage « Ouvert » (< 5 s) de « Lu en partie ».
+    time_spent_seconds: int = 0
     # « Lu jusqu'au bout » (Epic 30) — null = inconnu, pas « non terminé ».
     completed_at: datetime | None = None
     # Langue détectée du titre (forward-compat — label éventuel mobile).
@@ -166,6 +168,7 @@ class DigestItem(BaseModel):
     is_saved: bool = False
     is_liked: bool = False
     is_dismissed: bool = False
+    time_spent_seconds: int = 0
     completed_at: datetime | None = None
 
     @field_serializer("entities", when_used="always")

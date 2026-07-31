@@ -104,7 +104,7 @@ class VeilleWallScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const PriceRow(note: '· ${SoutienCopy.veilleWallPriceNote}'),
+                  const PriceRow(note: SoutienCopy.veilleWallPriceNote),
                   const SizedBox(height: FacteurSpacing.space3),
                   const CheckoutCtaButton(label: SoutienCopy.wallCta),
                   const SizedBox(height: FacteurSpacing.space2),

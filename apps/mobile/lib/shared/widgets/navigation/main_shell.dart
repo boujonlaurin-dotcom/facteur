@@ -8,6 +8,7 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../../features/app_update/providers/app_update_provider.dart';
 import '../../../features/app_update/widgets/ios_update_banner.dart';
 import '../../../features/app_update/widgets/ios_update_gate.dart';
+import '../../../features/feed/widgets/header_search_button.dart';
 import '../../../features/feed/widgets/profile_avatar_button.dart';
 import '../../../features/gamification/widgets/streak_indicator.dart';
 import '../../../features/sources/widgets/reconnect_subscriptions_banner.dart';
@@ -111,7 +112,10 @@ class MainTabPageScaffold extends ConsumerWidget {
           // L'ancre profil du tour guidé n'est posée que sur le header Essentiel
           // (étapes 4/5 y naviguent) — clé unique malgré les deux branches
           // montées simultanément.
-          _SharedTopHeader(attachTourAvatarKey: currentIndex == 0),
+          _SharedTopHeader(
+            attachTourAvatarKey: currentIndex == 0,
+            isEssentielTab: currentIndex == 0,
+          ),
           // Bannière incitative « nouvelle version dispo » (iOS) : non bloquante,
           // app-wide sur les deux onglets. SizedBox.shrink au cas nominal.
           const IosUpdateBanner(),
@@ -136,11 +140,17 @@ class _SharedTopHeader extends StatelessWidget {
   /// guidé). Activé sur le seul header Essentiel pour garder la clé unique.
   final bool attachTourAvatarKey;
 
-  const _SharedTopHeader({this.attachTourAvatarKey = false});
+  /// Onglet hôte — la loupe s'en sert pour savoir s'il faut basculer sur Flâner
+  /// après avoir appliqué un filtre.
+  final bool isEssentielTab;
+
+  const _SharedTopHeader({
+    this.attachTourAvatarKey = false,
+    required this.isEssentielTab,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.facteurColors;
     return SafeArea(
       bottom: false,
       child: Padding(
@@ -158,44 +168,17 @@ class _SharedTopHeader extends StatelessWidget {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: KeyedSubtree(
-                key: attachTourAvatarKey ? tourProfileAvatarKey : null,
-                child: Consumer(
-                builder: (context, ref, _) {
-                  final hasUpdate =
-                      ref
-                          .watch(appUpdateProvider)
-                          .valueOrNull
-                          ?.updateAvailable ==
-                      true;
-                  final settingsButton = ProfileAvatarButton(
-                    onTap: () => context.push(RoutePaths.settings),
-                  );
-                  if (!hasUpdate) return settingsButton;
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      settingsButton,
-                      Positioned(
-                        top: -2,
-                        right: -2,
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: colors.error,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: colors.backgroundPrimary,
-                              width: 2,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Story 30.1 — la recherche sort de la barre de filtres de
+                  // Flâner : présente sur les deux onglets, à taille de cible
+                  // confortable, elle se lit enfin comme une fonction de
+                  // premier niveau et non comme un réglage de filtre.
+                  HeaderSearchButton(isEssentielTab: isEssentielTab),
+                  const SizedBox(width: FacteurSpacing.space2),
+                  _buildProfileAvatar(context),
+                ],
               ),
             ),
           ],
@@ -203,7 +186,47 @@ class _SharedTopHeader extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildProfileAvatar(BuildContext context) {
+    final colors = context.facteurColors;
+    return KeyedSubtree(
+      key: attachTourAvatarKey ? tourProfileAvatarKey : null,
+      child: Consumer(
+        builder: (context, ref, _) {
+          final hasUpdate =
+              ref.watch(appUpdateProvider).valueOrNull?.updateAvailable == true;
+          final settingsButton = ProfileAvatarButton(
+            onTap: () => context.push(RoutePaths.settings),
+          );
+          if (!hasUpdate) return settingsButton;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              settingsButton,
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: colors.error,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: colors.backgroundPrimary,
+                      width: 2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
+
 
 /// Conteneur des navigators de branche (le `navigatorContainerBuilder`).
 ///

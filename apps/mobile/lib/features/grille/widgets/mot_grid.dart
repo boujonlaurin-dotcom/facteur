@@ -26,6 +26,7 @@ class MotGrid extends StatelessWidget {
     this.revealRow = -1,
     this.bounceRevealRow = false,
     this.shakeNonce = 0,
+    this.tileSizeOverride,
   });
 
   final int longueur;
@@ -46,11 +47,15 @@ class MotGrid extends StatelessWidget {
   /// Incrément de shake pour la ligne courante (essai refusé).
   final int shakeNonce;
 
+  /// Taille de tuile forcée (px), calculée par l'appelant pour tenir dans la
+  /// hauteur disponible. `null` = taille design par défaut.
+  final double? tileSizeOverride;
+
   bool get _isJeu => variant == MotGridVariant.jeu;
 
-  double get _tileSize => _isJeu
-      ? GrilleConstants.tileSize
-      : GrilleConstants.tileSizeResult;
+  double get _tileSize =>
+      tileSizeOverride ??
+      (_isJeu ? GrilleConstants.tileSize : GrilleConstants.tileSizeResult);
   double get _gap =>
       _isJeu ? GrilleConstants.tileGap : GrilleConstants.tileGapResult;
 

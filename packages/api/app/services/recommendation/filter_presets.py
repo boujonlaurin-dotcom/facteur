@@ -366,8 +366,31 @@ def apply_entity_filter(query, entity_name: str):
 
 
 def apply_keyword_filter(query, keyword: str):
-    """Filter content whose title contains the keyword (case-insensitive)."""
-    return query.where(Content.title.ilike(f"%{keyword}%"))
+    r"""Filter content whose title or description matches the keyword at word starts.
+
+    Le mot-clé est tokenisé sur les espaces ; **chaque** token doit matcher (AND).
+    Chaque token matche en **début de mot** via la regex POSIX Postgres (`~*`) :
+    `\m` + token échappé → « belle » matche « belles »/« bellement »/« La belle
+    époque » mais **pas** « poubelle » ni « Isabelle ». L'entrée est échappée
+    (`re.escape`, aligné sur `veille/feed_filter.py`) : les `%`, `_`, `(`… saisis
+    par l'utilisateur ne sont plus des jokers ni des métacaractères regex.
+
+    Étendu à `Content.description` (title ~* p OR description ~* p) pour le rappel,
+    comme `veille/feed_filter.build_strong_predicate`. Pas de `\M` final : on veut
+    matcher les flexions (pluriels, adverbes), pas seulement le mot exact.
+    """
+    tokens = [t for t in keyword.split() if t]
+    if not tokens:
+        return query
+    for token in tokens:
+        pattern = r"\m" + re.escape(token)
+        query = query.where(
+            or_(
+                Content.title.op("~*")(pattern),
+                Content.description.op("~*")(pattern),
+            )
+        )
+    return query
 
 
 def get_opposing_biases(user_stance: BiasStance) -> list[BiasStance]:

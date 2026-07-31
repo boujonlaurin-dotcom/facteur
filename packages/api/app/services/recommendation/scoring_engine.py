@@ -51,6 +51,12 @@ class ScoringContext:
         # de couverture multi-sources (cf. helpers.compute_coverage_score).
         # Vide en cold start ou hors mode thématique personnalisé.
         cluster_source_counts: dict[UUID, int] | None = None,
+        # Chemin `topics` (topic_selector) : nombre de sources distinctes du
+        # cluster COURANT, porté directement sur le contexte (construit par
+        # cluster). Évite de dépendre de `content.cluster_id` (NULL à ~99 % en
+        # base) et toute mutation d'attribut ORM. Prioritaire sur
+        # `cluster_source_counts` quand renseigné.
+        coverage_source_count: int | None = None,
         # True quand le scoring sert une section thème/sujet/source de la
         # Tournée (`is_personalized_theme_mode`). Gate les règles réservées à
         # ce mode — aujourd'hui le malus feuilleton du PenaltyPass. Faux
@@ -94,6 +100,9 @@ class ScoringContext:
 
         # Top3 thematic selection: cluster_id -> nb sources distinctes (24h).
         self.cluster_source_counts = cluster_source_counts or {}
+
+        # Chemin `topics` : count du cluster courant (None hors de ce chemin).
+        self.coverage_source_count = coverage_source_count
 
         # Sections de la Tournée (cf. paramètre).
         self.personalized_theme_mode = personalized_theme_mode

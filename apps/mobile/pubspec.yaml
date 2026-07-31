@@ -58,6 +58,11 @@ dependencies:
   # Home Screen Widget
   home_widget: ^0.7.0
 
+  # Rafraîchissement du widget app fermée (WorkManager Android).
+  # Cf. docs/bugs/bug-widget-fiabilite.md (C6) : sans ça, l'alarme système de
+  # 30 min ne fait que repeindre les mêmes octets, aucun réseau.
+  workmanager: ^0.9.0
+
   # Deep Links (widget tap → in-app routing)
   app_links: ^6.3.2
 
@@ -105,6 +110,7 @@ dependencies:
 dev_dependencies:
   mocktail: ^1.0.3
   mockito: ^5.4.4
+  fake_async: ^1.3.1
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0

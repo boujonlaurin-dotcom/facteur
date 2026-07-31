@@ -52,7 +52,7 @@ from app.services.digest_selector import DigestSelector
 from app.services.editorial.schemas import EditorialPipelineResult
 from app.services.streak_service import StreakService
 from app.services.topic_selector import ScoredArticle, TopicGroup
-from app.utils.time import editorial_day, today_paris
+from app.utils.time import today_paris, week_start_paris
 
 logger = structlog.get_logger()
 
@@ -1398,7 +1398,7 @@ class DigestService:
             status.is_hidden = False
             # Increment regular streak via StreakService
             await self.streak_service.increment_consumption(str(user_id))
-            # Feedback: reinforce theme + subtopic weights
+            # Feedback: reinforce theme + subtopic weights + named entities
             from app.services.content_service import ContentService
             from app.services.recommendation.scoring_config import ScoringWeights
 
@@ -1407,12 +1407,15 @@ class DigestService:
             await content_service._adjust_subtopic_weights(
                 user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
             )
+            await content_service._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.READ_TOPIC_BOOST
+            )
 
         elif action == DigestAction.SAVE:
             status.is_saved = True
             status.saved_at = datetime.utcnow()
             status.is_hidden = False
-            # Reinforce subtopic weights on bookmark
+            # Reinforce subtopic weights + named entities on bookmark
             from app.services.content_service import ContentService
 
             content_service = ContentService(self.session)
@@ -1421,11 +1424,14 @@ class DigestService:
             await content_service._adjust_subtopic_weights(
                 user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
             )
+            await content_service._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+            )
 
         elif action == DigestAction.LIKE:
             status.is_liked = True
             status.liked_at = datetime.utcnow()
-            # Reinforce subtopic weights via ContentService
+            # Reinforce subtopic weights + named entities via ContentService
             from app.services.content_service import ContentService
 
             content_service = ContentService(self.session)
@@ -1434,17 +1440,23 @@ class DigestService:
             await content_service._adjust_subtopic_weights(
                 user_id, content_id, ScoringWeights.LIKE_TOPIC_BOOST
             )
+            await content_service._adjust_entity_affinity(
+                user_id, content_id, ScoringWeights.LIKE_TOPIC_BOOST
+            )
 
         elif action == DigestAction.UNLIKE:
             status.is_liked = False
             status.liked_at = None
-            # Reverse subtopic weight adjustment
+            # Reverse subtopic weight + entity affinity adjustment
             from app.services.content_service import ContentService
 
             content_service = ContentService(self.session)
             from app.services.recommendation.scoring_config import ScoringWeights
 
             await content_service._adjust_subtopic_weights(
+                user_id, content_id, -ScoringWeights.LIKE_TOPIC_BOOST
+            )
+            await content_service._adjust_entity_affinity(
                 user_id, content_id, -ScoringWeights.LIKE_TOPIC_BOOST
             )
 
@@ -1534,8 +1546,8 @@ class DigestService:
         )
         await self.session.execute(upsert_stmt)
 
-        # Update closure streak (idempotent same-day via last_closure_date).
-        streak_update = await self._update_closure_streak(user_id)
+        # Update closure streak (idempotent same-edition via last_closure_date).
+        streak_update = await self._update_closure_streak(user_id, digest.target_date)
 
         await self.session.flush()
 
@@ -1626,11 +1638,11 @@ class DigestService:
                     inserted=inserted_id is not None,
                 )
                 # Keep the closure streak in sync when we actually inserted a
-                # new row — `_update_closure_streak` is itself same-day
+                # new row — `_update_closure_streak` is itself same-edition
                 # idempotent, but skipping the call when we no-opped on
                 # conflict avoids an unnecessary UserStreak read/write.
                 if inserted_id is not None:
-                    await self._update_closure_streak(user_id)
+                    await self._update_closure_streak(user_id, digest.target_date)
                 return True
         except Exception as exc:  # noqa: BLE001 — never break the caller
             logger.warning(
@@ -1964,6 +1976,11 @@ class DigestService:
                         if s.representative_content_id
                         else None
                     ),
+                    # `score` / `pillar_scores` : forward-only, alimentent la
+                    # jauge CTR (scripts/evaluate_feed_ranking.py). `None` sur
+                    # les chemins non scorés (fallback clusters vides) et sur
+                    # tous les `extra_actu_articles`, qui ne passent jamais par
+                    # le scoring.
                     "actu_article": {
                         "content_id": str(s.actu_article.content_id),
                         "title": s.actu_article.title,
@@ -1972,6 +1989,8 @@ class DigestService:
                         "is_user_source": s.actu_article.is_user_source,
                         "badge": "actu",
                         "published_at": s.actu_article.published_at.isoformat(),
+                        "score": s.actu_article.score,
+                        "pillar_scores": s.actu_article.pillar_scores,
                     }
                     if s.actu_article
                     else None,
@@ -2041,6 +2060,22 @@ class DigestService:
         positive.sort(key=lambda x: x.points, reverse=True)
         top = positive[0]
 
+        # Le sujet précis d'abord : `_score_subtopics` émet "Sujet suivi : …" /
+        # "Sujet : …". La branche qui suivait testait `"Sous-thème"`, préfixe
+        # qu'aucun pilier n'émet plus — et elle était de toute façon
+        # inatteignable, puisque `"Thème" in "Sous-thème : …"` est vrai et
+        # arrivait avant. Les raisons du digest tombaient donc sur "Vos
+        # intérêts : …" avec un thème large, ou sur le label brut.
+        for prefix in ("Sujet suivi : ", "Sujet : "):
+            if top.label.startswith(prefix):
+                topics = [
+                    b.label.removeprefix(p)
+                    for b in positive
+                    for p in ("Sujet suivi : ", "Sujet : ")
+                    if b.label.startswith(p)
+                ][:2]
+                return f"Vos centres d'intérêt : {', '.join(topics)}"
+
         # Format based on top reason type
         if "Thème" in top.label:
             theme = top.label.split(": ")[1] if ": " in top.label else ""
@@ -2061,19 +2096,6 @@ class DigestService:
                 f"Renforcé par vos j'aime : {', '.join(topics)}"
                 if topics
                 else "Renforcé par vos j'aime"
-            )
-        elif "Sous-thème" in top.label:
-            topics = [
-                parts[1]
-                for b in positive
-                if "Sous-thème" in b.label
-                for parts in [b.label.split(": ", 1)]
-                if len(parts) > 1
-            ][:2]
-            return (
-                f"Vos centres d'intérêt : {', '.join(topics)}"
-                if topics
-                else "Vos centres d'intérêt"
             )
         else:
             return top.label
@@ -2208,6 +2230,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    time_spent_seconds=action_state.get("time_spent_seconds", 0),
                     completed_at=action_state.get("completed_at"),
                 )
             )
@@ -2351,6 +2374,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    time_spent_seconds=action_state.get("time_spent_seconds", 0),
                     completed_at=action_state.get("completed_at"),
                     read_at=action_state.get("read_at"),
                 )
@@ -2382,6 +2406,7 @@ class DigestService:
                         is_saved=action_state["is_saved"],
                         is_liked=action_state["is_liked"],
                         is_dismissed=action_state["is_dismissed"],
+                        time_spent_seconds=action_state.get("time_spent_seconds", 0),
                         completed_at=action_state.get("completed_at"),
                     )
                 )
@@ -2603,6 +2628,7 @@ class DigestService:
                     is_saved=action_state["is_saved"],
                     is_liked=action_state["is_liked"],
                     is_dismissed=action_state["is_dismissed"],
+                    time_spent_seconds=action_state.get("time_spent_seconds", 0),
                     completed_at=action_state.get("completed_at"),
                     read_at=action_state.get("read_at"),
                 )
@@ -2633,6 +2659,7 @@ class DigestService:
                         is_saved=action_state["is_saved"],
                         is_liked=action_state["is_liked"],
                         is_dismissed=action_state["is_dismissed"],
+                        time_spent_seconds=action_state.get("time_spent_seconds", 0),
                         completed_at=action_state.get("completed_at"),
                     )
                 )
@@ -2705,6 +2732,7 @@ class DigestService:
             "is_saved": status.is_saved,
             "is_liked": status.is_liked,
             "is_dismissed": status.is_hidden,
+            "time_spent_seconds": status.time_spent_seconds or 0,
             "completed_at": status.completed_at,
         }
 
@@ -2735,6 +2763,7 @@ class DigestService:
                 "is_liked": status.is_liked,
                 "is_dismissed": status.is_hidden,
                 "read_at": status.seen_at,
+                "time_spent_seconds": status.time_spent_seconds or 0,
                 "completed_at": status.completed_at,
             }
             for status in statuses
@@ -2922,8 +2951,19 @@ class DigestService:
 
         return {"read": read_count, "saved": saved_count, "dismissed": dismissed_count}
 
-    async def _update_closure_streak(self, user_id: UUID) -> dict[str, Any]:
-        """Update user's closure streak for digest completion."""
+    async def _update_closure_streak(
+        self, user_id: UUID, target_date: date
+    ) -> dict[str, Any]:
+        """Update user's closure streak for digest completion.
+
+        `target_date` is the *edition* that was just closed, never a notion of
+        "today". Deriving it server-side is what broke the streak: the two call
+        sites look up the digest with `today_paris()` (midnight boundary) while
+        this method stamped `editorial_day()` (07h30 boundary), so a reader
+        closing edition D at 01h got stamped D-1, and closing D+1 the next
+        evening saw `days_since == 2` — streak reset. Stamping the edition
+        itself removes the boundary question entirely.
+        """
         # Get or create streak record
         streak = await self.session.scalar(
             select(UserStreak).where(UserStreak.user_id == user_id)
@@ -2933,21 +2973,30 @@ class DigestService:
             streak = UserStreak(
                 id=uuid4(),
                 user_id=user_id,
-                week_start=date.today() - timedelta(days=date.today().weekday()),
+                week_start=week_start_paris(),
             )
             self.session.add(streak)
             await self.session.flush()
 
-        # Editorial day (07h30 Paris), NOT `date.today()` (server UTC). The
-        # trigger `maybe_record_implicit_completion` already gates on Paris
-        # time: stamping in UTC made a completion recorded for day D land on
-        # D-1 between 00h and 02h Paris in summer, breaking or doubling the
-        # streak.
-        today = editorial_day()
+        today = target_date
 
         # Update closure streak
         if streak.last_closure_date:
             days_since = (today - streak.last_closure_date).days
+
+            if days_since < 0:
+                # Édition *passée* refermée : le sélecteur de date sert les
+                # éditions J-7 et `complete_digest` accepte n'importe quel
+                # `digest_id`. Elle ne peut ni prolonger ni casser la série en
+                # cours. Sans cette sortie, `days_since` négatif tombait dans
+                # le `else` (reset à 1) et ramenait en plus le curseur
+                # `last_closure_date` en arrière — regression introduite en
+                # même temps que l'estampillage sur l'édition.
+                return {
+                    "current": streak.closure_streak,
+                    "longest": streak.longest_closure_streak,
+                    "message": None,
+                }
 
             if days_since == 0:
                 # Already completed today - don't increment

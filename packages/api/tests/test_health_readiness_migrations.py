@@ -14,7 +14,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.checks import get_migration_readiness
+from app.checks import (
+    MultipleAlembicHeadsError,
+    _single_head,
+    check_migrations_up_to_date,
+    get_migration_readiness,
+)
 from app.database import get_db
 from app.main import app
 
@@ -107,6 +112,59 @@ async def test_fail_open_on_config_error():
     ):
         status = await get_migration_readiness()
     assert status["behind"] is False
+
+
+# --- Fork Alembic (incident 2026-07-25) ---------------------------------------
+
+
+def _script_dir(*heads: str):
+    script_directory = MagicMock()
+    script_directory.get_heads.return_value = list(heads)
+    return script_directory
+
+
+def test_single_head_returns_the_head():
+    assert _single_head(_script_dir("mg04_merge_pt01_rd01")) == "mg04_merge_pt01_rd01"
+
+
+def test_single_head_returns_none_when_no_revision():
+    assert _single_head(_script_dir()) is None
+
+
+def test_single_head_raises_on_fork():
+    """`heads[0]` masquait le fork : selon l'ordre, le boot passait au vert avec
+    une révision jamais appliquée → 500 généralisés, readiness verte."""
+    with pytest.raises(MultipleAlembicHeadsError, match="pt01"):
+        _single_head(
+            _script_dir("pt01_contents_entities_trgm", "rd01_ucs_completed_at")
+        )
+
+
+@pytest.mark.asyncio
+async def test_readiness_not_ready_on_fork():
+    """Le fail-open ne s'applique pas au fork : l'image ne peut pas migrer."""
+    with patch(
+        "app.checks._code_head_and_ancestors",
+        side_effect=MultipleAlembicHeadsError("Multiple Alembic heads: ['a', 'b']"),
+    ):
+        status = await get_migration_readiness()
+    assert status["behind"] is True
+
+
+@pytest.mark.asyncio
+async def test_startup_check_crashes_on_fork(monkeypatch):
+    """Le contrôle de démarrage est fatal sur un fork, comme sur un schéma en retard."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    with (
+        patch(
+            "app.checks.script.ScriptDirectory.from_config",
+            return_value=_script_dir(
+                "pt01_contents_entities_trgm", "rd01_ucs_completed_at"
+            ),
+        ),
+        pytest.raises(MultipleAlembicHeadsError),
+    ):
+        await check_migrations_up_to_date()
 
 
 # --- Endpoint: 503 vs 200 -----------------------------------------------------

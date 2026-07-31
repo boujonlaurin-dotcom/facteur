@@ -84,6 +84,90 @@ class ContentEntity {
   }
 }
 
+/// Seuil (s) au-delà duquel une ouverture compte comme « Lu en partie » plutôt
+/// que « Ouvert ». Pendant produit d'`articleReadThreshold` (1 s, seuil
+/// `consumed` dans `read_sync_service.dart`) : ouvrir marque `consumed` en 1 s,
+/// mais il faut rester au moins [kPartialReadThresholdSeconds] pour dépasser
+/// « Ouvert ».
+///
+/// Edge case assumé : `time_spent` s'accumule côté serveur → N micro-ouvertures
+/// peuvent franchir le seuil et faire passer une carte en « Lu en partie ».
+const int kPartialReadThresholdSeconds = 5;
+
+/// Spectre d'engagement d'un article — source de vérité unique pour l'opacité et
+/// la coche des cartes (remplace la dispersion `isRead`/`isCompleted`).
+///
+/// Ordre = engagement croissant : plus on s'engage, plus la carte s'efface.
+enum ReadState { unread, opened, partiallyRead, completed }
+
+/// Dérive l'état de lecture depuis les signaux bruts.
+///
+/// [timeSpentSeconds] `null` = signal absent du payload (ex. Flux via
+/// `DigestItem`) : on retombe alors sur `partiallyRead` (comportement historique
+/// `0.6`), jamais sur « Ouvert ». « Ouvert » n'apparaît que si le temps passé
+/// est réellement connu et faible.
+ReadState deriveReadState({
+  required bool isConsumed,
+  required int readingProgress,
+  required bool isVideo,
+  required int? timeSpentSeconds,
+  required bool isCompleted,
+  bool consumedThisSession = false,
+}) {
+  if (isCompleted) return ReadState.completed;
+  final opened = isConsumed || readingProgress > 0 || consumedThisSession;
+  if (!opened) return ReadState.unread;
+  // Vidéo : la progression n'est pas plafonnée à 25, elle prime.
+  if (isVideo && readingProgress >= 25) return ReadState.partiallyRead;
+  // Signal de temps absent → on préserve « Lu en partie » (pas de downgrade).
+  if (timeSpentSeconds == null) return ReadState.partiallyRead;
+  if (timeSpentSeconds >= kPartialReadThresholdSeconds) {
+    return ReadState.partiallyRead;
+  }
+  return ReadState.opened;
+}
+
+/// Libellé d'état de lecture pour un [ReadState]. `null` pour `unread`.
+String? readingLabelForState(ReadState state, {required bool isVideo}) {
+  switch (state) {
+    case ReadState.completed:
+      return isVideo ? 'Vu jusqu\'au bout' : 'Lu jusqu\'au bout';
+    case ReadState.partiallyRead:
+      return isVideo ? 'Vu en partie' : 'Lu en partie';
+    case ReadState.opened:
+      return 'Ouvert';
+    case ReadState.unread:
+      return null;
+  }
+}
+
+/// Opacité de carte pour un [ReadState].
+double opacityForReadState(ReadState state) {
+  switch (state) {
+    case ReadState.unread:
+      return 1.0;
+    case ReadState.opened:
+      return 0.8;
+    case ReadState.partiallyRead:
+    case ReadState.completed:
+      return 0.6;
+  }
+}
+
+/// Fusionne l'état serveur [base] avec l'état de session : un article lu cette
+/// session (POST du statut différé au `dispose`) n'a pas encore de `time_spent`
+/// synchronisé — il doit rester au minimum « Ouvert », jamais « non lu ». Il
+/// montera à `partiallyRead`/`completed` au prochain refresh feed.
+ReadState effectiveReadState(
+  ReadState base, {
+  required bool consumedThisSession,
+  required bool completedThisSession,
+}) {
+  if (completedThisSession) return ReadState.completed;
+  if (consumedThisSession && base == ReadState.unread) return ReadState.opened;
+  return base;
+}
+
 class Content {
   final String id;
   final String title;
@@ -111,6 +195,11 @@ class Content {
   /// lecture. Conservé pour l'historique ; [completedAt] est le signal de
   /// complétion.
   final int readingProgress;
+
+  /// Temps passé cumulé (s) — départage « Ouvert » (< 5 s) de « Lu en partie »
+  /// (voir [readState]). `null` = signal absent du payload (le feed le porte,
+  /// certains chemins non) : dans ce cas on ne descend jamais à « Ouvert ».
+  final int? timeSpentSeconds;
 
   /// Horodatage « lu jusqu'au bout » (estampillé serveur, premier écrit gagne).
   /// Null = inconnu, pas « non terminé ».
@@ -180,6 +269,7 @@ class Content {
     this.entities = const [],
     this.recommendationReason,
     this.readingProgress = 0,
+    this.timeSpentSeconds,
     this.completedAt,
     this.noteText,
     this.noteUpdatedAt,
@@ -223,27 +313,18 @@ class Content {
   /// menées à leur terme.
   bool get isCompleted => completedAt != null;
 
+  /// État de lecture serveur-truth (hors fusion session — cf.
+  /// [effectiveReadState] côté carte).
+  ReadState get readState => deriveReadState(
+        isConsumed: status == ContentStatus.consumed,
+        readingProgress: readingProgress,
+        isVideo: isVideo,
+        timeSpentSeconds: timeSpentSeconds,
+        isCompleted: isCompleted,
+      );
+
   /// Libellé d'état de lecture. `null` si l'article n'a pas été ouvert.
-  String? get readingLabel {
-    if (isCompleted) {
-      return isVideo ? 'Vu jusqu\'au bout' : 'Lu jusqu\'au bout';
-    }
-    if (status == ContentStatus.unseen && readingProgress == 0) return null;
-
-    if (isVideo) {
-      // La vidéo n'a pas de cap partiel : sa progression reste exploitable.
-      if (readingProgress >= 25 || status == ContentStatus.consumed) {
-        return 'Vu en partie';
-      }
-      return null;
-    }
-
-    // Ouvrir un article le marque `consumed` au bout d'1 s
-    // (`articleReadThreshold`) : « Lu » ne dit donc rien de plus que
-    // « ouvert », d'où un libellé unique et sans jugement.
-    if (readingProgress > 0 || status == ContentStatus.consumed) return 'Lu';
-    return null;
-  }
+  String? get readingLabel => readingLabelForState(readState, isVideo: isVideo);
 
   /// Returns a copy with note fields explicitly set to null.
   /// Needed because copyWith uses ?? which can't set nullable fields to null.
@@ -269,6 +350,7 @@ class Content {
       entities: entities,
       recommendationReason: recommendationReason,
       readingProgress: readingProgress,
+      timeSpentSeconds: timeSpentSeconds,
       completedAt: completedAt,
       noteText: null,
       noteUpdatedAt: null,
@@ -341,6 +423,7 @@ class Content {
             ? RecommendationReason.fromJson(recJson)
             : null,
         readingProgress: (json['reading_progress'] as int?) ?? 0,
+        timeSpentSeconds: json['time_spent_seconds'] as int?,
         completedAt: json['completed_at'] != null
             ? DateTime.tryParse(json['completed_at'] as String)
             : null,
@@ -388,6 +471,7 @@ class Content {
     List<ContentEntity>? entities,
     RecommendationReason? recommendationReason,
     int? readingProgress,
+    int? timeSpentSeconds,
     DateTime? completedAt,
     String? noteText,
     DateTime? noteUpdatedAt,
@@ -435,6 +519,7 @@ class Content {
       entities: entities ?? this.entities,
       recommendationReason: recommendationReason ?? this.recommendationReason,
       readingProgress: readingProgress ?? this.readingProgress,
+      timeSpentSeconds: timeSpentSeconds ?? this.timeSpentSeconds,
       completedAt: completedAt ?? this.completedAt,
       noteText: noteText ?? this.noteText,
       noteUpdatedAt: noteUpdatedAt ?? this.noteUpdatedAt,

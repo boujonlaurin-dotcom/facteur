@@ -219,14 +219,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
 
           const SizedBox(height: FacteurSpacing.space3),
 
-          Text(
-            OnboardingStrings.subtopicsSubtitle,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: colors.textSecondary),
-            textAlign: TextAlign.center,
-          ),
+          _buildSubtitle(colors),
 
           const SizedBox(height: FacteurSpacing.space4),
 
@@ -243,6 +236,10 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                 ? PageView.builder(
                     controller: _pageController,
                     onPageChanged: (i) {
+                      // Relâche tout focus résiduel (ex : champ de l'EntityAddSheet
+                      // fermée) pour éviter que le clavier ne remonte au changement
+                      // de carte.
+                      FocusManager.instance.primaryFocus?.unfocus();
                       HapticFeedback.selectionClick();
                       setState(() {
                         _currentTheme = i;
@@ -347,6 +344,38 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
     );
   }
 
+  /// Sous-titre avec « le plus » en gras : un utilisateur n'avait pas compris que
+  /// ne pas cocher un sujet l'excluait. On garde `subtopicsSubtitle` comme source
+  /// de vérité et on met en emphase le segment à l'exécution.
+  Widget _buildSubtitle(FacteurColors colors) {
+    const subtitle = OnboardingStrings.subtopicsSubtitle;
+    const emphasis = 'le plus';
+    final base = Theme.of(context)
+        .textTheme
+        .bodyMedium
+        ?.copyWith(color: colors.textSecondary);
+    final index = subtitle.indexOf(emphasis);
+
+    if (index < 0) {
+      return Text(subtitle, style: base, textAlign: TextAlign.center);
+    }
+
+    return Text.rich(
+      TextSpan(
+        style: base,
+        children: [
+          TextSpan(text: subtitle.substring(0, index)),
+          TextSpan(
+            text: emphasis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          TextSpan(text: subtitle.substring(index + emphasis.length)),
+        ],
+      ),
+      textAlign: TextAlign.center,
+    );
+  }
+
   ThemeOption _resolveTheme(String slug) {
     return AvailableThemes.all.firstWhere(
       (t) => t.slug == slug,
@@ -431,6 +460,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
   /// Joue un bref état « validé » sur la carte courante (scale/opacité +
   /// check vert) puis enchaîne le scroll vers le thème suivant.
   Future<void> _validateAndGoToNextPage() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _isValidatingCurrentPage = true);
     HapticFeedback.selectionClick();
     await Future.delayed(const Duration(milliseconds: 250));
@@ -586,6 +616,13 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
                       ))
                   .toList(),
             ),
+            const SizedBox(height: FacteurSpacing.space2),
+            Text(
+              OnboardingStrings.customTopicAddedHint,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.textTertiary,
+                  ),
+            ),
           ],
 
           const SizedBox(height: FacteurSpacing.space2),
@@ -594,6 +631,7 @@ class _SubtopicsQuestionState extends ConsumerState<SubtopicsQuestion> {
           // valide + confirme + persiste le sujet au moment de l'ajout.
           if (canAddMore)
             GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => _openAddSheet(theme.slug),
               child: Container(
                 padding:
@@ -645,13 +683,14 @@ class _EntityChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         HapticFeedback.selectionClick();
         onTap();
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? themeColor.withOpacity(0.1)

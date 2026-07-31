@@ -7,7 +7,11 @@ import '../../../config/theme.dart';
 import '../widgets/source_add_panel.dart';
 
 class AddSourceScreen extends ConsumerWidget {
-  const AddSourceScreen({super.key});
+  /// Requête pré-remplie, passée via `state.extra` depuis la recherche
+  /// universelle (story 30.1) : l'écran s'ouvre avec la recherche déjà lancée.
+  final String? initialQuery;
+
+  const AddSourceScreen({super.key, this.initialQuery});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -21,7 +25,7 @@ class AddSourceScreen extends ConsumerWidget {
         ),
         title: const Text('Ajouter une source'),
       ),
-      body: const SourceAddPanel(),
+      body: SourceAddPanel(initialQuery: initialQuery),
     );
   }
 }
