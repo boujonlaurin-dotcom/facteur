@@ -218,7 +218,135 @@ Mesurés sur le corpus figé du 2026-07-31 :
 
 ---
 
-## 7. Reproduction
+## 7. PARTIE II — Vérification des leviers *profonds* (2e passe)
+
+La partie I identifiait l'algorithme comme coupable. Cette 2e passe a cherché les leviers
+structurants, **en mesurant** au lieu de supposer. Elle corrige une conclusion de la partie I
+et en ajoute une plus importante.
+
+### 7.1 Découverte majeure — le clustering ne voit pas le corpus
+
+`digest_selector._get_candidates()` (ligne 825) construit un pool **par utilisateur** :
+
+- étape 1 : articles des sources suivies — `.limit(200)` ;
+- étape 2 : complément sources curatées — `.limit(200)` ;
+- fenêtre : **168 h** (7 jours) ;
+- moins tout ce que l'utilisateur a déjà vu / masqué / sauvegardé.
+
+Ce pool (**~400 articles max**) est passé tel quel à `TopicSelector.select_topics_for_user()`,
+donc à `build_topic_clusters()`. Or le corpus réel sur 168 h est de **14 445 articles / 165 sources**.
+
+> **Le clustering qui produit « les sujets les + couverts en France » travaille sur ~2,8 % du corpus,
+> et sur un échantillon biaisé et différent pour chaque utilisateur.**
+
+Conséquences structurelles, indépendantes de tout algorithme :
+
+1. **La pastille « N sources » ne mesure pas la couverture médiatique**, mais le nombre de sources
+   *présentes dans la tranche filtrée de cet utilisateur*. Elle est donc trompeuse par construction.
+2. **Le signal se dégrade avec l'engagement** : les articles déjà lus sont exclus du pool, donc les
+   clusters d'un utilisateur assidu rétrécissent au fil de la journée.
+3. **La fenêtre 168 h dilue le jour** : un sujet à 83 articles/24 h ne pèse que 0,6 % d'un corpus 7 jours.
+
+### 7.2 Attribution quantifiée des deux leviers
+
+Mesure sur données de production, KPI = nombre de sujets couverts par ≥ 3 médias distincts.
+Regroupement par composantes connexes (**borne supérieure généreuse** : l'algo glouton réel fait moins).
+
+| | **Pool 400 art. / 168 h** (actuel) | **Corpus complet 24 h** |
+|---|---|---|
+| **Jaccard 0.45** (actuel) | **0 sujet** ⟵ *config de prod* | 32 sujets |
+| **Cosinus IDF 0.42** | 13 sujets | **79 sujets** |
+
+La simulation fidèle de la production (case en haut à gauche) donne **0 sujet à ≥ 3 médias**,
+meilleur cluster = 2 médias. **C'est exactement la capture** : « 3 sources », « 2 sources », « 2 sources ».
+
+**Les deux leviers sont nécessaires, aucun n'est suffisant seul** : corriger la métrique sans le pool
+plafonne à 13 ; corriger le pool sans la métrique plafonne à 32. Les deux ensemble : 79.
+
+### 7.3 Le levier « métrique » : IDF plutôt que Jaccard
+
+Sur le corpus complet 24 h, à matière identique (titre seul), remplacer Jaccard par un cosinus pondéré IDF :
+
+| | Jaccard 0.45 | Cosinus IDF 0.42 |
+|---|---|---|
+| Articles regroupés | 334 (15 %) | **996 (45 %)** |
+| Sujets multi-articles | 100 | 284 |
+| Sujets ≥ 3 médias | 32 | **79** |
+| Sujets ≥ 5 médias | 11 | **32** |
+
+Raison de fond : Jaccard traite « ceuta » et « avec » comme également informatifs, et sa normalisation
+par l'union pénalise les titres longs. L'IDF donne son poids à ce qui identifie l'événement
+(`ceuta` idf 3,28 ; `biscarrosse` 6,32) et ignore le remplissage.
+
+### 7.4 Piège écarté — la description brute dégrade la précision
+
+94 % des articles ont une `description` (médiane 273 car., ~5× le titre). L'intuition « clusterisons
+sur plus de texte » est **fausse en l'état** :
+
+| Matière (cos ≥ 0.4) | Paires intra-source | Paires cross-média | % cross-média |
+|---|---|---|---|
+| Titre seul | 576 | 1 021 | **63,9 %** |
+| Titre + description | 1 814 | 686 | **27,4 %** |
+
+La description RSS charrie du boilerplate de source (signatures, rubriques, mentions légales) : elle
+rapproche surtout les articles **d'un même média entre eux** — l'inverse du besoin produit. Elle n'est
+exploitable qu'après un nettoyage de boilerplate par source, à traiter comme un chantier distinct.
+
+### 7.5 Plafond mesuré des méthodes lexicales
+
+Banc d'essai B³ (métrique standard du clustering d'événements) sur 63 articles réels annotés
+(Ceuta 21, Gironde 8, Trump éclaté en Gaza/Ukraine/Iran/USA, 10 bruits distincts) :
+
+| Méthode | B³ P | B³ R | B³ F1 | Ceuta | Gironde |
+|---|---|---|---|---|---|
+| **ACTUEL** (Jaccard 0.45 glouton) | 1.00 | 0.31 | 0.47 | 2 méd. | 1 méd. |
+| Jaccard 0.25 + agglomératif | 1.00 | 0.43 | 0.60 | 3 méd. | 1 méd. |
+| Cosinus IDF 0.20 + agglomératif | 1.00 | **0.44** | **0.61** | 5 méd. | 1 méd. |
+| Cosinus IDF 0.20 + ancre entité | 1.00 | 0.44 | 0.61 | 5 méd. | 1 méd. |
+
+**Toutes les variantes lexicales plafonnent à R ≈ 0,44**, précision parfaite. Le rappel manquant est
+structurel : la Gironde reste à 1 média parce que « les mécanos au front », « des obus ont explosé »
+et « la radio Ici Gironde mobilisée » ne partagent aucun vocabulaire. **Aucun réglage lexical ne
+franchira ce plafond** — il faut une représentation sémantique.
+
+### 7.6 Ce que je n'ai PAS pu mesurer
+
+Le test des embeddings n'a pas pu être exécuté : `huggingface.co` est **bloqué par la politique
+d'egress** de l'environnement (403 au CONNECT). Le gain sémantique est donc **projeté, non mesuré** —
+je le signale explicitement plutôt que de l'extrapoler.
+
+Protocole de validation à exécuter dans un environnement autorisé, avant tout engagement :
+rejouer `docs/qa/scripts/bench_clustering_bcubed.py` en remplaçant la matrice de similarité par des
+embeddings **Mistral** (`mistral-embed` — déjà le fournisseur de la stack, cf. `editorial/llm_client.py`,
+donc aucun nouveau vendor). Critère de décision : **B³ R > 0,70 à P ≥ 0,95**, et Gironde ≥ 6 médias.
+Si ce seuil n'est pas atteint, ne pas engager le chantier `pgvector`.
+
+### 7.7 Plan révisé — par ordre de rendement mesuré
+
+L'ordre du plan de la partie I (§5) est **caduc** : il commençait par l'algorithme, qui est le second
+levier, pas le premier.
+
+**Lot A — Découpler clustering global et personnalisation** *(le levier dominant, sans IA)*
+Calculer les clusters **une fois par cycle sur le corpus complet 24 h**, les persister
+(`contents.cluster_id`, aujourd'hui mort : 11 lignes sur 2 205), avec le vrai décompte de médias.
+La personnalisation ne doit plus **re-clusteriser** : elle sélectionne et ordonne parmi des clusters
+globaux. Effet attendu : la pastille « N sources » devient vraie, et le KPI passe de 0 à ~32 sujets.
+Bénéfice collatéral : coût divisé (1 clustering/cycle au lieu d'1 par utilisateur).
+
+**Lot B — Remplacer Jaccard par un cosinus IDF + agglomératif liaison moyenne**
+Mesuré : ×2,5 sur le KPI (32 → 79). Supprime aussi la dérive du sac de tokens (§2.2). L'IDF se calcule
+sur le corpus du cycle, donc gratuitement une fois le Lot A en place.
+
+**Lot C — Observabilité** *(inchangé, cf. §5 Lot 2)* — sans elle, tout réglage reste aveugle.
+
+**Lot D — Couche sémantique** *(sous réserve du seuil §7.6)* — seule voie au-delà de R ≈ 0,44.
+
+**Non retenu** : clusteriser sur `title + description` brute (§7.4), et le regroupement par entité
+seule (§3.2, régression « Texas »).
+
+---
+
+## 8. Reproduction
 
 Scripts de l'analyse (corpus réel extrait de production, algorithme importé depuis `app/services/text_similarity.py`) :
 
