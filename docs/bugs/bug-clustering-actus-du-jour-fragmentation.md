@@ -166,7 +166,7 @@ Vérification sur le cas le plus dangereux du jour — les **24 articles contena
 
 1. **Sur-représentation d'une source.** BFMTV publie à lui seul ~45 articles quasi dupliqués sur la Gironde (« Incendie en Gironde: "[citation]", déclare X »). Le fold agrégateur ne traite que Reddit ; il n'existe pas de dédoublonnage intra-source. Ces titres-citations sont aussi structurellement inclusterisables.
 2. **`Content.entities` est sous-exploité.** 72 % des articles des dernières 24 h ont des entités NER (3,1 en moyenne). Elles ne servent aujourd'hui qu'à *nommer* un carrousel (`article_clustering_service.py:116-129`), jamais à regrouper.
-3. **La colonne `contents.cluster_id` est morte** : 11 lignes renseignées sur 2 205. Le clustering est intégralement recalculé en mémoire à chaque génération, sans persistance ni observabilité — impossible de suivre un sujet dans le temps ou de mesurer une régression.
+3. **La colonne `contents.cluster_id` n'est presque pas exploitée** : 11 lignes renseignées sur 2 205. Elle n'est écrite que par la pipeline éditoriale (`editorial/pipeline.py::_persist_content_cluster_ids`), et seulement pour les rares sujets qu'elle retient. Le clustering lui-même reste recalculé en mémoire à chaque génération, sans persistance ni observabilité — impossible de suivre un sujet dans le temps ou de mesurer une régression.
 4. **Stop words contre-productifs.** `president`, `gouvernement`, `ministre`, `monde`, `guerre`(non), `europe` sont filtrés. Sur un titre de 8 mots, retirer « président » ou « Europe » supprime un discriminant réel et rapproche le titre du bruit.
 
 ---
@@ -328,7 +328,8 @@ levier, pas le premier.
 
 **Lot A — Découpler clustering global et personnalisation** *(le levier dominant, sans IA)*
 Calculer les clusters **une fois par cycle sur le corpus complet 24 h**, les persister
-(`contents.cluster_id`, aujourd'hui mort : 11 lignes sur 2 205), avec le vrai décompte de médias.
+(`contents.cluster_id`, aujourd'hui écrit par la seule pipeline éditoriale : 11 lignes sur 2 205),
+avec le vrai décompte de médias.
 La personnalisation ne doit plus **re-clusteriser** : elle sélectionne et ordonne parmi des clusters
 globaux. Effet attendu : la pastille « N sources » devient vraie, et le KPI passe de 0 à ~32 sujets.
 Bénéfice collatéral : coût divisé (1 clustering/cycle au lieu d'1 par utilisateur).
@@ -346,7 +347,62 @@ seule (§3.2, régression « Texas »).
 
 ---
 
-## 8. Reproduction
+## 8. État d'implémentation
+
+### Livré
+
+**Lot A — le regroupement global fait autorité.**
+`DigestSelector._build_global_trending_context()` regroupait déjà tout le corpus 24 h pour calculer
+le flag *trending*, mais jetait le regroupement. Il le conserve désormais dans `GlobalTrendingContext`
+(`cluster_by_content`, `cluster_source_domains`). `TopicSelector._clusters_from_global()` **projette**
+les candidats de l'utilisateur sur ces sujets globaux au lieu de re-clusteriser son pool.
+
+Le point décisif est le décompte de médias : `source_domains` reste celui du **corpus complet**. Un
+sujet couvert par 14 médias est donc « trending » même si le pool de l'utilisateur n'en contient qu'un
+article — c'est exactement ce que promet « les sujets les + couverts en France ». Les candidats hors
+fenêtre 24 h (le pool remonte à 168 h) restent éligibles en sujet isolé, et l'absence de contexte
+global fait retomber proprement sur un clustering local.
+
+**Lot B — cosinus pondéré IDF + agglomératif par centroïde.**
+Nouveau module `app/services/briefing/topic_clustering.py`, sans dépendance au modèle `Content`
+(testable isolément). `ImportanceDetector.build_topic_clusters()` le délègue et conserve son rôle
+métier (domaines, fold agrégateurs, thème dominant). Bénéficie à tous les consommateurs du
+clustering : digest, Essentiel, carrousels, feed.
+
+Note d'implémentation : une **liaison moyenne sur graphe creux a été essayée puis écartée**. Les paires
+sous le seuil y comptant pour 0, elle refermait les clusters à mesure qu'ils grossissaient — le défaut
+même qu'on corrigeait (Ceuta plafonnait à 3 médias). La liaison par centroïde n'a pas ce biais.
+
+Nouvelle constante `TOPIC_CLUSTER_COSINE_THRESHOLD = 0.30`. `TOPIC_CLUSTER_THRESHOLD` (0.45) est
+**conservée telle quelle** : elle pilote un dédoublonnage Jaccard dans `essentiel_service` et n'a rien
+à voir avec le clustering — les deux étaient couplées par accident.
+
+### Résultats mesurés
+
+Banc d'essai B³ sur corpus annoté (`docs/qa/scripts/bench_clustering_bcubed.py`) :
+
+| | B³ P | B³ R | B³ F1 | Ceuta | Clusters mixtes |
+|---|---|---|---|---|---|
+| Avant (Jaccard 0.45 glouton) | 1.00 | 0.31 | 0.47 | 2 médias | 0 |
+| **Après (cosinus IDF 0.30, centroïde)** | **1.00** | **0.47** | **0.64** | **9 médias** | **0** |
+
+La précision reste parfaite : Gaza, Ukraine et Iran restent séparés malgré « Trump » partout — pas de
+régression « Texas ». Performance : **0,45 s pour 2 200 articles** (1,4 s pour 4 400), une fois par
+cycle et non plus une fois par utilisateur.
+
+### Non livré
+
+- **Lot C (observabilité)** : seul le log `global_trending_context_built` a été enrichi du KPI
+  `topics_3_plus_media`. La persistance générale des clusters reste à faire. Attention au partage de DB :
+  `contents.cluster_id` est déjà écrit par la pipeline éditoriale et lu par `title_annotation_service` —
+  y écrire depuis `main` changerait le comportement du backend `production` (ancien code) sur la DB
+  commune pendant une semaine. À traiter en expand-contract dans une PR dédiée.
+- **Lot D (sémantique)** : bloqué sur la mesure (§7.6). Le plafond lexical R ≈ 0,44 n'est pas franchi ;
+  la Gironde reste un cas non résolu.
+
+---
+
+## 9. Reproduction
 
 Scripts de l'analyse (corpus réel extrait de production, algorithme importé depuis `app/services/text_similarity.py`) :
 

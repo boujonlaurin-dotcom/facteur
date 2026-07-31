@@ -205,6 +205,18 @@ class GlobalTrendingContext:
     une_content_ids: set[UUID]
     computed_at: datetime.datetime
 
+    # Regroupement GLOBAL des sujets, calculé une fois sur le corpus 24 h complet
+    # (toutes sources actives) — et non sur le pool filtré d'un utilisateur.
+    #
+    # Sans cela, « les sujets les + couverts en France » était calculé sur ~400
+    # articles par utilisateur (200 sources suivies + 200 curatées, moins le
+    # déjà-vu) alors que le corpus réel dépasse 2 000 articles/jour : la pastille
+    # « N sources » ne mesurait pas la couverture médiatique mais la taille de la
+    # tranche vue par cet utilisateur, et se dégradait à mesure qu'il lisait.
+    # Cf. docs/bugs/bug-clustering-actus-du-jour-fragmentation.md §7.1.
+    cluster_by_content: dict[UUID, str] = field(default_factory=dict)
+    cluster_source_domains: dict[str, set[str]] = field(default_factory=dict)
+
 
 class DiversityConstraints:
     """Configuration des contraintes de diversité."""
@@ -1896,10 +1908,25 @@ class DigestSelector:
         result = await self.session.execute(stmt)
         recent_contents = list(result.scalars().all())
 
-        # 2. Détecter les clusters trending
-        trending_ids = self.importance_detector.detect_trending_clusters(
-            recent_contents,
-        )
+        # 2. Regrouper le corpus complet par sujet, UNE fois. C'est ce
+        # regroupement global qui fait autorité sur « ce sujet est couvert par
+        # N médias » — le pool personnalisé de chaque utilisateur n'en voit
+        # qu'une fraction et ne peut pas servir de référence.
+        clusters = self.importance_detector.build_topic_clusters(recent_contents)
+
+        trending_ids: set[UUID] = set()
+        cluster_by_content: dict[UUID, str] = {}
+        cluster_source_domains: dict[str, set[str]] = {}
+        for cluster in clusters:
+            cluster_source_domains[cluster.cluster_id] = cluster.source_domains
+            is_trending = (
+                len(cluster.source_domains)
+                >= self.importance_detector.min_sources_for_trending
+            )
+            for content in cluster.contents:
+                cluster_by_content[content.id] = cluster.cluster_id
+                if is_trending:
+                    trending_ids.add(content.id)
 
         # 3. Fetch GUIDs "À la une" et identifier les contenus une
         une_guids = await self._fetch_une_guids()
@@ -1913,12 +1940,23 @@ class DigestSelector:
             recent_contents=len(recent_contents),
             trending_count=len(trending_ids),
             une_count=len(une_ids),
+            global_clusters=len(clusters),
+            # KPI produit : nombre de sujets réellement couverts par >= 3 médias
+            # distincts dans la journée. Sert de garde-fou en prod — cf. §6 du
+            # bug doc (cible >= 6, mesuré à 0 avant correction).
+            topics_3_plus_media=sum(
+                1
+                for domains in cluster_source_domains.values()
+                if len(domains) >= self.importance_detector.min_sources_for_trending
+            ),
         )
 
         return GlobalTrendingContext(
             trending_content_ids=trending_ids,
             une_content_ids=une_ids,
             computed_at=now,
+            cluster_by_content=cluster_by_content,
+            cluster_source_domains=cluster_source_domains,
         )
 
     async def _fetch_une_guids(self) -> set[str]:

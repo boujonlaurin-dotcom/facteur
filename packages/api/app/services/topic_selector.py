@@ -100,11 +100,13 @@ class TopicSelector:
         if not candidates:
             return []
 
-        # 1. Clustering
-        clusters = self.importance_detector.build_topic_clusters(
-            candidates,
-            similarity_threshold=ScoringWeights.TOPIC_CLUSTER_THRESHOLD,
-        )
+        # 1. Regroupement par sujet — le regroupement GLOBAL fait autorité.
+        clusters = self._clusters_from_global(candidates, trending_context)
+        if clusters is None:
+            clusters = self.importance_detector.build_topic_clusters(
+                candidates,
+                similarity_threshold=ScoringWeights.TOPIC_CLUSTER_COSINE_THRESHOLD,
+            )
 
         if not clusters:
             return []
@@ -150,6 +152,96 @@ class TopicSelector:
         )
 
         return topic_groups
+
+    def _clusters_from_global(
+        self,
+        candidates: list[Content],
+        trending_context: GlobalTrendingContext | None,
+    ) -> list[TopicCluster] | None:
+        """Reconstitue les clusters du user à partir du regroupement GLOBAL.
+
+        Le clustering est calculé une fois par cycle sur le corpus 24 h complet
+        (`DigestSelector._build_global_trending_context`). Ici on se contente de
+        **projeter** les candidats de l'utilisateur sur ces sujets : la
+        personnalisation choisit parmi des sujets, elle ne les redéfinit pas.
+
+        Le point clé est `source_domains` : on garde le décompte **global** de
+        médias, pas celui des seuls articles visibles par cet utilisateur. Un
+        sujet couvert par 14 médias reste « trending » même si le pool de
+        l'utilisateur n'en contient qu'un article — c'est précisément ce que
+        promet « les sujets les + couverts en France ».
+
+        Returns:
+            Les clusters projetés, ou None si aucun regroupement global n'est
+            disponible (génération à la demande sans contexte) : l'appelant
+            retombe alors sur un clustering local.
+        """
+        if trending_context is None or not trending_context.cluster_by_content:
+            return None
+
+        grouped: dict[str, list[Content]] = {}
+        orphans: list[Content] = []
+        for content in candidates:
+            key = trending_context.cluster_by_content.get(content.id)
+            # Un candidat hors fenêtre 24 h (le pool remonte à 168 h) n'a pas de
+            # sujet global : il reste éligible, en sujet à lui seul.
+            if key is None:
+                orphans.append(content)
+            else:
+                grouped.setdefault(key, []).append(content)
+
+        clusters: list[TopicCluster] = []
+        for key, contents in grouped.items():
+            clusters.append(
+                TopicCluster(
+                    cluster_id=key,
+                    label=contents[0].title[:80] if contents else "",
+                    tokens=set(),
+                    contents=contents,
+                    source_ids={c.source_id for c in contents},
+                    source_domains=trending_context.cluster_source_domains.get(
+                        key, set()
+                    ),
+                    theme=self._dominant_theme(contents),
+                )
+            )
+        for content in orphans:
+            clusters.append(
+                TopicCluster(
+                    cluster_id=f"orphan-{content.id}",
+                    label=content.title[:80],
+                    tokens=set(),
+                    contents=[content],
+                    source_ids={content.source_id},
+                    source_domains=set(),
+                    theme=self._dominant_theme([content]),
+                )
+            )
+
+        clusters.sort(key=lambda c: len(c.contents), reverse=True)
+
+        logger.info(
+            "topic_clusters_from_global",
+            candidates=len(candidates),
+            projected_topics=len(grouped),
+            orphans=len(orphans),
+            trending_topics=sum(1 for c in clusters if c.is_trending),
+        )
+        return clusters
+
+    @staticmethod
+    def _dominant_theme(contents: list[Content]) -> str | None:
+        """Thème majoritaire du cluster, avec repli sur celui de la source."""
+        from collections import Counter
+
+        themes: list[str] = []
+        for content in contents:
+            theme = getattr(content, "theme", None)
+            if not theme and getattr(content, "source", None):
+                theme = getattr(content.source, "theme", None)
+            if theme:
+                themes.append(theme)
+        return Counter(themes).most_common(1)[0][0] if themes else None
 
     def _score_clusters(
         self,

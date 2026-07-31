@@ -97,10 +97,18 @@ def make_context(
     return ctx
 
 
-def make_trending_context(trending_ids=None, une_ids=None):
+def make_trending_context(
+    trending_ids=None,
+    une_ids=None,
+    cluster_by_content=None,
+    cluster_source_domains=None,
+):
     ctx = Mock(spec=GlobalTrendingContext)
     ctx.trending_content_ids = trending_ids or set()
     ctx.une_content_ids = une_ids or set()
+    # Vides par défaut : le sélecteur retombe alors sur un clustering local.
+    ctx.cluster_by_content = cluster_by_content or {}
+    ctx.cluster_source_domains = cluster_source_domains or {}
     return ctx
 
 
@@ -631,3 +639,74 @@ class TestSelectTopicsForUser:
 
         assert len(result) == 1
         assert result[0].label == "The specific article title"
+
+
+class TestClustersFromGlobal:
+    """Le regroupement global fait autorité — la perso ne redéfinit pas les sujets.
+
+    Cf. docs/bugs/bug-clustering-actus-du-jour-fragmentation.md §7.1 : le pool
+    d'un utilisateur (~400 articles) ne voit qu'une fraction du corpus, il ne
+    peut donc pas servir de référence pour « les sujets les + couverts ».
+    """
+
+    def test_returns_none_without_global_clustering(self):
+        selector = TopicSelector()
+
+        assert selector._clusters_from_global([make_content()], None) is None
+        assert (
+            selector._clusters_from_global([make_content()], make_trending_context())
+            is None
+        )
+
+    def test_projects_candidates_onto_global_topics(self):
+        a, b, c = make_content(), make_content(), make_content()
+        selector = TopicSelector()
+
+        clusters = selector._clusters_from_global(
+            [a, b, c],
+            make_trending_context(
+                cluster_by_content={a.id: "sujet-1", b.id: "sujet-1", c.id: "sujet-2"},
+                cluster_source_domains={"sujet-1": {"x.fr", "y.fr"}, "sujet-2": set()},
+            ),
+        )
+
+        by_id = {cl.cluster_id: cl for cl in clusters}
+        assert {c.id for c in by_id["sujet-1"].contents} == {a.id, b.id}
+        assert {c.id for c in by_id["sujet-2"].contents} == {c.id}
+
+    def test_keeps_global_media_count_not_user_slice(self):
+        """Un seul article visible, mais 14 médias couvrent le sujet : trending."""
+        only_one = make_content()
+        selector = TopicSelector()
+
+        clusters = selector._clusters_from_global(
+            [only_one],
+            make_trending_context(
+                cluster_by_content={only_one.id: "ceuta"},
+                cluster_source_domains={
+                    "ceuta": {f"media{i}.fr" for i in range(14)}
+                },
+            ),
+        )
+
+        assert len(clusters) == 1
+        assert len(clusters[0].source_domains) == 14
+        assert clusters[0].is_trending is True
+
+    def test_candidate_outside_global_window_stays_eligible(self):
+        """Le pool remonte à 168 h, le clustering global couvre 24 h."""
+        fresh, old = make_content(), make_content()
+        selector = TopicSelector()
+
+        clusters = selector._clusters_from_global(
+            [fresh, old],
+            make_trending_context(
+                cluster_by_content={fresh.id: "sujet-1"},
+                cluster_source_domains={"sujet-1": {"x.fr"}},
+            ),
+        )
+
+        assert sum(len(cl.contents) for cl in clusters) == 2
+        orphan = next(cl for cl in clusters if cl.cluster_id.startswith("orphan-"))
+        assert orphan.contents[0].id == old.id
+        assert orphan.is_trending is False
