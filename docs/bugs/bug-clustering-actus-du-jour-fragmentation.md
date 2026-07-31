@@ -3,7 +3,7 @@
 **Date** : 2026-07-31
 **Branche** : `claude/article-clustering-analysis-06xko0`
 **Sévérité** : **P0 — cœur de proposition de valeur**. La section « Les sujets les + couverts en France » n'affiche pas les sujets les plus couverts.
-**Statut** : Diagnostic terminé — plan à valider (pas d'implémentation)
+**Statut** : Lots A et B livrés (cf. §8). Lot C (persistance) et Lot D (sémantique) à faire.
 **Liés** : `bug-actus-du-jour-ranking.md`, `bug-clustering-consistency.md`, `bug-comparison-clustering-too-loose.md`, `bug-digest-pas-de-recul-same-event.md`
 
 ---
