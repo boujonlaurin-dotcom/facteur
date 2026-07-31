@@ -5,7 +5,7 @@ Epic 10+: Digest "Sujets du jour" — clustering universel
 
 Ce module détecte les contenus objectivement importants via:
 1. Parsing des feeds "À la Une" des sources de référence
-2. Clustering des titres par similarité Jaccard pour détecter les sujets tendance
+2. Regroupement des titres par cosinus pondéré IDF pour détecter les sujets tendance
 3. Clustering universel pour regrouper les articles par sujet (build_topic_clusters)
 
 Architecture: Ce module est DÉCOUPLÉ du ScoringEngine. Il consomme les contenus
@@ -106,18 +106,19 @@ class ImportanceDetector:
     2. Les sujets tendance (couverts par ≥N sources distinctes)
 
     Attributes:
-        similarity_threshold: Seuil de similarité Jaccard pour regrouper les titres (défaut: 0.4)
+        similarity_threshold: Seuil de cosinus IDF pour regrouper les titres (défaut: 0.30)
         min_sources_for_trending: Nombre minimum de sources pour qu'un sujet soit "trending" (défaut: 3)
     """
 
     def __init__(
-        self, similarity_threshold: float = 0.4, min_sources_for_trending: int = 3
+        self, similarity_threshold: float = 0.30, min_sources_for_trending: int = 3
     ):
         """Initialise le détecteur d'importance.
 
         Args:
-            similarity_threshold: Seuil de similarité Jaccard [0-1].
-                0.4 = environ 40% des mots en commun.
+            similarity_threshold: Seuil de cosinus pondéré IDF [0-1].
+                0.30 = valeur calibrée sur corpus annoté (cf. ScoringWeights
+                .TOPIC_CLUSTER_COSINE_THRESHOLD).
             min_sources_for_trending: Nombre minimum de sources distinctes
                 couvrant un même sujet pour le considérer comme "trending".
         """
@@ -147,12 +148,13 @@ class ImportanceDetector:
         Retourne TOUS les clusters (y compris singletons). Chaque cluster
         représente un sujet potentiel pour le digest.
 
-        Algorithme identique à detect_trending_clusters mais retourne
-        la structure complète au lieu de filtrer sur le trending.
+        Le regroupement lui-même est délégué à `topic_clustering.cluster_documents`
+        (cosinus pondéré IDF, liaison par centroïde) ; cette méthode y ajoute les
+        métadonnées métier (sources, domaines, thème dominant, fold agrégateurs).
 
         Args:
             contents: Liste des contenus à analyser
-            similarity_threshold: Seuil Jaccard override (default: self.similarity_threshold)
+            similarity_threshold: Seuil cosinus override (default: self.similarity_threshold)
 
         Returns:
             Liste de TopicCluster triée par taille décroissante
@@ -166,48 +168,34 @@ class ImportanceDetector:
             else self.similarity_threshold
         )
 
-        # Phase 1: Clustering Jaccard (même algo que detect_trending_clusters)
-        raw_clusters: list[dict] = []
-
+        # Phase 1: Regroupement par cosinus pondéré IDF (cf. topic_clustering).
+        from app.services.briefing.topic_clustering import cluster_documents
         from app.services.recommendation.scoring_config import ScoringWeights
 
+        # Les titres sans token exploitable sont écartés du clustering, mais on
+        # garde la correspondance index → contenu pour reconstruire les clusters.
+        indexed: list[tuple[Content, set[str]]] = []
         for content in contents:
             tokens = self.normalize_title(content.title)
-            if not tokens:
-                continue
+            if tokens:
+                indexed.append((content, tokens))
 
-            # Minimum token constraint: very short titles become singletons
-            if len(tokens) < ScoringWeights.TOPIC_CLUSTER_MIN_TOKENS:
-                raw_clusters.append(
-                    {
-                        "tokens": tokens,
-                        "contents": [content],
-                    }
-                )
-                continue
+        if not indexed:
+            return []
 
-            matched_cluster = None
-            best_similarity = 0.0
+        groups = cluster_documents(
+            [tokens for _, tokens in indexed],
+            threshold=threshold,
+            min_tokens=ScoringWeights.TOPIC_CLUSTER_MIN_TOKENS,
+        )
 
-            for cluster in raw_clusters:
-                sim = self.jaccard_similarity(tokens, cluster["tokens"])
-                if sim > best_similarity and sim >= threshold:
-                    best_similarity = sim
-                    matched_cluster = cluster
-
-            if matched_cluster:
-                matched_cluster["contents"].append(content)
-                # Evolve cluster tokens with cap to prevent drift
-                merged = matched_cluster["tokens"] | tokens
-                if len(merged) <= ScoringWeights.TOPIC_CLUSTER_MAX_TOKENS:
-                    matched_cluster["tokens"] = merged
-            else:
-                raw_clusters.append(
-                    {
-                        "tokens": tokens,
-                        "contents": [content],
-                    }
-                )
+        raw_clusters: list[dict] = [
+            {
+                "tokens": set().union(*(indexed[i][1] for i in group)),
+                "contents": [indexed[i][0] for i in group],
+            }
+            for group in groups
+        ]
 
         # Phase 2: Convertir en TopicCluster avec métadonnées
         topic_clusters: list[TopicCluster] = []

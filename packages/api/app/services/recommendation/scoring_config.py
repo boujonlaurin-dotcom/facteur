@@ -261,17 +261,26 @@ class ScoringWeights:
     # Nombre maximum d'articles par topic group.
     TOPIC_MAX_ARTICLES = 3
 
-    # Seuil Jaccard pour le clustering universel.
-    # 0.45 = articles doivent partager ~45% de tokens pour être groupés.
-    # Plus strict que trending (0.4) pour éviter les faux clusters.
+    # Seuil Jaccard du filet de dédoublonnage de l'Essentiel (essentiel_service).
+    # NE PILOTE PLUS le clustering universel : celui-ci utilise désormais un
+    # cosinus pondéré IDF, dont l'échelle est différente (cf. constante suivante).
     TOPIC_CLUSTER_THRESHOLD = 0.45
+
+    # Seuil du clustering universel — cosinus pondéré IDF, liaison par centroïde
+    # (`briefing/topic_clustering.py`).
+    #
+    # Calibré sur corpus de production annoté (banc d'essai B³ :
+    # `docs/qa/scripts/bench_clustering_bcubed.py`). À 0.30, la précision reste
+    # parfaite (B³ P = 1.00, aucun cluster mêlant deux sujets réels) alors que le
+    # rappel passe de 0.31 à 0.47 et que le sujet Ceuta remonte de 2 à 9 médias.
+    # En dessous de 0.25 la précision décroche (des sujets distincts fusionnent) ;
+    # au-dessus de 0.35 on retombe sur la fragmentation d'origine.
+    # Cf. docs/bugs/bug-clustering-actus-du-jour-fragmentation.md.
+    TOPIC_CLUSTER_COSINE_THRESHOLD = 0.30
 
     # Minimum de tokens pour qu'un article soit candidat au clustering.
     # Articles avec < 3 tokens après filtrage deviennent des singletons.
     TOPIC_CLUSTER_MIN_TOKENS = 3
-
-    # Maximum de tokens par cluster (évite la dérive par union successive).
-    TOPIC_CLUSTER_MAX_TOKENS = 15
 
     # --- EXPLICIT FEEDBACK LAYER (Like & Bookmark signals) ---
 

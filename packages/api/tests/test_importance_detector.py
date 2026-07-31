@@ -329,7 +329,9 @@ class TestImportanceDetectorInit:
         """Test des valeurs par défaut."""
         detector = ImportanceDetector()
 
-        assert detector.similarity_threshold == 0.4
+        # Seuil de cosinus pondéré IDF (et non plus Jaccard) depuis le passage
+        # à topic_clustering — cf. ScoringWeights.TOPIC_CLUSTER_COSINE_THRESHOLD.
+        assert detector.similarity_threshold == 0.30
         assert detector.min_sources_for_trending == 3
 
     def test_custom_values(self):
