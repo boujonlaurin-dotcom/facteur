@@ -57,6 +57,11 @@ class ScoringContext:
         # base) et toute mutation d'attribut ORM. Prioritaire sur
         # `cluster_source_counts` quand renseigné.
         coverage_source_count: int | None = None,
+        # True quand le scoring sert une section thème/sujet/source de la
+        # Tournée (`is_personalized_theme_mode`). Gate les règles réservées à
+        # ce mode — aujourd'hui le malus feuilleton du PenaltyPass. Faux
+        # partout ailleurs (« Pour vous », Flâner scoré, digest).
+        personalized_theme_mode: bool = False,
     ):
         self.user_profile = user_profile
         self.user_interests = user_interests
@@ -98,6 +103,9 @@ class ScoringContext:
 
         # Chemin `topics` : count du cluster courant (None hors de ce chemin).
         self.coverage_source_count = coverage_source_count
+
+        # Sections de la Tournée (cf. paramètre).
+        self.personalized_theme_mode = personalized_theme_mode
 
         # Diagnostics pour explicabilité
         self.reasons: dict[UUID, dict[str, Any]] = {}

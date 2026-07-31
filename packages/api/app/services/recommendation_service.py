@@ -197,6 +197,7 @@ def stratify_followed_first(
     return followed + others
 
 
+from app.services.digest_content_refs import extract_content_ids
 from app.services.language_user_filter import language_filter_clause
 from app.services.recommendation.filter_presets import (
     apply_entity_filter,
@@ -338,9 +339,16 @@ class RecommendationService:
         personalization_stmt = select(UserPersonalization).where(
             UserPersonalization.user_id == user_id
         )
+        # `uq_daily_digest_user_date_serene` garantit 1 ligne par
+        # (user, date, is_serene) : sans le prédicat `is_serene`, un compte qui
+        # a les deux digests du jour (normal + serein) en récupérait un au
+        # hasard — donc l'exclusion portait potentiellement sur les articles de
+        # l'AUTRE digest que celui affiché. Prédicat gratuit (index
+        # `ix_daily_digest_target_date_is_serene`), pas de requête en plus.
         digest_stmt = select(DailyDigest).where(
             DailyDigest.user_id == user_id,
             DailyDigest.target_date == date_module.today(),
+            DailyDigest.is_serene == serein,
         )
 
         async def _user_context_short():
@@ -472,11 +480,22 @@ class RecommendationService:
             return results
 
         # 2. Process digest exclusion (already fetched in Phase 1)
+        #
+        # Bug curation sections thématiques : la version précédente inlinait un
+        # parse `flat_v1` (« items est une liste de {content_id} »). Depuis le
+        # passage à `editorial_v3`, `items` est un **objet**
+        # `{mode, metadata, subjects[]}` → itérer un dict renvoie ses CLÉS, donc
+        # `isinstance(item, dict)` était faux partout et la liste ressortait
+        # vide. Aucune exception levée ⇒ no-op **silencieux** (pas même le
+        # warning ci-dessous). On délègue désormais à `extract_content_ids`, le
+        # helper partagé qui connaît les 3 layouts (flat_v1 / topics_v1 /
+        # editorial_v*) et que le storage cleanup utilise déjà. Pur Python sur
+        # une ligne déjà chargée en phase 1 — aucune requête ajoutée.
+        #
         # Round 3 fix (Sentry warning feed_digest_exclusion_failed, type
         # "string indices must be integers") : certains rows DailyDigest.items
-        # ont été persistés en string JSON au lieu de list — probablement via
-        # une insertion qui a passé le JSON déjà sérialisé. Parse défensif ici
-        # pour couvrir les deux représentations sans resérialiser en DB.
+        # ont été persistés en string JSON au lieu de list — parse défensif
+        # conservé pour couvrir les deux représentations sans resérialiser en DB.
         digest_content_ids: list[UUID] = []
         try:
             items_raw = digest_row.items if digest_row else None
@@ -485,11 +504,12 @@ class RecommendationService:
 
                 items_raw = _json.loads(items_raw)
             if items_raw:
-                digest_content_ids = [
-                    UUID(item["content_id"])
-                    for item in items_raw
-                    if isinstance(item, dict) and item.get("content_id")
-                ]
+                digest_content_ids = list(
+                    extract_content_ids(
+                        items_raw,
+                        digest_row.format_version if digest_row else None,
+                    )
+                )
         except Exception as e:
             logger.warning("feed_digest_exclusion_failed", error=str(e))
 
@@ -908,6 +928,9 @@ class RecommendationService:
             source_priority_multipliers=source_priority_multipliers,
             subscribed_source_ids=subscribed_source_ids,
             user_interest_states=user_interest_states,
+            # Gate les règles réservées aux sections de la Tournée (malus
+            # feuilleton du PenaltyPass). Faux pour « Pour vous » / Flâner.
+            personalized_theme_mode=personalized_theme_mode,
         )
 
         use_pillars = ScoringWeights.SCORING_VERSION == "pillars_v1"
@@ -2383,8 +2406,28 @@ class RecommendationService:
             .where(~exists_stmt)
         )
 
-        # Story 10.20: Exclude today's digest articles from feed
-        if digest_content_ids:
+        # Story 10.20: Exclude today's digest articles from feed.
+        #
+        # Restreint à `personalized_theme_mode` (sections de la Tournée). Deux
+        # raisons :
+        #  - c'est là que ça compte : la Tournée rend l'Essentiel / Actus du
+        #    jour AU-DESSUS des sections thème, puis le client
+        #    (`_dedupeSectionsInOrder`) retire de chaque section les articles
+        #    déjà rendus — mais APRÈS le slice de pagination, donc sans les
+        #    remplacer. Exclure ici, c'est-à-dire AVANT le slice, rend à la
+        #    section ses 10 articles réellement affichables ;
+        #  - Flâner n'a aucune dédup inter-sections : y appliquer l'exclusion
+        #    l'amputerait des ~14 articles du digest sans contrepartie. Comme
+        #    l'extraction était un no-op silencieux (cf. get_feed), le
+        #    comportement observé de Flâner est celui « sans exclusion » — on
+        #    le fige tel quel.
+        #
+        # Coût requête : un `NOT IN` sur la vingtaine d'UUID d'un digest, sur
+        # une requête déjà filtrée thème + sources suivies + fenêtre. Postgres
+        # le compile en `id <> ALL (...)` évalué sur les lignes déjà remontées
+        # par `ix_contents_source_published` — plan inchangé, coût +0,6 %
+        # (EXPLAIN prod), et strictement 0 requête ajoutée.
+        if digest_content_ids and personalized_theme_mode:
             query = query.where(Content.id.notin_(digest_content_ids))
 
         # Debug logging for feed source filtering

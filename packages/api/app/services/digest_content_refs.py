@@ -7,6 +7,7 @@ The digest is stored in 3 possible layouts, depending on `format_version`:
   ``{"format": "topics_v1", "topics": [{"articles": [{"content_id": ...}, ...]}, ...]}``.
 - **editorial_v1 / editorial_v2 / editorial_v3 / …** (any ``editorial_v*``):
   ``items`` is a JSON *object* with structured keys:
+  ``subjects[i].representative_content_id``,
   ``subjects[i].actu_article.content_id``,
   ``subjects[i].extra_actu_articles[j].content_id``,
   ``subjects[i].deep_article.content_id``,
@@ -60,6 +61,18 @@ def extract_content_ids(items: Any, format_version: str | None) -> set[UUID]:
         for subject in items.get("subjects") or []:
             if not isinstance(subject, dict):
                 continue
+            # Pivot du sujet (`pipeline.py` : « propagate representative id so
+            # the mobile bottom sheet re-fetches /perspectives on the SAME
+            # content »). C'est une référence à part entière : elle diffère de
+            # `actu_article` sur une bonne moitié des sujets, et le cleanup qui
+            # supprimerait cette ligne casserait le bottom sheet Perspectives.
+            # Elle sert aussi à l'exclusion digest du feed (sections de la
+            # Tournée) — un pivot non extrait revenait dans la section pour se
+            # faire retirer ensuite par la dédup client.
+            if (
+                cid := _safe_uuid(subject.get("representative_content_id"))
+            ) is not None:
+                ids.add(cid)
             actu = subject.get("actu_article")
             if (
                 isinstance(actu, dict)

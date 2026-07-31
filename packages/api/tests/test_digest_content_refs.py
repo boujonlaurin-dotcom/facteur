@@ -147,3 +147,24 @@ def test_wrong_layout_for_format_falls_back_to_flat_walker():
     """
     cid = uuid4()
     assert extract_content_ids([{"content_id": str(cid)}], "editorial_v1") == {cid}
+
+
+def test_editorial_extracts_representative_content_id():
+    """Le pivot du sujet est une référence à part entière.
+
+    Il diffère de `actu_article` sur une bonne moitié des sujets en prod. Deux
+    conséquences si on l'oublie : le storage cleanup peut supprimer la ligne
+    dont dépend le bottom sheet Perspectives, et l'exclusion digest du feed
+    laisse ce pivot revenir dans les sections thématiques de la Tournée.
+    """
+    rep, actu = uuid4(), uuid4()
+    items = {
+        "mode": "pour_vous",
+        "subjects": [
+            {
+                "representative_content_id": str(rep),
+                "actu_article": {"content_id": str(actu)},
+            }
+        ],
+    }
+    assert extract_content_ids(items, "editorial_v3") == {rep, actu}

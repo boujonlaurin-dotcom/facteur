@@ -55,6 +55,14 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
   final ScrollController _scroll = ScrollController(keepScrollOffset: false);
   bool _loadingMore = false;
 
+  /// Tours de top-up déjà consommés (cf. [_topUpIfUnderfilled]).
+  int _topUpRounds = 0;
+
+  /// Plafond de tours de top-up. Borne dure : une page dont tous les articles
+  /// sont déjà rendus ailleurs dans la Tournée ne fait pas grandir la section
+  /// tout en gardant `hasMore == true` — sans ce plafond on bouclerait.
+  static const int _kMaxTopUpRounds = 2;
+
   @override
   void initState() {
     super.initState();
@@ -62,8 +70,38 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
       if (!mounted) return;
       ref.read(tourneeLastDedicatedSectionProvider.notifier).state =
           widget.sectionKeyValue;
+      _topUpIfUnderfilled();
     });
     _scroll.addListener(_onScroll);
+  }
+
+  /// Complète une section arrivée sous une page pleine, sans attendre le scroll.
+  ///
+  /// La dédup inter-sections retire d'une section les articles déjà rendus
+  /// au-dessus (Essentiel, Actus du jour) **après** le slice de pagination : une
+  /// section peut donc s'ouvrir avec 6-7 articles alors que le backend en a
+  /// encore. L'exclusion serveur (`personalized_theme_mode`) couvre le cas
+  /// nominal ; ce top-up reste le filet pour tout ce qu'elle ne voit pas
+  /// (chevauchement avec une autre section thème rendue plus haut).
+  ///
+  /// Sans lui, l'utilisateur devait scroller sous les carrousels et « Explorer
+  /// plus » pour déclencher [_onScroll] — la section paraissait close.
+  void _topUpIfUnderfilled() {
+    if (!mounted || _loadingMore || _topUpRounds >= _kMaxTopUpRounds) return;
+    final section = _resolveSection();
+    if (section == null || !section.hasMore || section.isLoadingMore) return;
+    if (section.items.length >= kThemeSectionPageLimit) return;
+    _topUpRounds++;
+    _loadingMore = true;
+    ref
+        .read(fluxContinuProvider.notifier)
+        .loadMoreTheme(widget.sectionKeyValue)
+        .whenComplete(() {
+      _loadingMore = false;
+      if (!mounted) return;
+      // Enchaîne le tour suivant seulement si la section est toujours maigre.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _topUpIfUnderfilled());
+    });
   }
 
   @override

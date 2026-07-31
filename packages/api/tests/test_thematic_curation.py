@@ -281,3 +281,63 @@ def test_pillar_engine_ranks_rich_article_above_none_teaser():
     rich_score = engine.compute_score(rich, context).final_score
     teaser_score = engine.compute_score(teaser, context).final_score
     assert rich_score > teaser_score
+
+
+# --------------------------------------------------------------------------
+# Exclusion digest — cause racine du « 6-7 articles » des sections thème
+# (docs/bugs/bug-curation-entree-sections-thematiques.md)
+# --------------------------------------------------------------------------
+
+
+async def test_digest_exclusion_applies_to_personalized_theme_sections(
+    db_session, followed_tech_source, user_id
+):
+    """Les articles du digest du jour sortent du pool d'une section thème.
+
+    Sans ça, la section reçoit 10 articles digest inclus, puis le client les
+    retire (dédup inter-sections) APRÈS le slice de pagination → 6-7 affichés
+    sans remplacement.
+    """
+    all_ids = await _add_tech_contents(
+        db_session, followed_tech_source.id, count=12, hours_ago=10
+    )
+    in_digest = set(list(all_ids)[:4])
+
+    service = RecommendationService(db_session)
+    candidates = await service._get_candidates(
+        user_id=user_id,
+        limit_candidates=100,
+        theme="tech",
+        personalized=True,
+        followed_source_ids={followed_tech_source.id},
+        digest_content_ids=list(in_digest),
+    )
+
+    ids = {c.id for c in candidates}
+    assert not (in_digest & ids), "les articles du digest doivent être exclus"
+    assert (all_ids - in_digest) <= ids, "le reste du pool doit rester servi"
+
+
+async def test_digest_exclusion_does_not_apply_to_flaner(
+    db_session, followed_tech_source, user_id
+):
+    """Flâner (`followed_only`, sans `personalized`) garde les articles du
+    digest : il n'a pas de dédup inter-sections, l'exclusion l'amputerait sans
+    contrepartie. Non-régression du volume observé côté Flâner."""
+    all_ids = await _add_tech_contents(
+        db_session, followed_tech_source.id, count=12, hours_ago=10
+    )
+    in_digest = set(list(all_ids)[:4])
+
+    service = RecommendationService(db_session)
+    candidates = await service._get_candidates(
+        user_id=user_id,
+        limit_candidates=100,
+        theme="tech",
+        followed_only=True,
+        followed_source_ids={followed_tech_source.id},
+        digest_content_ids=list(in_digest),
+    )
+
+    ids = {c.id for c in candidates}
+    assert in_digest <= ids, "Flâner ne doit PAS perdre les articles du digest"

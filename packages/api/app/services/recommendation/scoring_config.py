@@ -304,6 +304,17 @@ class ScoringWeights:
 
     IMPRESSION_MANUAL = -120.0  # "J'ai déjà vu" — malus permanent, pas de decay
 
+    # --- FEUILLETON / ÉPISODE DE SÉRIE (sections de la Tournée) ---
+    # Malus absolu sur le score composite (échelle ~0-100) pour un titre portant
+    # un marqueur de série (« … 4/22 : … », « QSPTAG #332 »). Volontairement
+    # **léger** : à comparer aux mutes (source -80, thème -40), c'est « un cran
+    # plus bas », pas une exclusion — un épisode de série reste lisible et
+    # remonte s'il est par ailleurs excellent. Objectif : libérer les 3 slots
+    # previewés en tête de section au profit de l'actualité.
+    # Appliqué UNIQUEMENT en `personalized_theme_mode` (décision PO) : « Pour
+    # vous », Flâner et le digest gardent leur classement actuel.
+    SERIAL_EPISODE_MALUS = -6.0
+
     # Fenêtre pendant laquelle un article récemment impressionné est exclu du
     # feed chronologique par défaut (pull-to-refresh). Aligné sur le tier
     # IMPRESSION_VERY_RECENT (<1h = "invisible après refresh").
