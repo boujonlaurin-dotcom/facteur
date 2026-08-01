@@ -161,11 +161,39 @@ footer{padding:48px 0;font-family:var(--mono);font-size:12px;color:var(--ink-sof
   <h1>Comment Facteur décide<br>de <em>ce que tu vois</em></h1>
   <p class="lede">Chaque article reçoit une note. Cette note vient de quatre piliers pondérés, de pénalités absolues, puis d'une couche de diversité et de hasard. Voici le mécanisme complet, chiffre par chiffre.</p>
   <div class="meta">
-    Source : <b>boujonlaurin-dotcom/facteur</b>, commit 6533b53 du 30 juillet 2026<br>
-    Moteur actif : <b>pillars_v1</b> (<code>ScoringWeights.SCORING_VERSION</code>)<br>
-    Fichiers clés : <b>app/services/recommendation/</b> (scoring_engine, scoring_config, pillars/)
+    Source : <b>boujonlaurin-dotcom/facteur</b>, relu sur <b>main</b> au 1<sup>er</sup> août 2026 (8f08039)<br>
+    Moteur décrit ici : <b>pillars_v1</b> (<code>ScoringWeights.SCORING_VERSION</code>)<br>
+    Fichiers clés : <b>app/services/recommendation/</b> (scoring_engine, scoring_config, pillars/)<br>
+    <b>Portée :</b> cette page décrit <b>pillars_v1</b>, qui range Flâner, « Pour vous » et les
+    sections de la Tournée. <b>L'Essentiel et les Actus du jour ne passent pas par ce moteur</b> —
+    voir la station 00 ci-dessous avant toute conclusion.
   </div>
 </header>
+
+<!-- 00 -->
+<section id="surfaces">
+  <div class="stationhead"><div class="num">00</div><h2>Qui range quoi</h2></div>
+  <p class="sub">Facteur n'a pas un algorithme, il en a quatre. Avant de régler une constante, il faut savoir quelle surface elle touche — sinon on ajuste un moteur qui ne pilote pas l'écran qu'on regarde.</p>
+  <div class="body">
+  <table>
+    <thead><tr><th>Surface</th><th>Ce qui range les articles</th><th>Décrit ici ?</th></tr></thead>
+    <tbody>
+      <tr><td>Flâner, « Pour vous »</td><td><code>PillarScoringEngine</code> (pillars_v1)</td><td>oui</td></tr>
+      <tr><td>Sections thème / sujet / source de la Tournée</td><td><code>PillarScoringEngine</code></td><td>oui</td></tr>
+      <tr><td>Ma veille</td><td><code>PillarScoringEngine</code> + seuils dédiés (<code>VEILLE_*</code>)</td><td>partiellement</td></tr>
+      <tr><td><b>L'Essentiel (les 5 articles)</b></td><td><b><code>essentiel_service._score_article</code> — barème additif propre, constantes <code>_W_*</code> en dur dans le fichier</b></td><td><b>non</b></td></tr>
+      <tr><td>Actus du jour — sujets et article de tête</td><td><code>topic_selector</code> + <code>digest_selector</code></td><td>partiellement</td></tr>
+      <tr><td><b>Actus du jour — articles « extra » d'un sujet</b></td><td><b>tri <code>(a une image, date de publication)</code> — aucun score</b></td><td><b>non</b></td></tr>
+      <tr><td>Ordre des blocs de la Tournée</td><td>ordre utilisateur + rétrogradation des sections maigres (côté mobile)</td><td>non</td></tr>
+    </tbody>
+  </table>
+
+  <div class="flag"><span class="tag">Conséquence pratique</span>
+    <h3>Le simulateur de cette page ne prédit pas l'Essentiel</h3>
+    <p>Le banc de tri (station 05) reproduit fidèlement pillars_v1. Il est donc juste pour Flâner et pour les sections de la Tournée, et <b>muet sur la surface la plus consultée de l'app</b>. L'Essentiel applique un barème distinct où une source suivie vaut <code>+100</code> et un thème suivi jusqu'à <code>+150</code> (50 × poids appris, plafonné à 3.0) — des ordres de grandeur sans rapport avec l'échelle 0-100 des piliers.</p>
+    <p>Aligner ou documenter ce second barème est le premier chantier ouvert.</p></div>
+  </div>
+</section>
 
 <!-- 01 -->
 <section id="trajet">
@@ -184,7 +212,8 @@ footer{padding:48px 0;font-family:var(--mono);font-size:12px;color:var(--ink-sof
       <p>Les articles qui parlent du même sujet sont regroupés par similarité Jaccard (seuil 0.45). C'est ce qui permet les vues multi-sources et la détection de sujets couverts par plusieurs médias.</p></div>
     <div class="stop key"><div class="dot"></div>
       <h3>4. Sélection des candidats</h3>
-      <p>Une requête SQL sort jusqu'à <code>500</code> articles. Elle exclut déjà : masqués, sauvegardés, vus, consommés, affichés il y a moins d'1h, marqués "déjà vu", et les articles du digest du jour. Filtrage supplémentaire selon la surface (thème, source suivie, langue, paywall).</p></div>
+      <p>Une requête SQL sort jusqu'à <code>500</code> articles. Elle exclut déjà : masqués, sauvegardés, vus, consommés, affichés il y a moins d'1h, marqués "déjà vu". Filtrage supplémentaire selon la surface (thème, source suivie, langue, paywall).</p>
+      <p><b>Exclusion des articles du digest du jour :</b> active uniquement sur les sections de la Tournée. Elle était <b>inopérante partout</b> jusqu'au 31 juillet 2026 — le lecteur attendait une liste plate alors que le digest est stocké en <code>editorial_v3</code> (un objet), ne trouvait rien et ne levait aucune erreur. Réparée et volontairement gardée hors de Flâner, qui n'a pas de déduplication inter-blocs et y perdrait une quinzaine d'articles par jour sans contrepartie.</p></div>
     <div class="stop key"><div class="dot"></div>
       <h3>5. Scoring par piliers</h3>
       <p>Chaque candidat passe dans les 4 piliers, normalisés de 0 à 100, puis combinés par leurs poids. C'est le cœur du système, détaillé plus bas.</p></div>
@@ -291,13 +320,15 @@ footer{padding:48px 0;font-family:var(--mono);font-size:12px;color:var(--ink-sof
       <tr><td>Affiché il y a moins d'1h</td><td>Rend l'article invisible après un pull to refresh</td><td class="n neg">-100</td></tr>
       <tr><td>Source masquée</td><td>Mute explicite</td><td class="n neg">-80</td></tr>
       <tr><td>Affiché il y a moins de 24h</td><td>Décroissance temporelle</td><td class="n neg">-70</td></tr>
-      <tr><td>Moins de 50 caractères</td><td>Type de contenu masqué (podcast, vidéo)</td><td class="n neg">-50</td></tr>
+      <tr><td>Type de contenu masqué</td><td>L'utilisateur a masqué les podcasts ou les vidéos</td><td class="n neg">-50</td></tr>
       <tr><td>Affiché il y a moins de 48h</td><td>Remonte seulement si très pertinent</td><td class="n neg">-40</td></tr>
       <tr><td>Thème masqué</td><td>Mute de thème</td><td class="n neg">-40</td></tr>
       <tr><td>Sujet ou entité masqués</td><td>Cumulatif par match</td><td class="n neg">-30</td></tr>
       <tr><td>Affiché il y a moins de 72h</td><td>Handicap léger, puis retour à zéro</td><td class="n neg">-20</td></tr>
+      <tr><td>Épisode d'une série</td><td>Titre portant un compteur de feuilleton (« … 4/22 : … ») ou une numérotation de newsletter. Sections de la Tournée uniquement</td><td class="n neg">-6</td></tr>
     </tbody>
   </table>
+  <p style="margin-top:18px">Noter l'échelle : la plus faible de ces pénalités (-6) reste presque deux fois le malus « hors thème suivi » (-8) une fois celui-ci absorbé par le plancher à zéro (station 09). Les pénalités sont, de loin, le levier le plus puissant du système — et le moins réglable, car aucune n'est exposée dans le simulateur autrement qu'en tout ou rien.</p>
 </section>
 
 <!-- 05 SIGNATURE -->
@@ -452,10 +483,11 @@ footer{padding:48px 0;font-family:var(--mono);font-size:12px;color:var(--ink-sof
   <p class="sub">Repérés en lisant le code, classés du plus concret au plus stratégique.</p>
   <div class="body">
 
-    <div class="flag"><span class="tag">À vérifier en priorité</span>
-      <h3>Le bonus de pluralité ne s'applique jamais</h3>
+    <div class="flag"><span class="tag">Réglé à moitié</span>
+      <h3>Le bonus de pluralité est branché sur le digest, pas sur le feed</h3>
       <p>Le pilier Pertinence contient un bonus de couverture multi-sources : un sujet relayé par 3 médias distincts vaut +19 points, par 6 médias +30. C'est le signal le plus aligné avec la promesse de Facteur, un sujet couvert par plusieurs rédactions est plus probablement l'essentiel qu'un scoop isolé.</p>
-      <p>Or ce bonus lit <code>context.cluster_source_counts</code>, et ce champ n'est renseigné par aucun des quatre endroits qui construisent un <code>ScoringContext</code> (feed, digest, sélecteur de sujets, veille). La fonction retourne donc 0 partout. Le clustering existe, la formule existe, le branchement manque. Question pour Laurin : oubli ou désactivation volontaire ?</p></div>
+      <p><b>Depuis le 1<sup>er</sup> août 2026</b>, <code>topic_selector</code> renseigne <code>coverage_source_count</code> et le bonus s'applique enfin — mais sur ce seul chemin. Les trois autres constructeurs de <code>ScoringContext</code> (<code>recommendation_service</code> pour tout le feed, <code>digest_selector</code>, la veille) ne renseignent toujours ni <code>coverage_source_count</code> ni <code>cluster_source_counts</code> : le bonus y vaut encore 0.</p>
+      <p>Le blocage est connu et nommé dans le code : <code>content.cluster_id</code> est NULL à ~99 % en base, donc la variante « dictionnaire par cluster » n'a rien à lire. Débloquer le feed suppose soit de peupler <code>cluster_id</code>, soit de calculer le compte de sources à la volée sur le pool de candidats — c'est un vrai chantier, pas un branchement d'une ligne.</p></div>
 
     <div class="flag"><span class="tag">Effet de bord</span>
       <h3>Le malus hors thème est absorbé par le plancher à zéro</h3>
@@ -493,16 +525,28 @@ footer{padding:48px 0;font-family:var(--mono);font-size:12px;color:var(--ink-sof
       <tr><td>IMPRESSION_RECENT</td><td>Force du "tu l'as déjà vu"</td><td class="n">-70</td></tr>
       <tr><td>LIKE_TOPIC_BOOST</td><td>Vitesse d'apprentissage du profil</td><td class="n">+0.15</td></tr>
       <tr><td>SUBTOPIC_DECAY</td><td>Vitesse d'oubli quotidien</td><td class="n">0.98</td></tr>
-      <tr><td>COVERAGE_BASE / CAP</td><td>Bonus de pluralité, actuellement inactif</td><td class="n">12 / 30</td></tr>
+      <tr><td>COVERAGE_BASE / CAP</td><td>Bonus de pluralité — actif sur le digest, inactif sur le feed</td><td class="n">12 / 30</td></tr>
       <tr><td>DIGEST_SPORT_PENALTY</td><td>Rétrogradation du sport dans le digest</td><td class="n">-80</td></tr>
+      <tr><td>INTEREST_WEIGHT_DECAY</td><td>Oubli quotidien du poids de thème. Ajouté en juillet 2026 : ce poids était le seul des trois signaux appris à ne jamais redescendre</td><td class="n">0.98</td></tr>
+      <tr><td>ENTITY_MATCH_MULTIPLIER</td><td>Prime quand un Sujet perso est un abonnement à une entité nommée plutôt qu'un mot-clé</td><td class="n">x1.5</td></tr>
+      <tr><td>SERIAL_EPISODE_MALUS</td><td>Dépriorisation des épisodes de série. Tournée uniquement</td><td class="n">-6</td></tr>
+      <tr><td>THEMATIC_WINDOW_TIERS_HOURS</td><td>Paliers d'élargissement de la fenêtre des sections thématiques</td><td class="n">24 / 48 / 72</td></tr>
+      <tr><td>THEMATIC_MIN_POOL_SIZE</td><td>Seuil sous lequel on élargit la fenêtre. <b>Inférieur à la taille de page (10)</b> : un thème à 8-15 articles ne déclenche donc aucun élargissement et tient sur une page</td><td class="n">8</td></tr>
       <tr><td>SCORING_VERSION</td><td>Bascule entre pillars_v1 et l'ancien layers_v1</td><td class="n">pillars_v1</td></tr>
     </tbody>
   </table>
+  <p style="margin-top:20px"><b>Hors de ce fichier</b>, et donc invisibles à tout réglage centralisé : les constantes
+  <code>_W_*</code> de <code>essentiel_service.py</code> (source suivie +100, thème suivi 50 × poids,
+  trending +50, à la une +35, badge actu +25, déjà lu -1000) et la fenêtre
+  <code>ESSENTIEL_TOURNEE_WINDOW</code> (24h fixes, sans élargissement adaptatif). Ce sont elles qui
+  décident du contenu de l'écran le plus consulté.</p>
 </section>
 
 <footer>
-  Lecture du dépôt au 30 juillet 2026. Le moteur legacy layers_v1 est toujours présent dans le code<br>
-  mais inactif. Les chiffres de cette page proviennent directement de scoring_config.py et pillars/.
+  Première lecture du dépôt au 30 juillet 2026, actualisée sur main le 1<sup>er</sup> août 2026.<br>
+  Le moteur legacy layers_v1 est toujours présent dans le code mais inactif. Les chiffres de cette page
+  proviennent directement de scoring_config.py et pillars/ — sauf ceux de l'Essentiel, qui vivent dans
+  essentiel_service.py.
 </footer>
 
 </div>
