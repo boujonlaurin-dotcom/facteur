@@ -28,6 +28,14 @@ class PipelineConfig:
     # stepping back, not another same-day dispatch from a deep source.
     # See docs/bugs/bug-digest-pas-de-recul-same-event.md.
     deep_min_age_hours: int = 24
+    # Fenêtres successives du clustering éditorial, de la plus étroite à la plus
+    # large. On retient la première qui atteint EDITORIAL_CLUSTERING_MIN_POOL,
+    # sinon la dernière. 24 h suffit largement à `pour_vous` (~2 000 articles) ;
+    # `serein` est hard-filtré sur is_good_news (~13 articles/24 h) et descend
+    # donc jusqu'à 168 h — ce qui était son comportement historique.
+    # Cf. app/services/editorial/candidate_pool.py et
+    # docs/maintenance/maintenance-clustering-corpus-complet.md.
+    clustering_window_ladder_hours: tuple[int, ...] = (24, 48, 168)
 
 
 @dataclass(frozen=True)

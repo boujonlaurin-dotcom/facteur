@@ -402,10 +402,7 @@ class DigestSelector:
                             # is_good_news + followed-sources peut être vide).
                             # Cf. bug-digest-pipeline-fallbacks.md C5.
                             global_pool_candidates = (
-                                await self._fetch_editorial_global_pool(
-                                    mode=mode,
-                                    hours_lookback=hours_lookback,
-                                )
+                                await self._fetch_editorial_global_pool(mode=mode)
                             )
                             compute_candidates = global_pool_candidates or candidates
 
@@ -1064,11 +1061,7 @@ class DigestSelector:
 
         return candidates
 
-    async def _fetch_editorial_global_pool(
-        self,
-        mode: str,
-        hours_lookback: int,
-    ) -> list[Content]:
+    async def _fetch_editorial_global_pool(self, mode: str) -> list[Content]:
         """Pool global pour la pipeline éditoriale on-demand.
 
         Pendant le batch, ``digest_generation_job._get_global_candidates``
@@ -1078,33 +1071,28 @@ class DigestSelector:
         sinon les users dont les sources suivies ne couvrent pas le mode
         (cas typique du serein) reçoivent un digest vide.
 
-        Returns: liste de Contents (≤200) ; vide si la requête échoue.
-        """
-        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-            hours=hours_lookback
-        )
-        stmt = select(Content).options(selectinload(Content.source))
-        if mode == "serein":
-            from app.services.recommendation.filter_presets import (
-                apply_good_news_filter,
-            )
+        La politique de pool (fenêtre, filtres, bornes) est partagée avec le
+        chemin batch via `editorial/candidate_pool.py` : les deux doivent voir le
+        même corpus, sinon un même sujet n'affiche pas le même nombre de médias
+        selon que le digest vient du batch ou d'un recalcul à la demande.
 
-            stmt = stmt.join(Source, Content.source_id == Source.id)
-            stmt = apply_good_news_filter(stmt)
-        stmt = (
-            stmt.where(Content.published_at >= cutoff)
-            .order_by(Content.published_at.desc())
-            .limit(200)
+        Returns: le corpus de la fenêtre de regroupement ; vide si la requête échoue.
+        """
+        from app.services.editorial.candidate_pool import (
+            fetch_editorial_pool,
+            finalize_pool,
         )
+
         try:
-            result = await self.session.execute(stmt)
-            return list(result.scalars().all())
+            contents = await fetch_editorial_pool(self.session, mode)
         except SQLAlchemyError:
             logger.exception(
                 "digest_selector_global_pool_failed",
                 mode=mode,
             )
             return []
+
+        return finalize_pool(contents, mode, "digest_selector_global_pool_built")
 
     async def _rehydrate_editorial_clusters(self, global_ctx: object) -> list:
         """Reconstruit les `TopicCluster` (avec Content chargés) depuis `cluster_data`.

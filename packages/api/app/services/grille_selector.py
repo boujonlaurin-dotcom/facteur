@@ -118,13 +118,28 @@ def _window(text: str, surface: str) -> str:
 def _build_cluster_index(
     editorial_ctx: EditorialGlobalContext | None,
 ) -> dict[str, int]:
-    """content_id (str) → rang du cluster qui le contient (plus petit = mieux)."""
+    """content_id (str) → rang du cluster qui le contient (plus petit = mieux).
+
+    **Seuls les clusters multi-articles sont indexés.** Le bonus qui en dépend
+    récompense un mot appartenant à un *sujet* du jour ; un singleton n'en est
+    pas un. La distinction était implicite tant que `cluster_data` venait d'un
+    pool plafonné à 200 articles : peu de contenus y figuraient, donc le bonus
+    discriminait de fait. Depuis que le clustering éditorial voit tout le corpus
+    du jour (~2 350 articles, cf. `editorial/candidate_pool.py`), indexer les
+    singletons ferait toucher le bonus à la quasi-totalité des candidats — il
+    deviendrait une constante, donc sans effet sur le classement.
+    """
     index: dict[str, int] = {}
     if editorial_ctx is None:
         return index
-    for rank, cluster in enumerate(editorial_ctx.cluster_data):
-        for cid in cluster.get("content_ids", []):
+    rank = 0
+    for cluster in editorial_ctx.cluster_data:
+        content_ids = cluster.get("content_ids", [])
+        if len(content_ids) < 2:
+            continue
+        for cid in content_ids:
             index.setdefault(str(cid), rank)
+        rank += 1
     return index
 
 

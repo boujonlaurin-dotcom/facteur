@@ -515,11 +515,17 @@ class DigestGenerationJob:
         Falls back to a broad recent-content query so the pipeline never
         cold-paths because of one unlucky user.
 
-        En plus de la tranche "top-200 par récence" (user-agnostique), on
-        unionne une tranche bornée d'articles récents des sources suivies du
-        batch (P1) : sans elle, les sources de niche sont systématiquement
-        évincées par les gros volumes mainstream et n'entrent jamais dans le
-        clustering. Les deux tranches passent les mêmes filtres ad/good-news.
+        Le pool est **tout le corpus de la fenêtre de regroupement**, et non plus
+        les 200 articles les plus récents : le décompte « N médias couvrent ce
+        sujet » n'a de sens que sur la couverture réelle du jour. La politique
+        (fenêtre, filtres, bornes) vit dans `editorial/candidate_pool.py` — elle
+        est partagée avec le chemin on-demand pour que les deux voient le même
+        corpus. Cf. `docs/maintenance/maintenance-clustering-corpus-complet.md`.
+
+        On unionne une tranche bornée d'articles des sources suivies du batch
+        (P1) sur la fenêtre `hours_lookback`, plus large : sans elle, une source
+        de niche qui ne publie pas tous les jours sort du clustering. Les deux
+        tranches passent les mêmes filtres ad/good-news.
 
         Args:
             session: Async SQLAlchemy session.
@@ -531,42 +537,20 @@ class DigestGenerationJob:
         """
         from datetime import UTC, timedelta
 
-        from sqlalchemy.orm import selectinload
-
         from app.models.content import Content
-        from app.models.source import Source
+        from app.services.editorial.candidate_pool import (
+            build_editorial_pool_stmt,
+            clustering_window_hours,
+            fetch_editorial_pool,
+            finalize_pool,
+        )
 
         # Content.published_at is stored as tz-aware, so the comparison
         # value must also be tz-aware (and utcnow() is deprecated in 3.12).
-        cutoff = datetime.datetime.now(UTC) - timedelta(hours=self.hours_lookback)
+        now = datetime.datetime.now(UTC)
 
-        def _base_stmt():
-            # Serein filter references Source.theme so we need an explicit join.
-            # The join is harmless for pour_vous (every Content has a Source) but
-            # we keep it behind the mode branch to match existing behaviour.
-            stmt = select(Content).options(selectinload(Content.source))
-            if mode == "serein":
-                # Mode "Bonnes nouvelles" : hard-filter is_good_news=True. Pool
-                # potentiellement plus restreint que l'ancien serein, c'est voulu.
-                from app.services.recommendation.filter_presets import (
-                    apply_good_news_filter,
-                )
-
-                stmt = stmt.join(Source, Content.source_id == Source.id)
-                stmt = apply_good_news_filter(stmt)
-            else:
-                # Mode pour_vous : apply_good_news_filter inclut déjà apply_ad_filter,
-                # mais pour_vous n'y passe pas — sans ce filtre, les pubs Frandroid
-                # (is_ad=True) remontent dans le clustering éditorial.
-                from app.services.recommendation.filter_presets import apply_ad_filter
-
-                stmt = apply_ad_filter(stmt)
-            return stmt.where(Content.published_at >= cutoff)
-
-        recency_stmt = _base_stmt().order_by(Content.published_at.desc()).limit(200)
         try:
-            result = await session.execute(recency_stmt)
-            candidates = list(result.scalars().all())
+            candidates = await fetch_editorial_pool(session, mode, now=now)
         except Exception as e:
             logger.error(
                 "digest_generation_global_candidates_failed",
@@ -576,13 +560,40 @@ class DigestGenerationJob:
             return []
 
         if not followed_source_ids:
-            return candidates
+            return finalize_pool(
+                candidates, mode, "digest_generation_global_pool_built"
+            )
 
-        # Tranche "sources suivies" : mêmes filtres + cutoff, bornée, puis
-        # dédupliquée contre la tranche récence (un article peut déjà y figurer).
+        # Tranche "sources suivies" (P1) : une source de niche qui ne publie pas
+        # tous les jours doit quand même entrer dans le clustering.
+        #
+        # Elle ne couvre QUE l'antériorité que la fenêtre de regroupement n'atteint
+        # pas. Depuis que le pool nominal est exhaustif sur sa fenêtre, requêter à
+        # nouveau [0, window] ne rendrait que des articles déjà présents : ils
+        # consommeraient le `LIMIT` avant que le moindre article de niche plus
+        # ancien n'y entre — soit exactement l'inverse du but de cette tranche.
+        window_hours = clustering_window_hours()
+        if window_hours >= self.hours_lookback:
+            # La fenêtre de regroupement couvre déjà tout ce que cette tranche
+            # irait chercher : son intervalle serait vide. Cas atteignable en
+            # remontant `clustering_window_ladder_hours` dans le YAML.
+            logger.info(
+                "digest_generation_followed_slice_skipped",
+                mode=mode,
+                reason="window_covers_lookback",
+                window_hours=window_hours,
+                hours_lookback=self.hours_lookback,
+            )
+            return finalize_pool(
+                candidates, mode, "digest_generation_global_pool_built"
+            )
+
+        window_start = now - timedelta(hours=window_hours)
         seen_ids = {c.id for c in candidates}
         followed_stmt = (
-            _base_stmt()
+            build_editorial_pool_stmt(
+                mode, now - timedelta(hours=self.hours_lookback), window_start
+            )
             .where(Content.source_id.in_(followed_source_ids))
             .order_by(Content.published_at.desc())
             .limit(self.FOLLOWED_SLICE_LIMIT)
@@ -607,7 +618,11 @@ class DigestGenerationJob:
                 recency_count=len(candidates),
                 followed_added=len(followed_articles),
             )
-        return candidates + followed_articles
+        return finalize_pool(
+            candidates + followed_articles,
+            mode,
+            "digest_generation_global_pool_built",
+        )
 
     async def _prune_old_highlights(
         self,
