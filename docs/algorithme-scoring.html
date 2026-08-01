@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facteur : comment l'algorithme trie les articles</title>
+<style>
+:root{
+  --cream:#EDE8DC;
+  --paper:#F7F4EC;
+  --orange:#E8602C;
+  --orange-soft:#F6C9B4;
+  --ink:#33322C;
+  --ink-soft:#6E6C61;
+  --rule:#D9D2C1;
+  --green:#4F7A5B;
+  --red:#B03A2E;
+  --serif:"Fraunces","Newsreader","Iowan Old Style",Palatino,Georgia,serif;
+  --sans:"DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--cream);color:var(--ink);
+  font-family:var(--sans);font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:980px;margin:0 auto;padding:0 24px 120px}
+
+/* ---------- header ---------- */
+header{padding:72px 0 40px;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--orange)}
+h1{font-family:var(--serif);font-weight:700;font-size:clamp(38px,7vw,68px);line-height:1.02;margin:16px 0 0;letter-spacing:-.02em}
+h1 em{font-style:normal;color:var(--orange)}
+.lede{font-size:19px;max-width:60ch;margin:20px 0 0;color:var(--ink-soft)}
+.meta{font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-top:28px;line-height:1.9}
+.meta b{font-weight:500;color:var(--ink)}
+
+/* ---------- sections ---------- */
+section{padding:64px 0;border-bottom:1px solid var(--rule)}
+.stationhead{display:flex;gap:20px;align-items:baseline}
+.num{font-family:var(--mono);font-size:12px;color:var(--orange);letter-spacing:.1em;padding-top:8px;min-width:32px}
+h2{font-family:var(--serif);font-weight:600;font-size:clamp(26px,4vw,38px);line-height:1.12;margin:0;letter-spacing:-.01em}
+.sub{color:var(--ink-soft);max-width:66ch;margin:14px 0 0 52px}
+@media(max-width:640px){.sub{margin-left:0}}
+.body{margin-left:52px}
+@media(max-width:640px){.body{margin-left:0}.stationhead{gap:12px}}
+p{max-width:66ch}
+
+/* ---------- route ---------- */
+.route{margin-top:36px;position:relative}
+.route:before{content:"";position:absolute;left:15px;top:14px;bottom:14px;width:2px;
+  background:repeating-linear-gradient(to bottom,var(--orange) 0 6px,transparent 6px 12px)}
+.stop{position:relative;padding:0 0 26px 52px}
+.stop:last-child{padding-bottom:0}
+.dot{position:absolute;left:6px;top:4px;width:20px;height:20px;border-radius:50%;
+  background:var(--cream);border:2px solid var(--orange)}
+.stop.key .dot{background:var(--orange)}
+.stop h3{font-family:var(--sans);font-size:15px;font-weight:600;margin:0 0 2px}
+.stop p{margin:0;font-size:14.5px;color:var(--ink-soft)}
+.stop code{font-family:var(--mono);font-size:12px;background:var(--paper);padding:1px 5px;border:1px solid var(--rule);border-radius:3px}
+
+/* ---------- pillar weights ---------- */
+.pillars{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:36px;
+  border:1px solid var(--ink);border-radius:6px;overflow:hidden;background:var(--ink)}
+@media(max-width:700px){.pillars{grid-template-columns:1fr 1fr}}
+.pcell{background:var(--paper);padding:22px 18px}
+.pcell .pct{font-family:var(--serif);font-size:44px;line-height:1;font-weight:700}
+.pcell .pname{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--orange);margin-top:10px}
+.pcell .pdesc{font-size:13.5px;color:var(--ink-soft);margin-top:8px;line-height:1.5}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse;margin-top:28px;font-size:14.5px}
+th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:500;padding:0 12px 10px 0;border-bottom:1px solid var(--ink)}
+td{padding:11px 12px 11px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+td.n{font-family:var(--mono);white-space:nowrap;text-align:right;padding-right:0}
+.pos{color:var(--green)}.neg{color:var(--red)}
+tr.group td{background:var(--paper);font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--orange);padding:8px 12px 8px 0}
+
+/* ---------- cap bars ---------- */
+.caps{margin-top:32px;display:grid;gap:18px}
+.cap{display:grid;grid-template-columns:130px 1fr;gap:16px;align-items:center}
+@media(max-width:640px){.cap{grid-template-columns:1fr;gap:6px}}
+.cap .lbl{font-family:var(--mono);font-size:12px}
+.capbar{height:34px;background:var(--paper);border:1px solid var(--rule);border-radius:3px;position:relative;overflow:hidden}
+.capfill{position:absolute;left:0;top:0;bottom:0;background:var(--orange-soft)}
+.capmark{position:absolute;top:0;bottom:0;width:2px;background:var(--orange)}
+.captxt{position:absolute;left:10px;top:0;bottom:0;display:flex;align-items:center;
+  font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+
+/* ---------- bench (simulator) ---------- */
+.bench{margin-top:36px;border:2px solid var(--ink);border-radius:8px;background:var(--paper);overflow:hidden}
+.benchhead{padding:16px 22px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;
+  align-items:center;gap:12px;flex-wrap:wrap}
+.benchhead .t{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--orange)}
+.benchgrid{display:grid;grid-template-columns:1fr 1fr}
+@media(max-width:820px){.benchgrid{grid-template-columns:1fr}}
+.controls{padding:22px;border-right:1px solid var(--rule)}
+@media(max-width:820px){.controls{border-right:none;border-bottom:1px solid var(--rule)}}
+.readout{padding:22px}
+.grp{margin-bottom:22px}
+.grp:last-child{margin-bottom:0}
+.grp>.gt{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-soft);margin-bottom:10px;border-bottom:1px solid var(--rule);padding-bottom:5px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:9px;font-size:14px}
+.row label{flex:1}
+select{font-family:var(--sans);font-size:13.5px;padding:5px 8px;border:1px solid var(--rule);
+  background:var(--cream);color:var(--ink);border-radius:4px;max-width:56%}
+input[type=range]{width:52%;accent-color:var(--orange)}
+input[type=checkbox]{accent-color:var(--orange);width:17px;height:17px}
+.val{font-family:var(--mono);font-size:12px;color:var(--ink-soft);min-width:38px;text-align:right}
+
+.bar{margin-bottom:16px}
+.barhead{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.barhead .bn{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+.barhead .bv{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+.track{height:12px;background:var(--cream);border:1px solid var(--rule);border-radius:2px;overflow:hidden;display:flex}
+.fill{background:var(--orange-soft);height:100%}
+.fill.w{background:var(--orange)}
+.final{margin-top:24px;padding-top:20px;border-top:2px solid var(--ink)}
+.final .fl{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+.final .fv{font-family:var(--serif);font-size:62px;font-weight:700;line-height:1;margin-top:4px}
+.final .fv small{font-size:20px;color:var(--ink-soft);font-weight:400}
+.penline{font-family:var(--mono);font-size:12.5px;color:var(--red);margin-top:8px}
+.reason{margin-top:16px;padding:12px 14px;background:var(--cream);border-left:3px solid var(--orange);font-size:13.5px}
+.reason .rl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-bottom:3px}
+
+/* ---------- examples ---------- */
+.ex{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:32px}
+@media(max-width:760px){.ex{grid-template-columns:1fr}}
+.excard{background:var(--paper);border:1px solid var(--rule);border-radius:6px;padding:20px}
+.excard .eh{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--orange)}
+.excard .es{font-family:var(--serif);font-size:46px;font-weight:700;line-height:1;margin:8px 0 12px}
+.excard p{font-size:13.5px;color:var(--ink-soft);margin:0}
+.excard ul{margin:10px 0 0;padding-left:18px;font-size:13px;color:var(--ink-soft)}
+
+/* ---------- flags ---------- */
+.flag{background:var(--paper);border:1px solid var(--rule);border-left:4px solid var(--orange);
+  border-radius:0 6px 6px 0;padding:20px 22px;margin-top:18px}
+.flag h3{font-family:var(--sans);font-size:16px;font-weight:600;margin:0 0 8px}
+.flag p{margin:0;font-size:14.5px;color:var(--ink-soft)}
+.flag p + p{margin-top:10px}
+.flag code{font-family:var(--mono);font-size:12.5px;background:var(--cream);padding:1px 5px;border-radius:3px}
+.tag{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  padding:3px 8px;border-radius:20px;background:var(--orange);color:var(--paper);margin-bottom:10px}
+.tag.soft{background:var(--cream);color:var(--ink-soft);border:1px solid var(--rule)}
+
+footer{padding:48px 0;font-family:var(--mono);font-size:12px;color:var(--ink-soft);line-height:1.9}
+:focus-visible{outline:2px solid var(--orange);outline-offset:3px}
+@media(prefers-reduced-motion:no-preference){.fill{transition:width .18s ease}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Facteur / moteur de recommandation</div>
+  <h1>Comment Facteur décide<br>de <em>ce que tu vois</em></h1>
+  <p class="lede">Chaque article reçoit une note. Cette note vient de quatre piliers pondérés, de pénalités absolues, puis d'une couche de diversité et de hasard. Voici le mécanisme complet, chiffre par chiffre.</p>
+  <div class="meta">
+    Source : <b>boujonlaurin-dotcom/facteur</b>, commit 6533b53 du 30 juillet 2026<br>
+    Moteur actif : <b>pillars_v1</b> (<code>ScoringWeights.SCORING_VERSION</code>)<br>
+    Fichiers clés : <b>app/services/recommendation/</b> (scoring_engine, scoring_config, pillars/)
+  </div>
+</header>
+
+<!-- 01 -->
+<section id="trajet">
+  <div class="stationhead"><div class="num">01</div><h2>Le trajet d'un article</h2></div>
+  <p class="sub">De la collecte RSS jusqu'à la carte affichée dans l'app. Le scoring n'est que l'étape 5 sur 9, et plusieurs décisions importantes se prennent avant et après.</p>
+  <div class="body">
+  <div class="route">
+    <div class="stop"><div class="dot"></div>
+      <h3>1. Collecte</h3>
+      <p>Le parseur RSS (<code>rss_parser.py</code>) récupère les flux des sources actives et enregistre les nouveaux articles.</p></div>
+    <div class="stop"><div class="dot"></div>
+      <h3>2. Classification automatique</h3>
+      <p>Un worker asynchrone passe chaque article dans mDeBERTa (thème et topics parmi une taxonomie de 50 sous-thèmes) et spaCy NER (entités nommées : personnes, orgs, lieux). Résultat stocké dans <code>content.topics</code> et <code>content.entities</code>.</p></div>
+    <div class="stop"><div class="dot"></div>
+      <h3>3. Clustering</h3>
+      <p>Les articles qui parlent du même sujet sont regroupés par similarité Jaccard (seuil 0.45). C'est ce qui permet les vues multi-sources et la détection de sujets couverts par plusieurs médias.</p></div>
+    <div class="stop key"><div class="dot"></div>
+      <h3>4. Sélection des candidats</h3>
+      <p>Une requête SQL sort jusqu'à <code>500</code> articles. Elle exclut déjà : masqués, sauvegardés, vus, consommés, affichés il y a moins d'1h, marqués "déjà vu", et les articles du digest du jour. Filtrage supplémentaire selon la surface (thème, source suivie, langue, paywall).</p></div>
+    <div class="stop key"><div class="dot"></div>
+      <h3>5. Scoring par piliers</h3>
+      <p>Chaque candidat passe dans les 4 piliers, normalisés de 0 à 100, puis combinés par leurs poids. C'est le cœur du système, détaillé plus bas.</p></div>
+    <div class="stop key"><div class="dot"></div>
+      <h3>6. Pénalités absolues</h3>
+      <p>Sources et thèmes masqués, articles déjà affichés. Ces points sont soustraits du score final, hors normalisation.</p></div>
+    <div class="stop"><div class="dot"></div>
+      <h3>7. Diversité de sources</h3>
+      <p>Le 2e article d'une même source voit son score multiplié par 0.70, le 3e par 0.49, et ainsi de suite. Neutralisé dans les sections mono-thème (remplacé par un entrelacement sans pénalité).</p></div>
+    <div class="stop"><div class="dot"></div>
+      <h3>8. Hasard contrôlé</h3>
+      <p>Un bruit de Gumbel (température 0.15) réordonne les articles de scores proches. Le score reste inchangé, seul l'ordre bouge. Désactivé sur les sections paginées pour éviter les doublons.</p></div>
+    <div class="stop"><div class="dot"></div>
+      <h3>9. Affichage et transparence</h3>
+      <p>Pagination, puis construction de la raison "Pourquoi cet article ?" à partir des 6 contributions les plus fortes en valeur absolue.</p></div>
+  </div>
+  </div>
+</section>
+
+<!-- 02 -->
+<section id="piliers">
+  <div class="stationhead"><div class="num">02</div><h2>Les quatre piliers</h2></div>
+  <p class="sub">Chaque pilier calcule un score brut en points, le ramène sur une échelle 0 à 100, puis pèse pour un pourcentage fixe du résultat. Les poids somment à 1.0.</p>
+  <div class="pillars">
+    <div class="pcell"><div class="pct">40<small>%</small></div><div class="pname">Pertinence</div>
+      <div class="pdesc">Thèmes suivis, sous-thèmes, sujets perso, entités lues souvent, apprentissage comportemental.</div></div>
+    <div class="pcell"><div class="pct">25<small>%</small></div><div class="pname">Source</div>
+      <div class="pdesc">Source suivie, ajoutée à la main, abonnement, fiabilité éditoriale, affinité apprise.</div></div>
+    <div class="pcell"><div class="pct">20<small>%</small></div><div class="pname">Fraîcheur</div>
+      <div class="pdesc">Décroissance hyperbolique depuis la publication, plus une préférence déclarée à l'onboarding.</div></div>
+    <div class="pcell"><div class="pct">15<small>%</small></div><div class="pname">Qualité</div>
+      <div class="pdesc">Image de couverture, lisibilité dans le reader natif, source éditorialisée.</div></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Signal</th><th>Condition</th><th style="text-align:right">Points bruts</th></tr></thead>
+    <tbody>
+      <tr class="group"><td colspan="3">Pertinence, plafond de normalisation 160</td></tr>
+      <tr><td>Thème principal</td><td>Thème de l'article ou de la source dans tes intérêts</td><td class="n pos">+50</td></tr>
+      <tr><td>Thème secondaire</td><td>Facteur 0.7 appliqué</td><td class="n pos">+35</td></tr>
+      <tr><td>Sous-thème</td><td>45 par match, 2 max, atténué par la position (0.6 puissance rang) et multiplié par le poids appris</td><td class="n pos">+45 à +72</td></tr>
+      <tr><td>Bonus précision</td><td>Thème et sous-thème matchent tous les deux</td><td class="n pos">+18</td></tr>
+      <tr><td>Sujet perso</td><td>25 fois le multiplicateur de priorité, un seul sujet retenu</td><td class="n pos">+25 à +37</td></tr>
+      <tr><td>Apprentissage</td><td>50 fois (poids d'intérêt moins 1), poids borné entre 0.1 et 3.0</td><td class="n">-45 à +100</td></tr>
+      <tr><td>Affinité entité</td><td>8 par point d'affinité au dessus de 1.0, plafonné</td><td class="n pos">+30 max</td></tr>
+      <tr><td>Format préféré</td><td>Podcast, vidéo, format court ou long selon l'onboarding</td><td class="n pos">+15 à +20</td></tr>
+      <tr><td>Hors thème suivi</td><td>Aucun thème, sous-thème ni sujet ne matche</td><td class="n neg">-8</td></tr>
+
+      <tr class="group"><td colspan="3">Source, plafond 95</td></tr>
+      <tr><td>Source suivie</td><td>Explicitement suivie par l'utilisateur</td><td class="n pos">+35</td></tr>
+      <tr><td>Source non suivie</td><td>Socle accordé à toute source active</td><td class="n pos">+15</td></tr>
+      <tr><td>Source ajoutée à la main</td><td>S'ajoute à source suivie</td><td class="n pos">+12</td></tr>
+      <tr><td>Abonnement</td><td>Débloque aussi les articles payants</td><td class="n pos">+20</td></tr>
+      <tr><td>Affinité apprise</td><td>Jusqu'à 25 selon l'engagement mesuré sur cette source</td><td class="n pos">+25 max</td></tr>
+      <tr><td>Fiabilité haute</td><td>Score de fiabilité éditorial</td><td class="n pos">+10</td></tr>
+      <tr><td>Fiabilité basse</td><td>Adouci de -30 à -20 pour permettre la récupération</td><td class="n neg">-20</td></tr>
+      <tr><td>Multiplicateur de source</td><td>0.2 (réduite) ou 2.0 (favorite), appliqué au total du pilier</td><td class="n">x0.2 à x2</td></tr>
+
+      <tr class="group"><td colspan="3">Fraîcheur, plafond 115</td></tr>
+      <tr><td>Récence</td><td>Formule 100 divisé par (heures/24 + 1). 0h vaut 100, 24h vaut 50, 72h vaut 25, 7j vaut 12.5</td><td class="n pos">+12 à +100</td></tr>
+      <tr><td>Préférence récent</td><td>Déclarée à l'onboarding, article de moins de 24h</td><td class="n pos">+15</td></tr>
+      <tr><td>Préférence intemporel</td><td>Déclarée à l'onboarding, article de plus de 48h</td><td class="n pos">+10</td></tr>
+
+      <tr class="group"><td colspan="3">Qualité, plafond 32</td></tr>
+      <tr><td>Image de couverture</td><td>Miniature présente</td><td class="n pos">+12</td></tr>
+      <tr><td>Lecture complète</td><td>Article lisible entièrement dans le reader Facteur</td><td class="n pos">+10</td></tr>
+      <tr><td>Lecture partielle</td><td>Entre 100 et 500 caractères de texte</td><td class="n pos">+5</td></tr>
+      <tr><td>Source éditorialisée</td><td>Source curée par Facteur</td><td class="n pos">+10</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 03 -->
+<section id="normalisation">
+  <div class="stationhead"><div class="num">03</div><h2>Le levier caché : les plafonds</h2></div>
+  <p class="sub">Chaque pilier fait <code>min(brut / plafond, 1) x 100</code>. Ces quatre plafonds sont réglés à la main dans le code, et ils changent le comportement du feed autant que les poids officiels. C'est le premier sujet à ouvrir avec Laurin.</p>
+  <div class="body">
+  <div class="caps">
+    <div class="cap"><div class="lbl">Pertinence<br>plafond 160</div>
+      <div class="capbar"><div class="capfill" style="width:71%"></div><div class="capmark" style="left:71%"></div>
+        <div class="captxt">Un match parfait thème + 2 sous-thèmes + précision = 113 brut, soit 71 sur 100</div></div></div>
+    <div class="cap"><div class="lbl">Source<br>plafond 95</div>
+      <div class="capbar"><div class="capfill" style="width:47%"></div><div class="capmark" style="left:47%"></div>
+        <div class="captxt">Source suivie et fiable = 45 brut, soit 47 sur 100</div></div></div>
+    <div class="cap"><div class="lbl">Fraîcheur<br>plafond 115</div>
+      <div class="capbar"><div class="capfill" style="width:87%"></div><div class="capmark" style="left:87%"></div>
+        <div class="captxt">Article publié à l'instant = 100 brut, soit 87 sur 100</div></div></div>
+    <div class="cap"><div class="lbl">Qualité<br>plafond 32</div>
+      <div class="capbar"><div class="capfill" style="width:100%"></div><div class="capmark" style="left:100%"></div>
+        <div class="captxt">Image + texte complet + source curée = 32 brut, soit 100 sur 100</div></div></div>
+  </div>
+  <p style="margin-top:26px">Lecture : le pilier Qualité se sature très vite. Une image de couverture seule vaut déjà 37 sur 100. Les trois autres piliers, eux, n'atteignent presque jamais leur plafond. Résultat pratique : les 15 % de Qualité fonctionnent aujourd'hui plus comme une prime à l'image que comme un vrai signal de qualité éditoriale.</p>
+  </div>
+</section>
+
+<!-- 04 -->
+<section id="penalites">
+  <div class="stationhead"><div class="num">04</div><h2>Les pénalités</h2></div>
+  <p class="sub">Elles ne passent pas par la normalisation. Elles s'appliquent en points absolus sur le score final, qui tourne autour de 0 à 100. Une seule pénalité suffit donc à sortir un article du feed.</p>
+  <table>
+    <thead><tr><th>Pénalité</th><th>Déclencheur</th><th style="text-align:right">Points</th></tr></thead>
+    <tbody>
+      <tr><td>Marqué "déjà vu"</td><td>Action explicite de l'utilisateur, permanent, sans décroissance</td><td class="n neg">-120</td></tr>
+      <tr><td>Affiché il y a moins d'1h</td><td>Rend l'article invisible après un pull to refresh</td><td class="n neg">-100</td></tr>
+      <tr><td>Source masquée</td><td>Mute explicite</td><td class="n neg">-80</td></tr>
+      <tr><td>Affiché il y a moins de 24h</td><td>Décroissance temporelle</td><td class="n neg">-70</td></tr>
+      <tr><td>Moins de 50 caractères</td><td>Type de contenu masqué (podcast, vidéo)</td><td class="n neg">-50</td></tr>
+      <tr><td>Affiché il y a moins de 48h</td><td>Remonte seulement si très pertinent</td><td class="n neg">-40</td></tr>
+      <tr><td>Thème masqué</td><td>Mute de thème</td><td class="n neg">-40</td></tr>
+      <tr><td>Sujet ou entité masqués</td><td>Cumulatif par match</td><td class="n neg">-30</td></tr>
+      <tr><td>Affiché il y a moins de 72h</td><td>Handicap léger, puis retour à zéro</td><td class="n neg">-20</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 05 SIGNATURE -->
+<section id="banc">
+  <div class="stationhead"><div class="num">05</div><h2>Le banc de tri</h2></div>
+  <p class="sub">Le simulateur reproduit exactement la formule du code. Change les caractéristiques d'un article, ou déplace les poids des piliers, et regarde la note bouger. À utiliser en direct pendant la discussion avec Laurin.</p>
+
+  <div class="bench">
+    <div class="benchhead">
+      <div class="t">Simulateur pillars_v1</div>
+      <button id="reset" style="font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;background:none;border:1px solid var(--rule);color:var(--ink-soft);padding:6px 12px;border-radius:4px;cursor:pointer">Réinitialiser</button>
+    </div>
+    <div class="benchgrid">
+      <div class="controls">
+
+        <div class="grp"><div class="gt">Pertinence</div>
+          <div class="row"><label for="theme">Correspondance de thème</label>
+            <select id="theme"><option value="0">aucune</option><option value="35">secondaire</option><option value="50" selected>principal</option></select></div>
+          <div class="row"><label for="subs">Sous-thèmes qui matchent</label>
+            <select id="subs"><option value="0">aucun</option><option value="1" selected>un</option><option value="2">deux</option></select></div>
+          <div class="row"><label for="custom">Sujet perso qui matche</label><input type="checkbox" id="custom"></div>
+          <div class="row"><label for="iw">Poids d'intérêt appris</label>
+            <input type="range" id="iw" min="0.1" max="3" step="0.1" value="1"><span class="val" id="iwv">1.0</span></div>
+          <div class="row"><label for="ent">Affinité entités (bonus)</label>
+            <input type="range" id="ent" min="0" max="30" step="2" value="0"><span class="val" id="entv">0</span></div>
+        </div>
+
+        <div class="grp"><div class="gt">Source</div>
+          <div class="row"><label for="src">Statut</label>
+            <select id="src"><option value="15">non suivie</option><option value="35" selected>suivie</option><option value="47">suivie + ajoutée à la main</option><option value="55">suivie + abonnement</option></select></div>
+          <div class="row"><label for="rel">Fiabilité</label>
+            <select id="rel"><option value="10" selected>haute</option><option value="0">moyenne</option><option value="-20">basse</option></select></div>
+          <div class="row"><label for="aff">Affinité apprise</label>
+            <input type="range" id="aff" min="0" max="25" step="1" value="0"><span class="val" id="affv">0</span></div>
+          <div class="row"><label for="mult">Multiplicateur explicite</label>
+            <select id="mult"><option value="0.2">réduite (x0.2)</option><option value="1" selected>normale</option><option value="2">favorite (x2)</option></select></div>
+        </div>
+
+        <div class="grp"><div class="gt">Fraîcheur</div>
+          <div class="row"><label for="age">Âge de l'article</label>
+            <input type="range" id="age" min="0" max="168" step="1" value="3"><span class="val" id="agev">3h</span></div>
+          <div class="row"><label for="rpref">Préférence déclarée</label>
+            <select id="rpref"><option value="none" selected>aucune</option><option value="recent">récent</option><option value="timeless">intemporel</option></select></div>
+        </div>
+
+        <div class="grp"><div class="gt">Qualité</div>
+          <div class="row"><label for="img">Image de couverture</label><input type="checkbox" id="img" checked></div>
+          <div class="row"><label for="txt">Lecture dans l'app</label>
+            <select id="txt"><option value="10" selected>complète</option><option value="5">partielle</option><option value="0">aucune</option></select></div>
+          <div class="row"><label for="cur">Source éditorialisée</label><input type="checkbox" id="cur" checked></div>
+        </div>
+
+        <div class="grp"><div class="gt">Pénalités</div>
+          <div class="row"><label for="imp">Déjà affiché</label>
+            <select id="imp"><option value="0" selected>jamais</option><option value="-20">il y a 2 à 3 jours</option><option value="-40">hier</option><option value="-70">il y a moins de 24h</option><option value="-100">il y a moins d'1h</option><option value="-120">marqué déjà vu</option></select></div>
+          <div class="row"><label for="mute">Source ou thème masqués</label>
+            <select id="mute"><option value="0" selected>non</option><option value="-40">thème masqué</option><option value="-80">source masquée</option></select></div>
+        </div>
+
+        <div class="grp"><div class="gt">Poids des piliers</div>
+          <div class="row"><label for="wp">Pertinence</label><input type="range" id="wp" min="0" max="1" step="0.05" value="0.40"><span class="val" id="wpv">40%</span></div>
+          <div class="row"><label for="ws">Source</label><input type="range" id="ws" min="0" max="1" step="0.05" value="0.25"><span class="val" id="wsv">25%</span></div>
+          <div class="row"><label for="wf">Fraîcheur</label><input type="range" id="wf" min="0" max="1" step="0.05" value="0.20"><span class="val" id="wfv">20%</span></div>
+          <div class="row"><label for="wq">Qualité</label><input type="range" id="wq" min="0" max="1" step="0.05" value="0.15"><span class="val" id="wqv">15%</span></div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:6px" id="wsum"></div>
+        </div>
+
+      </div>
+
+      <div class="readout">
+        <div class="bar"><div class="barhead"><span class="bn">Pertinence</span><span class="bv" id="b1"></span></div>
+          <div class="track"><div class="fill" id="f1"></div></div></div>
+        <div class="bar"><div class="barhead"><span class="bn">Source</span><span class="bv" id="b2"></span></div>
+          <div class="track"><div class="fill" id="f2"></div></div></div>
+        <div class="bar"><div class="barhead"><span class="bn">Fraîcheur</span><span class="bv" id="b3"></span></div>
+          <div class="track"><div class="fill" id="f3"></div></div></div>
+        <div class="bar"><div class="barhead"><span class="bn">Qualité</span><span class="bv" id="b4"></span></div>
+          <div class="track"><div class="fill" id="f4"></div></div></div>
+
+        <div style="margin-top:24px"><div class="barhead"><span class="bn">Contribution pondérée</span><span class="bv" id="bbase"></span></div>
+          <div class="track" id="stack"></div></div>
+
+        <div class="final">
+          <div class="fl">Score final</div>
+          <div class="fv" id="score">0</div>
+          <div class="penline" id="pen"></div>
+        </div>
+
+        <div class="reason"><span class="rl">Raison affichée dans l'app</span><span id="why"></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 06 -->
+<section id="apres">
+  <div class="stationhead"><div class="num">06</div><h2>Ce qui se passe après le score</h2></div>
+  <p class="sub">Trois mécanismes réordonnent la liste sans toucher aux notes. Ils comptent autant que le scoring dans le ressenti du feed.</p>
+  <div class="body">
+    <div class="flag"><span class="tag soft">Fatigue de source</span>
+      <h3>Multiplication par 0.70 à chaque répétition</h3>
+      <p>Le 2e article d'une source garde 70 % de son score, le 3e 49 %, le 4e 34 %. C'est ce qui produit l'effet revue de presse. Neutralisé dans les sections mono-thème, où l'utilisateur suit délibérément peu de sources : on utilise à la place un entrelacement qui évite les murs de même source sans pénaliser le score.</p></div>
+
+    <div class="flag"><span class="tag soft">Hasard</span>
+      <h3>Bruit de Gumbel, température 0.15</h3>
+      <p>Équivalent à un tirage dans une distribution softmax des scores. À 0.15, deux articles séparés de moins de 15 points peuvent s'échanger. Le digest tourne à 0.08, donc plus stable. Le score déterministe reste intact, seul l'ordre bouge, et la raison "Hasard pour diversifier" est ajoutée au détail affiché.</p></div>
+
+    <div class="flag"><span class="tag soft">Stratification</span>
+      <h3>Sources suivies d'abord</h3>
+      <p>Dans les sections par thème ou par sujet, tous les articles de sources suivies remontent au dessus des autres, chaque groupe gardant son ordre interne. Garantit que les sections thématiques ouvrent sur les médias que l'utilisateur a choisis.</p></div>
+  </div>
+</section>
+
+<!-- 07 -->
+<section id="apprentissage">
+  <div class="stationhead"><div class="num">07</div><h2>Comment le profil apprend</h2></div>
+  <p class="sub">Les poids d'intérêt et de sous-thème bougent à chaque interaction, dans une fourchette bornée de 0.1 à 3.0, avec une décroissance quotidienne vers le neutre.</p>
+  <table>
+    <thead><tr><th>Interaction</th><th>Effet</th><th style="text-align:right">Delta</th></tr></thead>
+    <tbody>
+      <tr><td>Like</td><td>Poids du sous-thème, plus 0.03 sur le poids du thème</td><td class="n pos">+0.15</td></tr>
+      <tr><td>Swipe pour écarter</td><td>Symétrique du like, un rejet annule un like</td><td class="n neg">-0.15</td></tr>
+      <tr><td>Sauvegarde</td><td>Signal intermédiaire</td><td class="n pos">+0.05</td></tr>
+      <tr><td>Lecture</td><td>Signal implicite le plus faible, s'accumule</td><td class="n pos">+0.03</td></tr>
+      <tr><td>Décroissance quotidienne</td><td>Job planifié à 6h50 heure de Paris, sur les sous-thèmes et les entités</td><td class="n">x0.98</td></tr>
+      <tr><td>Thème déclaré favori</td><td>Plancher garanti même sans historique d'usage</td><td class="n pos">1.5 mini</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:22px">Ordre de grandeur utile : 7 likes sur un même sous-thème font passer son poids de 1.0 à environ 2.0, ce qui double sa contribution de 45 à 90 points bruts. La décroissance de 0.98 par jour ramène un poids de 2.0 vers 1.0 en une trentaine de jours sans interaction.</p>
+</section>
+
+<!-- 08 -->
+<section id="exemples">
+  <div class="stationhead"><div class="num">08</div><h2>Trois articles, trois notes</h2></div>
+  <p class="sub">Mêmes chiffres que le simulateur, calculés à la main pour servir de repère.</p>
+  <div class="ex">
+    <div class="excard"><div class="eh">Cas A</div><div class="es">70.6</div>
+      <p>Le cas idéal, très rare dans un feed réel.</p>
+      <ul><li>Publié il y a 3h</li><li>Thème et sous-thème suivis</li><li>Source suivie et fiable</li><li>Image, texte complet, source curée</li></ul></div>
+    <div class="excard"><div class="eh">Cas B</div><div class="es">24.6</div>
+      <p>L'article de fond de feed. Il ne passe jamais devant A.</p>
+      <ul><li>Publié il y a 30h</li><li>Aucun thème suivi</li><li>Source non suivie mais curée</li><li>Image, pas de texte complet</li></ul></div>
+    <div class="excard"><div class="eh">Cas C</div><div class="es">0.6</div>
+      <p>Le cas A, déjà affiché il y a 5h. La pénalité de 70 points annule tout le travail des piliers.</p>
+      <ul><li>Identique à A</li><li>Vu au refresh précédent</li></ul></div>
+  </div>
+</section>
+
+<!-- 09 -->
+<section id="discussion">
+  <div class="stationhead"><div class="num">09</div><h2>Quatre points à ouvrir avec Laurin</h2></div>
+  <p class="sub">Repérés en lisant le code, classés du plus concret au plus stratégique.</p>
+  <div class="body">
+
+    <div class="flag"><span class="tag">À vérifier en priorité</span>
+      <h3>Le bonus de pluralité ne s'applique jamais</h3>
+      <p>Le pilier Pertinence contient un bonus de couverture multi-sources : un sujet relayé par 3 médias distincts vaut +19 points, par 6 médias +30. C'est le signal le plus aligné avec la promesse de Facteur, un sujet couvert par plusieurs rédactions est plus probablement l'essentiel qu'un scoop isolé.</p>
+      <p>Or ce bonus lit <code>context.cluster_source_counts</code>, et ce champ n'est renseigné par aucun des quatre endroits qui construisent un <code>ScoringContext</code> (feed, digest, sélecteur de sujets, veille). La fonction retourne donc 0 partout. Le clustering existe, la formule existe, le branchement manque. Question pour Laurin : oubli ou désactivation volontaire ?</p></div>
+
+    <div class="flag"><span class="tag">Effet de bord</span>
+      <h3>Le malus hors thème est absorbé par le plancher à zéro</h3>
+      <p>Un article qui ne matche aucun thème reçoit -8 points de pertinence. Mais la normalisation renvoie 0 dès que le brut est négatif. Un article à -8 et un article à 0 donnent donc exactement le même résultat, et le malus n'a d'effet que dans les cas où un autre bonus de pertinence le compense partiellement.</p>
+      <p>Deux options : déplacer ce malus dans les pénalités absolues, ou l'assumer comme neutre et le retirer pour simplifier.</p></div>
+
+    <div class="flag"><span class="tag">Réglage</span>
+      <h3>Le pilier Qualité mesure surtout la présence d'une image</h3>
+      <p>Avec un plafond à 32 et une image qui vaut 12 points, une simple miniature suffit à décrocher 37 sur 100. Un article avec image, texte complet et source curée sature à 100. En pratique, les 15 % réservés à la Qualité récompensent le confort de lecture, pas la qualité éditoriale.</p>
+      <p>Si l'objectif est un vrai signal de qualité, il faudrait y faire entrer des critères de contenu (longueur, présence de sources citées, statut du média) et relever le plafond en conséquence.</p></div>
+
+    <div class="flag"><span class="tag">Positionnement</span>
+      <h3>La fraîcheur est-elle compatible avec le slow media ?</h3>
+      <p>La décroissance est hyperbolique et rapide : un article perd la moitié de son score de fraîcheur en 24h, les trois quarts en 72h. Combinée aux bonus de récence du digest et aux pénalités d'impression, elle pousse structurellement vers l'actualité chaude.</p>
+      <p>C'est un choix d'app d'actualité classique. La question de fond, avant tout réglage de constante : est-ce que Facteur veut qu'un très bon article de 5 jours puisse encore remonter en tête ? Si oui, le réglage n'est pas dans le poids de 20 %, mais dans la forme de la courbe et dans le plafond de 115.</p></div>
+
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="leviers" style="border-bottom:none">
+  <div class="stationhead"><div class="num">10</div><h2>Les constantes réglables</h2></div>
+  <p class="sub">Toutes centralisées dans <code>scoring_config.py</code>. Une modification de ce fichier change le comportement de toutes les surfaces à la fois, feed, digest, essentiel, veille.</p>
+  <table>
+    <thead><tr><th>Constante</th><th>Ce qu'elle contrôle</th><th style="text-align:right">Valeur</th></tr></thead>
+    <tbody>
+      <tr><td>PILLAR_WEIGHTS</td><td>Équilibre général entre les quatre piliers</td><td class="n">40/25/20/15</td></tr>
+      <tr><td>MAX_PERTINENCE_RAW</td><td>Plafond de normalisation, le levier le moins visible</td><td class="n">160</td></tr>
+      <tr><td>MAX_QUALITE_RAW</td><td>Plafond très bas, saturation rapide</td><td class="n">32</td></tr>
+      <tr><td>recency_base</td><td>Amplitude de la décroissance de fraîcheur</td><td class="n">100</td></tr>
+      <tr><td>THEME_MATCH</td><td>Poids d'un thème suivi, réduit de 70 à 50 en phase 2</td><td class="n">50</td></tr>
+      <tr><td>TOPIC_MATCH</td><td>Poids d'un sous-thème, réduit de 60 à 45</td><td class="n">45</td></tr>
+      <tr><td>FEED_RANDOMIZATION_TEMPERATURE</td><td>Dose de découverte dans le feed</td><td class="n">0.15</td></tr>
+      <tr><td>decay_factor (diversité)</td><td>Fatigue de source, non exposé dans la config</td><td class="n">0.70</td></tr>
+      <tr><td>IMPRESSION_RECENT</td><td>Force du "tu l'as déjà vu"</td><td class="n">-70</td></tr>
+      <tr><td>LIKE_TOPIC_BOOST</td><td>Vitesse d'apprentissage du profil</td><td class="n">+0.15</td></tr>
+      <tr><td>SUBTOPIC_DECAY</td><td>Vitesse d'oubli quotidien</td><td class="n">0.98</td></tr>
+      <tr><td>COVERAGE_BASE / CAP</td><td>Bonus de pluralité, actuellement inactif</td><td class="n">12 / 30</td></tr>
+      <tr><td>DIGEST_SPORT_PENALTY</td><td>Rétrogradation du sport dans le digest</td><td class="n">-80</td></tr>
+      <tr><td>SCORING_VERSION</td><td>Bascule entre pillars_v1 et l'ancien layers_v1</td><td class="n">pillars_v1</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>
+  Lecture du dépôt au 30 juillet 2026. Le moteur legacy layers_v1 est toujours présent dans le code<br>
+  mais inactif. Les chiffres de cette page proviennent directement de scoring_config.py et pillars/.
+</footer>
+
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const CAP = {p:160, s:95, f:115, q:32};
+
+  const defaults = {theme:"50",subs:"1",custom:false,iw:1,ent:0,src:"35",rel:"10",aff:0,mult:"1",
+    age:3,rpref:"none",img:true,txt:"10",cur:true,imp:"0",mute:"0",wp:.40,ws:.25,wf:.20,wq:.15};
+
+  function norm(raw, cap){ return raw <= 0 ? 0 : Math.min(raw/cap,1)*100; }
+
+  function compute(){
+    // --- pertinence ---
+    const theme = parseFloat($("theme").value);
+    const nsubs = parseInt($("subs").value,10);
+    let sub = 0;
+    if(nsubs >= 1) sub += 45;                 // position factor 0.6^0
+    if(nsubs >= 2) sub += 45*0.6;             // position factor 0.6^1
+    if(nsubs >= 1 && theme > 0) sub += 18;    // bonus précision
+    const custom = $("custom").checked ? 25 : 0;
+    const iw = parseFloat($("iw").value);
+    const behav = theme > 0 ? 50*(iw-1) : 0;
+    const ent = parseFloat($("ent").value);
+    let p = theme + sub + custom + behav + ent;
+    if(theme === 0 && sub === 0 && custom === 0) p -= 8;
+
+    // --- source ---
+    let s = parseFloat($("src").value) + parseFloat($("rel").value) + parseFloat($("aff").value);
+    s = s * parseFloat($("mult").value);
+
+    // --- fraicheur ---
+    const h = parseFloat($("age").value);
+    let f = 100/(h/24 + 1);
+    const rp = $("rpref").value;
+    if(rp === "recent" && h < 24) f += 15;
+    if(rp === "timeless" && h > 48) f += 10;
+
+    // --- qualite ---
+    const q = ($("img").checked?12:0) + parseFloat($("txt").value) + ($("cur").checked?10:0);
+
+    // --- normalisation + ponderation ---
+    const n = {p:norm(p,CAP.p), s:norm(s,CAP.s), f:norm(f,CAP.f), q:norm(q,CAP.q)};
+    const w = {p:parseFloat($("wp").value), s:parseFloat($("ws").value),
+               f:parseFloat($("wf").value), q:parseFloat($("wq").value)};
+    const base = n.p*w.p + n.s*w.s + n.f*w.f + n.q*w.q;
+    const pen = parseFloat($("imp").value) + parseFloat($("mute").value);
+
+    return {raw:{p,s,f,q}, n, w, base, pen, final:base+pen, theme, sub, custom, behav, ent, h};
+  }
+
+  function label(r){
+    const cw = {pertinence:r.n.p*r.w.p, source:r.n.s*r.w.s, fraicheur:r.n.f*r.w.f, qualite:r.n.q*r.w.q};
+    const dom = Object.keys(cw).reduce((a,b)=> cw[a]>=cw[b]?a:b);
+    if(dom==="pertinence"){
+      if(r.custom>0 && r.custom>=r.theme && r.custom>=r.sub) return "Votre sujet";
+      if(r.sub>=r.theme && r.sub>0) return "Vos centres d'intérêt : sous-thème suivi";
+      if(r.theme>0) return "Vos intérêts : thème suivi";
+      return "Vos centres d'intérêt";
+    }
+    if(dom==="source") return parseFloat($("src").value)>15 ? "Source suivie" : "Source suivie";
+    if(dom==="fraicheur") return "À la une";
+    return "Article de qualité";
+  }
+
+  function render(){
+    const r = compute();
+    const set = (bid,fid,val,raw,cap)=>{
+      $(bid).textContent = raw.toFixed(0)+" brut / "+cap+"  →  "+val.toFixed(0)+"/100";
+      $(fid).style.width = val.toFixed(1)+"%";
+    };
+    set("b1","f1",r.n.p,r.raw.p,CAP.p);
+    set("b2","f2",r.n.s,r.raw.s,CAP.s);
+    set("b3","f3",r.n.f,r.raw.f,CAP.f);
+    set("b4","f4",r.n.q,r.raw.q,CAP.q);
+
+    // stacked contribution bar
+    const parts = [r.n.p*r.w.p, r.n.s*r.w.s, r.n.f*r.w.f, r.n.q*r.w.q];
+    const shades = ["#E8602C","#EE8659","#F4AC86","#F9D2C3"];
+    $("stack").innerHTML = parts.map((v,i)=>
+      '<div style="width:'+Math.max(v,0).toFixed(1)+'%;background:'+shades[i]+'"></div>').join("");
+    $("bbase").textContent = r.base.toFixed(1)+" avant pénalités";
+
+    $("score").innerHTML = r.final.toFixed(1)+' <small>/ 100</small>';
+    $("pen").textContent = r.pen < 0 ? "Pénalités appliquées : "+r.pen.toFixed(0)+" points" : "";
+    $("why").textContent = label(r);
+
+    // value readouts
+    $("iwv").textContent = parseFloat($("iw").value).toFixed(1);
+    $("entv").textContent = $("ent").value;
+    $("affv").textContent = $("aff").value;
+    const h = parseInt($("age").value,10);
+    $("agev").textContent = h < 48 ? h+"h" : Math.round(h/24)+"j";
+    ["wp","ws","wf","wq"].forEach(k=> $(k+"v").textContent = Math.round(parseFloat($(k).value)*100)+"%");
+    const sum = ["wp","ws","wf","wq"].reduce((a,k)=>a+parseFloat($(k).value),0);
+    $("wsum").textContent = Math.abs(sum-1) < 0.001
+      ? "Somme des poids : 100 %"
+      : "Somme des poids : "+Math.round(sum*100)+" %. Dans le code, ils doivent sommer à 100 %.";
+  }
+
+  Object.keys(defaults).forEach(k=>{
+    const el = $(k);
+    if(el) el.addEventListener("input", render);
+  });
+
+  $("reset").addEventListener("click", ()=>{
+    Object.entries(defaults).forEach(([k,v])=>{
+      const el = $(k); if(!el) return;
+      if(el.type === "checkbox") el.checked = v; else el.value = v;
+    });
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
