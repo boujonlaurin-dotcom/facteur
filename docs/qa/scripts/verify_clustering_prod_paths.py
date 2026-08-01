@@ -23,10 +23,9 @@ s: préfixe source_id, a: type de source, t: titre}, extraite de production.
 
 import importlib.util
 import json
-import math
 import os
+import re
 import sys
-from collections import Counter
 
 SC = os.path.dirname(os.path.abspath(__file__))
 API = os.path.join(SC, "..", "..", "..", "packages", "api", "app", "services")
@@ -102,8 +101,12 @@ def metrics(groups, rows):
         "topics_3plus_media": sum(1 for d in doms if len(d) >= 3),
         "topics_5plus_media": sum(1 for d in doms if len(d) >= 5),
         "multi_article": sum(1 for s in sizes if s >= 2),
-        "singleton_rate": round(100.0 * sum(1 for s in sizes if s == 1) / n, 1) if n else 0.0,
-        "grouped_rate": round(100.0 * sum(s for s in sizes if s >= 2) / n, 1) if n else 0.0,
+        "singleton_rate": round(100.0 * sum(1 for s in sizes if s == 1) / n, 1)
+        if n
+        else 0.0,
+        "grouped_rate": round(100.0 * sum(s for s in sizes if s >= 2) / n, 1)
+        if n
+        else 0.0,
         "max_media": max((len(d) for d in doms), default=0),
         "max_articles": max(sizes, default=0),
         "_groups": groups,
@@ -146,11 +149,42 @@ def corpus_window(rows, gen, hours):
     return [r for r in rows if lo <= r["_ts"] <= gen]
 
 
+# Gabarits de bulletins/chroniques — miroir de `NEWS_BULLETIN_PATTERNS`, restreint
+# aux formes présentes dans le corpus mesuré. Sert à simuler `drop_unclusterable`.
+_BULLETIN = re.compile(
+    r"^\s*(journal de \d{1,2}\s?h|le journal\b|journal (rtl|rfi|bfm|europe|france)\b"
+    r"|revue de presse\b|les titres\b|jt (de|du)\b|flash (info|actu)\b)",
+    re.I,
+)
+
+
+def editorial_pool_v2(rows, gen, window_h=24, cap=6000, min_pool=200, fallback_h=48):
+    """Réplique la politique de `editorial/candidate_pool.py` après correctif.
+
+    Tout le corpus de la fenêtre, sans plafond top-N, sans article post-daté,
+    sans bulletin. Le plafond historique de 200 devient un plancher.
+    """
+
+    def _slice(hours):
+        lo = gen - hours * 3600
+        win = [r for r in rows if lo <= r["_ts"] <= gen]
+        win.sort(key=lambda r: r["_ts"], reverse=True)
+        return win[:cap]
+
+    pool = _slice(window_h)
+    if len(pool) < min_pool:
+        pool = _slice(fallback_h)
+    return [r for r in pool if not _BULLETIN.match(r["t"])]
+
+
 def run(label, rows):
     tokens = [normalize_title(r["t"]) for r in rows]
     out = {}
     for name, groups in (
-        ("AVANT  Jaccard 0.40 glouton (défaut prod réel)", cluster_before(tokens, 0.40)),
+        (
+            "AVANT  Jaccard 0.40 glouton (défaut prod réel)",
+            cluster_before(tokens, 0.40),
+        ),
         ("AVANT  Jaccard 0.45 glouton (chemin topics)", cluster_before(tokens, 0.45)),
         ("APRÈS  cosinus IDF 0.30 centroïde (livré)", cluster_after(tokens, 0.30)),
     ):
@@ -175,7 +209,9 @@ def run(label, rows):
 
 def chaining_audit(m, rows, top=5):
     """Inspection des plus gros clusters : détection de chaînage à l'œil nu."""
-    order = sorted(range(len(m["_groups"])), key=lambda k: len(m["_groups"][k]), reverse=True)
+    order = sorted(
+        range(len(m["_groups"])), key=lambda k: len(m["_groups"][k]), reverse=True
+    )
     for k in order[:top]:
         g = m["_groups"][k]
         print(f"\n  -- cluster {len(g)} art. / {len(m['_doms'][k])} médias --")
@@ -194,28 +230,38 @@ def main():
     gen = dt.datetime(2026, 7, 31, 5, 0, tzinfo=dt.UTC).timestamp()  # cron 07:00 Paris
 
     print("=" * 118)
-    print("CLUSTERING — MESURE AVANT/APRÈS SUR LE CODE LIVRÉ (topic_clustering.py importé)")
-    print(f"Génération simulée : 2026-07-31 05:00 UTC (cron 07:00 Paris)")
-    print("KPI = nombre de sujets couverts par >= 3 médias distincts (après fold agrégateurs)")
+    print(
+        "CLUSTERING — MESURE AVANT/APRÈS SUR LE CODE LIVRÉ (topic_clustering.py importé)"
+    )
+    print("Génération simulée : 2026-07-31 05:00 UTC (cron 07:00 Paris)")
+    print(
+        "KPI = nombre de sujets couverts par >= 3 médias distincts (après fold agrégateurs)"
+    )
     print("=" * 118)
 
     pool = editorial_pool(rows, gen)
-    ed = run("CHEMIN ÉDITORIAL — pool réel de la pipeline (le seul emprunté en prod)", pool)
+    run("CHEMIN ÉDITORIAL — AVANT correctif : pool plafonné à 200 par récence", pool)
+
+    pool2 = editorial_pool_v2(rows, gen)
+    after = run(
+        "CHEMIN ÉDITORIAL — APRÈS correctif : corpus complet de la fenêtre", pool2
+    )
 
     c24 = corpus_window(rows, gen, 24)
-    full = run("CORPUS COMPLET 24 h — borne haute, non atteinte en prod", c24)
+    run("CORPUS COMPLET 24 h — référence non filtrée", c24)
 
-    print(f"\n### Couverture du pool éditorial")
-    print(f"  pool éditorial          : {len(pool)} articles, {len({r['d'] for r in pool})} médias")
-    print(f"  corpus 24 h             : {len(c24)} articles, {len({r['d'] for r in c24})} médias")
-    print(f"  part du corpus vue      : {100.0 * len(pool) / len(c24):.1f} %")
-    span = (max(r["_ts"] for r in pool) - min(r["_ts"] for r in pool)) / 3600
-    print(f"  fenêtre réelle du pool  : {span:.1f} h (contre 48 h autorisées)")
+    print("\n### Couverture du pool éditorial")
+    for label, p in (("AVANT", pool), ("APRÈS", pool2)):
+        span = (max(r["_ts"] for r in p) - min(r["_ts"] for r in p)) / 3600
+        print(
+            f"  {label} : {len(p):>5} articles | {len({r['d'] for r in p}):>3} médias | "
+            f"{100.0 * len(p) / len(c24):>5.1f} % du corpus 24 h | fenêtre {span:.1f} h"
+        )
 
     print("\n" + "=" * 118)
-    print("AUDIT DE CHAÎNAGE — plus gros clusters produits par le code livré sur 24 h")
+    print("AUDIT DE CHAÎNAGE — plus gros clusters vus par le digest APRÈS correctif")
     print("=" * 118)
-    chaining_audit(full["APRÈS  cosinus IDF 0.30 centroïde (livré)"], c24)
+    chaining_audit(after["APRÈS  cosinus IDF 0.30 centroïde (livré)"], pool2)
 
 
 if __name__ == "__main__":

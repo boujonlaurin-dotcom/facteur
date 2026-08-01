@@ -1078,33 +1078,39 @@ class DigestSelector:
         sinon les users dont les sources suivies ne couvrent pas le mode
         (cas typique du serein) reçoivent un digest vide.
 
-        Returns: liste de Contents (≤200) ; vide si la requête échoue.
-        """
-        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-            hours=hours_lookback
-        )
-        stmt = select(Content).options(selectinload(Content.source))
-        if mode == "serein":
-            from app.services.recommendation.filter_presets import (
-                apply_good_news_filter,
-            )
+        La politique de pool (fenêtre, filtres, bornes) est partagée avec le
+        chemin batch via `editorial/candidate_pool.py` : les deux doivent voir le
+        même corpus, sinon un même sujet n'affiche pas le même nombre de médias
+        selon que le digest vient du batch ou d'un recalcul à la demande.
 
-            stmt = stmt.join(Source, Content.source_id == Source.id)
-            stmt = apply_good_news_filter(stmt)
-        stmt = (
-            stmt.where(Content.published_at >= cutoff)
-            .order_by(Content.published_at.desc())
-            .limit(200)
+        Returns: le corpus de la fenêtre de regroupement ; vide si la requête échoue.
+        """
+        from app.services.editorial.candidate_pool import (
+            EDITORIAL_CLUSTERING_WINDOW_HOURS,
+            drop_unclusterable,
+            fetch_editorial_pool,
         )
+
         try:
-            result = await self.session.execute(stmt)
-            return list(result.scalars().all())
+            contents = await fetch_editorial_pool(
+                self.session, mode, fallback_hours=hours_lookback
+            )
         except SQLAlchemyError:
             logger.exception(
                 "digest_selector_global_pool_failed",
                 mode=mode,
             )
             return []
+
+        pool = drop_unclusterable(contents)
+        logger.info(
+            "digest_selector_global_pool_built",
+            mode=mode,
+            window_hours=EDITORIAL_CLUSTERING_WINDOW_HOURS,
+            pool_size=len(pool),
+            source_count=len({c.source_id for c in pool}),
+        )
+        return pool
 
     async def _rehydrate_editorial_clusters(self, global_ctx: object) -> list:
         """Reconstruit les `TopicCluster` (avec Content chargés) depuis `cluster_data`.

@@ -54,9 +54,23 @@ def kpi(groups, rows):
 
 
 def fragmentation(groups, rows, needle):
-    return sum(
-        1 for g in groups if any(needle in rows[i]["t"].lower() for i in g)
+    return sum(1 for g in groups if any(needle in rows[i]["t"].lower() for i in g))
+
+
+def llm_input_view(rows, threshold, limit=15):
+    """Les `limit` clusters que la curation LLM voit réellement.
+
+    `curation.select_topics` trie par nombre de médias et tronque à
+    `cluster_input_limit` (15). C'est donc CE classement — pas le KPI global —
+    qui détermine ce que l'utilisateur lit. Le digest en retient 5.
+    """
+    tk = [v.normalize_title(r["t"]) for r in rows]
+    g = v.cluster_after(tk, threshold)
+    m = v.metrics(g, rows)
+    order = sorted(
+        range(len(g)), key=lambda k: (len(m["_doms"][k]), len(g[k])), reverse=True
     )
+    return [(len(m["_doms"][k]), len(g[k]), rows[g[k][0]]["t"]) for k in order[:limit]]
 
 
 def main():
@@ -69,23 +83,45 @@ def main():
     base = dt.datetime(2026, 7, 31, 5, 0, tzinfo=dt.UTC).timestamp()
 
     print("=" * 112)
-    print("1. ROBUSTESSE — le gain du chemin éditorial selon l'heure de génération")
+    print("0. CE QUE LA CURATION LLM VOIT — top 15 clusters (cluster_input_limit),")
+    print("   dont elle retient 5 pour le digest. C'est la vue produit.")
     print("=" * 112)
-    print(f"  {'heure UTC':<12}{'pool':>7}{'médias':>8}{'fenêtre':>10}"
-          f"{'AVANT j0.40':>13}{'APRÈS c0.30':>13}{'delta':>8}")
+    for label, pool in (
+        ("AVANT correctif — pool plafonné à 200", v.editorial_pool(rows, base)),
+        ("APRÈS correctif — corpus de la fenêtre", v.editorial_pool_v2(rows, base)),
+    ):
+        print(f"\n  {label} ({len(pool)} articles) :")
+        for i, (d, a, title) in enumerate(llm_input_view(pool, 0.30), 1):
+            print(f"    {i:>2}. [{d:>2} méd. / {a:>2} art.] {title[:84]}")
+
+    print("\n" + "=" * 112)
+    print(
+        "1. ROBUSTESSE — sujets >= 3 médias vus par le digest, selon l'heure de génération"
+    )
+    print("   (algorithme identique des deux côtés : seul le pool change)")
+    print("=" * 112)
+    print(
+        f"  {'heure':<8}{'pool AVANT':>11}{'méd.':>6}{'fenêtre':>9}{'KPI':>6}"
+        f"{'  |':>3}{'pool APRÈS':>11}{'méd.':>6}{'fenêtre':>9}{'KPI':>6}{'gain':>7}"
+    )
     for h in (5, 8, 11, 14, 17, 20):
         gen = dt.datetime(2026, 7, 31, h, 0, tzinfo=dt.UTC).timestamp()
         if gen > max(r["_ts"] for r in rows if r["p"] <= "2026-08-01T00:01"):
             continue
-        pool = v.editorial_pool(rows, gen)
-        if len(pool) < 50:
+        old, new = v.editorial_pool(rows, gen), v.editorial_pool_v2(rows, gen)
+        if len(old) < 50:
             continue
-        tk = [v.normalize_title(r["t"]) for r in pool]
-        b, _, _ = kpi(v.cluster_before(tk, 0.40), pool)
-        a, _, _ = kpi(v.cluster_after(tk, 0.30), pool)
-        span = (max(r["_ts"] for r in pool) - min(r["_ts"] for r in pool)) / 3600
-        print(f"  {h:02d}:00{'':<7}{len(pool):>7}{len({r['d'] for r in pool}):>8}"
-              f"{span:>9.1f}h{b:>13}{a:>13}{a - b:>+8}")
+        cells = []
+        for pool in (old, new):
+            tk = [v.normalize_title(r["t"]) for r in pool]
+            k, _, _ = kpi(v.cluster_after(tk, 0.30), pool)
+            span = (max(r["_ts"] for r in pool) - min(r["_ts"] for r in pool)) / 3600
+            cells.append((len(pool), len({r["d"] for r in pool}), span, k))
+        (n1, m1, s1, k1), (n2, m2, s2, k2) = cells
+        print(
+            f"  {h:02d}:00{'':<3}{n1:>11}{m1:>6}{s1:>8.1f}h{k1:>6}{'  |':>3}"
+            f"{n2:>11}{m2:>6}{s2:>8.1f}h{k2:>6}{f'x{k2 / max(k1, 1):.0f}':>7}"
+        )
 
     c24 = v.corpus_window(rows, base, 24)
     tk24 = [v.normalize_title(r["t"]) for r in c24]
@@ -94,8 +130,10 @@ def main():
     print(f"2. SENSIBILITÉ AU SEUIL — corpus complet 24 h ({len(c24)} articles),")
     print("   et non le corpus annoté de 63 articles ayant servi à calibrer")
     print("=" * 112)
-    print(f"  {'seuil':<9}{'sujets>=3méd':>14}{'dont boilerplate':>19}"
-          f"{'art. trending':>15}{'ceuta méd.':>12}{'gironde méd.':>14}{'max art.':>10}")
+    print(
+        f"  {'seuil':<9}{'sujets>=3méd':>14}{'dont boilerplate':>19}"
+        f"{'art. trending':>15}{'ceuta méd.':>12}{'gironde méd.':>14}{'max art.':>10}"
+    )
     for th in (0.22, 0.25, 0.28, 0.30, 0.32, 0.35, 0.40):
         g = v.cluster_after(tk24, th)
         total, junk, tart = kpi(g, c24)
@@ -115,8 +153,10 @@ def main():
     ):
         g = fn(tk24, th)
         total, junk, tart = kpi(g, c24)
-        print(f"  {name:<22} sujets>=3méd={total:>4}   articles marqués trending="
-              f"{tart:>5} ({100.0 * tart / len(c24):.1f} % du corpus)")
+        print(
+            f"  {name:<22} sujets>=3méd={total:>4}   articles marqués trending="
+            f"{tart:>5} ({100.0 * tart / len(c24):.1f} % du corpus)"
+        )
 
     print("\n" + "=" * 112)
     print("4. FRAGMENTATION RÉSIDUELLE — nombre de clusters distincts portant le sujet")

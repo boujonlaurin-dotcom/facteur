@@ -17,6 +17,20 @@ from app.services.editorial.schemas import (
 )
 
 
+def _content(title="Un titre d'actualité ordinaire", source_id=None):
+    """Content factory for pool tests — a real `title` str, unlike a bare Mock()."""
+    return Mock(id=uuid4(), source_id=source_id or uuid4(), title=title)
+
+
+def _result(items):
+    """Wrap rows the way `session.execute(...).scalars().all()` expects."""
+    scalars = MagicMock()
+    scalars.all = MagicMock(return_value=items)
+    res = MagicMock()
+    res.scalars = MagicMock(return_value=scalars)
+    return res
+
+
 def _make_editorial_result(n_subjects=2):
     """Build a minimal EditorialPipelineResult for testing."""
     now = datetime.datetime.now(datetime.UTC)
@@ -421,25 +435,19 @@ class TestFollowedSourceSlice:
 
     @pytest.mark.asyncio
     async def test_followed_slice_unioned_and_deduped(self, job):
-        """A followed-source article past the top-200 cut is added, deduped."""
+        """A followed-source article outside the clustering window is added, deduped."""
 
         followed_src = uuid4()
         # recency slice: c1 (other source), c2 (followed, already present)
-        c1 = Mock(id=uuid4(), source_id=uuid4())
-        c2 = Mock(id=uuid4(), source_id=followed_src)
+        c1 = _content(source_id=uuid4())
+        c2 = _content(source_id=followed_src)
         # followed slice query returns c2 (dup) + c3 (new, older niche article)
-        c3 = Mock(id=uuid4(), source_id=followed_src)
-
-        def _result(items):
-            scalars = MagicMock()
-            scalars.all = MagicMock(return_value=items)
-            res = MagicMock()
-            res.scalars = MagicMock(return_value=scalars)
-            return res
+        c3 = _content(source_id=followed_src)
 
         mock_session = AsyncMock()
+        # Pool under EDITORIAL_CLUSTERING_MIN_POOL ⇒ widened re-fetch, then followed.
         mock_session.execute = AsyncMock(
-            side_effect=[_result([c1, c2]), _result([c2, c3])]
+            side_effect=[_result([c1, c2]), _result([c1, c2]), _result([c2, c3])]
         )
 
         result = await job._get_global_candidates(
@@ -449,9 +457,8 @@ class TestFollowedSourceSlice:
         ids = [c.id for c in result]
         # c1, c2 from recency + c3 from followed slice (c2 deduped).
         assert ids == [c1.id, c2.id, c3.id]
-        assert mock_session.execute.await_count == 2
-        # Second query (followed slice) filters on source_id and keeps cutoff.
-        followed_stmt = mock_session.execute.await_args_list[1].args[0]
+        # Last query (followed slice) filters on source_id and keeps the cutoff.
+        followed_stmt = mock_session.execute.await_args_list[-1].args[0]
         compiled = str(
             followed_stmt.compile(compile_kwargs={"literal_binds": False})
         ).lower()
@@ -460,19 +467,85 @@ class TestFollowedSourceSlice:
 
     @pytest.mark.asyncio
     async def test_no_followed_slice_when_empty(self, job):
-        """Without followed sources, only the recency slice query runs."""
-        scalars = MagicMock()
-        scalars.all = MagicMock(return_value=[Mock(id=uuid4(), source_id=uuid4())])
-        res = MagicMock()
-        res.scalars = MagicMock(return_value=scalars)
+        """Without followed sources, no source_id-filtered query runs."""
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(return_value=res)
+        mock_session.execute = AsyncMock(return_value=_result([_content()]))
 
         result = await job._get_global_candidates(
             mock_session, followed_source_ids=set()
         )
         assert len(result) == 1
+        for call in mock_session.execute.await_args_list:
+            compiled = str(
+                call.args[0].compile(compile_kwargs={"literal_binds": False})
+            ).lower()
+            assert "contents.source_id in" not in compiled
+
+    @pytest.mark.asyncio
+    async def test_pool_is_the_whole_window_not_a_top_n_slice(self, job):
+        """Le pool n'est plus plafonné à 200 : un corpus complet passe entier.
+
+        C'est la garantie produit de « les sujets les + couverts en France » — le
+        décompte de médias d'un sujet doit porter sur la couverture du jour, pas
+        sur les 200 articles les plus récents (mesuré : 10,5 % du corpus 24 h).
+        Cf. docs/maintenance/maintenance-clustering-corpus-complet.md.
+        """
+        corpus = [_content() for _ in range(2400)]
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=_result(corpus))
+
+        result = await job._get_global_candidates(mock_session)
+
+        assert len(result) == 2400
+        # Pool au-dessus du plancher ⇒ pas de ré-élargissement.
         assert mock_session.execute.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_thin_pool_widens_to_fallback_window(self, job):
+        """Nuit creuse / panne d'ingestion : on ré-élargit plutôt que de rendre peu."""
+        thin = [_content() for _ in range(10)]
+        wide = [_content() for _ in range(300)]
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(side_effect=[_result(thin), _result(wide)])
+
+        result = await job._get_global_candidates(mock_session)
+
+        assert len(result) == 300
+        assert mock_session.execute.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_pool_excludes_future_dated_articles(self, job):
+        """Des dates RSS futures trustaient la tête du tri par récence."""
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=_result([_content()]))
+
+        await job._get_global_candidates(mock_session)
+
+        compiled = str(
+            mock_session.execute.await_args_list[0]
+            .args[0]
+            .compile(compile_kwargs={"literal_binds": False})
+        ).lower()
+        assert "contents.published_at <=" in compiled
+
+    @pytest.mark.asyncio
+    async def test_pool_drops_news_bulletins(self, job):
+        """Les bulletins partagent un gabarit, pas un sujet : hors clustering.
+
+        Sans ce filtre, élargir le pool fabrique un faux « sujet » : 20 journaux
+        radio de 3 médias, à cheval sur 3 jours, comptés comme un sujet du jour.
+        """
+        keep = _content(title="Trêve à Gaza : accord sur le désarmement du Hamas")
+        drops = [
+            _content(title="JOURNAL DE 8H du jeudi 30 juillet 2026"),
+            _content(title="Le journal RTL de 6h du 31 juillet 2026"),
+        ]
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=_result([keep, *drops]))
+
+        result = await job._get_global_candidates(mock_session)
+
+        assert [c.id for c in result] == [keep.id]
 
 
 class TestBatchFollowedSourceIds:
@@ -717,9 +790,7 @@ class TestEditorialModeFailureRollback:
 
         with (
             patch.object(job_mod, "DigestSelector") as mock_sel_cls,
-            patch.object(
-                job_mod, "state_mark_pending", new_callable=AsyncMock
-            ),
+            patch.object(job_mod, "state_mark_pending", new_callable=AsyncMock),
             patch.object(
                 job_mod, "apply_session_timeouts", new_callable=AsyncMock
             ) as mock_apply,
