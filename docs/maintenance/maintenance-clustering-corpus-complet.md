@@ -48,22 +48,42 @@ et ses deux appelants.
 | | Avant | Après |
 |---|---|---|
 | Sélection | 200 plus récents (+ 200 sources suivies) | **tout le corpus de la fenêtre** |
-| Fenêtre de regroupement | 48 h nominale, **1,7–2,9 h réelle** | **24 h** |
+| Fenêtre de regroupement | 48 h nominale, **1,7–2,9 h réelle** | **échelle 24 → 48 → 168 h** |
 | Borne | `LIMIT 200` (plafond) | `LIMIT 6000` (sécurité mémoire, jamais atteinte) |
-| Pool maigre | — | ré-élargissement à `hours_lookback` sous **200** articles |
+| Pool maigre | — | on descend l'échelle jusqu'à **200** articles utiles |
 
 Le **200 historique devient un plancher** : il ne coupe plus le corpus, il détecte
-un pool anormalement maigre (nuit de réveillon, panne d'ingestion) et déclenche un
-ré-élargissement plutôt qu'un digest vide.
+un pool anormalement maigre et fait descendre d'un barreau plutôt que de servir un
+digest famélique.
 
-**Pourquoi 24 h et pas 48 h.** « Actus du jour » est un produit quotidien : un sujet
+**Pourquoi une échelle et pas une fenêtre unique.** Les deux modes n'ont pas du tout
+la même densité, et c'est ce qui a failli passer inaperçu :
+
+| Mode | 24 h | 48 h | 168 h |
+|---|---|---|---|
+| `pour_vous` | ~2 000 | — | — |
+| `serein` (hard-filtré `is_good_news`) | **13** | **33** | **145** |
+
+Une fenêtre nominale de 24 h avec un repli unique à 48 h aurait amputé
+« Bonnes Nouvelles » de **77 % de sa matière** (145 → 33) sur le chemin on-demand,
+qui lisait jusqu'ici 168 h. L'échelle fait descendre `serein` jusqu'au dernier
+barreau et restitue exactement son comportement historique, sans élargir
+`pour_vous` d'une heure.
+
+**Pourquoi 24 h en nominal.** « Actus du jour » est un produit quotidien : un sujet
 se définit dans la journée. À 48 h, les articles de la veille se raccrochent à ceux
 du jour — observé sur les bulletins radio, qui formaient un cluster à cheval sur
 3 jours. Mesuré avant de trancher : passer de 48 h à 24 h coûte **44 articles issus
 de 27 sources** qui n'ont rien publié dans les dernières 24 h. Ces 27 sources
-restent couvertes par la tranche « sources suivies », qui garde volontairement la
-fenêtre large `hours_lookback` — c'est la garantie P1 existante, préservée telle
-quelle.
+restent couvertes par la tranche « sources suivies » (ci-dessous).
+
+**La tranche « sources suivies » (P1) ne couvre plus que le créneau que la fenêtre
+n'atteint pas** — `[now-48 h, now-24 h]` au lieu de `[now-48 h, now]`. Depuis que le
+pool nominal est exhaustif sur sa fenêtre, la requêter à nouveau sur `[0, 24 h]` ne
+rendait que des articles déjà présents : ils consommaient le `LIMIT 200` avant qu'un
+seul article de niche plus ancien n'y entre — l'exact inverse du but de la tranche.
+La garantie P1 était donc **cassée par la première version de ce correctif**, sans
+qu'aucun test ne le voie.
 
 ### 3.2 Deux exclusions d'entrée
 
@@ -81,6 +101,13 @@ quelle.
   sélection ») sauvait le cluster entier. On traite ici la cause : un bulletin
   n'entre pas dans le calcul. Il reste consultable ailleurs dans l'app ; c'est un
   filtre d'entrée du regroupement, pas une suppression de contenu.
+
+  **Taux de faux positifs mesuré** sur les 4 399 titres de production du corpus figé :
+  **39 titres écartés (0,9 %)**, dont **38 bulletins authentiques**. Le seul cas
+  discutable est une enquête en série (« … (2/3) »), qui n'est pas de l'actu chaude
+  non plus. Le risque théorique existe (`^le journal\b` attraperait « Le journal
+  Libération racheté par un fonds ») mais ne s'est pas matérialisé sur 24 h de
+  production ; il est à re-mesurer si `NEWS_BULLETIN_PATTERNS` s'élargit.
 
 ### 3.3 Les deux chemins voient enfin le même corpus
 
@@ -158,30 +185,37 @@ couverts**, de 5 à 12 médias.
 ## 5. Où regarder en prod
 
 ```
-digest_generation_global_pool_built   mode, window_hours, pool_size, source_count,
-                                      dropped_unclusterable   (chemin batch)
-digest_selector_global_pool_built     idem, chemin on-demand
-editorial_pool_widened                pool sous le plancher ⇒ fenêtre ré-élargie
-editorial_pool_truncated              ⚠ plafond de 6 000 atteint = anomalie d'ingestion
-global_trending_context_built         topics_3_plus_media = le KPI
-editorial_pipeline.clusters_built     nombre de clusters soumis à la curation
+digest_generation_global_pool_built       mode, window_hours, pool_size, source_count,
+                                          dropped_unclusterable   (chemin batch)
+digest_selector_global_pool_built         idem, chemin on-demand
+editorial_pool_ladder_exhausted           aucun barreau n'atteint le plancher — normal
+                                          pour `serein`, anormal pour `pour_vous`
+editorial_pool_truncated                  ⚠ plafond 6 000 atteint = anomalie d'ingestion
+digest_generation_followed_slice_skipped  fenêtre ≥ hours_lookback : tranche P1 sans objet
+global_trending_context_built             topics_3_plus_media = le KPI
+editorial_pipeline.clusters_built         nombre de clusters soumis à la curation
 ```
 
-Les deux derniers événements de pool sont émis par `candidate_pool.fetch_editorial_pool`,
-donc **communs aux deux chemins** — le `mode` les distingue, pas le nom.
+Les événements `editorial_pool_*` sont émis par `candidate_pool`, donc **communs aux
+deux chemins** — le `mode` les distingue, pas le nom.
 
-Signal de bonne santé attendu : `pool_size` ≈ 2 000-2 500, `source_count` ≈ 190,
-`topics_3_plus_media` entre 50 et 85. Un `pool_size` retombé à ~200 signifie que le
-ré-élargissement s'est déclenché — donc que l'ingestion a un problème.
+Signal de bonne santé attendu : `pool_size` ≈ 2 000-2 500 et `source_count` ≈ 190 en
+`pour_vous` ; `pool_size` ≈ 150 en `serein` avec `editorial_pool_ladder_exhausted`
+à chaque run (attendu — le mode n'a jamais 200 bonnes nouvelles). Un `pool_size`
+`pour_vous` retombé à ~200 signifie que l'ingestion a un problème.
+
+`topics_3_plus_media` doit se situer entre 50 et 85 en régime normal.
 
 ## 6. Pour le prochain agent — ce qui reste ouvert
 
 ### 6.1 Arbitrages que j'ai tranchés seul
 
-1. **Fenêtre 24 h.** Choisie pour la cohérence produit (§3.1), au prix de 44 articles
-   de 27 sources peu actives. Si la promesse devient « les sujets de la semaine »,
-   ce choix est à refaire — et il faudra alors un decay temporel, sinon les clusters
-   se mettront à cheval sur plusieurs jours.
+1. **Échelle `[24, 48, 168]`.** Le premier barreau est choisi pour la cohérence
+   produit (§3.1) ; les suivants existent pour `serein`. Si la promesse devient
+   « les sujets de la semaine », ce choix est à refaire — et il faudra alors un
+   decay temporel, sinon les clusters se mettront à cheval sur plusieurs jours.
+   Le plancher (200) arbitre entre les barreaux : le monter ferait descendre
+   `pour_vous` à 48 h les jours creux.
 2. **Bulletins exclus à l'entrée** plutôt que filtrés au niveau cluster. Plus radical,
    mais traite la cause. Un faux positif de `NEWS_BULLETIN_PATTERNS` fait maintenant
    disparaître un article du regroupement — les patterns sont partagés avec
@@ -246,7 +280,39 @@ ré-élargissement s'est déclenché — donc que l'ingestion a un problème.
    et `essentiel_service._W_TRENDING = 50` perd son pouvoir discriminant quand un
    cinquième du corpus est trending. **À revoir avant de toucher au seuil.**
 
-### 6.4 Ce que j'ai délibérément laissé de côté
+### 6.4 Effets induits traités ici (et pourquoi)
+
+Élargir le pool a des conséquences en dehors du digest, parce que
+`EditorialGlobalContext.cluster_data` sérialise **tous** les clusters et passe de
+~200 à ~2 350 contenus. Un consommateur en dépendait :
+
+- **`grille_selector._build_cluster_index`** n'indexe plus que les clusters
+  **multi-articles**. Le bonus `+2` qu'il alimente récompense l'appartenance à un
+  *sujet* ; avec les singletons indexés, la quasi-totalité des candidats y avait
+  droit — le bonus devenait une constante, donc sans effet sur le classement. La
+  distinction était implicite tant que `cluster_data` ne couvrait que 200 articles.
+
+### 6.5 Findings de revue écartés, avec la raison
+
+- **`defer(Content.html_content)` sur la requête de pool.** Suggéré pour alléger le
+  transfert. Mesuré : `html_content` pèse **699 kB sur 24 h** (1 kB/article), pas les
+  mégaoctets supposés. Le gain est réel mais faible, alors qu'un `defer` sur des
+  objets réhydratés puis re-sérialisés fait crasher tout accès tardif en contexte
+  async (`MissingGreenlet`). Mauvais rapport risque/gain — non appliqué.
+- **Ré-élargissement en « delta » plutôt qu'en requête complète.** L'échelle
+  re-requête toute la fenêtre à chaque barreau au lieu de ne chercher que
+  l'incrément. C'est deux à trois requêtes au lieu d'une, uniquement sur les modes
+  clairsemés. La version « delta + fusion » complique la boucle pour un gain qui ne
+  se paie que là — non appliqué, mais c'est le premier endroit à regarder si le
+  chemin on-demand `serein` devient chaud.
+- **Coût CPU superlinéaire de `cluster_documents` au plafond.** Un banc synthétique
+  à forte densité de tokens donne ~O(n²) (11 s à n=2 400, 77 s à n=6 000). Sur des
+  titres réels, la mesure est de **0,45 s pour 2 214 articles** — trois ordres de
+  grandeur d'écart, le corpus réel est creux. `EDITORIAL_CLUSTERING_MAX_ARTICLES`
+  borne donc la mémoire, pas le CPU : si l'ingestion double durablement, re-mesurer
+  avant de relever ce plafond.
+
+### 6.6 Ce que j'ai délibérément laissé de côté
 
 - Étendre le filtre bulletins aux **autres** consommateurs du clustering
   (`routers/feed.py`, `article_clustering_service`, `recommendation_service`). Ce

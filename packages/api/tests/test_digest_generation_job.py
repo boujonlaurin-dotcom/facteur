@@ -444,10 +444,16 @@ class TestFollowedSourceSlice:
         # followed slice query returns c2 (dup) + c3 (new, older niche article)
         c3 = _content(source_id=followed_src)
 
+        # Pool sous EDITORIAL_CLUSTERING_MIN_POOL ⇒ toute l'échelle de fenêtres est
+        # parcourue, puis la tranche « sources suivies ».
+        from app.services.editorial.candidate_pool import clustering_window_ladder
+
         mock_session = AsyncMock()
-        # Pool under EDITORIAL_CLUSTERING_MIN_POOL ⇒ widened re-fetch, then followed.
         mock_session.execute = AsyncMock(
-            side_effect=[_result([c1, c2]), _result([c1, c2]), _result([c2, c3])]
+            side_effect=[
+                *([_result([c1, c2])] * len(clustering_window_ladder())),
+                _result([c2, c3]),
+            ]
         )
 
         result = await job._get_global_candidates(
@@ -464,6 +470,35 @@ class TestFollowedSourceSlice:
         ).lower()
         assert "contents.source_id in" in compiled
         assert "contents.published_at >=" in compiled
+
+    @pytest.mark.asyncio
+    async def test_followed_slice_only_covers_what_the_window_misses(self, job):
+        """La tranche « sources suivies » borne sa requête AVANT la fenêtre nominale.
+
+        Le pool nominal est désormais exhaustif sur sa fenêtre. Si la tranche
+        suivie re-requêtait [0, fenêtre], son `LIMIT` serait consommé par des
+        articles déjà présents — dédupliqués juste après en Python — et aucun
+        article de niche plus ancien n'entrerait : l'exact inverse du but de
+        cette tranche (garantie P1).
+        """
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[_result([_content()]), _result([_content()]), _result([])]
+        )
+
+        await job._get_global_candidates(
+            mock_session, followed_source_ids={uuid4()}
+        )
+
+        followed_stmt = mock_session.execute.await_args_list[-1].args[0]
+        params = followed_stmt.compile().params
+        # Fenêtre de la tranche suivie : [now-48h, now-24h] — bornée en haut par
+        # le début de la fenêtre de regroupement, pas par `now`.
+        span_hours = (params["published_at_2"] - params["published_at_1"]).total_seconds() / 3600
+        assert 20 < span_hours < 28, (
+            "la tranche suivie doit couvrir le créneau que la fenêtre de "
+            f"regroupement n'atteint pas, pas la refaire ; span={span_hours}h"
+        )
 
     @pytest.mark.asyncio
     async def test_no_followed_slice_when_empty(self, job):

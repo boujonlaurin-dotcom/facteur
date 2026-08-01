@@ -402,10 +402,7 @@ class DigestSelector:
                             # is_good_news + followed-sources peut être vide).
                             # Cf. bug-digest-pipeline-fallbacks.md C5.
                             global_pool_candidates = (
-                                await self._fetch_editorial_global_pool(
-                                    mode=mode,
-                                    hours_lookback=hours_lookback,
-                                )
+                                await self._fetch_editorial_global_pool(mode=mode)
                             )
                             compute_candidates = global_pool_candidates or candidates
 
@@ -1064,11 +1061,7 @@ class DigestSelector:
 
         return candidates
 
-    async def _fetch_editorial_global_pool(
-        self,
-        mode: str,
-        hours_lookback: int,
-    ) -> list[Content]:
+    async def _fetch_editorial_global_pool(self, mode: str) -> list[Content]:
         """Pool global pour la pipeline éditoriale on-demand.
 
         Pendant le batch, ``digest_generation_job._get_global_candidates``
@@ -1086,15 +1079,12 @@ class DigestSelector:
         Returns: le corpus de la fenêtre de regroupement ; vide si la requête échoue.
         """
         from app.services.editorial.candidate_pool import (
-            EDITORIAL_CLUSTERING_WINDOW_HOURS,
-            drop_unclusterable,
             fetch_editorial_pool,
+            finalize_pool,
         )
 
         try:
-            contents = await fetch_editorial_pool(
-                self.session, mode, fallback_hours=hours_lookback
-            )
+            contents = await fetch_editorial_pool(self.session, mode)
         except SQLAlchemyError:
             logger.exception(
                 "digest_selector_global_pool_failed",
@@ -1102,15 +1092,7 @@ class DigestSelector:
             )
             return []
 
-        pool = drop_unclusterable(contents)
-        logger.info(
-            "digest_selector_global_pool_built",
-            mode=mode,
-            window_hours=EDITORIAL_CLUSTERING_WINDOW_HOURS,
-            pool_size=len(pool),
-            source_count=len({c.source_id for c in pool}),
-        )
-        return pool
+        return finalize_pool(contents, mode, "digest_selector_global_pool_built")
 
     async def _rehydrate_editorial_clusters(self, global_ctx: object) -> list:
         """Reconstruit les `TopicCluster` (avec Content chargés) depuis `cluster_data`.

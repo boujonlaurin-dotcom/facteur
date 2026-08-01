@@ -82,6 +82,13 @@ def _is_non_actu_cluster(cluster: TopicCluster) -> bool:
     a passé la curation. Réutilise les prédicats partagés avec l'actu_matcher.
     Un cluster mixte (au moins un contenu d'actu chaude) reste éligible.
     Cf. bug-actus-du-jour-ranking.md (Partie B).
+
+    Note : depuis que `candidate_pool.drop_unclusterable` écarte les bulletins
+    **à l'entrée** du clustering, la branche `is_news_bulletin_title` de ce `all()`
+    ne peut plus se déclencher pour les appelants qui passent par
+    `fetch_editorial_pool` — elle reste un filet pour ceux qui construiraient leur
+    pool autrement. La branche denylist, elle, fait toujours le travail : aucune
+    source denylistée n'est filtrée en amont.
     """
     from app.services.recommendation.filter_presets import (
         is_denylisted_editorial_source,

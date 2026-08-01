@@ -539,10 +539,10 @@ class DigestGenerationJob:
 
         from app.models.content import Content
         from app.services.editorial.candidate_pool import (
-            EDITORIAL_CLUSTERING_WINDOW_HOURS,
             build_editorial_pool_stmt,
-            drop_unclusterable,
+            clustering_window_hours,
             fetch_editorial_pool,
+            finalize_pool,
         )
 
         # Content.published_at is stored as tz-aware, so the comparison
@@ -550,9 +550,7 @@ class DigestGenerationJob:
         now = datetime.datetime.now(UTC)
 
         try:
-            candidates = await fetch_editorial_pool(
-                session, mode, fallback_hours=self.hours_lookback, now=now
-            )
+            candidates = await fetch_editorial_pool(session, mode, now=now)
         except Exception as e:
             logger.error(
                 "digest_generation_global_candidates_failed",
@@ -562,15 +560,39 @@ class DigestGenerationJob:
             return []
 
         if not followed_source_ids:
-            return drop_unclusterable(candidates)
+            return finalize_pool(
+                candidates, mode, "digest_generation_global_pool_built"
+            )
 
-        # Tranche "sources suivies" : mêmes filtres, fenêtre plus large que celle
-        # du regroupement (une source de niche ne publie pas tous les jours),
-        # bornée, puis dédupliquée contre la tranche récence.
+        # Tranche "sources suivies" (P1) : une source de niche qui ne publie pas
+        # tous les jours doit quand même entrer dans le clustering.
+        #
+        # Elle ne couvre QUE l'antériorité que la fenêtre de regroupement n'atteint
+        # pas. Depuis que le pool nominal est exhaustif sur sa fenêtre, requêter à
+        # nouveau [0, window] ne rendrait que des articles déjà présents : ils
+        # consommeraient le `LIMIT` avant que le moindre article de niche plus
+        # ancien n'y entre — soit exactement l'inverse du but de cette tranche.
+        window_hours = clustering_window_hours()
+        if window_hours >= self.hours_lookback:
+            # La fenêtre de regroupement couvre déjà tout ce que cette tranche
+            # irait chercher : son intervalle serait vide. Cas atteignable en
+            # remontant `clustering_window_ladder_hours` dans le YAML.
+            logger.info(
+                "digest_generation_followed_slice_skipped",
+                mode=mode,
+                reason="window_covers_lookback",
+                window_hours=window_hours,
+                hours_lookback=self.hours_lookback,
+            )
+            return finalize_pool(
+                candidates, mode, "digest_generation_global_pool_built"
+            )
+
+        window_start = now - timedelta(hours=window_hours)
         seen_ids = {c.id for c in candidates}
         followed_stmt = (
             build_editorial_pool_stmt(
-                mode, now - timedelta(hours=self.hours_lookback), now
+                mode, now - timedelta(hours=self.hours_lookback), window_start
             )
             .where(Content.source_id.in_(followed_source_ids))
             .order_by(Content.published_at.desc())
@@ -596,16 +618,11 @@ class DigestGenerationJob:
                 recency_count=len(candidates),
                 followed_added=len(followed_articles),
             )
-        pool = drop_unclusterable(candidates + followed_articles)
-        logger.info(
+        return finalize_pool(
+            candidates + followed_articles,
+            mode,
             "digest_generation_global_pool_built",
-            mode=mode,
-            window_hours=EDITORIAL_CLUSTERING_WINDOW_HOURS,
-            pool_size=len(pool),
-            source_count=len({c.source_id for c in pool}),
-            dropped_unclusterable=len(candidates) + len(followed_articles) - len(pool),
         )
-        return pool
 
     async def _prune_old_highlights(
         self,

@@ -17,6 +17,13 @@ pipeline:
   # publiée par une source deep) ne sera pas promue en mise en perspective.
   # Cf. docs/bugs/bug-digest-pas-de-recul-same-event.md.
   deep_min_age_hours: 24
+  # Fenêtres successives du clustering éditorial, de la plus étroite à la plus
+  # large. On garde la première qui atteint le plancher de pool, sinon la
+  # dernière. « Actus du jour » est quotidien, donc 24 h en nominal : au-delà,
+  # les articles de la veille se raccrochent à ceux du jour. Mais « Bonnes
+  # Nouvelles » est hard-filtré sur is_good_news (~13 articles/24 h contre
+  # ~2 000 pour pour_vous) et a besoin de descendre jusqu'à 168 h.
+  clustering_window_ladder_hours: [24, 48, 168]
 
 cost:
   max_llm_calls_per_batch: 10   # Safety cap LLM calls

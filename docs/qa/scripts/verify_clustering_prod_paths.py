@@ -152,13 +152,30 @@ def corpus_window(rows, gen, hours):
 # Gabarits de bulletins/chroniques — miroir de `NEWS_BULLETIN_PATTERNS`, restreint
 # aux formes présentes dans le corpus mesuré. Sert à simuler `drop_unclusterable`.
 _BULLETIN = re.compile(
-    r"^\s*(journal de \d{1,2}\s?h|le journal\b|journal (rtl|rfi|bfm|europe|france)\b"
-    r"|revue de presse\b|les titres\b|jt (de|du)\b|flash (info|actu)\b)",
+    "|".join(
+        [
+            r"^\s*journal de \d{1,2}\s?h",
+            r"^\s*le \d{1,2}\s?/\s?\d{1,2}\b",
+            r"(^\s*|[,:]\s+)chronique du\b",
+            r"^\s*jt (de |du )",
+            r"^\s*les titres\b",
+            r"^\s*info (matin|soir)\b",
+            r"^\s*bulletin (info|météo|meteo)\b",
+            r"^\s*revue de presse\b",
+            r"^\s*flash (info|actu)\b",
+            r"^\s*le journal\b",
+            r"^\s*journal (rtl|rfi|bfm|europe|france|rmc|lcp|i-?t[eé]l[eé])\b",
+            r"^\s*l['’]\s*[ée]mission\b",
+            r"^\s*(ma|la|sa|notre)\s+chronique\b",
+            r"^\s*chronique\s*[:\-–—]",
+            r",\s*émission du (lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b",
+        ]
+    ),
     re.I,
 )
 
 
-def editorial_pool_v2(rows, gen, window_h=24, cap=6000, min_pool=200, fallback_h=48):
+def editorial_pool_v2(rows, gen, ladder=(24, 48, 168), cap=6000, min_pool=200):
     """Réplique la politique de `editorial/candidate_pool.py` après correctif.
 
     Tout le corpus de la fenêtre, sans plafond top-N, sans article post-daté,
@@ -171,10 +188,11 @@ def editorial_pool_v2(rows, gen, window_h=24, cap=6000, min_pool=200, fallback_h
         win.sort(key=lambda r: r["_ts"], reverse=True)
         return win[:cap]
 
-    pool = _slice(window_h)
-    if len(pool) < min_pool:
-        pool = _slice(fallback_h)
-    return [r for r in pool if not _BULLETIN.match(r["t"])]
+    for hours in ladder:
+        pool = [r for r in _slice(hours) if not _BULLETIN.search(r["t"])]
+        if len(pool) >= min_pool:
+            break
+    return pool
 
 
 def run(label, rows):

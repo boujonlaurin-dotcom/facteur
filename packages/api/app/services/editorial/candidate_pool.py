@@ -41,6 +41,20 @@ Cf. `docs/bugs/bug-clustering-actus-du-jour-fragmentation.md` (diagnostic) et
   sélection ») suffisait à sauver le cluster entier. On traite ici la cause : un
   bulletin n'entre pas dans le calcul. Il reste évidemment consultable ailleurs dans
   l'app — c'est un filtre d'entrée du clustering, pas une suppression de contenu.
+
+## Portée exacte — ce module ne couvre PAS tout le clustering
+
+Le filtre s'applique au pool **éditorial**, donc au digest. `build_topic_clusters`
+a d'autres appelants qui construisent leur propre pool et gardent le défaut décrit
+ci-dessus (un cluster de bulletins lu comme un sujet « trending ») :
+
+- `digest_selector._build_global_trending_context` — requête brute, alimente `is_trending` ;
+- `routers/feed.py` — endpoint `/feed/trending` ;
+- `article_clustering_service.find_hot_cluster` — carrousel « actu chaude ».
+
+Les traiter revient à pousser l'exclusion dans `ImportanceDetector` lui-même, ce qui
+change le comportement de trois surfaces vivantes non mesurées — chantier distinct,
+tracé au §6.4 de `docs/maintenance/maintenance-clustering-corpus-complet.md`.
 """
 
 import datetime
@@ -48,27 +62,66 @@ import datetime
 import structlog
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.content import Content
 from app.models.source import Source
+from app.services.editorial.config import load_editorial_config
+from app.services.recommendation.filter_presets import (
+    apply_ad_filter,
+    apply_good_news_filter,
+    is_news_bulletin_title,
+)
 
 logger = structlog.get_logger()
 
-# Fenêtre de regroupement. « Actus du jour » est un produit quotidien : un sujet se
-# définit dans la journée. Une fenêtre plus large laisse des articles de la veille
-# se raccrocher à ceux du jour et fabrique des clusters à cheval sur plusieurs
-# jours (observé sur les bulletins radio, sur 3 jours).
-EDITORIAL_CLUSTERING_WINDOW_HOURS = 24
+# --- Bornes de sécurité (code, pas configuration) ---------------------------
+#
+# Ces deux-là ne sont pas des réglages produit : ce sont des garde-fous. Les
+# fenêtres, elles, sont dans `editorial_config.yaml` avec les autres réglages du
+# pipeline — voir `clustering_window_hours` / `clustering_fallback_hours`.
 
-# Si la fenêtre nominale rend un pool anormalement maigre (nuit de réveillon,
-# panne d'ingestion), on ré-élargit à la fenêtre de repli plutôt que de produire un
-# digest vide. Valeur = l'ancien plafond, qui devient donc un **plancher**.
+# Plancher de pool. En dessous, la fenêtre est ré-élargie plutôt que de produire
+# un digest maigre. Valeur = l'ancien plafond `LIMIT 200`, qui devient donc son
+# exact contraire.
 EDITORIAL_CLUSTERING_MIN_POOL = 200
 
-# Borne de sécurité mémoire, pas de qualité : ~2 400 articles/24 h en régime
-# normal, on garde une marge ×2,5 avant de tronquer. Une troncature ici serait un
-# signal d'anomalie d'ingestion — elle est loguée par les appelants.
+# Borne mémoire : ~2 400 articles/24 h en régime normal, marge ×2,5 avant de
+# tronquer. Une troncature signale une anomalie d'ingestion, pas un réglage à
+# ajuster — d'où le `logger.warning`.
 EDITORIAL_CLUSTERING_MAX_ARTICLES = 6000
+
+
+def clustering_window_ladder() -> tuple[int, ...]:
+    """Fenêtres candidates, de la plus étroite à la plus large.
+
+    On garde la première qui atteint `EDITORIAL_CLUSTERING_MIN_POOL`, sinon la
+    dernière. Une échelle plutôt qu'une fenêtre unique parce que les deux modes
+    n'ont pas du tout la même densité :
+
+    - `pour_vous` : ~2 000 articles/24 h ⇒ la fenêtre nominale suffit toujours.
+      « Actus du jour » est un produit quotidien, et au-delà de 24 h les articles
+      de la veille se raccrochent à ceux du jour (observé sur les bulletins radio,
+      clusters à cheval sur 3 jours).
+    - `serein` : hard-filtré sur `is_good_news`, soit **13 articles/24 h, 33 sur
+      48 h, 145 sur 168 h** (mesuré en production). S'arrêter à 48 h amputerait
+      « Bonnes Nouvelles » de 77 % de sa matière — l'échelle le fait descendre
+      jusqu'à 168 h, ce qui était exactement son comportement historique.
+
+    **La fenêtre appartient au module, pas aux appelants.** Elle a d'abord été
+    câblée sur leur `hours_lookback` — mais ce paramètre veut dire « jusqu'où
+    remonter pour les candidats personnalisés » et vaut 48 h côté batch, 168 h
+    côté on-demand : les deux chemins se seraient élargis différemment dans le
+    seul cas où ce module existe pour garantir qu'ils voient le même corpus.
+    """
+    ladder = tuple(load_editorial_config().pipeline.clustering_window_ladder_hours)
+    # Une échelle décroissante ferait « ré-élargir » vers un pool plus petit.
+    return tuple(sorted(ladder)) if ladder else (24,)
+
+
+def clustering_window_hours() -> int:
+    """Fenêtre nominale — le premier barreau de l'échelle."""
+    return clustering_window_ladder()[0]
 
 
 def build_editorial_pool_stmt(
@@ -88,13 +141,6 @@ def build_editorial_pool_stmt(
         Un ``Select`` sur ``Content`` (source *eager-loaded*), sans tri ni limite :
         c'est à l'appelant de les poser selon sa tranche.
     """
-    from sqlalchemy.orm import selectinload
-
-    from app.services.recommendation.filter_presets import (
-        apply_ad_filter,
-        apply_good_news_filter,
-    )
-
     stmt = select(Content).options(selectinload(Content.source))
     if mode == "serein":
         # Mode « Bonnes nouvelles » : hard-filter is_good_news. `apply_good_news_filter`
@@ -113,7 +159,6 @@ def build_editorial_pool_stmt(
 async def fetch_editorial_pool(
     session: AsyncSession,
     mode: str,
-    fallback_hours: int,
     now: datetime.datetime | None = None,
 ) -> list[Content]:
     """Corpus de la fenêtre de regroupement, ré-élargi si le pool est maigre.
@@ -126,15 +171,16 @@ async def fetch_editorial_pool(
     Args:
         session: session async.
         mode: ``"serein"`` ou autre (cf. `build_editorial_pool_stmt`).
-        fallback_hours: fenêtre de repli quand le pool nominal est trop maigre.
         now: borne haute, injectable pour les tests. Défaut : maintenant, UTC.
 
     Returns:
-        Les contenus bruts de la fenêtre, **sans** `drop_unclusterable` : les
-        appelants qui unionnent d'autres tranches doivent filtrer une seule fois,
-        à la fin.
+        Les contenus de la fenêtre retenue, déjà passés par `drop_unclusterable` —
+        le plancher doit se mesurer sur ce qui ira réellement au clustering, pas
+        sur le brut. Les appelants qui unionnent d'autres tranches refiltrent le
+        tout via `finalize_pool` (le filtre est idempotent).
     """
     now = now or datetime.datetime.now(datetime.UTC)
+    ladder = clustering_window_ladder()
 
     async def _fetch(hours: int) -> list[Content]:
         stmt = (
@@ -142,23 +188,26 @@ async def fetch_editorial_pool(
             .order_by(Content.published_at.desc())
             .limit(EDITORIAL_CLUSTERING_MAX_ARTICLES)
         )
-        return list((await session.execute(stmt)).scalars().all())
+        return drop_unclusterable(list((await session.execute(stmt)).scalars().all()))
 
-    contents = await _fetch(EDITORIAL_CLUSTERING_WINDOW_HOURS)
-
-    if len(contents) < EDITORIAL_CLUSTERING_MIN_POOL:
-        # Nuit creuse / panne d'ingestion : mieux vaut une fenêtre plus large
-        # qu'un digest vide.
-        widened = await _fetch(fallback_hours)
+    # On descend l'échelle jusqu'à atteindre le plancher. Une seule requête dans
+    # le cas nominal ; les barreaux suivants ne servent qu'aux modes clairsemés
+    # (`serein`) et aux creux d'ingestion. Re-requêter la fenêtre entière plutôt
+    # que le seul delta garde la boucle lisible pour un coût qui ne se paie que
+    # sur ces cas-là.
+    contents: list[Content] = []
+    for hours in ladder:
+        contents = await _fetch(hours)
+        if len(contents) >= EDITORIAL_CLUSTERING_MIN_POOL:
+            break
+    else:
         logger.info(
-            "editorial_pool_widened",
+            "editorial_pool_ladder_exhausted",
             mode=mode,
-            window_hours=EDITORIAL_CLUSTERING_WINDOW_HOURS,
-            fallback_hours=fallback_hours,
-            before=len(contents),
-            after=len(widened),
+            widest_window_hours=ladder[-1],
+            pool_size=len(contents),
+            floor=EDITORIAL_CLUSTERING_MIN_POOL,
         )
-        contents = widened
 
     if len(contents) >= EDITORIAL_CLUSTERING_MAX_ARTICLES:
         # Jamais atteint en régime normal (~2 400 art./24 h) : signale une
@@ -172,6 +221,26 @@ async def fetch_editorial_pool(
     return contents
 
 
+def finalize_pool(contents: list[Content], mode: str, event: str) -> list[Content]:
+    """Applique `drop_unclusterable` et loge le pool servi au clustering.
+
+    Dernière étape commune aux deux chemins, après que chacun a unioné ses
+    éventuelles tranches supplémentaires. Vit ici pour la même raison que le
+    reste : la duplication de cette séquence est ce qui avait laissé les deux
+    appelants diverger.
+    """
+    pool = drop_unclusterable(contents)
+    logger.info(
+        event,
+        mode=mode,
+        window_hours=clustering_window_hours(),
+        pool_size=len(pool),
+        source_count=len({c.source_id for c in pool}),
+        dropped_unclusterable=len(contents) - len(pool),
+    )
+    return pool
+
+
 def drop_unclusterable(contents: list[Content]) -> list[Content]:
     """Retire les contenus qui ne portent pas de sujet regroupable.
 
@@ -182,7 +251,6 @@ def drop_unclusterable(contents: list[Content]) -> list[Content]:
     Un titre absent ou non-textuel est conservé : ce filtre écarte ce qu'il
     reconnaît, il n'est pas une garde de validation.
     """
-    from app.services.recommendation.filter_presets import is_news_bulletin_title
 
     def _keep(content: Content) -> bool:
         title = getattr(content, "title", None)

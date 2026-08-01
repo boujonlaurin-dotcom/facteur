@@ -168,12 +168,33 @@ def test_build_cluster_index_keeps_lowest_rank():
     cid = str(uuid4())
     ctx = _ctx(
         clusters=[
-            {"content_ids": [cid]},
-            {"content_ids": [cid]},
+            {"content_ids": [cid, str(uuid4())]},
+            {"content_ids": [cid, str(uuid4())]},
         ]
     )
     index = _build_cluster_index(ctx)
     assert index[cid] == 0
+
+
+def test_build_cluster_index_skips_singletons():
+    """Le bonus éditorial récompense l'appartenance à un *sujet*, pas au corpus.
+
+    `cluster_data` couvrait ~200 articles quand le pool éditorial était plafonné ;
+    il couvre désormais tout le corpus du jour (~2 350). Indexer les singletons
+    ferait toucher le +2 à la quasi-totalité des candidats — une constante, donc
+    sans effet sur le classement. Cf. editorial/candidate_pool.py.
+    """
+    solo, paired = str(uuid4()), str(uuid4())
+    ctx = _ctx(
+        clusters=[
+            {"content_ids": [solo]},
+            {"content_ids": [paired, str(uuid4())]},
+        ]
+    )
+    index = _build_cluster_index(ctx)
+    assert solo not in index
+    # Le rang reste dense : le singleton ignoré ne consomme pas de rang.
+    assert index[paired] == 0
 
 
 def test_subject_label_words_normalized():
