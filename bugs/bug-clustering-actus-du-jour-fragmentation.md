@@ -3,8 +3,15 @@
 **Date** : 2026-07-31
 **Branche** : `claude/article-clustering-analysis-06xko0`
 **Sévérité** : **P0 — cœur de proposition de valeur**. La section « Les sujets les + couverts en France » n'affiche pas les sujets les plus couverts.
-**Statut** : Lots A et B livrés (cf. §8). Lot C (persistance) et Lot D (sémantique) à faire.
+**Statut** : Lot B livré et actif. **Lot A livré mais inerte** (code mort — cf. §10).
+Le levier de pool a été traité séparément dans
+[`maintenance-clustering-corpus-complet.md`](../maintenance/maintenance-clustering-corpus-complet.md).
+Lot C (persistance) et Lot D (sémantique) à faire.
 **Liés** : `bug-actus-du-jour-ranking.md`, `bug-clustering-consistency.md`, `bug-comparison-clustering-too-loose.md`, `bug-digest-pas-de-recul-same-event.md`
+
+> ⚠️ **Plusieurs chiffres de ce document ont été invalidés par une contre-mesure.**
+> Voir [`bug-clustering-actus-du-jour-verification.md`](bug-clustering-actus-du-jour-verification.md)
+> et le §10 ci-dessous avant de citer quoi que ce soit d'ici.
 
 ---
 
@@ -327,6 +334,10 @@ L'ordre du plan de la partie I (§5) est **caduc** : il commençait par l'algori
 levier, pas le premier.
 
 **Lot A — Découpler clustering global et personnalisation** *(le levier dominant, sans IA)*
+> ⚠️ **Livré sur la mauvaise branche de l'arbre d'appel.** `TopicSelector` n'est jamais
+> atteint en production (format `editorial` pour 100 % des digests). Le principe était
+> juste ; son application au chemin vivant est faite dans
+> [`maintenance-clustering-corpus-complet.md`](../maintenance/maintenance-clustering-corpus-complet.md).
 Calculer les clusters **une fois par cycle sur le corpus complet 24 h**, les persister
 (`contents.cluster_id`, aujourd'hui écrit par la seule pipeline éditoriale : 11 lignes sur 2 205),
 avec le vrai décompte de médias.
@@ -379,6 +390,13 @@ Nouvelle constante `TOPIC_CLUSTER_COSINE_THRESHOLD = 0.30`. `TOPIC_CLUSTER_THRES
 
 ### Résultats mesurés
 
+> ⚠️ **Ce tableau n'est pas reproductible en l'état** et sa ligne « Après » ne
+> provient pas du harness commité : `bench_clustering_bcubed.py` implémente une
+> liaison **moyenne** et un IDF **non lissé**, pas la liaison par centroïde livrée.
+> Exécuté tel quel, il donne à 0.30 : R = 0.40, Ceuta 4 médias. Chiffres remesurés
+> sur le code réel dans
+> [`bug-clustering-actus-du-jour-verification.md`](bug-clustering-actus-du-jour-verification.md) §3.1.
+
 Banc d'essai B³ sur corpus annoté (`docs/qa/scripts/bench_clustering_bcubed.py`) :
 
 | | B³ P | B³ R | B³ F1 | Ceuta | Clusters mixtes |
@@ -386,9 +404,11 @@ Banc d'essai B³ sur corpus annoté (`docs/qa/scripts/bench_clustering_bcubed.py
 | Avant (Jaccard 0.45 glouton) | 1.00 | 0.31 | 0.47 | 2 médias | 0 |
 | **Après (cosinus IDF 0.30, centroïde)** | **1.00** | **0.47** | **0.64** | **9 médias** | **0** |
 
-La précision reste parfaite : Gaza, Ukraine et Iran restent séparés malgré « Trump » partout — pas de
-régression « Texas ». Performance : **0,45 s pour 2 200 articles** (1,4 s pour 4 400), une fois par
-cycle et non plus une fois par utilisateur.
+Pas de régression « Texas » : Gaza, Ukraine et Iran restent séparés malgré « Trump »
+partout — **ce point-là a été revérifié et tient**. En revanche la précision n'est
+**pas** de 1.00 à l'échelle : 0.94 sur les 81 clusters ≥ 3 médias du corpus complet
+(cf. §5 du document de vérification). Performance : **0,45 s pour 2 200 articles**
+(1,4 s pour 4 400), une fois par cycle et non plus une fois par utilisateur.
 
 ### Non livré
 
@@ -410,3 +430,29 @@ Scripts de l'analyse (corpus réel extrait de production, algorithme importé de
 - Simulation de l'algorithme et comparaison des variantes : voir historique de la branche `claude/article-clustering-analysis-06xko0`.
 
 **Aucune modification de code applicatif n'a été faite** — ce document est un diagnostic.
+
+---
+
+## 10. Post-mortem — ce que la contre-mesure a invalidé (2026-08-01)
+
+Contre-expertise complète : [`bug-clustering-actus-du-jour-verification.md`](bug-clustering-actus-du-jour-verification.md).
+Correctif de pool : [`maintenance-clustering-corpus-complet.md`](../maintenance/maintenance-clustering-corpus-complet.md).
+
+| Affirmation de ce document | Statut après remesure |
+|---|---|
+| « Lot A livré » | ❌ **Code mort.** `_get_user_digest_format()` renvoie `"editorial"` sans condition ⇒ `TopicSelector` inatteignable. Vérifié : 1 765 digests sur 7 j, 100 % `editorial_v3`. |
+| Ligne de base « Jaccard 0.45 » | ❌ Le chemin vivant tournait à **0,40** (défaut de `ImportanceDetector`). 0,45 n'était passé que par `TopicSelector` — la branche morte. |
+| « 32 → 79 sujets » (§7.2, §7.7) | ❌ Proxy en **liaison simple**, ni l'avant ni l'après. Mesure réelle code contre code : **22 → 81**. Le proxy surestimait la base et sous-estimait l'arrivée. |
+| « KPI de 0 à ~32 » attendu du Lot A | ❌ Non atteint : le Lot A est inerte. Le pool corrigé donne **4 → 82** sur le chemin éditorial. |
+| B³ P = 1.00 | ⚠️ Vrai sur 63 articles annotés, **0,94** sur les 81 clusters ≥ 3 médias du corpus complet. |
+| « en dessous de 0,25 la précision décroche » | ⚠️ Optimiste : la falaise est **entre 0,28 et 0,25** (plus gros cluster 23 → 93 articles). |
+| Lot B (cosinus IDF + centroïde) | ✅ **Actif en production** et confirmé : le doublon Gaza de la capture fusionne bien en un sujet à 7 sources. |
+| Non-régression « Texas » | ✅ Confirmée : Gaza / Ukraine / Iran restent séparés. |
+| Gironde non résolu, plafond lexical R ≈ 0,44 | ✅ Confirmé (4 médias au mieux, ~91 clusters). |
+| §7.4 description brute, §3.2 entité seule | ✅ Écartés à raison — ne pas reproposer sans preuve nouvelle. |
+
+**Leçon de méthode.** Les deux erreurs coûteuses viennent de la même cause : avoir
+mesuré un *proxy* (composantes connexes en SQL, harness à liaison moyenne) plutôt que
+le code réellement exécuté, et n'avoir pas vérifié **quel chemin la production
+emprunte** avant d'optimiser. Le Lot C (observabilité) existait précisément pour ça,
+et il a été repoussé — c'est ce qui a permis aux deux erreurs de tenir jusqu'au merge.
