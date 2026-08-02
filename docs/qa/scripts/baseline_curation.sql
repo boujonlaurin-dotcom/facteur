@@ -1,0 +1,122 @@
+-- Baseline « qualité de la curation » — requêtes de référence
+-- Cf. docs/bugs/bug-curation-essentiel-personnalisation.md
+--
+-- Rejouer avec :
+--   psql "$DATABASE_URL_RO" -X -f docs/qa/scripts/baseline_curation.sql
+-- Résultats figés au 01/08/2026 :
+--   docs/bugs/bug-curation-essentiel-personnalisation-baseline.md
+--
+-- Prérequis : `ALTER ROLE claude_analytics_ro BYPASSRLS;` (appliqué le 2026-08-01).
+-- Sans lui, daily_digest / contents / user_content_status renvoient 0 ligne
+-- (RLS) et toutes les métriques ci-dessous sortent vides SANS erreur.
+--
+-- Fenêtre : 30 jours glissants. `rank` 1-5 = ce que la carte « Ton Essentiel »
+-- affiche réellement ; 6-10 = généré puis tronqué, jamais vu.
+
+\set ON_ERROR_STOP on
+\timing off
+
+CREATE TEMP VIEW slots AS
+SELECT
+    d.user_id,
+    d.target_date,
+    d.mode,
+    (s ->> 'rank')::int                              AS rank,
+    s ->> 'theme'                                    AS theme,
+    (s -> 'actu_article' ->> 'content_id')::uuid     AS content_id,
+    (s -> 'actu_article' ->> 'source_id')::uuid      AS source_id,
+    s -> 'actu_article' ->> 'source_name'            AS source_name,
+    (s -> 'actu_article' ->> 'is_user_source')::bool AS is_user_source,
+    s ->> 'selection_reason'                         AS selection_reason,
+    (s ->> 'source_count')::int                      AS source_count
+FROM daily_digest d,
+     LATERAL jsonb_array_elements(d.items -> 'subjects') s
+WHERE d.target_date >= CURRENT_DATE - 30
+  AND d.format_version = 'editorial_v3'
+  AND jsonb_typeof(s -> 'actu_article') = 'object';
+
+CREATE TEMP VIEW top5 AS SELECT * FROM slots WHERE rank BETWEEN 1 AND 5;
+
+\echo '=== M1 — Slots du top-5 quasi-universels vs réellement personnels ==='
+-- Un slot est « quasi-universel » si l'article qui l'occupe est présent dans le
+-- top-5 d'au moins 50 % des utilisateurs servis ce jour-là dans ce mode ;
+-- « personnel » s'il l'est chez moins de 10 %.
+WITH day_users AS (
+    SELECT target_date, mode, COUNT(DISTINCT user_id) AS users_total
+    FROM top5 GROUP BY 1, 2
+),
+art_share AS (
+    SELECT t.target_date, t.mode, t.content_id,
+           COUNT(DISTINCT t.user_id)::float / du.users_total AS share
+    FROM top5 t JOIN day_users du USING (target_date, mode)
+    GROUP BY t.target_date, t.mode, t.content_id, du.users_total
+)
+SELECT t.mode,
+       COUNT(*)                                                        AS slots,
+       ROUND((100.0 * AVG((a.share >= 0.50)::int))::numeric, 1)        AS pct_quasi_universels,
+       ROUND((100.0 * AVG((a.share <  0.10)::int))::numeric, 1)        AS pct_personnels
+FROM top5 t JOIN art_share a USING (target_date, mode, content_id)
+GROUP BY t.mode ORDER BY t.mode;
+
+\echo ''
+\echo '=== M2 — Personnalisation affichee (1-5) vs tronquee (6-10) ==='
+SELECT CASE WHEN rank <= 5 THEN '1-5 (affiche)' ELSE '6-10 (jamais vu)' END AS zone,
+       COUNT(*)                                                     AS slots,
+       ROUND((100.0 * AVG(is_user_source::int))::numeric, 1)        AS pct_source_suivie,
+       ROUND((100.0 * AVG((source_count = 1)::int))::numeric, 1)    AS pct_mono_source
+FROM slots WHERE rank BETWEEN 1 AND 10
+GROUP BY 1 ORDER BY 1;
+
+\echo ''
+\echo '=== M3 — Repartition des themes dans le top-5 ==='
+SELECT COALESCE(theme, '(null)')                                  AS theme,
+       COUNT(*)                                                   AS slots,
+       ROUND((100.0 * COUNT(*) / SUM(COUNT(*)) OVER ())::numeric, 1) AS pct_top5
+FROM top5 GROUP BY 1 ORDER BY 2 DESC;
+
+\echo ''
+\echo '=== M4 — Pourvoyeurs : part du top-5 et CTR ==='
+SELECT s.source_name,
+       COUNT(*)                                                      AS slots,
+       ROUND((100.0 * COUNT(*) / SUM(COUNT(*)) OVER ())::numeric, 2) AS pct_top5,
+       COUNT(ucs.content_id)                                         AS lus,
+       ROUND((100.0 * COUNT(ucs.content_id) / COUNT(*))::numeric, 2) AS ctr_pct
+FROM top5 s
+LEFT JOIN user_content_status ucs
+       ON ucs.user_id = s.user_id
+      AND ucs.content_id = s.content_id
+      AND ucs.status = 'consumed'
+GROUP BY s.source_name ORDER BY 2 DESC LIMIT 15;
+
+\echo ''
+\echo '=== M5 — CTR du top-5 : source suivie vs non suivie ==='
+SELECT CASE WHEN s.is_user_source THEN 'source suivie' ELSE 'source non suivie' END AS zone,
+       COUNT(*)                                                      AS slots,
+       COUNT(ucs.content_id)                                         AS lus,
+       ROUND((100.0 * COUNT(ucs.content_id) / COUNT(*))::numeric, 2) AS ctr_pct
+FROM top5 s
+LEFT JOIN user_content_status ucs
+       ON ucs.user_id = s.user_id
+      AND ucs.content_id = s.content_id
+      AND ucs.status = 'consumed'
+GROUP BY 1 ORDER BY 1;
+
+\echo ''
+\echo '=== M6 — CTR global du top-5 (metrique de non-regression) ==='
+SELECT COUNT(*)                                                      AS slots,
+       COUNT(ucs.content_id)                                         AS lus,
+       ROUND((100.0 * COUNT(ucs.content_id) / COUNT(*))::numeric, 2) AS ctr_pct
+FROM top5 s
+LEFT JOIN user_content_status ucs
+       ON ucs.user_id = s.user_id
+      AND ucs.content_id = s.content_id
+      AND ucs.status = 'consumed';
+
+\echo ''
+\echo '=== M7 — selection_reason : taux d acces au top-5 ==='
+SELECT selection_reason,
+       COUNT(*) FILTER (WHERE rank <= 5)                             AS top5,
+       COUNT(*)                                                      AS total,
+       ROUND((100.0 * COUNT(*) FILTER (WHERE rank <= 5) / COUNT(*))::numeric, 1) AS pct_atteint_top5
+FROM slots WHERE rank BETWEEN 1 AND 10
+GROUP BY 1 HAVING COUNT(*) >= 200 ORDER BY 3 DESC;
