@@ -566,3 +566,18 @@ class ScoringWeights:
     # Fenêtre de récence (jours) du comptage d'articles par candidat (aligné
     # sur le filtre 14 j du fallback `get_top_themes`).
     TOURNEE_SUGGEST_RECENCY_DAYS = 14
+
+
+def scoring_algo_version() -> str:
+    """Identifiant de la configuration de scoring **effectivement active**.
+
+    Estampillé sur chaque `article_impression` (cf. `routers/analytics.py`) :
+    sans lui, aucune comparaison avant/après d'un cycle de tuning n'est
+    possible — deux semaines de CTR mesurées sous deux jeux de constantes
+    différents ne sont pas comparables et rien dans la donnée ne le dirait.
+
+    Aujourd'hui = la seule version du moteur. Le lot « tuning » ajoutera ici le
+    hash des overrides d'environnement actifs (`SCORING_OVERRIDES`), de sorte
+    qu'un tuning appliqué sans redeploy change quand même la version.
+    """
+    return ScoringWeights.SCORING_VERSION

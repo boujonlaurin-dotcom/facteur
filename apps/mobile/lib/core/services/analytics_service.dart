@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -53,12 +55,19 @@ class AnalyticsService {
     _sessionId = const Uuid().v4();
     _sessionStartTime = DateTime.now();
     final localDate = _sessionStartTime!.toIso8601String().split('T').first;
+    // Sonde de périmètre : « ce compte a-t-il personnalisé l'ordre de sa
+    // Tournée ? ». C'est du SharedPreferences **local**, donc invisible en DB —
+    // c'est la seule façon de savoir combien de comptes sont concernés par une
+    // règle d'ordonnancement qui recouvre l'ordre manuel.
+    final prefs = await SharedPreferences.getInstance();
+    final tourneeCustomized = prefs.getBool(_kTourneeCustomizedPrefKey) ?? false;
 
     await _logEvent('session_start', {
       'session_id': _sessionId,
       'is_organic': isOrganic,
       'platform': defaultTargetPlatform.toString(),
       'local_date': localDate,
+      'tournee_customized': tourneeCustomized,
       if (_appVersion != null) 'app_version': _appVersion,
     });
     // Story 14.1 — PostHog uses `app_open` as the conventional event name
@@ -83,6 +92,11 @@ class AnalyticsService {
     // pause→resume cycle can start a fresh session immediately.
     _sessionId = null;
     _sessionStartTime = null;
+
+    // Vide le buffer d'impressions AVANT `session_end` : `endSession` est
+    // appelée sur `AppLifecycleState.paused` (cf. `app.dart`), c'est le dernier
+    // moment garanti où le process tourne encore.
+    await flushPendingEvents();
 
     await _logEvent('session_end', {
       'session_id': sessionId,
@@ -404,6 +418,92 @@ class AnalyticsService {
       'position': position,
     };
     await _logEvent('digest_item_viewed', props);
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // Impressions d'article — dénominateur du CTR (Tournée + Essentiel)
+  // ──────────────────────────────────────────────────────────────
+
+  /// Clé SharedPreferences de dédup des impressions d'article : une entrée
+  /// `'$dayKey|$sectionKey|$contentId'` par carte déjà comptée aujourd'hui,
+  /// purgée des jours passés à chaque écriture (même pattern que
+  /// [_kSuggestionImpressionsKey]).
+  static const _kArticleImpressionsKey = 'article_impressions_v1';
+
+  /// Miroir de `tournee_customized_v1` (cf. `tournee_order_prefs_provider`).
+  /// Dupliqué ici plutôt qu'importé : `core/services` ne doit pas dépendre
+  /// d'un feature.
+  static const _kTourneeCustomizedPrefKey = 'tournee_customized_v1';
+
+  /// Garde-fou mémoire : les clés déjà comptées **dans ce process**, pour ne
+  /// pas relire SharedPreferences à chaque re-montage de carte au scroll (une
+  /// carte recyclée par le viewport paresseux re-déclenche son tracker).
+  final Set<String> _impressedArticleKeys = <String>{};
+
+  /// Impression d'un article rendu dans la Tournée ou l'Essentiel — le
+  /// **dénominateur** du CTR, dont le numérateur reste
+  /// `user_content_status.status = 'consumed'` côté backend.
+  ///
+  /// Dédupliquée **1×/(contentId, sectionKey, jour)** : un article vu trois
+  /// fois dans la même section le même jour compte une impression. Le même
+  /// article vu dans deux sections différentes en compte deux — c'est voulu,
+  /// la position dans une section est justement ce qu'on mesure.
+  ///
+  /// Backend-only, **pas de miroir PostHog** : le dénominateur doit se joindre
+  /// à `user_content_status` × `contents` en Postgres, et le pipeline PostHog
+  /// ne couvre qu'une fraction des clics réels (`article_read` ≈ 15 % des
+  /// `consumed`). Un miroir donnerait deux chiffres divergents pour la même
+  /// métrique.
+  ///
+  /// `algo_version` est estampillé **côté serveur** (cf.
+  /// `routers/analytics.py`) : le client ne connaît pas la configuration de
+  /// scoring.
+  Future<void> trackArticleImpression({
+    required String contentId,
+    required String sectionKey,
+    required String sectionFamily,
+    required String surface,
+    required String dayKey,
+    required int sectionIndex,
+    required int positionInSection,
+    required int globalPosition,
+    double? scoreTotal,
+    double? blockScore,
+    String? theme,
+    String? sourceId,
+    bool isSerene = false,
+    bool underfilled = false,
+  }) async {
+    if (_apiClient == null) return;
+    final entry = '$dayKey|$sectionKey|$contentId';
+    if (!_impressedArticleKeys.add(entry)) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    // Purge des jours passés : on ne conserve que les entrées du jour courant.
+    final kept = (prefs.getStringList(_kArticleImpressionsKey) ?? const [])
+        .where((e) => e.startsWith('$dayKey|'))
+        .toList();
+    if (kept.contains(entry)) return; // déjà comptée aujourd'hui (relance)
+    kept.add(entry);
+    await prefs.setStringList(_kArticleImpressionsKey, kept);
+
+    await _logEventBuffered('article_impression', {
+      'session_id': _sessionId,
+      'content_id': contentId,
+      'section_key': sectionKey,
+      'section_family': sectionFamily,
+      'surface': surface,
+      'day_key': dayKey,
+      'section_index': sectionIndex,
+      'position_in_section': positionInSection,
+      'global_position': globalPosition,
+      'score_total': scoreTotal,
+      'block_score': blockScore,
+      'theme': theme,
+      'source_id': sourceId,
+      'is_serene': isSerene,
+      'underfilled': underfilled,
+    });
   }
 
   Future<void> trackPerspectiveComparisonOpened({
@@ -1130,6 +1230,71 @@ class AnalyticsService {
     await _logEvent('grille_revealed', props);
     await _capturePostHog('grille_revealed', props);
   }
+
+  // ──────────────────────────────────────────────────────────────
+  // Buffer d'events — POST groupé
+  // ──────────────────────────────────────────────────────────────
+
+  /// Taille de lot déclenchant un flush immédiat. Aligné sur le plafond serveur
+  /// (`MAX_BATCH_EVENTS = 100`) avec une marge large : un flush ne doit jamais
+  /// se faire refuser pour cause de lot trop grand.
+  static const int _kBatchFlushSize = 25;
+
+  /// Inactivité au bout de laquelle un lot partiel part quand même — sinon les
+  /// impressions d'une session courte n'arrivent qu'à la mise en arrière-plan.
+  static const Duration _kBatchIdleFlush = Duration(seconds: 10);
+
+  final List<Map<String, dynamic>> _pendingEvents = [];
+  Timer? _flushTimer;
+
+  /// Empile un event pour envoi **groupé**. Réservé à la télémétrie à haut
+  /// volume (impressions) : `_logEvent` reste le chemin unitaire de tout event
+  /// porteur d'un effet de bord serveur (`session_start` → streak, version).
+  ///
+  /// Motif : `_logEvent` fait un POST HTTP par event. ~30 impressions par
+  /// session, c'est 30 POST fire-and-forget sur réseau mobile.
+  Future<void> _logEventBuffered(
+    String eventType,
+    Map<String, dynamic> eventData,
+  ) async {
+    if (_apiClient == null) return;
+    if (_deviceId == null) await init();
+    _pendingEvents.add({
+      'event_type': eventType,
+      'event_data': eventData,
+      'device_id': _deviceId,
+    });
+    if (_pendingEvents.length >= _kBatchFlushSize) {
+      await flushPendingEvents();
+      return;
+    }
+    _flushTimer?.cancel();
+    _flushTimer = Timer(_kBatchIdleFlush, () => unawaited(flushPendingEvents()));
+  }
+
+  /// Pousse le buffer vers `POST /analytics/events/batch`. Appelée sur seuil,
+  /// sur inactivité et par [endSession] (donc sur `AppLifecycleState.paused`).
+  ///
+  /// Un lot qui échoue est **abandonné**, jamais ré-empilé : de l'analytics
+  /// best-effort qui se remettrait en file grossirait sans borne hors ligne, et
+  /// finirait par rejouer un lot au-delà du plafond serveur.
+  Future<void> flushPendingEvents() async {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    final client = _apiClient;
+    if (client == null || _pendingEvents.isEmpty) return;
+    final batch = List<Map<String, dynamic>>.from(_pendingEvents);
+    _pendingEvents.clear();
+    try {
+      await client.dio.post<dynamic>('analytics/events/batch', data: batch);
+    } catch (e) {
+      debugPrint('Analytics batch error (${batch.length} events): $e');
+    }
+  }
+
+  /// Nombre d'events en attente de flush — sonde de test.
+  @visibleForTesting
+  int get pendingEventCount => _pendingEvents.length;
 
   Future<void> _logEvent(
     String eventType,
