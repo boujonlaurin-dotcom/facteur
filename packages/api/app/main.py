@@ -105,6 +105,7 @@ from app.routers import (
     push_devices,
     sources,
     streaks,
+    stripe_webhooks,
     subscription,
     user_interests,
     user_sources_state,
@@ -502,6 +503,7 @@ app.include_router(
 app.include_router(streaks.router, prefix="/api/streaks", tags=["Streaks"])
 app.include_router(grille.router, prefix="/api/grille", tags=["Grille"])
 app.include_router(webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
+app.include_router(stripe_webhooks.router, prefix="/api/webhooks", tags=["Webhooks"])
 app.include_router(checkout.router, prefix="/api/checkout", tags=["Checkout"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(internal.router, prefix="/api/internal", tags=["Internal"])
