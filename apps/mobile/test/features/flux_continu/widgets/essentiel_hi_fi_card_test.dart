@@ -101,6 +101,7 @@ EssentielArticle _article({
   bool isRead = false,
   DateTime? completedAt,
   int sourceCount = 0,
+  int perspectiveCount = 0,
   List<SourceMini> perspectiveSources = const [],
 }) {
   return EssentielArticle(
@@ -113,7 +114,7 @@ EssentielArticle _article({
     sectionLabel: label,
     theme: theme,
     rank: rank,
-    perspectiveCount: 3,
+    perspectiveCount: perspectiveCount,
     isActuDuJour: isActuDuJour,
     isRead: isRead,
     completedAt: completedAt,
@@ -335,6 +336,48 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('4 sources'), findsOneWidget);
       expect(find.text('3 sources'), findsOneWidget);
+      expect(find.text('1 source'), findsNothing);
+    });
+
+    testWidgets(
+        'la couverture affiche le plus grand entre source_count (ranking) et '
+        'perspective_count (reader) — bug carte bloquée à ~2', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          // Ranking figé à 1, mais la couverture réelle (reader) = 7 : la puce
+          // doit refléter le 7, pas rester bloquée sous le seuil.
+          articles: [_article(rank: 1, sourceCount: 1, perspectiveCount: 7)],
+          onTapArticle: (_) {},
+        ),
+      ));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('7 sources'), findsOneWidget);
+      expect(find.text('1 source'), findsNothing);
+    });
+
+    testWidgets(
+        'aucune puce quand la couverture réelle reste < 2 (source et '
+        'perspective sous le seuil)', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1, sourceCount: 1, perspectiveCount: 1)],
+          onTapArticle: (_) {},
+        ),
+      ));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const Key('essentiel-coverage-chip')), findsNothing);
       expect(find.text('1 source'), findsNothing);
     });
 

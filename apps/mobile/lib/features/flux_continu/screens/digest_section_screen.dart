@@ -166,7 +166,7 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
             final lead = pickTopicLead(topic);
             return FluxContinuArticleCard(
               article: lead,
-              sourceCount: topic.sourceCount,
+              sourceCount: topic.coverageCount,
               perspectiveSources: topic.perspectiveSources,
               divergenceLevel: topic.divergenceLevel,
               onTap: () => _openArticle(context, lead),

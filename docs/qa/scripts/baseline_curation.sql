@@ -120,3 +120,44 @@ SELECT selection_reason,
        ROUND((100.0 * COUNT(*) FILTER (WHERE rank <= 5) / COUNT(*))::numeric, 1) AS pct_atteint_top5
 FROM slots WHERE rank BETWEEN 1 AND 10
 GROUP BY 1 HAVING COUNT(*) >= 200 ORDER BY 3 DESC;
+
+-- ============================================================================
+-- Bloc C-1 (PR 3) — signal `perso` : santé de user_interests / user_subtopics.
+-- ⚠️ Ces tables ne sont PAS couvertes par le GRANT de claude_analytics_ro
+--    (BYPASSRLS ne donne pas le SELECT). Lancer ce bloc via le rôle service
+--    (MCP Supabase) ou après un `GRANT SELECT ON user_interests, user_subtopics
+--    TO claude_analytics_ro;`. Valeurs figées au 02/08/2026.
+-- ============================================================================
+
+\echo ''
+\echo '=== M8 — user_interests sur un theme MUTE (attendu 0 apres migration) ==='
+SELECT COUNT(*) AS lignes, COUNT(DISTINCT ui.user_id) AS comptes
+FROM user_interests ui
+JOIN user_personalization up ON up.user_id = ui.user_id
+WHERE ui.interest_slug = ANY(COALESCE(up.muted_themes, '{}'));
+
+\echo ''
+\echo '=== M9 — user_interests fabriques (1,0 < weight < 1,2) : ne plus croitre ==='
+SELECT COUNT(*) FILTER (WHERE weight > 1.0 AND weight < 1.2) AS fabriques,
+       COUNT(*)                                             AS total
+FROM user_interests;
+
+\echo ''
+\echo '=== M10 — users a amplitude user_subtopics < 0,2 (signal plat) ==='
+WITH amp AS (
+    SELECT user_id, MAX(weight) - MIN(weight) AS amplitude
+    FROM user_subtopics GROUP BY user_id
+)
+SELECT COUNT(*) FILTER (WHERE amplitude < 0.2) AS users_plats,
+       COUNT(*)                                AS users_total
+FROM amp;
+
+\echo ''
+\echo '=== M11 — doublons (user_id, topic_slug) dans user_subtopics (attendu 0) ==='
+SELECT COUNT(*) AS paires_en_double
+FROM (
+    SELECT user_id, topic_slug
+    FROM user_subtopics
+    GROUP BY user_id, topic_slug
+    HAVING COUNT(*) > 1
+) t;

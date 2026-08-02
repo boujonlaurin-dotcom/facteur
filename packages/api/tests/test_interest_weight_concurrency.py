@@ -1,19 +1,18 @@
-"""Régression Sentry PYTHON-4P — race condition user_interests_user_slug_uniq.
+"""Re-pondération des intérêts sur lecture — comportement C-1 (UPDATE-only).
 
-L'ancien code de re-pondération des intérêts faisait un check-then-insert
-(SELECT UserInterest ; si absent → add()). Sous concurrence (SEEN au scroll +
-CONSUMED au retour WebView quasi-simultanés pour le même thème), les deux
-requêtes voyaient "absent" et inséraient → IntegrityError sur
-user_interests_user_slug_uniq → 500, et le commit de lecture était perdu.
+Contexte historique (PYTHON-4P) : l'ancien code faisait un check-then-insert
+puis un upsert `ON CONFLICT` pour éviter la race SEEN/CONSUMED.
 
-Le fix remplace l'insertion par un upsert Postgres atomique
-(INSERT ... ON CONFLICT (user_id, interest_slug) DO UPDATE). La requête
-"perdante" d'une course emprunte la branche DO UPDATE — c'est exactement ce
-qu'exerce ici un second appel séquentiel sur le même (user, thème).
+C-1 (bug-curation-essentiel-personnalisation §3.1) va plus loin : une **lecture
+est un signal passif** et ne doit plus **fabriquer** d'intérêt. Fabriquer une
+ligne `state='followed'` sur le thème de la SOURCE empoisonnait la perso et
+contredisait les `muted_themes`. `_adjust_interest_weight` fait donc désormais
+un **UPDATE seul** (no-op si la ligne n'existe pas) : plus aucune création sur
+lecture, la course d'insertion disparaît de fait (plus d'INSERT). La création
+reste réservée aux signaux explicites (like/save/note).
 
 NB : la fixture `db_session` isole chaque test dans une connexion unique +
-savepoints (cf. conftest), donc une vraie concurrence 2-connexions n'est pas
-reproductible ici ; on valide le chemin ON CONFLICT de façon déterministe.
+savepoints (cf. conftest).
 """
 
 from datetime import datetime
@@ -53,31 +52,42 @@ async def _make_content(db_session, source, *, duration_seconds=None):
 
 
 @pytest.mark.asyncio
-async def test_adjust_interest_weight_creates_then_increments(db_session, test_source):
-    """1er appel crée l'intérêt (1.0 + boost, FOLLOWED) ; 2e appel incrémente."""
+async def test_read_does_not_create_interest(db_session, test_source):
+    """C-1 : une lecture sur un thème inconnu ne FABRIQUE plus d'intérêt."""
     service = ContentService(db_session)
     user_id = await _make_user(db_session)
     content = await _make_content(db_session, test_source)
-    content_id = content.id  # capturé avant expunge_all (évite un reload sync)
+    content_id = content.id
     theme = test_source.theme  # "society"
 
-    # 1er appel : création
     await service._adjust_interest_weight(user_id, content_id, time_spent=None)
     await db_session.commit()
 
-    db_session.expunge_all()  # l'upsert Core bypass l'ORM → vider l'identity map
+    db_session.expunge_all()
     row = await db_session.scalar(
         select(UserInterest).where(
             UserInterest.user_id == user_id,
             UserInterest.interest_slug == theme,
         )
     )
-    assert row is not None
-    # engagement_factor=1.0 (pas de time_spent), learning_rate=0.05
-    assert row.weight == pytest.approx(1.0 + 0.05)
-    assert row.state == InterestState.FOLLOWED
+    assert row is None, "la lecture ne doit créer aucun UserInterest (C-1)"
 
-    # 2e appel : branche ON CONFLICT DO UPDATE → incrément, une seule ligne
+
+@pytest.mark.asyncio
+async def test_read_increments_existing_interest(db_session, test_source):
+    """Une lecture RENFORCE un intérêt déjà déclaré (UPDATE), sans doublon."""
+    service = ContentService(db_session)
+    user_id = await _make_user(db_session)
+    content = await _make_content(db_session, test_source)
+    content_id = content.id
+    theme = test_source.theme
+
+    # Intérêt déclaré préexistant (ex. onboarding), weight 1.0.
+    db_session.add(
+        UserInterest(user_id=user_id, interest_slug=theme, weight=1.0)
+    )
+    await db_session.commit()
+
     await service._adjust_interest_weight(user_id, content_id, time_spent=None)
     await db_session.commit()
 
@@ -90,8 +100,9 @@ async def test_adjust_interest_weight_creates_then_increments(db_session, test_s
             )
         )
     ).all()
-    assert len(rows) == 1, "pas de doublon : la contrainte unique tient"
-    assert rows[0].weight == pytest.approx(1.0 + 0.05 + 0.05)
+    assert len(rows) == 1
+    # engagement_factor=1.0 (pas de time_spent), learning_rate=0.05
+    assert rows[0].weight == pytest.approx(1.0 + 0.05)
 
 
 @pytest.mark.asyncio

@@ -14,13 +14,12 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.digest_selector import DigestSelector, DigestContext
+from app.services.digest_selector import DigestContext, DigestSelector
 from app.services.editorial.schemas import (
     EditorialPipelineResult,
     EditorialSubject,
     MatchedActuArticle,
 )
-
 
 # ─── Factories ────────────────────────────────────────────────────────────────
 
@@ -214,6 +213,49 @@ async def test_rehydrate_clusters_from_cluster_data():
     assert clusters[0].cluster_id == "cl-1"
     assert {c.id for c in clusters[0].contents} == {c1.id, c2.id}
     assert clusters[0].source_ids == {src}
+
+
+@pytest.mark.asyncio
+async def test_rehydrated_clusters_do_not_depend_on_source_domains():
+    """Invariant B-2 : `cluster_data` ne sérialise PAS `source_domains`.
+
+    Le fold couverture (importance_detector) agit sur `source_ids` en phase
+    globale ; les clusters réhydratés per-user en héritent via `source_ids` et
+    ont `source_domains == set()`. Ce test verrouille l'invariant pour que la
+    projection per-user (et une future PR de tri) ne s'appuie jamais sur
+    `source_domains` d'un cluster réhydraté — sinon tout compte multi-sources
+    per-user retomberait à 0. Cf. bug-curation-essentiel-personnalisation §2.
+    """
+    src_a = uuid4()
+    src_b = uuid4()
+    c1 = _make_content(src_a, title="A")
+    c2 = _make_content(src_b, title="B")
+    selector = _make_selector(session_maker=_FakeSessionMaker([c1, c2]))
+
+    global_ctx = types.SimpleNamespace(
+        cluster_data=[
+            {
+                "cluster_id": "cl-1",
+                "label": "Cluster 1",
+                "content_ids": [str(c1.id), str(c2.id)],
+                "source_ids": [str(src_a), str(src_b)],
+                "theme": "tech",
+            }
+        ],
+        subjects=[],
+    )
+
+    clusters = await selector._rehydrate_editorial_clusters(global_ctx)
+    assert len(clusters) == 1
+    # source_ids (déjà foldé en global) porte le décompte multi-sources.
+    assert clusters[0].source_ids == {src_a, src_b}
+    assert len(clusters[0].source_ids) >= 2
+    # source_domains reste vide : aucune dépendance per-user dessus. Piège
+    # verrouillé : la propriété `is_multi_source` lit `source_domains`, donc
+    # elle vaut False sur un cluster réhydraté — le per-user DOIT compter via
+    # `source_ids`, jamais via `is_multi_source`/`source_domains`.
+    assert clusters[0].source_domains == set()
+    assert clusters[0].is_multi_source is False
 
 
 @pytest.mark.asyncio

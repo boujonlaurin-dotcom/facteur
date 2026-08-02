@@ -462,7 +462,10 @@ async def submit_article_feedback(
             if request.sentiment == "positive"
             else ScoringWeights.DISMISS_TOPIC_PENALTY
         )
-        await service._adjust_subtopic_weights(user_uuid, content_id, delta)
+        # Feedback = signal explicite → création autorisée (positif seulement).
+        await service._adjust_subtopic_weights(
+            user_uuid, content_id, delta, allow_create=True
+        )
         await service._adjust_entity_affinity(user_uuid, content_id, delta)
 
         await db.commit()

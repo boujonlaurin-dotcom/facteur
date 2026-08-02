@@ -889,11 +889,11 @@ class _MediumTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (article.sourceCount >=
+                        if (article.coverageCount >=
                             kCoverageChipMinSources) ...[
                           const SizedBox(width: 8),
                           CoverageChip(
-                            sourceCount: article.sourceCount,
+                            sourceCount: article.coverageCount,
                             sources: article.perspectiveSources,
                             colors: colors,
                           ),
@@ -1020,11 +1020,11 @@ class _SourceRow extends StatelessWidget {
             style: FacteurTypography.labelSmall(colors.textTertiary),
           ),
         ),
-        if (article.sourceCount >= kCoverageChipMinSources) ...[
+        if (article.coverageCount >= kCoverageChipMinSources) ...[
           const Spacer(),
           CoverageChip(
             key: const Key('essentiel-coverage-chip'),
-            sourceCount: article.sourceCount,
+            sourceCount: article.coverageCount,
             sources: article.perspectiveSources,
             colors: colors,
           ),

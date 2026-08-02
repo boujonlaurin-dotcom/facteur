@@ -273,7 +273,7 @@ class SectionBlock extends StatelessWidget {
                 allowImageOnTop: imageAllowed.contains(
                   pickTopicLead(visible[i]).contentId,
                 ),
-                sourceCount: visible[i].sourceCount,
+                sourceCount: visible[i].coverageCount,
                 perspectiveSources: visible[i].perspectiveSources,
                 divergenceLevel: visible[i].divergenceLevel,
                 onTap: () => onTapArticle(pickTopicLead(visible[i])),
