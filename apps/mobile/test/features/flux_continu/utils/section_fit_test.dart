@@ -283,57 +283,6 @@ void main() {
   // le départ le **pire des deux états** qu'elle traversera (pic de tri vs état
   // final). Sans ça la carte grandit sous le doigt et le feed saute.
 
-  group('fitTriageHero', () {
-    int fit(double usable, {int maxCount = 5}) => fitTriageHero(
-          usableHeight: usable,
-          chromeHeight: kHeroChromeHeight,
-          leadHeight: kHeroLeadHeight,
-          mediumHeight: kHeroMediumHeight,
-          maxCount: maxCount,
-        );
-
-    test('un grand écran trie le slate complet', () {
-      expect(fit(2000), 5);
-    });
-
-    test('ne renvoie jamais 0', () {
-      expect(fit(0), 1);
-      expect(fit(-500), 1);
-    });
-
-    test('renvoie 1 quand le cap appelant est 1', () {
-      expect(fit(2000, maxCount: 1), 1);
-    });
-
-    test('décroît, sans jamais remonter, quand la place se réduit', () {
-      var previous = fit(2000);
-      for (var usable = 1900.0; usable >= 100; usable -= 50) {
-        final current = fit(usable);
-        expect(current, lessThanOrEqualTo(previous),
-            reason: 'le fit ne doit jamais remonter en perdant de la place');
-        previous = current;
-      }
-    });
-
-    test('borne par le pire des deux états, pas par l\'état courant', () {
-      // Hauteur juste suffisante pour l'état final à 4 articles, mais pas pour
-      // le pic de tri à 4 : le fit doit refuser 4.
-      const n = 4;
-      const finalState =
-          kHeroChromeHeight + kHeroLeadHeight + (n - 1) * kHeroMediumHeight;
-      const peak = kHeroChromeHeight +
-          kTriageProgressHeight +
-          kTriageCardHeight +
-          kTriageActionBarHeight +
-          (n - 1) * kTriageKeptSlotHeight;
-      expect(peak, greaterThan(finalState),
-          reason: 'sinon ce test ne teste rien');
-
-      expect(fit(finalState), lessThan(n));
-      expect(fit(peak), greaterThanOrEqualTo(n));
-    });
-  });
-
   group('triageReservedHeight', () {
     double reserved(int n) => triageReservedHeight(
           slateSize: n,
@@ -363,22 +312,6 @@ void main() {
 
     test('traite un slate vide comme un slate de 1', () {
       expect(reserved(0), reserved(1));
-    });
-
-    test('ce que fitTriageHero renvoie tient toujours dans la place', () {
-      for (var usable = 300.0; usable <= 1400; usable += 25) {
-        final n = fitTriageHero(
-          usableHeight: usable,
-          chromeHeight: kHeroChromeHeight,
-          leadHeight: kHeroLeadHeight,
-          mediumHeight: kHeroMediumHeight,
-          maxCount: 5,
-        );
-        if (n > 1) {
-          expect(reserved(n), lessThanOrEqualTo(usable),
-              reason: 'fit a renvoyé $n pour $usable px');
-        }
-      }
     });
   });
 }

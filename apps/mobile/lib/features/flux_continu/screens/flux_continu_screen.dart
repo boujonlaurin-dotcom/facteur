@@ -17,6 +17,7 @@ import 'package:haptic_feedback/haptic_feedback.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../../../config/routes.dart';
@@ -64,7 +65,15 @@ import '../services/auto_grow_nudge_scheduler.dart';
 import '../services/tournee_progress_service.dart'
     show TourneeProgressService;
 import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
-import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
+import '../utils/section_fit.dart'
+    show
+        kHeroLeadHeight,
+        kHeroMediumHeight,
+        kMinPlausibleUsableHeight,
+        kTriageActionBarHeight,
+        kTriageCardHeight,
+        kTriageProgressHeight,
+        triageReservedHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
@@ -2452,23 +2461,145 @@ class _FluxContinuSkeleton extends StatelessWidget {
   }
 }
 
-/// Placeholder du hero « L'Essentiel du jour » (carte hi-fi) pendant le
-/// squelette : un grand bloc neutre arrondi qui réserve l'espace au-dessus de
-/// la ligne de flottaison.
+/// Exposé aux tests widget : `_HeroSkeleton` est privé mais sa géométrie
+/// (hauteur réservée bien au-dessus de l'ancien bloc de 260 px, présence du
+/// shimmer) est le garde-fou de ce fix. Monter `FluxContinuScreen` entier n'est
+/// pas jouable en test (Supabase/Hive/GoRouter) — cf. `firstPreparingSectionIndex`.
+@visibleForTesting
+Widget essentielHeroSkeletonForTest() => const _HeroSkeleton();
+
+/// Placeholder du hero « Ton Essentiel » pendant le squelette.
+///
+/// Reproduit la géométrie de la **carte de tri au swipe** (Story 33.1), qui est
+/// le composant affiché par défaut : pastille date/météo, une **seule** carte à
+/// trier, barre d'actions. Il réserve la **hauteur de pic** que la vraie carte
+/// fige dès la 1ʳᵉ frame via [triageReservedHeight] — sinon le feed saute à
+/// l'hydratation. Respire en shimmer (mêmes teintes que [SectionSkeletonCard])
+/// pour se lire comme « l'Essentiel se prépare » et non comme une carte rognée.
 class _HeroSkeleton extends StatelessWidget {
   const _HeroSkeleton();
+
+  /// Slate nominal : la carte Essentiel est verrouillée à 5 articles. Sert
+  /// uniquement à réserver la hauteur de pic du tri — aucun contenu n'est rendu.
+  static const int _kNominalSlate = 5;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-      child: Container(
-        height: 260,
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+    // Mêmes teintes que `SectionSkeletonCard` : le sweep est porté par le fond.
+    final base = colors.textTertiary.withValues(alpha: 0.10);
+    final highlight = colors.textTertiary.withValues(alpha: 0.04);
+
+    // Hauteur de la pile de tri, identique à celle réservée par la vraie carte
+    // (chrome=0 : la pastille/en-tête est rendue au-dessus de la pile).
+    final stackHeight = triageReservedHeight(
+      slateSize: _kNominalSlate,
+      chromeHeight: 0,
+      leadHeight: kHeroLeadHeight,
+      mediumHeight: kHeroMediumHeight,
+    );
+
+    // Barre shimmer neutre réutilisée pour chaque coquille.
+    Widget bar({double? width, required double height, double radius = 6}) =>
+        Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: base,
+            borderRadius: BorderRadius.circular(radius),
+          ),
+        );
+
+    return Container(
+      // Marges/paddings identiques à `EssentielHiFiCard` → alignement pixel-exact
+      // (aucun décalage horizontal à l'hydratation).
+      margin: const EdgeInsets.fromLTRB(
+        FacteurSpacing.space3,
+        FacteurSpacing.space2,
+        FacteurSpacing.space3,
+        FacteurSpacing.space4,
+      ),
+      decoration: facteurSurfaceCardDecoration(colors),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          FacteurSpacing.space4,
+          FacteurSpacing.space3,
+          FacteurSpacing.space4,
+          FacteurSpacing.space2,
+        ),
+        child: Shimmer.fromColors(
+          baseColor: base,
+          highlightColor: highlight,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // En-tête : pastille date/météo (140) + filet accent + titre/chapô.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  bar(width: 52, height: 140, radius: FacteurRadius.medium),
+                  const SizedBox(width: FacteurSpacing.space2),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        bar(width: 28, height: 3, radius: 2),
+                        const SizedBox(height: 10),
+                        bar(width: 150, height: 18),
+                        const SizedBox(height: 10),
+                        bar(width: double.infinity, height: 11),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // Pile de tri : progression + carte mono-article + barre d'actions.
+              // La place restante (futurs « gardés ») reste vide, comme la carte
+              // réelle dont la liste se construit vers le bas.
+              SizedBox(
+                height: stackHeight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: kTriageProgressHeight,
+                      child: Center(
+                        child: bar(
+                          width: double.infinity,
+                          height: 6,
+                          radius: 3,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      height: kTriageCardHeight,
+                      decoration: BoxDecoration(
+                        color: base,
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.large),
+                      ),
+                    ),
+                    SizedBox(
+                      height: kTriageActionBarHeight,
+                      child: Center(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            bar(width: 52, height: 52, radius: FacteurRadius.pill),
+                            const SizedBox(width: FacteurSpacing.space6),
+                            bar(width: 52, height: 52, radius: FacteurRadius.pill),
+                            const SizedBox(width: FacteurSpacing.space6),
+                            bar(width: 52, height: 52, radius: FacteurRadius.pill),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

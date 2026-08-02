@@ -225,8 +225,10 @@ const double kTriageProgressHeight = 38;
 /// serrées ≈ 64.
 const double kTriageKeptSlotHeight = 64;
 
-/// Taille de slate que la carte peut trier **sans jamais changer de hauteur**
-/// entre le premier et le dernier geste.
+/// Hauteur (px) que la carte réserve pour trier [slateSize] articles **sans
+/// jamais changer de hauteur** entre le premier et le dernier geste. Exposée
+/// pour que le widget puisse figer sa hauteur (`SizedBox`) au lieu de la
+/// laisser suivre le contenu.
 ///
 /// C'est la réponse directe au risque « le feed saute » : la carte réserve dès
 /// le départ le **pire des deux états** qu'elle traversera, et non l'état
@@ -242,40 +244,6 @@ const double kTriageKeptSlotHeight = 64;
 /// Le pire cas suppose **tout gardé**. Un utilisateur qui rejette tout occupe
 /// moins de place : la carte rétrécit alors en fin de tri, ce qui ne décale
 /// rien sous elle (le contenu remonte, il ne saute pas sous le doigt).
-///
-/// Renvoie toujours ≥ 1 : comme [fitHeroCount], on ne rend jamais une pile vide.
-int fitTriageHero({
-  required double usableHeight,
-  required double chromeHeight,
-  required double leadHeight,
-  required double mediumHeight,
-  required int maxCount,
-  double cardHeight = kTriageCardHeight,
-  double actionBarHeight = kTriageActionBarHeight,
-  double progressHeight = kTriageProgressHeight,
-  double keptSlotHeight = kTriageKeptSlotHeight,
-}) {
-  if (maxCount <= 1) return 1;
-
-  double reservedFor(int n) {
-    final triagePeak = chromeHeight +
-        progressHeight +
-        cardHeight +
-        actionBarHeight +
-        (n - 1) * keptSlotHeight;
-    final finalState = chromeHeight + leadHeight + (n - 1) * mediumHeight;
-    return triagePeak > finalState ? triagePeak : finalState;
-  }
-
-  for (var n = maxCount; n > 1; n--) {
-    if (reservedFor(n) <= usableHeight) return n;
-  }
-  return 1;
-}
-
-/// Hauteur (px) réservée par la carte pour trier [slateSize] articles — la
-/// valeur que [fitTriageHero] borne. Exposée pour que le widget puisse figer sa
-/// hauteur (`SizedBox`) au lieu de la laisser suivre le contenu.
 double triageReservedHeight({
   required int slateSize,
   required double chromeHeight,
