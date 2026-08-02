@@ -16,7 +16,7 @@ pré-existant volumineux (tables prod absentes de `app.models`, comme
 proposerait de les **supprimer**. Cf. docs/runbooks/recover-from-alembic-drift.md.
 
 Revision ID: tr01_essentiel_triage
-Revises: st02_supporter_messages
+Revises: mg06_merge_cq01_st02
 """
 
 from collections.abc import Sequence
@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "tr01_essentiel_triage"
-down_revision: str | Sequence[str] | None = "st02_supporter_messages"
+down_revision: str | Sequence[str] | None = "mg06_merge_cq01_st02"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
