@@ -1422,7 +1422,10 @@ class DigestService:
             from app.services.recommendation.scoring_config import ScoringWeights
 
             await content_service._adjust_subtopic_weights(
-                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+                user_id,
+                content_id,
+                ScoringWeights.BOOKMARK_TOPIC_BOOST,
+                allow_create=True,
             )
             await content_service._adjust_entity_affinity(
                 user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
@@ -1438,7 +1441,10 @@ class DigestService:
             from app.services.recommendation.scoring_config import ScoringWeights
 
             await content_service._adjust_subtopic_weights(
-                user_id, content_id, ScoringWeights.LIKE_TOPIC_BOOST
+                user_id,
+                content_id,
+                ScoringWeights.LIKE_TOPIC_BOOST,
+                allow_create=True,
             )
             await content_service._adjust_entity_affinity(
                 user_id, content_id, ScoringWeights.LIKE_TOPIC_BOOST
