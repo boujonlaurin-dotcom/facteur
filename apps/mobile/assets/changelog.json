@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Tes cartes",
+      "summary": "Le nombre de rédactions affiché sur tes cartes colle enfin à la couverture réelle : si un sujet est traité par 7 sources, la carte l'annonce au lieu de rester bloquée à 2. Et l'invitation à prendre du recul ou à comparer les points de vue réapparaît de façon fiable pendant ta lecture."
+    },
+    {
+      "tag": "Tes cartes",
       "summary": "Chaque carte te dit maintenant combien de rédactions traitent le sujet : « 3 sources », avec leurs logos. C'est le signal qui explique pourquoi un article arrive dans ta tournée, et l'entrée naturelle vers « Comparer les angles ». Au passage, la petite pastille de sous-thème quitte le bas de carte : moins de bruit, plus de sens."
     },
     {
