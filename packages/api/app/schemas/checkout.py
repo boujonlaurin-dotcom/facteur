@@ -1,8 +1,12 @@
 """Schémas Pydantic pour le checkout web Premium."""
 
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
+
+# Longueur max d'un « mot » de soutien (aligné front + Stripe metadata <= 500).
+SUPPORT_MESSAGE_MAX_LEN = 280
 
 
 class CheckoutStartRequest(BaseModel):
@@ -35,3 +39,31 @@ class CheckoutSendLinkResponse(BaseModel):
 
     sent: bool
     email: EmailStr
+
+
+class CreateStripeSessionRequest(BaseModel):
+    """Création d'une session Stripe Checkout à prix libre (appelé du web).
+
+    Identité résolue soit via `token` signé (parcours app -> email -> web), soit
+    via `email` (visiteur anonyme passwordless). `amount_cents` est borné serveur.
+    """
+
+    amount_cents: int
+    token: str | None = None
+    email: EmailStr | None = None
+    # Mot optionnel laissé par le soutien (mur public, modéré avant affichage).
+    message: str | None = Field(default=None, max_length=SUPPORT_MESSAGE_MAX_LEN)
+
+
+class CreateStripeSessionResponse(BaseModel):
+    """Réponse : URL hébergée Stripe Checkout vers laquelle rediriger."""
+
+    url: str
+
+
+class SupporterMessagePublic(BaseModel):
+    """Message de soutien exposé publiquement (uniquement si `published`)."""
+
+    message: str
+    display_name: str | None = None
+    created_at: datetime

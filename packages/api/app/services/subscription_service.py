@@ -1,15 +1,18 @@
 """Service abonnement."""
 
-from datetime import datetime, timedelta
+import contextlib
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import sentry_sdk
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.subscription import UserSubscription
+from app.models.subscription import SupporterMessage, UserSubscription
 from app.schemas.subscription import SubscriptionResponse, SubscriptionStatus
 from app.services.posthog_client import get_posthog_client
+from app.services.revenuecat_grant_service import RevenueCatGrantService
 
 logger = structlog.get_logger()
 
@@ -23,6 +26,9 @@ class SubscriptionService:
     """
 
     TRIAL_DAYS = 7
+    # Marge de grâce ajoutée à l'entitlement promotionnel RevenueCat au-delà de
+    # la fin de période Stripe : absorbe le délai des webhooks de renouvellement.
+    GRANT_GRACE_DAYS = 3
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -251,3 +257,239 @@ class SubscriptionService:
 
         self._mark_event(subscription, event_id)
         await self.db.flush()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Stripe (parcours « Soutien à prix libre »)
+    #
+    # L'idempotence globale des webhooks Stripe est portée par la table
+    # `stripe_events` (INSERT ON CONFLICT côté routeur) : ces handlers n'ont
+    # donc pas à re-dédupliquer. Le grant/revoke RevenueCat est lui-même
+    # idempotent (re-grant = extension, revoke_promotionals = no-op si absent).
+    # ─────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_seconds(value: int | str | None) -> datetime | None:
+        """Convertit un timestamp Stripe (secondes epoch) en datetime UTC.
+
+        Exprimé via `_parse_ms` (source unique de la conversion epoch -> datetime
+        naïf UTC) : le montant est en secondes, on repasse en ms.
+        """
+        if value is None:
+            return None
+        try:
+            return SubscriptionService._parse_ms(int(value) * 1000)
+        except (TypeError, ValueError, OSError):
+            return None
+
+    @staticmethod
+    def _invoice_period_end(invoice: dict) -> datetime | None:
+        """Fin de période facturée : ligne d'abonnement d'abord, puis fallback."""
+        lines = (invoice.get("lines") or {}).get("data") or []
+        if lines:
+            period = lines[0].get("period") or {}
+            end = SubscriptionService._parse_seconds(period.get("end"))
+            if end:
+                return end
+        return SubscriptionService._parse_seconds(invoice.get("period_end"))
+
+    async def _resolve_subscription_by_stripe(
+        self,
+        *,
+        stripe_subscription_id: str | None = None,
+        stripe_customer_id: str | None = None,
+    ) -> UserSubscription | None:
+        """Retrouve la ligne miroir via l'id d'abonnement puis de client Stripe."""
+        if stripe_subscription_id:
+            result = await self.db.execute(
+                select(UserSubscription).where(
+                    UserSubscription.stripe_subscription_id == stripe_subscription_id
+                )
+            )
+            row = result.scalar_one_or_none()
+            if row:
+                return row
+        if stripe_customer_id:
+            result = await self.db.execute(
+                select(UserSubscription).where(
+                    UserSubscription.stripe_customer_id == stripe_customer_id
+                )
+            )
+            return result.scalar_one_or_none()
+        return None
+
+    async def handle_stripe_checkout_completed(self, session: dict) -> None:
+        """`checkout.session.completed` : persiste le mapping user <-> Stripe.
+
+        Le grant Premium est posé par `handle_stripe_invoice_paid` (qui connaît la
+        période) ; ici on ne fait que relier `user_id` aux ids Stripe.
+        """
+        metadata = session.get("metadata") or {}
+        user_id = session.get("client_reference_id") or metadata.get("user_id")
+        if not user_id:
+            logger.warning("stripe.checkout_completed_missing_user")
+            sentry_sdk.capture_message(
+                "stripe.checkout_completed_missing_user", level="warning"
+            )
+            return
+
+        subscription = await self._get_or_create_subscription(user_id)
+        subscription.provider = "stripe"
+        if session.get("customer"):
+            subscription.stripe_customer_id = session["customer"]
+        if session.get("subscription"):
+            subscription.stripe_subscription_id = session["subscription"]
+
+        raw_amount = metadata.get("support_amount_cents") or session.get("amount_total")
+        if raw_amount is not None:
+            with contextlib.suppress(TypeError, ValueError):
+                subscription.support_amount_cents = int(raw_amount)
+
+        # Mot de soutien optionnel : persisté non publié (modération avant le
+        # mur public). Seuls les paiements engagés (ce webhook) laissent un mot.
+        raw_message = (metadata.get("support_message") or "").strip()
+        if raw_message:
+            self.db.add(
+                SupporterMessage(
+                    id=uuid4(),
+                    user_id=subscription.user_id,
+                    message=raw_message,
+                    stripe_session_id=session.get("id"),
+                    published=False,
+                )
+            )
+
+        self._emit(
+            subscription.user_id,
+            "support_checkout_completed",
+            {
+                "amount_cents": subscription.support_amount_cents,
+                "has_message": bool(raw_message),
+            },
+        )
+        await self.db.flush()
+
+    async def handle_stripe_invoice_paid(
+        self, invoice: dict, grant_service: RevenueCatGrantService | None = None
+    ) -> None:
+        """`invoice.paid` : passe l'abonnement `active` puis (re-)grant Premium."""
+        grant_service = grant_service or RevenueCatGrantService()
+
+        subscription_id = invoice.get("subscription")
+        customer_id = invoice.get("customer")
+        user_id = (
+            (invoice.get("subscription_details") or {}).get("metadata") or {}
+        ).get("user_id")
+
+        subscription: UserSubscription | None = None
+        if not user_id:
+            subscription = await self._resolve_subscription_by_stripe(
+                stripe_subscription_id=subscription_id,
+                stripe_customer_id=customer_id,
+            )
+            if subscription:
+                user_id = str(subscription.user_id)
+
+        if not user_id:
+            logger.warning(
+                "stripe.invoice_paid_unresolved_user",
+                subscription=subscription_id,
+                customer=customer_id,
+            )
+            sentry_sdk.capture_message(
+                "stripe.invoice_paid_unresolved_user", level="warning"
+            )
+            return
+
+        if subscription is None:
+            subscription = await self._get_or_create_subscription(user_id)
+
+        subscription.provider = "stripe"
+        if subscription_id:
+            subscription.stripe_subscription_id = subscription_id
+        if customer_id:
+            subscription.stripe_customer_id = customer_id
+        subscription.status = "active"
+        subscription.current_period_start = (
+            self._parse_seconds(invoice.get("period_start"))
+            or subscription.current_period_start
+        )
+        period_end = self._invoice_period_end(invoice)
+        if period_end:
+            subscription.current_period_end = period_end
+        await self.db.flush()
+
+        if period_end:
+            # `period_end` est un datetime naïf en UTC (cf. `_parse_seconds`) :
+            # on le rend timezone-aware avant `.timestamp()`, sinon Python
+            # l'interprète en heure locale et décale `end_time_ms` de l'offset
+            # UTC du serveur.
+            end_utc = period_end.replace(tzinfo=UTC)
+            end_time_ms = int(
+                (end_utc + timedelta(days=self.GRANT_GRACE_DAYS)).timestamp() * 1000
+            )
+            await grant_service.grant_premium(user_id, end_time_ms)
+
+        self._emit(
+            subscription.user_id,
+            "support_invoice_paid",
+            {"amount_cents": subscription.support_amount_cents},
+        )
+
+    async def handle_stripe_subscription_deleted(
+        self, sub_obj: dict, grant_service: RevenueCatGrantService | None = None
+    ) -> None:
+        """`customer.subscription.deleted` : status `cancelled` + revoke Premium."""
+        grant_service = grant_service or RevenueCatGrantService()
+
+        subscription_id = sub_obj.get("id")
+        customer_id = sub_obj.get("customer")
+        user_id = (sub_obj.get("metadata") or {}).get("user_id")
+
+        subscription: UserSubscription | None = None
+        if not user_id:
+            subscription = await self._resolve_subscription_by_stripe(
+                stripe_subscription_id=subscription_id,
+                stripe_customer_id=customer_id,
+            )
+            if subscription:
+                user_id = str(subscription.user_id)
+        else:
+            subscription = await self._get_subscription(user_id)
+
+        if not user_id:
+            logger.warning(
+                "stripe.subscription_deleted_unresolved_user",
+                subscription=subscription_id,
+            )
+            sentry_sdk.capture_message(
+                "stripe.subscription_deleted_unresolved_user", level="warning"
+            )
+            return
+
+        if subscription is not None:
+            subscription.status = "cancelled"
+            await self.db.flush()
+
+        await grant_service.revoke_premium(user_id)
+        self._emit(UUID(user_id), "support_subscription_cancelled", {})
+
+    async def handle_stripe_payment_failed(self, invoice: dict) -> None:
+        """`invoice.payment_failed` : status `past_due` (pas de revoke immédiat).
+
+        L'entitlement promotionnel expire de lui-même à `end_time_ms` si les
+        paiements ne reprennent pas ; on ne coupe pas l'accès tout de suite.
+        """
+        subscription = await self._resolve_subscription_by_stripe(
+            stripe_subscription_id=invoice.get("subscription"),
+            stripe_customer_id=invoice.get("customer"),
+        )
+        if subscription is None:
+            logger.warning(
+                "stripe.payment_failed_unresolved_user",
+                subscription=invoice.get("subscription"),
+            )
+            return
+
+        subscription.status = "past_due"
+        await self.db.flush()
+        self._emit(subscription.user_id, "support_payment_failed", {})

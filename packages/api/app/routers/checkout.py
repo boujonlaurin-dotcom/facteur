@@ -19,18 +19,29 @@ import httpx
 import sentry_sdk
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_db
 from app.dependencies import get_current_user_id
+from app.models.subscription import SupporterMessage
 from app.schemas.checkout import (
     CheckoutSendLinkRequest,
     CheckoutSendLinkResponse,
     CheckoutStartRequest,
     CheckoutStartResponse,
+    CreateStripeSessionRequest,
+    CreateStripeSessionResponse,
+    SupporterMessagePublic,
+)
+from app.services.checkout_token import (
+    CheckoutTokenError,
+    mint_checkout_token,
+    verify_checkout_token,
 )
 from app.services.posthog_client import get_posthog_client
+from app.services.stripe_service import create_support_subscription_session
 from app.services.subscription_service import SubscriptionService
 
 router = APIRouter()
@@ -304,8 +315,20 @@ async def send_link(
             detail="User email not found",
         )
 
-    checkout_url = _build_checkout_url(request.offering, user_id)
-    await _supabase_send_magic_link(email, _build_bridge_url(checkout_url))
+    # Option (c) — cutover env-gated : dès que le parcours Stripe est configuré
+    # (`stripe_secret_key` + `checkout_link_secret`), le magic link pointe vers
+    # la page « prix libre » `/soutenir?t=<token>`. Sinon on garde le pont
+    # RevenueCat Web Billing historique (repli à chaud = retirer les env vars).
+    settings = get_settings()
+    stripe_flow = settings.support_stripe_enabled
+    if stripe_flow:
+        token = mint_checkout_token(user_id, email)
+        redirect_to = (
+            f"{settings.public_web_base_url}/soutenir?{urlencode({'t': token})}"
+        )
+    else:
+        redirect_to = _build_bridge_url(_build_checkout_url(request.offering, user_id))
+    await _supabase_send_magic_link(email, redirect_to)
 
     service = SubscriptionService(db)
     await service._get_or_create_subscription(user_id)
@@ -317,6 +340,7 @@ async def send_link(
         properties={
             "offering": request.offering,
             "resend": request.resend,
+            "flow": "stripe" if stripe_flow else "revenuecat",
         },
     )
 
@@ -328,3 +352,88 @@ async def send_link(
     )
 
     return CheckoutSendLinkResponse(sent=True, email=email)
+
+
+@router.post("/create-stripe-session", response_model=CreateStripeSessionResponse)
+async def create_stripe_session(
+    request: CreateStripeSessionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> CreateStripeSessionResponse:
+    """Ouvre une session Stripe Checkout à prix libre depuis la page `/soutenir`.
+
+    Non authentifié (appelé du web). L'identité vient soit du `token` signé
+    (parcours app -> email -> web), soit de l'`email` (visiteur anonyme
+    passwordless). Le montant est borné côté serveur par `stripe_service`.
+    """
+    if request.token:
+        try:
+            claims = verify_checkout_token(request.token)
+        except CheckoutTokenError as exc:
+            logger.warning("checkout.stripe_session_invalid_token", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired link",
+            ) from exc
+        user_id = claims["user_id"]
+        email = claims["email"]
+        via = "token"
+    elif request.email:
+        existing_id = await _supabase_admin_lookup_user_by_email(request.email)
+        user_id = existing_id or await _supabase_admin_create_user(request.email)
+        email = request.email
+        via = "email"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="token or email is required",
+        )
+
+    service = SubscriptionService(db)
+    await service._get_or_create_subscription(user_id)
+    await db.commit()
+
+    url = await create_support_subscription_session(
+        user_id, email, request.amount_cents, message=request.message
+    )
+
+    get_posthog_client().capture(
+        user_id=user_id,
+        event="support_session_created",
+        properties={
+            "amount_cents": request.amount_cents,
+            "via": via,
+            "has_message": bool(request.message and request.message.strip()),
+        },
+    )
+    logger.info(
+        "checkout.create_stripe_session",
+        user_id=user_id,
+        amount_cents=request.amount_cents,
+        via=via,
+    )
+    return CreateStripeSessionResponse(url=url)
+
+
+@router.get("/support-messages", response_model=list[SupporterMessagePublic])
+async def support_messages(
+    db: AsyncSession = Depends(get_db),
+) -> list[SupporterMessagePublic]:
+    """Mur public des mots de soutien : uniquement les messages **modérés**.
+
+    Non authentifié (lecture publique). Ne renvoie que `published = true` : un
+    mot reste invisible tant qu'un humain ne l'a pas validé.
+    """
+    result = await db.execute(
+        select(SupporterMessage)
+        .where(SupporterMessage.published.is_(True))
+        .order_by(SupporterMessage.created_at.desc())
+        .limit(100)
+    )
+    return [
+        SupporterMessagePublic(
+            message=row.message,
+            display_name=row.display_name,
+            created_at=row.created_at,
+        )
+        for row in result.scalars().all()
+    ]

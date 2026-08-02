@@ -430,4 +430,53 @@ void main() {
       expect(a.perspectiveSources, isEmpty);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // coverageCount — max(sourceCount, perspectiveCount) — bug « carte bloquée »
+  // ---------------------------------------------------------------------------
+  group('coverageCount', () {
+    EssentielArticle article({int sourceCount = 0, int perspectiveCount = 0}) {
+      return EssentielArticle(
+        contentId: 'c',
+        title: 't',
+        url: 'https://example.com',
+        publishedAt: DateTime(2026, 7, 30),
+        sourceName: 'Le Monde',
+        sourceLetter: 'L',
+        sectionLabel: 'Climat',
+        rank: 1,
+        sourceCount: sourceCount,
+        perspectiveCount: perspectiveCount,
+      );
+    }
+
+    DigestTopic topic({int sourceCount = 0, int perspectiveCount = 0}) {
+      return DigestTopic(
+        topicId: 't',
+        label: 'Topic',
+        sourceCount: sourceCount,
+        perspectiveCount: perspectiveCount,
+      );
+    }
+
+    test('EssentielArticle : perspective (reader) > source (ranking figé)', () {
+      expect(article(sourceCount: 2, perspectiveCount: 7).coverageCount, 7);
+    });
+
+    test('EssentielArticle : source >= perspective → source', () {
+      expect(article(sourceCount: 5, perspectiveCount: 3).coverageCount, 5);
+    });
+
+    test('EssentielArticle : égaux → la valeur commune', () {
+      expect(article(sourceCount: 4, perspectiveCount: 4).coverageCount, 4);
+    });
+
+    test('DigestTopic : perspective (reader) > source (ranking figé)', () {
+      expect(topic(sourceCount: 2, perspectiveCount: 8).coverageCount, 8);
+    });
+
+    test('DigestTopic : source >= perspective → source', () {
+      expect(topic(sourceCount: 6, perspectiveCount: 1).coverageCount, 6);
+    });
+  });
 }

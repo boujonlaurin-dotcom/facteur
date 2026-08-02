@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facteur · Soutenir une info libre</title>
+    <meta name="description"
+        content="Soutiens Facteur à prix libre : une info ouverte, sans pub ni actionnaire. Tu choisis ton montant mensuel, résiliable en un geste.">
+    <meta property="og:title" content="Facteur · Soutenir une info libre">
+    <meta property="og:description"
+        content="Une info ouverte, sans pub ni actionnaire. Tu choisis ton montant mensuel, résiliable en un geste.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://facteur.app/soutenir">
+    <meta name="robots" content="noindex">
+    <link rel="canonical" href="https://facteur.app/soutenir">
+
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=DM+Sans:wght@400;600;700&family=Courier+Prime:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <style>
+    :root{
+      --font-serif:'Fraunces',Georgia,serif;
+      --font-sans:'DM Sans',system-ui,-apple-system,sans-serif;
+      --font-mono:'Courier Prime','Courier New',monospace;
+      --acc:#d4652a;
+      --acc-ink:color-mix(in srgb,var(--acc) 78%,black);
+      --cream:#faf8f5;
+      --ink:#2C2A29;
+    }
+    *{box-sizing:border-box}
+    html{overflow-x:clip}
+    body{margin:0;background:var(--cream);color:var(--ink);font-family:var(--font-sans);-webkit-font-smoothing:antialiased}
+    a{color:var(--acc-ink)}
+    a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+    ::selection{background:color-mix(in srgb,var(--acc) 22%,transparent)}
+    [hidden]{display:none!important}
+
+    .wrap{max-width:620px;margin:0 auto;padding:0 20px}
+    .card{background:#fff;border:1px solid #eadfce;border-radius:18px;padding:clamp(24px,5vw,40px)}
+
+    .amounts{display:flex;gap:10px;margin:0 0 14px}
+    .amt{flex:1;font-family:var(--font-sans);font-weight:700;font-size:18px;color:var(--ink);background:var(--cream);border:1.5px solid #eadfce;border-radius:12px;padding:16px 8px;cursor:pointer;transition:border-color 140ms,background 140ms,transform 140ms}
+    .amt:hover{border-color:color-mix(in srgb,var(--acc) 45%,#eadfce)}
+    .amt--on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 8%,#fff);color:var(--acc-ink)}
+
+    .field{width:100%;font-family:var(--font-sans);font-size:16px;color:var(--ink);background:var(--cream);border:1.5px solid #eadfce;border-radius:12px;padding:14px 16px;transition:border-color 140ms}
+    .field:focus{border-color:var(--acc);outline:none;background:#fff}
+    .label{display:block;font-weight:600;font-size:14px;margin:0 0 7px}
+
+    .custom{position:relative}
+    .custom .field{padding-right:88px}
+    .custom__unit{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:14px;color:#8a847f;pointer-events:none}
+
+    .btn{width:100%;font-family:var(--font-sans);font-weight:700;font-size:16px;color:#fff;background:var(--acc);border:none;border-radius:100px;padding:16px 22px;cursor:pointer;transition:opacity 140ms}
+    .btn:hover{opacity:0.93}
+    .btn:disabled{opacity:0.6;cursor:default}
+
+    .error{margin:0 0 14px;font-size:13.5px;line-height:1.5;color:#C0392B;background:color-mix(in srgb,#C0392B 8%,white);border-radius:10px;padding:11px 14px}
+    .note{font-size:13px;line-height:1.6;color:#8a847f}
+    </style>
+</head>
+
+<body>
+
+<nav style="position:sticky;top:0;z-index:50;background:rgba(250,248,245,0.96);border-bottom:1px solid #eadfce">
+  <div class="wrap" style="max-width:1080px;padding:11px 20px;display:flex;align-items:center;gap:10px">
+    <a href="/" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink)">
+      <span aria-hidden="true" style="color:var(--acc-ink);font-size:17px;line-height:1">&larr;</span>
+      <img src="favicon.png" alt="Logo Facteur" style="width:26px;height:26px;border-radius:7px;display:block">
+      <span style="font-family:var(--font-serif);font-weight:700;letter-spacing:-0.5px;font-size:19px">Facteur</span>
+    </a>
+  </div>
+</nav>
+
+<header class="wrap" style="padding-top:clamp(40px,7vw,72px);padding-bottom:8px;text-align:center">
+  <span style="font-family:var(--font-mono);font-weight:700;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--acc-ink)">Soutenir Facteur</span>
+  <h1 style="font-family:var(--font-serif);font-weight:600;font-size:clamp(28px,5.5vw,40px);line-height:1.15;letter-spacing:-0.5px;margin:14px 0 0">
+    Une info libre ne tient que si on la finance ensemble.
+  </h1>
+  <p style="max-width:520px;margin:16px auto 0;font-size:17px;line-height:1.6;color:#5D5B5A">
+    Facteur est et restera une application ouverte, sans pub ni actionnaire pour
+    orienter l'information. Tu choisis ton montant, chaque mois, aussi longtemps
+    que tu le veux.
+  </p>
+</header>
+
+<main class="wrap" style="padding-top:28px;padding-bottom:56px;display:grid;gap:22px">
+
+  <section style="display:grid;gap:14px">
+    <p style="margin:0;font-size:16px;line-height:1.65;color:#3a3735">
+      L'info qu'on te livre coûte cher à produire : collecte des articles,
+      stockage, calcul de tes préférences, pipelines IA pour les analyses et les
+      évaluations. En nous rejoignant, tu deviens <strong>Fact&middot;eur&middot;isse</strong>
+      et tu fais vivre une information indépendante.
+    </p>
+  </section>
+
+  <section class="card">
+    <p class="label" style="font-size:15px;margin-bottom:12px">Ton soutien mensuel</p>
+
+    <div class="amounts" role="group" aria-label="Montant mensuel">
+      <button type="button" class="amt" data-amount="3">3 &euro;</button>
+      <button type="button" class="amt amt--on" data-amount="5">5 &euro;</button>
+      <button type="button" class="amt" data-amount="10">10 &euro;</button>
+    </div>
+
+    <label class="custom" style="display:block;margin-bottom:16px">
+      <span class="label">Autre montant</span>
+      <input id="custom-amount" class="field" type="number" min="2" max="100" step="1"
+        inputmode="numeric" placeholder="Ex. 20" aria-label="Autre montant en euros par mois">
+      <span class="custom__unit">&euro; / mois</span>
+    </label>
+
+    <div id="email-row" hidden style="margin-bottom:16px">
+      <label class="label" for="email">Ton email</label>
+      <input id="email" class="field" type="email" placeholder="toi@exemple.fr" autocomplete="email">
+      <p class="note" style="margin:8px 0 0">On l'utilise pour relier ton soutien à ton compte Facteur.</p>
+    </div>
+
+    <div style="margin-bottom:16px">
+      <label class="label" for="message">Ajoute un mot <span style="font-weight:400;color:#8a847f">(optionnel)</span></label>
+      <textarea id="message" class="field" rows="3" maxlength="280"
+        placeholder="Pourquoi tu soutiens Facteur ?" style="resize:vertical"></textarea>
+      <p class="note" style="margin:8px 0 0">Il pourra apparaître sur notre site, après relecture.</p>
+    </div>
+
+    <p id="error" class="error" role="alert" hidden></p>
+
+    <button id="submit" class="btn" type="button">Choisir mon soutien &rarr;</button>
+
+    <p class="note" style="margin:16px 0 0;text-align:center">
+      Paiement sécurisé par Stripe &middot; résiliable en un geste, sans engagement.
+    </p>
+  </section>
+
+  <section id="wall" hidden style="display:grid;gap:14px">
+    <h2 style="font-family:var(--font-serif);font-weight:600;font-size:22px;letter-spacing:-0.3px;text-align:center;margin:8px 0 0">
+      Ils soutiennent Facteur
+    </h2>
+    <div id="wall-list" style="display:grid;gap:12px"></div>
+  </section>
+
+</main>
+
+<footer style="border-top:1px solid #eadfce;background:var(--cream)">
+  <div class="wrap" style="max-width:1080px;padding:26px 20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px">
+    <a href="/" style="display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:var(--ink)">
+      <img src="favicon.png" alt="" style="width:22px;height:22px;border-radius:6px;display:block">
+      <span style="font-family:var(--font-serif);font-weight:700;letter-spacing:-0.5px;font-size:17px">Facteur</span>
+    </a>
+    <p style="margin:0;font-family:var(--font-mono);font-size:12px;color:#959392">Sans pub &middot; sans actionnaire &middot; <a href="/" style="color:#959392">facteur.app</a></p>
+  </div>
+</footer>
+
+<script src="js/soutenir.js?v=1"></script>
+</body>
+
+</html>

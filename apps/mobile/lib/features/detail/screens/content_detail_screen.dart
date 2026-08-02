@@ -236,11 +236,6 @@ const double _kFooterBottomMargin = 8;
 /// de l'ombre). Sans elle, un liseré fantôme resterait visible en bas.
 const double _kFooterShadowClearance = 24;
 
-/// Tolérance (px) autour de l'offset 0 en dessous de laquelle l'utilisateur
-/// est encore considéré « en haut de l'article » pour le nudge de scroll —
-/// absorbe un léger rebond d'overscroll sans faire clignoter le nudge.
-const double _kScrollNudgeTopTolerance = 32.0;
-
 /// Nombre minimal de points de vue en ligne pour que le nudge flottant
 /// « Voir plus de points de vue ? » vaille la peine d'être montré (le pas de
 /// recul, prioritaire, n'a pas de seuil : une carte suffit).
@@ -258,6 +253,109 @@ const Duration _kScrollNudgeArmDelay = Duration(milliseconds: 1500);
 
 /// Durée d'affichage avant auto-masquage : le nudge ne traîne pas à l'écran.
 const Duration _kScrollNudgeAutoHideDelay = Duration(seconds: 6);
+
+/// Délai de confirmation avant de brûler le cooldown 24 h : `markShown` n'est
+/// posé que si la pastille est **toujours** visible à l'échéance. Un flip
+/// transitoire (flash masqué aussitôt) ne doit pas éteindre le nudge pour la
+/// journée — c'était le symptôme « never shows » persistant en test.
+const Duration _kScrollNudgeConfirmDelay = Duration(milliseconds: 400);
+
+/// Type de cible du nudge de scroll, résolu par [resolveScrollNudgeTargetKind].
+/// Extrait comme fonction pure top-level pour être testable sans pomper l'écran.
+enum ScrollNudgeTargetKind { none, deepReco, perspectives }
+
+/// Décide **quelle** cible le nudge de scroll doit viser, à partir de signaux
+/// bruts. Le pas de recul (deep reco) prime sur la couverture médiatique, mais
+/// seulement si sa carte est montée dans l'arbre courant ([deepRecoMounted]) :
+/// dans la branche scroll-vers-le-site elle ne l'est pas, et prioriser une
+/// cible morte empêchait le nudge de retomber sur les perspectives. Le seuil
+/// de points de vue est **inclusif** (`>=`) pour s'aligner sur la pastille de
+/// la carte (affichée à >= 2).
+ScrollNudgeTargetKind resolveScrollNudgeTargetKind({
+  required bool showPerspectivesBand,
+  required bool isExternal,
+  required bool hasDeepReco,
+  required bool deepRecoMounted,
+  required int perspectivesCount,
+  required int minCount,
+}) {
+  if (!showPerspectivesBand || isExternal) return ScrollNudgeTargetKind.none;
+  if (hasDeepReco && deepRecoMounted) return ScrollNudgeTargetKind.deepReco;
+  if (perspectivesCount >= minCount) return ScrollNudgeTargetKind.perspectives;
+  return ScrollNudgeTargetKind.none;
+}
+
+/// Signaux d'entrée du calcul pur de visibilité du nudge de scroll. Regroupés
+/// pour que [computeScrollNudgeVisibility] reste une fonction pure testable.
+class ScrollNudgeInputs {
+  const ScrollNudgeInputs({
+    required this.armElapsed,
+    required this.spent,
+    required this.webViewActive,
+    required this.ctaTapped,
+    required this.hasActiveScrollController,
+    required this.showPerspectivesBand,
+    required this.isExternal,
+    required this.hasDeepReco,
+    required this.deepRecoMounted,
+    required this.perspectivesCount,
+    required this.minCount,
+    required this.cooldownOk,
+    required this.targetTopY,
+    required this.viewportHeight,
+    required this.minBelowFraction,
+  });
+
+  final bool armElapsed;
+  final bool spent;
+  final bool webViewActive;
+  final bool ctaTapped;
+  final bool hasActiveScrollController;
+  final bool showPerspectivesBand;
+  final bool isExternal;
+  final bool hasDeepReco;
+  final bool deepRecoMounted;
+  final int perspectivesCount;
+  final int minCount;
+
+  /// Résultat du cooldown 24 h de la cible résolue. `null` = pas encore résolu
+  /// (vérification asynchrone en vol) → le nudge attend, ne s'affiche pas.
+  final bool? cooldownOk;
+
+  /// Position écran (px) du haut de la cible. `null` = clé non montée/attachée
+  /// (premier frame après fetch, ou carte absente de la branche de layout).
+  final double? targetTopY;
+  final double viewportHeight;
+  final double minBelowFraction;
+}
+
+/// Calcul **pur** de la visibilité du nudge de scroll (aucune mutation d'état).
+/// La destination hors écran (`targetTopY > viewport * minBelowFraction`) est
+/// le seul garde-fou de position : plus de gate « uniquement tout en haut » —
+/// la fiabilité prime, l'auto-masquage + le cooldown 24 h garantissent une
+/// seule apparition par article.
+bool computeScrollNudgeVisibility(ScrollNudgeInputs i) {
+  if (!i.armElapsed || i.spent) return false;
+  if (i.webViewActive || i.ctaTapped) return false;
+  if (!i.hasActiveScrollController) return false;
+
+  final kind = resolveScrollNudgeTargetKind(
+    showPerspectivesBand: i.showPerspectivesBand,
+    isExternal: i.isExternal,
+    hasDeepReco: i.hasDeepReco,
+    deepRecoMounted: i.deepRecoMounted,
+    perspectivesCount: i.perspectivesCount,
+    minCount: i.minCount,
+  );
+  if (kind == ScrollNudgeTargetKind.none) return false;
+
+  final cooldownOk = i.cooldownOk;
+  if (cooldownOk == null || !cooldownOk) return false;
+
+  final topY = i.targetTopY;
+  if (topY == null) return false;
+  return topY > i.viewportHeight * i.minBelowFraction;
+}
 
 /// Cible résolue du nudge de scroll flottant (pas de recul prioritaire, sinon
 /// couverture médiatique). Résolue à la volée par [_resolveScrollNudgeTarget].
@@ -449,6 +547,9 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   bool _scrollNudgeShownRecorded = false;
   Timer? _scrollNudgeArmTimer;
   Timer? _scrollNudgeAutoHideTimer;
+  // Confirme la visibilité avant de brûler le cooldown 24 h (anti flip
+  // transitoire). Annulé partout où la pastille se masque.
+  Timer? _scrollNudgeConfirmTimer;
 
   bool get _showPerspectivesBand =>
       _content?.contentType == ContentType.article;
@@ -1151,24 +1252,35 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// `null` si aucune cible pertinente (pas un article, mode externe, ou pas
   /// assez de points de vue et pas de pas de recul).
   _ScrollNudgeTarget? _resolveScrollNudgeTarget() {
-    if (!_showPerspectivesBand || _isExternal) return null;
-    if (_perspectivesResponse?.deepRecommendation != null) {
-      return _ScrollNudgeTarget(
-        NudgeIds.scrollToDeepReco,
-        _deepRecoKey,
-        'Prendre du recul ?',
-        PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
-      );
+    final kind = resolveScrollNudgeTargetKind(
+      showPerspectivesBand: _showPerspectivesBand,
+      isExternal: _isExternal,
+      hasDeepReco: _perspectivesResponse?.deepRecommendation != null,
+      // La carte deep-reco n'est montée qu'en lecture in-app : dans la branche
+      // scroll-vers-le-site sa clé n'a pas de contexte → on retombe sur les
+      // perspectives au lieu de pointer vers une cible morte.
+      deepRecoMounted: _deepRecoKey.currentContext != null,
+      perspectivesCount: _inlinePerspectives.length,
+      minCount: _kScrollNudgeMinCount,
+    );
+    switch (kind) {
+      case ScrollNudgeTargetKind.deepReco:
+        return _ScrollNudgeTarget(
+          NudgeIds.scrollToDeepReco,
+          _deepRecoKey,
+          'Prendre du recul ?',
+          PhosphorIcons.binoculars(PhosphorIconsStyle.regular),
+        );
+      case ScrollNudgeTargetKind.perspectives:
+        return _ScrollNudgeTarget(
+          NudgeIds.scrollToPerspectives,
+          _perspectivesKey,
+          'Voir plus de points de vue ?',
+          PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
+        );
+      case ScrollNudgeTargetKind.none:
+        return null;
     }
-    if (_inlinePerspectives.length > _kScrollNudgeMinCount) {
-      return _ScrollNudgeTarget(
-        NudgeIds.scrollToPerspectives,
-        _perspectivesKey,
-        'Voir plus de points de vue ?',
-        PhosphorIcons.arrowDown(PhosphorIconsStyle.regular),
-      );
-    }
-    return null;
   }
 
   /// Démarre le délai anti-pop du nudge. Appelé en `initState` (et au retour
@@ -1200,66 +1312,93 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }();
   }
 
-  /// Calcul pur des conditions d'affichage du nudge de scroll. Aucune
-  /// mutation d'état ici — voir [_updateScrollNudgeVisibility]. Résout et
-  /// mémorise la cible courante dans `_activeScrollNudgeTarget`.
+  /// Assemble les signaux d'état et délègue la décision à la fonction pure
+  /// [computeScrollNudgeVisibility]. Deux effets de bord assumés : mémorise la
+  /// cible courante dans `_activeScrollNudgeTarget` et amorce (une fois) la
+  /// résolution asynchrone du cooldown de cette cible.
   bool _computeShouldShowScrollNudge() {
-    // Délai anti-pop écoulé, pas déjà consommé sur cet article. Le cooldown
-    // 24 h est vérifié plus bas, sur la cible réellement résolue.
-    if (!_scrollNudgeArmDelayElapsed || _scrollNudgeSpent) return false;
-    // Le nudge n'a de sens que pendant la lecture scrollable normale : dès que
-    // la WebView a pris le relais visuel, ou que le CTA a été tapé (révélation
-    // en cours), la destination n'est plus pertinente.
-    if (_isWebViewActive || _ctaTapped) return false;
-
-    // Gardes bon marché d'abord (chemin chaud du scroll) : « en haut » avant
-    // toute résolution/allocation de cible.
-    final ScrollController? active = _activeScrollController;
-    if (active == null) return false;
-    if (active.offset > _kScrollNudgeTopTolerance) return false;
-
-    final target = _resolveScrollNudgeTarget();
-    if (target == null) return false;
-    _activeScrollNudgeTarget = target;
-
-    // Cooldown de LA cible courante — pas de celle connue à l'armement. Le
-    // premier passage lance la vérification et rappellera cette méthode.
-    final cooldownOk = _scrollNudgeCooldownById[target.id];
-    if (cooldownOk == null) {
-      _ensureScrollNudgeCooldown(target.id);
+    // Gardes bon marché d'abord (chemin chaud du scroll) : on bail sur un simple
+    // booléen avant de résoudre la cible, marcher l'arbre de rendu ou lire le
+    // MediaQuery. La fonction pure re-teste ces gates, mais les court-circuiter
+    // ici évite le travail cher quand le nudge est désarmé/dépensé/masqué.
+    if (!_scrollNudgeArmDelayElapsed ||
+        _scrollNudgeSpent ||
+        _isWebViewActive ||
+        _ctaTapped ||
+        _activeScrollController == null) {
       return false;
     }
-    if (!cooldownOk) return false;
 
-    // Destination hors écran (assez bas pour valoir un scroll). Si la clé n'est
-    // pas encore montée (premier frame après fetch, ou carte non rendue dans la
-    // branche de layout courante), on traite comme "non applicable" : pas de
-    // nudge pointant vers rien.
-    final renderObject = target.key.currentContext?.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.attached) return false;
-    final topY = renderObject.localToGlobal(Offset.zero).dy;
-    final viewportHeight = MediaQuery.of(context).size.height;
-    return topY > viewportHeight * _kScrollNudgeMinBelowFraction;
+    final target = _resolveScrollNudgeTarget();
+    if (target != null) {
+      _activeScrollNudgeTarget = target;
+      // Cooldown de LA cible courante — pas de celle connue à l'armement. Le
+      // premier passage lance la vérification et rappellera cette méthode.
+      _ensureScrollNudgeCooldown(target.id);
+    }
+
+    // Position écran du haut de la cible, si sa clé est montée et attachée.
+    double? targetTopY;
+    final renderObject = target?.key.currentContext?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.attached) {
+      targetTopY = renderObject.localToGlobal(Offset.zero).dy;
+    }
+
+    return computeScrollNudgeVisibility(
+      ScrollNudgeInputs(
+        armElapsed: _scrollNudgeArmDelayElapsed,
+        spent: _scrollNudgeSpent,
+        webViewActive: _isWebViewActive,
+        ctaTapped: _ctaTapped,
+        hasActiveScrollController: _activeScrollController != null,
+        showPerspectivesBand: _showPerspectivesBand,
+        isExternal: _isExternal,
+        hasDeepReco: _perspectivesResponse?.deepRecommendation != null,
+        deepRecoMounted: _deepRecoKey.currentContext != null,
+        perspectivesCount: _inlinePerspectives.length,
+        minCount: _kScrollNudgeMinCount,
+        cooldownOk: target == null
+            ? null
+            : _scrollNudgeCooldownById[target.id],
+        targetTopY: targetTopY,
+        viewportHeight: MediaQuery.of(context).size.height,
+        minBelowFraction: _kScrollNudgeMinBelowFraction,
+      ),
+    );
   }
 
   /// Recalcule et applique la visibilité du nudge de scroll. Ne fait jamais de
   /// `setState` — seule `_showScrollNudge.value` change, consommée par un
-  /// `ValueListenableBuilder<bool>` dédié dans `build()`. Au premier passage
-  /// false→true : pose le cooldown 24 h (markShown, une seule fois) et arme
-  /// l'auto-masquage.
+  /// `ValueListenableBuilder<bool>` dédié dans `build()`. Au passage false→true
+  /// arme l'auto-masquage et un timer de **confirmation** avant de brûler le
+  /// cooldown 24 h ; au passage true→false annule ce timer (le nudge n'a pas
+  /// tenu → on ne le grille pas pour la journée).
   void _updateScrollNudgeVisibility() {
     if (!mounted) return;
     final shouldShow = _computeShouldShowScrollNudge();
     if (_showScrollNudge.value == shouldShow) return;
     _showScrollNudge.value = shouldShow;
-    if (!shouldShow) return;
+    if (!shouldShow) {
+      _scrollNudgeConfirmTimer?.cancel();
+      return;
+    }
 
+    // markShown 24 h posé **après confirmation** (le nudge est toujours visible
+    // à l'échéance) : un flip transitoire aussitôt masqué ne consomme plus la
+    // journée. Le timer est annulé sur chaque masquage (branche ci-dessus,
+    // auto-hide, reset, tap).
     final target = _activeScrollNudgeTarget;
     if (target != null && !_scrollNudgeShownRecorded) {
-      _scrollNudgeShownRecorded = true;
-      // Démarre le cooldown 24 h dès le premier affichage réel → ne réapparaît
-      // plus aujourd'hui (couvre « déjà montré / cliqué »).
-      unawaited(ref.read(nudgeServiceProvider).markShown(target.id));
+      _scrollNudgeConfirmTimer?.cancel();
+      _scrollNudgeConfirmTimer = Timer(_kScrollNudgeConfirmDelay, () {
+        if (!mounted ||
+            !_showScrollNudge.value ||
+            _scrollNudgeShownRecorded) {
+          return;
+        }
+        _scrollNudgeShownRecorded = true;
+        unawaited(ref.read(nudgeServiceProvider).markShown(target.id));
+      });
     }
     // Auto-masquage : le nudge ne traîne pas à l'écran.
     _scrollNudgeAutoHideTimer?.cancel();
@@ -1267,14 +1406,16 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       if (!mounted) return;
       _scrollNudgeSpent = true;
       _showScrollNudge.value = false;
+      _scrollNudgeConfirmTimer?.cancel();
     });
   }
 
   /// Tap sur le nudge : scrolle le contrôleur actif pour amener le haut de la
   /// destination juste sous le header, puis masque le nudge sans attendre le
   /// `ScrollUpdateNotification` résultant (sinon il resterait visible,
-  /// incongru, pendant toute l'animation). Le cooldown est déjà posé à
-  /// l'affichage.
+  /// incongru, pendant toute l'animation). Le tap est un engagement franc → on
+  /// pose le cooldown 24 h même si le timer de confirmation n'a pas encore
+  /// couru (tap dans les 400 ms suivant l'affichage).
   void _scrollToNudgeTarget(GlobalKey key) {
     final ScrollController? active = _activeScrollController;
     final renderObject = key.currentContext?.findRenderObject();
@@ -1285,6 +1426,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     HapticFeedback.selectionClick();
+
+    _scrollNudgeConfirmTimer?.cancel();
+    final tapped = _activeScrollNudgeTarget;
+    if (tapped != null && !_scrollNudgeShownRecorded) {
+      _scrollNudgeShownRecorded = true;
+      unawaited(ref.read(nudgeServiceProvider).markShown(tapped.id));
+    }
 
     final topY = renderObject.localToGlobal(Offset.zero).dy;
     final desiredScreenY = _headerHeight + FacteurSpacing.space3;
@@ -1373,6 +1521,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   void _resetScrollNudge() {
     _scrollNudgeArmTimer?.cancel();
     _scrollNudgeAutoHideTimer?.cancel();
+    _scrollNudgeConfirmTimer?.cancel();
     _scrollNudgeSpent = false;
     _scrollNudgeArmDelayElapsed = false;
     _scrollNudgeCooldownById.clear();
@@ -2015,6 +2164,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     _perspectivesRefetchTimer?.cancel();
     _scrollNudgeArmTimer?.cancel();
     _scrollNudgeAutoHideTimer?.cancel();
+    _scrollNudgeConfirmTimer?.cancel();
     _analysisSheetData.dispose();
     _bookmarkBounceController.dispose();
     _likeBounceController.dispose();
