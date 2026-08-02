@@ -240,37 +240,47 @@ class ContentService:
             elif ratio < 0.1:
                 engagement_factor = 0.2
 
-        # 3. Update UserInterest — upsert atomique (Postgres ON CONFLICT)
-        # SEEN (scroll) et CONSUMED (retour WebView) arrivent quasi-simultanément
-        # pour le même (user_id, theme_slug) ; un check-then-insert classique
-        # provoquait une UniqueViolation (user_interests_user_slug_uniq).
-        # NewWeight = OldWeight + (Engagement * Rate), capé à 3.0 pour éviter
-        # l'explosion. À la création : poids 1.0 + boost (découverte de thèmes
-        # via sources généralistes). On ne touche pas `state` sur conflit pour
-        # préserver un éventuel FAVORITE.
+        # 3. Renforce UserInterest — UPDATE SEUL (C-1).
+        # Une lecture est un signal PASSIF : elle ne doit plus FABRIQUER
+        # d'intérêt. Fabriquer une ligne `state='followed'` sur le thème de la
+        # SOURCE (généraliste) empoisonnait la perso et contredisait les
+        # `muted_themes` (53 lignes / 27 comptes). On se contente donc de
+        # renforcer un intérêt déjà déclaré/appris : `UPDATE ... WHERE` no-op
+        # (rowcount 0) si la ligne n'existe pas. La création reste réservée aux
+        # signaux explicites (like/save/note, cf. `_adjust_subtopic_weights`).
+        # NewWeight = OldWeight + (Engagement * Rate), capé à 3.0.
+        # Cf. bug-curation-essentiel-personnalisation §3.1.
         learning_rate = 0.05
         boost = engagement_factor * learning_rate
 
         stmt = (
-            insert(UserInterest)
-            .values(
-                user_id=user_id,
-                interest_slug=theme_slug,
-                weight=1.0 + boost,
+            update(UserInterest)
+            .where(
+                UserInterest.user_id == user_id,
+                UserInterest.interest_slug == theme_slug,
             )
-            .on_conflict_do_update(
-                constraint="user_interests_user_slug_uniq",
-                set_={"weight": func.least(UserInterest.weight + boost, 3.0)},
-            )
+            .values(weight=func.least(UserInterest.weight + boost, 3.0))
         )
         await self.session.execute(stmt)
 
     async def _adjust_subtopic_weights(
-        self, user_id: UUID, content_id: UUID, delta: float
+        self,
+        user_id: UUID,
+        content_id: UUID,
+        delta: float,
+        *,
+        allow_create: bool = False,
     ) -> None:
         """
-        Ajuste les poids des sous-thèmes utilisateur en fonction d'un signal explicite.
+        Ajuste les poids des sous-thèmes utilisateur en fonction d'un signal.
         Réutilisé par like (+0.15) et bookmark (+0.05).
+
+        `allow_create` (défaut False) — C-1 : seuls les signaux **explicites**
+        (like/save/note/feedback, actions digest SAVE/LIKE) peuvent CRÉER une
+        ligne `user_subtopics`. Un signal passif (lecture) ou négatif ne fait
+        qu'`UPDATE` une ligne existante (no-op sinon) : on cesse de fabriquer un
+        intérêt à partir d'une simple lecture. Cf.
+        bug-curation-essentiel-personnalisation §3.1.
 
         ⚠️ Ces poids alimentent le scoring de **toutes** les sections du feed.
         Tout endpoint dont le chemin arrive ici doit donc appeler
@@ -293,23 +303,38 @@ class ContentService:
         if not content or not content.topics:
             return
 
+        # Poids borné [0.1, 3.0], partagé par les deux branches (upsert / update).
+        clamped = func.greatest(func.least(UserSubtopic.weight + delta, 3.0), 0.1)
         for topic_slug in content.topics:
-            stmt = select(UserSubtopic).where(
-                UserSubtopic.user_id == user_id,
-                UserSubtopic.topic_slug == topic_slug,
-            )
-            subtopic = await self.session.scalar(stmt)
-
-            if subtopic:
-                new_weight = subtopic.weight + delta
-                subtopic.weight = max(0.1, min(new_weight, 3.0))
-            elif delta > 0:
-                new_subtopic = UserSubtopic(
-                    user_id=user_id,
-                    topic_slug=topic_slug,
-                    weight=1.0 + delta,
+            if allow_create and delta > 0:
+                # Signal explicite positif : upsert atomique (Postgres ON
+                # CONFLICT sur la contrainte `uq_user_subtopics_user_topic`).
+                # Création à 1.0 + delta ; conflit → renforce, borné.
+                stmt = (
+                    insert(UserSubtopic)
+                    .values(
+                        user_id=user_id,
+                        topic_slug=topic_slug,
+                        weight=1.0 + delta,
+                    )
+                    .on_conflict_do_update(
+                        constraint="uq_user_subtopics_user_topic",
+                        set_={"weight": clamped},
+                    )
                 )
-                self.session.add(new_subtopic)
+                await self.session.execute(stmt)
+            else:
+                # Signal passif (lecture) ou négatif : UPDATE seul, jamais de
+                # création (C-1). No-op si la ligne n'existe pas.
+                stmt = (
+                    update(UserSubtopic)
+                    .where(
+                        UserSubtopic.user_id == user_id,
+                        UserSubtopic.topic_slug == topic_slug,
+                    )
+                    .values(weight=clamped)
+                )
+                await self.session.execute(stmt)
 
         # Also adjust interest weight for source theme
         if content.source and content.source.theme:
@@ -319,8 +344,8 @@ class ContentService:
             theme_slug = content.source.theme
             learning_rate = ScoringWeights.LIKE_INTEREST_RATE
 
-            if delta > 0:
-                # Like/bookmark : upsert atomique, poids borné [0.1, 3.0].
+            if delta > 0 and allow_create:
+                # Signal explicite (like/save/note) : upsert atomique, borné.
                 stmt = (
                     insert(UserInterest)
                     .values(
@@ -340,9 +365,11 @@ class ContentService:
                 )
                 await self.session.execute(stmt)
             else:
-                # Unlike : décrément ciblé, jamais de création de ligne (pas
-                # d'INSERT → pas de risque de conflit). No-op si l'intérêt
-                # n'existe pas.
+                # Signal passif (lecture, allow_create=False) ou négatif
+                # (unlike/dismiss) : UPDATE seul, jamais de création (C-1). Le
+                # pas suit le signe de delta. No-op si l'intérêt n'existe pas —
+                # une lecture ne FABRIQUE plus d'intérêt sur le thème source.
+                step = learning_rate if delta > 0 else -learning_rate
                 stmt = (
                     update(UserInterest)
                     .where(
@@ -351,7 +378,7 @@ class ContentService:
                     )
                     .values(
                         weight=func.greatest(
-                            func.least(UserInterest.weight - learning_rate, 3.0),
+                            func.least(UserInterest.weight + step, 3.0),
                             0.1,
                         )
                     )
@@ -480,7 +507,11 @@ class ContentService:
             if is_liked
             else -ScoringWeights.LIKE_TOPIC_BOOST
         )
-        await self._adjust_subtopic_weights(user_id, content_id, delta)
+        # Like : signal explicite → création autorisée (allow_create). Sur
+        # unlike (delta < 0) la branche update-only s'applique de toute façon.
+        await self._adjust_subtopic_weights(
+            user_id, content_id, delta, allow_create=True
+        )
         await self._adjust_entity_affinity(user_id, content_id, delta)
 
         return status
@@ -516,10 +547,13 @@ class ContentService:
         result = await self.session.scalars(stmt)
         status = result.one()
 
-        # Reinforce subtopic weights on bookmark
+        # Reinforce subtopic weights on bookmark (signal explicite → création OK)
         if is_saved:
             await self._adjust_subtopic_weights(
-                user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+                user_id,
+                content_id,
+                ScoringWeights.BOOKMARK_TOPIC_BOOST,
+                allow_create=True,
             )
             await self._adjust_entity_affinity(
                 user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
@@ -649,9 +683,12 @@ class ContentService:
         result = await self.session.scalars(stmt)
         status = result.one()
 
-        # Reinforce subtopic weights (same as bookmark)
+        # Reinforce subtopic weights (same as bookmark, signal explicite → création OK)
         await self._adjust_subtopic_weights(
-            user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST
+            user_id,
+            content_id,
+            ScoringWeights.BOOKMARK_TOPIC_BOOST,
+            allow_create=True,
         )
         await self._adjust_entity_affinity(
             user_id, content_id, ScoringWeights.BOOKMARK_TOPIC_BOOST

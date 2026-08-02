@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -168,6 +169,15 @@ class UserSubtopic(Base):
     """User preferences for granular sub-topics (Story 4.1c)."""
 
     __tablename__ = "user_subtopics"
+    __table_args__ = (
+        # Unicité rétablie (C-1) : la contrainte d'origine avait été droppée par
+        # accident (cf. migration `4d497ce7bcc2`). Empêche les doublons et permet
+        # l'upsert atomique dans `_adjust_subtopic_weights` / l'onboarding.
+        UniqueConstraint("user_id", "topic_slug", name="uq_user_subtopics_user_topic"),
+        # La table n'avait aucun index : chaque lecture feed/digest était un
+        # seq scan sur `user_id`.
+        Index("ix_user_subtopics_user_id", "user_id"),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, default=uuid4

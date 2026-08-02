@@ -1,12 +1,12 @@
 """Tests for like feature: set_like_status, subtopic weight adjustments."""
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
-from datetime import datetime
 
-from app.services.content_service import ContentService
+import pytest
+
 from app.models.content import UserContentStatus
+from app.services.content_service import ContentService
 
 
 @pytest.mark.asyncio
@@ -78,7 +78,10 @@ async def test_like_adjusts_subtopic_weights():
         service, "_adjust_subtopic_weights", new_callable=AsyncMock
     ) as mock_adjust:
         await service.set_like_status(user_id, content_id, True)
-        mock_adjust.assert_called_once_with(user_id, content_id, 0.15)
+        # Like = signal explicite → allow_create=True (C-1).
+        mock_adjust.assert_called_once_with(
+            user_id, content_id, 0.15, allow_create=True
+        )
 
 
 @pytest.mark.asyncio
@@ -101,41 +104,18 @@ async def test_unlike_reverses_subtopic_weights():
         service, "_adjust_subtopic_weights", new_callable=AsyncMock
     ) as mock_adjust:
         await service.set_like_status(user_id, content_id, False)
-        mock_adjust.assert_called_once_with(user_id, content_id, -0.15)
+        # Unlike (delta < 0) : allow_create=True mais la branche update-only
+        # s'applique de toute façon (pas de création sur signal négatif).
+        mock_adjust.assert_called_once_with(
+            user_id, content_id, -0.15, allow_create=True
+        )
 
 
-@pytest.mark.asyncio
-async def test_like_weight_cap():
-    """Verify weight doesn't exceed 3.0 after subtopic adjustment."""
-    from app.models.user import UserSubtopic
-    from app.models.content import Content
-    from app.models.source import Source
-
-    session = AsyncMock()
-    service = ContentService(session)
-
-    user_id = uuid4()
-    content_id = uuid4()
-
-    # Mock content with topics
-    mock_source = MagicMock(spec=Source)
-    mock_source.theme = "tech"
-    mock_content = MagicMock(spec=Content)
-    mock_content.topics = ["ai"]
-    mock_content.source = mock_source
-
-    # Subtopic near cap
-    mock_subtopic = UserSubtopic(
-        user_id=user_id, topic_slug="ai", weight=2.95
-    )
-
-    session.get.return_value = mock_content
-    session.scalar.side_effect = [mock_subtopic, None]  # subtopic, then interest
-
-    await service._adjust_subtopic_weights(user_id, content_id, 0.15)
-
-    # Weight should be capped at 3.0
-    assert mock_subtopic.weight == 3.0
+# NB : le cap 3.0, le clamp 0.1, la création sur like et le "no-create" sur
+# lecture de `_adjust_subtopic_weights` sont désormais couverts contre une vraie
+# DB (l'implémentation est passée d'une mutation ORM à un upsert Postgres Core,
+# non observable via un mock de session) — cf.
+# `tests/test_subtopic_weight_concurrency.py`.
 
 
 @pytest.mark.asyncio
@@ -158,42 +138,7 @@ async def test_bookmark_adjusts_subtopic_weights():
         service, "_adjust_subtopic_weights", new_callable=AsyncMock
     ) as mock_adjust:
         await service.set_save_status(user_id, content_id, True)
-        mock_adjust.assert_called_once_with(user_id, content_id, 0.05)
-
-
-@pytest.mark.asyncio
-async def test_like_creates_new_subtopic():
-    """Verify liking creates subtopic if none exists."""
-    from app.models.content import Content
-    from app.models.source import Source
-
-    session = AsyncMock()
-    service = ContentService(session)
-
-    user_id = uuid4()
-    content_id = uuid4()
-
-    mock_source = MagicMock(spec=Source)
-    mock_source.theme = "tech"
-    mock_content = MagicMock(spec=Content)
-    mock_content.topics = ["quantum_computing"]
-    mock_content.source = mock_source
-
-    session.get.return_value = mock_content
-    # No existing subtopic or interest
-    session.scalar.return_value = None
-
-    await service._adjust_subtopic_weights(user_id, content_id, 0.15)
-
-    # Le sous-thème est créé via add() ; l'intérêt de thème passe désormais par
-    # un upsert atomique (execute) — un seul add() (le sous-thème).
-    assert session.add.call_count == 1
-    # L'intérêt est upserté sur user_interests via execute().
-    interest_inserts = [
-        call.args[0]
-        for call in session.execute.call_args_list
-        if getattr(call.args[0], "is_insert", False)
-        and getattr(call.args[0], "table", None) is not None
-        and call.args[0].table.name == "user_interests"
-    ]
-    assert len(interest_inserts) == 1
+        # Bookmark = signal explicite → allow_create=True (C-1).
+        mock_adjust.assert_called_once_with(
+            user_id, content_id, 0.05, allow_create=True
+        )

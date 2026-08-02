@@ -430,3 +430,202 @@ class TestAggregatorFold:
         assert len(clusters) == 1
         assert clusters[0].source_ids == {r1, r2}
         assert clusters[0].is_multi_source is True
+
+
+class TestReliabilityFold:
+    """Fold couverture par fiabilité (B-2).
+
+    Une rédaction non curée à faible fiabilité (`low`/`mixed`) — BFMTV « Home
+    Fil actu », CNEWS — apporte du volume sans jugement éditorial : elle ne doit
+    pas gonfler `source_count`. `unknown` (jamais évaluée, ex. Libération -
+    Politique) reste comptée. Cf. bug-curation-essentiel-personnalisation §1.2.
+    """
+
+    def _make_content(
+        self,
+        title,
+        *,
+        is_curated,
+        reliability_score,
+        source_id=None,
+        source_type=None,
+    ):
+        from datetime import UTC
+        from datetime import datetime as dt
+
+        from app.models.enums import SourceType
+
+        c = MagicMock()
+        c.title = title
+        c.id = uuid.uuid4()
+        c.source_id = source_id or uuid.uuid4()
+        c.published_at = dt.now(UTC)
+        c.entities = None
+        c.theme = None
+        c.url = f"https://source-{c.source_id}.fr/article"
+        c.source = MagicMock()
+        c.source.type = source_type or SourceType.ARTICLE
+        c.source.theme = "politics"
+        c.source.is_curated = is_curated
+        c.source.reliability_score = reliability_score
+        return c
+
+    def test_low_reliability_uncurated_does_not_inflate_source_count(self):
+        from app.models.enums import ReliabilityScore
+
+        counted_id = uuid.uuid4()
+        folded_id = uuid.uuid4()
+        contents = [
+            self._make_content(
+                "Budget 2027 débat Assemblée nationale motion",
+                is_curated=True,
+                reliability_score=ReliabilityScore.HIGH,
+                source_id=counted_id,
+            ),
+            self._make_content(
+                "Budget 2027 débat Assemblée nationale motion",
+                is_curated=False,
+                reliability_score=ReliabilityScore.LOW,
+                source_id=folded_id,
+            ),
+        ]
+        det = ImportanceDetector(similarity_threshold=0.4)
+        clusters = det.build_topic_clusters(contents)
+        assert len(clusters) == 1
+        # La source low non curée est foldée sur source_ids ET source_domains.
+        assert clusters[0].source_ids == {counted_id}
+        assert clusters[0].source_domains == {f"source-{counted_id}.fr"}
+        assert clusters[0].is_multi_source is False
+
+    def test_folded_only_cluster_keeps_its_count(self):
+        """Repli : un cluster composé UNIQUEMENT de sources foldées les garde."""
+        from app.models.enums import ReliabilityScore
+
+        f1 = uuid.uuid4()
+        f2 = uuid.uuid4()
+        contents = [
+            self._make_content(
+                "Fait divers agression centre-ville caméra",
+                is_curated=False,
+                reliability_score=ReliabilityScore.LOW,
+                source_id=f1,
+            ),
+            self._make_content(
+                "Fait divers agression centre-ville caméra",
+                is_curated=False,
+                reliability_score=ReliabilityScore.MIXED,
+                source_id=f2,
+            ),
+        ]
+        det = ImportanceDetector(similarity_threshold=0.4)
+        clusters = det.build_topic_clusters(contents)
+        assert len(clusters) == 1
+        assert clusters[0].source_ids == {f1, f2}
+        assert clusters[0].is_multi_source is True
+
+    def test_curated_medium_source_still_counts(self):
+        """Europe 1 (curée, medium) compte toujours : le fold vise low/mixed non curées."""
+        from app.models.enums import ReliabilityScore
+
+        europe1_id = uuid.uuid4()
+        folded_id = uuid.uuid4()
+        contents = [
+            self._make_content(
+                "Réforme retraites concertation syndicats calendrier",
+                is_curated=True,
+                reliability_score=ReliabilityScore.MEDIUM,
+                source_id=europe1_id,
+            ),
+            self._make_content(
+                "Réforme retraites concertation syndicats calendrier",
+                is_curated=False,
+                reliability_score=ReliabilityScore.LOW,
+                source_id=folded_id,
+            ),
+        ]
+        det = ImportanceDetector(similarity_threshold=0.4)
+        clusters = det.build_topic_clusters(contents)
+        assert len(clusters) == 1
+        assert clusters[0].source_ids == {europe1_id}
+
+    def test_unknown_reliability_still_counts(self):
+        """Non-régression : Libération - Politique (unknown, non curée) compte."""
+        from app.models.enums import ReliabilityScore
+
+        libe_id = uuid.uuid4()
+        high_id = uuid.uuid4()
+        contents = [
+            self._make_content(
+                "Élection législative partielle résultat second tour",
+                is_curated=False,
+                reliability_score=ReliabilityScore.UNKNOWN,
+                source_id=libe_id,
+            ),
+            self._make_content(
+                "Élection législative partielle résultat second tour",
+                is_curated=True,
+                reliability_score=ReliabilityScore.HIGH,
+                source_id=high_id,
+            ),
+        ]
+        det = ImportanceDetector(similarity_threshold=0.4)
+        clusters = det.build_topic_clusters(contents)
+        assert len(clusters) == 1
+        assert clusters[0].source_ids == {libe_id, high_id}
+        assert clusters[0].is_multi_source is True
+
+    def test_kill_switch_restores_aggregator_only_fold(self, monkeypatch):
+        """EDITORIAL_COVERAGE_FOLD_ENABLED=false : la source low non curée recompte."""
+        from app.models.enums import ReliabilityScore
+
+        monkeypatch.setenv("EDITORIAL_COVERAGE_FOLD_ENABLED", "false")
+
+        counted_id = uuid.uuid4()
+        low_id = uuid.uuid4()
+        contents = [
+            self._make_content(
+                "Sommet climat annonce financement pays sud",
+                is_curated=True,
+                reliability_score=ReliabilityScore.HIGH,
+                source_id=counted_id,
+            ),
+            self._make_content(
+                "Sommet climat annonce financement pays sud",
+                is_curated=False,
+                reliability_score=ReliabilityScore.LOW,
+                source_id=low_id,
+            ),
+        ]
+        det = ImportanceDetector(similarity_threshold=0.4)
+        clusters = det.build_topic_clusters(contents)
+        assert len(clusters) == 1
+        assert clusters[0].source_ids == {counted_id, low_id}
+        assert clusters[0].is_multi_source is True
+
+    def test_custom_reliability_csv_env(self, monkeypatch):
+        """EDITORIAL_COVERAGE_FOLD_RELIABILITY=low : mixed recompte, low toujours foldée."""
+        from app.models.enums import ReliabilityScore
+
+        monkeypatch.setenv("EDITORIAL_COVERAGE_FOLD_RELIABILITY", "low")
+
+        mixed_id = uuid.uuid4()
+        low_id = uuid.uuid4()
+        contents = [
+            self._make_content(
+                "Procès affaire corruption marché public verdict",
+                is_curated=False,
+                reliability_score=ReliabilityScore.MIXED,
+                source_id=mixed_id,
+            ),
+            self._make_content(
+                "Procès affaire corruption marché public verdict",
+                is_curated=False,
+                reliability_score=ReliabilityScore.LOW,
+                source_id=low_id,
+            ),
+        ]
+        det = ImportanceDetector(similarity_threshold=0.4)
+        clusters = det.build_topic_clusters(contents)
+        assert len(clusters) == 1
+        # `low` reste foldée ; `mixed` n'est plus dans le critère → recompte.
+        assert clusters[0].source_ids == {mixed_id}

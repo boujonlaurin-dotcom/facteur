@@ -101,9 +101,9 @@ pondère de la redondance ; A sans C pondère du bruit.
 | # | PR | Contenu | Statut |
 |---|---|---|---|
 | 0 | — | `BYPASSRLS` + figer la baseline | ✅ **fait le 01/08** |
-| 1 | PR 1 | **B-1** métadonnées sources (script idempotent) | 🟡 cette PR |
-| 2 | PR 2 | **B-2** fold couverture + dry-run comparatif du top-15 | à venir |
-| 3 | PR 3 | **C-1** stopper la fabrication d'intérêts + unicité `(user_id, topic_slug)` | à venir |
+| 1 | PR 1 | **B-1** métadonnées sources (script idempotent) | ✅ mergée (#1047) |
+| 2 | PR 2 | **B-2** fold couverture + dry-run comparatif du top-15 | ✅ **cette PR** |
+| 3 | PR 3 | **C-1** stopper la fabrication d'intérêts + unicité `(user_id, topic_slug)` | ✅ **cette PR** |
 | 4 | PR 4 | **A** score mixte, `is_multi` retiré, poids en env, bump `editorial_v4` | à venir |
 | 5 | PR 5 | **A** pool personnalisé rebranché (`digest_selector.py:406-407`) | à venir |
 | 6 | PR 6 | **C-2** taux appris lissés vers le prior population | à venir |
@@ -177,3 +177,87 @@ sources pendant que le fil brut de BFMTV produit 4 803 articles/30 j.
 - Dry-run joué contre la prod en lecture seule : 13 sources à corriger, 0
   introuvable, 0 renommée.
 - Aucune migration Alembic : DML pure sur des colonnes existantes.
+
+---
+
+## PR 2 — B-2 : ne compter que les rédactions qui portent un jugement
+
+Point d'insertion unique : le « fold agrégateurs » de
+`importance_detector.py`. `_is_aggregator` devient `_counts_toward_coverage`,
+appliqué aux **deux** collections (`source_ids` **et** `source_domains`).
+
+Critère : `SourceType.REDDIT` **OU** (`source.is_curated` falsy **ET**
+`reliability_score ∈ {low, mixed}`). Réglable sans déploiement via
+`EDITORIAL_COVERAGE_FOLD_RELIABILITY` (défaut `low,mixed`) et
+`EDITORIAL_COVERAGE_FOLD_ENABLED` (kill switch, défaut `true`).
+
+### Les 3 corrections mesurées au plan d'origine (§1)
+
+1. **`unknown` retiré du critère.** `unknown` = jamais évaluée, pas « peu
+   fiable ». L'inclure folderait 39,5 % du corpus `politics` (déjà à 1,3 % du
+   top-5), via `Libération - Politique` notamment. Critère restreint à
+   `low`/`mixed` ⇒ 19 sources / 9 509 art./30 j, `politics` foldé retombe à
+   29,1 % (= `society`).
+2. **Le critère n'attrape que 2 des 5 pourvoyeurs** (Home Fil actu, CNEWS) ;
+   Ouest-France / France Info / Europe 1 sont curées ⇒ **M4 < 45 % n'est pas
+   atteignable par B-2 seul**. Assainissement du terme `importance`, pas le
+   levier des cibles (PR 4-5).
+3. **Le fold s'applique à `source_ids` aussi**, pas seulement `source_domains` :
+   `routers/feed.py` lit `source_ids` et hériterait sinon d'un comptage
+   incohérent.
+
+### Dry-run comparatif (prod, lecture seule, 24 h)
+
+`scripts/dryrun_coverage_fold.py --hours 24 --tag b2-fold`. Résultat (1 565
+contenus, 1 086 clusters) : **top-15 change de 13 %** (garde-fou : abort si
+> 50 %), **18 clusters franchissent `2→1`**, 9 franchissent `3→2`,
+**`politics` net = +0** (non net-sortant). Distribution `4+ domaines` :
+22 → 13. Artefacts : `.context/dryrun_coverage_fold_b2-fold.{json,md}`.
+
+Aucune migration.
+
+---
+
+## PR 3 — C-1 : arrêter de fabriquer des intérêts
+
+Correctif **au moment de l'écriture**, pas au scoring.
+
+- `_adjust_interest_weight` (lecture) → **UPDATE seul** : une lecture ne crée
+  plus de `user_interests` sur le thème de la source.
+- `_adjust_subtopic_weights` → paramètre `allow_create` (défaut `False`). Seuls
+  les signaux **explicites** (like / save / note / feedback, actions digest
+  SAVE|LIKE) peuvent créer une ligne ; lecture et signaux négatifs = update
+  seul. **Le tail « interest par thème source » de cette fonction est gardé par
+  le même `allow_create`** — il fabriquait lui aussi un `user_interests` sur
+  lecture (double-comptage §3.1 confirmé, cf. handoff).
+- Onboarding (`user_service.py`) : `db.add(UserSubtopic)` → upsert
+  `on_conflict_do_nothing` (ne casse pas sur la nouvelle contrainte).
+
+### Migration `cq01_subtopics_uniq_muted` (head : `sa02_alerts_v2`)
+
+1. Dédup `user_subtopics` sur `(user_id, topic_slug)` (garde le plus grand
+   weight) — la contrainte d'origine avait été droppée par accident
+   (`4d497ce7bcc2`).
+2. `UNIQUE uq_user_subtopics_user_topic` + `INDEX ix_user_subtopics_user_id`
+   (la table n'avait aucun index).
+3. `DELETE` idempotent des `user_interests` contredisant un `muted_themes`
+   (53 lignes / 27 comptes au 02/08).
+
+Idempotente, testée `alembic upgrade head` sur DB vide + downgrade/re-upgrade.
+**Risque expand-contract assumé** (DB partagée) : pendant ≤ 1 semaine le backend
+`production` (ancien code) peut recréer une course doublon (mesuré 5×/vie-de-table)
+⇒ `IntegrityError` ponctuelle au lieu d'un doublon silencieux. Le `DELETE` muté
+est **à rejouer une fois après la release hebdo**.
+
+### Vérification C-1
+
+Nouvelles métriques (M8-M11) dans `docs/qa/scripts/baseline_curation.sql`
+(bloc « C-1 », à lancer via le rôle service — `claude_analytics_ro` n'a pas le
+`SELECT` sur `user_interests`/`user_subtopics`) :
+
+| # | Métrique | Avant (02/08) | Après |
+|---|---|---|---|
+| M8 | `user_interests` sur un thème muté | 53 (27 comptes) | 0 après migration |
+| M9 | Lignes `user_interests` à `1,0 < w < 1,2` | 174 / 746 | ne plus croître |
+| M10 | Users à amplitude `user_subtopics` < 0,2 | 85 / 101 | ne plus croître |
+| M11 | Doublons `(user_id, topic_slug)` | 5 | 0, impossible |

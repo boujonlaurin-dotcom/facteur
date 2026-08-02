@@ -297,13 +297,23 @@ class UserService:
         subtopic_count = 0
         if answers.subtopics:
             for topic_slug in answers.subtopics:
-                subtopic = UserSubtopic(
-                    id=uuid4(),
-                    user_id=UUID(user_id),
-                    topic_slug=topic_slug,
-                    weight=1.0,
+                # Upsert idempotent : la contrainte `uq_user_subtopics_user_topic`
+                # (C-1) ferait échouer un `db.add` brut sur double soumission
+                # concurrente. Onboarding = déclaration explicite → weight=1.0
+                # exact, on ne clobbe pas un poids existant (do_nothing).
+                stmt = (
+                    pg_insert(UserSubtopic)
+                    .values(
+                        id=uuid4(),
+                        user_id=UUID(user_id),
+                        topic_slug=topic_slug,
+                        weight=1.0,
+                    )
+                    .on_conflict_do_nothing(
+                        constraint="uq_user_subtopics_user_topic",
+                    )
                 )
-                self.db.add(subtopic)
+                await self.db.execute(stmt)
                 subtopic_count += 1
 
                 # Create UserTopicProfile only if not already followed

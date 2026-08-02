@@ -12,6 +12,7 @@ Architecture: Ce module est DÉCOUPLÉ du ScoringEngine. Il consomme les contenu
 bruts et produit des clusters/flags d'importance utilisés par TopicSelector et Top3Selector.
 """
 
+import os
 from collections import Counter
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
@@ -37,6 +38,10 @@ from app.services.text_similarity import (
 # une "couverture média" distincte. Cf. bug-digest-pipeline-fallbacks.md C4.
 _AGGREGATOR_SOURCE_TYPES: frozenset[SourceType] = frozenset({SourceType.REDDIT})
 
+# Fold fiabilité (B-2) : valeurs par défaut et vocabulaire « faux » des flags env.
+_DEFAULT_COVERAGE_FOLD_SCORES: frozenset[str] = frozenset({"low", "mixed"})
+_FALSEY_ENV_VALUES: frozenset[str] = frozenset({"false", "0", "no", ""})
+
 
 def _extract_domain(url: str) -> str:
     """Extrait le domaine canonique depuis une URL d'article.
@@ -52,17 +57,67 @@ def _extract_domain(url: str) -> str:
         return str(url)
 
 
-def _is_aggregator(content: Content) -> bool:
+def _coverage_fold_enabled() -> bool:
+    """Kill switch du fold fiabilité (B-2).
+
+    `EDITORIAL_COVERAGE_FOLD_ENABLED=false` restaure le comportement
+    historique : seuls les agrégateurs (Reddit) sont foldés. Lu à l'usage
+    (pas de cache) pour rester testable sans `cache_clear`.
+    """
+    raw = os.environ.get("EDITORIAL_COVERAGE_FOLD_ENABLED", "true").strip().lower()
+    return raw not in _FALSEY_ENV_VALUES
+
+
+def _coverage_fold_reliability_scores() -> frozenset[str]:
+    """Scores de fiabilité qui déclenchent le fold (défaut : low, mixed).
+
+    ⚠️ `unknown` volontairement absent du défaut : « jamais évaluée » ≠ « peu
+    fiable » — l'inclure folderait ~39,5 % du corpus `politics` (cf.
+    bug-curation-essentiel-personnalisation §1.2). Surchargeable via
+    `EDITORIAL_COVERAGE_FOLD_RELIABILITY` (CSV).
+    """
+    raw = os.environ.get("EDITORIAL_COVERAGE_FOLD_RELIABILITY", "").strip()
+    if not raw:
+        return _DEFAULT_COVERAGE_FOLD_SCORES
+    return frozenset(s.strip().lower() for s in raw.split(",") if s.strip())
+
+
+def _counts_toward_coverage(content: Content) -> bool:
+    """True si la source du contenu compte comme une couverture média distincte.
+
+    Renvoie False (le contenu ne gonfle pas `source_count`) pour :
+    - les **agrégateurs** (Reddit) — reprise, pas production éditoriale ;
+    - les **sources non curées à faible fiabilité** (`reliability_score`
+      ∈ {low, mixed}) — du volume sans jugement (BFMTV « Home Fil actu »,
+      CNEWS). `unknown` n'est PAS foldée (cf. `_coverage_fold_reliability_scores`).
+
+    Sémantique de **repli conservée** : `build_topic_clusters` ne folde ces
+    sources que si le cluster contient au moins une source qui compte ; un
+    cluster composé uniquement de sources foldées garde son décompte.
+    """
     src = getattr(content, "source", None)
     if src is None:
-        return False
+        # Source inconnue → on ne folde pas (conservateur).
+        return True
+
+    # Agrégateur (Reddit) : jamais une couverture distincte. Foldé même quand
+    # le kill switch est off (comportement historique).
     src_type = getattr(src, "type", None)
-    if src_type is None:
-        return False
-    try:
-        return SourceType(src_type) in _AGGREGATOR_SOURCE_TYPES
-    except ValueError:
-        return False
+    if src_type is not None:
+        try:
+            if SourceType(src_type) in _AGGREGATOR_SOURCE_TYPES:
+                return False
+        except ValueError:
+            pass
+
+    # Fold fiabilité (B-2) : non curée ET reliability ∈ {low, mixed}.
+    if _coverage_fold_enabled() and not bool(getattr(src, "is_curated", False)):
+        score = getattr(src, "reliability_score", None)
+        score_str = str(getattr(score, "value", score) or "").strip().lower()
+        if score_str in _coverage_fold_reliability_scores():
+            return False
+
+    return True
 
 
 # Re-exposé pour compat (anciennement défini ici)
@@ -202,24 +257,26 @@ class ImportanceDetector:
 
         for raw in raw_clusters:
             cluster_contents: list[Content] = raw["contents"]
-            # Fold agrégateurs : si le cluster a au moins une source primaire,
-            # on n'inclut pas les sources de type aggregator (Reddit) dans le
-            # compte. Sinon (cluster Reddit-only), on les conserve — un sujet
-            # repris uniquement par r/france mérite encore d'exister.
-            primary_source_ids: set[UUID] = set()
-            aggregator_source_ids: set[UUID] = set()
-            primary_source_domains: set[str] = set()
-            aggregator_source_domains: set[str] = set()
+            # Fold couverture (agrégateurs + faible fiabilité non curée, B-2) :
+            # si le cluster contient au moins une source qui compte comme
+            # couverture média distincte, on n'inclut pas les sources foldées
+            # (Reddit, ou non curée low/mixed) dans le décompte. Sinon (cluster
+            # composé uniquement de sources foldées), on les conserve — un sujet
+            # repris uniquement par r/france ou CNEWS mérite encore d'exister.
+            counted_source_ids: set[UUID] = set()
+            folded_source_ids: set[UUID] = set()
+            counted_source_domains: set[str] = set()
+            folded_source_domains: set[str] = set()
             for c in cluster_contents:
                 domain = _extract_domain(c.url)
-                if _is_aggregator(c):
-                    aggregator_source_ids.add(c.source_id)
-                    aggregator_source_domains.add(domain)
+                if _counts_toward_coverage(c):
+                    counted_source_ids.add(c.source_id)
+                    counted_source_domains.add(domain)
                 else:
-                    primary_source_ids.add(c.source_id)
-                    primary_source_domains.add(domain)
-            source_ids = primary_source_ids or aggregator_source_ids
-            source_domains = primary_source_domains or aggregator_source_domains
+                    folded_source_ids.add(c.source_id)
+                    folded_source_domains.add(domain)
+            source_ids = counted_source_ids or folded_source_ids
+            source_domains = counted_source_domains or folded_source_domains
 
             # Thème dominant : mode de content.theme, fallback source.theme
             themes: list[str] = []
