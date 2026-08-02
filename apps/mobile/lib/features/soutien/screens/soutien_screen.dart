@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
 import '../../../widgets/design/facteur_stamp.dart';
+import '../../premium/premium_provider.dart';
+import '../../premium/premium_refresh.dart';
 import '../soutien_copy.dart';
 import '../widgets/checkout_cta_button.dart';
 import '../widgets/founder_photos.dart';
@@ -12,8 +17,39 @@ import '../widgets/price_row.dart';
 
 /// Porte 1 du système de monétisation : l'écran Soutien, incarné par les
 /// fondateurs. Lettre 2 §, carte bonus, réassurances, prix, CTA email.
-class SoutienScreen extends StatelessWidget {
+///
+/// Le soutien se finalise sur le web (option c : email -> page prix libre ->
+/// Stripe). Au retour dans l'app (reprise), on rafraîchit l'entitlement premium
+/// pour refléter le grant serveur asynchrone sans que l'utilisateur ait à
+/// relancer l'app.
+class SoutienScreen extends ConsumerStatefulWidget {
   const SoutienScreen({super.key});
+
+  @override
+  ConsumerState<SoutienScreen> createState() => _SoutienScreenState();
+}
+
+class _SoutienScreenState extends ConsumerState<SoutienScreen> {
+  late final AppLifecycleListener _lifecycleListener;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(onResume: _onResume);
+  }
+
+  void _onResume() {
+    // Déjà premium : rien à rafraîchir (évite un poll SDK inutile à chaque
+    // reprise de l'écran).
+    if (ref.read(isPremiumProvider)) return;
+    unawaited(refreshPremiumAfterCheckout(ref));
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

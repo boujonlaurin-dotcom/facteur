@@ -9,6 +9,14 @@ server {
         try_files /methodologie.html =404;
     }
 
+    location = /soutenir {
+        try_files /soutenir.html =404;
+    }
+
+    location = /soutenir-merci {
+        try_files /soutenir-merci.html =404;
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

@@ -71,6 +71,25 @@ class Settings(BaseSettings):
     # RevenueCat
     revenuecat_api_key: str = ""
     revenuecat_webhook_secret: str = ""
+    # Clé API SECRÈTE v1 RevenueCat (grant/revoke entitlement promotionnel).
+    # Distincte de `revenuecat_api_key` (SDK public) : une clé publique renvoie
+    # 401 sur /promotional. Utilisée par revenuecat_grant_service (PR2).
+    revenuecat_rest_api_key: str = ""
+    revenuecat_entitlement_id: str = "premium"
+
+    # Stripe — parcours « Soutien à prix libre » (env-gated : le backend Stripe
+    # renvoie 503 tant que `stripe_secret_key` est vide).
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_support_product_id: str = ""
+    stripe_currency: str = "eur"
+    stripe_support_min_cents: int = 200
+    stripe_support_max_cents: int = 10000
+    # Secret dédié (HS256) pour signer le lien de checkout app -> web. NE PAS
+    # réutiliser supabase_jwt_secret (l'auth réelle est ES256/JWKS).
+    checkout_link_secret: str = ""
+    # Base publique de la landing (liens web du parcours soutien).
+    public_web_base_url: str = "https://facteur.app"
 
     # RSS Sync
     rss_sync_interval_minutes: int = 30
@@ -251,6 +270,16 @@ class Settings(BaseSettings):
     def is_staging(self) -> bool:
         """Vérifie si on est en staging."""
         return self.environment == "staging"
+
+    @property
+    def support_stripe_enabled(self) -> bool:
+        """Le parcours soutien Stripe (prix libre) est-il actif ?
+
+        Une seule définition du cutover : `send_link` bascule le magic link vers
+        `/soutenir?t=<token>` (Stripe) dès que les deux secrets sont présents,
+        sinon retombe sur l'ancien pont RevenueCat Web Billing.
+        """
+        return bool(self.stripe_secret_key and self.checkout_link_secret)
 
 
 @lru_cache
