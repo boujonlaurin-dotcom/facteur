@@ -40,6 +40,13 @@ Biais connus, écrits dans l'en-tête du rapport plutôt que maquillés :
   vides avant la date de merge. CTR par sujet / entité / rang de sujet est en
   revanche rétroactif sur tout l'historique `editorial_v3`.
 
+**`--denominator triage`** (Story 33.1) bascule sur une jauge d'une autre
+nature : la ligne de base n'est plus un slot livré mais une **décision de tri**
+prise sur un article réellement vu, avec son rang dans le slate figé. C'est le
+jeu de données que les trois dénominateurs ci-dessus ne peuvent pas produire, et
+il répond directement à l'angle mort n°1 de `maintenance-feed-ranking-gauge.md`.
+Il sort un **taux de conservation** (`keep + later` / total trié), pas un CTR.
+
 Usage :
     cd packages/api
     PYTHONPATH=. python scripts/evaluate_feed_ranking.py --days 30
@@ -47,10 +54,14 @@ Usage :
     PYTHONPATH=. python scripts/evaluate_feed_ranking.py --compare \\
         ../../.context/feed-ranking-pr1-before-2026-07-29.json \\
         ../../.context/feed-ranking-pr1-after-2026-08-05.json
+    PYTHONPATH=. python scripts/evaluate_feed_ranking.py \\
+        --denominator triage --days 14 --tag v0
 
 Sorties :
-    .context/feed-ranking-<tag>-<date>.json  (machine, consommé par --compare)
-    .context/feed-ranking-<tag>-<date>.md    (lisible humain)
+    .context/feed-ranking-<tag>-<date>.json      (machine, consommé par --compare)
+    .context/feed-ranking-<tag>-<date>.md        (lisible humain)
+    .context/essentiel-triage-<tag>-<date>.json  (--denominator triage)
+    .context/essentiel-triage-<tag>-<date>.md    (--denominator triage)
 """
 
 from __future__ import annotations
@@ -78,11 +89,26 @@ PILLARS = ("pertinence", "source", "fraicheur", "qualite")
 DENOMINATORS = ("all", "engaged", "engaged-loo")
 DEFAULT_DENOMINATOR = "engaged-loo"
 
+# Story 33.1 — dénominateur d'une autre nature : la ligne de base n'est pas un
+# slot livré mais une décision de tri. Il ne figure donc pas dans `DENOMINATORS`
+# (le tableau « les 3 côte à côte » n'aurait aucun sens ici) et emprunte un
+# chemin SQL / métriques / rendu séparé.
+TRIAGE_DENOMINATOR = "triage"
+ALL_DENOMINATOR_CHOICES = (*DENOMINATORS, TRIAGE_DENOMINATOR)
+
 DENOMINATOR_HELP = {
     "all": "tout slot livré (mesure la distribution, pas la pertinence)",
     "engaged": "slots des digests avec >= 1 consommé (circulaire)",
     "engaged-loo": "slots des digests avec >= 1 consommé AUTRE que l'article mesuré",
+    TRIAGE_DENOMINATOR: (
+        "decisions de tri de la carte Essentiel (taux de conservation, "
+        "pas CTR) — negatifs explicites sur articles reellement vus"
+    ),
 }
+
+# Une décision « gardée » : l'article survit au tri. `later` compte comme gardé
+# — c'est un choix positif (mettre de côté), pas un rejet.
+TRIAGE_KEPT_DECISIONS = ("keep", "later")
 
 
 @dataclass
@@ -443,6 +469,132 @@ def build_metrics(
 
 
 # ---------------------------------------------------------------------------
+# Métriques du tri (Story 33.1)
+# ---------------------------------------------------------------------------
+
+
+def _is_kept(row: dict[str, Any]) -> bool:
+    return str(row.get("decision") or "").lower() in TRIAGE_KEPT_DECISIONS
+
+
+def build_triage_metrics(
+    *,
+    rows: list[dict[str, Any]],
+    min_shown: int = 5,
+    top: int = 25,
+) -> dict[str, Any]:
+    """Agrège les décisions de tri en taux de conservation. Pur Python.
+
+    `CtrBucket` est réutilisé tel quel : `shown` = décisions prises, `consumed`
+    = décisions gardées, `ctr` = taux de conservation. Le vocabulaire du bucket
+    ne colle pas parfaitement, mais dupliquer la structure pour renommer deux
+    champs coûterait plus cher que ça ne rapporte.
+    """
+    global_bucket = CtrBucket()
+    by_rank: defaultdict[int, CtrBucket] = defaultdict(CtrBucket)
+    by_theme: defaultdict[str, CtrBucket] = defaultdict(CtrBucket)
+    by_followed: defaultdict[str, CtrBucket] = defaultdict(CtrBucket)
+    by_via: defaultdict[str, CtrBucket] = defaultdict(CtrBucket)
+    by_score_band: defaultdict[str, CtrBucket] = defaultdict(CtrBucket)
+    by_pillar_band: dict[str, defaultdict[str, CtrBucket]] = {
+        pillar: defaultdict(CtrBucket) for pillar in PILLARS
+    }
+
+    decisions: defaultdict[str, int] = defaultdict(int)
+    users: set[str] = set()
+    days: set[str] = set()
+    slate_sizes: defaultdict[int, int] = defaultdict(int)
+    # Le tri distrait est un risque identifié de la V0 (pas de plein écran) :
+    # sans cette mesure, on ne saurait pas distinguer un rejet réfléchi d'un
+    # swipe fait en scrollant.
+    latencies: list[int] = []
+    scored = 0
+
+    for row in rows:
+        kept = _is_kept(row)
+        decisions[str(row.get("decision") or "unknown")] += 1
+        users.add(str(row.get("user_id")))
+        days.add(str(row.get("digest_date")))
+
+        slate_size = row.get("slate_size")
+        if isinstance(slate_size, int):
+            slate_sizes[slate_size] += 1
+
+        latency = row.get("latency_ms")
+        if isinstance(latency, int) and latency >= 0:
+            latencies.append(latency)
+
+        global_bucket.add(consumed=kept)
+
+        rank = row.get("rank")
+        if isinstance(rank, int):
+            by_rank[rank].add(consumed=kept)
+
+        theme = row.get("theme")
+        by_theme[str(theme) if theme else "unknown"].add(consumed=kept)
+
+        by_followed["suivie" if row.get("is_followed_source") else "non suivie"].add(
+            consumed=kept
+        )
+        by_via[str(row.get("decided_via") or "unknown")].add(consumed=kept)
+
+        # Un article trié dont on n'a pas retrouvé le score dans le digest ne
+        # peut rien dire du ranking : il est compté à part plutôt que rangé
+        # dans une bande « missing » qui se confondrait avec un score nul.
+        if row.get("final_score") is not None:
+            scored += 1
+        by_score_band[_score_band(row.get("final_score"))].add(consumed=kept)
+
+        pillar_scores = _coerce_json_object(row.get("pillar_scores"))
+        for pillar in PILLARS:
+            by_pillar_band[pillar][_score_band(pillar_scores.get(pillar))].add(
+                consumed=kept
+            )
+
+    latencies.sort()
+    median_latency = latencies[len(latencies) // 2] if latencies else None
+
+    return {
+        "denominator": TRIAGE_DENOMINATOR,
+        "rows_fetched": len(rows),
+        "rows_skipped": 0,
+        "decisions_by_kind": [
+            {"key": kind, "count": count}
+            for kind, count in sorted(decisions.items(), key=lambda kv: -kv[1])
+        ],
+        "users_counted": len(users),
+        "days_counted": len(days),
+        "slate_sizes": [
+            {"key": size, "count": count} for size, count in sorted(slate_sizes.items())
+        ],
+        "decisions_with_score": scored,
+        "median_latency_ms": median_latency,
+        "global": global_bucket.as_dict("global"),
+        "by_rank": _bucket_rows(
+            by_rank, min_shown=min_shown, top=None, sort_key=_by_key_asc
+        ),
+        "by_theme": _bucket_rows(
+            by_theme, min_shown=min_shown, top=top, sort_key=_by_shown_desc
+        ),
+        "by_followed_source": _bucket_rows(
+            by_followed, min_shown=1, top=None, sort_key=_by_key_asc
+        ),
+        "by_decided_via": _bucket_rows(
+            by_via, min_shown=1, top=None, sort_key=_by_key_asc
+        ),
+        "by_score_band": _bucket_rows(
+            by_score_band, min_shown=1, top=None, sort_key=_by_band
+        ),
+        "by_pillar_band": {
+            pillar: _bucket_rows(
+                by_pillar_band[pillar], min_shown=1, top=None, sort_key=_by_band
+            )
+            for pillar in PILLARS
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Rendu
 # ---------------------------------------------------------------------------
 
@@ -602,6 +754,145 @@ def render_report(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _render_keep_table(rows: list[dict[str, Any]], *, key_label: str) -> list[str]:
+    """Même table que `_render_table`, au vocabulaire du tri."""
+    if not rows:
+        return ["_Aucune ligne au-dessus du seuil._"]
+    lines = [
+        f"| {key_label} | triés | gardés | taux de conservation |",
+        f"| {'-' * len(key_label)} | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row['key']} | {row['shown']} | {row['consumed']} | "
+            f"{_pct(row['ctr'])} |"
+        )
+    return lines
+
+
+def render_triage_report(
+    metrics: dict[str, Any],
+    *,
+    since: dt.datetime,
+    until: dt.datetime,
+    tag: str,
+    row_limit_hit: bool,
+) -> str:
+    """Rapport de la jauge de tri (Story 33.1)."""
+    generated_at = dt.datetime.now(dt.UTC).strftime("%Y-%m-%d %H:%M:%SZ")
+    global_bucket = metrics["global"]
+    lines = [
+        f"# Jauge de tri — carte « Ton Essentiel » — {generated_at}",
+        "",
+        f"- Tag : `{tag}`",
+        f"- Fenêtre : {since.isoformat()} -> {until.isoformat()}",
+        f"- Décisions lues : {metrics['rows_fetched']}",
+        f"- Users : {metrics['users_counted']} · jours couverts : "
+        f"{metrics['days_counted']}",
+        f"- Décisions dont le score digest a été retrouvé : "
+        f"{metrics['decisions_with_score']}/{metrics['rows_fetched']}",
+        f"- Latence médiane de décision : "
+        f"{metrics['median_latency_ms'] if metrics['median_latency_ms'] is not None else 'n/a'} ms",
+        "",
+        "Ce rapport ne mesure **pas** un CTR. Sa ligne de base est une décision "
+        "prise sur un article réellement vu, avec son rang dans le slate figé : "
+        "c'est exactement ce qui manquait à la jauge CTR, dont le dénominateur "
+        "reposait sur `last_impressed_at` (ni impression ni position).",
+        "",
+        "`keep` et `later` comptent tous deux comme **gardés** : mettre de côté "
+        "est un choix positif, pas un rejet.",
+        "",
+    ]
+
+    if row_limit_hit:
+        lines.extend(
+            [
+                "> ⚠️ **`--row-limit` atteint** : fenêtre tronquée aux décisions "
+                "les plus récentes.",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Décisions par type",
+            "",
+            "| décision | volume |",
+            "| --- | ---: |",
+        ]
+    )
+    for entry in metrics["decisions_by_kind"]:
+        lines.append(f"| `{entry['key']}` | {entry['count']} |")
+
+    lines.extend(
+        [
+            "",
+            "## Taux de conservation global",
+            "",
+            f"{global_bucket['consumed']}/{global_bucket['shown']} = "
+            f"**{_pct(global_bucket['ctr'])}**",
+            "",
+            "## Par rang dans le slate figé",
+            "",
+            "**C'est la lecture qui décide de la suite.** Si le taux de "
+            "conservation ne décroît pas avec le rang, le ranking ne discrimine "
+            "pas et le câblage d'un terme perso serait prématuré.",
+            "",
+        ]
+    )
+    lines.extend(_render_keep_table(metrics["by_rank"], key_label="rang"))
+
+    lines.extend(
+        [
+            "",
+            "## Par source suivie",
+            "",
+            "Le gradient « source suivie ×3,6 » (3,58 % vs 0,99 %) est le signal "
+            "le plus net mesuré à ce jour. S'il se retrouve ici, il est réel ; "
+            "s'il disparaît, le CTR le surestimait.",
+            "",
+        ]
+    )
+    lines.extend(_render_keep_table(metrics["by_followed_source"], key_label="source"))
+
+    lines.extend(["", "## Par thème", ""])
+    lines.extend(_render_keep_table(metrics["by_theme"], key_label="thème"))
+
+    lines.extend(
+        [
+            "",
+            "## Par modalité de geste",
+            "",
+            "Écart fort entre `swipe` et `button` = le geste biaise la décision, "
+            "pas la pertinence de l'article.",
+            "",
+        ]
+    )
+    lines.extend(_render_keep_table(metrics["by_decided_via"], key_label="modalité"))
+
+    lines.extend(
+        [
+            "",
+            "## Par bande de score",
+            "",
+            "Bande `missing` = décision dont le score n'a pas été retrouvé dans "
+            "`daily_digest.items` (article servi hors digest, ou digest purgé).",
+            "",
+            "### Score final",
+            "",
+        ]
+    )
+    lines.extend(_render_keep_table(metrics["by_score_band"], key_label="bande"))
+
+    for pillar in PILLARS:
+        lines.extend(["", f"### Pilier {pillar}", ""])
+        lines.extend(
+            _render_keep_table(metrics["by_pillar_band"][pillar], key_label="bande")
+        )
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _bucket_index(rows: list[dict[str, Any]]) -> dict[Any, dict[str, Any]]:
     return {row["key"]: row for row in rows}
 
@@ -682,7 +973,11 @@ def render_compare(baseline: dict[str, Any], after: dict[str, Any]) -> str:
 # SQL
 # ---------------------------------------------------------------------------
 
-SQL = """
+# Bloc de CTE partagé par la requête CTR et la requête de tri : les deux ont
+# besoin exactement du même dépliage `daily_digest.items` (3 formats). Le
+# factoriser évite que les deux jauges divergent silencieusement le jour où un
+# 4e format apparaît.
+_DIGEST_ITEMS_CTE = """
 WITH digest_scope AS (
     SELECT
         dd.id,
@@ -818,6 +1113,11 @@ parsed_items AS (
     FROM digest_items
     WHERE item_json ? 'content_id'
 )
+"""
+
+SQL = (
+    _DIGEST_ITEMS_CTE
+    + """
 SELECT
     pi.digest_id,
     pi.user_id,
@@ -844,6 +1144,68 @@ LEFT JOIN user_content_status ucs
 ORDER BY pi.generated_at DESC, pi.rank NULLS LAST
 LIMIT :row_limit
 """
+)
+
+# Jauge de tri (Story 33.1). La ligne de base n'est plus un slot livré mais une
+# **décision prise sur un article réellement vu** : c'est ce qui manquait à la
+# jauge CTR, dont le dénominateur reposait sur `last_impressed_at` (« ni
+# impression ni position », cf. maintenance-feed-ranking-gauge.md).
+#
+# Le rang vient de la décision (`etd.rank`, rang dans le slate **figé**), pas du
+# digest : le slate est gelé au premier geste alors que `GET /api/essentiel`
+# re-ranke à chaque requête. Le join sur le digest ne sert qu'à récupérer les
+# scores (`pillar_scores`, `final_score`), qui n'existent pas ailleurs.
+SQL_TRIAGE = (
+    _DIGEST_ITEMS_CTE
+    + """
+, digest_scores AS (
+    -- Un article peut apparaître dans plusieurs slots du même digest ; on ne
+    -- garde qu'une ligne de score par (user, content, jour) pour ne pas
+    -- dupliquer la décision de tri au join.
+    SELECT DISTINCT ON (pi.user_id, pi.content_id_text, pi.target_date)
+        pi.user_id,
+        pi.content_id_text::uuid AS content_id,
+        pi.target_date,
+        pi.final_score,
+        pi.pillar_scores,
+        pi.slot,
+        pi.subject_label
+    FROM parsed_items pi
+    ORDER BY pi.user_id, pi.content_id_text, pi.target_date,
+             pi.final_score DESC NULLS LAST
+)
+SELECT
+    etd.user_id,
+    etd.content_id,
+    etd.digest_date,
+    etd.decision,
+    etd.rank,
+    etd.slate_size,
+    etd.decided_via,
+    etd.latency_ms,
+    etd.created_at,
+    ds.final_score,
+    COALESCE(ds.pillar_scores, '{}'::jsonb) AS pillar_scores,
+    ds.subject_label,
+    c.theme,
+    c.topics,
+    c.entities,
+    (us.user_id IS NOT NULL) AS is_followed_source
+FROM essentiel_triage_decisions etd
+JOIN contents c ON c.id = etd.content_id
+LEFT JOIN digest_scores ds
+    ON ds.user_id = etd.user_id
+   AND ds.content_id = etd.content_id
+   AND ds.target_date = etd.digest_date
+LEFT JOIN user_sources us
+    ON us.user_id = etd.user_id
+   AND us.source_id = c.source_id
+WHERE etd.created_at >= :since
+  AND etd.created_at < :until
+ORDER BY etd.created_at DESC
+LIMIT :row_limit
+"""
+)
 
 
 async def _fetch_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
@@ -852,11 +1214,12 @@ async def _fetch_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
     if "+psycopg" in url:
         connect_args["prepare_threshold"] = None
 
+    sql = SQL_TRIAGE if args.denominator == TRIAGE_DENOMINATOR else SQL
     engine = create_async_engine(url, pool_pre_ping=False, connect_args=connect_args)
     try:
         async with engine.connect() as conn:
             result = await conn.execute(
-                text(SQL),
+                text(sql),
                 {
                     "since": args.since,
                     "until": args.until,
@@ -883,9 +1246,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--denominator",
-        choices=DENOMINATORS,
+        choices=ALL_DENOMINATOR_CHOICES,
         default=DEFAULT_DENOMINATOR,
-        help="Dénominateur retenu (les 3 sont publiés côte à côte de toute façon)",
+        help=(
+            "Dénominateur retenu (les 3 dénominateurs CTR sont publiés côte à "
+            "côte de toute façon). `triage` bascule sur la jauge de tri de la "
+            "carte Essentiel : taux de conservation, pas CTR."
+        ),
     )
     parser.add_argument("--min-shown", type=int, default=5)
     parser.add_argument("--top", type=int, default=25)
@@ -925,29 +1292,46 @@ async def _main(argv: list[str]) -> int:
         return 0
 
     rows = await _fetch_rows(args)
-    metrics = build_metrics(
-        rows=rows,
-        denominator=args.denominator,
-        min_shown=args.min_shown,
-        top=args.top,
-    )
-    report = render_report(
-        metrics,
-        since=args.since,
-        until=args.until,
-        mode=args.mode,
-        include_serene=args.include_serene,
-        tag=args.tag,
-        row_limit_hit=len(rows) >= args.row_limit,
-    )
+    is_triage = args.denominator == TRIAGE_DENOMINATOR
+    if is_triage:
+        metrics = build_triage_metrics(
+            rows=rows, min_shown=args.min_shown, top=args.top
+        )
+        report = render_triage_report(
+            metrics,
+            since=args.since,
+            until=args.until,
+            tag=args.tag,
+            row_limit_hit=len(rows) >= args.row_limit,
+        )
+    else:
+        metrics = build_metrics(
+            rows=rows,
+            denominator=args.denominator,
+            min_shown=args.min_shown,
+            top=args.top,
+        )
+        report = render_report(
+            metrics,
+            since=args.since,
+            until=args.until,
+            mode=args.mode,
+            include_serene=args.include_serene,
+            tag=args.tag,
+            row_limit_hit=len(rows) >= args.row_limit,
+        )
     print(report)
 
     if args.no_write:
         return 0
 
     today = dt.datetime.now(dt.UTC).date().isoformat()
-    out_json = args.out_json or CONTEXT_DIR / f"feed-ranking-{args.tag}-{today}.json"
-    out_md = args.out_md or CONTEXT_DIR / f"feed-ranking-{args.tag}-{today}.md"
+    # Préfixe distinct : les deux jauges ne se comparent pas (`--compare` refuse
+    # déjà des dénominateurs différents), autant que les fichiers ne se
+    # mélangent pas non plus dans `.context/`.
+    prefix = "essentiel-triage" if is_triage else "feed-ranking"
+    out_json = args.out_json or CONTEXT_DIR / f"{prefix}-{args.tag}-{today}.json"
+    out_md = args.out_md or CONTEXT_DIR / f"{prefix}-{args.tag}-{today}.md"
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_md.parent.mkdir(parents=True, exist_ok=True)
 

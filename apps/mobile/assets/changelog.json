@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ton Essentiel",
+      "summary": "Ta carte du jour devient une pile à trier : un article à la fois, glisse à droite pour le garder, à gauche pour passer, ou mets-le de côté pour plus tard. Ta liste de lecture se construit sous ton doigt, sans quitter le fil. Tes choix ne changent rien à ce que l'appli te propose pour l'instant : ils servent d'abord à mesurer si le classement des articles tape juste."
+    },
+    {
       "tag": "Tes cartes",
       "summary": "Chaque carte te dit maintenant combien de rédactions traitent le sujet : « 3 sources », avec leurs logos. C'est le signal qui explique pourquoi un article arrive dans ta tournée, et l'entrée naturelle vers « Comparer les angles ». Au passage, la petite pastille de sous-thème quitte le bas de carte : moins de bruit, plus de sens."
     },

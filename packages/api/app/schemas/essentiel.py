@@ -115,3 +115,86 @@ class EssentielResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- Tri de l'Essentiel (Story 33.1) ------------------------------------------
+
+# Borne du batch : le slate est verrouillé à 5 par doctrine produit, mais le
+# client peut renvoyer un batch qui recouvre des décisions déjà envoyées
+# (re-tri, flush après reprise). Large, mais fini.
+MAX_TRIAGE_DECISIONS_PER_BATCH = 50
+
+
+class TriageDecisionKind(StrEnum):
+    """Issue d'un geste de tri.
+
+    Volontairement disjoint des actions d'interaction existantes : `PASS` n'est
+    **pas** `not_interested` (qui mute la source entière et sans expiration), et
+    `KEEP` n'est **pas** `read` (qui déclencherait `_W_READ_PENALTY` et ferait
+    disparaître de la carte l'article qu'on vient de choisir).
+    """
+
+    KEEP = "keep"
+    LATER = "later"
+    PASS = "pass"
+
+
+class TriageVia(StrEnum):
+    """Modalité du geste — sépare le swipe du mode boutons (accessibilité)."""
+
+    SWIPE = "swipe"
+    BUTTON = "button"
+
+
+class TriageDecisionItem(BaseModel):
+    """Une décision de tri sur un article du slate."""
+
+    content_id: UUID
+    decision: TriageDecisionKind
+    rank: int | None = Field(
+        None,
+        ge=1,
+        description="Rang de l'article dans le slate figé (1-indexé).",
+    )
+    decided_via: TriageVia | None = None
+    latency_ms: int | None = Field(
+        None,
+        ge=0,
+        description="Temps de décision, pour distinguer le tri distrait.",
+    )
+
+
+class TriageBatchRequest(BaseModel):
+    """Corps de `POST /api/essentiel/triage`.
+
+    Batché : le tri ne doit jamais attendre le réseau, le client accumule et
+    flushe (debounce, fin de tri, passage en arrière-plan).
+    """
+
+    digest_date: date = Field(
+        ..., description="Jour du slate trié (clé 07h30 Paris côté mobile)."
+    )
+    slate_size: int = Field(
+        ...,
+        ge=1,
+        le=20,
+        description="Taille du slate figé — dénominateur de la jauge.",
+    )
+    decisions: list[TriageDecisionItem] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_TRIAGE_DECISIONS_PER_BATCH,
+    )
+
+
+class TriageBatchResponse(BaseModel):
+    """Accusé de réception d'un batch de tri."""
+
+    recorded: int = Field(..., description="Nb de décisions enregistrées (upsert).")
+    saved_for_later: int = Field(
+        default=0,
+        description=(
+            "Nb de décisions `later` ayant déclenché le save existant — même "
+            "effet que le bouton signet de la carte."
+        ),
+    )

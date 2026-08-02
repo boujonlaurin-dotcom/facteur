@@ -51,6 +51,7 @@ import '../models/flux_continu_models.dart';
 import '../providers/auto_grow_nudge_provider.dart';
 import '../providers/edition_essentiel_provider.dart';
 import '../providers/edition_read_status_provider.dart';
+import '../providers/essentiel_triage_provider.dart';
 import '../providers/flux_continu_provider.dart';
 import '../providers/pending_feed_section_provider.dart';
 import '../providers/personalisation_cta_provider.dart';
@@ -969,6 +970,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       _backgroundedAt = DateTime.now();
       // Suspend le chrono de session : le temps en arrière-plan ne compte pas.
       _sessionTracker.pause(DateTime.now());
+      // Story 33.1 — vide la file des décisions de tri avant que l'OS ne puisse
+      // tuer le process. Sans ce flush, un tri interrompu perdrait tout ce qui
+      // n'a pas atteint le debounce de 2 s.
+      unawaited(ref.read(essentielTriageProvider.notifier).flush());
     } else if (appState == AppLifecycleState.resumed) {
       // Relance le chrono foreground puis tente la ré-actualisation.
       _sessionTracker.resume(DateTime.now());

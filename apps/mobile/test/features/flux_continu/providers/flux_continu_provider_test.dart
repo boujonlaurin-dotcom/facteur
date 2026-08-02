@@ -70,6 +70,16 @@ class _StubEssentielRepository implements EssentielRepository {
   @override
   Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
       (articles: const <EssentielArticle>[], newSinceMorning: 0, carousel: null);
+
+  // Story 33.1 — la collecte de tri n'a aucun effet sur ces tests ;
+  // le stub l'accepte pour rester conforme a l'interface.
+  @override
+  Future<bool> postTriage({
+    required String digestDate,
+    required int slateSize,
+    required List<Map<String, dynamic>> decisions,
+  }) async =>
+      true;
 }
 
 class _NoGrilleRepository implements GrilleRepository {
@@ -1823,6 +1833,16 @@ class _ControllableEssentielRepository implements EssentielRepository {
       (articles: articles, newSinceMorning: newSinceMorning, carousel: null),
     );
   }
+
+  // Story 33.1 — la collecte de tri n'a aucun effet sur ces tests ;
+  // le stub l'accepte pour rester conforme a l'interface.
+  @override
+  Future<bool> postTriage({
+    required String digestDate,
+    required int slateSize,
+    required List<Map<String, dynamic>> decisions,
+  }) async =>
+      true;
 }
 
 /// Stub EssentielRepository centré sur un [EssentielArticle] précis (dont les
@@ -1861,6 +1881,16 @@ class _OneArticleEssentielRepository implements EssentielRepository {
         newSinceMorning: 0,
         carousel: null,
       );
+
+  // Story 33.1 — la collecte de tri n'a aucun effet sur ces tests ;
+  // le stub l'accepte pour rester conforme a l'interface.
+  @override
+  Future<bool> postTriage({
+    required String digestDate,
+    required int slateSize,
+    required List<Map<String, dynamic>> decisions,
+  }) async =>
+      true;
 }
 
 /// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.
@@ -1871,4 +1901,14 @@ class _FixedEssentielRepository implements EssentielRepository {
   @override
   Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
       (articles: _articles, newSinceMorning: 0, carousel: null);
+
+  // Story 33.1 — la collecte de tri n'a aucun effet sur ces tests ;
+  // le stub l'accepte pour rester conforme a l'interface.
+  @override
+  Future<bool> postTriage({
+    required String digestDate,
+    required int slateSize,
+    required List<Map<String, dynamic>> decisions,
+  }) async =>
+      true;
 }

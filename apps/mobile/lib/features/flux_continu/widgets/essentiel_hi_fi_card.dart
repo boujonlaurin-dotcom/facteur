@@ -18,13 +18,16 @@ import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
 import '../providers/edition_read_status_provider.dart';
+import '../providers/essentiel_triage_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
+import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
 import 'auto_grow_candidate.dart';
 import 'coverage_chip.dart';
 import 'edition_timeline_sheet.dart';
+import 'essentiel_triage_stack.dart';
 import 'ephemeral_rattraper_label.dart';
 import 'weather_condition_icon.dart';
 import 'weather_detail_sheet.dart';
@@ -35,7 +38,7 @@ import 'weather_detail_sheet.dart';
 ///   - `articles[0]` → lead (fond teinté, bord gauche accent)
 ///   - `articles[1..2]` → médiums (filets fins)
 ///   - `articles[3..4]` → lights (filet pointillé, une ligne tronquée)
-class EssentielHiFiCard extends ConsumerWidget {
+class EssentielHiFiCard extends ConsumerStatefulWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
 
@@ -52,7 +55,35 @@ class EssentielHiFiCard extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<EssentielHiFiCard> createState() => _EssentielHiFiCardState();
+}
+
+class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
+  bool _startScheduled = false;
+
+  /// Fige le slate du jour. Appelé depuis `build` **uniquement** quand toutes
+  /// les conditions sont déjà réunies, et exécuté après la frame : muter un
+  /// provider pendant le build est interdit par Riverpod.
+  ///
+  /// Le gel se fait à la première frame de la pile, pas au premier geste : un
+  /// refetch glissé entre l'affichage et le premier swipe changerait sinon la
+  /// carte du dessus sous le doigt.
+  void _scheduleStart() {
+    if (_startScheduled) return;
+    _startScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(essentielTriageProvider.notifier).startIfNeeded(
+            widget.articles.map((a) => a.contentId).toList(growable: false),
+          );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final articles = widget.articles;
+    final onTapArticle = widget.onTapArticle;
+    final newSinceMorning = widget.newSinceMorning;
     final colors = Theme.of(context).extension<FacteurColors>()!;
     final accent = colors.sectionEssentiel;
     final spec = ref.watch(displayModeSpecProvider);
@@ -93,6 +124,16 @@ class EssentielHiFiCard extends ConsumerWidget {
     final missedYesterday =
         isToday && ref.watch(editionReadStatusProvider).missedYesterday();
     final headerTitle = isToday ? 'Ton Essentiel' : editionPillLabel(selection);
+
+    // Story 33.1 — la carte est une pile à trier tant que le tri du jour n'est
+    // pas fini. Jamais sur une édition passée : une lettre passée est figée,
+    // la trier n'aurait aucun sens et polluerait la jauge avec des décisions
+    // hors slate du jour.
+    final triage = ref.watch(essentielTriageProvider);
+    final canTriage = isToday && articles.isNotEmpty && triage.hydrated;
+    if (canTriage && !triage.hasStarted) _scheduleStart();
+    final showTriage = canTriage && triage.isActive;
+    final triageDone = canTriage && triage.done;
 
     return KeyedSubtree(
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
@@ -143,30 +184,75 @@ class EssentielHiFiCard extends ConsumerWidget {
             // Compaction « cartes ≤ écran » (passe 2, validée UX) : gap
             // header→lead 8→6 (le fond teinté du lead rétablit la séparation).
             const SizedBox(height: 6),
-            if (lead != null)
-              _LeadTile(
-                article: lead,
-                accent: accent,
-                spec: spec,
-                readState: readStateFor(lead),
-                onTap: () => onTapArticle(lead),
-              ),
-            for (final a in remaining) ...[
-              // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
-              // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
-              const SizedBox(height: 6),
-              const _Hairline(),
-              const SizedBox(height: 6),
-              _MediumTile(
-                article: a,
-                spec: spec,
-                readState: readStateFor(a),
-                onTap: () => onTapArticle(a),
-              ),
+            if (showTriage)
+              EssentielTriageStack(
+                articles: articles,
+                triage: triage,
+                onTapArticle: onTapArticle,
+                reservedHeight: triageReservedHeight(
+                  slateSize: triage.slate.length,
+                  chromeHeight: 0,
+                  leadHeight: kHeroLeadHeight,
+                  mediumHeight: kHeroMediumHeight,
+                ),
+              )
+            else ...[
+              if (lead != null)
+                _LeadTile(
+                  article: lead,
+                  accent: accent,
+                  spec: spec,
+                  readState: readStateFor(lead),
+                  onTap: () => onTapArticle(lead),
+                ),
+              for (final a in remaining) ...[
+                // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
+                // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
+                const SizedBox(height: 6),
+                const _Hairline(),
+                const SizedBox(height: 6),
+                _MediumTile(
+                  article: a,
+                  spec: spec,
+                  readState: readStateFor(a),
+                  onTap: () => onTapArticle(a),
+                ),
+              ],
+              // Tri terminé : la carte reprend sa liste habituelle, avec de quoi
+              // revenir sur ses choix. L'upsert backend est idempotent sur
+              // `(user, article, jour)`, donc re-trier écrase sans dupliquer.
+              if (triageDone) const _RetriggerTriageButton(),
             ],
           ],
         ),
       ),
+      ),
+    );
+  }
+}
+
+/// « Trier à nouveau » — discret, en pied de carte, une fois le tri du jour
+/// terminé. Le slate reste le même (il est figé pour la journée) ; seules les
+/// décisions repartent à zéro.
+class _RetriggerTriageButton extends ConsumerWidget {
+  const _RetriggerTriageButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).extension<FacteurColors>()!;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton(
+        style: TextButton.styleFrom(
+          minimumSize: const Size(0, 28),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: () => ref.read(essentielTriageProvider.notifier).restart(),
+        child: Text(
+          'Trier à nouveau',
+          style: TextStyle(fontSize: 13, color: colors.textSecondary),
+        ),
       ),
     );
   }
