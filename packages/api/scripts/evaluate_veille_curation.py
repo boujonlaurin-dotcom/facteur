@@ -83,6 +83,7 @@ from app.services.veille.feed_filter import (  # noqa: E402
 from app.services.veille.scoring_context import (  # noqa: E402
     build_veille_scoring_context,
 )
+from scripts._scoring_overrides import weights_override  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONTEXT_DIR = REPO_ROOT / ".context"
@@ -111,17 +112,15 @@ def _threshold_override(value: float | None):
 
     ``_score_block`` lit l'attribut de classe ; on le patche pour le sweep
     plutôt que de forker la porte (anti-drift). S'applique globalement (Bloc A
-    **et** Bloc B) le temps de l'évaluation.
+    **et** Bloc B) le temps de l'évaluation. Délègue au contexte de sweep
+    partagé ``weights_override`` (`scripts/_scoring_overrides.py`) — une seule
+    mécanique de patch/restore pour tous les harnais.
     """
     if value is None:
         yield
         return
-    original = ScoringWeights.VEILLE_RELEVANCE_THRESHOLD
-    ScoringWeights.VEILLE_RELEVANCE_THRESHOLD = value
-    try:
+    with weights_override(VEILLE_RELEVANCE_THRESHOLD=value):
         yield
-    finally:
-        ScoringWeights.VEILLE_RELEVANCE_THRESHOLD = original
 
 
 # ---------------------------------------------------------------------------

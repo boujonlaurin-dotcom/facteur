@@ -50,7 +50,7 @@ ce lot, c'est un signal d'erreur de conception à réexaminer.
 | PR | Objet | Axe | État |
 |---|---|---|---|
 | PR-1 | Instrumentation d'impression | 3 | **livrée** |
-| PR-2 | `SCORING_OVERRIDES` + contexte de sweep | 1 (outillage) | à faire |
+| PR-2 | `SCORING_OVERRIDES` + contexte de sweep | 1 (outillage) | **livrée** |
 | PR-3 | Personas, corpus gelé, harnais de sensibilité | 1 | à faire |
 | PR-4 | Ordre des blocs par score top-3 | 2 | à faire |
 | PR-5 | Shrinkage affinité source + `DIGEST_SPORT_PENALTY` | 4 (amorce) | à faire, gated sur PR-3 |
@@ -220,6 +220,80 @@ Un taux durablement bas signale une **surface non instrumentée**, pas un bug de
 seuil : le premier réflexe est de chercher d'où viennent les `consumed` non
 appariés (Flâner et le reader sont hors périmètre par construction — les en
 exclure avant de conclure).
+
+---
+
+## PR-2 — `SCORING_OVERRIDES` + contexte de sweep
+
+Pas pour l'A/B (impossible), **pour la latence de rollback** : aujourd'hui,
+changer une constante de scoring = commit + redeploy Railway sur une DB partagée
+main-staging / production. Cette PR pose deux surfaces de surcharge de
+`ScoringWeights`, une déployée et une offline.
+
+### Surcharge d'environnement `SCORING_OVERRIDES` (déployée)
+
+Une seule variable d'env portant du JSON `{"CONSTANTE": valeur, …}`, parsée
+**une fois** au premier import, appliquée par `setattr` sur `ScoringWeights`.
+Rollback = vider la variable Railway + restart (~30 s). Précédent : les env vars
+ad hoc déjà en place (`EDITORIAL_SOLO_SUBJECT_MIN_SCORE`,
+`EDITORIAL_COVERAGE_FOLD_ENABLED`…).
+
+- **Placement critique** : appliquée **en bas de `scoring_config.py`**, donc au
+  premier import de `ScoringWeights`, AVANT que tout autre module ne fige une
+  valeur en argument par défaut (`scheduler.decayed_subtopic_weight`) ou en copie
+  de niveau module (`essentiel_service._W_TRENDING`). Ces call sites lisent donc
+  la valeur **surchargée** — l'env override est effectif partout.
+- **Robustesse** : JSON invalide → erreur loggée, **rien appliqué** (fail-closed
+  sur la config) ; clé inconnue → WARN + ignorée ; chaque override → INFO.
+  `PILLAR_WEIGHTS` n'est accepté que si la somme fait 1.0.
+- **`algo_version`** : `scoring_algo_version()` suffixe désormais un hash court,
+  déterministe et stable des overrides actifs (`pillars_v1+ovr.<hash>`). Sans
+  override actif, la version reste nue (`pillars_v1`) — inchangé pour les
+  binaires sans la variable. C'est ce qui rend deux semaines de CTR mesurées sous
+  deux jeux de constantes comparables : l'event `article_impression` porte de
+  quelle config il relève (cf. PR-1).
+
+### Contexte de sweep offline `weights_override` (tuning)
+
+`scripts/_scoring_overrides.py::weights_override(**kwargs)` — généralisation
+directe du `_threshold_override` de `evaluate_veille_curation.py` (qui ne patchait
+que `VEILLE_RELEVANCE_THRESHOLD`, et **délègue désormais** à cette mécanique
+partagée). Patche N attributs le temps d'un `with`, restaure en `finally`.
+Consommé par les harnais de sensibilité/sweep de PR-3.
+
+### Deux pièges traités
+
+1. **Constantes liées au chargement du module (non patchables à chaud).**
+   `scheduler.decayed_subtopic_weight(decay=ScoringWeights.SUBTOPIC_DECAY)` fige
+   la valeur à l'import : un `setattr` runtime serait un **no-op silencieux**.
+   `weights_override` **lève** si on cible un nom de `NON_PATCHABLE_AT_RUNTIME`
+   (= `{SUBTOPIC_DECAY}`). Garde anti-drift :
+   `test_scoring_overrides.py::test_no_new_module_bound_defaults` parse l'AST de
+   tout `app/`, recense les défauts `def … = ScoringWeights.X` et échoue si la
+   liste s'allonge sans que la garde soit mise à jour. *(L'env override, lui,
+   atteint ces call sites car il court avant leur import — seul le sweep runtime
+   est concerné.)*
+2. **`PILLAR_WEIGHTS` est un dict mutable de classe** : deep-copié avant patch,
+   restauré après, et l'invariant `sum == 1.0` réasserté une fois tous les patchs
+   posés (les deux surfaces).
+
+### Règle de discipline (non négociable)
+
+L'override env est un outil de **tuning et de rollback, pas une surface de
+configuration**. Tout override qui survit plus d'un cycle est **promu dans
+`scoring_config.py` et la variable vidée** — sinon la source de vérité dérive,
+ce qui est le problème même qu'on cherche à résoudre.
+
+### Fichiers
+
+| Fichier | Nature |
+|---|---|
+| `packages/api/app/services/recommendation/scoring_config.py` | `_apply_env_scoring_overrides`, `_ACTIVE_OVERRIDES`, hash dans `scoring_algo_version()` |
+| `packages/api/scripts/_scoring_overrides.py` | nouveau — `weights_override`, `NON_PATCHABLE_AT_RUNTIME` |
+| `packages/api/scripts/evaluate_veille_curation.py` | `_threshold_override` délègue à `weights_override` |
+| `packages/api/tests/scripts/test_scoring_overrides.py` | nouveau — sweep, env, garde AST |
+
+Aucune migration Alembic (`ScoringWeights` n'expose que des attributs de classe).
 
 ---
 
