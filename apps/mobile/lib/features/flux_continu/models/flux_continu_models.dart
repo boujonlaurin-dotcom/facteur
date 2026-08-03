@@ -116,6 +116,38 @@ String sectionKey(FluxSection section) {
   };
 }
 
+/// Famille d'une section pour la mesure : `theme | source | veille |
+/// editorial`. Découpe principale de la jauge CTR de la Tournée — un CTR
+/// agrégé toutes familles confondues ne dit rien, un bloc source et un bloc
+/// éditorial ne se comparent pas.
+///
+/// `editorial` regroupe les blocs **épinglés** (héros Essentiel, Actus du jour,
+/// Bonnes Nouvelles, alertes, carrousel) : ils ne concourent pas au classement
+/// des blocs personnalisés.
+String sectionFamily(FluxSection section) {
+  if (section is! FeedThemeSection) return 'editorial';
+  return switch (section.kind) {
+    SectionKind.source => 'source',
+    SectionKind.veille => 'veille',
+    _ => 'theme',
+  };
+}
+
+/// Nombre de cartes d'article qu'une section rend réellement — le pas dont
+/// avance le rang absolu d'une carte dans la page (`global_position`).
+///
+/// Les blocs sans carte d'article (alertes, carrousel) valent 0 : ils
+/// n'occupent pas de rang de lecture. Le carrousel est un scroller horizontal,
+/// ses items ne se lisent pas comme une pile verticale.
+int renderedCardCount(FluxSection section) => switch (section) {
+      EssentielSection(:final articles) => articles.length,
+      DigestTopicSection(:final topics, :final coreVisibleCount) =>
+        topics.take(coreVisibleCount).length,
+      FeedThemeSection(:final items, :final coreVisibleCount) =>
+        items.take(coreVisibleCount).length,
+      AlertsSection() || CarouselSection() => 0,
+    };
+
 /// One section of the Flux Continu V1.8 home screen.
 ///
 /// Each section renders the same visual shell (banner + cards + optional
@@ -160,6 +192,11 @@ class EssentielArticle {
   final String? thumbnailUrl;
   final DateTime publishedAt;
   final String sourceName;
+
+  /// UUID de la source. Servi par `/api/essentiel` (`source.id`) et jusqu'ici
+  /// jeté au parse : il porte la découpe « CTR par source » de la mesure.
+  final String? sourceId;
+
   final String sourceLetter;
   final SectionKind kind;
   final String? theme;
@@ -201,6 +238,7 @@ class EssentielArticle {
     required this.sourceLetter,
     required this.sectionLabel,
     required this.rank,
+    this.sourceId,
     this.description,
     this.thumbnailUrl,
     this.kind = SectionKind.theme,
@@ -251,6 +289,7 @@ class EssentielArticle {
           DateTime.tryParse(json['published_at'] as String? ?? '') ??
           DateTime.now(),
       sourceName: sourceName,
+      sourceId: source['id'] as String?,
       sourceLetter: (json['source_letter'] as String?) ?? _initial(sourceName),
       kind: _parseKind(json['kind'] as String?),
       theme: json['theme'] as String?,
@@ -281,7 +320,7 @@ class EssentielArticle {
     'description': description,
     'thumbnail_url': thumbnailUrl,
     'published_at': publishedAt.toIso8601String(),
-    'source': {'name': sourceName},
+    'source': {'name': sourceName, if (sourceId != null) 'id': sourceId},
     'source_letter': sourceLetter,
     'kind': kind.name,
     'theme': theme,

@@ -42,6 +42,36 @@ class AnalyticsService:
         await self.session.commit()
         return event
 
+    async def log_events(
+        self,
+        user_id: UUID,
+        events: list[tuple[str, dict[str, Any], str | None]],
+    ) -> int:
+        """Log un lot d'événements en **un seul commit**.
+
+        Pendant bulk de [log_event], pour le buffer client d'impressions : une
+        session de lecture produit ~30 `article_impression`, soit 30 POST et
+        30 commits si on repassait par le chemin unitaire.
+
+        [events] = liste de `(event_type, event_data, device_id)`. Retourne le
+        nombre de lignes insérées.
+        """
+        if not events:
+            return 0
+        self.session.add_all(
+            [
+                AnalyticsEvent(
+                    user_id=user_id,
+                    event_type=event_type,
+                    event_data=event_data,
+                    device_id=device_id,
+                )
+                for event_type, event_data, device_id in events
+            ]
+        )
+        await self.session.commit()
+        return len(events)
+
     async def get_dau(self, target_date: date = None) -> int:
         """Récupère le nombre d'utilisateurs actifs journaliers (DAU)."""
         if target_date is None:

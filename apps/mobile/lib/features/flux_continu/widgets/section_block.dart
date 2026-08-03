@@ -6,6 +6,7 @@ import '../../feed/widgets/feed_carousel.dart';
 import '../../feed/widgets/feedback_inline.dart';
 import '../models/flux_continu_models.dart';
 import 'alerts_section_card.dart';
+import 'article_impression_tracker.dart';
 import 'essentiel_hi_fi_card.dart';
 import 'etoffer_theme_footer.dart';
 import 'flux_continu_article_card.dart';
@@ -80,6 +81,28 @@ class SectionBlock extends StatelessWidget {
   /// toute la Tournée, comme le veut le minimalisme du design system.
   final bool showPreparingLabel;
 
+  /// Jour Tournée courant. **Non-null ⇒ les cartes comptent une impression**
+  /// (dénominateur du CTR). Laissé `null` sur les chemins de **lecture seule** —
+  /// les éditions passées de `/edition`, qui sont de la consultation d'archive
+  /// et pas une Tournée servie par l'algo : les y compter fausserait le taux.
+  final String? impressionDayKey;
+
+  /// Rang de la section dans la page (0 = héros). Ignoré sans
+  /// [impressionDayKey].
+  final int sectionIndex;
+
+  /// Nombre de cartes rendues **avant** cette section, pour que chaque carte
+  /// porte son rang absolu dans la page.
+  final int globalPositionOffset;
+
+  /// Somme des meilleurs scores du bloc, quand l'ordonnancement par score est
+  /// branché. `null` = ordre non piloté par le score.
+  final double? blockScore;
+
+  /// Jour « serein » (mode Bonnes Nouvelles) — un CTR de jour serein ne se
+  /// compare pas à un CTR de jour normal.
+  final bool isSerene;
+
   const SectionBlock({
     super.key,
     required this.section,
@@ -101,7 +124,47 @@ class SectionBlock extends StatelessWidget {
     this.onTapSuggestionInfo,
     this.onPromoteSuggestion,
     this.showPreparingLabel = false,
+    this.impressionDayKey,
+    this.sectionIndex = 0,
+    this.globalPositionOffset = 0,
+    this.blockScore,
+    this.isSerene = false,
   });
+
+  /// Enveloppe une carte d'article dans son compteur d'impression. Passe-plat
+  /// quand [impressionDayKey] est `null` (lecture seule) : zéro widget de plus
+  /// dans l'arbre sur ces chemins.
+  Widget _tracked({
+    required int position,
+    required String contentId,
+    required Widget child,
+    double? scoreTotal,
+    String? theme,
+    String? sourceId,
+  }) {
+    final dayKey = impressionDayKey;
+    if (dayKey == null) return child;
+    final section = this.section;
+    return ArticleImpressionTracker(
+      dayKey: dayKey,
+      info: ArticleImpressionInfo(
+        contentId: contentId,
+        sectionKey: sectionKey(section),
+        sectionFamily: sectionFamily(section),
+        surface: 'tournee',
+        sectionIndex: sectionIndex,
+        positionInSection: position,
+        globalPosition: globalPositionOffset + position,
+        scoreTotal: scoreTotal,
+        blockScore: blockScore,
+        theme: theme,
+        sourceId: sourceId,
+        isSerene: isSerene,
+        underfilled: section is FeedThemeSection && section.underfilled,
+      ),
+      child: child,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,6 +183,10 @@ class SectionBlock extends StatelessWidget {
               articles: section.articles,
               newSinceMorning: section.newSinceMorning,
               onTapArticle: (a) => onTapArticle(a),
+              impressionDayKey: impressionDayKey,
+              sectionIndex: sectionIndex,
+              globalPositionOffset: globalPositionOffset,
+              isSerene: isSerene,
             ),
             const SizedBox(height: 16),
           ],
@@ -250,49 +317,49 @@ class SectionBlock extends StatelessWidget {
         return const [];
       case DigestTopicSection(:final topics, :final coreVisibleCount):
         final visible = topics.take(coreVisibleCount).toList();
-        final firstSwipeableIndex = visible.indexWhere(
-          (topic) =>
-              !pendingFeedbackIds.contains(pickTopicLead(topic).contentId),
+        // `pickTopicLead` scanne les articles du topic ; on le résout une fois
+        // par topic ici plutôt qu'à chaque référence (≈6×/carte/frame de scroll).
+        final leads = [for (final topic in visible) pickTopicLead(topic)];
+        final firstSwipeableIndex = leads.indexWhere(
+          (lead) => !pendingFeedbackIds.contains(lead.contentId),
         );
         final imageAllowed = _imageAllowedIds([
-          for (final topic in visible)
-            (
-              id: pickTopicLead(topic).contentId,
-              thumb: pickTopicLead(topic).thumbnailUrl,
-            ),
+          for (final lead in leads)
+            (id: lead.contentId, thumb: lead.thumbnailUrl),
         ]);
         return [
           for (var i = 0; i < visible.length; i++)
-            if (pendingFeedbackIds.contains(
-              pickTopicLead(visible[i]).contentId,
-            ))
-              _feedbackInlineFor(pickTopicLead(visible[i]).contentId)
+            if (pendingFeedbackIds.contains(leads[i].contentId))
+              _feedbackInlineFor(leads[i].contentId)
             else
-              FluxContinuArticleCard(
-                article: pickTopicLead(visible[i]),
-                allowImageOnTop: imageAllowed.contains(
-                  pickTopicLead(visible[i]).contentId,
+              _tracked(
+                position: i,
+                contentId: leads[i].contentId,
+                scoreTotal: leads[i].recommendationReason?.scoreTotal,
+                theme: visible[i].theme,
+                sourceId: leads[i].source?.id,
+                child: FluxContinuArticleCard(
+                  article: leads[i],
+                  allowImageOnTop: imageAllowed.contains(leads[i].contentId),
+                  sourceCount: visible[i].coverageCount,
+                  perspectiveSources: visible[i].perspectiveSources,
+                  divergenceLevel: visible[i].divergenceLevel,
+                  onTap: () => onTapArticle(leads[i]),
+                  onSwipeDismiss: onDismissArticle == null
+                      ? null
+                      : () => onDismissArticle!(leads[i].contentId),
+                  enableSwipeHint:
+                      enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
+                  onSwipeHintComplete:
+                      enableSwipeHintOnFirstCard && i == firstSwipeableIndex
+                      ? onSwipeHintComplete
+                      : null,
+                  nudgeAnchor: i == firstSwipeableIndex
+                      ? firstSwipeableCardAnchor
+                      : null,
+                  onSwipeConversion: onSwipeConversion,
+                  onLongPressConversion: onLongPressConversion,
                 ),
-                sourceCount: visible[i].coverageCount,
-                perspectiveSources: visible[i].perspectiveSources,
-                divergenceLevel: visible[i].divergenceLevel,
-                onTap: () => onTapArticle(pickTopicLead(visible[i])),
-                onSwipeDismiss: onDismissArticle == null
-                    ? null
-                    : () => onDismissArticle!(
-                        pickTopicLead(visible[i]).contentId,
-                      ),
-                enableSwipeHint:
-                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
-                onSwipeHintComplete:
-                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex
-                    ? onSwipeHintComplete
-                    : null,
-                nudgeAnchor: i == firstSwipeableIndex
-                    ? firstSwipeableCardAnchor
-                    : null,
-                onSwipeConversion: onSwipeConversion,
-                onLongPressConversion: onLongPressConversion,
               ),
           // Actus du jour — pas de footer d'ajout de sources → on re-signale
           // l'ouverture de la section par un « Tout lire › » discret cliquable.
@@ -376,25 +443,33 @@ class SectionBlock extends StatelessWidget {
                 VeilleArticleRow(:final content, :final index) =>
                   pendingFeedbackIds.contains(content.id)
                       ? _feedbackInlineFor(content.id)
-                      : FluxContinuArticleCard(
-                          article: content,
-                          onTap: () => onTapArticle(content),
-                          onSwipeDismiss: onDismissArticle == null
-                              ? null
-                              : () => onDismissArticle!(content.id),
-                          enableSwipeHint:
-                              enableSwipeHintOnFirstCard &&
-                              index == firstSwipeableIndex,
-                          onSwipeHintComplete:
-                              enableSwipeHintOnFirstCard &&
-                                  index == firstSwipeableIndex
-                              ? onSwipeHintComplete
-                              : null,
-                          nudgeAnchor: index == firstSwipeableIndex
-                              ? firstSwipeableCardAnchor
-                              : null,
-                          onSwipeConversion: onSwipeConversion,
-                          onLongPressConversion: onLongPressConversion,
+                      : _tracked(
+                          position: index,
+                          contentId: content.id,
+                          scoreTotal:
+                              content.recommendationReason?.scoreTotal,
+                          theme: content.source.theme,
+                          sourceId: content.source.id,
+                          child: FluxContinuArticleCard(
+                            article: content,
+                            onTap: () => onTapArticle(content),
+                            onSwipeDismiss: onDismissArticle == null
+                                ? null
+                                : () => onDismissArticle!(content.id),
+                            enableSwipeHint:
+                                enableSwipeHintOnFirstCard &&
+                                index == firstSwipeableIndex,
+                            onSwipeHintComplete:
+                                enableSwipeHintOnFirstCard &&
+                                    index == firstSwipeableIndex
+                                ? onSwipeHintComplete
+                                : null,
+                            nudgeAnchor: index == firstSwipeableIndex
+                                ? firstSwipeableCardAnchor
+                                : null,
+                            onSwipeConversion: onSwipeConversion,
+                            onLongPressConversion: onLongPressConversion,
+                          ),
                         ),
               },
           ];
@@ -411,24 +486,31 @@ class SectionBlock extends StatelessWidget {
             if (pendingFeedbackIds.contains(visible[i].id))
               _feedbackInlineFor(visible[i].id)
             else
-              FluxContinuArticleCard(
-                article: visible[i],
-                allowImageOnTop: imageAllowed.contains(visible[i].id),
-                onTap: () => onTapArticle(visible[i]),
-                onSwipeDismiss: onDismissArticle == null
-                    ? null
-                    : () => onDismissArticle!(visible[i].id),
-                enableSwipeHint:
-                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
-                onSwipeHintComplete:
-                    enableSwipeHintOnFirstCard && i == firstSwipeableIndex
-                    ? onSwipeHintComplete
-                    : null,
-                nudgeAnchor: i == firstSwipeableIndex
-                    ? firstSwipeableCardAnchor
-                    : null,
-                onSwipeConversion: onSwipeConversion,
-                onLongPressConversion: onLongPressConversion,
+              _tracked(
+                position: i,
+                contentId: visible[i].id,
+                scoreTotal: visible[i].recommendationReason?.scoreTotal,
+                theme: themeSlug ?? visible[i].source.theme,
+                sourceId: visible[i].source.id,
+                child: FluxContinuArticleCard(
+                  article: visible[i],
+                  allowImageOnTop: imageAllowed.contains(visible[i].id),
+                  onTap: () => onTapArticle(visible[i]),
+                  onSwipeDismiss: onDismissArticle == null
+                      ? null
+                      : () => onDismissArticle!(visible[i].id),
+                  enableSwipeHint:
+                      enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
+                  onSwipeHintComplete:
+                      enableSwipeHintOnFirstCard && i == firstSwipeableIndex
+                      ? onSwipeHintComplete
+                      : null,
+                  nudgeAnchor: i == firstSwipeableIndex
+                      ? firstSwipeableCardAnchor
+                      : null,
+                  onSwipeConversion: onSwipeConversion,
+                  onLongPressConversion: onLongPressConversion,
+                ),
               ),
           // Cohérence Tournée — un thème **maigre affiché** (≤1 survivant après
           // dédup, enrichi par réinjection) porte en pied le footer « Étoffer »

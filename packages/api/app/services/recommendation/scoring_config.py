@@ -1,3 +1,11 @@
+import hashlib
+import json
+import logging
+import os
+
+_logger = logging.getLogger(__name__)
+
+
 class ScoringWeights:
     """
     Configuration centralisée des poids de l'algorithme de recommandation.
@@ -566,3 +574,127 @@ class ScoringWeights:
     # Fenêtre de récence (jours) du comptage d'articles par candidat (aligné
     # sur le filtre 14 j du fallback `get_top_themes`).
     TOURNEE_SUGGEST_RECENCY_DAYS = 14
+
+
+# ---------------------------------------------------------------------------
+# SCORING_OVERRIDES — surcharge d'environnement (outil de tuning / rollback)
+# ---------------------------------------------------------------------------
+# Une seule variable d'env portant du JSON `{"CONSTANTE": valeur, …}`, parsée
+# **une fois** ici et appliquée par `setattr` sur `ScoringWeights`. But : la
+# **latence de rollback**. Aujourd'hui changer une constante = commit + redeploy
+# Railway sur une DB partagée main-staging / production ; ici, rollback = vider
+# la variable Railway + restart (~30 s). Précédent : les env vars ad hoc déjà en
+# place (`EDITORIAL_SOLO_SUBJECT_MIN_SCORE`, `EDITORIAL_COVERAGE_FOLD_ENABLED`…).
+#
+# Placement critique : **en bas de ce module**, donc appliqué au premier import
+# de `ScoringWeights`, AVANT que tout autre module ne lie une valeur en argument
+# par défaut (`scheduler.decayed_subtopic_weight`) ou en copie de niveau module
+# (`essentiel_service._W_TRENDING`). Ces call sites picoreront donc la valeur
+# **surchargée** — l'env override est effectif partout, contrairement au sweep
+# runtime (`scripts/_scoring_overrides.py`, cf. `NON_PATCHABLE_AT_RUNTIME`).
+#
+# DISCIPLINE (runbook `maintenance-reco-optimisation-lot2.md`) : l'override env
+# est un outil de tuning et de rollback, **pas une surface de configuration**.
+# Tout override qui survit plus d'un cycle est promu dans ce fichier et la
+# variable vidée — sinon la source de vérité dérive, le problème même qu'on
+# cherche à résoudre.
+
+# Constantes actives surchargées (nom → valeur appliquée). Alimente le hash de
+# `scoring_algo_version()` : deux semaines de CTR sous deux jeux de constantes
+# ne sont comparables que si l'event porte de quelle config il relève.
+_ACTIVE_OVERRIDES: dict[str, object] = {}
+
+
+def is_overridable_scoring_key(name: str) -> bool:
+    """Un nom surchargeable de `ScoringWeights` : attribut **public existant**.
+    Partagé par les deux surfaces de surcharge (env ici, sweep runtime dans
+    `scripts/_scoring_overrides.py`) pour qu'elles jugent « clé valide » pareil.
+    """
+    return not name.startswith("_") and hasattr(ScoringWeights, name)
+
+
+def pillar_weights_sum_ok(weights: dict[str, float]) -> bool:
+    """Invariant `PILLAR_WEIGHTS` : la somme des poids fait 1.0 (tolérance 1e-6).
+    Source unique de la règle et de la tolérance pour les deux surfaces.
+    """
+    return abs(sum(weights.values()) - 1.0) <= 1e-6
+
+
+def _coerce_override(name: str, value: object) -> object:
+    """Aligne le type JSON sur celui de la constante (int JSON → float attendu)."""
+    current = getattr(ScoringWeights, name)
+    if isinstance(current, bool):
+        return bool(value)
+    if (
+        isinstance(current, float)
+        and isinstance(value, int)
+        and not isinstance(value, bool)
+    ):
+        return float(value)
+    return value
+
+
+def _apply_env_scoring_overrides() -> None:
+    """Parse `SCORING_OVERRIDES` et patche `ScoringWeights`. Best-effort :
+    un JSON invalide log une erreur et **n'applique rien** (fail-closed sur la
+    config), une clé inconnue est WARN et ignorée, chaque override est loggé INFO.
+    """
+    raw = os.environ.get("SCORING_OVERRIDES", "").strip()
+    if not raw:
+        return
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        _logger.error("SCORING_OVERRIDES ignoré (JSON invalide) : %s", exc)
+        return
+    if not isinstance(parsed, dict):
+        _logger.error(
+            "SCORING_OVERRIDES ignoré : objet JSON attendu, reçu %s",
+            type(parsed).__name__,
+        )
+        return
+
+    for name, value in parsed.items():
+        if not is_overridable_scoring_key(name):
+            _logger.warning("SCORING_OVERRIDES : clé inconnue ignorée « %s »", name)
+            continue
+        if name == "PILLAR_WEIGHTS":
+            if not isinstance(value, dict):
+                _logger.warning(
+                    "SCORING_OVERRIDES : PILLAR_WEIGHTS attend un objet, ignoré"
+                )
+                continue
+            if not pillar_weights_sum_ok(value):
+                _logger.error(
+                    "SCORING_OVERRIDES : PILLAR_WEIGHTS somme %s != 1.0, ignoré",
+                    sum(value.values()),
+                )
+                continue
+        coerced = _coerce_override(name, value)
+        old = getattr(ScoringWeights, name)
+        setattr(ScoringWeights, name, coerced)
+        _ACTIVE_OVERRIDES[name] = coerced
+        _logger.info("SCORING_OVERRIDES : %s %r → %r", name, old, coerced)
+
+
+_apply_env_scoring_overrides()
+
+
+def scoring_algo_version() -> str:
+    """Identifiant de la configuration de scoring **effectivement active**.
+
+    Estampillé sur chaque `article_impression` (cf. `routers/analytics.py`) :
+    sans lui, aucune comparaison avant/après d'un cycle de tuning n'est
+    possible — deux semaines de CTR mesurées sous deux jeux de constantes
+    différents ne sont pas comparables et rien dans la donnée ne le dirait.
+
+    Sans override actif = la seule version du moteur (`SCORING_VERSION`), donc
+    inchangé pour les binaires sans `SCORING_OVERRIDES`. Avec overrides, on
+    suffixe un hash court, déterministe et stable des overrides appliqués : un
+    tuning poussé sans redeploy change quand même la version estampillée.
+    """
+    if not _ACTIVE_OVERRIDES:
+        return ScoringWeights.SCORING_VERSION
+    payload = json.dumps(_ACTIVE_OVERRIDES, sort_keys=True, default=str)
+    digest = hashlib.sha1(payload.encode()).hexdigest()[:8]
+    return f"{ScoringWeights.SCORING_VERSION}+ovr.{digest}"
