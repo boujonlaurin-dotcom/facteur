@@ -62,6 +62,26 @@ GrilleTodayResponse _todayInProgress() => const GrilleTodayResponse(
       prochainMotDansSec: 1000,
     );
 
+GrilleTodayResponse _todaySolved() => const GrilleTodayResponse(
+      date: '2026-05-31',
+      dateAffichee: 'Dimanche 31 mai',
+      dateCourt: 'Dim. 31 mai',
+      numero: 'N°144',
+      longueur: 6,
+      essaisMax: 6,
+      premiereLettre: 'B',
+      indice: 'indice',
+      theme: 'theme',
+      statut: 'solved',
+      essais: [],
+      nbEssais: 3,
+      streak: 2,
+      prochainMotDansSec: 1000,
+      mot: 'BATEAU',
+    );
+
+GrilleTodayResponse _todayFailed() => _todaySolved().copyWith(statut: 'failed');
+
 Widget _wrap(_FakeGrilleRepository repo) {
   return ProviderScope(
     overrides: [
@@ -110,4 +130,20 @@ void main() {
     await t.pumpAndSettle();
     expect(find.byType(CarteCta), findsOneWidget);
   });
+
+  testWidgets('mot trouvé → carte "Bien joué !"', (t) async {
+    await t.pumpWidget(_wrap(_FakeGrilleRepository(today: _todaySolved())));
+    await t.pumpAndSettle();
+    expect(find.text('Bien joué !'), findsOneWidget);
+  });
+
+  testWidgets(
+    'mot manqué → carte "Loupé de peu !" et pas "Bien joué !"',
+    (t) async {
+      await t.pumpWidget(_wrap(_FakeGrilleRepository(today: _todayFailed())));
+      await t.pumpAndSettle();
+      expect(find.text('Loupé de peu !'), findsOneWidget);
+      expect(find.text('Bien joué !'), findsNothing);
+    },
+  );
 }
