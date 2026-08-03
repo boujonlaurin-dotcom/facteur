@@ -317,45 +317,37 @@ class SectionBlock extends StatelessWidget {
         return const [];
       case DigestTopicSection(:final topics, :final coreVisibleCount):
         final visible = topics.take(coreVisibleCount).toList();
-        final firstSwipeableIndex = visible.indexWhere(
-          (topic) =>
-              !pendingFeedbackIds.contains(pickTopicLead(topic).contentId),
+        // `pickTopicLead` scanne les articles du topic ; on le résout une fois
+        // par topic ici plutôt qu'à chaque référence (≈6×/carte/frame de scroll).
+        final leads = [for (final topic in visible) pickTopicLead(topic)];
+        final firstSwipeableIndex = leads.indexWhere(
+          (lead) => !pendingFeedbackIds.contains(lead.contentId),
         );
         final imageAllowed = _imageAllowedIds([
-          for (final topic in visible)
-            (
-              id: pickTopicLead(topic).contentId,
-              thumb: pickTopicLead(topic).thumbnailUrl,
-            ),
+          for (final lead in leads)
+            (id: lead.contentId, thumb: lead.thumbnailUrl),
         ]);
         return [
           for (var i = 0; i < visible.length; i++)
-            if (pendingFeedbackIds.contains(
-              pickTopicLead(visible[i]).contentId,
-            ))
-              _feedbackInlineFor(pickTopicLead(visible[i]).contentId)
+            if (pendingFeedbackIds.contains(leads[i].contentId))
+              _feedbackInlineFor(leads[i].contentId)
             else
               _tracked(
                 position: i,
-                contentId: pickTopicLead(visible[i]).contentId,
-                scoreTotal:
-                    pickTopicLead(visible[i]).recommendationReason?.scoreTotal,
+                contentId: leads[i].contentId,
+                scoreTotal: leads[i].recommendationReason?.scoreTotal,
                 theme: visible[i].theme,
-                sourceId: pickTopicLead(visible[i]).source?.id,
+                sourceId: leads[i].source?.id,
                 child: FluxContinuArticleCard(
-                  article: pickTopicLead(visible[i]),
-                  allowImageOnTop: imageAllowed.contains(
-                    pickTopicLead(visible[i]).contentId,
-                  ),
+                  article: leads[i],
+                  allowImageOnTop: imageAllowed.contains(leads[i].contentId),
                   sourceCount: visible[i].coverageCount,
                   perspectiveSources: visible[i].perspectiveSources,
                   divergenceLevel: visible[i].divergenceLevel,
-                  onTap: () => onTapArticle(pickTopicLead(visible[i])),
+                  onTap: () => onTapArticle(leads[i]),
                   onSwipeDismiss: onDismissArticle == null
                       ? null
-                      : () => onDismissArticle!(
-                          pickTopicLead(visible[i]).contentId,
-                        ),
+                      : () => onDismissArticle!(leads[i].contentId),
                   enableSwipeHint:
                       enableSwipeHintOnFirstCard && i == firstSwipeableIndex,
                   onSwipeHintComplete:

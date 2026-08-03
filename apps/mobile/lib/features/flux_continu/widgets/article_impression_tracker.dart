@@ -133,7 +133,11 @@ class _ArticleImpressionTrackerState
   void _fire() {
     _dwell = null;
     if (!mounted || _fired) return;
-    _fired = true;
+    // `setState` retire le `VisibilityDetector` du sous-arbre (cf. `build`) :
+    // une carte ne compte qu'une fois, la garder branchée ferait recalculer sa
+    // géométrie à chaque tick de scroll pour le reste de la session. ~30 cartes
+    // sur la Tournée → autant de détecteurs qui s'éteignent dès qu'ils ont tiré.
+    setState(() => _fired = true);
     final info = widget.info;
     unawaited(
       ref.read(analyticsServiceProvider).trackArticleImpression(
@@ -166,6 +170,9 @@ class _ArticleImpressionTrackerState
 
   @override
   Widget build(BuildContext context) {
+    // Une fois l'impression comptée, plus rien à observer : on sort du pipeline
+    // de `visibility_detector` en rendant l'enfant nu.
+    if (_fired) return widget.child;
     return VisibilityDetector(
       key: Key(
         'impression_${widget.info.surface}_'

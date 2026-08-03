@@ -440,6 +440,26 @@ class AnalyticsService {
   /// carte recyclée par le viewport paresseux re-déclenche son tracker).
   final Set<String> _impressedArticleKeys = <String>{};
 
+  /// Dédup persistante scindée par jour, partagée par les impressions d'article
+  /// et de suggestion. Range [entry] dans la liste SharedPreferences [prefsKey]
+  /// en purgeant les jours passés (on ne garde que les entrées préfixées par
+  /// `'$dayKey|'`). Retourne `true` si l'entrée est neuve — l'événement doit
+  /// alors partir —, `false` si elle a déjà été comptée aujourd'hui.
+  Future<bool> _recordDailyOnce(
+    String prefsKey,
+    String entry,
+    String dayKey,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final kept = (prefs.getStringList(prefsKey) ?? const [])
+        .where((e) => e.startsWith('$dayKey|'))
+        .toList();
+    if (kept.contains(entry)) return false;
+    kept.add(entry);
+    await prefs.setStringList(prefsKey, kept);
+    return true;
+  }
+
   /// Impression d'un article rendu dans la Tournée ou l'Essentiel — le
   /// **dénominateur** du CTR, dont le numérateur reste
   /// `user_content_status.status = 'consumed'` côté backend.
@@ -478,14 +498,9 @@ class AnalyticsService {
     final entry = '$dayKey|$sectionKey|$contentId';
     if (!_impressedArticleKeys.add(entry)) return;
 
-    final prefs = await SharedPreferences.getInstance();
-    // Purge des jours passés : on ne conserve que les entrées du jour courant.
-    final kept = (prefs.getStringList(_kArticleImpressionsKey) ?? const [])
-        .where((e) => e.startsWith('$dayKey|'))
-        .toList();
-    if (kept.contains(entry)) return; // déjà comptée aujourd'hui (relance)
-    kept.add(entry);
-    await prefs.setStringList(_kArticleImpressionsKey, kept);
+    if (!await _recordDailyOnce(_kArticleImpressionsKey, entry, dayKey)) {
+      return; // déjà comptée aujourd'hui (relance)
+    }
 
     await _logEventBuffered('article_impression', {
       'session_id': _sessionId,
@@ -1084,15 +1099,10 @@ class AnalyticsService {
     required String kind,
     required String dayKey,
   }) async {
-    final prefs = await SharedPreferences.getInstance();
     final entry = '$dayKey|$sectionKey';
-    // Purge des jours passés : on ne conserve que les entrées du jour courant.
-    final kept = (prefs.getStringList(_kSuggestionImpressionsKey) ?? const [])
-        .where((e) => e.startsWith('$dayKey|'))
-        .toList();
-    if (kept.contains(entry)) return; // déjà comptée aujourd'hui
-    kept.add(entry);
-    await prefs.setStringList(_kSuggestionImpressionsKey, kept);
+    if (!await _recordDailyOnce(_kSuggestionImpressionsKey, entry, dayKey)) {
+      return; // déjà comptée aujourd'hui
+    }
     final props = {
       'session_id': _sessionId,
       'section_key': sectionKey,
