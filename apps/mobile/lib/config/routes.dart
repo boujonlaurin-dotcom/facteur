@@ -245,19 +245,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final authState = ref.read(authStateProvider);
-      String postAuthHomePath() {
-        // La « Lettre du jour » ne s'interpose plus au chargement quotidien
-        // (décision PO 02/08/2026) : le cold-open atterrit toujours directement
-        // sur L'Essentiel. La lettre reste jouée **une fois** en fin
-        // d'onboarding (cf. conclusion_animation_screen → /edition?from=onboarding)
-        // et le navigateur d'éditions passées (rewind) subsiste dans le feed.
-        //
-        // Story 9.8 « L'Essentiel dynamique au retour » : l'utilisateur revient
-        // **toujours** sur L'Essentiel — surface vivante se rafraîchissant à
-        // chaque retour (cf. FluxContinuScreen, cooldown + gate « en haut du
-        // feed ») — au lieu d'être renvoyé vers Flâner une fois parcouru.
-        return RoutePaths.fluxContinu;
-      }
+
+      // Atterrissage post-auth : **toujours** L'Essentiel.
+      //
+      // La « Lettre du jour » ne s'interpose plus au chargement quotidien
+      // (décision PO 02/08/2026). Elle reste jouée **une fois** en fin
+      // d'onboarding (cf. conclusion_animation_screen → /edition?from=onboarding)
+      // et le navigateur d'éditions passées (rewind) subsiste dans le feed.
+      //
+      // Story 9.8 « L'Essentiel dynamique au retour » : l'utilisateur revient
+      // toujours sur L'Essentiel — surface vivante se rafraîchissant à chaque
+      // retour (cf. FluxContinuScreen, cooldown + gate « en haut du feed ») —
+      // au lieu d'être renvoyé vers Flâner une fois parcouru.
 
       // Attendre que l'auth state soit initialisé
       if (authState.isLoading) {
@@ -351,7 +350,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           }
           return DeepLinkService.navigableRouteFor(pendingAction);
         }
-        return postAuthHomePath();
+        return RoutePaths.fluxContinu;
       }
 
       // 4. Onboarding : forcer si nécessaire
@@ -364,7 +363,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       // /edition (cf. conclusion_animation_screen → /edition?from=onboarding),
       // seul point où la lettre est encore jouée.
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return postAuthHomePath();
+        return RoutePaths.fluxContinu;
       }
 
       // La « Lettre du jour » ne gate plus l'accès à L'Essentiel (décision PO

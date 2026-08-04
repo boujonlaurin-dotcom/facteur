@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -194,12 +196,17 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
         child: Transform.translate(
           offset: Offset(effectiveDx, 0),
           child: Transform.rotate(
-            angle: (effectiveDx / _rotationDivisor) * 3.1415926535 / 180,
+            angle: (effectiveDx / _rotationDivisor) * math.pi / 180,
             child: Opacity(
               opacity: opacity,
               child: Stack(
                 children: [
-                  Positioned.fill(child: widget.child),
+                  // Frontière de repeinture : le drag appelle `setState` à
+                  // chaque frame et la carte est devenue lourde (image décodée,
+                  // glyphe de divergence, pile d'avatars). Sans elle, chaque
+                  // frame de geste re-enregistre la display list de tout ce qui
+                  // est visible jusqu'au viewport du feed.
+                  Positioned.fill(child: RepaintBoundary(child: widget.child)),
                   if (keepStamp > 0)
                     Positioned(
                       top: 16,

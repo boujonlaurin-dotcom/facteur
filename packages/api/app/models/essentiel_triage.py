@@ -42,11 +42,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
-# Valeurs autorisées, alignées sur `TriageDecisionKind` (app/schemas/essentiel.py)
-# et sur `TriageDecision` côté mobile.
-TRIAGE_DECISIONS = ("keep", "later", "pass")
-TRIAGE_VIAS = ("swipe", "button")
-
 
 class EssentielTriageDecision(Base):
     """Une décision de tri sur un article du slate Essentiel du jour."""
@@ -59,6 +54,9 @@ class EssentielTriageDecision(Base):
             "digest_date",
             name="uq_essentiel_triage_user_content_date",
         ),
+        # Vocabulaire aligné sur `TriageDecisionKind` / `TriageViaKind`
+        # (app/schemas/essentiel.py, la source de vérité) et sur `TriageDecision`
+        # côté mobile.
         CheckConstraint(
             "decision IN ('keep', 'later', 'pass')",
             name="ck_essentiel_triage_decision",

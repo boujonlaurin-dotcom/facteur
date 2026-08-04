@@ -265,14 +265,12 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
   /// Purge les clés des jours précédents — sans quoi elles s'accumuleraient
   /// indéfiniment dans SharedPreferences (même motif que
   /// `TourneeProgressService.purgeOldPrefsKeys`).
-  Future<void> _purgeStaleKeys(SharedPreferences prefs) async {
-    final today = triagePrefsKey(_dayKey);
-    final stale = prefs
-        .getKeys()
-        .where((k) => k.startsWith(kTriagePrefsKeyPrefix) && k != today)
-        .toList();
-    await Future.wait(stale.map(prefs.remove));
-  }
+  Future<void> _purgeStaleKeys(SharedPreferences prefs) =>
+      TourneeProgressService.purgeDatedPrefsKeys(
+        prefs,
+        prefix: kTriagePrefsKeyPrefix,
+        keep: triagePrefsKey(_dayKey),
+      );
 
   Future<void> _persist() async {
     try {

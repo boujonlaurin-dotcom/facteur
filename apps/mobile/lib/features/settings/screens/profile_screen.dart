@@ -10,7 +10,6 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/services/push_notification_service.dart';
-import '../../flux_continu/services/tournee_progress_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../widgets/profile_progression_card.dart';
 
@@ -114,25 +113,9 @@ class ProfileScreen extends ConsumerWidget {
               _Section(
                 title: 'OUTILS QA',
                 children: [
-                  _Tile(
-                    icon: Icons.replay,
-                    title: 'Rejouer le rituel matinal',
-                    subtitle: 'Réaffiche « Ton édition vient d\'arriver » au '
-                        'prochain redémarrage',
-                    onTap: () async {
-                      await ref
-                          .read(tourneeProgressServiceProvider)
-                          .resetMorningRitualShown();
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'Rituel réarmé — relance l\'app pour le revoir.',
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                  // « Rejouer le rituel matinal » a été retiré avec le gate
+                  // quotidien (décision PO 02/08/2026) : réarmer un flag que
+                  // plus personne ne lit ne réaffichait plus rien.
                   _Tile(
                     icon: PhosphorIcons.bell(PhosphorIconsStyle.regular),
                     title: 'Tester une alerte source',

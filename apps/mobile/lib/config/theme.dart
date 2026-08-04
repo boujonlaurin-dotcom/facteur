@@ -413,6 +413,26 @@ class FacteurRadius {
   static const double full = 999;
 }
 
+/// Marge externe de la carte Essentiel hi-fi, partagée avec son squelette de
+/// chargement (`_HeroSkeleton`). Le partage n'est pas cosmétique : si les deux
+/// divergent, le feed **saute latéralement** au moment de l'hydratation.
+const EdgeInsets kEssentielCardMargin = EdgeInsets.fromLTRB(
+  FacteurSpacing.space3,
+  FacteurSpacing.space2,
+  FacteurSpacing.space3,
+  FacteurSpacing.space4,
+);
+
+/// Padding interne de la carte Essentiel hi-fi, partagé avec son squelette.
+/// Top resserré (space4 → space3, compaction « cartes ≤ écran ») : gagne ~4 px
+/// sans toucher la pastille date/météo (choix PO).
+const EdgeInsets kEssentielCardPadding = EdgeInsets.fromLTRB(
+  FacteurSpacing.space4,
+  FacteurSpacing.space3,
+  FacteurSpacing.space4,
+  FacteurSpacing.space2,
+);
+
 /// Chrome partagé des cartes « surface » (carte Essentiel hi-fi, cartes-jour de
 /// la rétro « Cette semaine », …) : fond surface, radius large, bord fin (0.6)
 /// et ombre douce. Source unique pour que ces cartes restent visuellement

@@ -110,6 +110,10 @@ DENOMINATOR_HELP = {
 # — c'est un choix positif (mettre de côté), pas un rejet.
 TRIAGE_KEPT_DECISIONS = ("keep", "later")
 
+# Vocabulaire des colonnes du rapport de tri : mêmes colonnes que la jauge CTR
+# (exposé / retenu / taux), autres mots — on trie, on ne clique pas.
+TRIAGE_TABLE_COLUMNS = ("triés", "gardés", "taux de conservation")
+
 
 @dataclass
 class CtrBucket:
@@ -599,11 +603,20 @@ def build_triage_metrics(
 # ---------------------------------------------------------------------------
 
 
-def _render_table(rows: list[dict[str, Any]], *, key_label: str) -> list[str]:
+def _render_table(
+    rows: list[dict[str, Any]],
+    *,
+    key_label: str,
+    columns: tuple[str, str, str] = ("shown", "consumed", "CTR"),
+) -> list[str]:
+    """Table markdown des buckets. `columns` porte le vocabulaire du rapport :
+    exposition/consommation pour la jauge CTR, tri/conservation pour la jauge de
+    tri — les colonnes sont les mêmes, seuls les mots changent."""
     if not rows:
         return ["_Aucune ligne au-dessus du seuil._"]
+    shown_label, consumed_label, rate_label = columns
     lines = [
-        f"| {key_label} | shown | consumed | CTR |",
+        f"| {key_label} | {shown_label} | {consumed_label} | {rate_label} |",
         f"| {'-' * len(key_label)} | ---: | ---: | ---: |",
     ]
     for row in rows:
@@ -754,22 +767,6 @@ def render_report(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _render_keep_table(rows: list[dict[str, Any]], *, key_label: str) -> list[str]:
-    """Même table que `_render_table`, au vocabulaire du tri."""
-    if not rows:
-        return ["_Aucune ligne au-dessus du seuil._"]
-    lines = [
-        f"| {key_label} | triés | gardés | taux de conservation |",
-        f"| {'-' * len(key_label)} | ---: | ---: | ---: |",
-    ]
-    for row in rows:
-        lines.append(
-            f"| {row['key']} | {row['shown']} | {row['consumed']} | "
-            f"{_pct(row['ctr'])} |"
-        )
-    return lines
-
-
 def render_triage_report(
     metrics: dict[str, Any],
     *,
@@ -840,7 +837,11 @@ def render_triage_report(
             "",
         ]
     )
-    lines.extend(_render_keep_table(metrics["by_rank"], key_label="rang"))
+    lines.extend(
+        _render_table(
+            metrics["by_rank"], key_label="rang", columns=TRIAGE_TABLE_COLUMNS
+        )
+    )
 
     lines.extend(
         [
@@ -853,10 +854,20 @@ def render_triage_report(
             "",
         ]
     )
-    lines.extend(_render_keep_table(metrics["by_followed_source"], key_label="source"))
+    lines.extend(
+        _render_table(
+            metrics["by_followed_source"],
+            key_label="source",
+            columns=TRIAGE_TABLE_COLUMNS,
+        )
+    )
 
     lines.extend(["", "## Par thème", ""])
-    lines.extend(_render_keep_table(metrics["by_theme"], key_label="thème"))
+    lines.extend(
+        _render_table(
+            metrics["by_theme"], key_label="thème", columns=TRIAGE_TABLE_COLUMNS
+        )
+    )
 
     lines.extend(
         [
@@ -868,7 +879,13 @@ def render_triage_report(
             "",
         ]
     )
-    lines.extend(_render_keep_table(metrics["by_decided_via"], key_label="modalité"))
+    lines.extend(
+        _render_table(
+            metrics["by_decided_via"],
+            key_label="modalité",
+            columns=TRIAGE_TABLE_COLUMNS,
+        )
+    )
 
     lines.extend(
         [
@@ -882,12 +899,20 @@ def render_triage_report(
             "",
         ]
     )
-    lines.extend(_render_keep_table(metrics["by_score_band"], key_label="bande"))
+    lines.extend(
+        _render_table(
+            metrics["by_score_band"], key_label="bande", columns=TRIAGE_TABLE_COLUMNS
+        )
+    )
 
     for pillar in PILLARS:
         lines.extend(["", f"### Pilier {pillar}", ""])
         lines.extend(
-            _render_keep_table(metrics["by_pillar_band"][pillar], key_label="bande")
+            _render_table(
+                metrics["by_pillar_band"][pillar],
+                key_label="bande",
+                columns=TRIAGE_TABLE_COLUMNS,
+            )
         )
 
     return "\n".join(lines).rstrip() + "\n"

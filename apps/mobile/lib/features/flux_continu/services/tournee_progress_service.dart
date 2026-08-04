@@ -57,6 +57,19 @@ class TourneeProgressService {
     return shifted.toIso8601String().substring(0, 10);
   }
 
+  /// Jette les clés datées de [prefix] autres que [keep]. Motif partagé par
+  /// tous les compteurs à suffixe jour de l'app (état de tri, nudges d'aperçu) :
+  /// sans purge, une clé par jour s'accumule dans `SharedPreferences` à vie.
+  static Future<void> purgeDatedPrefsKeys(
+    SharedPreferences prefs, {
+    required String prefix,
+    required String keep,
+  }) async {
+    final stale =
+        prefs.getKeys().where((k) => k.startsWith(prefix) && k != keep).toList();
+    await Future.wait(stale.map(prefs.remove));
+  }
+
   static String closingPrefsKey(DateTime day) =>
       '$kClosingPrefsKeyPrefix${dayKey(day)}';
 
@@ -88,43 +101,13 @@ class TourneeProgressService {
     }
   }
 
+  /// Clé historique « rituel matinal vu aujourd'hui ». Plus personne ne l'écrit
+  /// ni ne la lit depuis que la « Lettre du jour » a cessé de gater L'Essentiel
+  /// (décision PO 02/08/2026) ; elle survit uniquement pour que
+  /// [purgeOldPrefsKeys] nettoie les clés restées sur les appareils déjà
+  /// installés. À supprimer une fois le parc renouvelé.
   static String morningRitualPrefsKey(DateTime day) =>
       '$kMorningRitualPrefsKeyPrefix${dayKey(day)}';
-
-  /// Lecture **synchrone** (sans await) de l'état « rituel matinal vu
-  /// aujourd'hui ». Utilisée par la redirection GoRouter (`postAuthHomePath`)
-  /// pour décider d'envoyer ou non vers `/edition` sans flicker. Renvoie
-  /// `false` tant que l'instance prefs n'est pas injectée (cf.
-  /// [isClosingDismissedTodaySync]).
-  bool isMorningRitualShownTodaySync({DateTime? now}) {
-    final prefs = _prefsOverride;
-    if (prefs == null) return false;
-    return prefs.getBool(morningRitualPrefsKey(now ?? DateTime.now())) ?? false;
-  }
-
-  Future<void> setMorningRitualShownToday({DateTime? now}) async {
-    try {
-      final prefs = await _prefs();
-      await prefs.setBool(morningRitualPrefsKey(now ?? DateTime.now()), true);
-    } catch (e) {
-      debugPrint('TourneeProgress: setMorningRitualShownToday failed: $e');
-    }
-  }
-
-  /// QA : oublie **toutes** les clés « rituel matinal vu » (jour courant inclus)
-  /// pour rejouer le rituel au prochain cold-open. Cf. bloc QA `profile_screen`.
-  Future<void> resetMorningRitualShown() async {
-    try {
-      final prefs = await _prefs();
-      final keys = prefs
-          .getKeys()
-          .where((k) => k.startsWith(kMorningRitualPrefsKeyPrefix))
-          .toList();
-      await Future.wait(keys.map(prefs.remove));
-    } catch (e) {
-      debugPrint('TourneeProgress: resetMorningRitualShown failed: $e');
-    }
-  }
 
   bool isEssentielViewedTodaySync({DateTime? now}) {
     final prefs = _prefsOverride;
@@ -154,18 +137,16 @@ class TourneeProgressService {
       final prefs = await _prefs();
       final today = now ?? DateTime.now();
       final closingToday = closingPrefsKey(today);
-      final morningToday = morningRitualPrefsKey(today);
       final essentielViewedToday = essentielViewedPrefsKey(today);
-      // Purge stale closing-dismissed/morning-ritual/essentiel-viewed keys
-      // (previous days) **and** any leftover `flux_continu_folded_*` blobs
-      // from before the fold mechanic was removed (2026-06), so they don't
-      // linger in SharedPreferences forever.
+      // Purge stale closing-dismissed/essentiel-viewed keys (previous days),
+      // **all** `morning_ritual_shown_*` keys (today included: nothing reads or
+      // writes them since the Lettre stopped gating L'Essentiel), **and** any
+      // leftover `flux_continu_folded_*` blobs from before the fold mechanic was
+      // removed (2026-06), so they don't linger in SharedPreferences forever.
       final stale = prefs.getKeys().where((k) {
         if (k.startsWith('flux_continu_folded_')) return true;
+        if (k.startsWith(kMorningRitualPrefsKeyPrefix)) return true;
         if (k.startsWith(kClosingPrefsKeyPrefix) && k != closingToday) {
-          return true;
-        }
-        if (k.startsWith(kMorningRitualPrefsKeyPrefix) && k != morningToday) {
           return true;
         }
         if (k.startsWith(kEssentielViewedPrefsKeyPrefix) &&

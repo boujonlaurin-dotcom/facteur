@@ -155,23 +155,12 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
       key: tourEssentielHeroKey,
       child: Container(
-      margin: const EdgeInsets.fromLTRB(
-        FacteurSpacing.space3,
-        FacteurSpacing.space2,
-        FacteurSpacing.space3,
-        FacteurSpacing.space4,
-      ),
-      // Chrome partagé avec les cartes-jour de la rétro hebdo (theme.dart).
+      // Marge/padding/chrome partagés avec `_HeroSkeleton` (theme.dart) : c'est
+      // ce qui garantit qu'aucun pixel ne bouge à l'hydratation.
+      margin: kEssentielCardMargin,
       decoration: facteurSurfaceCardDecoration(colors),
       child: Padding(
-        // Compaction « cartes ≤ écran » : top resserré space4→space3 pour
-        // gagner ~4px sans toucher la pastille date/météo (choix PO).
-        padding: const EdgeInsets.fromLTRB(
-          FacteurSpacing.space4,
-          FacteurSpacing.space3,
-          FacteurSpacing.space4,
-          FacteurSpacing.space2,
-        ),
+        padding: kEssentielCardPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

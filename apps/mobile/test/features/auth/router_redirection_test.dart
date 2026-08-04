@@ -235,10 +235,9 @@ void main() {
       'Story 9.8: L\'Essentiel déjà parcouru ne renvoie plus vers Flâner',
       (WidgetTester tester) async {
     _useTallSurface(tester);
-    // Rituel vu (pas de /edition) + Essentiel déjà parcouru aujourd'hui :
-    // avant la story 9.8, postAuthHomePath renvoyait vers /flaner.
+    // Essentiel déjà parcouru aujourd'hui : avant la story 9.8, l'atterrissage
+    // post-auth renvoyait alors vers /flaner.
     SharedPreferences.setMockInitialValues(<String, Object>{
-      TourneeProgressService.morningRitualPrefsKey(DateTime.now()): true,
       TourneeProgressService.essentielViewedPrefsKey(DateTime.now()): true,
     });
     final prefs = await SharedPreferences.getInstance();

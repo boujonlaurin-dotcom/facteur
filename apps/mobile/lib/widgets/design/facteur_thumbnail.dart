@@ -21,6 +21,14 @@ class FacteurThumbnail extends StatefulWidget {
   /// Public accessor for failed image URLs cached during this session.
   static Set<String> get failedUrls => _FacteurThumbnailState._failedUrls;
 
+  /// Déclare une URL comme morte pour la session, depuis un rendu d'image qui
+  /// n'est pas un [FacteurThumbnail] (la carte de tri, par exemple, réserve un
+  /// slot de hauteur fixe et ne peut donc pas se replier comme lui). Passe par
+  /// une méthode plutôt que par la mutation directe du `Set` exposé, pour que
+  /// le cache garde un propriétaire et une politique d'éviction unique.
+  static void markFailed(String url) =>
+      _FacteurThumbnailState._failedUrls.add(url);
+
   const FacteurThumbnail({
     super.key,
     required this.imageUrl,

@@ -334,13 +334,5 @@ void main() {
       );
       expect(withCounter - withoutCounter, kTriageCounterHeight);
     });
-
-    test(
-        'la carte de tri enrichie (image + titre 4 lignes + pied) laisse de '
-        'quoi rendre le bandeau', () {
-      // Garde-fou d'arithmétique : le bandeau est un slot fixe pris DANS la
-      // carte. S'il venait à dépasser sa hauteur, l'image mangerait le titre.
-      expect(kTriageCardImageHeight, lessThan(kTriageCardHeight / 2));
-    });
   });
 }

@@ -62,7 +62,7 @@ import '../providers/tournee_order_prefs_provider.dart'
     show isTourneeReorderableKey, tourneeOrderPrefsProvider;
 import '../providers/tournee_reorder_persistence.dart'
     show persistTourneeEssentielReorder, reorderTourneeTabKeys;
-import '../services/auto_grow_nudge_scheduler.dart';
+import '../services/preview_nudge_scheduler.dart';
 import '../services/tournee_progress_service.dart'
     show TourneeProgressService;
 import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
@@ -479,7 +479,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   // Nudge auto-grow « découvre l'aperçu au long-press » : un pulse discret sur
   // une carte visible + non lue, quelques fois par jour, tant que l'utilisateur
-  // n'a pas fait un vrai long-press (cf. auto_grow_nudge_scheduler.dart).
+  // n'a pas fait un vrai long-press (cf. preview_nudge_scheduler.dart).
   Timer? _autoGrowTimer;
   int _autoGrowNonce = 0;
   final math.Random _autoGrowRng = math.Random();
@@ -2522,22 +2522,12 @@ class _HeroSkeleton extends StatelessWidget {
         );
 
     return Container(
-      // Marges/paddings identiques à `EssentielHiFiCard` → alignement pixel-exact
-      // (aucun décalage horizontal à l'hydratation).
-      margin: const EdgeInsets.fromLTRB(
-        FacteurSpacing.space3,
-        FacteurSpacing.space2,
-        FacteurSpacing.space3,
-        FacteurSpacing.space4,
-      ),
+      // Mêmes constantes que `EssentielHiFiCard` (theme.dart) → alignement
+      // pixel-exact, aucun décalage horizontal à l'hydratation.
+      margin: kEssentielCardMargin,
       decoration: facteurSurfaceCardDecoration(colors),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          FacteurSpacing.space4,
-          FacteurSpacing.space3,
-          FacteurSpacing.space4,
-          FacteurSpacing.space2,
-        ),
+        padding: kEssentielCardPadding,
         child: Shimmer.fromColors(
           baseColor: base,
           highlightColor: highlight,

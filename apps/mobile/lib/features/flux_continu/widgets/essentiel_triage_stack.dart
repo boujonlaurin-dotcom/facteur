@@ -13,7 +13,7 @@ import '../../detail/content_preview_mapper.dart';
 import '../../digest/widgets/divergence_inline_badge.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/essentiel_triage_provider.dart';
-import '../services/triage_preview_nudge_scheduler.dart';
+import '../services/preview_nudge_scheduler.dart';
 import '../utils/section_fit.dart';
 import 'auto_grow_pulse.dart';
 import 'coverage_chip.dart';
@@ -181,10 +181,17 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
                   Positioned.fill(
                     child: Transform.scale(
                       scale: 0.96,
+                      // `RepaintBoundary` **sous** l'`Opacity` : avec un enfant
+                      // déjà composité, `RenderOpacity` pousse un calque au
+                      // compositeur au lieu de passer par `saveLayer` (un
+                      // tampon hors écran réalloué à chaque peinture, donc à
+                      // chaque frame de swipe).
                       child: Opacity(
                         opacity: 0.5,
                         child: IgnorePointer(
-                          child: _TriageArticleCard(article: next),
+                          child: RepaintBoundary(
+                            child: _TriageArticleCard(article: next),
+                          ),
                         ),
                       ),
                     ),
@@ -682,7 +689,7 @@ class _TriageCardBanner extends StatelessWidget {
                   .round(),
               placeholder: (_) => flat,
               errorWidget: (_) {
-                FacteurThumbnail.failedUrls.add(url);
+                FacteurThumbnail.markFailed(url);
                 return flat;
               },
             ),
