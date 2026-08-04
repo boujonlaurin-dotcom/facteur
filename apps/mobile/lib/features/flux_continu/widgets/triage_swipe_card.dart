@@ -21,7 +21,7 @@ import '../../../config/theme.dart';
 class TriageSwipeCard extends StatefulWidget {
   final Widget child;
 
-  /// Swipe droite — « Je lis ». **Garde** l'article ; ce n'est pas une lecture
+  /// Swipe droite — « Je garde ». **Garde** l'article ; ce n'est pas une lecture
   /// (la lecture vient après, depuis la liste des gardés).
   final VoidCallback onKeep;
 
@@ -205,7 +205,7 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
                       top: 16,
                       left: 16,
                       child: _Stamp(
-                        label: 'Je lis',
+                        label: 'Je garde',
                         color: colors.primary,
                         opacity: keepStamp,
                         angle: -0.2,

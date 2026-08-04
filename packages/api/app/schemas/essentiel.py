@@ -61,6 +61,11 @@ class EssentielArticle(BaseModel):
     # Tronqué à `PERSPECTIVE_SOURCES_CAP` à l'émission : la carte n'affiche que
     # 3 avatars et chaque entrée porte un logo qui déclenche une requête image.
     perspective_sources: list[dict] = Field(default_factory=list)
+    # Polarisation du sujet d'origine ("low" | "medium" | "high"), reprise telle
+    # quelle du `DigestTopic` — pilote la pastille de divergence de la carte.
+    # `None` quand le topic ne la porte pas (article hors sujet transversal) :
+    # le mobile reste alors silencieux.
+    divergence_level: str | None = None
     rank: int = Field(..., ge=1, le=5, description="Position dans l'essentiel (1..5)")
     is_read: bool = False
     is_saved: bool = False

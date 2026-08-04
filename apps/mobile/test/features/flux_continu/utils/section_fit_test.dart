@@ -304,7 +304,8 @@ void main() {
             kTriageProgressHeight +
             kTriageCardHeight +
             kTriageActionBarHeight +
-            (n - 1) * kTriageKeptSlotHeight;
+            (n - 1) * kTriageKeptSlotHeight +
+            kTriageCounterHeight;
         expect(reserved(n), greaterThanOrEqualTo(finalState));
         expect(reserved(n), greaterThanOrEqualTo(peak));
       }
@@ -312,6 +313,34 @@ void main() {
 
     test('traite un slate vide comme un slate de 1', () {
       expect(reserved(0), reserved(1));
+    });
+
+    test('réserve la place du compteur passé sous la liste des gardés', () {
+      // Le compteur a quitté la barre de progression pour fermer la liste des
+      // gardés : s'il n'était pas ajouté au pic, la dernière ligne serait
+      // rognée par le `SizedBox` de hauteur figée.
+      final withCounter = triageReservedHeight(
+        slateSize: 5,
+        chromeHeight: 0,
+        leadHeight: kHeroLeadHeight,
+        mediumHeight: kHeroMediumHeight,
+      );
+      final withoutCounter = triageReservedHeight(
+        slateSize: 5,
+        chromeHeight: 0,
+        leadHeight: kHeroLeadHeight,
+        mediumHeight: kHeroMediumHeight,
+        counterHeight: 0,
+      );
+      expect(withCounter - withoutCounter, kTriageCounterHeight);
+    });
+
+    test(
+        'la carte de tri enrichie (image + titre 4 lignes + pied) laisse de '
+        'quoi rendre le bandeau', () {
+      // Garde-fou d'arithmétique : le bandeau est un slot fixe pris DANS la
+      // carte. S'il venait à dépasser sa hauteur, l'image mangerait le titre.
+      expect(kTriageCardImageHeight, lessThan(kTriageCardHeight / 2));
     });
   });
 }

@@ -28,6 +28,7 @@ import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/orchestration/first_impression_orchestrator.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
@@ -72,6 +73,7 @@ import '../utils/section_fit.dart'
         kMinPlausibleUsableHeight,
         kTriageActionBarHeight,
         kTriageCardHeight,
+        kTriageCounterHeight,
         kTriageProgressHeight,
         triageReservedHeight;
 import '../utils/section_snap.dart';
@@ -468,6 +470,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   final DigestSessionTracker _sessionTracker = DigestSessionTracker();
   int _lastKnownStreak = 0;
 
+  /// Service analytics capturé au montage : `dispose()` émet la session digest,
+  /// mais en fin de teardown `ref` n'est plus lisible (« Cannot use ref after
+  /// the widget was disposed »). Lire ici, au montage, où `ref` est valide,
+  /// évite que `_emitDigestSession` ne jette et n'interrompe le reste du
+  /// démontage (annulation des timers → « Timer still pending »).
+  late final AnalyticsService _analytics;
+
   // Nudge auto-grow « découvre l'aperçu au long-press » : un pulse discret sur
   // une carte visible + non lue, quelques fois par jour, tant que l'utilisateur
   // n'a pas fait un vrai long-press (cf. auto_grow_nudge_scheduler.dart).
@@ -490,6 +499,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   @override
   void initState() {
     super.initState();
+    // Capture le service analytics tant que `ref` est valide (cf. _analytics).
+    _analytics = ref.read(analyticsServiceProvider);
     // Observe le cycle de vie pour ré-actualiser L'Essentiel au retour au
     // premier plan (story 9.8, cf. [didChangeAppLifecycleState]).
     WidgetsBinding.instance.addObserver(this);
@@ -999,7 +1010,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // Les compteurs par-article ne sont pas instrumentés ici (hors périmètre du
     // garde-fou) : seuls comptent la durée et la complétion de clôture.
     unawaited(
-      ref.read(analyticsServiceProvider).trackDigestSession(
+      _analytics.trackDigestSession(
             digestDate: DateTime.now().toIso8601String().split('T').first,
             articlesRead: 0,
             articlesSaved: 0,
@@ -2593,6 +2604,15 @@ class _HeroSkeleton extends StatelessWidget {
                             bar(width: 52, height: 52, radius: FacteurRadius.pill),
                           ],
                         ),
+                      ),
+                    ),
+                    // Compteur « N sur M triés », qui ferme la liste des gardés
+                    // — vide au boot, donc collé sous la barre d'actions.
+                    SizedBox(
+                      height: kTriageCounterHeight,
+                      child: Align(
+                        alignment: Alignment.bottomLeft,
+                        child: bar(width: 110, height: 11),
                       ),
                     ),
                   ],

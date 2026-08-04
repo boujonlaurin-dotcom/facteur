@@ -2,7 +2,11 @@
   "unreleased": [
     {
       "tag": "Ton Essentiel",
-      "summary": "Ta carte du jour devient une pile à trier : un article à la fois, glisse à droite pour le garder, à gauche pour passer, ou mets-le de côté pour plus tard. Ta liste de lecture se construit sous ton doigt, sans quitter le fil. Tes choix ne changent rien à ce que l'appli te propose pour l'instant : ils servent d'abord à mesurer si le classement des articles tape juste."
+      "summary": "Ta carte du jour devient une pile à trier : un article à la fois, glisse à droite pour le garder, à gauche pour passer, ou mets-le de côté pour plus tard. Chaque article se présente avec son image, le nombre de rédactions qui traitent le sujet et le niveau de divergence entre elles, de quoi choisir sans ouvrir. Un appui long ouvre l'aperçu. Ta liste de lecture se construit sous ton doigt, sans quitter le fil. Une fois le tri fini, la carte n'affiche que ce que tu as gardé, pas ce que tu as écarté. Tes choix ne changent rien à ce que l'appli te propose pour l'instant : ils servent d'abord à mesurer si le classement des articles tape juste."
+    },
+    {
+      "tag": "Ton Essentiel",
+      "summary": "Tu arrives directement sur ton Essentiel à l'ouverture : la Lettre du jour n'est plus un passage obligé chaque matin. Tu la découvres toujours une fois, à la fin de ton inscription, et tu peux rouvrir les éditions passées quand tu veux depuis le fil."
     },
     {
       "tag": "Tes cartes",

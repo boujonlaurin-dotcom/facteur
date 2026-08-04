@@ -172,6 +172,10 @@ class EssentielArticle {
 
   /// Logos des rédactions qui couvrent le sujet, tronqués à 3 par le backend.
   final List<SourceMini> perspectiveSources;
+
+  /// Polarisation du sujet d'origine (`low` | `medium` | `high`) — alimente
+  /// [DivergenceInlineBadge]. `null` = signal absent : la pastille se tait.
+  final String? divergenceLevel;
   final int rank;
   final bool isRead;
   final bool isSaved;
@@ -208,6 +212,7 @@ class EssentielArticle {
     this.perspectiveCount = 0,
     this.sourceCount = 0,
     this.perspectiveSources = const [],
+    this.divergenceLevel,
     this.isRead = false,
     this.isSaved = false,
     this.isLiked = false,
@@ -261,6 +266,7 @@ class EssentielArticle {
         for (final raw in (json['perspective_sources'] as List?) ?? const [])
           if (raw is Map) SourceMini.fromJson(raw.cast<String, dynamic>()),
       ],
+      divergenceLevel: json['divergence_level'] as String?,
       rank: (json['rank'] as num?)?.toInt() ?? 0,
       isRead: (json['is_read'] as bool?) ?? false,
       isSaved: (json['is_saved'] as bool?) ?? false,
@@ -289,6 +295,7 @@ class EssentielArticle {
     'perspective_count': perspectiveCount,
     'source_count': sourceCount,
     'perspective_sources': [for (final s in perspectiveSources) s.toJson()],
+    'divergence_level': divergenceLevel,
     'rank': rank,
     'is_read': isRead,
     'is_saved': isSaved,

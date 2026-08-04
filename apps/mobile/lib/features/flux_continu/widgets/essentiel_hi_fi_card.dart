@@ -98,11 +98,6 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
           completedThisSession: completedIds.contains(a.contentId),
         );
 
-    final lead = articles.isNotEmpty ? articles.first : null;
-    final remaining = articles.length > 1
-        ? articles.sublist(1, articles.length > 5 ? 5 : articles.length)
-        : const <EssentielArticle>[];
-
     // EPIC « Lettre du jour » — déclencheur « rewind » dans l'en-tête. Toujours
     // affiché (today ET passé) ; ouvre la timeline en overlay. La carte étant
     // l'unique héros Essentiel rendu dans les deux vues (live + passée), le
@@ -134,6 +129,27 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     if (canTriage && !triage.hasStarted) _scheduleStart();
     final showTriage = canTriage && triage.isActive;
     final triageDone = canTriage && triage.done;
+
+    // Liste rendue en mode passif (hors pile de tri). Après un tri terminé, la
+    // carte ne montre **que les articles gardés** (« Je garde » + « Plus tard »),
+    // dans l'ordre du slate : les rejetés ne réapparaissent pas (décision PO,
+    // renverse la tension documentée en 33.1). En dehors du tri terminé, c'est
+    // le slate du jour tel quel.
+    final List<EssentielArticle> passiveArticles;
+    if (triageDone) {
+      final byId = {for (final a in articles) a.contentId: a};
+      passiveArticles = [
+        for (final id in triage.keptContentIds)
+          if (byId[id] != null) byId[id]!,
+      ];
+    } else {
+      passiveArticles = articles;
+    }
+    final lead = passiveArticles.isNotEmpty ? passiveArticles.first : null;
+    final remaining = passiveArticles.length > 1
+        ? passiveArticles.sublist(
+            1, passiveArticles.length > 5 ? 5 : passiveArticles.length)
+        : const <EssentielArticle>[];
 
     return KeyedSubtree(
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
@@ -218,7 +234,11 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
                   onTap: () => onTapArticle(a),
                 ),
               ],
-              // Tri terminé : la carte reprend sa liste habituelle, avec de quoi
+              // Tri terminé sans rien garder (tout passé) : état vide sobre
+              // plutôt qu'une carte nue. Le slate n'est pas perdu, il est figé
+              // pour la journée et « Trier à nouveau » le rejoue.
+              if (triageDone && lead == null) const _NothingKeptNotice(),
+              // Tri terminé : la carte reprend sa liste des gardés, avec de quoi
               // revenir sur ses choix. L'upsert backend est idempotent sur
               // `(user, article, jour)`, donc re-trier écrase sans dupliquer.
               if (triageDone) const _RetriggerTriageButton(),
@@ -253,6 +273,25 @@ class _RetriggerTriageButton extends ConsumerWidget {
           'Trier à nouveau',
           style: TextStyle(fontSize: 13, color: colors.textSecondary),
         ),
+      ),
+    );
+  }
+}
+
+/// Tri terminé alors que rien n'a été gardé (tout passé). Message sobre à la
+/// place d'une carte vide ; « Trier à nouveau » (rendu juste en dessous)
+/// permet de revenir sur ses choix.
+class _NothingKeptNotice extends StatelessWidget {
+  const _NothingKeptNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<FacteurColors>()!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        'Rien gardé aujourd\'hui.',
+        style: FacteurTypography.bodySmall(colors.textSecondary),
       ),
     );
   }

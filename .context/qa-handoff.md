@@ -6,7 +6,7 @@
 ## Feature développée
 
 La carte « Ton Essentiel » en tête du Flux continu n'est plus une liste passive :
-elle devient une **pile à trier**. Un article à la fois, swipe droite « Je lis »,
+elle devient une **pile à trier**. Un article à la fois, swipe droite « Je garde »,
 swipe gauche « Pas pour moi », bouton signet « Plus tard ». La liste des gardés se
 construit sous la pile, dans le feed, sans écran supplémentaire.
 
@@ -32,15 +32,16 @@ de la carte.
 **Parcours** :
 1. Ouvrir l'app sur le Flux continu, édition du jour.
 2. La carte affiche la pile : progression « 0 sur N triés », un article, la barre
-   d'actions (✕ · signet · « Je lis »).
-3. Swiper à droite → tampon « JE LIS », la carte part, l'article apparaît dans la
+   d'actions (✕ · signet · « Je garde » avec coche pleine blanche).
+3. Swiper à droite → tampon « JE GARDE », la carte part, l'article apparaît dans la
    liste sous la pile, la progression avance.
 4. Swiper à gauche → tampon « PAS POUR MOI », l'article ne rejoint pas la liste.
 5. Trier tous les articles.
 
 **Résultat attendu** : au dernier geste, la carte reprend sa liste habituelle
-(lead + médiums, **tous** les articles, rejetés compris) et affiche « Trier à
-nouveau » en pied. Aucun 4xx/5xx, un seul `POST /api/essentiel/triage` (batché).
+(lead + médiums) mais **uniquement avec les articles gardés** — les rejetés ne
+réapparaissent pas — et affiche « Trier à nouveau » en pied. Aucun 4xx/5xx, un
+seul `POST /api/essentiel/triage` (batché).
 
 ### Scénario 2 — Le feed ne saute pas
 **Parcours** :
@@ -53,10 +54,10 @@ Vérifier aussi que les ancres de snap du scroll restent correctes.
 
 ### Scénario 3 — Mode boutons seuls (accessibilité)
 **Parcours** :
-1. Sans jamais swiper, utiliser uniquement ✕ / signet / « Je lis ».
+1. Sans jamais swiper, utiliser uniquement ✕ / signet / « Je garde ».
 
 **Résultat attendu** : même mouvement de sortie que le swipe. Les 3 boutons
-portent un label sémantique (`Pas pour moi`, `Plus tard`, `Je lis`).
+portent un label sémantique (`Pas pour moi`, `Plus tard`, `Je garde`).
 
 ### Scénario 4 — Tri partiel puis kill/relaunch
 **Parcours** :
@@ -95,6 +96,50 @@ slate est figé pour la journée). Le backend écrase par upsert, sans dupliquer
 **Résultat attendu** : le tri **n'attend jamais le réseau** (aucun spinner,
 aucun blocage). Les décisions repartent au flush suivant.
 
+### Scénario 9 — Fidélité maquette de la carte de tri (passe A2)
+**Parcours** :
+1. Ouvrir l'édition du jour, observer la carte du dessus.
+
+**Résultat attendu** :
+- **bandeau image** en tête de carte ;
+- source, puis titre sur **4 lignes max** ;
+- **pas de chapô** ;
+- pied : pastille de polarisation (si le sujet en porte une) puis « N sources »
+  (si ≥ 2) ;
+- barre de progression : le **segment en cours** est plus épais que les autres,
+  et tous gardent la **même largeur** ;
+- le compteur « 1 sur 5 triés » se lit **sous** les articles gardés, pas en tête
+  de carte ;
+- bouton plein « Je garde » avec une coche pleine blanche avant le libellé.
+
+### Scénario 10 — Article sans image : pas de saut de hauteur
+**Parcours** :
+1. Trier jusqu'à tomber sur un article sans image (ou avec une image cassée).
+
+**Résultat attendu** : le bandeau **garde sa place** (aplat teinté), la carte
+mesure exactement la même hauteur que les autres. Le repère visuel sous la carte
+ne bouge pas d'un pixel.
+
+### Scénario 11 — Aperçu au long-press × swipe (arène de gestes)
+**Parcours** :
+1. Appui maintenu sur la carte du dessus, sans bouger le doigt.
+2. Relâcher, puis faire un swipe horizontal normal.
+
+**Résultat attendu** : (1) l'aperçu flottant s'ouvre et se ferme au relâchement ;
+(2) le swipe reste pleinement fonctionnel. Un drag horizontal **ne doit jamais**
+ouvrir l'aperçu sous le doigt. Même geste disponible sur les lignes « gardés ».
+
+### Scénario 12 — Nudge « aperçu » sur la 2ᵉ carte
+**Parcours** :
+1. Storage vidé, trier le 1ᵉʳ article : rien ne doit se passer de spécial.
+2. Sur la **2ᵉ** carte : la carte grossit brièvement et un mini libellé
+   « Appuie longuement pour un aperçu. » apparaît.
+3. Attendre ~2,5 s, puis continuer le tri.
+4. Faire un vrai long-press, recharger, refaire un tri.
+
+**Résultat attendu** : le libellé disparaît seul ; il ne revient **pas** plus
+tard dans la journée ; après un long-press réel il ne revient **plus jamais**.
+
 ## Critères d'acceptation
 
 - [ ] La pile remplace la liste passive sur l'édition du jour, pas ailleurs
@@ -104,6 +149,10 @@ aucun blocage). Les décisions repartent au flush suivant.
 - [ ] « Trier à nouveau » réinitialise sans rebattre l'ordre
 - [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus
 - [ ] Copy : aucun em-dash, ton sobre (pas de facteur personnifié)
+- [ ] Carte de tri : image, couverture, polarisation, titre 4 lignes, pas de chapô
+- [ ] Un article sans image ne change pas la hauteur de la carte
+- [ ] Long-press → aperçu, sans jamais bloquer le swipe
+- [ ] Nudge « aperçu » : 1×/jour max, éteint pour de bon après un long-press réel
 
 ## Garde-fous à vérifier côté données (le cœur de la V0)
 

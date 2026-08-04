@@ -20,7 +20,6 @@ import '../features/flux_continu/screens/morning_ritual_screen.dart';
 import '../features/flux_continu/screens/source_section_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
-import '../features/flux_continu/services/tournee_progress_service.dart';
 import '../features/auth/screens/email_confirmation_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
@@ -246,25 +245,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       final authState = ref.read(authStateProvider);
-      String postAuthHomePath({bool allowMorningRitual = true}) {
-        final tournee = ref.read(tourneeProgressServiceProvider);
-        // Rituel matinal (Story 28.1) : au premier open du jour, on présente
-        // l'écran enveloppe `/edition` AVANT le feed. Lecture **synchrone**
-        // (pas d'await → pas de flicker, comme la closing card) ; la résolution
-        // « édition prête » est faite dans l'écran, qui file au feed sans
-        // marquer « vu » si rien n'est prêt (décision PO #4). Exclu juste après
-        // l'onboarding (`allowMorningRitual: false`) : le nouvel utilisateur
-        // file droit à son feed, le rituel l'accueillera au prochain cold-open.
-        if (allowMorningRitual && !tournee.isMorningRitualShownTodaySync()) {
-          return RoutePaths.edition;
-        }
-        // Story 9.8 « L'Essentiel dynamique au retour » : on inverse le modèle
-        // de fermeture. L'utilisateur revient **toujours** sur L'Essentiel — qui
-        // devient une surface vivante se rafraîchissant à chaque retour (cf.
-        // FluxContinuScreen, cooldown + gate « en haut du feed ») — au lieu
-        // d'être renvoyé vers Flâner une fois parcouru. Flâner reste un onglet
-        // manuel. Le flag `hasBrowsedEssentielTodaySync` est **conservé** (widget,
-        // closing card) : seul l'enforcement du redirect est retiré ici.
+      String postAuthHomePath() {
+        // La « Lettre du jour » ne s'interpose plus au chargement quotidien
+        // (décision PO 02/08/2026) : le cold-open atterrit toujours directement
+        // sur L'Essentiel. La lettre reste jouée **une fois** en fin
+        // d'onboarding (cf. conclusion_animation_screen → /edition?from=onboarding)
+        // et le navigateur d'éditions passées (rewind) subsiste dans le feed.
+        //
+        // Story 9.8 « L'Essentiel dynamique au retour » : l'utilisateur revient
+        // **toujours** sur L'Essentiel — surface vivante se rafraîchissant à
+        // chaque retour (cf. FluxContinuScreen, cooldown + gate « en haut du
+        // feed ») — au lieu d'être renvoyé vers Flâner une fois parcouru.
         return RoutePaths.fluxContinu;
       }
 
@@ -369,29 +360,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       // 5. Onboarding fini mais on retombe sur /onboarding (ex: back) → renvoi au
-      // feed sans rejouer le rituel (allowMorningRitual: false). La sortie
-      // d'onboarding « normale » passe, elle, délibérément par /edition
-      // (cf. conclusion_animation_screen → /edition?from=onboarding).
+      // feed. La sortie d'onboarding « normale » passe, elle, délibérément par
+      // /edition (cf. conclusion_animation_screen → /edition?from=onboarding),
+      // seul point où la lettre est encore jouée.
       if (!authState.needsOnboarding && isOnOnboarding) {
-        return postAuthHomePath(allowMorningRitual: false);
+        return postAuthHomePath();
       }
 
-      // 6. Gate Rituel : L'Essentiel n'est accessible qu'APRÈS la lettre du
-      // jour. Cold boot, tap onglet (main_shell fait `context.go`), push,
-      // reprise d'app : tout ce qui vise `/flux-continu` passe par `/edition`
-      // tant que la lettre du jour n'a pas été vue. Match EXACT → les
-      // sous-routes `/flux-continu/content/:id` (tap article widget)
-      // s'échappent et ouvrent l'article directement ; `/flaner` (Flâner) n'est
-      // jamais gated → exception widget préservée. Sûr ici : logged-in + email
-      // confirmé + `onboardingStatusKnown` déjà garantis, et le rituel se
-      // marque « vu » à sa révélation (pas de boucle).
-      if (matchedLocation == RoutePaths.fluxContinu &&
-          !authState.needsOnboarding &&
-          !ref
-              .read(tourneeProgressServiceProvider)
-              .isMorningRitualShownTodaySync()) {
-        return RoutePaths.edition;
-      }
+      // La « Lettre du jour » ne gate plus l'accès à L'Essentiel (décision PO
+      // 02/08/2026) : /flux-continu est atteint directement, aucun dé-routage
+      // vers /edition. La route /edition reste servie pour l'onboarding et le
+      // navigateur d'éditions passées (rewind), pas comme sas quotidien.
 
       return null;
     },
