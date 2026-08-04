@@ -51,7 +51,7 @@ ce lot, c'est un signal d'erreur de conception à réexaminer.
 |---|---|---|---|
 | PR-1 | Instrumentation d'impression | 3 | **livrée** |
 | PR-2 | `SCORING_OVERRIDES` + contexte de sweep | 1 (outillage) | **livrée** |
-| PR-3 | Personas, corpus gelé, harnais de sensibilité | 1 | à faire |
+| PR-3 | Personas, corpus gelé, harnais de sensibilité | 1 | **livrée** |
 | PR-4 | Ordre des blocs par score top-3 | 2 | à faire |
 | PR-5 | Shrinkage affinité source + `DIGEST_SPORT_PENALTY` | 4 (amorce) | à faire, gated sur PR-3 |
 | PR-6 | `evaluate_tournee_ctr.py` | 3 | à faire, ≈2 semaines après PR-1 |
@@ -297,11 +297,81 @@ Aucune migration Alembic (`ScoringWeights` n'expose que des attributs de classe)
 
 ---
 
+## PR-3 — Personas, corpus gelé, harnais de sensibilité
+
+Runbook complet :
+[`maintenance-scoring-tuning-harness.md`](./maintenance-scoring-tuning-harness.md).
+Trois scripts, deux fixtures, un test — **aucune constante modifiée, aucune
+migration, aucun changement de comportement en prod**.
+
+### Ce qui est posé
+
+| Fichier | Nature |
+|---|---|
+| `packages/api/scripts/build_persona_dataset.py` | nouveau — 8 personas (6 médoïdes + 2 extrêmes) depuis un dump MCP, k-medoids stdlib déterministe |
+| `packages/api/scripts/build_scoring_corpus.py` | nouveau — corpus 24 h append-only depuis `DATABASE_URL_RO` |
+| `packages/api/scripts/evaluate_scoring_personas.py` | nouveau — `--sensitivity` / `--invariants` / `--gold` / `--sweep` / `--compare` |
+| `packages/api/scripts/validate_personas.py` | **supprimé** (faux profils écrits dans une DB vivante) |
+| `packages/api/tests/fixtures/scoring_personas.json` | 8 personas anonymisés |
+| `packages/api/tests/fixtures/scoring_corpus_2026-08-03.json` | 200 articles, gelé |
+| `packages/api/tests/fixtures/scoring_gold_labels.json` | squelette vide + mode d'emploi |
+| `packages/api/tests/scripts/test_evaluate_scoring_personas.py` | 48 tests, ni DB ni réseau |
+| `packages/api/tests/scripts/test_build_persona_dataset.py` | 19 tests — déterminisme du clustering, anonymisation |
+
+### Faits mesurés qui corrigent le cadrage
+
+1. **Le rôle RO lit `contents`/`sources` mais est refusé sur toutes les tables
+   `user_*`.** Corpus → lecture directe ; personas → dump MCP (convention
+   `--raw` de `build_event_dataset.py`).
+2. **2 comptes au plafond `weight = 3,0`, pas 32** (`users_at_cap = 2` sur 130
+   comptes ayant des intérêts). Le persona vétéran reste utile comme régime de
+   saturation de `THEME_MATCH`, mais il ne représente que 2 comptes.
+3. **64 des 112 constantes balayables sont hors du moteur de piliers.** Le
+   rapport distingue explicitement *hors-périmètre* (jamais lue par
+   `compute_score`) d'*inerte* (lue, sans effet mesurable) — les confondre
+   ferait passer un cap d'arrangement de la Tournée pour un dial de scoring.
+4. **`DIGEST_SPORT_PENALTY` ne vit pas dans le moteur de piliers** : elle est
+   appliquée par `digest_selector` après combinaison. Le harnais la rejoue à la
+   demande (`--sport-penalty`), mais elle n'entrera jamais dans le classement de
+   sensibilité.
+5. **Le sport suivi est déjà enterré avant la pénalité digest.** Le meilleur
+   article sport d'une source suivie sort au rang **134** (`persona_01`) et
+   **50** (`persona_04`) *avant* les −80, et 187 / 172 après. La pénalité fait
+   son travail mais n'est pas la cause première : **PR-5 qui ne toucherait que
+   `DIGEST_SPORT_PENALTY` déplacerait peu de chose.** *(À reconfirmer sur le
+   corpus complet : le vivier sport est mince sur 200 articles.)*
+
+### Résultat de recette
+
+`--sweep ENTITY_AFFINITY_BASE=8,16,32,64` → **courbe plate**, churn 0,000 sur
+tout l'intervalle : le harnais **redécouvre l'inertie déjà établie** de
+l'affinité entités. C'était la condition d'acceptation.
+
+Première lecture : **20 constantes actives · 1 faible · 27 inertes · 64
+hors-périmètre**, dominées par `THEME_MATCH`, `recency_base` et `TOPIC_MATCH`.
+Les `MAX_*_RAW` remontent haut mais sont des dénominateurs de normalisation —
+architecture, pas dial.
+
+### Réponse à la question ouverte n°1
+
+**Non, `essentiel_service.py` ne passe pas par `PillarScoringEngine`.** Il
+réutilise les signaux du digest déjà scoré (docstring L7-14) et applique ses
+propres boosts. Conséquence : l'option « faire remonter un score pour les blocs
+éditoriaux », écartée en PR-4, aurait coûté un chemin de scoring entier — la
+décision d'écarter est confirmée.
+
+---
+
 ## Journal des constantes modifiées
 
 Une ligne par constante touchée par le lot : valeur avant/après, quel objectif a
-bougé, de combien, sur quel fichier corpus. Vide tant que PR-3 n'a pas livré le
-harnais — **aucune constante ne bouge sans mesure**.
+bougé, de combien, sur quel fichier corpus.
+
+**Toujours vide après PR-3, et c'est voulu** : PR-3 livre l'instrument, elle ne
+règle rien. La première ligne sera écrite par PR-5, contre
+`scoring_corpus_2026-08-03.json`, sur une constante de la liste *active* — et
+une seule par cycle, sans quoi un gold à 240 labels ne peut plus attribuer
+l'effet.
 
 | Date | Constante | Avant | Après | Objectif déplacé | Corpus |
 |---|---|---|---|---|---|
@@ -338,8 +408,10 @@ porte, c'est le prototype de la chose qu'on ship et qu'on n'utilise jamais.
 
 ## Points à vérifier avant d'attaquer les PRs suivantes
 
-1. `essentiel_service.py` passe-t-il par `PillarScoringEngine` ? (décide du coût
-   réel de l'option « faire remonter un score » écartée en PR-4 — non ouvert).
+1. ~~`essentiel_service.py` passe-t-il par `PillarScoringEngine` ?~~ **Tranché
+   en PR-3 : non** — il réutilise les signaux du digest déjà scoré avec ses
+   propres boosts. L'option écartée en PR-4 aurait coûté un chemin de scoring
+   entier.
 2. Le repli two-phase de `personalized_theme_mode` quand le pool de sources
    suivies est maigre : tombe-t-il sur du curated non suivi ? Si oui la
    comparabilité inter-familles varie *par bloc et par jour*

@@ -1,130 +1,95 @@
-# fix(curation): fold couverture (B-2) + arrêt de la fabrication d'intérêts (C-1)
+# feat(reco): personas, corpus gelé et harnais de sensibilité (PR-3, lot reco 2)
 
-Base `main`. **Une migration Alembic** (`cq01_subtopics_uniq_muted`).
-Backend-only (0 fichier mobile).
+Base `main`. **Aucune migration Alembic.** Backend-only (0 fichier mobile),
+**aucun changement de comportement en prod** : trois scripts, des fixtures, deux
+fichiers de tests et un runbook.
 
-## Contexte
+De quoi **mesurer** avant de toucher une constante de scoring. Sans ça, le
+« Journal des constantes modifiées » du lot reste vide et PR-5 est bloquée :
+*aucune constante ne bouge sans mesure*.
 
-Deuxième livrable du lot « qualité de la curation », après PR 1 (B-1
-métadonnées, #1047). La cible du lot est
-`score = w_imp · norm(importance) + w_perso · norm(perso)` (PR 4-5). Les deux
-termes sont aujourd'hui faux : `importance` compte de la redondance (B), `perso`
-est un signal plat et fabriqué (C). **Cette PR répare les deux termes avant que
-PR 4 ne les mélange.** Elle ne change volontairement **pas** le tri.
+Runbook : `docs/maintenance/maintenance-scoring-tuning-harness.md`.
+Suivi du lot : `docs/maintenance/maintenance-reco-optimisation-lot2.md`.
 
-Diagnostic complet : `docs/bugs/bug-curation-essentiel-personnalisation.md`.
+## Ce que ça pose
 
-## PR 2 — B-2 : ne compter que les rédactions qui portent un jugement
+| Fichier | Nature |
+|---|---|
+| `scripts/build_persona_dataset.py` | 8 personas (6 médoïdes + 2 extrêmes) dérivés de 62 comptes réels — k-medoids stdlib **déterministe** |
+| `scripts/build_scoring_corpus.py` | corpus 24 h **append-only** depuis `DATABASE_URL_RO` |
+| `scripts/evaluate_scoring_personas.py` | `--sensitivity` / `--invariants` / `--gold` / `--sweep` / `--compare` |
+| `scripts/validate_personas.py` | **supprimé** — écrivait de faux profils dans une DB vivante |
+| `tests/scripts/test_evaluate_scoring_personas.py` | 48 tests, ni DB ni réseau |
+| `tests/scripts/test_build_persona_dataset.py` | 19 tests — déterminisme, anonymisation |
 
-`importance_detector.py` : `_is_aggregator` → `_counts_toward_coverage`, appliqué
-aux **deux** collections (`source_ids` **et** `source_domains`).
+Le harnais rejoue le **vrai** `PillarScoringEngine.compute_score` ; un test
+d'identité casse si quelqu'un en recopie une variante.
 
-- **Critère** : `SourceType.REDDIT` **OU** (`is_curated` falsy **ET**
-  `reliability_score ∈ {low, mixed}`). Réglable sans déploiement :
-  `EDITORIAL_COVERAGE_FOLD_RELIABILITY` (défaut `low,mixed`),
-  `EDITORIAL_COVERAGE_FOLD_ENABLED` (kill switch, défaut `true`).
-- **`unknown` volontairement exclu** : « jamais évaluée » ≠ « peu fiable » ;
-  l'inclure folderait 39,5 % du corpus `politics` (déjà à 1,3 % du top-5).
+## Méthodo (elle commande l'ordre des modes)
 
-### Dry-run comparatif (prod, lecture seule, 24 h) — livrable bloquant
+8 personas × ~30 candidats ≈ **240 labels pour 113 constantes** : 2 labels par
+paramètre. Tuner au gold d'abord serait de l'overfit. D'où **sensibilité (0
+label) → invariants → gold en portail de non-régression**, jamais en fonction à
+maximiser.
 
-`scripts/dryrun_coverage_fold.py --hours 24 --tag b2-fold` (read-only, sans LLM,
-exit ≠ 0 si > 50 % du top-15 change). Résultat sur 1 565 contenus / 1 086
-clusters :
+## Recette
 
-- **top-15 (entrée LLM) change de 13 %** (2 sortants, 2 entrants) ;
-- **18 clusters franchissent `2→1`**, 9 franchissent `3→2` ; `4+ domaines` :
-  22 → 13 ;
-- **`politics` net = +0** (non enterré ; sortants = 1 environment, 1 culture ;
-  entrants = 1 science, 1 sport).
+`--sweep ENTITY_AFFINITY_BASE=8,16,32,64` → **courbe plate** (churn 0,000
+partout). Le harnais **redécouvre l'inertie déjà établie** de l'affinité
+entités. C'était la condition d'acceptation : un instrument qui ne retrouve pas
+ce qu'on sait déjà est faux.
 
-Artefacts : `.context/dryrun_coverage_fold_b2-fold.{json,md}`.
+Première lecture : **20 constantes actives · 1 faible · 27 inertes · 64
+hors-périmètre**, menées par `THEME_MATCH`, `recency_base` et `TOPIC_MATCH`.
 
-## PR 3 — C-1 : arrêter de fabriquer des intérêts
+## Faits mesurés qui corrigent le cadrage
 
-Correctif **au moment de l'écriture** (une fois la ligne créée, rien ne distingue
-un intérêt déclaré d'un intérêt fabriqué) :
+1. `claude_analytics_ro` lit `contents`/`sources` mais est **refusé sur toutes
+   les tables `user_*`** → corpus en direct, personas par dump MCP (convention
+   `--raw` de `build_event_dataset.py`).
+2. **2 comptes** au plafond `weight = 3,0`, pas 32.
+3. **64 des 112 constantes balayables sont hors du moteur de piliers.** Le
+   rapport distingue *hors-périmètre* (jamais lue par `compute_score`)
+   d'*inerte* (lue, sans effet mesurable) — les confondre ferait passer un cap
+   d'arrangement de la Tournée pour un dial de scoring.
+4. `DIGEST_SPORT_PENALTY` **ne vit pas dans le moteur de piliers** : elle est
+   appliquée par `digest_selector` après combinaison.
+5. **Le sport suivi est déjà enterré avant la pénalité** : rangs 134 / 50 avant
+   les −80, 187 / 172 après. **PR-5 qui ne toucherait que cette constante
+   déplacerait peu de chose.**
+6. Question ouverte n°1 du lot tranchée : **`essentiel_service.py` ne passe pas
+   par `PillarScoringEngine`** (vérifié, aucun call site — seulement une mention
+   en docstring).
 
-- `_adjust_interest_weight` (lecture) → **UPDATE seul** (no-op si absent).
-- `_adjust_subtopic_weights` → paramètre `allow_create` (défaut `False`). Créent
-  seulement les signaux **explicites** : like/save/note (`content_service`),
-  feedback (`routers/contents.py`), actions digest **SAVE/LIKE**
-  (`digest_service`). Lecture (READ) et signaux négatifs = update seul.
-- **Double-comptage confirmé (§3.1)** : le tail « interest par thème source » de
-  `_adjust_subtopic_weights` fabriquait **aussi** un `user_interests` sur lecture
-  (en plus de `_adjust_interest_weight`). Il est désormais gardé par le même
-  `allow_create` → plus aucune fabrication d'intérêt sur lecture. La magnitude du
-  renforcement d'un intérêt *existant* sur lecture (0,05 + 0,03) est inchangée
-  (hors périmètre C-1, relève de PR 4).
-- Onboarding (`user_service.py`) : `db.add(UserSubtopic)` → upsert
-  `on_conflict_do_nothing` (ne casse pas sur la nouvelle contrainte).
+## Garde-fous anti-overfit (dans le code, pas seulement dans le doc)
 
-### Migration `cq01_subtopics_uniq_muted` (down_revision `sa02_alerts_v2`)
+- Corpus **append-only** : le script refuse d'écraser un fichier existant.
+- `--compare` **lève** si le `corpus_file` diffère — **et** si l'échantillon
+  diffère (`--corpus-sample` change le jeu de candidats sans changer le nom du
+  corpus).
+- `--sweep` publie la courbe complète et qualifie sa forme
+  (`PLATE` / `MONOTONE` / `UNIMODALE` / `NON MONOTONE — bruit, ne pas calibrer`).
+- **Held-out** : les 2 extrêmes sont exclus du mode gold par défaut.
+- Le gold livré est un **squelette vide** : PR-3 livre le chargeur et le schéma,
+  pas des labels. Un gold vide rapporte « aucun label », **jamais** `p@5 = 0,000`.
+- `NOW` figé au `generated_at` du corpus, jamais l'horloge du run.
 
-1. **Dédup** `user_subtopics` sur `(user_id, topic_slug)` (garde le plus grand
-   weight) — la contrainte d'origine avait été droppée par accident
-   (`4d497ce7bcc2`).
-2. **`UNIQUE uq_user_subtopics_user_topic`** + **`INDEX ix_user_subtopics_user_id`**
-   (la table n'avait aucun index → seq scan à chaque lecture feed/digest).
-3. **`DELETE`** idempotent des `user_interests` contredisant un `muted_themes`.
+Deux pièges gardés par des tests : le moteur doit être **construit dans** le
+`with weights_override(...)` (sinon `PILLAR_WEIGHTS` est un no-op silencieux), et
+aucune perturbation ne doit faire tomber un pilier à 0 (une exception avalée
+par `compute_score` produirait un faux « actif »).
 
-Idempotente, `__table_args__` posé sur le modèle. Testée : `alembic upgrade head`
-sur DB vide (chaîne complète), downgrade/re-upgrade, exactement **1 head**.
+## Vérification
 
-**Risque expand-contract assumé** (DB partagée staging/prod) : pendant ≤ 1
-semaine, le backend `production` (ancien code) fait encore du check-then-insert ;
-une course produira une `IntegrityError` ponctuelle (mesuré **5×** sur toute la
-vie de la table) au lieu d'un doublon silencieux. Décision PO §5 : contrainte
-dans cette PR.
+- `pytest tests/scripts/` : **484 passés**, 82 erreurs = baseline DB locale
+  indisponible (port 54322), inchangée.
+- `ruff check` + `ruff format` : propres sur les nouveaux fichiers ; `app/`
+  (le gate CI) intact.
+- **Alembic : exactement 1 head, aucune migration** — attendu sur tout ce lot.
+- Bout en bout sur données réelles : corpus 1 763 articles / 112 sources →
+  8 personas → `--sensitivity` → `--sweep`.
 
-## Tests
+## Suite
 
-- `test_importance_detector.py::TestReliabilityFold` — 7 cas (fold low/mixed,
-  repli cluster 100 % foldé, curée medium compte, **`unknown` compte** — non-rég
-  Libération, `source_ids` **et** `source_domains`, kill switch, CSV env).
-- `test_digest_per_user_projection.py::test_rehydrated_clusters_do_not_depend_on_source_domains`
-  — invariant : cluster réhydraté n'a pas de `source_domains`, le décompte passe
-  par `source_ids` (déjà foldé en global).
-- `test_subtopic_weight_concurrency.py` (nouveau) — read n'crée pas / like crée /
-  cap 3.0 / clamp 0.1.
-- `test_interest_weight_concurrency.py` — réécrit : read n'crée pas / read
-  incrémente un existant.
-- `tests/alembic/test_cq01_subtopics_uniq_muted.py` (nouveau) — dédup garde
-  max-weight + idempotence, DELETE muté (seulement muté, idempotent, thème
-  re-déclaré préservé, no-op sans mute).
-- Non-régression `test_like_feature.py` / `test_user_service_persist.py` mis à
-  jour (`allow_create`, upsert onboarding).
-- **Suite backend complète : 2862 passed, 18 skipped, 2 xfailed.** `ruff check` OK.
-
-## Vérification C-1 (avant/après)
-
-Bloc « C-1 » ajouté à `docs/qa/scripts/baseline_curation.sql` (M8-M11). À lancer
-via le rôle service (`claude_analytics_ro` n'a pas le `SELECT` sur
-`user_interests`/`user_subtopics`). Valeurs live prod (via MCP Supabase) :
-
-| # | Métrique | Avant (live 02/08) | Après |
-|---|---|---|---|
-| M8 | `user_interests` sur un thème muté | **42** (27 comptes) | **0** après migration |
-| M11 | Doublons `(user_id, topic_slug)` | **5** | **0**, impossible |
-
-(M8 = 53 au snapshot 02/08 ; le chiffre dérive tant que `production` fabrique
-encore — d'où le rejeu post-release ci-dessous.)
-
-## Après merge
-
-1. `alembic upgrade head` rejoué automatiquement au boot Railway (staging + prod).
-2. **Après la release hebdo suivante** : rejouer une fois le `DELETE` des thèmes
-   mutés (le temps que `production` prenne le correctif de code) :
-
-   ```sql
-   DELETE FROM user_interests ui USING user_personalization up
-   WHERE up.user_id = ui.user_id
-     AND ui.interest_slug = ANY(COALESCE(up.muted_themes, '{}'));
-   ```
-
-## Ce que cette PR ne fait pas
-
-- Ne change pas le tri (`is_multi`, `subject_rank_key`) — **PR 4**.
-- Ne rebranche pas le pool personnalisé (« l'IA » qui remonte) — **PR 5**.
-- N'atteint pas les cibles M1-M4 seule : elle rend les deux termes du futur score
-  honnêtes, le mélange c'est PR 4-5.
+PR-4 (mobile, ordre des blocs par score top-3) part **après** le merge de
+celle-ci, sur une branche neuve depuis `main`.

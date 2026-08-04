@@ -1,0 +1,6043 @@
+{
+  "schema_version": 1,
+  "dataset_kind": "scoring_personas",
+  "generated_at": "2026-08-03T13:58:19+00:00",
+  "source_window": "users actifs 30 j (analytics_events OU user_content_status), user_profiles non supprimes",
+  "population_size": 62,
+  "k": 6,
+  "features": [
+    "n_followed_sources",
+    "n_themes",
+    "n_custom_topics",
+    "max_interest_weight",
+    "days_since_signup"
+  ],
+  "note": "Personas dérivés de comptes réels (k-medoids déterministe, stdlib) puis anonymisés. Aucun user_id ni email. Les deux derniers sont des extrêmes délibérés et servent de held-out au mode --gold.",
+  "personas": [
+    {
+      "persona_id": "persona_01",
+      "archetype": "34 sources · 9 thèmes · 51 sujets · w_max 2.96 · J+89",
+      "cluster_size": 3,
+      "selection": "cluster_medoid",
+      "is_heldout": false,
+      "days_since_signup": 89,
+      "followed_sources": [
+        {
+          "source_id": "0318e5a5-5ef2-4d3d-8e0e-202ad0433a8a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "306614d1-04ce-400b-aca3-28abf612a1f8",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "311ccd27-3b26-489d-8530-079b3c1ef882",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "32e3231b-e0a0-4109-b235-a5e9734fee77",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "445b1618-3e87-4d67-a646-16c6b62d703e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "4be55729-cd84-46d2-9119-644349118373",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "50809fce-7f26-4ad3-90ad-92de165746bd",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5243a419-aca5-49d2-a132-94ebd4d67ccc",
+          "is_custom": false,
+          "has_subscription": true,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "56e3fc84-1781-4187-93f2-76b5a01b122a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "583ac86a-3e28-4a89-a3d3-9b9375b9b8f9",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5ac7541a-5d6f-4127-8bba-5f53842944d5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5d269a77-263a-4b6e-9390-7fd559174d3a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5dc5b005-7f5c-4bf2-a722-c0a1a81e5cb6",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "8baabd4d-dd6c-48ea-bb09-c3d5373aefa5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "97eab57f-983d-4b47-a560-29debf13d2df",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "aa8770fd-bfb9-434b-bbe3-a24b0321f444",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ad73eb54-8368-4d1f-a58a-e6b2b211c981",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b0e1431f-2817-4429-a83f-d56d3a26951a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b168ad4a-ef11-479e-b10d-a9da341f1519",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b8e4dfb0-87e5-434e-b54c-a59c49ce2fdc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b9becd34-46a9-44a7-8896-b6bbf07ae2dc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "bbad58f4-c9cb-4de5-b8cd-6df0bc0ca86e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "be37a0fd-b8eb-4113-9432-ad894d291b3b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "c9157b18-6458-47e7-a1e7-f94cd1d9841d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d0a970de-878b-4332-84ad-ae4e680f952a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d3d78ff8-745c-47f4-82fe-c94c69eed845",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "da7114f9-2ff9-4a3e-9c93-c707596769a9",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "dc454a63-9384-417d-a216-707c2bfbbb18",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "e621430d-5791-4655-8b85-9f3b9422478b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ea6ed4c4-1e15-4199-85d7-976d52eea6f4",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "f2a83bed-e8c9-490e-ad6d-64866cef71d3",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "fa5e156c-39d1-4cf3-adb9-4d106a80288d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "fb5ea207-0b4c-4b1b-af76-216a7ef81b13",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "fc6fc6b4-eb66-4af4-b528-00c88ed8eade",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "culture": {
+          "weight": 1.9055182096,
+          "state": "followed"
+        },
+        "custom": {
+          "weight": 1.153664,
+          "state": "followed"
+        },
+        "economy": {
+          "weight": 1.046118408,
+          "state": "followed"
+        },
+        "environment": {
+          "weight": 1.9946477984,
+          "state": "followed"
+        },
+        "international": {
+          "weight": 2.5081000608,
+          "state": "followed"
+        },
+        "politics": {
+          "weight": 1.046118408,
+          "state": "followed"
+        },
+        "society": {
+          "weight": 2.96,
+          "state": "followed"
+        },
+        "sport": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "tech": {
+          "weight": 2.2250830256,
+          "state": "followed"
+        }
+      },
+      "subtopic_weights": {
+        "biodiversity": 1.03,
+        "food": 1.05085405992571,
+        "finance": 1,
+        "gaming": 1,
+        "wellness": 1,
+        "philosophy": 1,
+        "asia": 1,
+        "africa": 1,
+        "politics": 1.22726304156183,
+        "realestate": 1,
+        "gastronomy": 1,
+        "energy": 1.028812,
+        "ai": 1.1106841792,
+        "immigration": 1.0564830448,
+        "cinema": 1.028812,
+        "factcheck": 1.028812,
+        "feminism": 1.0576710448,
+        "cybersecurity": 1.0276710448,
+        "privacy": 1.0276710448,
+        "education": 1.02552289067745,
+        "middleeast": 1.02451218420663,
+        "usa": 1.02451218420663,
+        "sport": 1.0426374973969,
+        "health": 1.08925075343777,
+        "religion": 1.04346331816996,
+        "europe": 1.10227531816996,
+        "art": 1.02002823915265,
+        "climate": 1.28388082012468,
+        "agriculture": 1.04966605992572,
+        "justice": 1.08643342890847,
+        "environment": 1.22452095155715,
+        "space": 1.0723813748785,
+        "work": 1.04454042335928,
+        "history": 1.09230355732261,
+        "geopolitics": 1.22600038494627,
+        "science": 1.0723813748785,
+        "startups": 1.01847341009527,
+        "tech": 1.13382014952572,
+        "literature": 1.02085405992571,
+        "inequality": 1.14190576723764,
+        "economy": 1.07593344245088,
+        "music": 1.02260925824425
+      },
+      "custom_topics": [
+        {
+          "topic_name": "Afrique",
+          "slug_parent": "africa",
+          "keywords": [
+            "africa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Alimentation",
+          "slug_parent": "food",
+          "keywords": [
+            "food"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Asie",
+          "slug_parent": "asia",
+          "keywords": [
+            "asia"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Bien-être",
+          "slug_parent": "wellness",
+          "keywords": [
+            "wellness"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "BRICS",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "BRICS",
+            "alliance économique",
+            "pays émergents",
+            "nouvel ordre mondial",
+            "coopération internationale",
+            "expansion BRICS",
+            "dollar",
+            "souveraineté monétaire",
+            "Chine",
+            "Russie"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "BRICS"
+        },
+        {
+          "topic_name": "Cinéma",
+          "slug_parent": "cinema",
+          "keywords": [
+            "cinema"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Climat",
+          "slug_parent": "climate",
+          "keywords": [
+            "climate"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "COP",
+          "slug_parent": "climate",
+          "keywords": [
+            "COP",
+            "accord de Paris",
+            "changement climatique",
+            "réchauffement climatique",
+            "COP28",
+            "COP27",
+            "négociations internationales",
+            "émissions de CO2",
+            "transition énergétique",
+            "GIEC"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Cybersécurité",
+          "slug_parent": "cybersecurity",
+          "keywords": [
+            "cybersecurity"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Déforestation",
+          "slug_parent": "environment",
+          "keywords": [
+            "déforestation",
+            "Amazonie",
+            "déboisement",
+            "biodiversité",
+            "réchauffement climatique",
+            "agriculture intensive",
+            "exploitation forestière",
+            "CO2",
+            "ONG environnement",
+            "accords internationaux"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Données et vie privée",
+          "slug_parent": "privacy",
+          "keywords": [
+            "privacy"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Droits des femmes",
+          "slug_parent": "feminism",
+          "keywords": [
+            "droits des femmes",
+            "égalité des genres",
+            "violences conjugales",
+            "féminisme",
+            "parité",
+            "avortement",
+            "stéréotypes de genre",
+            "mouvements féministes",
+            "lois sur l'égalité",
+            "féminicides"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Éducation",
+          "slug_parent": "education",
+          "keywords": [
+            "education"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Élections",
+          "slug_parent": "politics",
+          "keywords": [
+            "élections",
+            "vote",
+            "scrutin",
+            "campagne électorale",
+            "partis politiques",
+            "résultats",
+            "démocratie",
+            "abstention",
+            "candidats",
+            "loi électorale"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Emploi et travail",
+          "slug_parent": "work",
+          "keywords": [
+            "work"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Énergies renouvelables",
+          "slug_parent": "energy",
+          "keywords": [
+            "solaire",
+            "éolien",
+            "hydroélectricité",
+            "biomasse",
+            "géothermie",
+            "transition énergétique",
+            "panneaux photovoltaïques",
+            "énergies vertes",
+            "stockage d'énergie",
+            "autoconsommation"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "États-Unis",
+          "slug_parent": "usa",
+          "keywords": [
+            "usa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Exposition",
+          "slug_parent": "art",
+          "keywords": [
+            "exposition",
+            "musée",
+            "art contemporain",
+            "vernissage",
+            "curateur",
+            "galerie",
+            "installation",
+            "art moderne",
+            "culture",
+            "patrimoine"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Fact-checking",
+          "slug_parent": "factcheck",
+          "keywords": [
+            "factcheck"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Finance",
+          "slug_parent": "finance",
+          "keywords": [
+            "finance"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Gastronomie",
+          "slug_parent": "gastronomy",
+          "keywords": [
+            "gastronomy"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Géopolitique",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "geopolitics"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Histoire",
+          "slug_parent": "history",
+          "keywords": [
+            "history"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Immigration",
+          "slug_parent": "immigration",
+          "keywords": [
+            "immigration"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Immobilier",
+          "slug_parent": "realestate",
+          "keywords": [
+            "realestate"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Inégalités sociales",
+          "slug_parent": "inequality",
+          "keywords": [
+            "inequality"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Inflation",
+          "slug_parent": "economy",
+          "keywords": [
+            "inflation",
+            "prix",
+            "pouvoir d'achat",
+            "banque centrale",
+            "taux d'intérêt",
+            "coût de la vie",
+            "déflation",
+            "stagflation",
+            "indice des prix",
+            "politique monétaire"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Intelligence artificielle",
+          "slug_parent": "ai",
+          "keywords": [
+            "ai"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Jeux vidéo",
+          "slug_parent": "gaming",
+          "keywords": [
+            "gaming"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "JO 2028",
+          "slug_parent": "sport",
+          "keywords": [
+            "Jeux Olympiques",
+            "Los Angeles 2028",
+            "JO",
+            "olympisme",
+            "athlétisme",
+            "médaille",
+            "infrastructure sportive",
+            "cérémonie d'ouverture",
+            "sportifs français",
+            "sélection des villes"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "EVENT",
+          "canonical_name": "JO 2028"
+        },
+        {
+          "topic_name": "Justice et droit",
+          "slug_parent": "justice",
+          "keywords": [
+            "justice"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Linux",
+          "slug_parent": "tech",
+          "keywords": [
+            "système d'exploitation",
+            "open source",
+            "distribution",
+            "kernel",
+            "Ubuntu",
+            "Debian",
+            "Fedora",
+            "terminal",
+            "logiciel libre",
+            "serveur"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Littérature",
+          "slug_parent": "literature",
+          "keywords": [
+            "literature"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Marché immobilier",
+          "slug_parent": "realestate",
+          "keywords": [
+            "immobilier",
+            "prix de l'immobilier",
+            "marché du logement",
+            "crédit immobilier",
+            "investissement locatif",
+            "Taux d'intérêt",
+            "promotion immobilière",
+            "logement neuf",
+            "marché locatif",
+            "bulle immobilière"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Mélenchon",
+          "slug_parent": "politics",
+          "keywords": [
+            "Jean-Luc Mélenchon",
+            "LFI",
+            "NUPES",
+            "gauche radicale",
+            "programme politique",
+            "manifestations",
+            "réforme des retraites",
+            "écologie politique",
+            "mouvement social"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "PERSON",
+          "canonical_name": "Mélenchon"
+        },
+        {
+          "topic_name": "Moyen-Orient",
+          "slug_parent": "middleeast",
+          "keywords": [
+            "middleeast"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Musique",
+          "slug_parent": "music",
+          "keywords": [
+            "music"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Nucléaire",
+          "slug_parent": "energy",
+          "keywords": [
+            "énergie nucléaire",
+            "réacteur",
+            "fission",
+            "fusion",
+            "centrales nucléaires",
+            "déchets radioactifs",
+            "EPR",
+            "SMR",
+            "uranium",
+            "transition énergétique"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "OpenAI",
+          "slug_parent": "ai",
+          "keywords": [
+            "OpenAI",
+            "ChatGPT",
+            "GPT-4",
+            "modèles de langage",
+            "intelligence artificielle",
+            "IA générative",
+            "innovation technologique",
+            "recherche en IA",
+            "Microsoft",
+            "partenariats technologiques"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "OpenAI"
+        },
+        {
+          "topic_name": "Philosophie",
+          "slug_parent": "philosophy",
+          "keywords": [
+            "philosophy"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Politique",
+          "slug_parent": "politics",
+          "keywords": [
+            "politics"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Réforme des retraites",
+          "slug_parent": "politics",
+          "keywords": [
+            "retraite",
+            "âge légal",
+            "durée de cotisation",
+            "réforme",
+            "système par répartition",
+            "départ anticipé",
+            "équilibre financier",
+            "syndicats",
+            "manifestations",
+            "débat public"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Réforme éducation",
+          "slug_parent": "education",
+          "keywords": [
+            "réforme scolaire",
+            "ministère de l'Éducation nationale",
+            "programmes scolaires",
+            "pédagogie",
+            "école primaire",
+            "collège",
+            "lycée",
+            "évaluation des élèves",
+            "inclusion scolaire",
+            "numérique éducatif"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Rugby",
+          "slug_parent": "sport",
+          "keywords": [
+            "rugby",
+            "Top 14",
+            "Coupe du Monde",
+            "XV de France",
+            "Tournoi des Six Nations",
+            "rugby féminin",
+            "haka",
+            "mêlée",
+            "essai",
+            "ballon ovale"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Santé",
+          "slug_parent": "health",
+          "keywords": [
+            "health"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Système de santé",
+          "slug_parent": "health",
+          "keywords": [
+            "santé publique",
+            "hôpital",
+            "médecine",
+            "assurance maladie",
+            "soins",
+            "réforme santé",
+            "médecin",
+            "pharmacie",
+            "précarité médicale",
+            "innovation médicale"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Technologie",
+          "slug_parent": "tech",
+          "keywords": [
+            "tech"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Tennis",
+          "slug_parent": "sport",
+          "keywords": [
+            "tennis",
+            "Roland-Garros",
+            "Wimbledon",
+            "US Open",
+            "ATP",
+            "WTA",
+            "Grand Chelem",
+            "raquette",
+            "tournoi",
+            "classement ATP"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Ukraine",
+          "slug_parent": "tech",
+          "keywords": [
+            "ukraine"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Union européenne",
+          "slug_parent": "europe",
+          "keywords": [
+            "UE",
+            "Union européenne",
+            "politique européenne",
+            "règlementation",
+            "Commission européenne",
+            "Parlement européen",
+            "marché unique",
+            "fédéralisme européen",
+            "Brexit",
+            "élargissement"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Véhicule électrique",
+          "slug_parent": "environment",
+          "keywords": [
+            "voiture électrique",
+            "véhicule propre",
+            "batterie lithium",
+            "autonomie",
+            "recharge rapide",
+            "ZFE",
+            "mobilité durable",
+            "bornes de recharge",
+            "hybride rechargeable",
+            "coût énergétique"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": {
+        "queen": 1.02260925824425,
+        "falaise des brevets": 1.02451218420663,
+        "allier": 1.03,
+        "europe": 1.0576710448,
+        "lithium": 1.03,
+        "emmanuel macron": 1.03823360634181,
+        "saudi arabia": 1.03,
+        "paris": 1.03,
+        "freddy mercury": 1.02260925824425,
+        "orange": 1.02260925824425,
+        "rn": 1.02260925824425,
+        "jean-dominique arnault": 1.02260925824425,
+        "industrie pharmaceutique": 1.02451218420663,
+        "médicaments": 1.02451218420663,
+        "génériques": 1.02451218420663,
+        "biosimilaires": 1.02451218420663,
+        "gironde": 1.12747008053948,
+        "wim wenders": 1.028812,
+        "faux mouvement": 1.028812,
+        "nastassja kinski": 1.028812,
+        "la france insoumise": 1.02085405992571,
+        "pyrénées-orientales": 1.028812,
+        "vergers": 1.028812,
+        "eaux usées": 1.028812,
+        "laurent nuñez": 1.028812,
+        "schengen": 1.028812,
+        "ceuta": 1.028812,
+        "écologistes": 1.02085405992571,
+        "conseil constitutionnel": 1.02085405992571,
+        "pesticide": 1.02085405992571,
+        "armée russe": 1.0276710448,
+        "moscou": 1.0564830448,
+        "france": 1.08305831622592,
+        "espagne": 1.0564830448,
+        "licenciements": 1.02451218420663,
+        "alstom": 1.02451218420663,
+        "olivier mannoni": 1.0276710448,
+        "coulée brune : comment le fascisme inonde notre langue": 1.0276710448,
+        "policiers": 1.0276710448,
+        "gendarmes": 1.0276710448,
+        "territoire de belfort": 1.028812,
+        "corse": 1.028812,
+        "le porge": 1.028812,
+        "mégafeu": 1.057624,
+        "ia": 1.0553420896,
+        "starlink": 1.028812,
+        "lieutenant-colonel laurent nerich": 1.028812,
+        "robot vacuums": 1.0276710448,
+        "observatoire des conflits": 1.028812,
+        "commandement du combat futur": 1.028812,
+        "armée de terre": 1.028812,
+        "digital digging": 1.0276710448,
+        "henk van ess": 1.0276710448,
+        "parents": 1.02552289067745,
+        "enseignants": 1.02552289067745,
+        "établissement scolaire": 1.02552289067745,
+        "dz mafia": 1.02002823915265,
+        "google earth": 1.0553420896,
+        "landes": 1.0481321489217,
+        "banque centrale de russie": 1.028812,
+        "saoudite": 1.028812,
+        "téhéran": 1.028812,
+        "union européenne": 1.07781737811439,
+        "assurances": 1.02260925824425,
+        "harkis": 1.028812,
+        "algérie": 1.028812,
+        "provence": 1.028812,
+        "guerre d'algérie": 1.028812,
+        "éclipse solaire du 12 août 2026": 1.0276710448,
+        "luca van assche": 1.02260925824425,
+        "estoril": 1.02260925824425,
+        "nano banana 2": 1.0276710448,
+        "alexander blockx": 1.02260925824425,
+        "atp": 1.02260925824425,
+        "vingt-sept": 1.02085405992571,
+        "google play": 1.02085405992571,
+        "pizza": 1.02085405992571,
+        "naples": 1.02085405992571,
+        "new york": 1.02085405992571,
+        "são paulo": 1.02085405992571,
+        "ézéchiel zérah": 1.02085405992571,
+        "maires d'extrême droite": 1.02552289067745,
+        "projets écologiques": 1.02552289067745,
+        "russie": 1.07609741009527,
+        "volodymyr zelensky": 1.02354150171204,
+        "maison blanche": 1.02354150171204,
+        "ukraine": 1.02354150171204,
+        "guerre en ukraine": 1.02354150171204,
+        "grèce": 1.01847341009527,
+        "turquie": 1.01847341009527,
+        "saint-étienne-du-rouvray": 1.02085405992571,
+        "seine-maritime": 1.02085405992571,
+        "castres": 1.00790755553068,
+        "toulouse": 1.00790755553068,
+        "conseil d'état": 1.01614116187249,
+        "météo france": 1.04637695060316,
+        "charles de gaulle": 1.02260925824425,
+        "cap-ferret": 1.02002823915265,
+        "hexagone": 1.00823360634181,
+        "najat vallaud-belkacem": 1.00823360634181,
+        "world weather attribution": 1.02002823915265,
+        "christophe rivenq": 1.02002823915265,
+        "alès": 1.02002823915265,
+        "pas-de-calais": 1.02085405992571,
+        "jean-philippe tanguy": 1.00823360634181,
+        "présidentielle": 1.02260925824425,
+        "députés": 1.00790755553068,
+        "cour des comptes": 1.00823360634181,
+        "venise": 1.00790755553068,
+        "biennale de venise": 1.00790755553068,
+        "ghana": 1.00790755553068,
+        "françois angelier": 1.00790755553068,
+        "airbus": 1.02451218420663,
+        "le four": 1.02002823915265,
+        "les jacquets": 1.02002823915265,
+        "petit piquey": 1.02002823915265,
+        "tour de france": 1.02002823915265,
+        "google": 1.07573128209384,
+        "attentat islamiste": 1.02085405992571,
+        "euthanasie": 1.00790755553068,
+        "suicide assisté": 1.00790755553068,
+        "30 juin 2026": 1.00790755553068,
+        "gemini": 1.00929466293291,
+        "marc fumaroli": 1.00790755553068,
+        "paul morand": 1.00790755553068,
+        "anna de noailles": 1.00790755553068,
+        "commission européenne": 1.00823360634181,
+        "état français": 1.00823360634181,
+        "var": 1.04966605992571,
+        "renault": 1.00929466293291,
+        "google assistant": 1.00929466293291,
+        "android auto": 1.00929466293291,
+        "bouches-du-rhône": 1.02085405992571,
+        "vigilance orange": 1.02085405992571,
+        "orages": 1.02085405992571,
+        "claouey": 1.02002823915265,
+        "bordeaux": 1.02171393161778,
+        "littoral méditerranéen": 1.02002823915265,
+        "verre": 1.01847341009527,
+        "bouteilles en verre": 1.01847341009527,
+        "start-up locales": 1.01847341009527,
+        "sanofi": 1.02451218420663,
+        "cac 40": 1.02451218420663,
+        "autoroute a69": 1.01614116187249,
+        "canicule": 1.00823360634181,
+        "la voie est libre": 1.00823360634181,
+        "père jacques hamel": 1.02085405992571,
+        "amorino": 1.00823360634181,
+        "europe 1": 1.00823360634181,
+        "sébastien lecornu": 1.04966605992571,
+        "donald trump": 1.07320756163775,
+        "météo-france": 1.04884023915265,
+        "michael armitage": 1.00790755553068,
+        "amoako boafo": 1.00790755553068,
+        "citeo": 1.01847341009527,
+        "conseil d’état": 1.00823360634181,
+        "rassemblement national": 1.00823360634181
+      },
+      "muted_sources": [],
+      "muted_themes": [
+        "science"
+      ],
+      "muted_topics": [
+        "cinema"
+      ],
+      "muted_content_types": [],
+      "user_prefs": {
+        "objective": "bias",
+        "approach": "direct",
+        "response_style": "nuanced",
+        "content_recency": "recent",
+        "serein_enabled": "false",
+        "independence_pref": "established",
+        "swipe_liked_count": "10"
+      }
+    },
+    {
+      "persona_id": "persona_02",
+      "archetype": "21 sources · 5 thèmes · 17 sujets · w_max 1.30 · J+21",
+      "cluster_size": 27,
+      "selection": "cluster_medoid",
+      "is_heldout": false,
+      "days_since_signup": 21,
+      "followed_sources": [
+        {
+          "source_id": "0cd4319c-2322-47e9-a256-1509d6e47ed1",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "1b8dde5f-7641-4ebc-bf3a-07bebdaf8ffb",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "26b05d76-4fda-45d2-b5ec-4548c8c77650",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "311ccd27-3b26-489d-8530-079b3c1ef882",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "445b1618-3e87-4d67-a646-16c6b62d703e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "4be55729-cd84-46d2-9119-644349118373",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5243a419-aca5-49d2-a132-94ebd4d67ccc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5790ea77-18f8-4c92-ab8b-35a10fcc3f63",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5ac7541a-5d6f-4127-8bba-5f53842944d5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "97eab57f-983d-4b47-a560-29debf13d2df",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "9d93d883-72a4-43ac-813d-002df717af30",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "a5be7d9f-ad89-4185-b501-9a641a06ba33",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ad73eb54-8368-4d1f-a58a-e6b2b211c981",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b168ad4a-ef11-479e-b10d-a9da341f1519",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b8e4dfb0-87e5-434e-b54c-a59c49ce2fdc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b9becd34-46a9-44a7-8896-b6bbf07ae2dc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "be37a0fd-b8eb-4113-9432-ad894d291b3b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d0a970de-878b-4332-84ad-ae4e680f952a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d6e6be66-7aae-49aa-966c-20a71d4844a9",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "eedecc86-fdb4-44d8-a16d-b944e0804857",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "f2a83bed-e8c9-490e-ad6d-64866cef71d3",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "culture": {
+          "weight": 1.0737894528,
+          "state": "favorite"
+        },
+        "environment": {
+          "weight": 1.206118408,
+          "state": "favorite"
+        },
+        "international": {
+          "weight": 1.046118408,
+          "state": "favorite"
+        },
+        "science": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "society": {
+          "weight": 1.2951578112,
+          "state": "favorite"
+        }
+      },
+      "subtopic_weights": {
+        "europe": 1,
+        "justice": 1,
+        "health": 1,
+        "environment": 1.07805368591867,
+        "history": 1,
+        "gastronomy": 1,
+        "travel": 1,
+        "feminism": 1,
+        "work": 1,
+        "biodiversity": 1.03,
+        "climate": 1.07805368591867,
+        "geopolitics": 1.02354150171204,
+        "music": 1.02552289067745,
+        "inequality": 1.02354150171204,
+        "lgbtq": 1.02552289067745,
+        "family": 1.02354150171204,
+        "education": 1.02354150171204
+      },
+      "custom_topics": [
+        {
+          "topic_name": "Biodiversité",
+          "slug_parent": "biodiversity",
+          "keywords": [
+            "biodiversity"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Climat",
+          "slug_parent": "climate",
+          "keywords": [
+            "climate"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Droits des femmes",
+          "slug_parent": "feminism",
+          "keywords": [
+            "droits des femmes",
+            "égalité des genres",
+            "violences conjugales",
+            "féminisme",
+            "parité",
+            "avortement",
+            "stéréotypes de genre",
+            "mouvements féministes",
+            "lois sur l'égalité",
+            "féminicides"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Éducation",
+          "slug_parent": "education",
+          "keywords": [
+            "education"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Emploi et travail",
+          "slug_parent": "work",
+          "keywords": [
+            "work"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Europe",
+          "slug_parent": "europe",
+          "keywords": [
+            "europe"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Gastronomie",
+          "slug_parent": "gastronomy",
+          "keywords": [
+            "gastronomy"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Habitat léger",
+          "slug_parent": "environment",
+          "keywords": [
+            "tiny house",
+            "habitat écologique",
+            "mobil-home",
+            "construction durable",
+            "zéro déchet",
+            "permaculture",
+            "autonomie énergétique",
+            "logement minimaliste",
+            "réglementation habitat léger",
+            "tiny living"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Hip-hop",
+          "slug_parent": "music",
+          "keywords": [
+            "rap",
+            "culture hip-hop",
+            "artistes",
+            "albums",
+            "tournées",
+            "freestyle",
+            "beatmaking",
+            "graffiti",
+            "breakdance",
+            "influence sociale"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Histoire",
+          "slug_parent": "history",
+          "keywords": [
+            "history"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Inégalités sociales",
+          "slug_parent": "inequality",
+          "keywords": [
+            "inequality"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Initiatives locales",
+          "slug_parent": "environment",
+          "keywords": [
+            "développement durable",
+            "écologie locale",
+            "projets verts",
+            "recyclage",
+            "énergie renouvelable",
+            "biodiversité urbaine",
+            "circuits courts",
+            "zéro déchet",
+            "transition écologique",
+            "collectivités"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Justice et droit",
+          "slug_parent": "justice",
+          "keywords": [
+            "justice"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "LGBTQ+",
+          "slug_parent": "lgbtq",
+          "keywords": [
+            "lgbtq"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Santé",
+          "slug_parent": "health",
+          "keywords": [
+            "health"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Séries TV",
+          "slug_parent": "cinema",
+          "keywords": [
+            "séries TV",
+            "streaming",
+            "Netflix",
+            "Amazon Prime",
+            "HBO",
+            "séries originales",
+            "binge-watching",
+            "scénarisation",
+            "réseaux sociaux",
+            "culture pop"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Voyage",
+          "slug_parent": "travel",
+          "keywords": [
+            "travel"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": {
+        "ibiza": 1.03,
+        "couleuvres fer-à-cheval": 1.03,
+        "marche des fiertés de berlin": 1.02354150171204,
+        "berlin": 1.02354150171204,
+        "msc croisières": 1.02354150171204,
+        "msc": 1.02354150171204,
+        "saint-nazaire": 1.02354150171204,
+        "gironde": 1.02451218420663,
+        "préfecture de la gironde": 1.02451218420663
+      },
+      "muted_sources": [],
+      "muted_themes": [
+        "economy",
+        "politics",
+        "sport",
+        "tech"
+      ],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {
+        "objective": "anxiety,noise",
+        "approach": "direct",
+        "response_style": "nuanced",
+        "content_recency": "recent",
+        "serein_enabled": "false",
+        "independence_pref": "independent",
+        "swipe_liked_count": "6",
+        "swipe_disliked_count": "4"
+      }
+    },
+    {
+      "persona_id": "persona_03",
+      "archetype": "0 sources · 1 thèmes · 3 sujets · w_max 1.07 · J+3",
+      "cluster_size": 7,
+      "selection": "cluster_medoid",
+      "is_heldout": false,
+      "days_since_signup": 3,
+      "followed_sources": [],
+      "interests": {
+        "tech": {
+          "weight": 1.0737894528,
+          "state": "followed"
+        }
+      },
+      "subtopic_weights": {
+        "history": 1.02552289067745,
+        "inequality": 1.02552289067745
+      },
+      "custom_topics": [
+        {
+          "topic_name": "Apple",
+          "slug_parent": "tech",
+          "keywords": [
+            "Apple",
+            "iPhone",
+            "Mac",
+            "iOS",
+            "innovation",
+            "Silicon Valley",
+            "Tim Cook",
+            "écosystème",
+            "technologie"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "Apple"
+        },
+        {
+          "topic_name": "Blockchain",
+          "slug_parent": "tech",
+          "keywords": [
+            "blockchain",
+            "crypto-monnaie",
+            "smart contract",
+            "décentralisation",
+            "Bitcoin",
+            "Ethereum",
+            "NFT",
+            "Web3",
+            "registre distribué",
+            "minage"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Cloud computing",
+          "slug_parent": "tech",
+          "keywords": [
+            "cloud",
+            "informatique en nuage",
+            "AWS",
+            "Azure",
+            "Google Cloud",
+            "stockage en ligne",
+            "scalabilité",
+            "cybersécurité cloud",
+            "SaaS",
+            "IaaS"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": {
+        "richard loving": 1.02552289067745,
+        "mildred loving": 1.02552289067745,
+        "virginie": 1.02552289067745,
+        "cour suprême": 1.02552289067745,
+        "états-unis": 1.02552289067745
+      },
+      "muted_sources": [],
+      "muted_themes": [],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {}
+    },
+    {
+      "persona_id": "persona_04",
+      "archetype": "82 sources · 10 thèmes · 61 sujets · w_max 3.00 · J+163",
+      "cluster_size": 2,
+      "selection": "cluster_medoid",
+      "is_heldout": false,
+      "days_since_signup": 163,
+      "followed_sources": [
+        {
+          "source_id": "019833de-600e-47fa-ad79-98358a833a51",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "0318e5a5-5ef2-4d3d-8e0e-202ad0433a8a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "favorite"
+        },
+        {
+          "source_id": "035275ac-cc23-4f61-a540-b54f8e845338",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "036098a3-2725-48a4-a921-7545bdec82c4",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "03f703fb-3e6b-44d7-ad46-0b4fee77b425",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "04731468-8d2b-44d4-a6a7-eb6d3ec581f5",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "0a24f9a4-15ed-4e25-8441-db6d20563421",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "0c44295f-8925-46eb-ac16-56e554cef3e2",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "0cd4319c-2322-47e9-a256-1509d6e47ed1",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "118d25fd-74d7-45bb-a778-ff1ac8f143c8",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "17be5094-a7e9-485d-85c0-11c90bfd56a1",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "1ae8c581-9458-4221-bcc4-7664b1fdde72",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "1b8dde5f-7641-4ebc-bf3a-07bebdaf8ffb",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "24eb8e05-51c2-4c49-83ae-d20be98a300f",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "2abbc78c-f5cb-487d-9bb6-0809718ab33a",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "2cb97f81-47cf-4bb9-a926-694278a5ee56",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "2dd55406-bcb1-4ff2-bd37-b7802f135d3b",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "306614d1-04ce-400b-aca3-28abf612a1f8",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "311ccd27-3b26-489d-8530-079b3c1ef882",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "31af28bd-7d05-4c64-af96-9ee47fee6f5e",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "3213a0f9-31a6-4d90-9737-19cdfbfa32d2",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "343a1127-4341-43a7-88c1-d20ce1d9190f",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "42dd5aca-c491-4754-b6df-2e84f7e3e6c8",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "445b1618-3e87-4d67-a646-16c6b62d703e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "44c007e0-a787-4df2-a03b-5613f2e3026a",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5243a419-aca5-49d2-a132-94ebd4d67ccc",
+          "is_custom": false,
+          "has_subscription": true,
+          "priority_multiplier": 0.2,
+          "state": "followed"
+        },
+        {
+          "source_id": "52b6ac31-3fb0-44b6-9bf7-bcd22157066d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "562aa0d7-b1b5-4e43-a53b-50e415ba7cd5",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "followed"
+        },
+        {
+          "source_id": "56e3fc84-1781-4187-93f2-76b5a01b122a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5790ea77-18f8-4c92-ab8b-35a10fcc3f63",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "583ac86a-3e28-4a89-a3d3-9b9375b9b8f9",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5ac7541a-5d6f-4127-8bba-5f53842944d5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "5dc5b005-7f5c-4bf2-a722-c0a1a81e5cb6",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "favorite"
+        },
+        {
+          "source_id": "60b6b0e1-97f4-489d-9b4e-8f91a73d66bf",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "632d0661-6992-43cc-a0b6-b6a883cf71d0",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "667d2c87-20f4-4a1e-aad1-79216ecce279",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "6e27afbc-92ec-4450-82cf-58d106e2ebe5",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "7493233d-ffe7-4fc8-bbd6-102ccf680df1",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "7f234639-ee5a-4969-87ee-7f7ef0b3dbe0",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "87a41275-0f59-4707-8e6f-7fbda5098cdb",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "901d4415-6eda-4378-95be-360ef6061290",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "9295e831-55f4-4e66-9447-436a84be06c7",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "979884e4-282f-43ec-ac5e-77d0094b6509",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "97eab57f-983d-4b47-a560-29debf13d2df",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "9b90c578-13c0-41fd-9cae-6775e894285d",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "a01b61d0-7cc0-4a75-8fac-48e35e427ebf",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "a3a5762a-de2e-4f7f-97e8-8e470a651a78",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "a5be7d9f-ad89-4185-b501-9a641a06ba33",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ad73eb54-8368-4d1f-a58a-e6b2b211c981",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "aefef65e-d233-49bf-9823-8b23a5acd0f8",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "aff12f97-2cd3-486b-afbd-280b0f97a22e",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "b168ad4a-ef11-479e-b10d-a9da341f1519",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b1b7459e-1e4f-4d4f-8df4-9fe475e10578",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "b8e4dfb0-87e5-434e-b54c-a59c49ce2fdc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "favorite"
+        },
+        {
+          "source_id": "be37a0fd-b8eb-4113-9432-ad894d291b3b",
+          "is_custom": false,
+          "has_subscription": true,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "c9157b18-6458-47e7-a1e7-f94cd1d9841d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "cc78ee33-f922-4d98-b176-2b0bb192a23e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "ce7b713c-55a9-4f77-9fb9-bf11a4c42f4f",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "cef495e0-8541-40a8-b6bd-692707b95bad",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "d0a970de-878b-4332-84ad-ae4e680f952a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d3d78ff8-745c-47f4-82fe-c94c69eed845",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "d5ce3f80-a02b-4b83-9c51-fe2a3c7a1f6d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "favorite"
+        },
+        {
+          "source_id": "d6e6be66-7aae-49aa-966c-20a71d4844a9",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "da7114f9-2ff9-4a3e-9c93-c707596769a9",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "da76f746-aed5-489f-821e-75b16d747df6",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "dc454a63-9384-417d-a216-707c2bfbbb18",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "e2f0b4e9-76ad-43fe-8e0f-9594c70076c5",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "e446c0b6-d460-422f-bb47-41cbf0cbf373",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "e621430d-5791-4655-8b85-9f3b9422478b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "e6a87c97-22dc-470b-bec7-99aea5d610b5",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "e76ae1b1-c003-4877-9f23-4623cff1a046",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "e9fccff0-be0c-4061-8648-a3f929af472f",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "ead4aeec-b635-4caf-984f-94f5808bd24d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "eb931b2a-51bb-44d9-a126-85cb792ad6ef",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "f04aa2ab-99c5-43d1-94d6-1e9379f79496",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "f2a83bed-e8c9-490e-ad6d-64866cef71d3",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "hidden"
+        },
+        {
+          "source_id": "f6d50620-e1b4-435a-a868-aeace2a3e74f",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "faff0363-e0d5-47b6-a7b4-c6bd7109eeaa",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        },
+        {
+          "source_id": "fc6fc6b4-eb66-4af4-b528-00c88ed8eade",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "fcf88bb7-19db-4016-a7e5-a6d3bc0a6df0",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 0.2,
+          "state": "followed"
+        },
+        {
+          "source_id": "fcfdbbda-a57c-4445-b3b4-c0477cef7e0d",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ffc3211a-ac85-4943-8a2a-106162d39446",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "culture": {
+          "weight": 3.0,
+          "state": "followed"
+        },
+        "custom": {
+          "weight": 1.5549268032,
+          "state": "followed"
+        },
+        "economy": {
+          "weight": 1.8209076624,
+          "state": "followed"
+        },
+        "environment": {
+          "weight": 2.84473632,
+          "state": "favorite"
+        },
+        "international": {
+          "weight": 2.9208,
+          "state": "followed"
+        },
+        "politics": {
+          "weight": 2.6233679616,
+          "state": "followed"
+        },
+        "science": {
+          "weight": 2.4665653744,
+          "state": "favorite"
+        },
+        "society": {
+          "weight": 3.0,
+          "state": "followed"
+        },
+        "sport": {
+          "weight": 1.6825524384,
+          "state": "followed"
+        },
+        "tech": {
+          "weight": 2.92313632,
+          "state": "favorite"
+        }
+      },
+      "subtopic_weights": {
+        "inequality": 2.00772757817643,
+        "health": 1.13735491347567,
+        "fashion": 1.02805895346581,
+        "biodiversity": 1.55019976483194,
+        "immigration": 1.29905129002782,
+        "europe": 1.19698953592107,
+        "agriculture": 1.22357006140827,
+        "art": 1.17350678891422,
+        "design": 1.0566548728754,
+        "middleeast": 1.20148376974337,
+        "sport": 1.53010656394851,
+        "media": 2.42540657062888,
+        "asia": 1.04714593084514,
+        "startups": 1.43696059200365,
+        "economy": 1.54931747682429,
+        "music": 1.0093529844886,
+        "philosophy": 1.17513353551529,
+        "usa": 1.20676521014157,
+        "travel": 1.0046764922443,
+        "entrepreneurship": 1.01998894223537,
+        "food": 1.17139994229201,
+        "lgbtq": 1.15891302188075,
+        "justice": 1.26261746299102,
+        "tech": 1.6905992256959,
+        "science": 2.06241637187831,
+        "feminism": 1.23227355526386,
+        "realestate": 1.03879034982981,
+        "work": 1.08921005396021,
+        "education": 1.19587209737353,
+        "finance": 1.31664376282387,
+        "cybersecurity": 1.04528124040313,
+        "climate": 2.25820176818556,
+        "cinema": 1.02049052532598,
+        "geopolitics": 1.50748776304736,
+        "wellness": 1.09145832256952,
+        "factcheck": 1.04052959945062,
+        "space": 1.17693342316539,
+        "relationships": 1.04675422059774,
+        "religion": 1.03020704441432,
+        "energy": 1.40742712555238,
+        "history": 1.19157939834958,
+        "politics": 2.29462332112133,
+        "family": 1.05981716713567,
+        "environment": 2.61440713121407,
+        "privacy": 1.60355957027478,
+        "gaming": 1.02196224230757,
+        "marketing": 1.11574707599899,
+        "ai": 1.70755913837019
+      },
+      "custom_topics": [
+        {
+          "topic_name": "Alimentation",
+          "slug_parent": "food",
+          "keywords": [
+            "food"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Anthropic (entreprise)",
+          "slug_parent": "ai",
+          "keywords": [
+            "Anthropic",
+            "Claude",
+            "IA générative",
+            "modèle de langage",
+            "sécurité IA",
+            "éthique IA",
+            "startup tech",
+            "Silicon Valley"
+          ],
+          "priority_multiplier": 2,
+          "state": "favorite",
+          "entity_type": "ORG",
+          "canonical_name": "Anthropic (entreprise)"
+        },
+        {
+          "topic_name": "Apple",
+          "slug_parent": "tech",
+          "keywords": [
+            "Apple",
+            "iPhone",
+            "Mac",
+            "iOS",
+            "innovation",
+            "Silicon Valley",
+            "Tim Cook",
+            "écosystème",
+            "technologie"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "Apple"
+        },
+        {
+          "topic_name": "Asie",
+          "slug_parent": "asia",
+          "keywords": [
+            "Asie",
+            "continent",
+            "culture asiatique",
+            "économie asiatique",
+            "géopolitique asiatique",
+            "tourisme en Asie",
+            "technologie en Asie",
+            "démographie asiatique",
+            "relations internationales en Asie",
+            "développement durable en Asie"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Assemblée nationale",
+          "slug_parent": "politics",
+          "keywords": [
+            "Assemblée nationale",
+            "députés",
+            "lois françaises",
+            "Parlement",
+            "scrutin",
+            "réforme constitutionnelle",
+            "majorité présidentielle",
+            "opposition politique",
+            "proposition de loi",
+            "session parlementaire"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "Assemblée nationale"
+        },
+        {
+          "topic_name": "Bally Bagayoko",
+          "slug_parent": "africa",
+          "keywords": [
+            "Bally Bagayoko",
+            "football",
+            "Mali",
+            "sélection nationale",
+            "attaquant",
+            "ligue africaine",
+            "performance sportive",
+            "scout",
+            "talent malien"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": "PERSON",
+          "canonical_name": "Bally Bagayoko"
+        },
+        {
+          "topic_name": "Bien-être",
+          "slug_parent": "wellness",
+          "keywords": [
+            "wellness"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Biodiversité",
+          "slug_parent": "biodiversity",
+          "keywords": [
+            "biodiversité"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Blockchain",
+          "slug_parent": "tech",
+          "keywords": [
+            "blockchain",
+            "crypto-monnaies",
+            "smart contracts",
+            "décentralisation",
+            "Bitcoin",
+            "Ethereum",
+            "Web3",
+            "NFT",
+            "minage",
+            "registre distribué"
+          ],
+          "priority_multiplier": 0.2,
+          "state": "hidden",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Brésil",
+          "slug_parent": "usa",
+          "keywords": [
+            "brésil"
+          ],
+          "priority_multiplier": 2,
+          "state": "favorite",
+          "entity_type": "LOCATION",
+          "canonical_name": "Brésil"
+        },
+        {
+          "topic_name": "CDP",
+          "slug_parent": "climate",
+          "keywords": [
+            "CDP",
+            "Carbon Disclosure Project",
+            "émissions de CO2",
+            "rapport RSE",
+            "investissement durable",
+            "transparence climatique",
+            "notation environnementale",
+            "changement climatique",
+            "finance verte"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "CDP"
+        },
+        {
+          "topic_name": "Climat",
+          "slug_parent": "climate",
+          "keywords": [
+            "climat"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Démocratie",
+          "slug_parent": "politics",
+          "keywords": [
+            "démocratie",
+            "droits civiques",
+            "élections",
+            "gouvernance",
+            "libertés",
+            "participation citoyenne",
+            "régime politique",
+            "souveraineté populaire",
+            "système électoral",
+            "transparence"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Design",
+          "slug_parent": "design",
+          "keywords": [
+            "design graphique",
+            "UX/UI",
+            "architecture",
+            "design industriel",
+            "tendances design",
+            "couleur",
+            "typographie",
+            "ergonomie",
+            "innovation design",
+            "design durable"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Donald Trump",
+          "slug_parent": "usa",
+          "keywords": [
+            "Donald Trump",
+            "président américain",
+            "républicain",
+            "politique américaine",
+            "MAGA",
+            "élections 2024",
+            "impeachment",
+            "conservatisme",
+            "populisme"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "PERSON",
+          "canonical_name": "Donald Trump"
+        },
+        {
+          "topic_name": "Données et vie privée",
+          "slug_parent": "privacy",
+          "keywords": [
+            "privacy"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Droits des femmes",
+          "slug_parent": "feminism",
+          "keywords": [
+            "droits des femmes",
+            "égalité des genres",
+            "violences conjugales",
+            "féminisme",
+            "parité",
+            "mouvements féministes",
+            "stéréotypes de genre",
+            "avortement",
+            "leadership féminin",
+            "féminicides"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Éducation",
+          "slug_parent": "education",
+          "keywords": [
+            "éducation"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Énergie",
+          "slug_parent": "energy",
+          "keywords": [
+            "énergie"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Énergies renouvelables",
+          "slug_parent": "energy",
+          "keywords": [
+            "solaire",
+            "éolien",
+            "hydroélectricité",
+            "biomasse",
+            "géothermie",
+            "transition énergétique",
+            "panneaux photovoltaïques",
+            "énergies vertes",
+            "stockage d'énergie",
+            "autoconsommation"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Entrepreneuriat",
+          "slug_parent": "entrepreneurship",
+          "keywords": [
+            "startup",
+            "création d'entreprise",
+            "levée de fonds",
+            "business model",
+            "innovation",
+            "pitch deck",
+            "incubateur",
+            "accélérateur",
+            "entrepreneur",
+            "scale-up"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Entreprises à mission",
+          "slug_parent": "entrepreneurship",
+          "keywords": [
+            "entreprise à mission",
+            "B Corp",
+            "RSE",
+            "impact social",
+            "économie sociale et solidaire",
+            "modèle économique responsable",
+            "label mission",
+            "entrepreneuriat durable",
+            "transparence",
+            "gouvernance partagée"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "Entreprises à mission"
+        },
+        {
+          "topic_name": "Environnement",
+          "slug_parent": "environment",
+          "keywords": [
+            "écologie",
+            "pollution",
+            "développement durable",
+            "biodiversité",
+            "climat",
+            "ressources naturelles",
+            "éco-responsabilité",
+            "transition écologique",
+            "réchauffement climatique",
+            "protection de l'environnement"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "États-Unis",
+          "slug_parent": "usa",
+          "keywords": [
+            "usa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Europe",
+          "slug_parent": "europe",
+          "keywords": [
+            "europe"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Fact-checking",
+          "slug_parent": "factcheck",
+          "keywords": [
+            "vérification des faits",
+            "désinformation",
+            "fake news",
+            "hoax",
+            "rumeurs",
+            "sources fiables",
+            "médias",
+            "réseaux sociaux",
+            "propagande",
+            "journalisme"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Finance",
+          "slug_parent": "finance",
+          "keywords": [
+            "finance"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Framasoft",
+          "slug_parent": "tech",
+          "keywords": [
+            "logiciel libre",
+            "association",
+            "éducation populaire",
+            "alternatives numériques",
+            "dégooglisation",
+            "Framasoft",
+            "outils collaboratifs",
+            "open source",
+            "numérique éthique"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "Framasoft"
+        },
+        {
+          "topic_name": "Géopolitique",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "geopolitics"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Histoire",
+          "slug_parent": "history",
+          "keywords": [
+            "histoire",
+            "passé",
+            "archéologie",
+            "civilisations",
+            "événements historiques",
+            "patrimoine",
+            "chronologie",
+            "mémoire collective",
+            "révolutions",
+            "découvertes"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Inégalités sociales",
+          "slug_parent": "inequality",
+          "keywords": [
+            "inequality"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Intelligence artificielle",
+          "slug_parent": "ai",
+          "keywords": [
+            "intelligence artificielle"
+          ],
+          "priority_multiplier": 2,
+          "state": "favorite",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Justice et droit",
+          "slug_parent": "justice",
+          "keywords": [
+            "justice"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "LGBTQ+",
+          "slug_parent": "lgbtq",
+          "keywords": [
+            "droits LGBTQ+",
+            "mariage homosexuel",
+            "pride",
+            "transidentité",
+            "homophobie",
+            "égalité des genres",
+            "coming out",
+            "discrimination",
+            "PMA pour toutes",
+            "queer theory"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Marketing",
+          "slug_parent": "marketing",
+          "keywords": [
+            "stratégie marketing",
+            "publicité",
+            "branding",
+            "réseaux sociaux",
+            "SEO",
+            "contenu digital",
+            "data marketing",
+            "influenceurs",
+            "ROI",
+            "ciblage client"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Mastodon",
+          "slug_parent": "tech",
+          "keywords": [
+            "réseau social décentralisé",
+            "fédération",
+            "ActivityPub",
+            "alternative à Twitter",
+            "instance Mastodon",
+            "open source",
+            "microblogging",
+            "modération",
+            "fédéré"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "Mastodon"
+        },
+        {
+          "topic_name": "Mathématiques",
+          "slug_parent": "science",
+          "keywords": [
+            "algèbre",
+            "géométrie",
+            "calcul",
+            "théorèmes",
+            "équations",
+            "mathématiques pures",
+            "applications mathématiques",
+            "histoire des maths",
+            "maths appliquées",
+            "recherche mathématique"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Moyen-Orient",
+          "slug_parent": "middleeast",
+          "keywords": [
+            "middleeast"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "NBA",
+          "slug_parent": "sport",
+          "keywords": [
+            "basketball",
+            "NBA",
+            "ligue américaine",
+            "Michael Jordan",
+            "LeBron James",
+            "Kobe Bryant",
+            "playoffs",
+            "draft",
+            "All-Star",
+            "records"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "NBA"
+        },
+        {
+          "topic_name": "NBA",
+          "slug_parent": "sport",
+          "keywords": [
+            "basketball",
+            "ligue américaine",
+            "NBA",
+            "Michael Jordan",
+            "LeBron James",
+            "Kobe Bryant",
+            "playoffs",
+            "draft",
+            "All-Star",
+            "records"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "omnibus VI",
+          "slug_parent": "politics",
+          "keywords": [
+            "loi Omnibus",
+            "immigration",
+            "sécurité",
+            "réforme",
+            "débat parlementaire",
+            "politique française",
+            "projet de loi",
+            "vote",
+            "mesures controversées",
+            "Assemblée nationale"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "EVENT",
+          "canonical_name": "omnibus VI"
+        },
+        {
+          "topic_name": "OpenAI",
+          "slug_parent": "ai",
+          "keywords": [
+            "intelligence artificielle",
+            "OpenAI",
+            "ChatGPT",
+            "modèles de langage",
+            "IA générative",
+            "innovation technologique",
+            "recherche en IA",
+            "éthique de l'IA",
+            "Microsoft",
+            "sécurité des IA"
+          ],
+          "priority_multiplier": 2,
+          "state": "favorite",
+          "entity_type": "ORG",
+          "canonical_name": "OpenAI"
+        },
+        {
+          "topic_name": "palantir",
+          "slug_parent": "tech",
+          "keywords": [
+            "Palantir",
+            "analyse de données",
+            "IA",
+            "surveillance",
+            "logiciel",
+            "big data",
+            "Renseignement",
+            "Gouvernement",
+            "entreprise technologique"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "palantir"
+        },
+        {
+          "topic_name": "Paris Saint-Germain Football Club",
+          "slug_parent": "sport",
+          "keywords": [
+            "PSG",
+            "Ligue 1",
+            "Mbappé",
+            "Neymar",
+            "Mbollé",
+            "Kylian Mbappé",
+            "transferts",
+            "Ligue des Champions",
+            "Qatar",
+            "football français"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": "ORG",
+          "canonical_name": "Paris Saint-Germain Football Club"
+        },
+        {
+          "topic_name": "Patrick Pouyanné",
+          "slug_parent": "energy",
+          "keywords": [
+            "TotalEnergies",
+            "pétrole",
+            "gaz",
+            "transition énergétique",
+            "PDG",
+            "énergie renouvelable",
+            "carburants",
+            "climat",
+            "stratégie énergétique"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "PERSON",
+          "canonical_name": "Patrick Pouyanné"
+        },
+        {
+          "topic_name": "Philosophie",
+          "slug_parent": "philosophy",
+          "keywords": [
+            "philosophie",
+            "métaphysique",
+            "éthique",
+            "épistémologie",
+            "existentialisme",
+            "stoïcisme",
+            "philosophes",
+            "pensée critique",
+            "logique"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Physique",
+          "slug_parent": "science",
+          "keywords": [
+            "physique quantique",
+            "mécanique classique",
+            "relativité",
+            "particules élémentaires",
+            "théorie des cordes",
+            "physique nucléaire",
+            "optique",
+            "thermodynamique",
+            "astrophysique",
+            "expériences scientifiques"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Politique",
+          "slug_parent": "politics",
+          "keywords": [
+            "politique"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "présidentielle 2027",
+          "slug_parent": "politics",
+          "keywords": [
+            "élection présidentielle 2027",
+            "candidats 2027",
+            "campagne électorale",
+            "programmes politiques",
+            "sondages 2027",
+            "débats présidentiels",
+            "scrutin 2027",
+            "enjeux politiques",
+            "partis politiques",
+            "vote"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "EVENT",
+          "canonical_name": "présidentielle 2027"
+        },
+        {
+          "topic_name": "Pro A (basketball)",
+          "slug_parent": "sport",
+          "keywords": [
+            "Pro A",
+            "basketball français",
+            "LNB",
+            "championnat de France",
+            "basket professionnel",
+            "playoffs",
+            "équipes de Pro A",
+            "transfert basket",
+            "Nanterre",
+            "ASVEL"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": "EVENT",
+          "canonical_name": "Pro A (basketball)"
+        },
+        {
+          "topic_name": "Relations et amour",
+          "slug_parent": "relationships",
+          "keywords": [
+            "amour",
+            "relations amoureuses",
+            "couple",
+            "séduction",
+            "communication",
+            "conflits",
+            "intimité",
+            "thérapie de couple",
+            "attachement",
+            "romance"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Réseaux sociaux",
+          "slug_parent": "media",
+          "keywords": [
+            "réseaux sociaux",
+            "Facebook",
+            "Instagram",
+            "TikTok",
+            "X (Twitter)",
+            "algorithmes",
+            "influenceurs",
+            "vie privée",
+            "désinformation",
+            "communautés en ligne"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Sales",
+          "slug_parent": "economy",
+          "keywords": [
+            "ventes",
+            "commerce",
+            "marketing",
+            "consommation",
+            "stratégie commerciale",
+            "chiffre d'affaires",
+            "distribution",
+            "clientèle",
+            "promotion",
+            "marge"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "San Antonio Spurs",
+          "slug_parent": "sport",
+          "keywords": [
+            "basketball",
+            "NBA",
+            "Tim Duncan",
+            "Tony Parker",
+            "Manu Ginóbili",
+            "playoffs",
+            "San Antonio",
+            "équipe historique",
+            "coach Popovich",
+            "dynastie"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": "ORG",
+          "canonical_name": "San Antonio Spurs"
+        },
+        {
+          "topic_name": "Santé",
+          "slug_parent": "health",
+          "keywords": [
+            "health"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Science",
+          "slug_parent": "science",
+          "keywords": [
+            "science",
+            "science"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "SEO",
+          "slug_parent": "marketing",
+          "keywords": [
+            "référencement naturel",
+            "optimisation",
+            "moteurs de recherche",
+            "Google",
+            "mots-clés",
+            "backlinks",
+            "algorithme",
+            "trafic organique",
+            "positionnement",
+            "audit SEO"
+          ],
+          "priority_multiplier": 2,
+          "state": "favorite",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Startups",
+          "slug_parent": "startups",
+          "keywords": [
+            "startups",
+            "startups"
+          ],
+          "priority_multiplier": 2,
+          "state": "favorite",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Studio Ghibli",
+          "slug_parent": "cinema",
+          "keywords": [
+            "animation japonaise",
+            "Hayao Miyazaki",
+            "Isao Takahata",
+            "Totoro",
+            "Le Voyage de Chihiro",
+            "Princesse Mononoké",
+            "films d'animation",
+            "cinéma d'auteur",
+            "Miyazaki Productions"
+          ],
+          "priority_multiplier": 1,
+          "state": "unfollowed",
+          "entity_type": "ORG",
+          "canonical_name": "Studio Ghibli"
+        },
+        {
+          "topic_name": "Technologie",
+          "slug_parent": "tech",
+          "keywords": [
+            "innovation",
+            "numérique",
+            "high-tech",
+            "startup",
+            "IA",
+            "robotique",
+            "cybersécurité",
+            "blockchain",
+            "smartphone",
+            "réalité virtuelle"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Vibecoding",
+          "slug_parent": "tech",
+          "keywords": [
+            "vibecoding",
+            "développement logiciel",
+            "productivité",
+            "motivation",
+            "travail à distance",
+            "culture tech",
+            "open source",
+            "collaboration",
+            "burnout",
+            "wellbeing"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "Vibecoding"
+        }
+      ],
+      "entity_affinities": {
+        "2025": 1.02354150171204,
+        "moscou": 1.028812,
+        "israël": 1.05538727142592,
+        "dunkerque": 1.03,
+        "port de dunkerque": 1.03,
+        "xxe siècle": 1.03,
+        "préfecture de la gironde": 1.02451218420663,
+        "gironde": 1.3953853752624,
+        "extrême droite espagnole": 1.2121446768,
+        "espagne": 1.28324358483555,
+        "hamas": 1.02657527142592,
+        "japon": 1.028812,
+        "théiers": 1.028812,
+        "allan brunon": 1.0276710448,
+        "généticiens": 1.028812,
+        "matcha": 1.028812,
+        "bande de gaza": 1.02657527142592,
+        "palestine": 1.02657527142592,
+        "grenoble": 1.0276710448,
+        "isère": 1.0276710448,
+        "barbara butch": 1.0276710448,
+        "la france insoumise": 1.0276710448,
+        "drees": 1.02354150171204,
+        "cern": 1.065365824551,
+        "fcc": 1.065365824551,
+        "donald trump": 1.15236565003102,
+        "lhc": 1.065365824551,
+        "france": 1.08707975616878,
+        "ukraine": 1.07888359131204,
+        "maroc": 1.0276710448,
+        "gouvernement espagnol": 1.0276710448,
+        "anthropic": 1.02657527142592,
+        "claude": 1.02657527142592,
+        "volodymyr zelensky": 1.02354150171204,
+        "loire": 1.0276710448,
+        "biscarrosse": 1.0276710448,
+        "fontainebleau": 1.02552289067745,
+        "vigilance orange canicule": 1.02552289067745,
+        "maison blanche": 1.02354150171204,
+        "guerre en ukraine": 1.02354150171204,
+        "accord commercial nord-américain": 1.05340863774041,
+        "victor wembanyama": 1.03932747002098,
+        "kel’el ware": 1.02085405992571,
+        "landes": 1.0276710448,
+        "houston rockets": 1.02085405992571,
+        "minnesota timberwolves": 1.02085405992571,
+        "tribunal de l'union européenne": 1.02002823915265,
+        "elon musk": 1.04088229907836,
+        "robotaxis autonomes": 1.02002823915265,
+        "banane": 1.02552289067745,
+        "nawal": 1.02552289067745,
+        "manyaya": 1.02552289067745,
+        "antiracisme": 1.02552289067745,
+        "chicago bulls": 1.03932747002098,
+        "feux de forêt": 1.02171393161778,
+        "mer d'aral": 1.02552289067745,
+        "co₂": 1.02552289067745,
+        "ia": 1.09579816818161,
+        "joé seyfried": 1.02354150171204,
+        "vincent picard": 1.02354150171204,
+        "star contender": 1.02354150171204,
+        "sao josé dos campos": 1.02354150171204,
+        "nirmal purja": 1.02657527142592,
+        "broad peak": 1.02657527142592,
+        "pakistan": 1.02657527142592,
+        "beaugency": 1.02552289067745,
+        "loiret": 1.02552289067745,
+        "ai overviews": 1.02002823915265,
+        "seo": 1.02002823915265,
+        "éditeurs": 1.02002823915265,
+        "portugal": 1.02657527142592,
+        "julie": 1.02657527142592,
+        "alentejo": 1.02657527142592,
+        "richard loving": 1.02552289067745,
+        "mildred loving": 1.02552289067745,
+        "virginie": 1.02552289067745,
+        "cour suprême": 1.02552289067745,
+        "meta": 1.05561082646856,
+        "infomaniak": 1.19567549519381,
+        "perrot duval holding": 1.19567549519381,
+        "plages du débarquement": 1.02171393161778,
+        "normandie": 1.02171393161778,
+        "patrimoine mondial de l'unesco": 1.02171393161778,
+        "débarquement allié": 1.02171393161778,
+        "nazisme": 1.02171393161778,
+        "allemagne": 1.02171393161778,
+        "san antonio spurs": 1.01847341009527,
+        "openai": 1.05209816210337,
+        "nba": 1.12741254047557,
+        "règlement sur l'ia": 1.02552289067745,
+        "google": 1.02552289067745,
+        "microsoft": 1.02552289067745,
+        "système d'échange de quotas de co2": 1.02451218420663,
+        "charles lee": 1.02085405992571,
+        "hornets": 1.02085405992571,
+        "ashraf": 1.02451218420663,
+        "damian lillard": 1.02552289067745,
+        "françois": 1.02451218420663,
+        "télétravail": 1.01847341009527,
+        "gard": 1.01847341009527,
+        "rob brezsny": 1.02552289067745,
+        "courrier international": 1.02552289067745,
+        "lion": 1.02552289067745,
+        "emmanuel macron": 1.02451218420663,
+        "vakita": 1.48030866247708,
+        "hugo clément": 1.48030866247708,
+        "gay pride de berlin": 1.04256799154349,
+        "future of life institute": 1.02552289067745,
+        "pins": 1.2382136463229,
+        "états-unis": 1.17332289740062,
+        "wyylde": 1.02002823915265,
+        "gay pride": 1.02171393161778,
+        "totalenergies": 1.00823360634181,
+        "notre affaire à tous": 1.00823360634181,
+        "justice climatique": 1.00823360634181,
+        "dz mafia": 1.03694682019054,
+        "régimes végétariens": 1.02171393161778,
+        "solomiansky": 1.0276710448,
+        "missiles balistiques": 1.0276710448,
+        "russie": 1.0841540896,
+        "kiev": 1.0553420896,
+        "badaroz": 1.01847341009527,
+        "régimes végétaliens": 1.02171393161778,
+        "starship": 1.02085405992571,
+        "juin 2026": 1.02085405992571,
+        "tornades de feu": 1.02085405992571,
+        "commission européenne": 1.02451218420663,
+        "summer league": 1.02085405992571,
+        "bronny james": 1.02085405992571,
+        "questionnaire brisons le silence": 1.02002823915265,
+        "établissements publics": 1.02002823915265,
+        "lebron james": 1.02085405992571,
+        "sixers": 1.02085405992571,
+        "lgbt+": 1.02085405992571,
+        "matas buzelis": 1.01847341009527,
+        "fox sports": 1.00759441633166,
+        "deni avdija": 1.01847341009527,
+        "tiago splitter": 1.01847341009527,
+        "tesla": 1.02002823915265,
+        "roberto vannacci": 1.01847341009527,
+        "oman": 1.0276710448,
+        "limah": 1.0276710448,
+        "détroit d'ormuz": 1.0276710448,
+        "ukmt": 1.0276710448,
+        "père jacques hamel": 1.02085405992571,
+        "binge drinking": 1.02085405992571,
+        "scientifiques": 1.02002823915265,
+        "été 2026": 1.02002823915265,
+        "comores": 1.0579038176474,
+        "grande comore": 1.0579038176474,
+        "ndzouani": 1.0579038176474,
+        "patrimoine mondial de l’unesco": 1.0579038176474,
+        "unesco": 1.0579038176474,
+        "laurent nuñez": 1.01847341009527,
+        "europe": 1.06539448328499,
+        "xavier de la porte": 1.02002823915265,
+        "souveraineté numérique": 1.02002823915265,
+        "ceuta": 1.2398157216,
+        "téhéran": 1.07436312983011,
+        "salman rushdie": 1.02552289067745,
+        "hadi matar": 1.02552289067745,
+        "etats-unis": 1.02552289067745,
+        "versets sataniques": 1.02552289067745,
+        "ministère américain de la justice": 1.02552289067745,
+        "cap-ferret": 1.02002823915265,
+        "seine-maritime": 1.02085405992571,
+        "désinformation": 1.2026633617659,
+        "sébastien lecornu": 1.02085405992571,
+        "kimi": 1.02260925824425,
+        "silicon valley": 1.02260925824425,
+        "thomas le bonniec": 1.02002823915265,
+        "vert": 1.15313734406472,
+        "stations d'épuration": 1.15313734406472,
+        "ja morant": 1.00759441633166,
+        "memphis grizzlies": 1.00759441633166,
+        "jerami grant": 1.00759441633166,
+        "kris murray": 1.00759441633166,
+        "zlatan ibrahimovic": 1.00759441633166,
+        "coupe du monde 2026": 1.00759441633166,
+        "marins": 1.01847341009527,
+        "suisse": 1.065365824551,
+        "science": 1.02451218420663,
+        "anne ring": 1.02085405992571,
+        "ian": 1.02085405992571,
+        "june 1961": 1.02085405992571,
+        "iso": 1.02552289067745,
+        "iso14060": 1.02552289067745,
+        "thomas richter": 1.02552289067745,
+        "big tech": 1.02171393161778,
+        "changement climatique": 1.02451218420663,
+        "amérique du nord": 1.02451218420663,
+        "bordeaux": 1.02085405992571,
+        "amérique du sud": 1.02451218420663,
+        "pyrénées": 1.02171393161778,
+        "ours": 1.02171393161778,
+        "berlin": 1.06428192316126,
+        "australie": 1.15354983350367,
+        "paris": 1.02826184549447,
+        "saint-malo": 1.01847341009527,
+        "passereaux": 1.02451218420663,
+        "presqu'île du cap-ferret": 1.02002823915265,
+        "préfecture": 1.02002823915265,
+        "tidjane salaün": 1.02085405992571,
+        "attentat islamiste": 1.02085405992571,
+        "saint-étienne-du-rouvray": 1.02085405992571,
+        "gouvernement": 1.02171393161778,
+        "pesticides": 1.01847341009527,
+        "mégabassines": 1.01847341009527,
+        "giovanni fasanella": 1.02085405992571,
+        "tigre du platane": 1.02085405992571,
+        "spacex": 1.04170811985142,
+        "la réunion": 1.02085405992571,
+        "pêcheurs artisanaux": 1.02085405992571,
+        "moyen-orient": 1.02002823915265,
+        "saumos": 1.2382136463229,
+        "forêt des landes": 1.2382136463229,
+        "sud-ouest": 1.17333764653923,
+        "julian phillips": 1.02085405992571,
+        "apple": 1.02002823915265,
+        "digital market act": 1.02002823915265,
+        "hakeem olajuwon": 1.02085405992571,
+        "bucks": 1.02085405992571,
+        "projet de loi ripost sur la tranquillité publique": 1.01847341009527,
+        "italie": 1.02085405992571,
+        "marcheprime": 1.02085405992571,
+        "cestas": 1.02085405992571,
+        "iran": 1.07436312983011,
+        "portland trail blazers": 1.02606782642694,
+        "sénat": 1.01847341009527,
+        "projet de loi d’urgence agricole": 1.01847341009527,
+        "christophe rivenq": 1.03694682019054,
+        "alès": 1.03694682019054
+      },
+      "muted_sources": [
+        "8baabd4d-dd6c-48ea-bb09-c3d5373aefa5",
+        "0c62aadf-20ec-48c5-a003-33939f0ade17",
+        "5d269a77-263a-4b6e-9390-7fd559174d3a",
+        "5d269a77-263a-4b6e-9390-7fd559174d3a",
+        "5dfba3fb-0c69-48be-8467-fad30e897806",
+        "5dfba3fb-0c69-48be-8467-fad30e897806",
+        "29c221eb-a832-4315-82ad-79e772ca1ab2",
+        "f765725b-8906-4336-aecc-430d0aaa4ea0",
+        "f07f88dc-ddc5-4dbe-b951-1bf90e89eb86"
+      ],
+      "muted_themes": [],
+      "muted_topics": [
+        "geopolitics",
+        "health",
+        "société",
+        "literature",
+        "cinema",
+        "ice",
+        "work",
+        "religion",
+        "gaming",
+        "cybersecurity",
+        "coupe d'allemagne",
+        "music",
+        "fashion",
+        "wrc",
+        "travel",
+        "san antonio",
+        "emmanuel macron"
+      ],
+      "muted_content_types": [],
+      "user_prefs": {
+        "objective": "anxiety",
+        "approach": "detailed",
+        "response_style": "decisive",
+        "content_recency": "recent",
+        "serein_enabled": "false"
+      }
+    },
+    {
+      "persona_id": "persona_05",
+      "archetype": "26 sources · 8 thèmes · 43 sujets · w_max 1.00 · J+34",
+      "cluster_size": 5,
+      "selection": "cluster_medoid",
+      "is_heldout": false,
+      "days_since_signup": 34,
+      "followed_sources": [
+        {
+          "source_id": "019833de-600e-47fa-ad79-98358a833a51",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "0318e5a5-5ef2-4d3d-8e0e-202ad0433a8a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "0c62aadf-20ec-48c5-a003-33939f0ade17",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "1b8dde5f-7641-4ebc-bf3a-07bebdaf8ffb",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "311ccd27-3b26-489d-8530-079b3c1ef882",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "3213a0f9-31a6-4d90-9737-19cdfbfa32d2",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "32e3231b-e0a0-4109-b235-a5e9734fee77",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "41b2f545-042f-4e82-9e3f-5f96cdfe79c4",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "445b1618-3e87-4d67-a646-16c6b62d703e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "4be55729-cd84-46d2-9119-644349118373",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5243a419-aca5-49d2-a132-94ebd4d67ccc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5790ea77-18f8-4c92-ab8b-35a10fcc3f63",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "5ac7541a-5d6f-4127-8bba-5f53842944d5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "87a41275-0f59-4707-8e6f-7fbda5098cdb",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "8baabd4d-dd6c-48ea-bb09-c3d5373aefa5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "97eab57f-983d-4b47-a560-29debf13d2df",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "a3a5762a-de2e-4f7f-97e8-8e470a651a78",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "aa8770fd-bfb9-434b-bbe3-a24b0321f444",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ad73eb54-8368-4d1f-a58a-e6b2b211c981",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b168ad4a-ef11-479e-b10d-a9da341f1519",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "be37a0fd-b8eb-4113-9432-ad894d291b3b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "c9157b18-6458-47e7-a1e7-f94cd1d9841d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d1f6070d-e73d-4083-97a8-d0dbb4a52342",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d5ce3f80-a02b-4b83-9c51-fe2a3c7a1f6d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d6e6be66-7aae-49aa-966c-20a71d4844a9",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "da7114f9-2ff9-4a3e-9c93-c707596769a9",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "economy": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "environment": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "international": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "politics": {
+          "weight": 1.0,
+          "state": "favorite"
+        },
+        "science": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "society": {
+          "weight": 1.0,
+          "state": "favorite"
+        },
+        "sport": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "tech": {
+          "weight": 1.0,
+          "state": "favorite"
+        }
+      },
+      "subtopic_weights": {
+        "ai": 1,
+        "tech": 1,
+        "gaming": 1,
+        "politics": 1,
+        "geopolitics": 1,
+        "justice": 1,
+        "health": 1,
+        "education": 1,
+        "space": 1,
+        "climate": 1,
+        "energy": 1,
+        "wellness": 1,
+        "finance": 1,
+        "startups": 1,
+        "europe": 1,
+        "usa": 1,
+        "privacy": 1,
+        "cybersecurity": 1,
+        "factcheck": 1,
+        "work": 1,
+        "immigration": 1,
+        "inequality": 1,
+        "feminism": 1,
+        "religion": 1,
+        "environment": 1,
+        "biodiversity": 1,
+        "agriculture": 1,
+        "food": 1,
+        "entrepreneurship": 1,
+        "realestate": 1,
+        "africa": 1,
+        "asia": 1,
+        "middleeast": 1
+      },
+      "custom_topics": [
+        {
+          "topic_name": "Afrique",
+          "slug_parent": "africa",
+          "keywords": [
+            "africa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Agriculture",
+          "slug_parent": "agriculture",
+          "keywords": [
+            "agriculture"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Alimentation",
+          "slug_parent": "food",
+          "keywords": [
+            "food"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Asie",
+          "slug_parent": "asia",
+          "keywords": [
+            "asia"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Badminton",
+          "slug_parent": "sport",
+          "keywords": [
+            "badminton"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Bien-être",
+          "slug_parent": "wellness",
+          "keywords": [
+            "wellness"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Biodiversité",
+          "slug_parent": "biodiversity",
+          "keywords": [
+            "biodiversity"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Climat",
+          "slug_parent": "climate",
+          "keywords": [
+            "climate"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Conférences universitaires",
+          "slug_parent": "science",
+          "keywords": [
+            "conférences universitaires"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "CSRD",
+          "slug_parent": "environment",
+          "keywords": [
+            "csrd"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Cybersécurité",
+          "slug_parent": "cybersecurity",
+          "keywords": [
+            "cybersecurity"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Données et vie privée",
+          "slug_parent": "privacy",
+          "keywords": [
+            "privacy"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Droits des femmes",
+          "slug_parent": "feminism",
+          "keywords": [
+            "droits des femmes"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "e-commerce",
+          "slug_parent": "tech",
+          "keywords": [
+            "e-commerce"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Emploi et travail",
+          "slug_parent": "work",
+          "keywords": [
+            "work"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Énergies renouvelables",
+          "slug_parent": "energy",
+          "keywords": [
+            "énergies renouvelables"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Entrepreneuriat",
+          "slug_parent": "entrepreneurship",
+          "keywords": [
+            "entrepreneurship"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Espace et astronomie",
+          "slug_parent": "space",
+          "keywords": [
+            "space"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "États-Unis",
+          "slug_parent": "usa",
+          "keywords": [
+            "usa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Europe",
+          "slug_parent": "europe",
+          "keywords": [
+            "europe"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Fact-checking",
+          "slug_parent": "factcheck",
+          "keywords": [
+            "factcheck"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Finance",
+          "slug_parent": "finance",
+          "keywords": [
+            "finance"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Fonds vert",
+          "slug_parent": "environment",
+          "keywords": [
+            "fonds vert"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Fonds vert",
+          "slug_parent": "politics",
+          "keywords": [
+            "fonds vert"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Géopolitique",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "geopolitics"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Green Pact",
+          "slug_parent": "environment",
+          "keywords": [
+            "green pact"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Immigration",
+          "slug_parent": "immigration",
+          "keywords": [
+            "immigration"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Inégalités sociales",
+          "slug_parent": "inequality",
+          "keywords": [
+            "inequality"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Intelligence artificielle",
+          "slug_parent": "ai",
+          "keywords": [
+            "ai"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Jeux vidéo",
+          "slug_parent": "gaming",
+          "keywords": [
+            "gaming"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Justice et droit",
+          "slug_parent": "justice",
+          "keywords": [
+            "justice"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Levée de fonds",
+          "slug_parent": "tech",
+          "keywords": [
+            "levée de fonds"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Marché immobilier",
+          "slug_parent": "realestate",
+          "keywords": [
+            "marché immobilier"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Moyen-Orient",
+          "slug_parent": "middleeast",
+          "keywords": [
+            "middleeast"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Politique agricole commune",
+          "slug_parent": "politics",
+          "keywords": [
+            "politique agricole commune"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Réforme allocations chômage",
+          "slug_parent": "politics",
+          "keywords": [
+            "réforme allocations chômage"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Réforme éducation",
+          "slug_parent": "education",
+          "keywords": [
+            "réforme éducation"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Religion",
+          "slug_parent": "religion",
+          "keywords": [
+            "religion"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Startups",
+          "slug_parent": "startups",
+          "keywords": [
+            "startups"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Système de santé",
+          "slug_parent": "health",
+          "keywords": [
+            "système de santé"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Utilisation de l'IA en sciences médicales",
+          "slug_parent": "science",
+          "keywords": [
+            "utilisation de l'ia en sciences médicales"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Venture Capital",
+          "slug_parent": "tech",
+          "keywords": [
+            "venture capital"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Vulgarisation scientifique",
+          "slug_parent": "science",
+          "keywords": [
+            "vulgarisation scientifique"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": {},
+      "muted_sources": [],
+      "muted_themes": [
+        "culture"
+      ],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {
+        "objective": "noise,bias",
+        "approach": "detailed",
+        "response_style": "nuanced",
+        "content_recency": "recent",
+        "serein_enabled": "false",
+        "independence_pref": "independent",
+        "swipe_liked_count": "8",
+        "swipe_disliked_count": "2"
+      }
+    },
+    {
+      "persona_id": "persona_06",
+      "archetype": "23 sources · 5 thèmes · 12 sujets · w_max 2.34 · J+168",
+      "cluster_size": 18,
+      "selection": "cluster_medoid",
+      "is_heldout": false,
+      "days_since_signup": 168,
+      "followed_sources": [
+        {
+          "source_id": "0318e5a5-5ef2-4d3d-8e0e-202ad0433a8a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "17be5094-a7e9-485d-85c0-11c90bfd56a1",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "32e3231b-e0a0-4109-b235-a5e9734fee77",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "50809fce-7f26-4ad3-90ad-92de165746bd",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5243a419-aca5-49d2-a132-94ebd4d67ccc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5ac7541a-5d6f-4127-8bba-5f53842944d5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5dc5b005-7f5c-4bf2-a722-c0a1a81e5cb6",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "659cf9e0-428c-49e6-a262-f5be575706b2",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "7baa8eb8-df2e-422c-be12-94e8057af26c",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "81a6536c-d3cc-4076-9bba-8db0b4946c39",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "901d4415-6eda-4378-95be-360ef6061290",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "aa8770fd-bfb9-434b-bbe3-a24b0321f444",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b168ad4a-ef11-479e-b10d-a9da341f1519",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b8e4dfb0-87e5-434e-b54c-a59c49ce2fdc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ba341bbb-2570-4dea-babf-5e17f1db52e0",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 2,
+          "state": "favorite"
+        },
+        {
+          "source_id": "be37a0fd-b8eb-4113-9432-ad894d291b3b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "c9157b18-6458-47e7-a1e7-f94cd1d9841d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "d0a970de-878b-4332-84ad-ae4e680f952a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d5ce3f80-a02b-4b83-9c51-fe2a3c7a1f6d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "dc454a63-9384-417d-a216-707c2bfbbb18",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "eedecc86-fdb4-44d8-a16d-b944e0804857",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "faff0363-e0d5-47b6-a7b4-c6bd7109eeaa",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "ffc3211a-ac85-4943-8a2a-106162d39446",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "economy": {
+          "weight": 1.046118408,
+          "state": "followed"
+        },
+        "international": {
+          "weight": 2.337433832,
+          "state": "followed"
+        },
+        "politics": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "sport": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "tech": {
+          "weight": 1.2674867664,
+          "state": "favorite"
+        }
+      },
+      "subtopic_weights": {
+        "finance": 1,
+        "startups": 1,
+        "wellness": 1,
+        "feminism": 1.02085405992571,
+        "space": 1.02085405992571,
+        "europe": 0.900406192615744,
+        "gaming": 0.900406192615744,
+        "health": 1.00527914710938,
+        "climate": 1.02085405992571,
+        "economy": 1.02085405992571,
+        "geopolitics": 1.11607687376406,
+        "cybersecurity": 1.02354150171204,
+        "justice": 1.04170811985142,
+        "tech": 1.02821799395635,
+        "africa": 1.02085405992571,
+        "fashion": 1.02085405992571,
+        "politics": 1.02085405992571,
+        "ai": 1.0046764922443,
+        "middleeast": 1.0046764922443,
+        "usa": 1.04346331816996,
+        "science": 1.02613320703509,
+        "cinema": 0.933730898526264,
+        "education": 1.00995563935368
+      },
+      "custom_topics": [
+        {
+          "topic_name": "Bien-être",
+          "slug_parent": "wellness",
+          "keywords": [
+            "wellness"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Cybersécurité",
+          "slug_parent": "cybersecurity",
+          "keywords": [
+            "cybersecurity"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "États-Unis",
+          "slug_parent": "usa",
+          "keywords": [
+            "usa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Europe",
+          "slug_parent": "europe",
+          "keywords": [
+            "europe"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Finance",
+          "slug_parent": "finance",
+          "keywords": [
+            "finance"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Géopolitique",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "relations internationales",
+            "diplomatie",
+            "conflits",
+            "alliances",
+            "puissances mondiales",
+            "souveraineté",
+            "stratégie",
+            "sécurité nationale"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Intelligence artificielle",
+          "slug_parent": "ai",
+          "keywords": [
+            "ai"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Jeux vidéo",
+          "slug_parent": "gaming",
+          "keywords": [
+            "gaming"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Politique",
+          "slug_parent": "politics",
+          "keywords": [
+            "politics"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Santé",
+          "slug_parent": "health",
+          "keywords": [
+            "health"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Startups",
+          "slug_parent": "startups",
+          "keywords": [
+            "startups"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Technologie",
+          "slug_parent": "tech",
+          "keywords": [
+            "tech"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": {
+        "maison blanche": 1.02354150171204,
+        "ukraine": 1.02354150171204,
+        "guerre en ukraine": 1.02354150171204,
+        "donald trump": 1.04615075995629,
+        "iceland": 1.02260925824425,
+        "union européenne": 1.02260925824425,
+        "volodymyr zelensky": 1.02354150171204
+      },
+      "muted_sources": [],
+      "muted_themes": [
+        "culture",
+        "environment",
+        "science",
+        "society"
+      ],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {
+        "objective": "culture",
+        "approach": "detailed",
+        "response_style": "nuanced",
+        "content_recency": "recent"
+      }
+    },
+    {
+      "persona_id": "persona_07",
+      "archetype": "53 sources · 8 thèmes · 35 sujets · w_max 3.00 · J+65",
+      "cluster_size": 2,
+      "selection": "extreme_veteran",
+      "is_heldout": true,
+      "days_since_signup": 65,
+      "followed_sources": [
+        {
+          "source_id": "0318e5a5-5ef2-4d3d-8e0e-202ad0433a8a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "036098a3-2725-48a4-a921-7545bdec82c4",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "03f703fb-3e6b-44d7-ad46-0b4fee77b425",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "0c62aadf-20ec-48c5-a003-33939f0ade17",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "0cd4319c-2322-47e9-a256-1509d6e47ed1",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "1025e562-9bfa-4090-9cd0-c4a0add1eee2",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "11fc4bc5-5c3e-42b3-9e4e-18abdf19445a",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "17be5094-a7e9-485d-85c0-11c90bfd56a1",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "1b8dde5f-7641-4ebc-bf3a-07bebdaf8ffb",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "311ccd27-3b26-489d-8530-079b3c1ef882",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "3213a0f9-31a6-4d90-9737-19cdfbfa32d2",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "32e3231b-e0a0-4109-b235-a5e9734fee77",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "41b2f545-042f-4e82-9e3f-5f96cdfe79c4",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "445b1618-3e87-4d67-a646-16c6b62d703e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "4a7d45c4-4892-4ea0-9344-ff87155e78fe",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "4be55729-cd84-46d2-9119-644349118373",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5243a419-aca5-49d2-a132-94ebd4d67ccc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "52b6ac31-3fb0-44b6-9bf7-bcd22157066d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5790ea77-18f8-4c92-ab8b-35a10fcc3f63",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "583ac86a-3e28-4a89-a3d3-9b9375b9b8f9",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "5ac7541a-5d6f-4127-8bba-5f53842944d5",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5d269a77-263a-4b6e-9390-7fd559174d3a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "5dc5b005-7f5c-4bf2-a722-c0a1a81e5cb6",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "7f234639-ee5a-4969-87ee-7f7ef0b3dbe0",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "81a6536c-d3cc-4076-9bba-8db0b4946c39",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "87a41275-0f59-4707-8e6f-7fbda5098cdb",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "8900ed73-4038-49fb-847c-2078b3d42cc7",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "901d4415-6eda-4378-95be-360ef6061290",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "9295e831-55f4-4e66-9447-436a84be06c7",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "97eab57f-983d-4b47-a560-29debf13d2df",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "9d93d883-72a4-43ac-813d-002df717af30",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "a3a5762a-de2e-4f7f-97e8-8e470a651a78",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "ad73eb54-8368-4d1f-a58a-e6b2b211c981",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b168ad4a-ef11-479e-b10d-a9da341f1519",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b4012b94-f101-47f7-89c9-f947fd2ebcf6",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "b71e6b5f-4995-43e3-990a-5674c719c737",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "b8e4dfb0-87e5-434e-b54c-a59c49ce2fdc",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "favorite"
+        },
+        {
+          "source_id": "bbad58f4-c9cb-4de5-b8cd-6df0bc0ca86e",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "be37a0fd-b8eb-4113-9432-ad894d291b3b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "c73dbcac-160f-4e81-82c7-1de42b098c74",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d0a970de-878b-4332-84ad-ae4e680f952a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d3d78ff8-745c-47f4-82fe-c94c69eed845",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d5ce3f80-a02b-4b83-9c51-fe2a3c7a1f6d",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "d6e6be66-7aae-49aa-966c-20a71d4844a9",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "da76f746-aed5-489f-821e-75b16d747df6",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "dab433f1-3058-41cb-a3e2-d744dfe6d0f7",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "dc454a63-9384-417d-a216-707c2bfbbb18",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "e76ae1b1-c003-4877-9f23-4623cff1a046",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "eedecc86-fdb4-44d8-a16d-b944e0804857",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "faff0363-e0d5-47b6-a7b4-c6bd7109eeaa",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "fb5ea207-0b4c-4b1b-af76-216a7ef81b13",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        },
+        {
+          "source_id": "fc6fc6b4-eb66-4af4-b528-00c88ed8eade",
+          "is_custom": true,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "unfollowed"
+        },
+        {
+          "source_id": "ffc3211a-ac85-4943-8a2a-106162d39446",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "culture": {
+          "weight": 1.8854734336,
+          "state": "followed"
+        },
+        "economy": {
+          "weight": 1.0,
+          "state": "followed"
+        },
+        "environment": {
+          "weight": 2.568025872,
+          "state": "favorite"
+        },
+        "international": {
+          "weight": 2.84473632,
+          "state": "favorite"
+        },
+        "politics": {
+          "weight": 1.046118408,
+          "state": "followed"
+        },
+        "science": {
+          "weight": 1.2859341296,
+          "state": "favorite"
+        },
+        "society": {
+          "weight": 3.0,
+          "state": "followed"
+        },
+        "tech": {
+          "weight": 1.4427367168,
+          "state": "followed"
+        }
+      },
+      "subtopic_weights": {
+        "environment": 1.28490700753007,
+        "immigration": 1.06,
+        "startups": 1,
+        "marketing": 1,
+        "factcheck": 1.03,
+        "africa": 1,
+        "energy": 1.09494643541082,
+        "lgbtq": 1.01923512088221,
+        "science": 1.15252306762332,
+        "health": 1.0539688868224,
+        "privacy": 1.02260925824425,
+        "finance": 1.0093529844886,
+        "feminism": 1.01402947673291,
+        "asia": 1.02451218420663,
+        "agriculture": 1.02354350297912,
+        "philosophy": 1.04210336277148,
+        "history": 1.0093529844886,
+        "literature": 1.0046764922443,
+        "climate": 1.45122088927664,
+        "justice": 1.14771730609356,
+        "gaming": 1.00527914710938,
+        "wellness": 1.025440311951,
+        "space": 1.05534470395436,
+        "inequality": 1.08762765267189,
+        "cybersecurity": 1.00646104859307,
+        "cinema": 1.0093529844886,
+        "work": 1.06235445061595,
+        "europe": 1.0046764922443,
+        "politics": 1.18336073679605,
+        "music": 1.0046764922443,
+        "geopolitics": 1.25818712472498,
+        "media": 1.03640457399054,
+        "sport": 1.03452000205888,
+        "travel": 1.0046764922443,
+        "middleeast": 1.08801649875998,
+        "ai": 1.0046764922443,
+        "biodiversity": 1.03645160029816,
+        "usa": 1.061926205946,
+        "tech": 1.06263194970679,
+        "economy": 1.09856619964515,
+        "food": 1.0046764922443,
+        "education": 1.02551381491107
+      },
+      "custom_topics": [
+        {
+          "topic_name": "Afrique",
+          "slug_parent": "africa",
+          "keywords": [
+            "africa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Agriculture",
+          "slug_parent": "agriculture",
+          "keywords": [
+            "agriculture"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Alimentation",
+          "slug_parent": "food",
+          "keywords": [
+            "food"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Asie",
+          "slug_parent": "asia",
+          "keywords": [
+            "asia"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "batterie",
+          "slug_parent": "energy",
+          "keywords": [
+            "batterie lithium-ion",
+            "stockage énergie",
+            "recyclage batterie",
+            "autonomie véhicule",
+            "innovation batterie",
+            "durée de vie",
+            "énergie renouvelable",
+            "batterie solide",
+            "impact environnemental"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Biodiversité",
+          "slug_parent": "biodiversity",
+          "keywords": [
+            "biodiversity"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Chimie",
+          "slug_parent": "science",
+          "keywords": [
+            "chimie organique",
+            "réaction chimique",
+            "molécule",
+            "laboratoire",
+            "périodique",
+            "synthèse",
+            "atome",
+            "composé",
+            "chimie inorganique",
+            "recherche"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Cinéma",
+          "slug_parent": "cinema",
+          "keywords": [
+            "cinema"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Climat",
+          "slug_parent": "climate",
+          "keywords": [
+            "climate"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Éducation",
+          "slug_parent": "education",
+          "keywords": [
+            "education"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Électrochimie",
+          "slug_parent": "science",
+          "keywords": [
+            "pile",
+            "batterie",
+            "réaction redox",
+            "électrolyse",
+            "énergie chimique",
+            "électrode",
+            "conductivité ionique",
+            "corrosion",
+            "électrosynthèse",
+            "électrochimie verte"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Énergies renouvelables",
+          "slug_parent": "energy",
+          "keywords": [
+            "solaire",
+            "éolien",
+            "hydroélectricité",
+            "biomasse",
+            "géothermie",
+            "transition énergétique",
+            "panneaux photovoltaïques",
+            "énergies vertes",
+            "stockage d'énergie",
+            "autoconsommation"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Environnement",
+          "slug_parent": "environment",
+          "keywords": [
+            "environment"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Espace et astronomie",
+          "slug_parent": "space",
+          "keywords": [
+            "space"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "États-Unis",
+          "slug_parent": "usa",
+          "keywords": [
+            "usa"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Europe",
+          "slug_parent": "europe",
+          "keywords": [
+            "europe"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Fact-checking",
+          "slug_parent": "factcheck",
+          "keywords": [
+            "factcheck"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Féminisme et droits des femmes",
+          "slug_parent": "feminism",
+          "keywords": [
+            "feminism"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Finance",
+          "slug_parent": "finance",
+          "keywords": [
+            "finance"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Géopolitique",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "geopolitics"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "hydrogène",
+          "slug_parent": "energy",
+          "keywords": [
+            "hydrogène vert",
+            "énergie renouvelable",
+            "pile à combustible",
+            "transition énergétique",
+            "stockage d'énergie",
+            "mobilité hydrogène",
+            "industrie lourde",
+            "électrolyse",
+            "carburant propre",
+            "UE hydrogène"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Inégalités sociales",
+          "slug_parent": "inequality",
+          "keywords": [
+            "inequality"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Intelligence artificielle",
+          "slug_parent": "ai",
+          "keywords": [
+            "ai"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Jeux vidéo",
+          "slug_parent": "gaming",
+          "keywords": [
+            "gaming"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Justice et droit",
+          "slug_parent": "justice",
+          "keywords": [
+            "justice"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "LGBTQ+",
+          "slug_parent": "lgbtq",
+          "keywords": [
+            "lgbtq"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Marketing",
+          "slug_parent": "marketing",
+          "keywords": [
+            "marketing"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Musique",
+          "slug_parent": "music",
+          "keywords": [
+            "music"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Philosophie",
+          "slug_parent": "philosophy",
+          "keywords": [
+            "philosophy"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Physique",
+          "slug_parent": "science",
+          "keywords": [
+            "physique quantique",
+            "mécanique classique",
+            "relativité",
+            "particules élémentaires",
+            "théorie des cordes",
+            "physique nucléaire",
+            "optique",
+            "thermodynamique",
+            "astrophysique",
+            "expériences scientifiques"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Pile à combustible à hydrogène",
+          "slug_parent": "energy",
+          "keywords": [
+            "pile à combustible",
+            "hydrogène vert",
+            "énergie renouvelable",
+            "mobilité hydrogène",
+            "stockage d'énergie",
+            "transition énergétique",
+            "batterie à hydrogène",
+            "électrolyse",
+            "infrastructures hydrogène",
+            "écologie"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "PRODUCT",
+          "canonical_name": "Pile à combustible à hydrogène"
+        },
+        {
+          "topic_name": "Politique",
+          "slug_parent": "politics",
+          "keywords": [
+            "politics"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Santé",
+          "slug_parent": "health",
+          "keywords": [
+            "health"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Startups",
+          "slug_parent": "startups",
+          "keywords": [
+            "startups"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "Technologie",
+          "slug_parent": "tech",
+          "keywords": [
+            "tech"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": {
+        "2025": 1.01923512088221,
+        "2026": 1.01923512088221,
+        "vrai ou faux": 1.03,
+        "crème solaire": 1.03,
+        "maurice ronai": 1.03,
+        "la fabrique des récits complotistes": 1.03,
+        "nasa": 1.02260925824425,
+        "gironde": 1.2637987139343,
+        "iran": 1.01923512088221,
+        "détroit d'ormuz": 1.01923512088221,
+        "japon": 1.02451218420663,
+        "barbara butch": 1.01923512088221,
+        "la france insoumise": 1.01923512088221,
+        "grenoble": 1.01923512088221,
+        "omerta": 1.01923512088221,
+        "alain soral": 1.01923512088221,
+        "rapaces": 1.02451218420663,
+        "france": 1.01923512088221,
+        "conseil constitutionnel": 1.03847024176442,
+        "clean hydrogen partnership": 1.01923512088221,
+        "vallées hydrogène": 1.01923512088221,
+        "projet français": 1.01923512088221,
+        "a400m": 1.02171393161778,
+        "pesticides": 1.01923512088221,
+        "grèce": 1.028812,
+        "dimanche 2 août": 1.028812,
+        "hélicoptères": 1.028812,
+        "armée américaine": 1.01923512088221,
+        "république islamique": 1.01923512088221,
+        "courrier international": 1.01923512088221,
+        "emmanuel macron": 1.01923512088221,
+        "france inter": 1.02552289067745,
+        "vert": 1.02552289067745,
+        "stations d'épuration": 1.02552289067745,
+        "questions prioritaires de constitutionnalité": 1.01923512088221,
+        "ministère de la transition écologique": 1.01847341009527,
+        "loi d'urgence agricole": 1.01847341009527,
+        "rob brezsny": 1.01923512088221,
+        "météo france": 1.02552289067745,
+        "landes": 1.02552289067745,
+        "médaille fields": 1.01923512088221,
+        "nobel de mathématiques": 1.01923512088221,
+        "chine": 1.01923512088221,
+        "coucou": 1.00823360634181,
+        "esa": 1.02260925824425,
+        "démarchage téléphonique": 1.02260925824425,
+        "espagne": 1.02260925824425,
+        "roland lescure": 1.02552289067745,
+        "lionel pujade": 1.02354150171204,
+        "cédric jubillar": 1.02171393161778,
+        "delphine jubillar": 1.02171393161778,
+        "mailhoc": 1.02171393161778,
+        "tarn": 1.02171393161778,
+        "ikea": 1.02260925824425,
+        "ikea compact": 1.02260925824425,
+        "jueun song": 1.02260925824425,
+        "préfecture": 1.02002823915265,
+        "loi d’urgence agricole": 1.01923512088221,
+        "députés de gauche": 1.01923512088221,
+        "cap-ferret": 1.02002823915265,
+        "bassin d’arcachon": 1.02002823915265,
+        "le monde diplomatique": 1.02552289067745,
+        "15 août": 1.02552289067745,
+        "james webb": 1.02260925824425,
+        "voyager": 1.02260925824425,
+        "états-unis": 1.03847024176442,
+        "monique barbut": 1.01847341009527,
+        "the guardian": 1.01923512088221,
+        "canada": 1.01923512088221,
+        "j.d. vance": 1.01923512088221,
+        "secret service": 1.01923512088221,
+        "bretagne": 1.01923512088221,
+        "narendra modi": 1.01847341009527,
+        "incendies": 1.14746926009693,
+        "inde": 1.01847341009527,
+        "concours d'entrée en faculté": 1.01847341009527
+      },
+      "muted_sources": [],
+      "muted_themes": [
+        "sport"
+      ],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {
+        "objective": "bias",
+        "approach": "detailed",
+        "response_style": "nuanced",
+        "content_recency": "recent",
+        "serein_enabled": "false"
+      }
+    },
+    {
+      "persona_id": "persona_08",
+      "archetype": "0 sources · 0 thèmes · 4 sujets · w_max 0.00 · J+1",
+      "cluster_size": 1,
+      "selection": "extreme_fresh_account",
+      "is_heldout": true,
+      "days_since_signup": 1,
+      "followed_sources": [],
+      "interests": {},
+      "subtopic_weights": {},
+      "custom_topics": [
+        {
+          "topic_name": "Assemblée nationale",
+          "slug_parent": "politics",
+          "keywords": [
+            "Assemblée nationale",
+            "députés",
+            "lois françaises",
+            "Parlement",
+            "scrutin",
+            "réforme constitutionnelle",
+            "majorité présidentielle",
+            "opposition politique",
+            "proposition de loi",
+            "session parlementaire"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        },
+        {
+          "topic_name": "BRICS",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "BRICS",
+            "alliance économique",
+            "pays émergents",
+            "nouvel ordre mondial",
+            "coopération internationale",
+            "expansion BRICS",
+            "dollar",
+            "souveraineté monétaire",
+            "Chine",
+            "Russie"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "BRICS"
+        },
+        {
+          "topic_name": "ONU",
+          "slug_parent": "geopolitics",
+          "keywords": [
+            "Organisation des Nations Unies",
+            "ONU",
+            "diplomatie internationale",
+            "maintien de la paix",
+            "droits de l'homme",
+            "Assemblée générale",
+            "Conseil de sécurité",
+            "secrétaire général",
+            "réformes internationales"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": "ORG",
+          "canonical_name": "ONU"
+        },
+        {
+          "topic_name": "Union européenne",
+          "slug_parent": "europe",
+          "keywords": [
+            "UE",
+            "Union européenne",
+            "politique européenne",
+            "règlementation",
+            "Commission européenne",
+            "Parlement européen",
+            "marché unique",
+            "fédéralisme européen",
+            "Brexit",
+            "élargissement"
+          ],
+          "priority_multiplier": 1,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": {},
+      "muted_sources": [],
+      "muted_themes": [],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {}
+    }
+  ]
+}
