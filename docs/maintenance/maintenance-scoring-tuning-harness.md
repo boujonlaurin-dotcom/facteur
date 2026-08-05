@@ -151,6 +151,11 @@ Le partage actif/faible/inerte est **mesuré** ; le partage hors-périmètre est
 **statique** (scan des `ScoringWeights.X` dans `pillars/`, `helpers/` et
 `scoring_engine.py`). Le rapport dit lequel est lequel.
 
+Le périmètre suit **ce que le run rejoue réellement**, pas seulement le moteur :
+avec `--sport-penalty`, `DIGEST_SPORT_PENALTY` sort de « hors-périmètre » et
+devient mesurable. Sans ce couplage, un run qui l'applique à chaque article la
+rapporterait « jamais lue par le moteur » — le rapport contredirait le run.
+
 `--corpus-sample 200` par défaut sur ce mode (112 × 4 × 8, sinon le run se
 compte en heures) ; `--only PREFIX` pour cibler.
 
@@ -318,8 +323,11 @@ L'inertie établie est redécouverte. ✅
   l'arrangement de la Tournée, le digest, l'Essentiel ou la veille.
   `DIGEST_SPORT_PENALTY` en fait partie : elle est appliquée par
   `digest_selector` **après** la combinaison des piliers. Le harnais la rejoue
-  sur demande (`--sport-penalty`, prédicat et constante de prod), mais elle
-  n'apparaîtra jamais dans le classement de sensibilité.
+  sur demande (`--sport-penalty`, prédicat et constante de prod) — et dans ce
+  régime **seulement**, elle entre dans le classement de sensibilité. Les autres
+  ajustements post-piliers de `digest_selector` (boost « actu décalée », caps de
+  diversité, exclusion sport du mode serein) n'ont **aucun** chemin de rejeu :
+  le mode `serein` est hors de portée de ce harnais.
 - **L'affinité de source apprise** (`source_affinity_scores`) : elle est
   calculée depuis l'historique d'interactions, pas stockée, et n'est donc pas
   dans les personas. Toute conclusion sur `SOURCE_AFFINITY_MAX_BONUS` est à

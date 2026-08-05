@@ -19,7 +19,7 @@ Suivi du lot : `docs/maintenance/maintenance-reco-optimisation-lot2.md`.
 | `scripts/build_scoring_corpus.py` | corpus 24 h **append-only** depuis `DATABASE_URL_RO` |
 | `scripts/evaluate_scoring_personas.py` | `--sensitivity` / `--invariants` / `--gold` / `--sweep` / `--compare` |
 | `scripts/validate_personas.py` | **supprimé** — écrivait de faux profils dans une DB vivante |
-| `tests/scripts/test_evaluate_scoring_personas.py` | 48 tests, ni DB ni réseau |
+| `tests/scripts/test_evaluate_scoring_personas.py` | 52 tests, ni DB ni réseau |
 | `tests/scripts/test_build_persona_dataset.py` | 19 tests — déterminisme, anonymisation |
 
 Le harnais rejoue le **vrai** `PillarScoringEngine.compute_score` ; un test
@@ -79,15 +79,68 @@ Deux pièges gardés par des tests : le moteur doit être **construit dans** le
 aucune perturbation ne doit faire tomber un pilier à 0 (une exception avalée
 par `compute_score` produirait un faux « actif »).
 
+## Passe `/simplify`
+
+Quatre revues (réutilisation / simplification / efficacité / altitude). Ce qui a
+été corrigé, au-delà du cosmétique :
+
+- **Le périmètre mesuré suit le régime du run.** `--sensitivity --sport-penalty`
+  appliquait `DIGEST_SPORT_PENALTY` à chaque article **tout en la rapportant
+  « jamais lue par le moteur »** : le rapport contredisait le run. Nouveau
+  `measurable_constants()`. Effet de bord utile : le fait n°5 est désormais
+  **mesuré** (verdict *inerte*, churn 0) et plus seulement déduit.
+- **L'invariant sport dit dans quel régime il a été mesuré.**
+  `followed_sport_survives_penalty` tournait **sans** la pénalité par défaut et
+  imputait quand même le rang à `DIGEST_SPORT_PENALTY`.
+- **Une seule passe de référence** pour les quatre modes (elle était refaite par
+  mode), et `--sweep` ne rescore plus la valeur égale à la constante courante —
+  c'est un no-op, or la recette documentée passe par là. ≈45 % de moins sur
+  `--invariants --gold`, ≈20 % sur la recette de sweep.
+- `is_sport_content` résolu une fois dans le corpus au lieu de ~300 000 fois.
+- `numeric_constants()` énumère via `is_overridable_scoring_key`, la règle même
+  sur laquelle `weights_override` accepte ou refuse (deux copies pouvaient
+  diverger et tuer le run en route).
+- `_deltas_vs_baseline` partagé : la convention τ-b (jeu figé re-classé) était
+  copiée dans deux modes ; `MUTED_WINDOW` séparé de `TAU_SET_SIZE` (élargir le
+  jeu de τ ne doit pas desserrer une assertion) ; `_max_weight` ne passe plus par
+  `features(user)[3]` (l'index couplait le choix du persona à l'ordre de
+  `FEATURE_NAMES`) ; corpus sérialisé une fois au lieu de deux ; `Corpus.path`
+  mort supprimé.
+
+**Non retenu** : mutualiser le boilerplate DB avec `evaluate_feed_ranking.py`
+(hors diff, et la 3ᵉ copie de la réécriture d'URL a un vrai propriétaire,
+`Settings.fix_database_url` — à traiter à part) ; remplacer `PersonaCustomTopic`
+par `UserTopicProfile` (le duck-typing suit `VeilleAngleTopic` et couvre en fait
+plus de champs) ; extraire les ajustements post-piliers de `digest_selector`
+(édition de code de prod pour de l'outillage hors-ligne — le mode `serein` reste
+donc hors de portée, c'est écrit dans le runbook).
+
 ## Vérification
 
-- `pytest tests/scripts/` : **484 passés**, 82 erreurs = baseline DB locale
-  indisponible (port 54322), inchangée.
-- `ruff check` + `ruff format` : propres sur les nouveaux fichiers ; `app/`
+- **Suite backend complète : `2 982 passés, 18 skipped, 2 xfailed, 0 échec,
+  0 erreur`** (2 min 02).
+  *Note pour qui rejouerait ça* : la « baseline 82 erreurs » citée plus tôt dans
+  ce lot n'était pas une baseline, c'était le conteneur `facteur-postgres-test`
+  arrêté. DB debout + `DATABASE_URL` construit depuis `POSTGRES_TEST_*` (le
+  défaut retombe sur l'utilisateur `postgres`, qui n'existe pas sur ce
+  conteneur) ⇒ **la suite est intégralement verte**, il n'y a aucun échec connu à
+  tolérer côté backend.
+- `pytest tests/scripts/` : 488 passés (484 + 4 tests ajoutés par la passe
+  simplify).
+- `ruff check` + `ruff format` : propres sur les 5 fichiers ; `app/`
   (le gate CI) intact.
-- **Alembic : exactement 1 head, aucune migration** — attendu sur tout ce lot.
+- **Alembic : aucune migration dans cette PR**, et la chaîne complète rejouée
+  sur une DB **vide** (`make db-reset` puis `alembic upgrade head`) arrive sans
+  erreur sur l'unique head `mg06_merge_cq01_st02`.
 - Bout en bout sur données réelles : corpus 1 763 articles / 112 sources →
   8 personas → `--sensitivity` → `--sweep`.
+- **Non-régression de la passe simplify prouvée sur les vraies fixtures** :
+  `--invariants` redonne 15 pass / 3 fail / 14 n/a et les mêmes rangs (134, 50) ;
+  `--sweep ENTITY_AFFINITY_BASE=8,16,32,64` redonne la courbe plate à l'identique ;
+  `build_persona_dataset.py` rejoué sur le dump brut reproduit
+  `scoring_personas.json` **au fichier près** (hors `generated_at`) — ce qui
+  vérifie du même coup que la fixture livrée est bien ce que le générateur
+  courant produit.
 
 ## Suite
 

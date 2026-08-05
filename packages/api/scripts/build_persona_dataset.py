@@ -165,12 +165,11 @@ def features(user: dict[str, Any]) -> list[float]:
     intensité de l'intérêt le plus fort, ancienneté. Ce sont exactement les
     entrées qui font varier les piliers Pertinence et Source.
     """
-    weights = [float(i.get("weight") or 0.0) for i in user.get("interests") or []]
     return [
         float(len(user.get("followed_sources") or [])),
         float(len(user.get("interests") or [])),
         float(len(user.get("custom_topics") or [])),
-        max(weights) if weights else 0.0,
+        _max_weight(user),
         float(user.get("days_since_signup") or 0),
     ]
 
@@ -337,7 +336,15 @@ def to_persona(
 
 
 def _max_weight(user: dict[str, Any]) -> float:
-    return features(user)[3]
+    """Intérêt le plus fort du compte.
+
+    Calculé directement, pas par `features(user)[3]` : cet index couplait le
+    choix du persona `extreme_veteran` à l'**ordre** de `FEATURE_NAMES`, si bien
+    qu'un réordonnancement cosmétique aurait changé le jeu de personas sans
+    qu'aucun test ne rougisse.
+    """
+    weights = [float(i.get("weight") or 0.0) for i in user.get("interests") or []]
+    return max(weights) if weights else 0.0
 
 
 def pick_extremes(

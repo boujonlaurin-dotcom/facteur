@@ -77,7 +77,10 @@ from app.models.content import Content  # noqa: E402
 from app.models.enums import ContentType, InterestState, ReliabilityScore  # noqa: E402
 from app.models.source import Source  # noqa: E402
 from app.services.recommendation.filter_presets import is_sport_content  # noqa: E402
-from app.services.recommendation.scoring_config import ScoringWeights  # noqa: E402
+from app.services.recommendation.scoring_config import (  # noqa: E402
+    ScoringWeights,
+    is_overridable_scoring_key,
+)
 from app.services.recommendation.scoring_engine import (  # noqa: E402
     PillarScoringEngine,
     ScoringContext,
@@ -101,7 +104,12 @@ SENSITIVITY_FACTORS = (0.5, 0.75, 1.25, 2.0)
 ZERO_CONSTANT_DELTAS = (-1.0, 1.0)
 
 TOP_K = 5
+# Taille du jeu figé sur lequel τ-b est calculé.
 TAU_SET_SIZE = 20
+# Fenêtre visible de l'invariant de mute. Volontairement distincte de
+# `TAU_SET_SIZE` : élargir le jeu de τ pour stabiliser la corrélation ne doit pas
+# desserrer en douce une assertion falsifiable.
+MUTED_WINDOW = 20
 
 # Sous ce churn max, une constante est déclarée **inerte** : elle ne déplace
 # jamais le top-5 d'aucun persona sous aucune perturbation de la grille. On ne
@@ -174,12 +182,19 @@ class Persona:
     user_prefs: dict[str, Any] = field(default_factory=dict)
 
 
+# `persona_id → (scores, classement)` hors override.
+Baselines = dict[str, tuple[dict[str, float], list[str]]]
+
+
 @dataclass
 class Corpus:
-    path: Path
     now: dt.datetime
     contents: list[Content]
     cluster_source_counts: dict[UUID, int]
+    # `is_sport_content` est un pur prédicat sur l'article : ni le persona ni la
+    # constante perturbée ne le changent. Le résoudre une fois évite de le
+    # rejouer à chaque passe (≈300 000 évaluations sur un run de sensibilité).
+    sport_content_ids: frozenset[str]
 
 
 def _as_uuid(value: Any) -> UUID | None:
@@ -344,10 +359,10 @@ def load_corpus(path: Path, *, sample: int | None = None) -> Corpus:
         )
 
     return Corpus(
-        path=path,
         now=now,
         contents=contents,
         cluster_source_counts=_cluster_source_counts(contents),
+        sport_content_ids=frozenset(str(c.id) for c in contents if is_sport_content(c)),
     )
 
 
@@ -437,10 +452,12 @@ def score_corpus(
     )
     scores: dict[str, float] = {}
     for content in corpus.contents:
+        cid = str(content.id)
         score = engine.compute_score(content, context).final_score
-        if apply_sport_penalty and is_sport_content(content):
+        if apply_sport_penalty and cid in corpus.sport_content_ids:
+            # La constante reste lue **dans** la boucle : elle est balayable.
             score += ScoringWeights.DIGEST_SPORT_PENALTY
-        scores[str(content.id)] = score
+        scores[cid] = score
     return scores
 
 
@@ -531,11 +548,16 @@ def numeric_constants() -> list[str]:
     `NON_PATCHABLE_AT_RUNTIME` est exclu **en amont** : `weights_override` lève
     dessus (à raison — le patch serait un no-op silencieux), donc les balayer
     ferait planter le run au lieu de produire un rapport.
+
+    Le critère « clé valide » vient de `is_overridable_scoring_key`, celui-là
+    même sur lequel `weights_override` accepte ou refuse : énumérer avec une
+    copie de la règle exposerait à lui soumettre une clé qu'il rejette, et le run
+    mourrait en route au lieu de produire un rapport.
     """
     return sorted(
         name
         for name in dir(ScoringWeights)
-        if not name.startswith("_")
+        if is_overridable_scoring_key(name)
         and name not in NON_PATCHABLE_AT_RUNTIME
         and isinstance(getattr(ScoringWeights, name), int | float)
         and not isinstance(getattr(ScoringWeights, name), bool)
@@ -573,6 +595,24 @@ def constants_in_engine_scope() -> frozenset[str]:
     return frozenset(referenced & set(numeric_constants()))
 
 
+def measurable_constants(
+    *,
+    apply_sport_penalty: bool = False,
+    **_ignored: Any,
+) -> frozenset[str]:
+    """Constantes que **ce run** peut réellement mesurer.
+
+    C'est le périmètre du moteur, **plus** les constantes post-piliers que le run
+    rejoue effectivement. Sans ce couplage, `--sensitivity --sport-penalty`
+    appliquerait `DIGEST_SPORT_PENALTY` à chaque article tout en la rapportant
+    « jamais lue par le moteur » — le rapport contredirait le run.
+    """
+    scope = constants_in_engine_scope()
+    if apply_sport_penalty:
+        scope |= {"DIGEST_SPORT_PENALTY"}
+    return frozenset(scope)
+
+
 def perturbations(name: str) -> list[tuple[str, float]]:
     """`(étiquette, valeur perturbée)` pour une constante.
 
@@ -593,14 +633,37 @@ def perturbations(name: str) -> list[tuple[str, float]]:
 
 def _baselines(
     corpus: Corpus, personas: list[Persona], **score_kwargs: Any
-) -> dict[str, tuple[dict[str, float], list[str]]]:
+) -> Baselines:
     """`persona_id → (scores, classement)` de référence, calculé **hors** de tout
-    override — c'est le point de comparaison de toutes les perturbations."""
-    baselines: dict[str, tuple[dict[str, float], list[str]]] = {}
+    override — c'est le point de comparaison de toutes les perturbations.
+
+    Une passe coûte tout le corpus × tous les personas. Les quatre modes partent
+    de la même référence : `main` la calcule une fois et la passe à chacun.
+    """
+    baselines: Baselines = {}
     for persona in personas:
         scores = score_corpus(corpus, persona, **score_kwargs)
         baselines[persona.persona_id] = (scores, ranking(scores))
     return baselines
+
+
+def _deltas_vs_baseline(
+    base_scores: dict[str, float], base_order: list[str], scores: dict[str, float]
+) -> tuple[float, float]:
+    """`(churn top-5, τ-b)` d'une configuration perturbée contre sa référence.
+
+    τ-b se calcule sur le **jeu figé** des `TAU_SET_SIZE` premiers de la
+    référence, re-classés par les nouveaux scores : c'est ce qui mesure un
+    réordonnancement plutôt qu'un changement de population. Partagé par
+    `--sensitivity` et `--sweep`, sans quoi les deux modes pourraient publier
+    deux « τ-b » qui ne veulent pas dire la même chose.
+    """
+    frozen = base_order[:TAU_SET_SIZE]
+    tau = kendall_tau_b(
+        [base_scores[cid] for cid in frozen],
+        [scores[cid] for cid in frozen],
+    )
+    return top_k_churn(base_order, ranking(scores)), tau
 
 
 def run_sensitivity(
@@ -608,6 +671,7 @@ def run_sensitivity(
     personas: list[Persona],
     *,
     only_prefix: str | None = None,
+    baselines: Baselines | None = None,
     **score_kwargs: Any,
 ) -> dict[str, Any]:
     """Classement des constantes par churn max. **Aucun label requis.**
@@ -617,8 +681,9 @@ def run_sensitivity(
     et le rapport le dit — pour qu'on ne lise pas « hors-périmètre » comme
     « inerte ».
     """
-    baselines = _baselines(corpus, personas, **score_kwargs)
-    in_scope = constants_in_engine_scope()
+    if baselines is None:
+        baselines = _baselines(corpus, personas, **score_kwargs)
+    in_scope = measurable_constants(**score_kwargs)
     names = [
         n for n in numeric_constants() if not only_prefix or n.startswith(only_prefix)
     ]
@@ -640,14 +705,7 @@ def run_sensitivity(
                 with weights_override(**{name: value}):
                     scores = score_corpus(corpus, persona, **score_kwargs)
                 base_scores, base_order = baselines[persona.persona_id]
-                order = ranking(scores)
-
-                churn = top_k_churn(base_order, order)
-                frozen = base_order[:TAU_SET_SIZE]
-                tau = kendall_tau_b(
-                    [base_scores[cid] for cid in frozen],
-                    [scores[cid] for cid in frozen],
-                )
+                churn, tau = _deltas_vs_baseline(base_scores, base_order, scores)
                 churns.append(churn)
                 taus.append(tau)
                 if worst is None or churn > worst["churn"]:
@@ -664,7 +722,6 @@ def run_sensitivity(
             {
                 "constant": name,
                 "value": getattr(ScoringWeights, name),
-                "in_engine_scope": name in in_scope,
                 "max_churn": max_churn,
                 "mean_churn": _mean(churns),
                 "min_tau": min_tau,
@@ -701,14 +758,15 @@ def _unmeasured_row(name: str) -> dict[str, Any]:
     return {
         "constant": name,
         "value": getattr(ScoringWeights, name),
-        "in_engine_scope": False,
         "max_churn": 0.0,
         "mean_churn": 0.0,
         "min_tau": 1.0,
         "mean_tau": 1.0,
         "worst_case": None,
         "measured": False,
-        "verdict": "hors-périmètre",
+        # Le verdict vient de la même fonction que les lignes mesurées : deux
+        # écritures du littéral pourraient diverger sans que rien ne rougisse.
+        "verdict": _sensitivity_verdict(0.0, 1.0, False),
     }
 
 
@@ -745,24 +803,33 @@ def _content_by_id(corpus: Corpus) -> dict[str, Content]:
 
 
 def check_invariants(
-    corpus: Corpus, persona: Persona, order: list[str]
+    corpus: Corpus,
+    persona: Persona,
+    order: list[str],
+    *,
+    apply_sport_penalty: bool = False,
 ) -> list[dict[str, Any]]:
     """4 assertions falsifiables. `n/a` quand le persona n'a pas le signal —
-    un `pass` vacueux est pire que rien, il donne l'illusion d'une couverture."""
+    un `pass` vacueux est pire que rien, il donne l'illusion d'une couverture.
+
+    `apply_sport_penalty` dit dans quel régime `order` a été produit. L'invariant
+    sport porte le nom de la pénalité : sans cette information il attribuerait à
+    `DIGEST_SPORT_PENALTY` un rang mesuré **sans** elle.
+    """
     index = _content_by_id(corpus)
     top = [index[cid] for cid in order[:TOP_K]]
     results: list[dict[str, Any]] = []
 
     # 1. Une source mutée ne remonte jamais dans la fenêtre visible.
     if persona.muted_sources:
-        window = [index[cid] for cid in order[:TAU_SET_SIZE]]
+        window = [index[cid] for cid in order[:MUTED_WINDOW]]
         leaked = [c for c in window if c.source_id in persona.muted_sources]
         results.append(
             {
                 "name": "muted_source_never_surfaces",
                 "status": "fail" if leaked else "pass",
                 "detail": f"{len(leaked)} article(s) de source mutée dans le top-"
-                f"{TAU_SET_SIZE}",
+                f"{MUTED_WINDOW}",
             }
         )
     else:
@@ -818,16 +885,22 @@ def check_invariants(
     sport_candidates = [
         cid
         for cid in order
-        if is_sport_content(index[cid])
+        if cid in corpus.sport_content_ids
         and index[cid].source_id in persona.followed_source_ids
     ]
-    if sport_candidates and "sport" in _followed_themes(persona):
+    if sport_candidates and "sport" in themes:
         best_rank = order.index(sport_candidates[0]) + 1
+        regime = (
+            "pénalité appliquée"
+            if apply_sport_penalty
+            else "hors pénalité (--sport-penalty absent)"
+        )
         results.append(
             {
                 "name": "followed_sport_survives_penalty",
                 "status": "pass" if best_rank <= 10 else "fail",
-                "detail": f"meilleur sport suivi au rang {best_rank} (attendu ≤10)",
+                "detail": f"meilleur sport suivi au rang {best_rank} "
+                f"(attendu ≤10, {regime})",
             }
         )
     else:
@@ -843,12 +916,23 @@ def check_invariants(
 
 
 def run_invariants(
-    corpus: Corpus, personas: list[Persona], **score_kwargs: Any
+    corpus: Corpus,
+    personas: list[Persona],
+    *,
+    baselines: Baselines | None = None,
+    **score_kwargs: Any,
 ) -> dict[str, Any]:
+    if baselines is None:
+        baselines = _baselines(corpus, personas, **score_kwargs)
     per_persona = []
     for persona in personas:
-        order = ranking(score_corpus(corpus, persona, **score_kwargs))
-        checks = check_invariants(corpus, persona, order)
+        _, order = baselines[persona.persona_id]
+        checks = check_invariants(
+            corpus,
+            persona,
+            order,
+            apply_sport_penalty=score_kwargs.get("apply_sport_penalty", False),
+        )
         per_persona.append(
             {
                 "persona_id": persona.persona_id,
@@ -879,6 +963,7 @@ def run_gold(
     gold: dict[str, set[str]],
     *,
     include_heldout: bool = False,
+    baselines: Baselines | None = None,
     **score_kwargs: Any,
 ) -> dict[str, Any]:
     """`precision@5` — **portail de non-régression**, jamais une cible.
@@ -887,6 +972,8 @@ def run_gold(
     jeu jamais regardé est la seule protection contre le fait de régler les
     constantes jusqu'à ce que le gold passe.
     """
+    if baselines is None:
+        baselines = _baselines(corpus, personas, **score_kwargs)
     rows = []
     for persona in personas:
         if persona.is_heldout and not include_heldout:
@@ -894,7 +981,7 @@ def run_gold(
         relevant = gold.get(persona.persona_id)
         if not relevant:
             continue
-        order = ranking(score_corpus(corpus, persona, **score_kwargs))
+        _, order = baselines[persona.persona_id]
         rows.append(
             {
                 "persona_id": persona.persona_id,
@@ -934,16 +1021,10 @@ def classify_curve(values: list[float], eps: float = 1e-9) -> str:
     if all(d >= -eps for d in diffs) or all(d <= eps for d in diffs):
         return "MONOTONE"
 
-    signs = [0 if abs(d) <= eps else (1 if d > 0 else -1) for d in diffs]
-    changes = len(
-        [
-            1
-            for a, b in zip(
-                [s for s in signs if s], [s for s in signs if s][1:], strict=False
-            )
-            if a != b
-        ]
-    )
+    # Les paliers (pente nulle) sont retirés avant de compter les inversions :
+    # sinon un plat entre deux montées compterait pour deux changements de signe.
+    signs = [1 if d > eps else -1 for d in diffs if abs(d) > eps]
+    changes = sum(1 for a, b in zip(signs, signs[1:], strict=False) if a != b)
     if changes <= 1:
         return "UNIMODALE"
     return "NON MONOTONE — bruit, ne pas calibrer"
@@ -956,28 +1037,36 @@ def run_sweep(
     values: list[float],
     *,
     gold: dict[str, set[str]] | None = None,
+    baselines: Baselines | None = None,
     **score_kwargs: Any,
 ) -> dict[str, Any]:
     """Courbe **complète**, jamais l'argmax."""
-    baselines = _baselines(corpus, personas, **score_kwargs)
+    if baselines is None:
+        baselines = _baselines(corpus, personas, **score_kwargs)
+    # `None` si la constante n'est pas un scalaire (`PILLAR_WEIGHTS` est un
+    # dict) : le raccourci ne s'applique alors jamais, et c'est
+    # `weights_override` qui rendra son verdict, avec son message à lui.
+    raw = getattr(ScoringWeights, name, None)
+    current = float(raw) if isinstance(raw, int | float) else None
     rows = []
     for value in values:
         churns: list[float] = []
         taus: list[float] = []
         precisions: list[float] = []
         for persona in personas:
-            with weights_override(**{name: value}):
-                scores = score_corpus(corpus, persona, **score_kwargs)
             base_scores, base_order = baselines[persona.persona_id]
-            order = ranking(scores)
-            churns.append(top_k_churn(base_order, order))
-            frozen = base_order[:TAU_SET_SIZE]
-            taus.append(
-                kendall_tau_b(
-                    [base_scores[cid] for cid in frozen],
-                    [scores[cid] for cid in frozen],
-                )
-            )
+            if current is not None and value == current:
+                # Surcharger une constante par sa propre valeur est un no-op :
+                # la référence *est* le résultat. La recette documentée
+                # (`ENTITY_AFFINITY_BASE=8,…` avec 8 en base) passe par ici.
+                scores, order = base_scores, base_order
+            else:
+                with weights_override(**{name: value}):
+                    scores = score_corpus(corpus, persona, **score_kwargs)
+                order = ranking(scores)
+            churn, tau = _deltas_vs_baseline(base_scores, base_order, scores)
+            churns.append(churn)
+            taus.append(tau)
             if gold and (relevant := gold.get(persona.persona_id)):
                 precisions.append(precision_at_k(order, relevant))
         rows.append(
@@ -1332,15 +1421,19 @@ def main(argv: list[str]) -> int:
         "sport_penalty": args.sport_penalty,
     }
 
+    # Référence commune aux quatre modes : une passe corpus × personas, pas une
+    # par mode. Tous partent du même `score_kwargs`, donc de la même référence.
+    baselines = _baselines(corpus, personas, **score_kwargs)
+
     if args.sensitivity:
         metrics = run_sensitivity(
-            corpus, personas, only_prefix=args.only, **score_kwargs
+            corpus, personas, only_prefix=args.only, baselines=baselines, **score_kwargs
         )
         payload["sensitivity"] = metrics
         sections.append(render_sensitivity(metrics))
 
     if args.invariants:
-        metrics = run_invariants(corpus, personas, **score_kwargs)
+        metrics = run_invariants(corpus, personas, baselines=baselines, **score_kwargs)
         payload["invariants"] = metrics
         sections.append(render_invariants(metrics))
 
@@ -1353,6 +1446,7 @@ def main(argv: list[str]) -> int:
             personas,
             gold,
             include_heldout=args.include_heldout,
+            baselines=baselines,
             **score_kwargs,
         )
         payload["gold"] = metrics
@@ -1360,7 +1454,15 @@ def main(argv: list[str]) -> int:
 
     if args.sweep:
         name, values = _parse_sweep(args.sweep)
-        metrics = run_sweep(corpus, personas, name, values, gold=gold, **score_kwargs)
+        metrics = run_sweep(
+            corpus,
+            personas,
+            name,
+            values,
+            gold=gold,
+            baselines=baselines,
+            **score_kwargs,
+        )
         payload["sweep"] = metrics
         sections.append(render_sweep(metrics))
 

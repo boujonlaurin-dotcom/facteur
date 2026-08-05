@@ -257,11 +257,14 @@ def _serialize(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def _write(path: Path, payload: dict[str, Any]) -> int:
+def _write_blob(path: Path, blob: str) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
-    blob = _serialize(payload)
     path.write_text(blob, encoding="utf-8")
     return len(blob.encode("utf-8"))
+
+
+def _write(path: Path, payload: dict[str, Any]) -> int:
+    return _write_blob(path, _serialize(payload))
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -309,23 +312,24 @@ async def _main(argv: list[str]) -> int:
         articles, since=since, until=until, hours=args.hours, sample=None
     )
     # Mesuré sur la sérialisation **effectivement écrite** (indentée) — sinon le
-    # seuil se juge sur un blob qui n'existe nulle part sur disque.
-    full_bytes = len(_serialize(full_payload).encode("utf-8"))
+    # seuil se juge sur un blob qui n'existe nulle part sur disque. Sérialisé une
+    # seule fois : sur une fenêtre 24 h réelle le blob pèse plusieurs Mo.
+    full_blob = _serialize(full_payload)
+    full_bytes = len(full_blob.encode("utf-8"))
 
-    if args.sample and full_bytes > MAX_FIXTURE_BYTES:
-        # Corpus trop gros pour le repo : le complet part dans `.context/`
-        # (non versionné) et l'échantillon versionné sert la CI.
-        full_out = CONTEXT_DIR / f"scoring-corpus-full-{today}.json"
-        _write(full_out, full_payload)
-        kept = sample_articles(articles, args.sample)
+    if args.sample:
+        if full_bytes > MAX_FIXTURE_BYTES:
+            # Corpus trop gros pour le repo : le complet part dans `.context/`
+            # (non versionné) et l'échantillon versionné sert la CI.
+            full_out = CONTEXT_DIR / f"scoring-corpus-full-{today}.json"
+            _write_blob(full_out, full_blob)
+            print(f"ℹ️  Corpus complet ({full_bytes / 1e6:.1f} Mo) → {full_out}")
         payload = build_payload(
-            kept, since=since, until=until, hours=args.hours, sample=args.sample
-        )
-        print(f"ℹ️  Corpus complet ({full_bytes / 1e6:.1f} Mo) → {full_out}")
-    elif args.sample:
-        kept = sample_articles(articles, args.sample)
-        payload = build_payload(
-            kept, since=since, until=until, hours=args.hours, sample=args.sample
+            sample_articles(articles, args.sample),
+            since=since,
+            until=until,
+            hours=args.hours,
+            sample=args.sample,
         )
     else:
         payload = full_payload

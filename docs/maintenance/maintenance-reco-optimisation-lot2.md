@@ -315,7 +315,7 @@ migration, aucun changement de comportement en prod**.
 | `packages/api/tests/fixtures/scoring_personas.json` | 8 personas anonymisés |
 | `packages/api/tests/fixtures/scoring_corpus_2026-08-03.json` | 200 articles, gelé |
 | `packages/api/tests/fixtures/scoring_gold_labels.json` | squelette vide + mode d'emploi |
-| `packages/api/tests/scripts/test_evaluate_scoring_personas.py` | 48 tests, ni DB ni réseau |
+| `packages/api/tests/scripts/test_evaluate_scoring_personas.py` | 52 tests, ni DB ni réseau |
 | `packages/api/tests/scripts/test_build_persona_dataset.py` | 19 tests — déterminisme du clustering, anonymisation |
 
 ### Faits mesurés qui corrigent le cadrage
@@ -332,14 +332,20 @@ migration, aucun changement de comportement en prod**.
    ferait passer un cap d'arrangement de la Tournée pour un dial de scoring.
 4. **`DIGEST_SPORT_PENALTY` ne vit pas dans le moteur de piliers** : elle est
    appliquée par `digest_selector` après combinaison. Le harnais la rejoue à la
-   demande (`--sport-penalty`), mais elle n'entrera jamais dans le classement de
-   sensibilité.
+   demande (`--sport-penalty`), et **le périmètre mesuré suit le régime du run** :
+   sans le drapeau elle est *hors-périmètre*, avec le drapeau elle entre dans le
+   classement de sensibilité. Sans ce couplage, le rapport l'aurait déclarée
+   « jamais lue par le moteur » dans un run qui l'appliquait à chaque article.
 5. **Le sport suivi est déjà enterré avant la pénalité digest.** Le meilleur
    article sport d'une source suivie sort au rang **134** (`persona_01`) et
    **50** (`persona_04`) *avant* les −80, et 187 / 172 après. La pénalité fait
    son travail mais n'est pas la cause première : **PR-5 qui ne toucherait que
    `DIGEST_SPORT_PENALTY` déplacerait peu de chose.** *(À reconfirmer sur le
    corpus complet : le vivier sport est mince sur 200 articles.)*
+   Désormais **mesuré et plus seulement déduit** :
+   `--sensitivity --sport-penalty --only DIGEST_SPORT` la classe **inerte**
+   (churn 0 sur toute la grille) — la perturber ne déplace le top-5 d'aucun
+   persona.
 
 ### Résultat de recette
 

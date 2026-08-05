@@ -30,7 +30,10 @@ from pathlib import Path
 import pytest
 
 from app.services.recommendation import scoring_engine
-from app.services.recommendation.scoring_config import ScoringWeights
+from app.services.recommendation.scoring_config import (
+    ScoringWeights,
+    is_overridable_scoring_key,
+)
 from scripts import evaluate_scoring_personas as ev
 from scripts._scoring_overrides import weights_override
 
@@ -283,6 +286,62 @@ def test_a_constant_that_reorders_without_moving_the_top5_is_weak_not_inert():
     top-20 sans changer l'ensemble des 5 premiers — et on la retirerait à tort
     du champ du tuning."""
     assert ev._sensitivity_verdict(0.0, 0.93, True) == "faible"
+
+
+def test_the_measured_scope_follows_what_the_run_actually_replays():
+    """`DIGEST_SPORT_PENALTY` vit hors du moteur de piliers, mais `--sport-penalty`
+    la rejoue sur chaque article. Sans ce couplage, le run l'appliquerait tout en
+    la rapportant « jamais lue par le moteur » : le rapport contredirait le run.
+    """
+    assert "DIGEST_SPORT_PENALTY" not in ev.measurable_constants()
+    assert "DIGEST_SPORT_PENALTY" in ev.measurable_constants(apply_sport_penalty=True)
+    # Le reste du périmètre ne bouge pas avec le drapeau.
+    assert ev.measurable_constants() == ev.constants_in_engine_scope()
+
+
+def test_the_sport_invariant_says_in_which_regime_it_was_measured(corpus, personas):
+    """L'invariant porte le nom de la pénalité. S'il ne disait pas qu'elle était
+    absente, il attribuerait à `DIGEST_SPORT_PENALTY` un rang mesuré sans elle."""
+    persona = personas[0]
+    order = ev.ranking(ev.score_corpus(corpus, persona))
+
+    off = ev.check_invariants(corpus, persona, order, apply_sport_penalty=False)
+    on = ev.check_invariants(corpus, persona, order, apply_sport_penalty=True)
+
+    def _detail(checks):
+        return next(
+            c["detail"]
+            for c in checks
+            if c["name"] == "followed_sport_survives_penalty"
+        )
+
+    # `n/a` (persona sans sport suivi) ne porte pas de régime — seul le cas
+    # réellement mesuré doit le déclarer.
+    if "rang" in _detail(off):
+        assert "hors pénalité" in _detail(off)
+        assert "pénalité appliquée" in _detail(on)
+
+
+def test_the_enumerator_and_the_override_agree_on_what_a_valid_key_is():
+    """`numeric_constants` alimente `weights_override`, qui lève sur une clé
+    refusée. Deux copies de la règle feraient mourir le run en route."""
+    for name in ev.numeric_constants():
+        assert is_overridable_scoring_key(name)
+
+
+def test_sweeping_a_constant_at_its_current_value_reproduces_the_baseline(
+    corpus, personas
+):
+    """La recette documentée (`ENTITY_AFFINITY_BASE=8,16,32,64`, base = 8) passe
+    par ce raccourci : surcharger une constante par sa propre valeur est un
+    no-op, donc la référence *est* le résultat — churn 0 et τ-b 1 exactement."""
+    current = float(ScoringWeights.ENTITY_AFFINITY_BASE)
+    metrics = ev.run_sweep(
+        corpus, personas, "ENTITY_AFFINITY_BASE", [current, current * 2]
+    )
+    row = next(r for r in metrics["rows"] if r["value"] == current)
+    assert row["mean_churn_vs_baseline"] == 0.0
+    assert row["mean_tau"] == 1.0
 
 
 def test_the_scope_excludes_modules_the_engine_never_runs():
