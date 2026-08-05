@@ -24,6 +24,17 @@ class NotifCandidate {
   const NotifCandidate(this.id, this.relevance);
 }
 
+/// Messages communauté/feedback — toujours éligibles, pertinence basse-moyenne
+/// pour ne jamais passer devant les nudges fonctionnels/profil. Regroupés ici
+/// (plutôt que 4 `.add()` séparés) pour garder les constantes de pertinence
+/// visibles ensemble.
+const _communityCandidates = [
+  NotifCandidate(NotifDuJourIds.feedbackMail, 0.35),
+  NotifCandidate(NotifDuJourIds.whatsappCommunity, 0.3),
+  NotifCandidate(NotifDuJourIds.shareApp, 0.3),
+  NotifCandidate(NotifDuJourIds.coffeeLaurin, 0.25),
+];
+
 /// Jour epoch local — constant sur la journée vécue par l'utilisateur,
 /// change à minuit local (même frontière que le day store : cap et rotation
 /// basculent au même moment).
@@ -142,6 +153,8 @@ final notifDuJourQueueProvider = Provider<List<String>>((ref) {
     // `kRotationJitter`.
     candidates.add(const NotifCandidate(NotifDuJourIds.serein, 0.55));
   }
+
+  candidates.addAll(_communityCandidates);
 
   // Fallback : garantit une file jamais vide.
   candidates.add(const NotifCandidate(NotifDuJourIds.recommencer, 0.1));

@@ -110,6 +110,21 @@ void main() {
     expect(queue, isNotEmpty);
   });
 
+  test('messages communauté/feedback toujours éligibles', () async {
+    final container = _container(veille: _veilleConfig());
+    SharedPreferences.setMockInitialValues({'tournee_customized_v1': true});
+    final queue = await _queue(container);
+    expect(
+      queue,
+      containsAll([
+        NotifDuJourIds.feedbackMail,
+        NotifDuJourIds.whatsappCommunity,
+        NotifDuJourIds.shareApp,
+        NotifDuJourIds.coffeeLaurin,
+      ]),
+    );
+  });
+
   test('serein éligible seulement si OFF et synchronisé', () async {
     final off = _container(sereinEnabled: false);
     expect(await _queue(off), contains(NotifDuJourIds.serein));
