@@ -21,6 +21,9 @@ from app.jobs.recompute_source_coverage_themes import (
 from app.jobs.recompute_source_language import recompute_source_language
 from app.jobs.rescue_failed_sources_job import run_rescue_failed_sources
 from app.services.observability.cost_budget import log_budget_projection
+from app.services.onboarding_reengagement_dispatcher import (
+    dispatch_onboarding_reengagement_pushes,
+)
 from app.services.push_alert_dispatcher import (
     dispatch_source_alerts,
     dispatch_topic_alerts,
@@ -759,6 +762,19 @@ def start_scheduler() -> None:
         max_instances=1,
     )
 
+    # Relance des abandons d'onboarding (Epic onboarding) — même cadence. Cible
+    # les devices enregistrés tôt (amorce étape 3/4) dont l'onboarding n'est pas
+    # terminé : J+0 (~1h) puis J+1 (~24h), 2 envois à vie max par device.
+    scheduler.add_job(
+        dispatch_onboarding_reengagement_pushes,
+        trigger=IntervalTrigger(minutes=5),
+        id="onboarding_reengagement_push_dispatch",
+        name="Onboarding re-engagement push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
     # Garde-fou file de classification (30 min) — alerte Sentry si le plus
     # vieux pending dépasse le seuil (défaut 12 h). 2e couche par-dessus le
     # superviseur `_on_task_done` du worker : détecte l'angle-mort même si la
@@ -792,6 +808,7 @@ def start_scheduler() -> None:
             "daily_essentiel_push_dispatch",
             "source_alert_push_dispatch",
             "topic_alert_push_dispatch",
+            "onboarding_reengagement_push_dispatch",
             "classification_queue_health_check",
         ],
         rss_interval_minutes=settings.rss_sync_interval_minutes,
