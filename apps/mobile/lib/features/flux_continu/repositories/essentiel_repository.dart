@@ -79,6 +79,46 @@ class EssentielRepository {
       return null;
     }
   }
+
+  /// `POST /api/essentiel/triage` — Story 33.1.
+  ///
+  /// Envoie un batch de décisions de tri. **Collecte seule** côté backend :
+  /// aucun poids de reco ne bouge (seul `later` déclenche le save existant,
+  /// exactement comme le bouton signet de la carte).
+  ///
+  /// Renvoie `true` si le batch a été accepté. Un échec n'est pas une erreur
+  /// pour l'utilisateur — le tri ne doit jamais attendre le réseau — mais le
+  /// provider garde les décisions en attente pour les renvoyer plus tard.
+  Future<bool> postTriage({
+    required String digestDate,
+    required int slateSize,
+    required List<Map<String, dynamic>> decisions,
+  }) async {
+    if (decisions.isEmpty) return true;
+    try {
+      final response = await _apiClient.dio.post<dynamic>(
+        'essentiel/triage',
+        data: {
+          'digest_date': digestDate,
+          'slate_size': slateSize,
+          'decisions': decisions,
+        },
+      );
+      return response.statusCode == 200;
+    } on DioException catch (e) {
+      // 4xx = payload que le backend refusera toujours (rang hors slate,
+      // décision inconnue) : le renvoyer en boucle ne servirait à rien.
+      final status = e.response?.statusCode ?? 0;
+      if (status >= 400 && status < 500) {
+        // ignore: avoid_print
+        print('EssentielRepository: triage rejected ($status) — dropped');
+        return true;
+      }
+      // ignore: avoid_print
+      print('EssentielRepository: postTriage failed: ${e.message}');
+      return false;
+    }
+  }
 }
 
 final essentielRepositoryProvider = Provider<EssentielRepository>((ref) {

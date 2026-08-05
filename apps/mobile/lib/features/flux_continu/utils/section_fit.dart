@@ -202,3 +202,89 @@ int fitHeroCount({
   final count = 1 + (mediums < 0 ? 0 : mediums);
   return count.clamp(lo.clamp(1, maxCount), maxCount);
 }
+
+// ── Pile de tri (« Ton Essentiel » triable au swipe — Story 33.1) ─────────────
+
+/// Hauteur (px) du bandeau image en tête de la carte de tri. **Slot fixe** : une
+/// image absente ou en erreur laisse un aplat teinté à la place, elle ne replie
+/// pas le bandeau — sans quoi la carte changerait de taille d'un article à
+/// l'autre, exactement le défaut que tout ce budget combat. Premier levier de
+/// repli si la carte déborde sur un petit écran (96 → 80).
+const double kTriageCardImageHeight = 96;
+
+/// Hauteur (px) de la carte du dessus de la pile de tri
+/// ([TriageSwipeCard]) : bandeau image [kTriageCardImageHeight] 96 + padding
+/// haut 12 + méta source ≈ 18 + gap 8 + titre 4 lignes (Fraunces 19 ·
+/// height 1.3 = 98,8) + gap 8 + pied (polarisation + couverture) ≈ 16 + padding
+/// bas 12 = 272. Le chapô a disparu de la carte : à ce niveau de tri, l'image
+/// et la couverture disent plus que deux lignes de description.
+///
+/// Les ~2 px de marge sur le titre ne sont pas cosmétiques : la carte a une
+/// hauteur **figée**, donc un budget trop serré ne déborde pas, il **rogne
+/// silencieusement** la 4ᵉ ligne. `essentiel_hi_fi_card_test` mesure la boîte
+/// du titre sur un titre pire cas pour verrouiller ça.
+///
+/// Les cartes du dessous sont décalées mais **ne dépassent pas** (translation
+/// verticale compensée par le scale), donc la pile ne coûte pas plus qu'une carte.
+const double kTriageCardHeight = 272;
+
+/// Barre d'actions compacte (✕ · signet · bouton plein « Je garde ») :
+/// bouton 44 + marges (10+10) = 64.
+const double kTriageActionBarHeight = 64;
+
+/// Barre de progression, **segments seuls** : le segment en cours de décision
+/// est épaissi (4 → 7 px), plus une marge basse de 7 = 14. Le compteur
+/// « N sur M triés » n'y vit plus — il est passé sous la liste des gardés
+/// ([kTriageCounterHeight]).
+const double kTriageProgressHeight = 14;
+
+/// Compteur « N sur M triés · K gardés », rendu **sous** les articles gardés
+/// (là où l'œil finit sa course) : libellé 12 ≈ 16 + marge haute 6 = 22.
+const double kTriageCounterHeight = 22;
+
+/// Un article gardé dans la liste qui se construit sous la pile. Plus compact
+/// qu'un medium ([kHeroMediumHeight]) : pas de hairline, titre sur 2 lignes
+/// serrées ≈ 64.
+const double kTriageKeptSlotHeight = 64;
+
+/// Hauteur (px) que la carte réserve pour trier [slateSize] articles **sans
+/// jamais changer de hauteur** entre le premier et le dernier geste. Exposée
+/// pour que le widget puisse figer sa hauteur (`SizedBox`) au lieu de la
+/// laisser suivre le contenu.
+///
+/// C'est la réponse directe au risque « le feed saute » : la carte réserve dès
+/// le départ le **pire des deux états** qu'elle traversera, et non l'état
+/// courant.
+///
+/// - *pic de tri* : `chrome + progression + carte + barre d'actions +
+///   (n−1)·slot gardé + compteur` — juste avant la dernière décision, la pile
+///   est encore là et tous les autres articles sont déjà listés dessous, le
+///   compteur fermant la liste ;
+/// - *état final* : `chrome + lead + (n−1)·medium` — le tri est fini, la liste
+///   des gardés est rendue avec les tuiles existantes ([kHeroLeadHeight] /
+///   [kHeroMediumHeight]).
+///
+/// Le pire cas suppose **tout gardé**. Un utilisateur qui rejette tout occupe
+/// moins de place : la carte rétrécit alors en fin de tri, ce qui ne décale
+/// rien sous elle (le contenu remonte, il ne saute pas sous le doigt).
+double triageReservedHeight({
+  required int slateSize,
+  required double chromeHeight,
+  required double leadHeight,
+  required double mediumHeight,
+  double cardHeight = kTriageCardHeight,
+  double actionBarHeight = kTriageActionBarHeight,
+  double progressHeight = kTriageProgressHeight,
+  double keptSlotHeight = kTriageKeptSlotHeight,
+  double counterHeight = kTriageCounterHeight,
+}) {
+  final n = slateSize < 1 ? 1 : slateSize;
+  final triagePeak = chromeHeight +
+      progressHeight +
+      cardHeight +
+      actionBarHeight +
+      (n - 1) * keptSlotHeight +
+      counterHeight;
+  final finalState = chromeHeight + leadHeight + (n - 1) * mediumHeight;
+  return triagePeak > finalState ? triagePeak : finalState;
+}

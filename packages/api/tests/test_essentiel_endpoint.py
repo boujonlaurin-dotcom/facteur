@@ -1644,3 +1644,26 @@ def test_topic_without_perspective_sources_emits_empty_list():
 
     assert article.perspective_sources == []
     assert article.source_count == 0
+
+
+def test_divergence_level_is_propagated_from_the_topic():
+    """La polarisation du sujet remonte telle quelle sur l'article.
+
+    Même source que `perspective_count`/`source_count` : le `DigestTopic`
+    complet est déjà en main, aucune requête supplémentaire.
+    """
+    topic = _make_topic(rank=1, label="Retraites", n_articles=1)
+    topic = topic.model_copy(update={"divergence_level": "high"})
+
+    article = build_essentiel_response(_make_digest([topic])).articles[0]
+
+    assert article.divergence_level == "high"
+
+
+def test_divergence_level_is_none_when_the_topic_does_not_carry_it():
+    """Absence de signal = silence : le mobile n'affiche alors aucune pastille."""
+    topic = _make_topic(rank=1, label="Climat", n_articles=1)
+
+    article = build_essentiel_response(_make_digest([topic])).articles[0]
+
+    assert article.divergence_level is None

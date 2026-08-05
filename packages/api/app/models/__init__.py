@@ -13,6 +13,7 @@ from app.models.digest_completion import DigestCompletion
 from app.models.digest_generation_state import DigestGenerationState
 from app.models.editorial_highlights_history import EditorialHighlightsHistory
 from app.models.enums import ContentStatus, ContentType, SourceType
+from app.models.essentiel_triage import EssentielTriageDecision
 from app.models.event_rsvp import EventRsvp
 from app.models.failed_source_attempt import FailedSourceAttempt
 from app.models.grille_game_state import GrilleGameState
@@ -84,6 +85,8 @@ __all__ = [
     # Progress (Epic 8)
     "UserTopicProgress",
     "TopicQuiz",
+    # Tri de l'Essentiel (Story 33.1)
+    "EssentielTriageDecision",
     # Digest Central (Epic 10)
     "DailyDigest",
     "DigestCompletion",

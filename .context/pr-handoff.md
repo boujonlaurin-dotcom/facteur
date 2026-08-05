@@ -1,148 +1,95 @@
-# feat(reco): personas, corpus gelé et harnais de sensibilité (PR-3, lot reco 2)
+# feat(essentiel) : le tri dans le feed — carte « Ton Essentiel » triable au swipe (33.1)
 
-Base `main`. **Aucune migration Alembic.** Backend-only (0 fichier mobile),
-**aucun changement de comportement en prod** : trois scripts, des fixtures, deux
-fichiers de tests et un runbook.
+Base `main`. **Une migration Alembic** (`tr01_essentiel_triage_decisions`, additive).
+Backend + mobile. Story : `docs/stories/core/33.1.tri-dans-le-feed.md`.
 
-De quoi **mesurer** avant de toucher une constante de scoring. Sans ça, le
-« Journal des constantes modifiées » du lot reste vide et PR-5 est bloquée :
-*aucune constante ne bouge sans mesure*.
+## Quoi
 
-Runbook : `docs/maintenance/maintenance-scoring-tuning-harness.md`.
-Suivi du lot : `docs/maintenance/maintenance-reco-optimisation-lot2.md`.
+La carte « Ton Essentiel » en tête du Flux continu n'est plus une liste passive :
+elle devient une **pile à trier**. Un article à la fois — swipe droite « Je
+garde », swipe gauche « Pas pour moi », bouton signet « Plus tard ». La liste des
+gardés se construit sous la pile, dans le feed, sans écran supplémentaire.
 
-## Ce que ça pose
+La PR embarque aussi deux décisions PO prises pendant la construction :
 
-| Fichier | Nature |
-|---|---|
-| `scripts/build_persona_dataset.py` | 8 personas (6 médoïdes + 2 extrêmes) dérivés de 62 comptes réels — k-medoids stdlib **déterministe** |
-| `scripts/build_scoring_corpus.py` | corpus 24 h **append-only** depuis `DATABASE_URL_RO` |
-| `scripts/evaluate_scoring_personas.py` | `--sensitivity` / `--invariants` / `--gold` / `--sweep` / `--compare` |
-| `scripts/validate_personas.py` | **supprimé** — écrivait de faux profils dans une DB vivante |
-| `tests/scripts/test_evaluate_scoring_personas.py` | 52 tests, ni DB ni réseau |
-| `tests/scripts/test_build_persona_dataset.py` | 19 tests — déterminisme, anonymisation |
+1. **La vue finale, c'est ce qu'on a gardé.** Le plan V0 rendait la liste
+   inchangée une fois le tri fini — les rejetés réapparaissaient. À la relecture,
+   la liste finale ne correspondait pas aux choix. En état `done`, la carte ne
+   rend plus que `keptContentIds` (« Je garde » + « Plus tard »), dans l'ordre du
+   slate ; état vide sobre si rien n'a été gardé. **Rien n'est retiré du digest
+   côté données** : le slate reste figé pour la journée et « Trier à nouveau » le
+   rejoue en entier. C'est purement l'affichage final.
+2. **La « Lettre du jour » ne gate plus l'accès à L'Essentiel.** Cold-open, tap
+   d'onglet et tap de push atterrissent directement sur le feed. La lettre reste
+   jouée **une fois**, en fin d'onboarding, et le rewind des éditions passées
+   subsiste dans le feed.
 
-Le harnais rejoue le **vrai** `PillarScoringEngine.compute_score` ; un test
-d'identité casse si quelqu'un en recopie une variante.
+## Pourquoi
 
-## Méthodo (elle commande l'ordre des modes)
+**V0 en collecte seule.** Chaque décision est enregistrée avec son rang dans le
+slate figé, mais **aucun poids de reco ne bouge**. Le but n'est pas de
+personnaliser tout de suite : c'est de produire le jeu de données que la jauge
+CTR ne peut pas produire — des **négatifs explicites sur des articles réellement
+vus**, avec leur position. C'est l'angle mort n°1 de
+`maintenance-feed-ranking-gauge.md`. Seule exception actée par le PO : « Plus
+tard » déclenche le save existant, exactement comme le bouton signet de la carte.
 
-8 personas × ~30 candidats ≈ **240 labels pour 113 constantes** : 2 labels par
-paramètre. Tuner au gold d'abord serait de l'overfit. D'où **sensibilité (0
-label) → invariants → gold en portail de non-régression**, jamais en fonction à
-maximiser.
+Le piège que le code garde activement : l'action `not_interested` existante est à
+un enum de distance, et elle ajouterait la **source entière** à
+`user_personalization.muted_sources`, sans expiration. Un test de non-régression
+négative verrouille ça (voir plus bas).
 
-## Recette
+## Comment ça a été vérifié
 
-`--sweep ENTITY_AFFINITY_BASE=8,16,32,64` → **courbe plate** (churn 0,000
-partout). Le harnais **redécouvre l'inertie déjà établie** de l'affinité
-entités. C'était la condition d'acceptation : un instrument qui ne retrouve pas
-ce qu'on sait déjà est faux.
+- [x] **Backend** — `pytest` : **2913 passed, 18 skipped, 2 xfailed**. `ruff check` OK.
+      Tests neufs sur le routeur de tri : idempotence de l'upsert sur
+      `(user, article, jour)`, batch partiel, `slate_size` incohérent rejeté, et
+      surtout la **non-régression négative** — `POST /essentiel/triage` avec
+      `decision=pass` ne modifie ni `user_subtopics.weight`, ni
+      `user_entity_affinity`, ni `user_personalization.muted_sources`.
+- [x] **API locale** — `uvicorn` + `curl` : `GET /api/essentiel` et
+      `POST /api/essentiel/triage` répondent `403` sans auth (cas limite), et
+      `divergence_level` est bien exposé dans l'OpenAPI (`string | null`).
+- [x] **Alembic** — exactement **1 head** (`tr01_essentiel_triage`), `upgrade head`
+      local contre une DB vide. Migration **purement additive** (nouvelle table,
+      aucun `DROP`/rename/`NOT NULL`-sur-peuplé) ⇒ conforme expand-contract sur
+      la DB partagée staging/prod.
+- [x] **Mobile** — `flutter test` : **2011 passed**, 26 échecs **strictement
+      identiques à la baseline `main`** (topic_chip, bookmark, feed_sources,
+      notification, perspectives, theme_section, subscriptions, settings_sheet,
+      widget_test — aucun dans le périmètre touché). `flutter analyze` : **526
+      issues, exactement la baseline**, zéro `error`, zéro `warning` neuf.
+- [x] **Build web** — `flutter build web --release` (garde-fou de compilation, cf.
+      l'incident `firstPreparingIndex` d'un build rouge passé inaperçu).
+- [x] **`/simplify`** — 4 relectures parallèles, findings appliqués (détail dans la
+      story, section « Passe SIMPLIFY »), puis re-run complet de VERIFY.
+- [ ] **Playwright / `/validate-feature`** — **non exécuté** : chaque scénario de
+      tri exige un compte connecté avec un digest du jour, et je n'ai pas de
+      credentials. `.context/qa-handoff.md` est à jour ; à lancer avant merge.
 
-Première lecture : **20 constantes actives · 1 faible · 27 inertes · 64
-hors-périmètre**, menées par `THEME_MATCH`, `recency_base` et `TOPIC_MATCH`.
+## Zones à risque
 
-## Faits mesurés qui corrigent le cadrage
+- **Router (zone à risque déclarée).** Le gate quotidien `/flux-continu → /edition`
+  est retiré du `redirect`, et `PushNotificationService.openRoute` ne dé-route plus
+  les push. C'étaient les deux seuls points d'application, coupés ensemble ; le
+  test de redirection le verrouille dans les deux sens. La sortie d'onboarding
+  passe toujours délibérément par `/edition?from=onboarding`.
+- **Migration sur DB partagée.** `tr01` est additive et idempotente, donc sans
+  risque pour le backend `production` qui tourne encore sur l'ancien code jusqu'à
+  la release hebdo suivante.
+- **Budget de hauteur du feed.** Le pic de tri passe de 542 à **628 px** pour un
+  slate de 5 (bandeau image 96 + titre 4 lignes + compteur). Si la vérification à
+  390×844 montre un débordement, les leviers de repli sont, dans cet ordre :
+  bandeau 96 → 80, puis `kTriageKeptSlotHeight` 64 → 56. **Ne pas réduire le
+  slate** — le verrouiller à 5 est une doctrine produit.
+- **Clés `SharedPreferences`.** Le compteur du nudge auto-grow change de mécanique
+  de purge (il fuyait une clé par jour ; il purge maintenant). Les **noms** de
+  clés persistées sont inchangés, donc aucune perte d'état à la mise à jour.
 
-1. `claude_analytics_ro` lit `contents`/`sources` mais est **refusé sur toutes
-   les tables `user_*`** → corpus en direct, personas par dump MCP (convention
-   `--raw` de `build_event_dataset.py`).
-2. **2 comptes** au plafond `weight = 3,0`, pas 32.
-3. **64 des 112 constantes balayables sont hors du moteur de piliers.** Le
-   rapport distingue *hors-périmètre* (jamais lue par `compute_score`)
-   d'*inerte* (lue, sans effet mesurable) — les confondre ferait passer un cap
-   d'arrangement de la Tournée pour un dial de scoring.
-4. `DIGEST_SPORT_PENALTY` **ne vit pas dans le moteur de piliers** : elle est
-   appliquée par `digest_selector` après combinaison.
-5. **Le sport suivi est déjà enterré avant la pénalité** : rangs 134 / 50 avant
-   les −80, 187 / 172 après. **PR-5 qui ne toucherait que cette constante
-   déplacerait peu de chose.**
-6. Question ouverte n°1 du lot tranchée : **`essentiel_service.py` ne passe pas
-   par `PillarScoringEngine`** (vérifié, aucun call site — seulement une mention
-   en docstring).
+## Ce que cette PR ne fait pas
 
-## Garde-fous anti-overfit (dans le code, pas seulement dans le doc)
-
-- Corpus **append-only** : le script refuse d'écraser un fichier existant.
-- `--compare` **lève** si le `corpus_file` diffère — **et** si l'échantillon
-  diffère (`--corpus-sample` change le jeu de candidats sans changer le nom du
-  corpus).
-- `--sweep` publie la courbe complète et qualifie sa forme
-  (`PLATE` / `MONOTONE` / `UNIMODALE` / `NON MONOTONE — bruit, ne pas calibrer`).
-- **Held-out** : les 2 extrêmes sont exclus du mode gold par défaut.
-- Le gold livré est un **squelette vide** : PR-3 livre le chargeur et le schéma,
-  pas des labels. Un gold vide rapporte « aucun label », **jamais** `p@5 = 0,000`.
-- `NOW` figé au `generated_at` du corpus, jamais l'horloge du run.
-
-Deux pièges gardés par des tests : le moteur doit être **construit dans** le
-`with weights_override(...)` (sinon `PILLAR_WEIGHTS` est un no-op silencieux), et
-aucune perturbation ne doit faire tomber un pilier à 0 (une exception avalée
-par `compute_score` produirait un faux « actif »).
-
-## Passe `/simplify`
-
-Quatre revues (réutilisation / simplification / efficacité / altitude). Ce qui a
-été corrigé, au-delà du cosmétique :
-
-- **Le périmètre mesuré suit le régime du run.** `--sensitivity --sport-penalty`
-  appliquait `DIGEST_SPORT_PENALTY` à chaque article **tout en la rapportant
-  « jamais lue par le moteur »** : le rapport contredisait le run. Nouveau
-  `measurable_constants()`. Effet de bord utile : le fait n°5 est désormais
-  **mesuré** (verdict *inerte*, churn 0) et plus seulement déduit.
-- **L'invariant sport dit dans quel régime il a été mesuré.**
-  `followed_sport_survives_penalty` tournait **sans** la pénalité par défaut et
-  imputait quand même le rang à `DIGEST_SPORT_PENALTY`.
-- **Une seule passe de référence** pour les quatre modes (elle était refaite par
-  mode), et `--sweep` ne rescore plus la valeur égale à la constante courante —
-  c'est un no-op, or la recette documentée passe par là. ≈45 % de moins sur
-  `--invariants --gold`, ≈20 % sur la recette de sweep.
-- `is_sport_content` résolu une fois dans le corpus au lieu de ~300 000 fois.
-- `numeric_constants()` énumère via `is_overridable_scoring_key`, la règle même
-  sur laquelle `weights_override` accepte ou refuse (deux copies pouvaient
-  diverger et tuer le run en route).
-- `_deltas_vs_baseline` partagé : la convention τ-b (jeu figé re-classé) était
-  copiée dans deux modes ; `MUTED_WINDOW` séparé de `TAU_SET_SIZE` (élargir le
-  jeu de τ ne doit pas desserrer une assertion) ; `_max_weight` ne passe plus par
-  `features(user)[3]` (l'index couplait le choix du persona à l'ordre de
-  `FEATURE_NAMES`) ; corpus sérialisé une fois au lieu de deux ; `Corpus.path`
-  mort supprimé.
-
-**Non retenu** : mutualiser le boilerplate DB avec `evaluate_feed_ranking.py`
-(hors diff, et la 3ᵉ copie de la réécriture d'URL a un vrai propriétaire,
-`Settings.fix_database_url` — à traiter à part) ; remplacer `PersonaCustomTopic`
-par `UserTopicProfile` (le duck-typing suit `VeilleAngleTopic` et couvre en fait
-plus de champs) ; extraire les ajustements post-piliers de `digest_selector`
-(édition de code de prod pour de l'outillage hors-ligne — le mode `serein` reste
-donc hors de portée, c'est écrit dans le runbook).
-
-## Vérification
-
-- **Suite backend complète : `2 982 passés, 18 skipped, 2 xfailed, 0 échec,
-  0 erreur`** (2 min 02).
-  *Note pour qui rejouerait ça* : la « baseline 82 erreurs » citée plus tôt dans
-  ce lot n'était pas une baseline, c'était le conteneur `facteur-postgres-test`
-  arrêté. DB debout + `DATABASE_URL` construit depuis `POSTGRES_TEST_*` (le
-  défaut retombe sur l'utilisateur `postgres`, qui n'existe pas sur ce
-  conteneur) ⇒ **la suite est intégralement verte**, il n'y a aucun échec connu à
-  tolérer côté backend.
-- `pytest tests/scripts/` : 488 passés (484 + 4 tests ajoutés par la passe
-  simplify).
-- `ruff check` + `ruff format` : propres sur les 5 fichiers ; `app/`
-  (le gate CI) intact.
-- **Alembic : aucune migration dans cette PR**, et la chaîne complète rejouée
-  sur une DB **vide** (`make db-reset` puis `alembic upgrade head`) arrive sans
-  erreur sur l'unique head `mg06_merge_cq01_st02`.
-- Bout en bout sur données réelles : corpus 1 763 articles / 112 sources →
-  8 personas → `--sensitivity` → `--sweep`.
-- **Non-régression de la passe simplify prouvée sur les vraies fixtures** :
-  `--invariants` redonne 15 pass / 3 fail / 14 n/a et les mêmes rangs (134, 50) ;
-  `--sweep ENTITY_AFFINITY_BASE=8,16,32,64` redonne la courbe plate à l'identique ;
-  `build_persona_dataset.py` rejoué sur le dump brut reproduit
-  `scoring_personas.json` **au fichier près** (hors `generated_at`) — ce qui
-  vérifie du même coup que la fixture livrée est bien ce que le générateur
-  courant produit.
-
-## Suite
-
-PR-4 (mobile, ordre des blocs par score top-3) part **après** le merge de
-celle-ci, sur une branche neuve depuis `main`.
+- Ne bouge **aucun poids de reco** : la V0 collecte, elle ne personnalise pas.
+- Ne retire rien du digest côté données — seul l'affichage final reflète les choix.
+- N'unifie pas le fait « l'utilisateur a découvert l'aperçu au long-press » entre
+  les trois surfaces qui le stockent aujourd'hui (décision produit, signalée dans
+  la story).

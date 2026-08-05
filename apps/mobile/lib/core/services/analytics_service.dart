@@ -141,6 +141,49 @@ class AnalyticsService {
     }
   }
 
+  /// Une décision de tri sur la carte « Ton Essentiel » (Story 33.1).
+  ///
+  /// Première famille d'events `essentiel_*` du produit. Ce qui la rend utile
+  /// et que `content_interaction` ne porte pas : [rank] **dans le slate figé**
+  /// + [slateSize], soit le dénominateur qui manquait à la jauge de ranking, et
+  /// [latencyMs], qui distingue le tri réfléchi du tri fait en scrollant.
+  Future<void> trackEssentielTriage({
+    required String decision,
+    required String contentId,
+    required int rank,
+    required int slateSize,
+    required String decidedVia,
+    int? latencyMs,
+  }) async {
+    await _logEvent('essentiel_triage_decision', {
+      'session_id': _sessionId,
+      'decision': decision,
+      'content_id': contentId,
+      'rank': rank,
+      'slate_size': slateSize,
+      'decided_via': decidedVia,
+      'latency_ms': latencyMs,
+    });
+  }
+
+  /// Fin d'un tri complet — un event par session de tri, pas par article.
+  Future<void> trackEssentielTriageSession({
+    required int slateSize,
+    required int kept,
+    required int later,
+    required int passed,
+    int? durationMs,
+  }) async {
+    await _logEvent('essentiel_triage_session', {
+      'session_id': _sessionId,
+      'slate_size': slateSize,
+      'kept': kept,
+      'later': later,
+      'passed': passed,
+      'duration_ms': durationMs,
+    });
+  }
+
   /// « Lu jusqu'au bout » (Epic 30).
   ///
   /// Émis **au moment de l'événement**, jamais depuis `dispose()`. Distinct de

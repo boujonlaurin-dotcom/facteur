@@ -172,14 +172,17 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Gate Rituel matinal (Chg 1) : L'Essentiel n'est atteignable qu'après la
-  // lettre du jour — tout atterrissage exact sur /flux-continu passe par
-  // /edition tant que le rituel n'a pas été vu.
+  // La « Lettre du jour » ne gate plus L'Essentiel (décision PO 02/08/2026) :
+  // le gate quotidien /flux-continu → /edition a été retiré. Cold-boot et tap
+  // onglet atterrissent directement sur L'Essentiel, que le rituel ait été vu
+  // ou non. La lettre n'est plus jouée qu'en fin d'onboarding.
   // ---------------------------------------------------------------------------
   testWidgets(
-      'Gate: tap onglet L\'Essentiel (rituel pas vu) redirige /flux-continu → /edition',
+      'La Lettre ne gate plus : cold-boot (rituel jamais vu) atterrit '
+      'directement sur /flux-continu et le tap onglet y reste',
       (WidgetTester tester) async {
     _useTallSurface(tester);
+    // Aucune clé « rituel vu » : avant, ce cold-boot passait par /edition.
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final prefs = await SharedPreferences.getInstance();
 
@@ -211,57 +214,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
-    // Atterrissage post-auth : rituel pas vu → /edition (via postAuthHomePath).
-    expect(_currentPath(router), RoutePaths.edition);
+    // Atterrissage post-auth : directement L'Essentiel, plus de /edition.
+    expect(_currentPath(router), RoutePaths.fluxContinu);
 
-    // Tap onglet « L'Essentiel » (main_shell fait `context.go(/flux-continu)`).
-    router.go(RoutePaths.fluxContinu);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    // Le gate re-route vers la lettre du jour.
-    expect(_currentPath(router), RoutePaths.edition);
-  });
-
-  testWidgets(
-      'Gate: rituel déjà vu → /flux-continu passe (L\'Essentiel accessible)',
-      (WidgetTester tester) async {
-    _useTallSurface(tester);
-    // Marque le rituel « vu aujourd'hui » (clé jour-tournée courante).
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      TourneeProgressService.morningRitualPrefsKey(DateTime.now()): true,
-    });
-    final prefs = await SharedPreferences.getInstance();
-
-    final container = ProviderContainer(
-      overrides: [
-        authStateProvider.overrideWith(
-          (ref) => FakeAuthStateNotifier(
-            AuthState(
-              user: _confirmedSocialUser(),
-              isLoading: false,
-              needsOnboarding: false,
-              onboardingStatusKnown: true,
-            ),
-          ),
-        ),
-        sharedPreferencesProvider.overrideWithValue(prefs),
-      ],
-    );
-    addTearDown(container.dispose);
-
-    final router = container.read(routerProvider);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp.router(routerConfig: router),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    // Rituel vu → le gate ne s'applique plus : L'Essentiel est accessible.
+    // Tap onglet « L'Essentiel » (main_shell fait `context.go(/flux-continu)`) :
+    // aucun re-route vers la lettre.
     router.go(RoutePaths.fluxContinu);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -278,10 +235,9 @@ void main() {
       'Story 9.8: L\'Essentiel déjà parcouru ne renvoie plus vers Flâner',
       (WidgetTester tester) async {
     _useTallSurface(tester);
-    // Rituel vu (pas de /edition) + Essentiel déjà parcouru aujourd'hui :
-    // avant la story 9.8, postAuthHomePath renvoyait vers /flaner.
+    // Essentiel déjà parcouru aujourd'hui : avant la story 9.8, l'atterrissage
+    // post-auth renvoyait alors vers /flaner.
     SharedPreferences.setMockInitialValues(<String, Object>{
-      TourneeProgressService.morningRitualPrefsKey(DateTime.now()): true,
       TourneeProgressService.essentielViewedPrefsKey(DateTime.now()): true,
     });
     final prefs = await SharedPreferences.getInstance();

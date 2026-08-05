@@ -1,89 +1,188 @@
-# QA Handoff — Invitation feedback « un café en visio » (Story 13.3)
+# QA Handoff — Story 33.1 : le tri dans le feed (carte « Ton Essentiel » triable)
 
 > Rempli par l'agent dev. Input de /validate-feature. Story :
-> `docs/stories/core/13.3.invitation-feedback-humaine.story.md`.
+> `docs/stories/core/33.1.tri-dans-le-feed.md`.
 
 ## Feature développée
 
-L'invitation à un call qualitatif (Epic 13) était invisible (enfouie dans la toute
-dernière boîte de la page) et pointait vers un lien Calendly mort. Elle devient une
-**entrée slim posée 2 sections avant la fin de la Tournée**, qui se déploie **une
-seule fois** en modale avec nos deux visages, un ask à « 5 minutes » et trois
-sorties nettes. La carte de fin de tournée est allégée en conséquence.
+La carte « Ton Essentiel » en tête du Flux continu n'est plus une liste passive :
+elle devient une **pile à trier**. Un article à la fois, swipe droite « Je garde »,
+swipe gauche « Pas pour moi », bouton signet « Plus tard ». La liste des gardés se
+construit sous la pile, dans le feed, sans écran supplémentaire.
+
+**V0 en collecte seule** : chaque décision est enregistrée avec son rang dans le
+slate figé, mais **aucun poids de reco ne bouge**. Seule exception actée par le
+PO : « Plus tard » déclenche le save existant, exactement comme le bouton signet
+de la carte.
 
 ## PR associée
 
-À compléter après ouverture.
+À créer (`--base main`).
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Tournée du jour (l'Essentiel) | `/flux-continu` | Modifié — nouvelle entrée inline à `sections.length - 3` |
-| Modale d'invitation | bottom sheet | Réécrite (`CallInviteSheet`) |
-| Carte de fin de tournée | `/flux-continu` (bas de page) | Modifié — teaser retiré, micro-vote compacté |
+| Flux continu (carte « Ton Essentiel ») | `/flux-continu` | Modifié |
+| Lettre passée (rewind J-7) | `/flux-continu` + timeline | Modifié (doit **rester** passive) |
 
-## Pré-requis de test
+## Scénarios de test
 
-L'entrée n'apparaît que si le backend renvoie `should_show: true` sur
-`GET /feedback/invite` (gating segmenté : `active` / `low_active` / `returning`,
-et ni snooze ni `MAX_SHOWS=2` ni statut terminal en base). Si rien ne s'affiche,
-vérifier/réinitialiser la ligne `feedback_invites` du user de test avant de
-conclure à un bug.
+### Scénario 1 — Happy path : trier les 5
+**Parcours** :
+1. Ouvrir l'app sur le Flux continu, édition du jour.
+2. La carte affiche la pile : progression « 0 sur N triés », un article, la barre
+   d'actions (✕ · signet · « Je garde » avec coche pleine blanche).
+3. Swiper à droite → tampon « JE GARDE », la carte part, l'article apparaît dans la
+   liste sous la pile, la progression avance.
+4. Swiper à gauche → tampon « PAS POUR MOI », l'article ne rejoint pas la liste.
+5. Trier tous les articles.
 
-Le nudge d'auto-ouverture est persisté dans SharedPreferences sous
-`nudge.feedback_call_auto_modal.seen` : le supprimer pour rejouer le scénario 2.
+**Résultat attendu** : au dernier geste, la carte reprend sa liste habituelle
+(lead + médiums) mais **uniquement avec les articles gardés** — les rejetés ne
+réapparaissent pas — et affiche « Trier à nouveau » en pied. Aucun 4xx/5xx, un
+seul `POST /api/essentiel/triage` (batché).
 
-## Scénarios
+### Scénario 2 — Le feed ne saute pas
+**Parcours** :
+1. Repérer un point de repère visuel juste sous la carte Essentiel.
+2. Trier les articles un par un en observant ce repère.
 
-### 1. Placement — l'invitation est vue sans aller au bout (le cœur du fix)
-Ouvrir la Tournée, scroller normalement. **Attendu** : l'entrée slim (deux photos
-rondes qui se chevauchent + « Django & Laurin aimeraient t'entendre 5 minutes. » +
-« Prendre un café ») apparaît **avant** la carte « Fin de tournée », pas dedans.
+**Résultat attendu** : la carte **ne change pas de hauteur** entre le premier et
+le dernier geste — la hauteur est réservée d'avance (`triageReservedHeight`).
+Vérifier aussi que les ancres de snap du scroll restent correctes.
 
-### 2. Auto-déploiement, une seule fois
-Premier passage éligible : la modale s'ouvre **seule** quand l'entrée entre dans
-le viewport (pas dès le chargement de la page, alors qu'on est encore en haut).
-La refermer, puis recharger la Tournée. **Attendu** : plus d'auto-ouverture, seule
-l'entrée inline reste ; un tap dessus rouvre la modale.
+### Scénario 3 — Mode boutons seuls (accessibilité)
+**Parcours** :
+1. Sans jamais swiper, utiliser uniquement ✕ / signet / « Je garde ».
 
-### 3. Contenu de la modale
-**Attendu** : les deux photos (DJANGO / LAURIN) rendues, pas de monogramme de
-repli ; tampon « TON AVIS COMPTE » ; titre « On peut te prendre 5 minutes ? » ;
-signature « Django & Laurin, tes facteurs » ; **trois** boutons distincts :
-« Prendre un café », « Plus tard », « On l'a déjà fait ». Aucun em-dash à l'écran.
+**Résultat attendu** : même mouvement de sortie que le swipe. Les 3 boutons
+portent un label sémantique (`Pas pour moi`, `Plus tard`, `Je garde`).
 
-### 4. Réservation
-Taper « Prendre un café ». **Attendu** : ouverture de
-`https://calendar.app.google/Yy1fLcasYk1uVbVT7` en navigateur externe (pas de
-page d'erreur), et la modale se referme.
+### Scénario 4 — Tri partiel puis kill/relaunch
+**Parcours** :
+1. Trier 2 articles sur 5.
+2. Tuer l'app, la relancer.
 
-### 5. Sorties — l'entrée disparaît tout de suite
-Taper « Plus tard » (ou « On l'a déjà fait »). **Attendu** : la modale se ferme
-**et** l'entrée inline disparaît de la Tournée dans la foulée (le statut est
-relu). Recharger : elle ne revient pas.
+**Résultat attendu** : la pile **reprend au 3ᵉ article**, les décisions déjà
+prises sont conservées, l'ordre de la pile est **identique**.
 
-### 6. Carte de fin de tournée — pas d'overflow
-Descendre jusqu'à la carte « Fin de tournée ». **Attendu** : tampon « TON AVIS
-COMPTE » + les trois emojis (😴 🙂 🔥), sans plus aucun bloc d'invitation ; la
-boîte tient dans l'écran, aucun bandeau jaune/noir d'overflow. Voter, vérifier la
-bascule vers « Merci pour ton retour ».
+### Scénario 5 — Refetch en cours de tri (piège n°3)
+**Parcours** :
+1. Commencer à trier.
+2. Provoquer un refetch de l'Essentiel (pull-to-refresh, ou retour foreground).
 
-### Cas limites
-- **Tournée courte** (moins de 2 sections) : aucune entrée d'invitation, aucun crash.
-- **User non éligible** : rien ne se rend (ni entrée, ni modale), et aucun appel à
-  `POST /feedback/invite/shown` dans l'onglet réseau.
+**Résultat attendu** : **le slate ne bouge pas**. Ni l'ordre, ni la carte du
+dessus, ni la progression. `GET /api/essentiel` re-ranke à chaque requête ; le
+gel est ce qui empêche la pile de changer sous le doigt.
+
+### Scénario 6 — « Trier à nouveau »
+**Parcours** :
+1. Terminer un tri, taper « Trier à nouveau ».
+
+**Résultat attendu** : la pile repart au 1ᵉʳ article, **avec le même ordre** (le
+slate est figé pour la journée). Le backend écrase par upsert, sans dupliquer.
+
+### Scénario 7 — Lettre passée
+**Parcours** :
+1. Ouvrir le rewind, sélectionner l'édition d'hier.
+
+**Résultat attendu** : **aucune pile**. La lettre passée reste passive.
+
+### Scénario 8 — Réseau coupé
+**Parcours** :
+1. Passer en mode avion, trier les 5, revenir en ligne.
+
+**Résultat attendu** : le tri **n'attend jamais le réseau** (aucun spinner,
+aucun blocage). Les décisions repartent au flush suivant.
+
+### Scénario 9 — Fidélité maquette de la carte de tri (passe A2)
+**Parcours** :
+1. Ouvrir l'édition du jour, observer la carte du dessus.
+
+**Résultat attendu** :
+- **bandeau image** en tête de carte ;
+- source, puis titre sur **4 lignes max** ;
+- **pas de chapô** ;
+- pied : pastille de polarisation (si le sujet en porte une) puis « N sources »
+  (si ≥ 2) ;
+- barre de progression : le **segment en cours** est plus épais que les autres,
+  et tous gardent la **même largeur** ;
+- le compteur « 1 sur 5 triés » se lit **sous** les articles gardés, pas en tête
+  de carte ;
+- bouton plein « Je garde » avec une coche pleine blanche avant le libellé.
+
+### Scénario 10 — Article sans image : pas de saut de hauteur
+**Parcours** :
+1. Trier jusqu'à tomber sur un article sans image (ou avec une image cassée).
+
+**Résultat attendu** : le bandeau **garde sa place** (aplat teinté), la carte
+mesure exactement la même hauteur que les autres. Le repère visuel sous la carte
+ne bouge pas d'un pixel.
+
+### Scénario 11 — Aperçu au long-press × swipe (arène de gestes)
+**Parcours** :
+1. Appui maintenu sur la carte du dessus, sans bouger le doigt.
+2. Relâcher, puis faire un swipe horizontal normal.
+
+**Résultat attendu** : (1) l'aperçu flottant s'ouvre et se ferme au relâchement ;
+(2) le swipe reste pleinement fonctionnel. Un drag horizontal **ne doit jamais**
+ouvrir l'aperçu sous le doigt. Même geste disponible sur les lignes « gardés ».
+
+### Scénario 12 — Nudge « aperçu » sur la 2ᵉ carte
+**Parcours** :
+1. Storage vidé, trier le 1ᵉʳ article : rien ne doit se passer de spécial.
+2. Sur la **2ᵉ** carte : la carte grossit brièvement et un mini libellé
+   « Appuie longuement pour un aperçu. » apparaît.
+3. Attendre ~2,5 s, puis continuer le tri.
+4. Faire un vrai long-press, recharger, refaire un tri.
+
+**Résultat attendu** : le libellé disparaît seul ; il ne revient **pas** plus
+tard dans la journée ; après un long-press réel il ne revient **plus jamais**.
 
 ## Critères d'acceptation
-- [ ] L'entrée est atteignable sans scroller jusqu'au tout dernier pixel.
-- [ ] L'auto-ouverture ne se produit **qu'une fois**, et seulement quand l'entrée
-      est visible.
-- [ ] Le lien Google Agenda ouvre une vraie page de réservation.
-- [ ] Les trois sorties font trois choses différentes (`accepted` / `declined` /
-      `already_done` dans l'onglet réseau).
-- [ ] Aucun overflow sur la carte de clôture en 390x844.
-- [ ] Console sans erreur, réseau sans 4xx/5xx inattendu.
 
-## Notes techniques
-Viewport de test : **390x844**, sémantique activée au boot (cf. skill
-`facteur-qa-web` — Flutter web = canvas).
+- [ ] La pile remplace la liste passive sur l'édition du jour, pas ailleurs
+- [ ] Swipe droite/gauche et les 3 boutons produisent la bonne décision
+- [ ] La carte ne change pas de hauteur pendant le tri (feed stable)
+- [ ] Le slate survit à un kill/relaunch et ne bouge pas au refetch
+- [ ] « Trier à nouveau » réinitialise sans rebattre l'ordre
+- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus
+- [ ] Copy : aucun em-dash, ton sobre (pas de facteur personnifié)
+- [ ] Carte de tri : image, couverture, polarisation, titre 4 lignes, pas de chapô
+- [ ] Un article sans image ne change pas la hauteur de la carte
+- [ ] Long-press → aperçu, sans jamais bloquer le swipe
+- [ ] Nudge « aperçu » : 1×/jour max, éteint pour de bon après un long-press réel
+
+## Garde-fous à vérifier côté données (le cœur de la V0)
+
+Après un tri contenant au moins un « Pas pour moi » :
+
+```sql
+-- Les décisions sont écrites avec leur rang et la taille du slate
+SELECT decision, rank, slate_size, decided_via, latency_ms
+  FROM essentiel_triage_decisions WHERE digest_date = CURRENT_DATE;
+
+-- GARDE-FOU n°1 : aucune source mutée. `not_interested` ajouterait la source
+-- entière à muted_sources, sans expiration. Le tri ne doit JAMAIS y toucher.
+SELECT user_id, muted_sources FROM user_personalization
+ WHERE cardinality(muted_sources) > 0;
+
+-- GARDE-FOU n°2 : aucun poids bougé par le tri
+SELECT count(*) FROM user_subtopics WHERE updated_at > now() - interval '5 min';
+SELECT count(*) FROM user_entity_affinity WHERE updated_at > now() - interval '5 min';
+
+-- Seul effet attendu : les « Plus tard » sont mis de côté
+SELECT content_id, is_saved FROM user_content_status WHERE is_saved IS TRUE;
+```
+
+Script E2E de l'endpoint : `bash docs/qa/scripts/verify_essentiel_triage.sh`
+(exige `API_URL` + `JWT`).
+
+## Notes pour l'agent QA
+
+- Viewport 390×844, sémantique activée au boot (skill `facteur-qa-web`).
+- La pile n'apparaît qu'après l'hydratation SharedPreferences (quelques frames) :
+  laisser la page se poser avant d'asserter.
+- Le tri est **fire-and-forget batché** (debounce 2 s, flush à la fin du tri et
+  au passage en arrière-plan) : ne pas s'attendre à un POST par swipe.

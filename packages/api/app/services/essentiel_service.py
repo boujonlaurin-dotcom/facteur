@@ -707,6 +707,7 @@ def _to_essentiel_article(
         perspective_count=topic.perspective_count,
         source_count=topic.source_count,
         perspective_sources=(topic.perspective_sources or [])[:PERSPECTIVE_SOURCES_CAP],
+        divergence_level=topic.divergence_level,
         rank=rank,
         is_read=article.is_read,
         is_saved=article.is_saved,

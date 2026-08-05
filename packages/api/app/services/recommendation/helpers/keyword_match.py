@@ -9,9 +9,21 @@ articles hors-sujet (plan veille V0, Problème 3).
 L'équivalent SQL (`~*` avec bornes Postgres `\\m…\\M`) vit dans
 `services/veille/feed_filter.py` car il produit un prédicat SQLAlchemy, pas un
 booléen Python — mais la sémantique est la même.
+
+Le pattern compilé est mis en cache par `keyword_lower` (vocabulaire de
+mots-clés petit et borné) pour éviter de recompiler la même regex à chaque
+appel — un run `--sensitivity` complet en fait des dizaines de milliers.
 """
 
 import re
+from functools import lru_cache
+
+_CACHE_MAXSIZE = 2048
+
+
+@lru_cache(maxsize=_CACHE_MAXSIZE)
+def _compiled_pattern(keyword_lower: str) -> re.Pattern[str]:
+    return re.compile(r"\b" + re.escape(keyword_lower) + r"\b")
 
 
 def matches_word_boundary(keyword_lower: str, *texts_lower: str) -> bool:
@@ -22,5 +34,5 @@ def matches_word_boundary(keyword_lower: str, *texts_lower: str) -> bool:
     """
     if not keyword_lower:
         return False
-    pattern = r"\b" + re.escape(keyword_lower) + r"\b"
-    return any(re.search(pattern, text) for text in texts_lower)
+    pattern = _compiled_pattern(keyword_lower)
+    return any(pattern.search(text) for text in texts_lower)

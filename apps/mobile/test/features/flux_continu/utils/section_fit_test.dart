@@ -276,4 +276,63 @@ void main() {
           lessThanOrEqualTo(heroFor(DisplayModeSpec.normal)));
     });
   });
+
+  // ── Pile de tri (Story 33.1) ───────────────────────────────────────────────
+  //
+  // Ce que ces tests gardent, au-delà de l'arithmétique : la carte réserve dès
+  // le départ le **pire des deux états** qu'elle traversera (pic de tri vs état
+  // final). Sans ça la carte grandit sous le doigt et le feed saute.
+
+  group('triageReservedHeight', () {
+    double reserved(int n) => triageReservedHeight(
+          slateSize: n,
+          chromeHeight: kHeroChromeHeight,
+          leadHeight: kHeroLeadHeight,
+          mediumHeight: kHeroMediumHeight,
+        );
+
+    test('croît avec la taille du slate', () {
+      expect(reserved(2), greaterThan(reserved(1)));
+      expect(reserved(5), greaterThan(reserved(2)));
+    });
+
+    test('couvre l\'état final autant que le pic de tri', () {
+      for (var n = 1; n <= 5; n++) {
+        final finalState =
+            kHeroChromeHeight + kHeroLeadHeight + (n - 1) * kHeroMediumHeight;
+        final peak = kHeroChromeHeight +
+            kTriageProgressHeight +
+            kTriageCardHeight +
+            kTriageActionBarHeight +
+            (n - 1) * kTriageKeptSlotHeight +
+            kTriageCounterHeight;
+        expect(reserved(n), greaterThanOrEqualTo(finalState));
+        expect(reserved(n), greaterThanOrEqualTo(peak));
+      }
+    });
+
+    test('traite un slate vide comme un slate de 1', () {
+      expect(reserved(0), reserved(1));
+    });
+
+    test('réserve la place du compteur passé sous la liste des gardés', () {
+      // Le compteur a quitté la barre de progression pour fermer la liste des
+      // gardés : s'il n'était pas ajouté au pic, la dernière ligne serait
+      // rognée par le `SizedBox` de hauteur figée.
+      final withCounter = triageReservedHeight(
+        slateSize: 5,
+        chromeHeight: 0,
+        leadHeight: kHeroLeadHeight,
+        mediumHeight: kHeroMediumHeight,
+      );
+      final withoutCounter = triageReservedHeight(
+        slateSize: 5,
+        chromeHeight: 0,
+        leadHeight: kHeroLeadHeight,
+        mediumHeight: kHeroMediumHeight,
+        counterHeight: 0,
+      );
+      expect(withCounter - withoutCounter, kTriageCounterHeight);
+    });
+  });
 }

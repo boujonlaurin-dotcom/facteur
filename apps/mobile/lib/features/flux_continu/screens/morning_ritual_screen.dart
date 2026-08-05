@@ -110,17 +110,13 @@ class _MorningRitualScreenState extends ConsumerState<MorningRitualScreen>
     _floorTimer?.cancel();
     if (!_shownTracked) {
       _shownTracked = true;
+      // Trace **analytics seule** : la lettre ne gate plus rien (décision PO
+      // 02/08/2026), donc plus aucun flag « vu aujourd'hui » à poser. L'écran
+      // n'est atteint qu'en fin d'onboarding ou par le rewind des éditions
+      // passées, jamais comme sas quotidien.
       unawaited(ref.read(analyticsServiceProvider).trackMorningRitualShown(
             dayKey: TourneeProgressService.dayKey(DateTime.now()),
           ));
-      // « Vu » dès la **révélation** (et non au tap CTA) : si l'utilisateur
-      // quitte sans ouvrir puis se reconnecte le même jour, l'enveloppe ne
-      // réapparaît pas — et le gate Rituel (routes.dart) le laisse alors passer
-      // vers L'Essentiel. La révélation étant désormais inconditionnelle, il n'y
-      // a plus de chemin qui ne marque pas « vu » (donc pas de boucle de gate).
-      unawaited(
-        ref.read(tourneeProgressServiceProvider).setMorningRitualShownToday(),
-      );
     }
     setState(() => _phase = _Phase.ritual);
   }
