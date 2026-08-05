@@ -1965,12 +1965,21 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       (s) => s is FeedThemeSection && s.isPlaceholder,
     );
 
+    // Rang absolu de la prochaine carte dans la page — avancé section par
+    // section (cf. [renderedCardCount]). C'est lui qui porte l'effet de
+    // position dans la mesure : `position_in_section` seul confond la 1ʳᵉ carte
+    // du haut de page avec la 1ʳᵉ carte du 9ᵉ bloc.
+    var globalPosition = 0;
+    final impressionDayKey = TourneeProgressService.dayKey(DateTime.now());
+
     final slivers = <SliverToBoxAdapter>[];
     for (var i = 0; i < state.sections.length; i++) {
       if (state.grilleSlotIndex == i) {
         slivers.add(_grilleSliver(followedByNormalSection: true));
       }
       final section = state.sections[i];
+      final sectionGlobalOffset = globalPosition;
+      globalPosition += renderedCardCount(section);
       final isFavorite = _isFavoriteSection(section);
       // Story 22.3 — une section suggérée ne porte pas l'étoile « favori »
       // (elle se gère via son badge « Choisie pour vous » + sheet), pour ne pas
@@ -2018,6 +2027,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                     child: SectionBlock(
                       section: section,
                       showPreparingLabel: i == firstPreparingIndex,
+                      // Mesure d'impression — dénominateur du CTR de la Tournée.
+                      impressionDayKey: impressionDayKey,
+                      sectionIndex: i,
+                      globalPositionOffset: sectionGlobalOffset,
+                      isSerene: state.isSerene,
                       onTapArticle: (a) => _openArticle(context, a),
                       onDismissArticle: _onSwipeDismiss,
                       pendingFeedbackIds: _pendingFeedback,

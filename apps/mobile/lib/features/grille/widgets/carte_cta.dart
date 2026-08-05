@@ -129,6 +129,7 @@ class CarteCta extends StatelessWidget {
   final VoidCallback onOpen;
 
   bool get _deja => state == CarteCtaState.deja;
+  bool get _dejaRate => _deja && !today.isSolved;
 
   @override
   Widget build(BuildContext context) {
@@ -156,7 +157,9 @@ class CarteCta extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            _deja ? 'Bien joué !' : 'Trouve le mot du jour',
+            _deja
+                ? (_dejaRate ? 'Loupé de peu !' : 'Bien joué !')
+                : 'Trouve le mot du jour',
             textAlign: TextAlign.center,
             style: GoogleFonts.fraunces(
               fontSize: 25,
@@ -192,6 +195,10 @@ class CarteCta extends StatelessWidget {
 
   String _intro() {
     if (_deja) {
+      if (_dejaRate) {
+        return '« Pas trouvé cette fois, mais tu y étais presque. '
+            'Reviens demain matin pour un mot tout neuf. »';
+      }
       final n = today.nbEssais;
       return '« Trouvé en $n essai${n > 1 ? 's' : ''} — bien joué !. '
           'Un nouveau mot arrivera demain matin. »';
@@ -202,12 +209,13 @@ class CarteCta extends StatelessWidget {
 
   Widget _stamp(BuildContext context) {
     final c = context.facteurColors;
-    final color = _deja ? c.success : c.textStamp;
+    final dejaSolved = _deja && !_dejaRate;
+    final color = dejaSolved ? c.success : c.textStamp;
     return Transform.rotate(
       angle: -2 * math.pi / 180,
       child: Container(
         decoration: BoxDecoration(
-          color: color.withValues(alpha: _deja ? 0.07 : 0.06),
+          color: color.withValues(alpha: dejaSolved ? 0.07 : 0.06),
           borderRadius: BorderRadius.circular(4),
           border: Border.all(color: color, width: 1.5),
         ),

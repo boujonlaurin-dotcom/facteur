@@ -24,6 +24,7 @@ import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
 import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
+import 'article_impression_tracker.dart';
 import 'auto_grow_candidate.dart';
 import 'coverage_chip.dart';
 import 'edition_timeline_sheet.dart';
@@ -47,12 +48,57 @@ class EssentielHiFiCard extends ConsumerStatefulWidget {
   /// masquée à `0`. Alimente « L'Essentiel vivant » (surface dynamique).
   final int newSinceMorning;
 
+  /// Jour Tournée courant. Non-null ⇒ chaque tuile compte une impression
+  /// (`surface: essentiel`). `null` sur les éditions passées en lecture seule.
+  final String? impressionDayKey;
+
+  /// Rang du héros dans la page et nombre de cartes rendues avant lui —
+  /// toujours 0/0 aujourd'hui (le héros ouvre la Tournée), mais portés en
+  /// paramètre pour que la mesure ne dépende pas de cette hypothèse.
+  final int sectionIndex;
+  final int globalPositionOffset;
+  final bool isSerene;
+
   const EssentielHiFiCard({
     super.key,
     required this.articles,
     required this.onTapArticle,
     this.newSinceMorning = 0,
+    this.impressionDayKey,
+    this.sectionIndex = 0,
+    this.globalPositionOffset = 0,
+    this.isSerene = false,
   });
+
+  /// Enveloppe une tuile dans son compteur d'impression ; passe-plat quand la
+  /// mesure n'est pas câblée (lecture seule).
+  Widget _tracked({
+    required EssentielArticle article,
+    required int position,
+    required Widget child,
+  }) {
+    final dayKey = impressionDayKey;
+    if (dayKey == null) return child;
+    return ArticleImpressionTracker(
+      dayKey: dayKey,
+      info: ArticleImpressionInfo(
+        contentId: article.contentId,
+        sectionKey: 'essentiel_v3',
+        sectionFamily: 'editorial',
+        surface: 'essentiel',
+        sectionIndex: sectionIndex,
+        positionInSection: position,
+        globalPosition: globalPositionOffset + position,
+        // Le héros ne passe pas par le moteur de scoring personnalisé
+        // (`recommendation_reason` est nul sur le chemin editorial_v3) : pas de
+        // score à porter, et c'est une propriété du produit, pas un trou.
+        theme: article.theme,
+        sourceId: article.sourceId,
+        isSerene: isSerene,
+      ),
+      child: child,
+    );
+  }
 
   @override
   ConsumerState<EssentielHiFiCard> createState() => _EssentielHiFiCardState();
@@ -190,6 +236,10 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
             // header→lead 8→6 (le fond teinté du lead rétablit la séparation).
             const SizedBox(height: 6),
             if (showTriage)
+              // Pas de compteur d'impression sur la pile de tri : une décision
+              // de tri est déjà une impression, mesurée par sa propre jauge
+              // (`essentiel_triage_decisions`). Les tuiles ne comptent que
+              // lorsqu'elles sont réellement rendues, c'est-à-dire ici.
               EssentielTriageStack(
                 articles: articles,
                 triage: triage,
@@ -203,24 +253,33 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
               )
             else ...[
               if (lead != null)
-                _LeadTile(
+                widget._tracked(
                   article: lead,
-                  accent: accent,
-                  spec: spec,
-                  readState: readStateFor(lead),
-                  onTap: () => onTapArticle(lead),
+                  position: 0,
+                  child: _LeadTile(
+                    article: lead,
+                    accent: accent,
+                    spec: spec,
+                    readState: readStateFor(lead),
+                    onTap: () => onTapArticle(lead),
+                  ),
                 ),
-              for (final a in remaining) ...[
+              for (var i = 0; i < remaining.length; i++) ...[
                 // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
                 // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
                 const SizedBox(height: 6),
                 const _Hairline(),
                 const SizedBox(height: 6),
-                _MediumTile(
-                  article: a,
-                  spec: spec,
-                  readState: readStateFor(a),
-                  onTap: () => onTapArticle(a),
+                widget._tracked(
+                  article: remaining[i],
+                  // +1 : le lead occupe le rang 0.
+                  position: i + 1,
+                  child: _MediumTile(
+                    article: remaining[i],
+                    spec: spec,
+                    readState: readStateFor(remaining[i]),
+                    onTap: () => onTapArticle(remaining[i]),
+                  ),
                 ),
               ],
               // Tri terminé sans rien garder (tout passé) : état vide sobre
