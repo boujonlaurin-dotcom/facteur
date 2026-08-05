@@ -23,6 +23,7 @@ from uuid import UUID
 import sentry_sdk
 import structlog
 from sqlalchemy import func, select
+from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import apply_session_timeouts, safe_async_session
@@ -1185,7 +1186,35 @@ async def run_digest_generation(
     async with safe_async_session() as session:
         try:
             result = await job.run(session, target_date)
-            await session.commit()
+            # Le travail réel du run est déjà committé dans des sessions filles
+            # ISOLÉES : seeding de l'état (commit intra-`run`), prune historique,
+            # génération par utilisateur (`_process_batch`), mot du jour
+            # (`_match_grille_featured_article`). La session batch partagée ne
+            # porte plus, au mieux, qu'une tx de LECTURE ouverte au retour.
+            #
+            # Mais une étape best-effort amont a pu la laisser en
+            # PENDING_ROLLBACK : les blocs `with contextlib.suppress(...):
+            # rollback(); apply_session_timeouts(session)` re-poussent des
+            # `SET LOCAL` juste après le rollback ; sous pression pool matinale
+            # ce SET LOCAL peut échouer, et `apply_session_timeouts` AVALE son
+            # erreur en interne (log debug) sans rollback → la nouvelle tx reste
+            # invalide. Le `commit()` final planterait alors en
+            # PendingRollbackError (Sentry PYTHON-4R) — un FAUX échec, puisque
+            # tous les digests ont bien été générés et committés en amont.
+            #
+            # Garde-fou : si la tx partagée est invalide, on la rollback AVANT
+            # de committer. Le commit final ne sert qu'à clôturer proprement la
+            # tx de lecture ; il ne doit jamais faire échouer un run réussi.
+            if session.in_transaction() and not session.is_active:
+                await session.rollback()
+            try:
+                await session.commit()
+            except PendingRollbackError:
+                # Ceinture + bretelles : si l'état de tx nous a échappé, un
+                # commit sur tx invalide se solde par un rollback plutôt qu'un
+                # crash. Le travail réel est déjà persisté en sessions filles.
+                logger.warning("digest_generation_final_commit_pending_rollback")
+                await session.rollback()
             return result
         except Exception:
             await session.rollback()
