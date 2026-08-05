@@ -574,18 +574,30 @@ async def refresh_feed(
         for cid in body.content_ids
     ]
 
-    # 2. UPSERT last_impressed_at = now()
+    # 2. UPSERT last_impressed_at = now() — fix N+1 (famille Sentry PYTHON-5Q).
+    # Avant : un `db.execute()` par content_id dans une boucle → N requêtes
+    # (et, sous le wrapper de session qui arme les timeouts par statement, un
+    # `SET LOCAL` répété par itération). Désormais un seul `INSERT ... ON
+    # CONFLICT DO UPDATE` multi-lignes. `dict.fromkeys` dédoublonne en gardant
+    # l'ordre : un `ON CONFLICT DO UPDATE` ne peut pas viser deux fois la même
+    # ligne cible dans un même statement.
+    unique_content_ids = list(dict.fromkeys(body.content_ids))
     refreshed = 0
-    for content_id in body.content_ids:
+    if unique_content_ids:
         stmt = (
             insert(UserContentStatus)
             .values(
-                user_id=user_uuid,
-                content_id=content_id,
-                status=ContentStatus.UNSEEN.value,
-                last_impressed_at=now,
-                created_at=now,
-                updated_at=now,
+                [
+                    {
+                        "user_id": user_uuid,
+                        "content_id": content_id,
+                        "status": ContentStatus.UNSEEN.value,
+                        "last_impressed_at": now,
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                    for content_id in unique_content_ids
+                ]
             )
             .on_conflict_do_update(
                 index_elements=["user_id", "content_id"],
@@ -593,7 +605,7 @@ async def refresh_feed(
             )
         )
         await db.execute(stmt)
-        refreshed += 1
+        refreshed = len(unique_content_ids)
 
     await db.commit()
     FEED_CACHE.invalidate(user_uuid)
@@ -627,29 +639,39 @@ async def undo_refresh(
 
     user_uuid = UUID(current_user_id)
     now = datetime.now(UTC)
-    restored = 0
 
-    for entry in body.previous_impressions:
-        stmt = (
-            insert(UserContentStatus)
-            .values(
-                user_id=user_uuid,
-                content_id=entry.content_id,
-                status=ContentStatus.UNSEEN.value,
-                last_impressed_at=entry.previous_last_impressed_at,
-                created_at=now,
-                updated_at=now,
-            )
-            .on_conflict_do_update(
-                index_elements=["user_id", "content_id"],
-                set_={
+    # Fix N+1 (famille Sentry PYTHON-5Q) : upsert bulk au lieu d'un
+    # `db.execute()` par entrée. `stmt.excluded.last_impressed_at` restaure la
+    # valeur propre à chaque ligne (y compris NULL) via la pseudo-table
+    # EXCLUDED, ce qui préserve la sémantique per-row de la boucle. Dédup en
+    # gardant la DERNIÈRE valeur par content_id (comme la boucle : last write
+    # wins) — nécessaire pour que le `ON CONFLICT DO UPDATE` reste valide sur
+    # une cible unique.
+    dedup = {e.content_id: e for e in body.previous_impressions}
+    restored = 0
+    if dedup:
+        stmt = insert(UserContentStatus).values(
+            [
+                {
+                    "user_id": user_uuid,
+                    "content_id": entry.content_id,
+                    "status": ContentStatus.UNSEEN.value,
                     "last_impressed_at": entry.previous_last_impressed_at,
+                    "created_at": now,
                     "updated_at": now,
-                },
-            )
+                }
+                for entry in dedup.values()
+            ]
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["user_id", "content_id"],
+            set_={
+                "last_impressed_at": stmt.excluded.last_impressed_at,
+                "updated_at": now,
+            },
         )
         await db.execute(stmt)
-        restored += 1
+        restored = len(dedup)
 
     await db.commit()
     FEED_CACHE.invalidate(user_uuid)
