@@ -77,10 +77,15 @@ class PushNotificationService {
     const androidSettings =
         AndroidInitializationSettings('@drawable/ic_stat_facteur');
 
+    // Permission iOS demandée explicitement (cf. requestPermission), JAMAIS au
+    // boot : le pop-up système ne s'affiche qu'une fois par install, et
+    // `init()` tourne pendant l'onboarding. Le déclencher ici brûlerait
+    // l'unique demande avant l'écran d'amorce (étape 3/4) et avant la modale
+    // d'activation quotidienne. On garde donc les 3 flags à `false`.
     const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
 
     const settings = InitializationSettings(
@@ -105,6 +110,22 @@ class PushNotificationService {
           await androidPlugin.requestNotificationsPermission() ?? false;
       debugPrint(
           'PushNotificationService: Android notification permission: $granted');
+      return granted;
+    }
+    // iOS : la demande n'est plus faite au boot (cf. DarwinInitializationSettings
+    // à `false`). On déclenche donc explicitement le pop-up système ici — il ne
+    // s'affiche qu'une fois, l'appel est un no-op idempotent si déjà décidé.
+    final iosPlugin = _plugin.resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin>();
+    if (iosPlugin != null) {
+      final granted = await iosPlugin.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+      debugPrint(
+          'PushNotificationService: iOS notification permission: $granted');
       return granted;
     }
     return true;

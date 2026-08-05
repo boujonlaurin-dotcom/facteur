@@ -380,6 +380,33 @@ class AnalyticsService {
     });
   }
 
+  /// Écran d'amorce notif (étape 3/4) affiché.
+  Future<void> trackOnboardingNotifPrimingShown({required int step}) async {
+    await _capturePostHog('onboarding_notif_priming_shown', {
+      'session_id': _sessionId,
+      'step': step,
+    });
+  }
+
+  /// L'utilisateur a accepté l'amorce ; [registered] = device enregistré côté
+  /// serveur (donc joignable par une relance J+0/J+1).
+  Future<void> trackOnboardingNotifPrimingAccepted({
+    required bool registered,
+  }) async {
+    await _capturePostHog('onboarding_notif_priming_accepted', {
+      'session_id': _sessionId,
+      'registered': registered,
+    });
+  }
+
+  /// L'utilisateur a repoussé l'amorce (« Plus tard ») — aucune demande OS
+  /// déclenchée, la modale d'activation quotidienne reste disponible.
+  Future<void> trackOnboardingNotifPrimingRefused() async {
+    await _capturePostHog('onboarding_notif_priming_refused', {
+      'session_id': _sessionId,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Sprint 2 — feature-by-feature events (PR1)
   // ──────────────────────────────────────────────────────────────
