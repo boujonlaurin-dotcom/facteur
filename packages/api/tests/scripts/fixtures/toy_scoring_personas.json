@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "dataset_kind": "scoring_personas",
+  "generated_at": "2026-08-01T12:00:00+00:00",
+  "source_window": "fixture jouet — aucune donnee de prod",
+  "population_size": 2,
+  "k": 2,
+  "features": [
+    "n_followed_sources",
+    "n_themes",
+    "n_custom_topics",
+    "max_interest_weight",
+    "days_since_signup"
+  ],
+  "note": "Personas JOUETS. toy_persona_01 suit tech+sport sans mute ; toy_persona_02 suit la societe MAIS mute la source qui la publie — c'est lui qui rend l'invariant `muted_source_never_surfaces` falsifiable.",
+  "personas": [
+    {
+      "persona_id": "toy_persona_01",
+      "archetype": "2 sources · 2 themes · 1 sujets · w_max 2.00 · J+120",
+      "cluster_size": 1,
+      "selection": "cluster_medoid",
+      "is_heldout": false,
+      "days_since_signup": 120,
+      "followed_sources": [
+        {
+          "source_id": "22222222-2222-4222-8222-00000000000a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1.0,
+          "state": "followed"
+        },
+        {
+          "source_id": "22222222-2222-4222-8222-00000000000b",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1.0,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "tech": { "weight": 2.0, "state": "favorite" },
+        "sport": { "weight": 1.0, "state": "followed" }
+      },
+      "subtopic_weights": { "ai": 1.5 },
+      "custom_topics": [
+        {
+          "topic_name": "Exploration spatiale",
+          "slug_parent": "space",
+          "keywords": ["orbite", "sonde"],
+          "priority_multiplier": 1.0,
+          "state": "followed",
+          "entity_type": null,
+          "canonical_name": null
+        }
+      ],
+      "entity_affinities": { "openai": 0.8 },
+      "muted_sources": [],
+      "muted_themes": [],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {}
+    },
+    {
+      "persona_id": "toy_persona_02",
+      "archetype": "2 sources · 1 themes · 0 sujets · w_max 2.00 · J+3",
+      "cluster_size": 1,
+      "selection": "extreme_fresh_account",
+      "is_heldout": true,
+      "days_since_signup": 3,
+      "followed_sources": [
+        {
+          "source_id": "22222222-2222-4222-8222-00000000000a",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1.0,
+          "state": "followed"
+        },
+        {
+          "source_id": "22222222-2222-4222-8222-00000000000c",
+          "is_custom": false,
+          "has_subscription": false,
+          "priority_multiplier": 1.0,
+          "state": "followed"
+        }
+      ],
+      "interests": {
+        "society": { "weight": 2.0, "state": "followed" }
+      },
+      "subtopic_weights": {},
+      "custom_topics": [],
+      "entity_affinities": {},
+      "muted_sources": ["22222222-2222-4222-8222-00000000000c"],
+      "muted_themes": [],
+      "muted_topics": [],
+      "muted_content_types": [],
+      "user_prefs": {}
+    }
+  ]
+}

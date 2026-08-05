@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "dataset_kind": "scoring_gold_labels",
+  "generated_at": "2026-08-03T00:00:00+00:00",
+  "corpus_file": "scoring_corpus_2026-08-03.json",
+  "note": "SQUELETTE — volontairement vide. PR-3 livre le chargeur, le schema et le portail de non-regression, PAS des labels. Fabriquer 240 labels pour 113 constantes serait de l'overfit deguise en gold : le jugement editorial est un travail PO, et il ne se fait QUE sur les 3-5 constantes que `--sensitivity` aura signalees comme actives. Remplir `labels` avec {content_id, relevant} en se referant a `corpus_file` — un gold ne vaut que contre le corpus qui l'a produit.",
+  "how_to_fill": {
+    "unite": "un objet par persona non held-out (persona_01 a persona_06)",
+    "label": "{ \"content_id\": \"<uuid du corpus>\", \"relevant\": true|false }",
+    "volume_cible": "~30 candidats juges par persona, tires du top-30 baseline",
+    "regle": "juger AVANT de regarder le score, sinon le gold ne fait qu'entériner le classement existant"
+  },
+  "personas": []
+}

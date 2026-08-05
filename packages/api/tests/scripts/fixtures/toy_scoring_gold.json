@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "dataset_kind": "scoring_gold_labels",
+  "generated_at": "2026-08-01T12:00:00+00:00",
+  "corpus_file": "toy_scoring_corpus.json",
+  "note": "Gold JOUET — sert uniquement a exercer le chargeur et precision@5. Aucun jugement editorial reel.",
+  "personas": [
+    {
+      "persona_id": "toy_persona_01",
+      "labels": [
+        { "content_id": "11111111-1111-4111-8111-000000000001", "relevant": true },
+        { "content_id": "11111111-1111-4111-8111-000000000011", "relevant": true },
+        { "content_id": "11111111-1111-4111-8111-000000000002", "relevant": true },
+        { "content_id": "11111111-1111-4111-8111-000000000010", "relevant": false },
+        { "content_id": "11111111-1111-4111-8111-000000000012", "relevant": false }
+      ]
+    },
+    {
+      "persona_id": "toy_persona_02",
+      "labels": [
+        { "content_id": "11111111-1111-4111-8111-000000000008", "relevant": true },
+        { "content_id": "11111111-1111-4111-8111-000000000004", "relevant": false }
+      ]
+    }
+  ]
+}
