@@ -16,53 +16,19 @@ void main() {
     return TourneeProgressService(prefs: prefs);
   }
 
-  group('TourneeProgressService — rituel matinal', () {
-    test('isMorningRitualShownTodaySync : faux par défaut', () async {
-      final svc = await service({});
-      expect(svc.isMorningRitualShownTodaySync(now: today), isFalse);
-    });
-
-    test('vrai après setMorningRitualShownToday', () async {
-      final svc = await service({});
-      await svc.setMorningRitualShownToday(now: today);
-      expect(svc.isMorningRitualShownTodaySync(now: today), isTrue);
-    });
-
-    test('clé jumelée au dayKey : un autre jour reste non-vu', () async {
-      final svc = await service({});
-      await svc.setMorningRitualShownToday(now: yesterday);
-      expect(svc.isMorningRitualShownTodaySync(now: yesterday), isTrue);
-      expect(svc.isMorningRitualShownTodaySync(now: today), isFalse);
-    });
-
-    test('purgeOldPrefsKeys retire les clés des jours passés, garde celle du jour',
-        () async {
+  group('TourneeProgressService — rituel matinal (clés héritées)', () {
+    test(
+        'purgeOldPrefsKeys retire TOUTES les clés « rituel vu », jour courant '
+        'inclus', () async {
+      // Depuis que la Lettre ne gate plus L'Essentiel (décision PO 02/08/2026),
+      // plus personne n'écrit ni ne lit ce flag : la purge est le seul chemin
+      // qui reste, et elle doit vider le sac au lieu d'y laisser la clé du jour.
       final todayKey = TourneeProgressService.morningRitualPrefsKey(today);
       final oldKey = TourneeProgressService.morningRitualPrefsKey(yesterday);
       final svc = await service({todayKey: true, oldKey: true});
 
       await svc.purgeOldPrefsKeys(now: today);
 
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool(todayKey), isTrue, reason: 'la clé du jour survit');
-      expect(prefs.getBool(oldKey), isNull, reason: 'la clé d\'hier est purgée');
-    });
-
-    test('isMorningRitualShownTodaySync sans prefs injecté → false (anti-flicker)',
-        () {
-      const svc = TourneeProgressService();
-      expect(svc.isMorningRitualShownTodaySync(now: today), isFalse);
-    });
-
-    test('resetMorningRitualShown (QA) oublie toutes les clés, jour courant inclus',
-        () async {
-      final todayKey = TourneeProgressService.morningRitualPrefsKey(today);
-      final oldKey = TourneeProgressService.morningRitualPrefsKey(yesterday);
-      final svc = await service({todayKey: true, oldKey: true});
-
-      await svc.resetMorningRitualShown();
-
-      expect(svc.isMorningRitualShownTodaySync(now: today), isFalse);
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getBool(todayKey), isNull);
       expect(prefs.getBool(oldKey), isNull);

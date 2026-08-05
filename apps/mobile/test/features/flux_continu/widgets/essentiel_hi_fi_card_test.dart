@@ -7,16 +7,20 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/digest/models/digest_models.dart';
+import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
+import 'package:facteur/features/flux_continu/providers/essentiel_triage_provider.dart';
 import 'package:facteur/features/flux_continu/providers/selected_edition_date_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_location_provider.dart';
 import 'package:facteur/features/flux_continu/providers/weather_provider.dart';
+import 'package:facteur/features/flux_continu/utils/section_fit.dart';
 import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dart';
 import 'package:facteur/features/flux_continu/widgets/ephemeral_rattraper_label.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
+import 'package:facteur/features/flux_continu/widgets/essentiel_triage_stack.dart';
 import 'package:facteur/features/gamification/models/streak_activity_model.dart';
 import 'package:facteur/features/gamification/providers/streak_activity_provider.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
@@ -27,7 +31,23 @@ import 'package:facteur/widgets/design/facteur_thumbnail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
-Widget _wrap(Widget child, {List<Override> overrides = const []}) {
+/// État de tri **inerte** : `hydrated: false` ⇒ la carte reste sur sa liste
+/// passive. Sans cet override, l'hydratation SharedPreferences se termine à un
+/// nombre de frames imprévisible et la carte bascule en pile à trier au milieu
+/// d'un test — les assertions ci-dessous ne passeraient plus que par chance.
+/// Le rendu de la pile est couvert séparément (« pile à trier » plus bas).
+Override _inertTriage() => essentielTriageProvider.overrideWith(
+      (ref) => EssentielTriageNotifier(
+        ref,
+        initialState: const EssentielTriageState(dayKey: 'test'),
+      ),
+    );
+
+Widget _wrap(
+  Widget child, {
+  List<Override> overrides = const [],
+  bool inertTriage = true,
+}) {
   return ProviderScope(
     overrides: [
       weatherProvider.overrideWith(
@@ -36,6 +56,10 @@ Widget _wrap(Widget child, {List<Override> overrides = const []}) {
       weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
       // Spec lu via Hive en prod — court-circuité dans les widget tests.
       displayModeSpecProvider.overrideWith((ref) => DisplayModeSpec.normal),
+      // `inertTriage: false` laisse tourner le VRAI notifier (hydratation
+      // SharedPreferences + startIfNeeded) — nécessaire pour exercer la chaîne
+      // d'activation réelle du tri, cf. « activation via le vrai notifier ».
+      if (inertTriage) _inertTriage(),
       ...overrides,
     ],
     child: MaterialApp(
@@ -89,11 +113,17 @@ EssentielArticle _article({
   int sourceCount = 0,
   int perspectiveCount = 0,
   List<SourceMini> perspectiveSources = const [],
+  String? divergenceLevel,
+  String? description,
+  String? thumbnailUrl,
+  String? title,
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
-    title: 'Titre $rank',
+    title: title ?? 'Titre $rank',
     url: 'https://example.com/$rank',
+    description: description,
+    thumbnailUrl: thumbnailUrl,
     publishedAt: DateTime(2026, 5, 23),
     sourceName: source,
     sourceLetter: source.substring(0, 1).toUpperCase(),
@@ -106,6 +136,7 @@ EssentielArticle _article({
     completedAt: completedAt,
     sourceCount: sourceCount,
     perspectiveSources: perspectiveSources,
+    divergenceLevel: divergenceLevel,
   );
 }
 
@@ -738,6 +769,384 @@ void main() {
 
       expect(find.text('9+'), findsOneWidget);
       expect(find.textContaining('nouveaux articles'), findsOneWidget);
+    });
+  });
+
+  // ── Pile à trier (Story 33.1) ─────────────────────────────────────────────
+
+  group('EssentielHiFiCard — pile à trier', () {
+    /// État de tri déterministe : slate figé sur les `contentId` de [_article].
+    Override triageWith({
+      required List<String> slate,
+      Map<String, TriageEntry> decisions = const {},
+    }) =>
+        essentielTriageProvider.overrideWith(
+          (ref) => EssentielTriageNotifier(
+            ref,
+            initialState: EssentielTriageState(
+              dayKey: 'test',
+              slate: slate,
+              decisions: decisions,
+              hydrated: true,
+            ),
+          ),
+        );
+
+    testWidgets('tri en cours : la pile remplace la liste passive',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      // Le haut de la pile est rendu, la barre d'actions aussi.
+      expect(find.text('Titre 1'), findsWidgets);
+      expect(find.text('Je garde'), findsOneWidget);
+      expect(find.textContaining('0 sur 2 triés'), findsOneWidget);
+    });
+
+    testWidgets('un article gardé apparaît sous la pile', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2'],
+            decisions: const {
+              'c-1': TriageEntry(
+                contentId: 'c-1',
+                decision: TriageDecision.keep,
+                rank: 1,
+                via: TriageVia.swipe,
+              ),
+            },
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.textContaining('1 sur 2 triés'), findsOneWidget);
+      expect(find.textContaining('1 gardé'), findsOneWidget);
+    });
+
+    testWidgets(
+        'la carte de tri porte l\'image, la couverture et la polarisation, '
+        'et plus de chapô', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(
+              rank: 1,
+              description: 'Un chapô qui ne doit plus être rendu.',
+              thumbnailUrl: 'https://example.com/1.jpg',
+              sourceCount: 4,
+              divergenceLevel: 'high',
+            ),
+            _article(rank: 2),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      expect(find.byKey(const Key('triage-coverage-chip')), findsOneWidget);
+      expect(find.text('4 sources'), findsOneWidget);
+      // Seule la carte du dessus porte le signal : `c-2` n'a pas de niveau.
+      expect(find.byType(DivergenceInlineBadge), findsOneWidget);
+      // Le chapô a quitté la carte : à ce stade on choisit, on ne lit pas.
+      expect(find.text('Un chapô qui ne doit plus être rendu.'), findsNothing);
+    });
+
+    testWidgets(
+        'le bandeau garde sa hauteur même sans image — la carte ne saute pas '
+        'd\'un article à l\'autre', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          // `c-1` sans image, `c-2` avec : les deux bandeaux doivent mesurer
+          // pareil, sinon la pile change de taille sous le doigt.
+          articles: [
+            _article(rank: 1),
+            _article(rank: 2, thumbnailUrl: 'https://example.com/2.jpg'),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      final banners = find.byKey(const Key('triage-card-banner'));
+      expect(banners, findsNWidgets(2));
+      for (final size in tester.widgetList(banners).map(
+            (w) => tester.getSize(find.byWidget(w)),
+          )) {
+        expect(size.height, kTriageCardImageHeight);
+      }
+    });
+
+    testWidgets(
+        'un titre long tient ses 4 lignes dans la carte, sans déborder '
+        'ni rogner le pied', (tester) async {
+      // Le point à ne pas rater du budget : la carte a une hauteur FIGÉE. Si
+      // l'arithmétique de `kTriageCardHeight` était trop serrée, le titre
+      // perdrait des lignes en silence (ou le pied sauterait). On vérifie sur
+      // le pire cas réel : un titre qui remplit ses 4 lignes.
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const longTitle =
+          'Un titre de presse particulièrement long qui occupe sans peine '
+          'quatre lignes entières sur un écran de trois cent quatre-vingt-dix '
+          'pixels de large, et même davantage si on le laissait faire';
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(
+              rank: 1,
+              title: longTitle,
+              sourceCount: 4,
+              divergenceLevel: 'high',
+            ),
+            _article(rank: 2),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      // 4 lignes de Fraunces 19 · height 1.3 ≈ 98,8 px. La boîte du titre doit
+      // les tenir : en dessous, le plafond `maxLines: 4` serait décoratif et le
+      // titre se ferait rogner par la hauteur figée de la carte.
+      final titleHeight = tester.getSize(find.text(longTitle)).height;
+      expect(titleHeight, greaterThanOrEqualTo(4 * 19 * 1.3));
+
+      // Et le pied reste rendu **sous** le titre, dans la carte.
+      final chip = find.byKey(const Key('triage-coverage-chip'));
+      expect(chip, findsOneWidget);
+      expect(
+        tester.getTopLeft(chip).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(find.text(longTitle)).dy),
+      );
+    });
+
+    testWidgets(
+        'long-press sur la carte de tri ouvre l\'aperçu ; un drag horizontal '
+        'ne l\'arme pas (arène de gestes swipe × long press)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      final card = tester.getCenter(find.text('Titre 1').first);
+
+      // 1. Drag horizontal court (sous le seuil de décision) : le swipe gagne
+      //    l'arène, l'aperçu ne doit jamais s'ouvrir sous le doigt.
+      final drag = await tester.startGesture(card);
+      await tester.pump(const Duration(milliseconds: 50));
+      await drag.moveBy(const Offset(30, 0));
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(find.byType(FacteurThumbnail), findsNothing);
+      await drag.up();
+      await tester.pumpAndSettle();
+
+      // 2. Appui maintenu sans mouvement : l'aperçu s'ouvre.
+      final press = await tester.startGesture(card);
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.byType(FacteurThumbnail), findsOneWidget);
+
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(find.byType(FacteurThumbnail), findsNothing);
+    });
+
+    testWidgets('le compteur se lit sous les articles gardés, pas au-dessus',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(rank: 1),
+            _article(rank: 2),
+            _article(rank: 3),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2', 'c-3'],
+            decisions: const {
+              'c-1': TriageEntry(
+                contentId: 'c-1',
+                decision: TriageDecision.keep,
+                rank: 1,
+                via: TriageVia.swipe,
+              ),
+            },
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      final keptRowY = tester.getTopLeft(find.text('Titre 1')).dy;
+      final counterY =
+          tester.getTopLeft(find.textContaining('1 sur 3 triés')).dy;
+      expect(counterY, greaterThan(keptRowY));
+    });
+
+    testWidgets(
+        'tri terminé : la carte n\'affiche que les articles gardés '
+        '(les rejetés ne réapparaissent pas) et propose « Trier à nouveau »',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(rank: 1),
+            _article(rank: 2),
+            _article(rank: 3),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2', 'c-3'],
+            decisions: const {
+              'c-1': TriageEntry(
+                contentId: 'c-1',
+                decision: TriageDecision.keep,
+                rank: 1,
+                via: TriageVia.swipe,
+              ),
+              'c-2': TriageEntry(
+                contentId: 'c-2',
+                decision: TriageDecision.pass,
+                rank: 2,
+                via: TriageVia.swipe,
+              ),
+              'c-3': TriageEntry(
+                contentId: 'c-3',
+                decision: TriageDecision.later,
+                rank: 3,
+                via: TriageVia.swipe,
+              ),
+            },
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.text('Trier à nouveau'), findsOneWidget);
+      expect(find.text('Je garde'), findsNothing);
+      // Gardés (« Je garde » + « Plus tard »), dans l'ordre du slate.
+      expect(find.text('Titre 1'), findsOneWidget);
+      expect(find.text('Titre 3'), findsOneWidget);
+      // Le rejeté a disparu de la vue finale — c'est le fix du décalage
+      // « liste finale ≠ gardés ».
+      expect(find.text('Titre 2'), findsNothing);
+    });
+
+    testWidgets(
+        'tri terminé sans rien garder : état vide sobre + « Trier à nouveau »',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2'],
+            decisions: const {
+              'c-1': TriageEntry(
+                contentId: 'c-1',
+                decision: TriageDecision.pass,
+                rank: 1,
+                via: TriageVia.swipe,
+              ),
+              'c-2': TriageEntry(
+                contentId: 'c-2',
+                decision: TriageDecision.pass,
+                rank: 2,
+                via: TriageVia.swipe,
+              ),
+            },
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.text('Rien gardé aujourd\'hui.'), findsOneWidget);
+      expect(find.text('Trier à nouveau'), findsOneWidget);
+      // Aucun article : ni gardé, ni rejeté « ressuscité ».
+      expect(find.text('Titre 1'), findsNothing);
+      expect(find.text('Titre 2'), findsNothing);
+    });
+
+    testWidgets(
+        'activation via le VRAI notifier : hydratation → startIfNeeded → la '
+        'pile de tri s\'affiche sans injecter d\'état', (tester) async {
+      // Régression du bug « le tri ne s\'affiche pas » : aucun autre test ne
+      // faisait tourner la vraie chaîne (hydrate → _scheduleStart →
+      // startIfNeeded → isActive → rendu). Sans override d\'état, sur une
+      // journée fraîche (SharedPreferences vide, cf. setUp), la pile doit
+      // apparaître d\'elle-même.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        inertTriage: false,
+      ));
+      // Laisse l\'hydratation SharedPreferences se résoudre puis le post-frame
+      // startIfNeeded figer le slate et faire basculer isActive.
+      await tester.pumpAndSettle();
+
+      expect(find.byType(EssentielTriageStack), findsOneWidget);
+      expect(find.text('Je garde'), findsOneWidget);
+      expect(find.textContaining('0 sur 2 triés'), findsOneWidget);
+    });
+
+    testWidgets('une édition passée ne déclenche jamais le tri', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2']),
+          selectedEditionDateProvider.overrideWith(
+            (ref) => EditionPastDay(DateTime(2026, 5, 20)),
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.text('Je garde'), findsNothing);
+      expect(find.text('Titre 2'), findsOneWidget);
     });
   });
 }

@@ -1,130 +1,95 @@
-# fix(curation): fold couverture (B-2) + arrêt de la fabrication d'intérêts (C-1)
+# feat(essentiel) : le tri dans le feed — carte « Ton Essentiel » triable au swipe (33.1)
 
-Base `main`. **Une migration Alembic** (`cq01_subtopics_uniq_muted`).
-Backend-only (0 fichier mobile).
+Base `main`. **Une migration Alembic** (`tr01_essentiel_triage_decisions`, additive).
+Backend + mobile. Story : `docs/stories/core/33.1.tri-dans-le-feed.md`.
 
-## Contexte
+## Quoi
 
-Deuxième livrable du lot « qualité de la curation », après PR 1 (B-1
-métadonnées, #1047). La cible du lot est
-`score = w_imp · norm(importance) + w_perso · norm(perso)` (PR 4-5). Les deux
-termes sont aujourd'hui faux : `importance` compte de la redondance (B), `perso`
-est un signal plat et fabriqué (C). **Cette PR répare les deux termes avant que
-PR 4 ne les mélange.** Elle ne change volontairement **pas** le tri.
+La carte « Ton Essentiel » en tête du Flux continu n'est plus une liste passive :
+elle devient une **pile à trier**. Un article à la fois — swipe droite « Je
+garde », swipe gauche « Pas pour moi », bouton signet « Plus tard ». La liste des
+gardés se construit sous la pile, dans le feed, sans écran supplémentaire.
 
-Diagnostic complet : `docs/bugs/bug-curation-essentiel-personnalisation.md`.
+La PR embarque aussi deux décisions PO prises pendant la construction :
 
-## PR 2 — B-2 : ne compter que les rédactions qui portent un jugement
+1. **La vue finale, c'est ce qu'on a gardé.** Le plan V0 rendait la liste
+   inchangée une fois le tri fini — les rejetés réapparaissaient. À la relecture,
+   la liste finale ne correspondait pas aux choix. En état `done`, la carte ne
+   rend plus que `keptContentIds` (« Je garde » + « Plus tard »), dans l'ordre du
+   slate ; état vide sobre si rien n'a été gardé. **Rien n'est retiré du digest
+   côté données** : le slate reste figé pour la journée et « Trier à nouveau » le
+   rejoue en entier. C'est purement l'affichage final.
+2. **La « Lettre du jour » ne gate plus l'accès à L'Essentiel.** Cold-open, tap
+   d'onglet et tap de push atterrissent directement sur le feed. La lettre reste
+   jouée **une fois**, en fin d'onboarding, et le rewind des éditions passées
+   subsiste dans le feed.
 
-`importance_detector.py` : `_is_aggregator` → `_counts_toward_coverage`, appliqué
-aux **deux** collections (`source_ids` **et** `source_domains`).
+## Pourquoi
 
-- **Critère** : `SourceType.REDDIT` **OU** (`is_curated` falsy **ET**
-  `reliability_score ∈ {low, mixed}`). Réglable sans déploiement :
-  `EDITORIAL_COVERAGE_FOLD_RELIABILITY` (défaut `low,mixed`),
-  `EDITORIAL_COVERAGE_FOLD_ENABLED` (kill switch, défaut `true`).
-- **`unknown` volontairement exclu** : « jamais évaluée » ≠ « peu fiable » ;
-  l'inclure folderait 39,5 % du corpus `politics` (déjà à 1,3 % du top-5).
+**V0 en collecte seule.** Chaque décision est enregistrée avec son rang dans le
+slate figé, mais **aucun poids de reco ne bouge**. Le but n'est pas de
+personnaliser tout de suite : c'est de produire le jeu de données que la jauge
+CTR ne peut pas produire — des **négatifs explicites sur des articles réellement
+vus**, avec leur position. C'est l'angle mort n°1 de
+`maintenance-feed-ranking-gauge.md`. Seule exception actée par le PO : « Plus
+tard » déclenche le save existant, exactement comme le bouton signet de la carte.
 
-### Dry-run comparatif (prod, lecture seule, 24 h) — livrable bloquant
+Le piège que le code garde activement : l'action `not_interested` existante est à
+un enum de distance, et elle ajouterait la **source entière** à
+`user_personalization.muted_sources`, sans expiration. Un test de non-régression
+négative verrouille ça (voir plus bas).
 
-`scripts/dryrun_coverage_fold.py --hours 24 --tag b2-fold` (read-only, sans LLM,
-exit ≠ 0 si > 50 % du top-15 change). Résultat sur 1 565 contenus / 1 086
-clusters :
+## Comment ça a été vérifié
 
-- **top-15 (entrée LLM) change de 13 %** (2 sortants, 2 entrants) ;
-- **18 clusters franchissent `2→1`**, 9 franchissent `3→2` ; `4+ domaines` :
-  22 → 13 ;
-- **`politics` net = +0** (non enterré ; sortants = 1 environment, 1 culture ;
-  entrants = 1 science, 1 sport).
+- [x] **Backend** — `pytest` : **2913 passed, 18 skipped, 2 xfailed**. `ruff check` OK.
+      Tests neufs sur le routeur de tri : idempotence de l'upsert sur
+      `(user, article, jour)`, batch partiel, `slate_size` incohérent rejeté, et
+      surtout la **non-régression négative** — `POST /essentiel/triage` avec
+      `decision=pass` ne modifie ni `user_subtopics.weight`, ni
+      `user_entity_affinity`, ni `user_personalization.muted_sources`.
+- [x] **API locale** — `uvicorn` + `curl` : `GET /api/essentiel` et
+      `POST /api/essentiel/triage` répondent `403` sans auth (cas limite), et
+      `divergence_level` est bien exposé dans l'OpenAPI (`string | null`).
+- [x] **Alembic** — exactement **1 head** (`tr01_essentiel_triage`), `upgrade head`
+      local contre une DB vide. Migration **purement additive** (nouvelle table,
+      aucun `DROP`/rename/`NOT NULL`-sur-peuplé) ⇒ conforme expand-contract sur
+      la DB partagée staging/prod.
+- [x] **Mobile** — `flutter test` : **2011 passed**, 26 échecs **strictement
+      identiques à la baseline `main`** (topic_chip, bookmark, feed_sources,
+      notification, perspectives, theme_section, subscriptions, settings_sheet,
+      widget_test — aucun dans le périmètre touché). `flutter analyze` : **526
+      issues, exactement la baseline**, zéro `error`, zéro `warning` neuf.
+- [x] **Build web** — `flutter build web --release` (garde-fou de compilation, cf.
+      l'incident `firstPreparingIndex` d'un build rouge passé inaperçu).
+- [x] **`/simplify`** — 4 relectures parallèles, findings appliqués (détail dans la
+      story, section « Passe SIMPLIFY »), puis re-run complet de VERIFY.
+- [ ] **Playwright / `/validate-feature`** — **non exécuté** : chaque scénario de
+      tri exige un compte connecté avec un digest du jour, et je n'ai pas de
+      credentials. `.context/qa-handoff.md` est à jour ; à lancer avant merge.
 
-Artefacts : `.context/dryrun_coverage_fold_b2-fold.{json,md}`.
+## Zones à risque
 
-## PR 3 — C-1 : arrêter de fabriquer des intérêts
-
-Correctif **au moment de l'écriture** (une fois la ligne créée, rien ne distingue
-un intérêt déclaré d'un intérêt fabriqué) :
-
-- `_adjust_interest_weight` (lecture) → **UPDATE seul** (no-op si absent).
-- `_adjust_subtopic_weights` → paramètre `allow_create` (défaut `False`). Créent
-  seulement les signaux **explicites** : like/save/note (`content_service`),
-  feedback (`routers/contents.py`), actions digest **SAVE/LIKE**
-  (`digest_service`). Lecture (READ) et signaux négatifs = update seul.
-- **Double-comptage confirmé (§3.1)** : le tail « interest par thème source » de
-  `_adjust_subtopic_weights` fabriquait **aussi** un `user_interests` sur lecture
-  (en plus de `_adjust_interest_weight`). Il est désormais gardé par le même
-  `allow_create` → plus aucune fabrication d'intérêt sur lecture. La magnitude du
-  renforcement d'un intérêt *existant* sur lecture (0,05 + 0,03) est inchangée
-  (hors périmètre C-1, relève de PR 4).
-- Onboarding (`user_service.py`) : `db.add(UserSubtopic)` → upsert
-  `on_conflict_do_nothing` (ne casse pas sur la nouvelle contrainte).
-
-### Migration `cq01_subtopics_uniq_muted` (down_revision `sa02_alerts_v2`)
-
-1. **Dédup** `user_subtopics` sur `(user_id, topic_slug)` (garde le plus grand
-   weight) — la contrainte d'origine avait été droppée par accident
-   (`4d497ce7bcc2`).
-2. **`UNIQUE uq_user_subtopics_user_topic`** + **`INDEX ix_user_subtopics_user_id`**
-   (la table n'avait aucun index → seq scan à chaque lecture feed/digest).
-3. **`DELETE`** idempotent des `user_interests` contredisant un `muted_themes`.
-
-Idempotente, `__table_args__` posé sur le modèle. Testée : `alembic upgrade head`
-sur DB vide (chaîne complète), downgrade/re-upgrade, exactement **1 head**.
-
-**Risque expand-contract assumé** (DB partagée staging/prod) : pendant ≤ 1
-semaine, le backend `production` (ancien code) fait encore du check-then-insert ;
-une course produira une `IntegrityError` ponctuelle (mesuré **5×** sur toute la
-vie de la table) au lieu d'un doublon silencieux. Décision PO §5 : contrainte
-dans cette PR.
-
-## Tests
-
-- `test_importance_detector.py::TestReliabilityFold` — 7 cas (fold low/mixed,
-  repli cluster 100 % foldé, curée medium compte, **`unknown` compte** — non-rég
-  Libération, `source_ids` **et** `source_domains`, kill switch, CSV env).
-- `test_digest_per_user_projection.py::test_rehydrated_clusters_do_not_depend_on_source_domains`
-  — invariant : cluster réhydraté n'a pas de `source_domains`, le décompte passe
-  par `source_ids` (déjà foldé en global).
-- `test_subtopic_weight_concurrency.py` (nouveau) — read n'crée pas / like crée /
-  cap 3.0 / clamp 0.1.
-- `test_interest_weight_concurrency.py` — réécrit : read n'crée pas / read
-  incrémente un existant.
-- `tests/alembic/test_cq01_subtopics_uniq_muted.py` (nouveau) — dédup garde
-  max-weight + idempotence, DELETE muté (seulement muté, idempotent, thème
-  re-déclaré préservé, no-op sans mute).
-- Non-régression `test_like_feature.py` / `test_user_service_persist.py` mis à
-  jour (`allow_create`, upsert onboarding).
-- **Suite backend complète : 2862 passed, 18 skipped, 2 xfailed.** `ruff check` OK.
-
-## Vérification C-1 (avant/après)
-
-Bloc « C-1 » ajouté à `docs/qa/scripts/baseline_curation.sql` (M8-M11). À lancer
-via le rôle service (`claude_analytics_ro` n'a pas le `SELECT` sur
-`user_interests`/`user_subtopics`). Valeurs live prod (via MCP Supabase) :
-
-| # | Métrique | Avant (live 02/08) | Après |
-|---|---|---|---|
-| M8 | `user_interests` sur un thème muté | **42** (27 comptes) | **0** après migration |
-| M11 | Doublons `(user_id, topic_slug)` | **5** | **0**, impossible |
-
-(M8 = 53 au snapshot 02/08 ; le chiffre dérive tant que `production` fabrique
-encore — d'où le rejeu post-release ci-dessous.)
-
-## Après merge
-
-1. `alembic upgrade head` rejoué automatiquement au boot Railway (staging + prod).
-2. **Après la release hebdo suivante** : rejouer une fois le `DELETE` des thèmes
-   mutés (le temps que `production` prenne le correctif de code) :
-
-   ```sql
-   DELETE FROM user_interests ui USING user_personalization up
-   WHERE up.user_id = ui.user_id
-     AND ui.interest_slug = ANY(COALESCE(up.muted_themes, '{}'));
-   ```
+- **Router (zone à risque déclarée).** Le gate quotidien `/flux-continu → /edition`
+  est retiré du `redirect`, et `PushNotificationService.openRoute` ne dé-route plus
+  les push. C'étaient les deux seuls points d'application, coupés ensemble ; le
+  test de redirection le verrouille dans les deux sens. La sortie d'onboarding
+  passe toujours délibérément par `/edition?from=onboarding`.
+- **Migration sur DB partagée.** `tr01` est additive et idempotente, donc sans
+  risque pour le backend `production` qui tourne encore sur l'ancien code jusqu'à
+  la release hebdo suivante.
+- **Budget de hauteur du feed.** Le pic de tri passe de 542 à **628 px** pour un
+  slate de 5 (bandeau image 96 + titre 4 lignes + compteur). Si la vérification à
+  390×844 montre un débordement, les leviers de repli sont, dans cet ordre :
+  bandeau 96 → 80, puis `kTriageKeptSlotHeight` 64 → 56. **Ne pas réduire le
+  slate** — le verrouiller à 5 est une doctrine produit.
+- **Clés `SharedPreferences`.** Le compteur du nudge auto-grow change de mécanique
+  de purge (il fuyait une clé par jour ; il purge maintenant). Les **noms** de
+  clés persistées sont inchangés, donc aucune perte d'état à la mise à jour.
 
 ## Ce que cette PR ne fait pas
 
-- Ne change pas le tri (`is_multi`, `subject_rank_key`) — **PR 4**.
-- Ne rebranche pas le pool personnalisé (« l'IA » qui remonte) — **PR 5**.
-- N'atteint pas les cibles M1-M4 seule : elle rend les deux termes du futur score
-  honnêtes, le mélange c'est PR 4-5.
+- Ne bouge **aucun poids de reco** : la V0 collecte, elle ne personnalise pas.
+- Ne retire rien du digest côté données — seul l'affichage final reflète les choix.
+- N'unifie pas le fait « l'utilisateur a découvert l'aperçu au long-press » entre
+  les trois surfaces qui le stockent aujourd'hui (décision produit, signalée dans
+  la story).

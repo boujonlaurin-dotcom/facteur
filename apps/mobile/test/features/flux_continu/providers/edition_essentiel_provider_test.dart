@@ -31,6 +31,17 @@ class _FakeEssentielRepository implements EssentielRepository {
     if (articles == null) return null;
     return (articles: articles, newSinceMorning: 0, carousel: null);
   }
+
+  // Story 33.1 — la collecte de tri n'a aucun effet sur ces tests ;
+  // le fake l'accepte pour rester conforme à l'interface.
+  @override
+  Future<bool> postTriage({
+    required String digestDate,
+    required int slateSize,
+    required List<Map<String, dynamic>> decisions,
+  }) async =>
+      true;
+
 }
 
 /// Court-circuite le vrai `FluxContinuNotifier` (build lourd) : aujourd'hui vide.

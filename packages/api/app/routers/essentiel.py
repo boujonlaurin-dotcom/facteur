@@ -12,13 +12,23 @@ from datetime import date
 from uuid import UUID
 
 import structlog
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db, safe_async_session, safe_fail_open_rollback
 from app.dependencies import get_current_user_id
-from app.schemas.essentiel import EssentielResponse
+from app.models.content import Content
+from app.models.essentiel_triage import EssentielTriageDecision
+from app.schemas.essentiel import (
+    EssentielResponse,
+    TriageBatchRequest,
+    TriageBatchResponse,
+    TriageDecisionKind,
+)
+from app.services.content_service import ContentService
 from app.services.digest_service import DigestService, read_digest_or_fallback
 from app.services.essentiel_service import (
     ESSENTIEL_MIN_ARTICLES,
@@ -180,3 +190,108 @@ async def get_essentiel(
         topic_weights_count=len(user_context.topic_weights),
     )
     return response
+
+
+@router.post("/triage", response_model=TriageBatchResponse)
+async def record_essentiel_triage(
+    payload: TriageBatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Enregistre un batch de décisions de tri du slate Essentiel (Story 33.1).
+
+    **Collecte seule.** Cet endpoint n'ajoute aucun terme au moteur de reco : ni
+    `_adjust_subtopic_weights`, ni `_adjust_entity_affinity`, ni
+    `_trigger_personalization_mute`. En particulier `decision=pass` n'est **pas**
+    branché sur `not_interested`, qui muterait la source entière et sans
+    expiration — un média entier tu pour un seul papier.
+
+    Seule exception, actée par le PO : `decision=later` déclenche en plus le save
+    existant, parce que c'est exactement ce que fait déjà le bouton signet de la
+    carte. Sans ça le produit aurait deux « mettre de côté » aux effets
+    différents. Le `BOOKMARK_TOPIC_BOOST` qui en découle est un poids qui existe
+    déjà ; le tri n'en crée aucun.
+
+    Idempotent : upsert sur `(user_id, content_id, digest_date)`, l'utilisateur
+    peut revenir sur un choix (« Trier à nouveau »).
+    """
+    user_uuid = UUID(current_user_id)
+
+    # Un rang ne peut pas dépasser la taille du slate qu'il indexe : sinon le
+    # dénominateur de la jauge est faux et le bug passe inaperçu des mois.
+    for item in payload.decisions:
+        if item.rank is not None and item.rank > payload.slate_size:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"rank {item.rank} incohérent avec slate_size {payload.slate_size}"
+                ),
+            )
+
+    # Dédup intra-batch, dernière décision gagnante : Postgres refuse qu'un même
+    # ON CONFLICT DO UPDATE touche deux fois la même ligne dans un seul INSERT.
+    by_content = {item.content_id: item for item in payload.decisions}
+
+    # Filtre sur les contenus réellement existants — un `content_id` périmé
+    # (article purgé entre le tri hors-ligne et le flush) ferait échouer tout le
+    # batch sur la FK, et donc perdre les décisions valides qui l'accompagnent.
+    known_ids = set(
+        (
+            await db.scalars(
+                select(Content.id).where(Content.id.in_(list(by_content.keys())))
+            )
+        ).all()
+    )
+    items = [item for cid, item in by_content.items() if cid in known_ids]
+    if not items:
+        return TriageBatchResponse(recorded=0, saved_for_later=0)
+
+    rows = [
+        {
+            "user_id": user_uuid,
+            "content_id": item.content_id,
+            "digest_date": payload.digest_date,
+            "decision": item.decision.value,
+            "rank": item.rank,
+            "slate_size": payload.slate_size,
+            "decided_via": item.decided_via.value if item.decided_via else None,
+            "latency_ms": item.latency_ms,
+        }
+        for item in items
+    ]
+
+    stmt = insert(EssentielTriageDecision).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_essentiel_triage_user_content_date",
+        set_={
+            "decision": stmt.excluded.decision,
+            "rank": stmt.excluded.rank,
+            "slate_size": stmt.excluded.slate_size,
+            "decided_via": stmt.excluded.decided_via,
+            "latency_ms": stmt.excluded.latency_ms,
+            "updated_at": func.now(),
+        },
+    )
+    await db.execute(stmt)
+
+    # `later` = « mettre de côté », strictement le bouton signet de la carte.
+    later_ids = [
+        item.content_id for item in items if item.decision == TriageDecisionKind.LATER
+    ]
+    if later_ids:
+        content_service = ContentService(db)
+        for content_id in later_ids:
+            await content_service.set_save_status(user_uuid, content_id, True)
+
+    await db.commit()
+
+    logger.info(
+        "essentiel_triage_recorded",
+        user_id=current_user_id,
+        digest_date=str(payload.digest_date),
+        slate_size=payload.slate_size,
+        recorded=len(rows),
+        skipped_unknown=len(by_content) - len(items),
+        saved_for_later=len(later_ids),
+    )
+    return TriageBatchResponse(recorded=len(rows), saved_for_later=len(later_ids))
