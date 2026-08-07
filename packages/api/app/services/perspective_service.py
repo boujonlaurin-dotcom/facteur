@@ -378,6 +378,71 @@ class PerspectiveService:
             source_name,
         )
 
+    async def _prefetch_source_attributes(self, domains: list[str]) -> None:
+        """Batch-warm ``_bias_cache``/``_reliability_cache`` in a single query.
+
+        Sans ça, chaque item RSS Google News déclenche 1-2 SELECT ``Source``
+        via ``resolve_bias``/``resolve_reliability`` (predicate ``url ILIKE
+        %domaine%``) → N+1 remonté par Sentry (PYTHON-50, culprit
+        ``get_perspectives`` : le endpoint programme un refresh en background
+        qui passe par ``_parse_rss``). On collapse les lookups par-domaine en
+        UNE requête, puis on pré-remplit les caches que ``resolve_*`` consulte
+        déjà. La sémantique est préservée à l'identique :
+
+        - on ne pré-remplit QUE ce que le predicate ``url`` par-domaine aurait
+          renvoyé (1 seule source active matchée, valeur ≠ "unknown") ;
+        - >1 source matchée → ``scalar_one_or_none`` lèverait, et
+          ``_resolve_source_column`` retombe sur "unknown" : on reproduit ce
+          "unknown" ;
+        - 0 match, ou match unique à valeur "unknown" → on ne pré-remplit rien,
+          et l'appel per-item d'origine gère le fallback par nom inchangé.
+
+        Best-effort : toute erreur laisse le chemin per-item d'origine intact.
+        """
+        if not self._has_db():
+            return
+        uniq = {d for d in domains if d}
+        uniq = {
+            d
+            for d in uniq
+            if d not in self._bias_cache or d not in self._reliability_cache
+        }
+        if not uniq:
+            return
+        try:
+            from app.models.source import Source
+
+            async with self._short_session() as session:
+                if session is None:
+                    return
+                stmt = select(Source).where(
+                    Source.is_active.is_(True),
+                    or_(*[Source.url.ilike(f"%{d}%") for d in uniq]),
+                )
+                rows = (await session.execute(stmt)).scalars().all()
+        except Exception as e:  # pragma: no cover - best-effort prefetch
+            logger.warning("prefetch_source_attributes_error", error=str(e))
+            return
+
+        for d in uniq:
+            matches = [s for s in rows if d.lower() in (s.url or "").lower()]
+            if len(matches) == 1:
+                s = matches[0]
+                if d not in self._bias_cache:
+                    b = s.bias_stance
+                    if b and getattr(b, "value", b) != "unknown":
+                        # normalize = identité pour le biais (cf. resolve_bias)
+                        self._bias_cache[d] = b
+                if d not in self._reliability_cache:
+                    r = s.reliability_score
+                    if r and getattr(r, "value", r) != "unknown":
+                        self._reliability_cache[d] = str(getattr(r, "value", r))
+            elif len(matches) > 1:
+                # scalar_one_or_none lèverait → _resolve_source_column = "unknown"
+                self._bias_cache.setdefault(d, "unknown")
+                self._reliability_cache.setdefault(d, "unknown")
+            # len(matches) == 0 → laissé au fallback per-item (predicate nom)
+
     async def analyze_divergences(
         self,
         article_title: str,
@@ -1050,6 +1115,19 @@ class PerspectiveService:
                 "perspectives_parse_rss",
                 total_items=len(items),
             )
+
+            # N+1 fix (Sentry PYTHON-50) : pré-charge en UNE requête le biais /
+            # la fiabilité de tous les domaines candidats, pour que les appels
+            # resolve_bias / resolve_reliability de la boucle ci-dessous tapent
+            # le cache mémoire au lieu d'un SELECT Source par item RSS.
+            # Sur-préchargement inoffensif : un domaine finalement filtré ne
+            # fait que remplir un cache jamais lu (sortie inchangée).
+            prefetch_domains = [
+                self._extract_domain(el.get("url", "") or "")
+                for el in (item.find("source") for item in items)
+                if el is not None
+            ]
+            await self._prefetch_source_attributes(prefetch_domains)
 
             perspectives = []
             seen_domains = set()
