@@ -100,7 +100,14 @@ UserSourcesState _sourcesState({List<SourceFavoriteRef> favorites = const []}) {
   );
 }
 
-FeedResponse _feedWithIds(List<String> ids, {String sourceId = 's'}) {
+/// [score] non nul ⇒ chaque article porte un `recommendationReason` de ce
+/// `scoreTotal`. C'est le seul input du tri des blocs (PR-4) : sans lui, aucune
+/// section n'entre dans `blockScores` et l'ordre reste celui par défaut.
+FeedResponse _feedWithIds(
+  List<String> ids, {
+  String sourceId = 's',
+  double? score,
+}) {
   return FeedResponse(
     items: ids
         .map((id) => Content(
@@ -114,6 +121,12 @@ FeedResponse _feedWithIds(List<String> ids, {String sourceId = 's'}) {
                 name: 'S',
                 type: SourceType.article,
               ),
+              recommendationReason: score == null
+                  ? null
+                  : RecommendationReason(
+                      label: 'Recommandé',
+                      scoreTotal: score,
+                    ),
             ))
         .toList(),
     pagination: Pagination(page: 1, perPage: 10, total: 0, hasNext: false),
@@ -151,6 +164,10 @@ void main() {
   void stubFeed({
     required Map<String, List<String>> themeIds,
     required Map<String, List<String>> sourceIds,
+    // PR-4 — `score_total` uniforme appliqué aux articles d'un thème/source.
+    // Absent ⇒ articles non scorés ⇒ section hors du classement par score.
+    Map<String, double> themeScores = const {},
+    Map<String, double> sourceScores = const {},
   }) {
     when(() => feedRepo.getFeed(
           page: any(named: 'page'),
@@ -164,10 +181,17 @@ void main() {
       final src = invocation.namedArguments[#sourceId] as String?;
       final theme = invocation.namedArguments[#theme] as String?;
       if (src != null) {
-        return _feedWithIds(sourceIds[src] ?? const [], sourceId: src);
+        return _feedWithIds(
+          sourceIds[src] ?? const [],
+          sourceId: src,
+          score: sourceScores[src],
+        );
       }
       if (theme != null) {
-        return _feedWithIds(themeIds[theme] ?? const []);
+        return _feedWithIds(
+          themeIds[theme] ?? const [],
+          score: themeScores[theme],
+        );
       }
       return _feedWithIds(const []);
     });
@@ -452,18 +476,31 @@ void main() {
     });
 
     test(
-        'dépriorisation : 5 riches + 1 maigre → le maigre passe après les '
-        'riches (gate ≥5)', () async {
+        'tri par score : 5 riches + 1 maigre → le maigre coule, par le score '
+        '(les slots manquants comptent 0)', () async {
+      // Même intention qu'avant PR-4 (« le bloc à 1 article ne doit pas rester
+      // au-dessus du pli »), mécanisme différent : ce n'est plus la partition
+      // binaire riches/maigres mais la somme des 3 meilleurs scores. À
+      // `score_total` par article **identique** (100), un bloc à 2 articles vaut
+      // 200 et le bloc à 1 article vaut 100 → il coule sans être un cas spécial.
       stubFeed(
         themeIds: {
           'tech': ['tc1', 'tc2'],
           'science': ['sc1', 'sc2'],
-          'culture': ['cu1'], // maigre
+          'culture': ['cu1'], // 1 seul article → 100 vs 200
           'economy': ['ec1', 'ec2'],
           'politics': ['po1', 'po2'],
           'environment': ['en1', 'en2'],
         },
         sourceIds: const {},
+        themeScores: const {
+          'tech': 100,
+          'science': 100,
+          'culture': 100,
+          'economy': 100,
+          'politics': 100,
+          'environment': 100,
+        },
       );
       final container = await buildContainer(
         interests: _interestsState(
@@ -486,7 +523,8 @@ void main() {
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
           .toList();
-      // 5 riches d'abord (ordre relatif préservé), le maigre 'culture' en fin.
+      // Les 5 blocs à 200 d'abord (à score égal le tri est stable : l'ordre des
+      // favoris départage), 'culture' à 100 en fin.
       expect(order, [
         'tech',
         'science',
@@ -497,12 +535,16 @@ void main() {
       ]);
     });
 
-    test('gate ≥5 : 4 riches + 1 maigre → ordre inchangé', () async {
+    test('aucun article scoré ⇒ ordre inchangé (sentinelle)', () async {
+      // Sans `recommendationReason`, aucune section n'entre dans `blockScores` :
+      // le classement est vide et chaque bloc garde sa position absolue — y
+      // compris le bloc à 1 article. C'est le filet qui protège les blocs non
+      // scorés (éditoriaux, veille sans scoring) de couler à 0.
       stubFeed(
         themeIds: {
           'tech': ['tc1', 'tc2'],
           'science': ['sc1', 'sc2'],
-          'culture': ['cu1'], // maigre, en 3ᵉ position
+          'culture': ['cu1'], // 1 article, en 3ᵉ position
           'economy': ['ec1', 'ec2'],
           'politics': ['po1', 'po2'],
         },
@@ -528,7 +570,7 @@ void main() {
           .where((s) => s.kind == SectionKind.theme)
           .map((s) => s.themeSlug)
           .toList();
-      // 4 riches < seuil ⇒ pas de dépriorisation : 'culture' reste en place.
+      // Aucun score ⇒ aucun tri : 'culture' reste à sa place.
       expect(order, ['tech', 'science', 'culture', 'economy', 'politics']);
     });
 

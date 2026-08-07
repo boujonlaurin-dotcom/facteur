@@ -2029,6 +2029,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                       showPreparingLabel: i == firstPreparingIndex,
                       // Mesure d'impression — dénominateur du CTR de la Tournée.
                       impressionDayKey: impressionDayKey,
+                      // PR-4 — score du bloc (somme des 3 meilleurs scores) au
+                      // moment de l'impression : c'est le champ qui relie
+                      // « ordre des blocs » et « CTR mesuré ». `null` pour une
+                      // section non scorée (éditoriale, veille sans score).
+                      blockScore: state.blockScores[sectionKey(section)],
                       sectionIndex: i,
                       globalPositionOffset: sectionGlobalOffset,
                       isSerene: state.isSerene,
