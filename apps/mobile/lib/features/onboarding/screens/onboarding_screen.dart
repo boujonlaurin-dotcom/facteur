@@ -197,8 +197,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
-  void _showCancelConfirmation(BuildContext context) {
-    showDialog<void>(
+  Future<void> _showCancelConfirmation(BuildContext context) async {
+    final quit = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Annuler les modifications ?'),
@@ -207,26 +207,23 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Continuer'),
           ),
           TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              // Différé au frame suivant : `setNeedsOnboarding` notifie le
-              // `refreshListenable` de GoRouter, qui recalcule `redirect` et
-              // remplace la route onboarding. Le déclencher dans la même
-              // frame que le `pop()` du dialog fait courir GoRouter contre le
-              // Navigator encore en train de fermer le dialog → crash.
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                ref.read(authStateProvider.notifier).setNeedsOnboarding(false);
-              });
-            },
+            onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Quitter'),
           ),
         ],
       ),
     );
+    if (!mounted || quit != true) return;
+    // `showDialog` ne complète qu'une fois le dialog entièrement démonté
+    // (animation de fermeture comprise), pas une frame après le `pop`.
+    // `setNeedsOnboarding` notifie alors le `refreshListenable` de GoRouter, qui
+    // recalcule `redirect` et remplace la route onboarding — sans courir contre
+    // un Navigator racine encore en train de fermer le dialog.
+    await ref.read(authStateProvider.notifier).setNeedsOnboarding(false);
   }
 
   Widget _buildCurrentContent(OnboardingState state) {
