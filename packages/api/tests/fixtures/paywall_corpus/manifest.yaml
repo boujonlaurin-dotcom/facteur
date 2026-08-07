@@ -1,0 +1,179 @@
+# Manifeste du corpus de vérité terrain — détection paywall
+#
+# Ce fichier décrit CE QU'IL FAUT collecter. Il ne contient aucune donnée
+# collectée : le HTML et le RSS sont produits par
+# `scripts/build_paywall_corpus.py`, les labels sont saisis à la main dans
+# `labels.json`.
+#
+# ── Statut des `feed_candidates` ────────────────────────────────────────────
+# Les URLs de flux ci-dessous sont des CANDIDATES, pas des faits vérifiés :
+# l'egress de la session de rédaction bloquait tous ces domaines (403 CONNECT),
+# donc aucune n'a pu être testée. Le collecteur essaie chaque candidate dans
+# l'ordre, garde la première qui parse en RSS/Atom avec au moins une entrée, et
+# écrit l'URL retenue dans `collection_report.json`. Une source dont aucune
+# candidate ne fonctionne apparaît en `feed_error` dans le rapport : il faut
+# alors corriger ce manifeste, pas contourner.
+#
+# ── Répartition obligatoire ─────────────────────────────────────────────────
+# Chaque source doit finir avec >= 3 articles payants ET >= 3 articles gratuits.
+# Les articles gratuits ne sont pas optionnels : ils sont la seule mesure des
+# faux positifs, qui est le critère bloquant de cette refonte. Le collecteur
+# refuse de marquer une source `complete` tant que le quota 3/3 n'est pas tenu.
+#
+# `seed_urls` = articles identifiés à la main (typiquement les faux négatifs
+# remontés par les utilisateurs). Le collecteur les prend tels quels, puis
+# complète avec les `max_articles` premières entrées du flux pour atteindre le
+# quota.
+
+version: 1
+max_articles_per_source: 10
+
+# Quota minimal par source, appliqué par le collecteur et par le harnais.
+min_paid_per_source: 3
+min_free_per_source: 3
+
+sources:
+  # ── Groupe A : faux négatifs remontés par les utilisateurs ────────────────
+  # Objectif : faire baisser le taux de FN sans bouger le taux de FP.
+
+  - slug: novethic
+    name: Novethic
+    group: false_negative
+    feed_candidates:
+      - https://www.novethic.fr/feed
+      - https://www.novethic.fr/rss.xml
+      - https://www.novethic.fr/feed/rss
+    seed_urls:
+      - https://www.novethic.fr/economie-et-social/transformation-de-leconomie/bonnes-nouvelles-transition-ecologique-sociale-ete-2026
+      - https://www.novethic.fr/economie-et-social/conge-solidarite-ecologique-proposition-soigner-eco-anxiete-travail
+
+  - slug: philomag
+    name: Philosophie Magazine
+    group: false_negative
+    feed_candidates:
+      - https://www.philomag.com/rss.xml
+      - https://www.philomag.com/feed
+      - https://www.philomag.com/articles/feed
+    seed_urls:
+      - https://www.philomag.com/articles/jonathan-haidt-lanxiete-est-le-trouble-dominant-de-la-generation-nee-avec-les-reseaux
+
+  - slug: la-croix
+    name: La Croix
+    group: false_negative
+    feed_candidates:
+      - https://www.la-croix.com/RSS
+      - https://www.la-croix.com/rss
+      - https://www.la-croix.com/feed
+    seed_urls:
+      - https://www.la-croix.com/societe/dons-financiers-aux-enfants-faut-il-toujours-pratiquer-l-egalite-20260802
+
+  - slug: lesjours
+    name: Les Jours
+    group: false_negative
+    feed_candidates:
+      - https://lesjours.fr/rss.xml
+      - https://lesjours.fr/feed
+      - https://lesjours.fr/rss
+    seed_urls:
+      - https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep38-nouveau-temoin/
+
+  - slug: cuisiner-jdf
+    name: Cuisiner (Le Journal des Femmes)
+    group: false_negative
+    # source_id en base : 92a33ad2-fdcc-43b2-83dc-03d6b95c1199 (catalogue repo).
+    # Le `feed_url` réel n'existe qu'en base — à confirmer par
+    #   SELECT name, feed_url FROM sources WHERE name ILIKE '%cuisin%';
+    # avant la collecte. Les candidates ci-dessous sont des hypothèses.
+    feed_candidates:
+      - https://cuisine.journaldesfemmes.fr/rss/
+      - https://cuisine.journaldesfemmes.fr/rss.xml
+      - https://www.journaldesfemmes.fr/rss/
+    seed_urls: []
+
+  # ── Groupe B : sources considérées fonctionnelles (anti-régression) ───────
+  # Aucune de ces sources ne doit voir son taux de faux positifs augmenter.
+  # Les 4 premières ont un `paywall_config` custom en base : il DOIT être
+  # renseigné ci-dessous avant la mesure, sinon le harnais rejoue le défaut et
+  # la baseline ne reflète pas la production.
+
+  - slug: lemonde
+    name: Le Monde
+    group: regression_guard
+    feed_candidates:
+      - https://www.lemonde.fr/rss/une.xml
+      - https://www.lemonde.fr/rss/plus-lus.xml
+    seed_urls: []
+    paywall_config: null # TODO: exporter depuis sources.paywall_config
+
+  - slug: lefigaro
+    name: Le Figaro
+    group: regression_guard
+    feed_candidates:
+      - https://www.lefigaro.fr/rss/figaro_actualites.xml
+      - https://www.lefigaro.fr/rss/figaro_flash-actu.xml
+    seed_urls: []
+    paywall_config: null # TODO: exporter depuis sources.paywall_config
+
+  - slug: lesechos
+    name: Les Échos
+    group: regression_guard
+    feed_candidates:
+      - https://services.lesechos.fr/rss/les-echos-economie.xml
+      - https://www.lesechos.fr/rss/rss_une_titres.xml
+    seed_urls: []
+    paywall_config: null # TODO: exporter depuis sources.paywall_config
+
+  - slug: lepoint
+    name: Le Point
+    group: regression_guard
+    feed_candidates:
+      - https://www.lepoint.fr/24h-infos/rss.xml
+      - https://www.lepoint.fr/rss.xml
+    seed_urls: []
+    paywall_config: null # TODO: exporter depuis sources.paywall_config
+
+  - slug: mediapart
+    name: Mediapart
+    group: regression_guard
+    feed_candidates:
+      - https://www.mediapart.fr/articles/feed
+      - https://www.mediapart.fr/rss/journal
+    seed_urls: []
+
+  - slug: liberation
+    name: Libération
+    group: regression_guard
+    feed_candidates:
+      - https://www.liberation.fr/arc/outboundfeeds/rss-all/
+      - https://www.liberation.fr/rss/
+    seed_urls: []
+
+  - slug: telerama
+    name: Télérama
+    group: regression_guard
+    feed_candidates:
+      - https://www.telerama.fr/rss/une.xml
+      - https://www.telerama.fr/rss.xml
+    seed_urls: []
+
+  # ── Groupe C : piège à faux positifs ──────────────────────────────────────
+  # Média entièrement gratuit qui parle d'abonnements, de presse et de
+  # financement des médias. C'est le seul endroit du corpus où un mot-clé trop
+  # court ("abonnés", "premium", "s'abonner" en pied de page) se trahit. Tout
+  # mot-clé candidat au DEFAULT_PAYWALL_CONFIG doit être testé ici en premier.
+
+  - slug: contrepoints
+    name: Contrepoints
+    group: false_positive_trap
+    feed_candidates:
+      - https://www.contrepoints.org/feed
+      - https://www.contrepoints.org/rss
+    seed_urls: []
+
+  - slug: bonpote
+    name: Bon Pote
+    group: false_positive_trap
+    feed_candidates:
+      - https://bonpote.com/feed/
+      - https://bonpote.com/rss
+    seed_urls: []
