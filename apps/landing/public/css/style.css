@@ -1448,8 +1448,10 @@ a:hover {
         left: 50%;
     }
 
+    /* Texte puis visuel : en column-reverse le mockup poussait les boutons et
+       le formulaire sous la ligne de flottaison sur un écran de 844px. */
     .hero__inner {
-        flex-direction: column-reverse;
+        flex-direction: column;
         gap: var(--space-lg);
         text-align: center;
     }
