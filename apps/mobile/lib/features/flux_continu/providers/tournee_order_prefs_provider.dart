@@ -55,6 +55,24 @@ const int kThinSectionMaxItems = 1; // ≤1 article après dédup = « maigre »
 const int kRichSectionMinItems = 2; // ≥2 articles = « riche »
 const int kThinDemotionRichThreshold = 5; // dépriorise si ≥5 sections riches
 
+/// Kill-switch du tri des blocs par score (`section_score_order.dart`, PR-4).
+///
+/// À `true` (défaut) : l'ordre des blocs est trié par la somme des 3 meilleurs
+/// scores de leurs articles, gelé une fois par journée tournée. La
+/// dépriorisation binaire ci-dessus est alors désactivée — le tri la remplace
+/// et la subsume (un bloc à 1 article coule structurellement).
+///
+/// À `false` : aucun ordre trié ni persisté, et la dépriorisation binaire
+/// ([kThinDemotionRichThreshold]) reprend à l'identique. Les deux filets ne
+/// sont pas retirés d'un coup : `kThinDemotionRichThreshold` et son paramètre
+/// `demote` partiront au cycle suivant, une fois le tri observé en prod (la CI
+/// ne lance pas `flutter test`).
+///
+/// Le kill-switch désarme le **tri**, pas la **mesure** : `blockScores` reste
+/// calculé et `block_score` reste renseigné sur `article_impression` (PR-1).
+/// Couper le tri ne doit pas aveugler l'instrument qui sert à le juger.
+const bool kTourneeScoreSortEnabled = true;
+
 /// Clé d'un thème favori dans l'ordre Tournée (= `sectionKey` d'une section thème).
 String tourneeThemeKey(String slug) => 'theme:$slug';
 

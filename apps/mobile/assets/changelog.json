@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ta Tournée",
+      "summary": "Les blocs de ta Tournée sont désormais classés par la qualité de ce qu'ils contiennent : un bloc qui n'a qu'un seul article ne prend plus la place d'un bloc bien fourni en haut de page. L'ordre est fixé une fois par jour, au chargement, donc rien ne bouge sous tes yeux pendant que tu lis. Si tu as arrangé ta Tournée à la main, ton ordre reste la base et départage les blocs à égalité."
+    },
+    {
       "tag": "Ton Essentiel",
       "summary": "Ta carte du jour devient une pile à trier : un article à la fois, glisse à droite pour le garder, à gauche pour passer, ou mets-le de côté pour plus tard. Chaque article se présente avec son image, le nombre de rédactions qui traitent le sujet et le niveau de divergence entre elles, de quoi choisir sans ouvrir. Un appui long ouvre l'aperçu. Ta liste de lecture se construit sous ton doigt, sans quitter le fil. Une fois le tri fini, la carte n'affiche que ce que tu as gardé, pas ce que tu as écarté. Tes choix ne changent rien à ce que l'appli te propose pour l'instant : ils servent d'abord à mesurer si le classement des articles tape juste."
     },

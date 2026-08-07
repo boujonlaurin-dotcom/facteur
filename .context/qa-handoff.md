@@ -1,19 +1,23 @@
-# QA Handoff — Story 33.1 : le tri dans le feed (carte « Ton Essentiel » triable)
+# QA Handoff — PR-4 : ordre des blocs de la Tournée par le score top-3
 
-> Rempli par l'agent dev. Input de /validate-feature. Story :
-> `docs/stories/core/33.1.tri-dans-le-feed.md`.
+> Rempli par l'agent dev. Input de `/validate-feature`. Lot :
+> `docs/maintenance/maintenance-reco-optimisation-lot2.md` (§ PR-4).
 
 ## Feature développée
 
-La carte « Ton Essentiel » en tête du Flux continu n'est plus une liste passive :
-elle devient une **pile à trier**. Un article à la fois, swipe droite « Je garde »,
-swipe gauche « Pas pour moi », bouton signet « Plus tard ». La liste des gardés se
-construit sous la pile, dans le feed, sans écran supplémentaire.
+Les blocs de la Tournée (thèmes, sources, veille, « Choisie pour vous ») ne sont
+plus simplement **dépriorisés** quand ils sont maigres : ils sont **triés par la
+somme des 3 meilleurs `score_total` de leurs articles**. Les slots manquants
+comptant 0, un bloc à 1 article coule structurellement (≈ 1 × s contre 3 × s)
+sans avoir besoin d'être un cas spécial.
 
-**V0 en collecte seule** : chaque décision est enregistrée avec son rang dans le
-slate figé, mais **aucun poids de reco ne bouge**. Seule exception actée par le
-PO : « Plus tard » déclenche le save existant, exactement comme le bouton signet
-de la carte.
+L'ordre est calculé **une seule fois par journée tournée** (frontière 07h30
+Paris), à la complétion du fan-out, puis **gelé et persisté** — aucun bloc ne
+bouge pendant le remplissage progressif ni pendant la session.
+
+En prime, le champ `block_score` de l'event `article_impression` (PR-1), qui
+valait `null` en prod, est désormais renseigné : c'est lui qui reliera « ordre
+des blocs » et « CTR mesuré ».
 
 ## PR associée
 
@@ -23,166 +27,102 @@ de la carte.
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Flux continu (carte « Ton Essentiel ») | `/flux-continu` | Modifié |
-| Lettre passée (rewind J-7) | `/flux-continu` + timeline | Modifié (doit **rester** passive) |
+| Tournée du jour (Flux continu) | `/flux-continu` | Modifié — **ordre** des blocs sous la carte héros |
+
+Aucun nouveau composant, aucune nouvelle UI : seuls l'**ordre** des sections et
+le contenu d'un event analytics changent.
 
 ## Scénarios de test
 
-### Scénario 1 — Happy path : trier les 5
+### Scénario 1 — Cold boot : aucun bloc ne saute pendant le remplissage
 **Parcours** :
-1. Ouvrir l'app sur le Flux continu, édition du jour.
-2. La carte affiche la pile : progression « 0 sur N triés », un article, la barre
-   d'actions (✕ · signet · « Je garde » avec coche pleine blanche).
-3. Swiper à droite → tampon « JE GARDE », la carte part, l'article apparaît dans la
-   liste sous la pile, la progression avance.
-4. Swiper à gauche → tampon « PAS POUR MOI », l'article ne rejoint pas la liste.
-5. Trier tous les articles.
+1. Vider les données de l'app (ou franchir 07h30), ouvrir la Tournée.
+2. Observer la page pendant tout le remplissage progressif (~10-15 recompositions).
 
-**Résultat attendu** : au dernier geste, la carte reprend sa liste habituelle
-(lead + médiums) mais **uniquement avec les articles gardés** — les rejetés ne
-réapparaissent pas — et affiche « Trier à nouveau » en pied. Aucun 4xx/5xx, un
-seul `POST /api/essentiel/triage` (batché).
+**Résultat attendu** : les blocs se remplissent **en place**, dans l'ordre par
+défaut. Une **seule** réorganisation survient, à la toute fin, quand tout est
+chargé. Aucun saut au milieu du remplissage.
 
-### Scénario 2 — Le feed ne saute pas
+### Scénario 2 — Ré-ouverture dans la même journée
 **Parcours** :
-1. Repérer un point de repère visuel juste sous la carte Essentiel.
-2. Trier les articles un par un en observant ce repère.
+1. Après le scénario 1, quitter l'app et la rouvrir (puis pull-to-refresh).
 
-**Résultat attendu** : la carte **ne change pas de hauteur** entre le premier et
-le dernier geste — la hauteur est réservée d'avance (`triageReservedHeight`).
-Vérifier aussi que les ancres de snap du scroll restent correctes.
+**Résultat attendu** : l'ordre est **identique** à celui de la fin du scénario 1,
+et il l'est **dès la première frame de contenu** — aucune réorganisation visible,
+même après le refresh.
 
-### Scénario 3 — Mode boutons seuls (accessibilité)
+### Scénario 3 — Les blocs pauvres sont en bas
 **Parcours** :
-1. Sans jamais swiper, utiliser uniquement ✕ / signet / « Je garde ».
+1. Ouvrir la Tournée avec des favoris dont au moins un ne ramène qu'un article.
 
-**Résultat attendu** : même mouvement de sortie que le swipe. Les 3 boutons
-portent un label sémantique (`Pas pour moi`, `Plus tard`, `Je garde`).
+**Résultat attendu** : le bloc à 1 article se trouve **sous** les blocs bien
+fournis. Actus du jour, Bonnes Nouvelles et La Grille gardent leur position
+habituelle — ils ne sont **jamais** poussés en queue (ils ne portent pas de
+score, donc ils tiennent leur place).
 
-### Scénario 4 — Tri partiel puis kill/relaunch
+### Scénario 4 — Compte personnalisé
 **Parcours** :
-1. Trier 2 articles sur 5.
-2. Tuer l'app, la relancer.
+1. Réordonner sa Tournée à la main via « Composer ma Tournée », puis recharger.
 
-**Résultat attendu** : la pile **reprend au 3ᵉ article**, les décisions déjà
-prises sont conservées, l'ordre de la pile est **identique**.
+**Résultat attendu** : l'ordre manuel départage les blocs de **score égal** ; un
+bloc manuellement remonté mais nettement moins fourni peut descendre (risque
+tranché par le PO). Rien ne bouge dans la journée en cours après le premier
+chargement.
 
-### Scénario 5 — Refetch en cours de tri (piège n°3)
+### Scénario 5 — Réseau coupé / blocs vides
 **Parcours** :
-1. Commencer à trier.
-2. Provoquer un refetch de l'Essentiel (pull-to-refresh, ou retour foreground).
+1. Passer en mode avion puis ouvrir la Tournée, puis revenir en ligne.
 
-**Résultat attendu** : **le slate ne bouge pas**. Ni l'ordre, ni la carte du
-dessus, ni la progression. `GET /api/essentiel` re-ranke à chaque requête ; le
-gel est ce qui empêche la pile de changer sous le doigt.
+**Résultat attendu** : aucun crash, aucune page vide anormale. Sans article
+scoré, aucun tri n'est appliqué (ordre par défaut). Au retour du réseau, tri
+normal au chargement suivant.
 
-### Scénario 6 — « Trier à nouveau »
+### Scénario 6 — Bascule de journée
 **Parcours** :
-1. Terminer un tri, taper « Trier à nouveau ».
+1. Laisser l'app ouverte à cheval sur 07h30 Paris (ou décaler l'horloge), puis
+   recharger la Tournée.
 
-**Résultat attendu** : la pile repart au 1ᵉʳ article, **avec le même ordre** (le
-slate est figé pour la journée). Le backend écrase par upsert, sans dupliquer.
-
-### Scénario 7 — Lettre passée
-**Parcours** :
-1. Ouvrir le rewind, sélectionner l'édition d'hier.
-
-**Résultat attendu** : **aucune pile**. La lettre passée reste passive.
-
-### Scénario 8 — Réseau coupé
-**Parcours** :
-1. Passer en mode avion, trier les 5, revenir en ligne.
-
-**Résultat attendu** : le tri **n'attend jamais le réseau** (aucun spinner,
-aucun blocage). Les décisions repartent au flush suivant.
-
-### Scénario 9 — Fidélité maquette de la carte de tri (passe A2)
-**Parcours** :
-1. Ouvrir l'édition du jour, observer la carte du dessus.
-
-**Résultat attendu** :
-- **bandeau image** en tête de carte ;
-- source, puis titre sur **4 lignes max** ;
-- **pas de chapô** ;
-- pied : pastille de polarisation (si le sujet en porte une) puis « N sources »
-  (si ≥ 2) ;
-- barre de progression : le **segment en cours** est plus épais que les autres,
-  et tous gardent la **même largeur** ;
-- le compteur « 1 sur 5 triés » se lit **sous** les articles gardés, pas en tête
-  de carte ;
-- bouton plein « Je garde » avec une coche pleine blanche avant le libellé.
-
-### Scénario 10 — Article sans image : pas de saut de hauteur
-**Parcours** :
-1. Trier jusqu'à tomber sur un article sans image (ou avec une image cassée).
-
-**Résultat attendu** : le bandeau **garde sa place** (aplat teinté), la carte
-mesure exactement la même hauteur que les autres. Le repère visuel sous la carte
-ne bouge pas d'un pixel.
-
-### Scénario 11 — Aperçu au long-press × swipe (arène de gestes)
-**Parcours** :
-1. Appui maintenu sur la carte du dessus, sans bouger le doigt.
-2. Relâcher, puis faire un swipe horizontal normal.
-
-**Résultat attendu** : (1) l'aperçu flottant s'ouvre et se ferme au relâchement ;
-(2) le swipe reste pleinement fonctionnel. Un drag horizontal **ne doit jamais**
-ouvrir l'aperçu sous le doigt. Même geste disponible sur les lignes « gardés ».
-
-### Scénario 12 — Nudge « aperçu » sur la 2ᵉ carte
-**Parcours** :
-1. Storage vidé, trier le 1ᵉʳ article : rien ne doit se passer de spécial.
-2. Sur la **2ᵉ** carte : la carte grossit brièvement et un mini libellé
-   « Appuie longuement pour un aperçu. » apparaît.
-3. Attendre ~2,5 s, puis continuer le tri.
-4. Faire un vrai long-press, recharger, refaire un tri.
-
-**Résultat attendu** : le libellé disparaît seul ; il ne revient **pas** plus
-tard dans la journée ; après un long-press réel il ne revient **plus jamais**.
+**Résultat attendu** : l'ordre de la veille est **jeté**, pas rejoué ; un ordre
+frais est calculé à la complétion du fan-out (donc à nouveau une seule
+réorganisation, en fin de chargement).
 
 ## Critères d'acceptation
 
-- [ ] La pile remplace la liste passive sur l'édition du jour, pas ailleurs
-- [ ] Swipe droite/gauche et les 3 boutons produisent la bonne décision
-- [ ] La carte ne change pas de hauteur pendant le tri (feed stable)
-- [ ] Le slate survit à un kill/relaunch et ne bouge pas au refetch
-- [ ] « Trier à nouveau » réinitialise sans rebattre l'ordre
+- [ ] Aucun bloc ne saute pendant le fan-out (une seule réorganisation, à la complétion)
+- [ ] L'ordre est stable toute la journée, identique à la ré-ouverture, dès la 1ʳᵉ frame
+- [ ] Un bloc à 1 article n'est plus au-dessus du pli quand des blocs denses existent
+- [ ] Actus / Bonnes Nouvelles / La Grille gardent leur position (jamais poussés en queue)
+- [ ] Le quota de 3 sections « Choisie pour vous » sous le cap 13 reste honoré après tri
 - [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus
-- [ ] Copy : aucun em-dash, ton sobre (pas de facteur personnifié)
-- [ ] Carte de tri : image, couverture, polarisation, titre 4 lignes, pas de chapô
-- [ ] Un article sans image ne change pas la hauteur de la carte
-- [ ] Long-press → aperçu, sans jamais bloquer le swipe
-- [ ] Nudge « aperçu » : 1×/jour max, éteint pour de bon après un long-press réel
 
-## Garde-fous à vérifier côté données (le cœur de la V0)
+## Zones de risque
 
-Après un tri contenant au moins un « Pas pour moi » :
+- **Cap 13** : un bloc dégradé peut désormais tomber **hors** du cap et
+  disparaître de la page. C'est voulu — mais vérifier que le quota suggestions
+  survit au tri.
+- **Frontière 07h30 Paris** (scénario 6) : la clé `tournee_score_order_v1` porte
+  le jour dans sa valeur ; une entrée d'hier doit être ignorée, pas appliquée.
+- **Comptes personnalisés** : un bloc glissé en tête peut descendre **le
+  lendemain**. Jamais dans la même session.
+- **Kill-switch** `kTourneeScoreSortEnabled` (`tournee_order_prefs_provider.dart`) :
+  à `false`, retour exact au comportement d'avant (dépriorisation binaire
+  riches/maigres). C'est le rollback si l'ordre observé déplaît.
 
-```sql
--- Les décisions sont écrites avec leur rang et la taille du slate
-SELECT decision, rank, slate_size, decided_via, latency_ms
-  FROM essentiel_triage_decisions WHERE digest_date = CURRENT_DATE;
+## Dépendances
 
--- GARDE-FOU n°1 : aucune source mutée. `not_interested` ajouterait la source
--- entière à muted_sources, sans expiration. Le tri ne doit JAMAIS y toucher.
-SELECT user_id, muted_sources FROM user_personalization
- WHERE cardinality(muted_sources) > 0;
-
--- GARDE-FOU n°2 : aucun poids bougé par le tri
-SELECT count(*) FROM user_subtopics WHERE updated_at > now() - interval '5 min';
-SELECT count(*) FROM user_entity_affinity WHERE updated_at > now() - interval '5 min';
-
--- Seul effet attendu : les « Plus tard » sont mis de côté
-SELECT content_id, is_saved FROM user_content_status WHERE is_saved IS TRUE;
-```
-
-Script E2E de l'endpoint : `bash docs/qa/scripts/verify_essentiel_triage.sh`
-(exige `API_URL` + `JWT`).
+- Aucun endpoint nouveau : le tri consomme `recommendation_reason.score_total`,
+  déjà servi par `GET /api/feed`.
+- **Aucune migration Alembic** (mobile-only).
+- Nouvelle clé `SharedPreferences` : `tournee_score_order_v1`, valeur
+  `{"day": "<dayKey>", "keys": [...]}` — clé unique day-stampée, auto-invalidante.
+- Event analytics `article_impression` : la propriété `block_score` passe de
+  `null` à une valeur réelle.
 
 ## Notes pour l'agent QA
 
 - Viewport 390×844, sémantique activée au boot (skill `facteur-qa-web`).
-- La pile n'apparaît qu'après l'hydratation SharedPreferences (quelques frames) :
-  laisser la page se poser avant d'asserter.
-- Le tri est **fire-and-forget batché** (debounce 2 s, flush à la fin du tri et
-  au passage en arrière-plan) : ne pas s'attendre à un POST par swipe.
+- Le gel de l'ordre se produit **après** la dernière tâche du fan-out : laisser
+  la page se poser complètement avant d'asserter l'ordre final.
+- Le comportement dépend des scores réels renvoyés par le backend. Sur un compte
+  sans favori bien fourni, il peut n'y avoir aucun changement visible — ce n'est
+  pas un échec, c'est le cas « rien à trier ».

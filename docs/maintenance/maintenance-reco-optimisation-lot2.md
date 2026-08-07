@@ -52,7 +52,7 @@ ce lot, c'est un signal d'erreur de conception à réexaminer.
 | PR-1 | Instrumentation d'impression | 3 | **livrée** |
 | PR-2 | `SCORING_OVERRIDES` + contexte de sweep | 1 (outillage) | **livrée** |
 | PR-3 | Personas, corpus gelé, harnais de sensibilité | 1 | à faire |
-| PR-4 | Ordre des blocs par score top-3 | 2 | à faire |
+| PR-4 | Ordre des blocs par score top-3 | 2 | **livrée** |
 | PR-5 | Shrinkage affinité source + `DIGEST_SPORT_PENALTY` | 4 (amorce) | à faire, gated sur PR-3 |
 | PR-6 | `evaluate_tournee_ctr.py` | 3 | à faire, ≈2 semaines après PR-1 |
 
@@ -81,7 +81,7 @@ Propriétés portées :
 | `position_in_section` | rang de la carte | |
 | `global_position` | compteur de page | porte l'effet de position |
 | `score_total` | `recommendation_reason.score_total` | `null` sur les blocs éditoriaux |
-| `block_score` | — | `null` **jusqu'à PR-4** : c'est ce champ qui reliera « ordre des blocs » et « CTR mesuré » |
+| `block_score` | `FluxContinuState.blockScores[sectionKey]` | **renseigné depuis PR-4** : somme des 3 meilleurs `score_total` du bloc — c'est le champ qui relie « ordre des blocs » et « CTR mesuré ». Recalculé à chaque recomposition, donc c'est le score du bloc **au moment de l'impression** ; l'ordre, lui, est gelé à la journée, donc les deux peuvent diverger dans la journée (load-more, refetch). Analyse : joindre sur le couple `(day_key, section)`, pas sur la valeur seule |
 | `theme`, `source_id` | carte | |
 | `is_serene`, `underfilled` | état | découpes de lecture |
 | `day_key` | `TourneeProgressService.dayKey` | frontière 4 h Paris |
@@ -294,6 +294,72 @@ ce qui est le problème même qu'on cherche à résoudre.
 | `packages/api/tests/scripts/test_scoring_overrides.py` | nouveau — sweep, env, garde AST |
 
 Aucune migration Alembic (`ScoringWeights` n'expose que des attributs de classe).
+
+---
+
+## PR-4 — Ordre des blocs par score top-3 (mobile)
+
+### Ce qui est posé
+
+La **dépriorisation binaire** riches/maigres (partition stable gatée sur
+`richCount >= kThinDemotionRichThreshold`) ne classait pas, elle reléguait. Elle
+est remplacée par un tri sur la **somme des 3 meilleurs `score_total`** des
+articles du bloc — score que le backend renvoie déjà dans
+`recommendation_reason`. Les slots manquants comptant 0, un bloc à 1 article est
+pénalisé *structurellement* (≈ 1 × s vs 3 × s), ce qu'une moyenne n'aurait pas
+fait. Répond à la plainte PO « des blocs à 1 article remontent en tête ».
+
+**PR-4 boucle aussi PR-1** : `block_score` était câblé de bout en bout
+(`SectionBlock` → `ArticleImpressionTracker` → `analytics_service`) mais
+personne ne le renseignait — il valait `null` en prod. `FluxContinuState.blockScores`
+le remplit désormais depuis la même passe qui a fixé l'ordre.
+
+### Décisions et leurs raisons
+
+**Ordre gelé à la journée tournée** (frontière 07h30 Paris, clé
+`tournee_score_order_v1` stockant `{"day", "keys"}`).
+`_fanOutSectionsProgressive` émet après chaque tâche (~10-15 recompositions) :
+trier à chaque emit ferait sauter les blocs sous les yeux. L'ordre est calculé
+**une fois**, à la complétion du fan-out, puis rejoué tel quel par tous les
+composes suivants du jour (cache in-day, pull-to-refresh, refetch partiels).
+Clé unique day-stampée ⇒ auto-invalidante, rien à ajouter à `purgeOldPrefsKeys`.
+
+**Réinjection à position absolue via `mergeVisibleReorder`**, pas `applyOrder` :
+ce dernier pousse les clés inconnues en **fin**, ce qui ferait couler Actus /
+Bonnes Nouvelles (jamais scorées) jusqu'à les faire tomber hors du cap 13.
+
+**Portée plus large que la classification maigre/riche** : toute section résolue
+portant au moins un article scoré entre au classement — veille et « Choisie pour
+vous » comprises. Une veille pauvre coule donc désormais elle aussi (décision
+PO). Une section dont *aucun* article ne porte de `recommendation_reason`
+(éditorial, coquille de boot) n'entre pas dans la map et **garde sa place**
+plutôt que de couler à 0.
+
+**Le tri s'applique aussi aux comptes personnalisés** (décision PO) : l'ordre
+manuel reste la base d'entrée et départage à score égal (le tri est stable),
+mais il ne fait plus autorité au-delà. Risque assumé : un bloc glissé en tête
+peut descendre le lendemain — l'ordre étant figé à la journée, jamais dans la
+même session.
+
+**Kill-switch** `kTourneeScoreSortEnabled` : à `false`, aucun calcul, aucune
+persistance, et la dépriorisation binaire reprend à l'identique.
+`kThinDemotionRichThreshold` et le paramètre `demote` deviennent obsolètes mais
+**partent au cycle suivant** — la CI ne lance pas `flutter test`, on ne retire
+pas les deux filets d'un coup. `thinKeys` reste utilisé par le backfill et la
+modal favoris.
+
+### Fichiers
+
+| Fichier | Nature |
+|---|---|
+| `apps/mobile/lib/features/flux_continu/utils/section_score_order.dart` | nouveau — `blockScore`, `rankKeysByBlockScore`, `applyScoreOrder` (pur, testable sans binding) |
+| `apps/mobile/lib/features/flux_continu/providers/flux_continu_provider.dart` | `blockScores` dans `_classifyFavoriteSections`, `scoreOrder` dans `_orderedTourneeKeys`, gel + persistance dans `_fanOutSectionsProgressive`, chargement dans `_buildStateFromPayload` |
+| `apps/mobile/lib/features/flux_continu/models/flux_continu_models.dart` | `FluxContinuState.blockScores` |
+| `apps/mobile/lib/features/flux_continu/providers/tournee_order_prefs_provider.dart` | `kTourneeScoreSortEnabled` |
+| `apps/mobile/lib/features/flux_continu/services/tournee_progress_service.dart` | `loadScoreOrderForToday` / `setScoreOrderToday` |
+| `apps/mobile/lib/features/flux_continu/screens/flux_continu_screen.dart` | 1 call site `SectionBlock(blockScore:)` (le seul portant `impressionDayKey`) |
+
+Aucune migration Alembic (mobile-only).
 
 ---
 

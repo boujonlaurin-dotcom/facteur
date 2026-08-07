@@ -735,6 +735,16 @@ class FluxContinuState {
   /// n'est classé (squelette / aucun favori résolu).
   final Set<String> thinFavoriteKeys;
 
+  /// Score de bloc (somme des 3 meilleurs `score_total`, cf.
+  /// `utils/section_score_order.dart`) par `sectionKey`, pour les seules
+  /// sections dont au moins un article porte un `recommendationReason`.
+  ///
+  /// Double usage : il pilote l'ordre des blocs (gelé à la journée) **et**
+  /// alimente la propriété `block_score` de l'event `article_impression` (PR-1)
+  /// — c'est le champ qui relie « ordre des blocs » et « CTR mesuré ». Vide sur
+  /// le squelette et tant qu'aucun fetch n'est résolu.
+  final Map<String, double> blockScores;
+
   const FluxContinuState({
     this.sections = const [],
     this.grilleSlotIndex,
@@ -746,6 +756,7 @@ class FluxContinuState {
     this.error,
     this.isSkeleton = false,
     this.thinFavoriteKeys = const {},
+    this.blockScores = const {},
   });
 
   FluxContinuState copyWith({
@@ -760,6 +771,7 @@ class FluxContinuState {
     bool clearError = false,
     bool? isSkeleton,
     Set<String>? thinFavoriteKeys,
+    Map<String, double>? blockScores,
   }) {
     return FluxContinuState(
       sections: sections ?? this.sections,
@@ -772,6 +784,7 @@ class FluxContinuState {
       error: clearError ? null : (error ?? this.error),
       isSkeleton: isSkeleton ?? this.isSkeleton,
       thinFavoriteKeys: thinFavoriteKeys ?? this.thinFavoriteKeys,
+      blockScores: blockScores ?? this.blockScores,
     );
   }
 
