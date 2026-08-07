@@ -118,6 +118,61 @@ class TestRefreshFeedBackup:
         for entry in second.previous_impressions:
             assert entry.previous_last_impressed_at is not None
 
+    async def test_refresh_with_duplicate_content_ids(
+        self, db_session, test_contents, fake_user_id
+    ):
+        """Un content_id en double ne fait pas planter l'upsert bulk (PYTHON-5Q).
+
+        L'upsert est passé d'une boucle `db.execute()` par id à un seul
+        `INSERT ... ON CONFLICT DO UPDATE` multi-lignes. Postgres refuse qu'un
+        `ON CONFLICT DO UPDATE` vise deux fois la même ligne cible dans un même
+        statement ("cannot affect row a second time") : la déduplication est
+        donc load-bearing, pas cosmétique.
+        """
+        ids = [c.id for c in test_contents]
+        # Le premier id est envoyé deux fois.
+        body = FeedRefreshRequest(content_ids=[ids[0], *ids])
+
+        response = await refresh_feed(
+            body=body, db=db_session, current_user_id=fake_user_id
+        )
+
+        # `refreshed` compte les ids UNIQUES.
+        assert response.refreshed == 3
+        # Toutes les lignes ont bien été impressionnées.
+        for cid in ids:
+            assert await _get_last_impressed(db_session, fake_user_id, cid) is not None
+
+    async def test_undo_with_duplicate_content_ids(
+        self, db_session, test_contents, fake_user_id
+    ):
+        """Idem côté undo : dédup last-write-wins, comme la boucle d'origine."""
+        ids = [c.id for c in test_contents]
+        await refresh_feed(
+            body=FeedRefreshRequest(content_ids=ids),
+            db=db_session,
+            current_user_id=fake_user_id,
+        )
+
+        older = datetime(2026, 1, 1, tzinfo=UTC)
+        newer = datetime(2026, 2, 2, tzinfo=UTC)
+        # Deux entrées pour le même content_id : la DERNIÈRE doit gagner.
+        body = FeedRefreshUndoRequest(
+            previous_impressions=[
+                PreviousImpression(content_id=ids[0], previous_last_impressed_at=older),
+                PreviousImpression(content_id=ids[0], previous_last_impressed_at=newer),
+            ]
+        )
+
+        resp = await undo_refresh(
+            body=body, db=db_session, current_user_id=fake_user_id
+        )
+
+        assert resp == {"restored": 1}
+        restored = await _get_last_impressed(db_session, fake_user_id, ids[0])
+        assert restored is not None
+        assert abs((restored - newer).total_seconds()) < 0.001
+
 
 class TestUndoRefresh:
     """undo_refresh should restore previous last_impressed_at values."""
@@ -194,9 +249,7 @@ class TestUndoRefresh:
             # Restored timestamp should match the one captured after first refresh
             assert abs((restored_ts - first_ts[cid]).total_seconds()) < 0.001
 
-    async def test_undo_is_idempotent(
-        self, db_session, test_contents, fake_user_id
-    ):
+    async def test_undo_is_idempotent(self, db_session, test_contents, fake_user_id):
         """Running undo twice with the same backup is safe (no-op on 2nd run)."""
         ids = [c.id for c in test_contents]
 
