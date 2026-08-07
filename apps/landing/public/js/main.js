@@ -233,6 +233,7 @@
 
             if (!email) return;
 
+            var btnLabel = btn.textContent;
             btn.disabled = true;
             btn.textContent = '...';
             error.hidden = true;
@@ -257,7 +258,7 @@
                 })
                 .then(function (data) {
                     input.value = '';
-                    btn.textContent = 'Être prévenu·e au lancement';
+                    btn.textContent = btnLabel;
                     btn.disabled = true;
 
                     // Show survey unless backend explicitly says duplicate
@@ -272,7 +273,7 @@
                         ? 'Une erreur est survenue. Réessaie.'
                         : err.message;
                     error.hidden = false;
-                    btn.textContent = 'Être prévenu·e au lancement';
+                    btn.textContent = btnLabel;
                     btn.disabled = false;
                 });
         });

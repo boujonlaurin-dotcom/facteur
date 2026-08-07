@@ -502,7 +502,7 @@ a:hover {
 }
 
 /* ═══════════════════════════════════════════
-   Store Badges — "Bientôt disponible"
+   Store Badges — liens de téléchargement
    ═══════════════════════════════════════════ */
 
 .store-badges {
@@ -525,9 +525,28 @@ a:hover {
     border-radius: var(--radius-md);
     background: var(--color-dark-bg);
     color: var(--color-dark-text);
-    cursor: default;
-    user-select: none;
-    opacity: 0.92;
+    text-decoration: none;
+    border-bottom: none;
+    transition: transform var(--duration-fast) var(--ease-out),
+        box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.store-badge:hover,
+.store-badge:focus-visible {
+    color: var(--color-dark-text);
+    border-bottom: none;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card-hover);
+}
+
+.store-badge--whatsapp {
+    background: #128c7e;
+    color: #fff;
+}
+
+.store-badge--whatsapp:hover,
+.store-badge--whatsapp:focus-visible {
+    color: #fff;
 }
 
 .store-badge__icon {
@@ -1958,6 +1977,11 @@ a:hover {
     .blog-card--featured .blog-card__visual--event {
         height: 100%;
     }
+
+    /* Cadre la visuelle : sans plafond, un visuel portrait étire toute la carte. */
+    .blog-card--featured .blog-card__visual-img {
+        max-height: 320px;
+    }
 }
 
 .blog-card__visual--event {
@@ -2117,6 +2141,29 @@ a:hover {
     font-weight: 700;
     color: var(--color-text);
     margin: var(--space-lg) 0 var(--space-sm);
+}
+
+.article__list {
+    margin: 0 0 var(--space-md) var(--space-md);
+    padding-left: var(--space-sm);
+    list-style: disc;
+}
+
+.article__list li {
+    font-size: var(--font-size-lg);
+    line-height: 1.7;
+    color: var(--color-text);
+    margin-bottom: var(--space-xs);
+    padding-left: 0.25rem;
+}
+
+.article__list li::marker {
+    color: var(--color-accent);
+}
+
+.article .store-badges {
+    margin: var(--space-lg) 0;
+    animation: none;
 }
 
 .article__signature {
