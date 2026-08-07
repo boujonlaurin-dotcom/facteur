@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../config/theme.dart';
@@ -5,6 +7,8 @@ import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../providers/onboarding_analytics.dart';
 import '../providers/onboarding_provider.dart';
+import '../services/onboarding_push_priming.dart';
+import '../widgets/onboarding_notif_priming.dart';
 import '../widgets/onboarding_progress_bar.dart';
 import '../widgets/reaction_screen.dart';
 import '../onboarding_strings.dart';
@@ -34,12 +38,57 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   /// provider : celui-ci est aussi lu hors onboarding.
   late final OnboardingStepTracker _stepTracker;
 
+  /// Amorce notif précoce (étape 3/4) : planifiée une seule fois, quelques
+  /// secondes après avoir atteint l'étape, pour capter tôt la permission.
+  Timer? _primingTimer;
+  bool _primingScheduled = false;
+
   @override
   void initState() {
     super.initState();
     _stepTracker = OnboardingStepTracker(ref.read(analyticsServiceProvider));
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _stepTracker.onState(ref.read(onboardingProvider));
+      if (!mounted) return;
+      final state = ref.read(onboardingProvider);
+      _stepTracker.onState(state);
+      unawaited(_maybeSchedulePriming(state));
+    });
+  }
+
+  @override
+  void dispose() {
+    _primingTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Arme (une seule fois) l'écran d'amorce ~4 s après avoir atteint l'étape
+  /// `objective` (ou au-delà), pour une session anonyme qui ne l'a pas encore
+  /// vu. `objective` est un écran de « dwell » : le délai atterrit de façon
+  /// fiable pendant que l'utilisateur est présent. Le seuil est ancré sur
+  /// l'index de l'enum (pas un littéral) pour survivre à un réordonnancement
+  /// des questions.
+  ///
+  /// `_primingScheduled` passe à `true` de façon synchrone avant le premier
+  /// `await` : la garde de ré-entrance tient donc même si `ref.listen` rappelle
+  /// pendant l'ouverture de la box Hive.
+  Future<void> _maybeSchedulePriming(OnboardingState state) async {
+    if (_primingScheduled) return;
+    if (state.globalQuestionIndex < Section1Question.objective.index) return;
+    if (!ref.read(authStateProvider).isAnonymous) return;
+    _primingScheduled = true;
+    if (await ref.read(onboardingPushPrimingProvider).hasSeenPriming()) return;
+    _primingTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) return;
+      final current = ref.read(onboardingProvider);
+      // Ne pas tirer pendant la transition de conclusion (finalize).
+      if (current.isReadyToFinalize) return;
+      unawaited(
+        showOnboardingNotifPriming(
+          context,
+          ref,
+          step: current.globalQuestionIndex,
+        ),
+      );
     });
   }
 
@@ -48,7 +97,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final state = ref.watch(onboardingProvider);
     ref.listen<OnboardingState>(
       onboardingProvider,
-      (_, next) => _stepTracker.onState(next),
+      (_, next) {
+        _stepTracker.onState(next);
+        unawaited(_maybeSchedulePriming(next));
+      },
     );
 
     return Scaffold(

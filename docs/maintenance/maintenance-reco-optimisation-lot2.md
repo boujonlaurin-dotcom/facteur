@@ -366,8 +366,13 @@ Aucune migration Alembic (mobile-only).
 ## Journal des constantes modifiées
 
 Une ligne par constante touchée par le lot : valeur avant/après, quel objectif a
-bougé, de combien, sur quel fichier corpus. Vide tant que PR-3 n'a pas livré le
-harnais — **aucune constante ne bouge sans mesure**.
+bougé, de combien, sur quel fichier corpus.
+
+**Toujours vide après PR-3, et c'est voulu** : PR-3 livre l'instrument, elle ne
+règle rien. La première ligne sera écrite par PR-5, contre
+`scoring_corpus_2026-08-03.json`, sur une constante de la liste *active* — et
+une seule par cycle, sans quoi un gold à 240 labels ne peut plus attribuer
+l'effet.
 
 | Date | Constante | Avant | Après | Objectif déplacé | Corpus |
 |---|---|---|---|---|---|
@@ -404,8 +409,10 @@ porte, c'est le prototype de la chose qu'on ship et qu'on n'utilise jamais.
 
 ## Points à vérifier avant d'attaquer les PRs suivantes
 
-1. `essentiel_service.py` passe-t-il par `PillarScoringEngine` ? (décide du coût
-   réel de l'option « faire remonter un score » écartée en PR-4 — non ouvert).
+1. ~~`essentiel_service.py` passe-t-il par `PillarScoringEngine` ?~~ **Tranché
+   en PR-3 : non** — il réutilise les signaux du digest déjà scoré avec ses
+   propres boosts. L'option écartée en PR-4 aurait coûté un chemin de scoring
+   entier.
 2. Le repli two-phase de `personalized_theme_mode` quand le pool de sources
    suivies est maigre : tombe-t-il sur du curated non suivi ? Si oui la
    comparabilité inter-familles varie *par bloc et par jour*
