@@ -633,7 +633,9 @@ class PushNotificationService {
     const contentId = '00000000-0000-4000-8000-0000000000a1';
     const body = "Le pantouflage discret d'un ex-ministre";
     await _showAlert(const {
-      'route': '/article/$contentId',
+      // Miroir EXACT de `compose_source_alert` (push_composer.py) : le bouton QA
+      // ne vaut que s'il porte le payload que FCM enverra vraiment.
+      'route': '/flux-continu/content/$contentId',
       'kind': 'source_alert',
       'source_id': '00000000-0000-4000-8000-0000000000b2',
       'source_name': 'Le Canard Enchaîné',
@@ -650,7 +652,8 @@ class PushNotificationService {
     const contentId = '00000000-0000-4000-8000-0000000000a2';
     const body = 'La finale se jouera sans son meilleur buteur';
     await _showAlert(const {
-      'route': '/article/$contentId',
+      // Miroir EXACT de `compose_topic_alert` (push_composer.py).
+      'route': '/flux-continu/content/$contentId',
       'kind': 'topic_alert',
       'topic_id': '00000000-0000-4000-8000-0000000000b3',
       'topic_name': 'Ligue 1',
@@ -679,7 +682,37 @@ class PushNotificationService {
     }
   }
 
+  /// Cible d'une push tapée dont la navigation n'a pas encore pu aboutir.
+  ///
+  /// Un tap sur notification en app FROIDE appelle [openRoute] depuis
+  /// `getInitialMessage()`, juste après `runApp` : ou bien le navigator n'existe
+  /// pas encore, ou bien la garde `authState.isLoading` du `redirect` renvoie
+  /// sur le splash. Dans les deux cas la cible était perdue et l'utilisateur
+  /// atterrissait sur L'Essentiel. On la met de côté ici, le `redirect` la
+  /// rejoue une fois l'auth résolue — exactement le chemin déjà retenu pour le
+  /// deep link widget (cf. docs/bugs/bug-widget-fiabilite.md C3), et pour la
+  /// même raison : ne jamais consommer un deep link avant l'auth.
+  static String? _pendingRoute;
+
+  /// Consomme la cible push en attente (`null` si aucune). Appelé par le
+  /// `redirect` du routeur une fois l'auth résolue.
+  static String? takePendingRoute() {
+    final pending = _pendingRoute;
+    _pendingRoute = null;
+    return pending;
+  }
+
+  /// Oublie la cible en attente : appelé par le `redirect` dès qu'un écran
+  /// réel est monté, pour qu'une cible périmée ne détourne pas une navigation
+  /// ultérieure repassant par le splash.
+  static void clearPendingRoute() {
+    _pendingRoute = null;
+  }
+
   static void openRoute(String route) {
+    // Mise de côté AVANT la navigation : si le `go` ci-dessous est absorbé par
+    // le splash (auth pas encore résolue), le `redirect` reprendra la cible.
+    _pendingRoute = route;
     final context = _navigatorKey?.currentContext;
     if (context == null) return;
     // La « Lettre du jour » ne s'interpose plus au tap d'une push (décision PO
