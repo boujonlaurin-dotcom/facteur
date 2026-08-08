@@ -191,10 +191,13 @@ Future<void> _bootstrap() async {
   // notifications lors de son init différé.
   PushNotificationService.setNavigatorKey(NotificationService.navigatorKey);
 
-  // PushNotificationService.init() est différé post-runApp : la codebase
-  // n'appelle jamais getNotificationAppLaunchDetails, donc le tap depuis
-  // cold-launch n'est pas géré aujourd'hui — déférer l'init ne régresse rien
-  // et économise ~100-400ms (timezone DB load + platform channel).
+  // PushNotificationService.init() est différé post-runApp : il économise
+  // ~100-400ms sur la 1ère frame (timezone DB load + platform channel).
+  // Le tap de cold-launch (app tuée) est bien géré malgré ce report : init()
+  // lit `getNotificationAppLaunchDetails` et *seede* l'intent, rejoué une fois
+  // auth + navigator prêts (`setLaunchAuthReady`). Le couple seed/flush est
+  // auto-gaté et idempotent, donc l'ordre d'arrivée (init avant ou après
+  // l'auth) n'a pas d'importance.
   final initsSw = Stopwatch()..start();
   final posthog = PostHogService();
   String? appVersion;

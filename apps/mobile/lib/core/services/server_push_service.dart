@@ -14,6 +14,7 @@ import 'package:uuid/uuid.dart';
 import '../api/api_client.dart';
 import '../api/notification_preferences_api_service.dart';
 import '../api/push_devices_api_service.dart';
+import 'notification_intent.dart';
 import 'posthog_service.dart';
 import 'push_notification_service.dart';
 
@@ -248,7 +249,6 @@ class ServerPushService {
 
   void _openMessage(RemoteMessage message) {
     final data = message.data;
-    final route = data['route'] as String? ?? '/digest';
     final timeToOpen = timeToOpenSeconds(
       data['sent_at'] as String?,
       DateTime.now().toUtc(),
@@ -262,7 +262,13 @@ class ServerPushService {
         },
       ),
     );
-    PushNotificationService.openRoute(route);
+    // Chemin FCM (iOS notification-type). Lit enfin `target_date` (envoyée par
+    // `compose_daily_digest`) : une notif de la veille ouvre son édition figée
+    // (#1) au lieu de l'Essentiel vivant du jour (ce qui préserve aussi les
+    // articles teasés, #3). Applier partagé avec le pipeline local.
+    PushNotificationService.routeIntent(
+      NotificationIntent.parseFromFcmData(data),
+    );
   }
 
   /// Délai (secondes) entre l'envoi serveur (`data['sent_at']`, ISO UTC) et

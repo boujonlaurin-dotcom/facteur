@@ -8,6 +8,7 @@ import 'config/routes.dart';
 import 'core/auth/auth_state.dart';
 import 'core/providers/analytics_provider.dart';
 import 'core/services/deep_link_service.dart';
+import 'core/services/push_notification_service.dart';
 import 'core/services/widget_service.dart';
 import 'features/digest/providers/digest_provider.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
@@ -296,6 +297,13 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
     // pre-auth waits for sign-in before navigating.
     ref.listen<AuthState>(authStateProvider, (prev, next) {
       DeepLinkService.instance.setAuthenticated(next.isAuthenticated);
+      // Rejoue un tap de notif locale ayant lancé l'app tuée (cold-launch).
+      // Le gate reprend EXACTEMENT les gardes du `redirect` (routes.dart §2b/§3)
+      // et pas le seul `isAuthenticated` : celui-ci passe à `true` AVANT que le
+      // statut d'onboarding soit résolu, or naviguer dans cette fenêtre se fait
+      // écraser par le renvoi sur `/splash` — et l'intent, déjà consommé,
+      // serait perdu sans retry.
+      PushNotificationService().setLaunchAuthReady(_canReplayNotification(next));
       if (next.isAuthenticated) {
         _startAnalyticsSessionIfNeeded();
         unawaited(ref.read(readSyncServiceProvider).flushCurrentUser());
@@ -308,8 +316,10 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       }
     });
     // Initial sync (the listen above only fires on changes).
-    DeepLinkService.instance.setAuthenticated(
-      ref.read(authStateProvider).isAuthenticated,
+    final authState = ref.read(authStateProvider);
+    DeepLinkService.instance.setAuthenticated(authState.isAuthenticated);
+    PushNotificationService().setLaunchAuthReady(
+      _canReplayNotification(authState),
     );
     // Complétions durables relues au démarrage : le filet de lecture aboutie
     // doit survivre au kill de l'app, la session ne le porte plus seule.
@@ -346,6 +356,15 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       routerConfig: router,
     );
   }
+
+  /// `true` quand une navigation vers le contenu survivrait au `redirect` du
+  /// router — mêmes conditions que ses gardes §2b et §3 (`config/routes.dart`).
+  /// Tant que c'est `false`, un `go()` serait réécrit en `/splash` (statut
+  /// d'onboarding non résolu) ou en `/onboarding`.
+  static bool _canReplayNotification(AuthState state) =>
+      state.isAuthenticated &&
+      state.onboardingStatusKnown &&
+      !state.needsOnboarding;
 
   void _startAnalyticsSessionIfNeeded() {
     if (!ref.read(authStateProvider).isAuthenticated) return;

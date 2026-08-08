@@ -5,13 +5,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../config/routes.dart';
+import '../../features/flux_continu/providers/pending_feed_section_provider.dart';
+import '../../features/flux_continu/providers/selected_edition_date_provider.dart';
+import '../../features/flux_continu/providers/tournee_order_prefs_provider.dart';
 import '../api/notification_preferences_api_service.dart';
+import 'notification_intent.dart';
 import 'posthog_service.dart';
 
 /// Variante de copy de la notification quotidienne.
@@ -95,8 +101,59 @@ class PushNotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    // Cold-launch depuis une notif LOCALE : tapée app tuée, elle n'emprunte pas
+    // le cold-launch FCM (`getInitialMessage`) mais ce chemin-ci. On seede le
+    // tap de lancement, rejoué quand router + auth sont prêts (miroir de
+    // `DeepLinkService.seedPending`/`flushPendingIfReady`). Sans ça, une notif
+    // bonnes nouvelles / veille tapée app tuée ne posait aucun état de section.
+    try {
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp ?? false) {
+        _pendingLaunchIntent = NotificationIntent.parseFromLocalPayload(
+          launch!.notificationResponse?.payload,
+        );
+        // Tente tout de suite : chez un utilisateur déjà connecté au boot, auth
+        // + nav peuvent déjà être prêts quand l'init asynchrone se termine.
+        _flushPendingLaunch();
+      }
+    } catch (e) {
+      debugPrint('PushNotificationService: launch details failed: $e');
+    }
+
     _initialized = true;
     debugPrint('PushNotificationService: Initialized successfully');
+  }
+
+  // --- Cold-launch pending intent (notif locale) ---------------------------
+
+  /// Intent d'un tap ayant lancé l'app depuis l'état tué (notif locale),
+  /// capturé par [init] et rejoué par [_flushPendingLaunch] une fois router +
+  /// auth prêts. `null` = aucun cold-launch en attente.
+  NotificationIntent? _pendingLaunchIntent;
+
+  /// `true` quand une navigation survivrait au `redirect` du router (auth +
+  /// statut d'onboarding résolus) — calculé et poussé par `app.dart`. Rejouer
+  /// avant ça se ferait écraser par le renvoi sur `/splash`.
+  bool _launchAuthReady = false;
+
+  /// Signale l'état d'auth au service (appelé depuis `app.dart`), et retente le
+  /// rejeu du cold-launch en attente.
+  void setLaunchAuthReady(bool value) {
+    _launchAuthReady = value;
+    _flushPendingLaunch();
+  }
+
+  /// Rejoue l'intent de cold-launch dès que router (contexte navigator) + auth
+  /// sont prêts. No-op idempotent tant qu'un des trois manque — appelé depuis
+  /// [init] ET [setLaunchAuthReady] pour couvrir les deux ordres d'arrivée
+  /// possibles.
+  void _flushPendingLaunch() {
+    final intent = _pendingLaunchIntent;
+    if (intent == null) return;
+    if (!_launchAuthReady) return;
+    if (_navigatorKey?.currentContext == null) return;
+    _pendingLaunchIntent = null;
+    routeIntent(intent);
   }
 
   Future<bool> requestPermission() async {
@@ -368,7 +425,13 @@ class PushNotificationService {
       ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: 'route:/digest?serein=1',
+      // Deep-link section (#2) : le tap scrolle vers la section Bonnes Nouvelles
+      // au lieu de retomber en haut de l'Essentiel. `serein` n'est plus forcé —
+      // la section s'affiche dans le flux normal, indépendamment du toggle.
+      payload: NotificationIntent.encodeLocalPayload(
+        RoutePaths.fluxContinu,
+        const {'section': kTourneeBonnesKey},
+      ),
     );
 
     debugPrint(
@@ -569,7 +632,12 @@ class PushNotificationService {
         android: androidDetails,
         iOS: iosDetails,
       ),
-      payload: 'route:$route',
+      // Le digest FCM est data-only sur Android : la notif est rendue ICI, donc
+      // son tap emprunte le pipeline LOCAL (jamais `_openMessage`). On reporte
+      // donc les clés de routing du `data` sur le payload (cf.
+      // `NotificationIntent.encodeLocalPayload`) — sans ça `route:/digest` perd
+      // la date et un tap de la veille rouvrait l'Essentiel vivant du jour (#1).
+      payload: NotificationIntent.encodeLocalPayload(route, data),
     );
   }
 
@@ -679,14 +747,31 @@ class PushNotificationService {
     }
   }
 
-  static void openRoute(String route) {
+  /// Applique un [NotificationIntent] : pose l'état d'édition + de section via
+  /// le container Riverpod (contexte du navigator racine) PUIS navigue. Poser
+  /// avant de naviguer suffit parce que `FluxContinuScreen` ne réinitialise pas
+  /// ces providers à l'entrée (invariant commenté dans son `initState`). Pattern
+  /// container-driven repris de `morning_ritual_screen._openSection`.
+  ///
+  /// No-op si le contexte n'est pas encore monté — le cold-launch est couvert
+  /// par [_flushPendingLaunch].
+  static void routeIntent(NotificationIntent intent) {
     final context = _navigatorKey?.currentContext;
     if (context == null) return;
+    if (intent.targetsFeed) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      container.read(selectedEditionDateProvider.notifier).state =
+          intent.edition;
+      // Section toujours explicite : `null` purge une clé restée d'un tap
+      // précédent, qui sinon se consommerait au prochain passage sur le feed.
+      container.read(pendingFeedSectionKeyProvider.notifier).state =
+          intent.section;
+    }
     // La « Lettre du jour » ne s'interpose plus au tap d'une push (décision PO
     // 02/08/2026) : on route directement vers la cible réelle. Navigation via
     // GoRouter (et non le navigator impératif `pushNamedAndRemoveUntil`) pour
     // rester cohérent avec les gardes du `redirect`.
-    GoRouter.of(context).go(route);
+    GoRouter.of(context).go(intent.navigationPath);
   }
 
   // --- Time helpers --------------------------------------------------------
@@ -728,15 +813,9 @@ class PushNotificationService {
       'PushNotificationService: tapped (id: ${response.id}, payload: $payload)',
     );
 
-    final route = _routeFromPayload(payload);
-    notifOpenedTracker(route);
-    openRoute(route);
-  }
-
-  static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) {
-      return '/flux-continu';
-    }
-    return payload.substring('route:'.length);
+    // Analytics : on garde la route brute du payload (avec sa query, ex.
+    // `?section=bonnes`) — plus discriminante que la seule route de navigation.
+    notifOpenedTracker(NotificationIntent.rawRouteFromPayload(payload));
+    routeIntent(NotificationIntent.parseFromLocalPayload(payload));
   }
 }

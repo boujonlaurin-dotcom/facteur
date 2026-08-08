@@ -499,6 +499,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   @override
   void initState() {
     super.initState();
+    // INVARIANT : ne jamais réinitialiser ici `selectedEditionDateProvider` ni
+    // `pendingFeedSectionKeyProvider` — `PushNotificationService.routeIntent`
+    // les pose juste avant de naviguer ici et compte sur leur survie au
+    // montage. Le retour « Aujourd'hui » passe par `_backToToday`.
+
     // Capture le service analytics tant que `ref` est valide (cf. _analytics).
     _analytics = ref.read(analyticsServiceProvider);
     // Observe le cycle de vie pour ré-actualiser L'Essentiel au retour au
