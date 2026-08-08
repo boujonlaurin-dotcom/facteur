@@ -5,13 +5,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../config/routes.dart';
+import '../../features/flux_continu/providers/pending_feed_section_provider.dart';
+import '../../features/flux_continu/providers/selected_edition_date_provider.dart';
+import '../../features/flux_continu/providers/tournee_order_prefs_provider.dart';
 import '../api/notification_preferences_api_service.dart';
+import 'notification_intent.dart';
 import 'posthog_service.dart';
 
 /// Variante de copy de la notification quotidienne.
@@ -97,8 +103,40 @@ class PushNotificationService {
 
     await retireLegacyAlertsChannel();
 
+    // Cold-launch depuis une notif LOCALE : tapée app tuée, elle n'emprunte pas
+    // le cold-launch FCM (`getInitialMessage`) mais ce chemin-ci, qui n'était
+    // jamais lu. Sans ça, une notif bonnes nouvelles / veille tapée app tuée ne
+    // posait aucun état de section. Le rejeu post-auth, lui, est déjà géré par
+    // le `redirect` via [takePendingRoute] — inutile de doubler ce gate ici.
+    try {
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp ?? false) {
+        _routeIntentWhenMounted(
+          NotificationIntent.parseFromLocalPayload(
+            launch!.notificationResponse?.payload,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('PushNotificationService: launch details failed: $e');
+    }
+
     _initialized = true;
     debugPrint('PushNotificationService: Initialized successfully');
+  }
+
+  /// Applique un intent de cold-launch dès que le navigator existe.
+  ///
+  /// [init] tourne juste après `runApp` : le navigator est en principe déjà
+  /// monté, mais une frame de battement suffit à le garantir au tout premier
+  /// boot. Pas d'attente de l'auth ici — [routeIntent] met la cible de côté et
+  /// le `redirect` la rejoue (cf. [takePendingRoute]).
+  static void _routeIntentWhenMounted(NotificationIntent intent) {
+    if (_navigatorKey?.currentContext != null) {
+      routeIntent(intent);
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => routeIntent(intent));
   }
 
   Future<bool> requestPermission() async {
@@ -370,7 +408,13 @@ class PushNotificationService {
       ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: 'route:/digest?serein=1',
+      // Deep-link section (#2) : le tap scrolle vers la section Bonnes Nouvelles
+      // au lieu de retomber en haut de l'Essentiel. `serein` n'est plus forcé —
+      // la section s'affiche dans le flux normal, indépendamment du toggle.
+      payload: NotificationIntent.encodeLocalPayload(
+        RoutePaths.fluxContinu,
+        const {'section': kTourneeBonnesKey},
+      ),
     );
 
     debugPrint(
@@ -572,7 +616,12 @@ class PushNotificationService {
         android: androidDetails,
         iOS: iosDetails,
       ),
-      payload: 'route:$route',
+      // Le digest FCM est data-only sur Android : la notif est rendue ICI, donc
+      // son tap emprunte le pipeline LOCAL (jamais `_openMessage`). On reporte
+      // donc les clés de routing du `data` sur le payload (cf.
+      // `NotificationIntent.encodeLocalPayload`) — sans ça `route:/digest` perd
+      // la date et un tap de la veille rouvrait l'Essentiel vivant du jour (#1).
+      payload: NotificationIntent.encodeLocalPayload(route, data),
     );
   }
 
@@ -739,6 +788,27 @@ class PushNotificationService {
     _pendingRoute = null;
   }
 
+  /// Applique un [NotificationIntent] : pose l'état d'édition + de section via
+  /// le container Riverpod (contexte du navigator racine) PUIS délègue la
+  /// navigation à [openRoute]. Poser avant de naviguer suffit parce que
+  /// `FluxContinuScreen` ne réinitialise pas ces providers à l'entrée
+  /// (invariant commenté dans son `initState`) — l'état survit donc aussi au
+  /// renvoi sur le splash, dont seule la *route* a besoin d'être rejouée.
+  /// Pattern container-driven repris de `morning_ritual_screen._openSection`.
+  static void routeIntent(NotificationIntent intent) {
+    final context = _navigatorKey?.currentContext;
+    if (context != null && intent.targetsFeed) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      container.read(selectedEditionDateProvider.notifier).state =
+          intent.edition;
+      // Section toujours explicite : `null` purge une clé restée d'un tap
+      // précédent, qui sinon se consommerait au prochain passage sur le feed.
+      container.read(pendingFeedSectionKeyProvider.notifier).state =
+          intent.section;
+    }
+    openRoute(intent.navigationPath);
+  }
+
   static void openRoute(String route) {
     // Mise de côté AVANT la navigation : si le `go` ci-dessous est absorbé par
     // le splash (auth pas encore résolue), le `redirect` reprendra la cible.
@@ -791,15 +861,9 @@ class PushNotificationService {
       'PushNotificationService: tapped (id: ${response.id}, payload: $payload)',
     );
 
-    final route = _routeFromPayload(payload);
-    notifOpenedTracker(route);
-    openRoute(route);
-  }
-
-  static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) {
-      return '/flux-continu';
-    }
-    return payload.substring('route:'.length);
+    // Analytics : on garde la route brute du payload (avec sa query, ex.
+    // `?section=bonnes`) — plus discriminante que la seule route de navigation.
+    notifOpenedTracker(NotificationIntent.rawRouteFromPayload(payload));
+    routeIntent(NotificationIntent.parseFromLocalPayload(payload));
   }
 }
