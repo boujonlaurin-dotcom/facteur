@@ -43,15 +43,9 @@ class EssentielHiFiCard extends ConsumerStatefulWidget {
   final List<EssentielArticle> articles;
   final void Function(EssentielArticle article) onTapArticle;
 
-  /// Nb d'articles frais publiés depuis ce matin (`new_since_this_morning`).
-  /// **Plomberie inerte** depuis l'itération PO 33.1 : la pastille « N nouveaux
-  /// articles » a été retirée (décision PO). Conservé pour ne pas casser la
-  /// chaîne provider→section→carte ; plus rendu.
-  final int newSinceMorning;
-
   /// Carrousel du jour, source des articles réinjectés par « Voir d'autres
-  /// articles » quand l'utilisateur a gardé moins de 2 articles au tri (itération
-  /// PO 33.1). `null` ⇒ pas d'articles en plus à proposer.
+  /// articles » au tri terminé (itération PO 33.1). `null` ⇒ pas d'articles en
+  /// plus à proposer.
   final FeedCarouselData? carousel;
 
   /// Jour Tournée courant. Non-null ⇒ chaque tuile compte une impression
@@ -69,7 +63,6 @@ class EssentielHiFiCard extends ConsumerStatefulWidget {
     super.key,
     required this.articles,
     required this.onTapArticle,
-    this.newSinceMorning = 0,
     this.carousel,
     this.impressionDayKey,
     this.sectionIndex = 0,
@@ -114,6 +107,48 @@ class EssentielHiFiCard extends ConsumerStatefulWidget {
 class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   bool _startScheduled = false;
 
+  // Mémo du pool adressable (slate du jour + articles du carrousel adaptés).
+  // Les deux entrées sont des champs du widget, qui ne dépendent d'aucun
+  // provider watché ici — alors que la carte, elle, se reconstruit à **chaque**
+  // décision de tri et à chaque émission des providers de session. Sans ce
+  // mémo, chaque rebuild réallouait un Set, jusqu'à 5 `EssentielArticle` et
+  // deux listes, presque toujours pour rien (le pool n'est lu que sur les
+  // chemins de tri).
+  List<EssentielArticle>? _memoArticles;
+  FeedCarouselData? _memoCarousel;
+  List<EssentielArticle> _memoExtra = const [];
+  List<EssentielArticle> _memoPool = const [];
+
+  void _refreshPoolMemo() {
+    final articles = widget.articles;
+    final carousel = widget.carousel;
+    if (identical(_memoArticles, articles) &&
+        identical(_memoCarousel, carousel)) {
+      return;
+    }
+    _memoArticles = articles;
+    _memoCarousel = carousel;
+
+    // Articles réinjectables (« Voir d'autres articles ») : les items du
+    // carrousel du jour non déjà dans le slate, adaptés en articles triables.
+    // Rangs au-delà du slate d'origine (le backend acceptera leur tri avec le
+    // `slate_size` **étendu** que `decide()` envoie après `extendSlate`).
+    final seen = {for (final a in articles) a.contentId};
+    final extra = <EssentielArticle>[];
+    final items = carousel?.items ?? const [];
+    for (var i = 0; i < items.length; i++) {
+      if (!seen.add(items[i].id)) continue; // déjà dans le slate
+      extra.add(
+        EssentielArticle.fromContent(items[i], rank: articles.length + i + 1),
+      );
+    }
+    _memoExtra = List.unmodifiable(extra);
+    // Pool adressable par la pile : slate du jour + articles injectables. Le gel
+    // du slate (`startIfNeeded`) n'utilise que `articles` (les 5) — les items du
+    // carrousel ne rejoignent le slate que via `extendSlate`.
+    _memoPool = List.unmodifiable([...articles, ...extra]);
+  }
+
   /// Fige le slate du jour. Appelé depuis `build` **uniquement** quand toutes
   /// les conditions sont déjà réunies, et exécuté après la frame : muter un
   /// provider pendant le build est interdit par Riverpod.
@@ -140,25 +175,9 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     final accent = colors.sectionEssentiel;
     final spec = ref.watch(displayModeSpecProvider);
 
-    // Articles réinjectables (« Voir d'autres articles ») : les items du
-    // carrousel du jour non déjà dans le slate, adaptés en articles triables.
-    // Rangs au-delà du slate d'origine (le backend acceptera leur tri avec le
-    // `slate_size` **étendu** que `decide()` envoie après `extendSlate`).
-    final carousel = widget.carousel;
-    final existingIds = {for (final a in articles) a.contentId};
-    final carouselArticles = <EssentielArticle>[
-      if (carousel != null)
-        for (var i = 0; i < carousel.items.length; i++)
-          if (existingIds.add(carousel.items[i].id))
-            EssentielArticle.fromContent(
-              carousel.items[i],
-              rank: articles.length + i + 1,
-            ),
-    ];
-    // Pool adressable par la pile : slate du jour + articles injectables. Le gel
-    // du slate (`startIfNeeded`) n'utilise que `articles` (les 5) — les items du
-    // carrousel ne rejoignent le slate que via `extendSlate`.
-    final pool = [...articles, ...carouselArticles];
+    _refreshPoolMemo();
+    final carouselArticles = _memoExtra;
+    final pool = _memoPool;
 
     // Un seul point de lecture des providers de session : l'état dérivé descend
     // ensuite dans les tuiles, qui restent des `StatelessWidget`.
@@ -232,14 +251,14 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     } else {
       passiveArticles = articles;
     }
-    // « Voir d'autres articles » : proposé au tri terminé quand l'utilisateur a
-    // gardé peu (< 2) ET qu'il reste des items de carrousel à injecter (jamais
-    // deux fois les mêmes → après injection, ils sont dans le slate).
+    // « Voir d'autres articles » : proposé au tri terminé dès qu'il reste des
+    // items de carrousel à injecter — jamais deux fois les mêmes, puisqu'après
+    // injection ils appartiennent au slate. Liste vide ⇒ le bouton est masqué,
+    // c'est le seul gate (`_TriageDoneActions` le dérive lui-même).
     final injectableIds = [
       for (final a in carouselArticles)
         if (!triage.slate.contains(a.contentId)) a.contentId,
     ];
-    final canExtendSlate = injectableIds.isNotEmpty;
     final lead = passiveArticles.isNotEmpty ? passiveArticles.first : null;
     final remaining = passiveArticles.length > 1
         ? passiveArticles.sublist(
@@ -333,10 +352,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
               // devenu redondant — la paire est là dans tous les cas.
               if (triageDone) ...[
                 if (lead == null) const _NothingKeptNotice(),
-                _TriageDoneActions(
-                  canExtend: canExtendSlate,
-                  injectableIds: injectableIds,
-                ),
+                _TriageDoneActions(injectableIds: injectableIds),
               ],
             ],
           ],
@@ -355,14 +371,12 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
 /// simplement gagné en lisibilité (texte primaire w600 au lieu d'un gris
 /// secondaire), il ne s'encadre pas.
 class _TriageDoneActions extends ConsumerWidget {
-  /// Le pool injectable est-il non vide ? `false` ⇒ « Plus d'articles » est
-  /// **masqué** : proposer d'élargir un slate déjà épuisé serait un bouton mort.
-  final bool canExtend;
-
   /// `contentId` des articles du carrousel du jour pas encore dans le slate.
+  /// Vide ⇒ « Plus d'articles » est **masqué** : proposer d'élargir un slate
+  /// déjà épuisé serait un bouton mort.
   final List<String> injectableIds;
 
-  const _TriageDoneActions({required this.canExtend, required this.injectableIds});
+  const _TriageDoneActions({required this.injectableIds});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -384,7 +398,7 @@ class _TriageDoneActions extends ConsumerWidget {
                 .copyWith(fontWeight: FontWeight.w600),
           ),
         ),
-        if (canExtend) ...[
+        if (injectableIds.isNotEmpty) ...[
           const SizedBox(width: 4),
           TextButton(
             style: style,

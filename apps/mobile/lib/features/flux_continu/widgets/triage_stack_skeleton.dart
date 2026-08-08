@@ -67,14 +67,17 @@ class TriageStackSkeleton extends StatelessWidget {
                       color: base,
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: kTriageCardPaddingH,
+                        vertical: kTriageCardPaddingV,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           bar(width: 96, height: 11),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: FacteurSpacing.space3),
                           bar(width: double.infinity, height: 14),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: FacteurSpacing.space2),
                           bar(width: 210, height: 14),
                         ],
                       ),
@@ -102,10 +105,10 @@ class TriageStackSkeleton extends StatelessWidget {
               // ancrée en haut) : la silhouette annonce la géométrie réelle.
               Positioned.fill(
                 child: Transform.scale(
-                  scale: 0.96,
+                  scale: kTriageBackCardScale,
                   alignment: Alignment.topCenter,
                   child: Opacity(
-                    opacity: 0.5,
+                    opacity: kTriageBackCardOpacity,
                     child: triageCard(detailed: false),
                   ),
                 ),
@@ -115,20 +118,32 @@ class TriageStackSkeleton extends StatelessWidget {
           ),
         ),
         // La **vraie** silhouette de la barre d'actions (`_ActionBar`) : deux
-        // ronds de 44 puis la pilule « Je garde » qui prend le reste. La
-        // précédente (3 pastilles de 52 centrées) annonçait une barre qui
-        // n'existe pas, donc l'attente ne ressemblait pas au contenu.
+        // ronds puis la pilule « Je garde » qui prend le reste, aux mêmes
+        // constantes partagées que la barre elle-même. La précédente (3
+        // pastilles de 52 centrées) annonçait une barre qui n'existe pas, donc
+        // l'attente ne ressemblait pas au contenu.
         SizedBox(
           height: kTriageActionBarHeight,
           child: Center(
             child: Row(
               children: [
-                bar(width: 44, height: 44, radius: FacteurRadius.pill),
-                const SizedBox(width: 10),
-                bar(width: 44, height: 44, radius: FacteurRadius.pill),
-                const SizedBox(width: 10),
+                bar(
+                  width: kTriageActionButtonSize,
+                  height: kTriageActionButtonSize,
+                  radius: FacteurRadius.pill,
+                ),
+                const SizedBox(width: kTriageActionGap),
+                bar(
+                  width: kTriageActionButtonSize,
+                  height: kTriageActionButtonSize,
+                  radius: FacteurRadius.pill,
+                ),
+                const SizedBox(width: kTriageActionGap),
                 Expanded(
-                  child: bar(height: 44, radius: FacteurRadius.pill),
+                  child: bar(
+                    height: kTriageActionButtonSize,
+                    radius: FacteurRadius.pill,
+                  ),
                 ),
               ],
             ),

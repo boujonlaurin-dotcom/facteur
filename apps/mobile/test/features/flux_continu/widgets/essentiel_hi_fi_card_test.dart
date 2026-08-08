@@ -775,18 +775,16 @@ void main() {
 
     testWidgets(
         'la pastille « N nouveaux articles » a été retirée (décision PO 33.1) '
-        '— rendue nulle part, même avec un delta > 0', (tester) async {
+        '— la carte ne l\'expose plus et n\'en rend aucune trace', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
-          newSinceMorning: 9,
           onTapArticle: (_) {},
         ),
       ));
 
       expect(find.textContaining('nouveaux articles'), findsNothing);
       expect(find.textContaining('nouvel article'), findsNothing);
-      expect(find.text('9+'), findsNothing);
     });
   });
 

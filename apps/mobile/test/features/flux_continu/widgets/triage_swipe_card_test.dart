@@ -226,8 +226,11 @@ void main() {
     await pumpHarness(tester, onGestureProgress: progress.add);
     await tester.pump();
 
-    // Au repos : rien à promouvoir.
-    expect(progress.last, 0);
+    // Au repos : **rien n'est émis du tout**. L'avancée part des points qui
+    // mutent le geste, jamais de `build` — sinon une carte immobile allouait une
+    // closure et un post-frame callback à chaque frame, pour une valeur qui ne
+    // bougeait pas.
+    expect(progress.where((p) => p != 0), isEmpty);
 
     await tester.drag(find.byType(TriageSwipeCard), swipeRight);
     await tester.pump();

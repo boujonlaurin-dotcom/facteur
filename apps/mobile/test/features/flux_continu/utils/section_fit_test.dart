@@ -279,40 +279,33 @@ void main() {
 
   // ── Pile de tri (Story 33.1) ───────────────────────────────────────────────
   //
-  // Ce que ces tests gardent, au-delà de l'arithmétique : la carte réserve dès
-  // le départ le **pire des deux états** qu'elle traversera (pic de tri vs état
-  // final). Sans ça la carte grandit sous le doigt et le feed saute.
+  // Ce que ces tests gardent : la carte de tri a deux hauteurs **discrètes**
+  // (avec / sans image) et jamais un fit-to-content, sans quoi la barre
+  // d'actions sauterait sous le pouce d'un article à l'autre. La géométrie
+  // partagée entre la vraie pile et sa silhouette vit dans ces constantes — si
+  // l'une des deux la re-transcrit à la main, l'attente cesse de ressembler au
+  // contenu (le défaut corrigé par l'itération PO 33.1).
 
-  group('triageReservedHeight', () {
-    double reserved(int n) => triageReservedHeight(
-          slateSize: n,
-          chromeHeight: kHeroChromeHeight,
-          leadHeight: kHeroLeadHeight,
-          mediumHeight: kHeroMediumHeight,
-        );
-
-    test('croît avec la taille du slate', () {
-      expect(reserved(2), greaterThan(reserved(1)));
-      expect(reserved(5), greaterThan(reserved(2)));
+  group('géométrie de la pile de tri', () {
+    test('la carte sans image est plus courte que la carte avec image', () {
+      expect(kTriageCardTextOnlyHeight, lessThan(kTriageCardHeight));
     });
 
-    test('couvre l\'état final autant que le pic de tri', () {
-      for (var n = 1; n <= 5; n++) {
-        final finalState =
-            kHeroChromeHeight + kHeroLeadHeight + (n - 1) * kHeroMediumHeight;
-        final peak = kHeroChromeHeight +
-            kTriageProgressHeight +
-            kTriageCardHeight +
-            kTriageActionBarHeight +
-            (n - 1) * kTriageKeptSlotHeight;
-        expect(reserved(n), greaterThanOrEqualTo(finalState));
-        expect(reserved(n), greaterThanOrEqualTo(peak));
-      }
+    test('la carte avec image réserve son bandeau en plus du texte', () {
+      expect(kTriageCardHeight - kTriageCardImageHeight,
+          greaterThan(kTriageCardPaddingV * 2));
     });
 
-    test('traite un slate vide comme un slate de 1', () {
-      expect(reserved(0), reserved(1));
+    test('la barre d\'actions contient ses boutons ronds et leurs marges', () {
+      expect(
+        kTriageActionBarHeight,
+        greaterThanOrEqualTo(kTriageActionButtonSize + kTriageActionGap * 2),
+      );
     });
 
+    test('la carte du dessous est en retrait, jamais agrandie', () {
+      expect(kTriageBackCardScale, lessThan(1.0));
+      expect(kTriageBackCardOpacity, lessThan(1.0));
+    });
   });
 }

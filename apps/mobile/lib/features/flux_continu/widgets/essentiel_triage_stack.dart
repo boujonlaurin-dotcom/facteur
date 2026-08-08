@@ -40,8 +40,9 @@ import 'triage_swipe_card.dart';
 /// ([kTriageCardTextOnlyHeight]). Jamais du fit-to-content — la barre d'actions
 /// glisse d'un article à l'autre (`AnimatedSize`), elle ne saute pas.
 class EssentielTriageStack extends ConsumerStatefulWidget {
-  /// Pool des articles adressables par la pile (le slate figé du jour + les
-  /// articles injectés par « Voir d'autres articles »), indexé par `contentId`.
+  /// Pool des articles adressables par la pile : le slate figé du jour, suivi
+  /// des articles injectables par « Voir d'autres articles ». C'est une liste ;
+  /// l'index par `contentId` est construit au build, à un seul endroit.
   final List<EssentielArticle> articles;
   final EssentielTriageState triage;
 
@@ -188,7 +189,20 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
 
     // Un seul point de lecture de l'état des sources : les cartes et les lignes
     // gardées restent des `StatelessWidget` et reçoivent un `InterestState`.
+    //
+    // Indexé une fois par build : `UserSourcesState.stateOf` est un scan
+    // linéaire, et la pile l'interrogerait sinon une fois par article rendu
+    // (carte du dessus + carte du dessous + chaque ligne gardée) à chaque
+    // décision de tri.
     final sourcesState = ref.watch(userSourcesStateProvider).valueOrNull;
+    final stateBySourceId = <String, InterestState>{};
+    if (sourcesState != null) {
+      // `putIfAbsent` et non `[]=` : `stateOf` retient la **première**
+      // occurrence, on garde exactement la même règle en cas de doublon.
+      for (final s in sourcesState.sources) {
+        stateBySourceId.putIfAbsent(s.sourceId, () => s.state);
+      }
+    }
     InterestState? sourceStateOf(EssentielArticle a) {
       final id = a.sourceId;
       if (sourcesState == null || id == null) {
@@ -196,7 +210,9 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
         // source suivie doit montrer sa coche sans attendre le réseau.
         return a.isFollowedSource ? InterestState.followed : null;
       }
-      return sourcesState.stateOf(id);
+      // Même défaut que `UserSourcesState.stateOf` : une source inconnue du
+      // catalogue est « non suivie », pas « état indéterminé ».
+      return stateBySourceId[id] ?? InterestState.unfollowed;
     }
 
     // Hauteur du slot : deux valeurs discrètes (avec / sans image), décidée à la
@@ -450,21 +466,13 @@ class _KeptRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            article.sourceName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: colors.textSecondary,
-                            ),
-                          ),
-                        ),
-                        _SourceStateMark(state: sourceState),
-                      ],
+                    _SourceLine(
+                      name: article.sourceName,
+                      state: sourceState,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -550,6 +558,36 @@ class _SourceStateMark extends StatelessWidget {
   }
 }
 
+/// Nom de source suivi de son éventuelle marque d'intérêt — sur la carte à
+/// trier comme sur les lignes gardées. Le nom s'élide avant la marque : le
+/// signal « je suis cette source » ne doit jamais être ce qui saute.
+class _SourceLine extends StatelessWidget {
+  final String name;
+  final TextStyle style;
+  final InterestState? state;
+
+  const _SourceLine({
+    required this.name,
+    required this.style,
+    required this.state,
+  });
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          Flexible(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: style,
+            ),
+          ),
+          _SourceStateMark(state: state),
+        ],
+      );
+}
+
 /// Barre d'actions compacte : ✕ · signet · bouton plein « Je garde ».
 ///
 /// Doublon volontaire du geste : le tri doit rester possible **sans swipe**
@@ -578,14 +616,14 @@ class _ActionBar extends StatelessWidget {
             color: colors.textSecondary,
             onTap: onPass,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: kTriageActionGap),
           _RoundButton(
             icon: PhosphorIcons.bookmarkSimple(),
             semanticLabel: 'Plus tard',
             color: colors.textSecondary,
             onTap: onLater,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: kTriageActionGap),
           Expanded(
             child: Semantics(
               button: true,
@@ -597,7 +635,7 @@ class _ActionBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(FacteurRadius.pill),
                   onTap: onKeep,
                   child: SizedBox(
-                    height: 44,
+                    height: kTriageActionButtonSize,
                     child: Center(
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -658,8 +696,8 @@ class _RoundButton extends StatelessWidget {
           customBorder: const CircleBorder(),
           onTap: onTap,
           child: SizedBox(
-            width: 44,
-            height: 44,
+            width: kTriageActionButtonSize,
+            height: kTriageActionButtonSize,
             child: Icon(icon, size: 20, color: color),
           ),
         ),
@@ -709,22 +747,14 @@ class _TriageArticleCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          article.sourceName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                      ),
-                      _SourceStateMark(state: sourceState),
-                    ],
+                  _SourceLine(
+                    name: article.sourceName,
+                    state: sourceState,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: colors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Expanded(

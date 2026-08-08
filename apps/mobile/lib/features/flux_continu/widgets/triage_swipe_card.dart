@@ -87,6 +87,11 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
   /// carte translatée hors écran + fondue (« carte grisée figée »).
   Timer? _exitGuard;
 
+  /// Largeur d'écran relevée au dernier [build]. Sert de dénominateur à
+  /// [_effectiveDx] / [_emitProgress], appelés depuis des callbacks où lire
+  /// `MediaQuery` serait hors phase.
+  double _screenWidth = 0;
+
   /// Aligné sur `SwipeToOpenCard._threshold`.
   static const double _threshold = 0.25;
 
@@ -130,6 +135,10 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
       _dragExtent = 0;
       _resetController.reset();
       _exitController.reset();
+      // La carte fraîche est au repos : la pile doit repartir d'une promotion
+      // nulle, sinon la nouvelle carte du dessous hérite de l'avancée de la
+      // précédente.
+      _emitProgress();
     }
   }
 
@@ -141,14 +150,43 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
     super.dispose();
   }
 
+  /// Décalage horizontal rendu, geste et sortie confondus. Getter plutôt que
+  /// calcul local à [build] : [_emitProgress] a besoin de la même valeur hors
+  /// phase de build.
+  double get _effectiveDx => _exiting
+      ? _dragExtent +
+          _exitDirection * _screenWidth * 1.2 * _exitController.value
+      : _dragExtent;
+
+  bool get _exiting => _exitController.isAnimating || _exitController.value > 0;
+
+  /// Remonte l'avancée normalisée du geste (`0..1`, 1 = une demi-largeur d'écran
+  /// parcourue) pour que la pile promeuve la carte du dessous **pendant** la
+  /// course plutôt qu'à son terme.
+  ///
+  /// Appelé depuis les points qui *mutent* l'état du geste, jamais depuis
+  /// [build] : émettre au build allouait une closure et un `addPostFrameCallback`
+  /// à chaque frame (y compris sur une carte au repos), et faisait atterrir la
+  /// promotion **après** le layout — soit une frame de retard permanent sur la
+  /// carte qu'elle est censée suivre.
+  void _emitProgress() {
+    final onProgress = widget.onGestureProgress;
+    if (onProgress == null || _screenWidth <= 0) return;
+    onProgress((_effectiveDx.abs() / (_screenWidth * 0.5))
+        .clamp(0.0, 1.0)
+        .toDouble());
+  }
+
   void _onResetTick() {
     setState(() {
       _dragExtent = _resetStartExtent * (1 - _resetController.value);
     });
+    _emitProgress();
   }
 
   void _onExitTick() {
     setState(() {});
+    _emitProgress();
   }
 
   void _handleDragStart(DragStartDetails details) {
@@ -162,6 +200,7 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
   void _handleDragUpdate(DragUpdateDetails details) {
     if (!_dragUnderway || _exitController.isAnimating) return;
     setState(() => _dragExtent += details.primaryDelta ?? 0);
+    _emitProgress();
   }
 
   void _handleDragEnd(DragEndDetails details) {
@@ -185,9 +224,7 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
       return;
     }
 
-    if (_dragExtent == 0) return;
-    _resetStartExtent = _dragExtent;
-    _resetController.forward(from: 0);
+    _springBack();
   }
 
   /// Perte d'arène de gestes (long-press qui gagne, scroll parent, annulation
@@ -196,6 +233,14 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
   void _handleDragCancel() {
     if (!_dragUnderway || _hasTriggered) return;
     _dragUnderway = false;
+    _springBack();
+  }
+
+  /// Retour élastique à `dx = 0` — le geste n'a pas franchi le seuil, ou l'arène
+  /// a été perdue. Les ticks de `_resetController` remontent l'avancée au fur et
+  /// à mesure, donc la carte du dessous redescend en même temps que celle du
+  /// dessus revient.
+  void _springBack() {
     if (_dragExtent == 0) return;
     _resetStartExtent = _dragExtent;
     _resetController.forward(from: 0);
@@ -230,21 +275,18 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
     _pendingExitDone = null;
     _exitGuard?.cancel();
     _exitGuard = null;
-    // Le reset du contrôleur est gaté sur le montage **et doit le rester** :
+    // Assainissement gaté sur le montage **et qui doit le rester** :
     // `State.mounted` ne retombe qu'à `unmount`, donc `!mounted` ⇒ `dispose` est
-    // déjà passé et `_exitController` n'a plus de ticker (toute lecture/écriture
-    // y lèverait). Il n'y a alors plus rien à assainir : ce State ne se
-    // remontera pas, la prochaine carte en aura un neuf. Le nettoyage du geste
-    // reste symétrique dans les deux branches, lui.
+    // déjà passé et `_exitController` n'a plus de ticker (toute lecture y
+    // lèverait). Il n'y a alors plus rien à assainir non plus : ce State ne se
+    // remontera pas, la prochaine carte en aura un neuf.
     if (mounted) {
       _exitController.reset();
       setState(() {
         _dragExtent = 0;
         _hasTriggered = false;
       });
-    } else {
-      _hasTriggered = false;
-      _dragExtent = 0;
+      _emitProgress();
     }
     onDone();
   }
@@ -263,14 +305,14 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    // Mémorisé pour que [_emitProgress] et [_effectiveDx] disposent de la
+    // largeur hors phase de build (ticks d'anim, handlers de geste), sans
+    // relire `MediaQuery` depuis un callback.
+    _screenWidth = MediaQuery.of(context).size.width;
     final colors = context.facteurColors;
 
-    final exiting = _exitController.isAnimating || _exitController.value > 0;
-    final effectiveDx = exiting
-        ? _dragExtent +
-            _exitDirection * screenWidth * 1.2 * _exitController.value
-        : _dragExtent;
+    final exiting = _exiting;
+    final effectiveDx = _effectiveDx;
     final opacity = exiting ? (1 - _exitController.value).clamp(0.0, 1.0) : 1.0;
 
     // Un tampon ne doit jamais apparaître sur une carte que personne n'a
@@ -284,19 +326,6 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
     final passStamp = gestureActive
         ? (-effectiveDx / _stampFullOpacityAt).clamp(0.0, 1.0).toDouble()
         : 0.0;
-
-    // Avancée normalisée du geste, remontée à la pile pour qu'elle promeuve la
-    // carte du dessous **pendant** la course plutôt qu'à son terme. Émise après
-    // la frame : notifier un `ValueNotifier` pendant le build ferait rebuilder
-    // un ancêtre en cours de layout.
-    final onProgress = widget.onGestureProgress;
-    if (onProgress != null) {
-      final progress =
-          (effectiveDx.abs() / (screenWidth * 0.5)).clamp(0.0, 1.0).toDouble();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) onProgress(progress);
-      });
-    }
 
     return GestureDetector(
       onHorizontalDragStart: _handleDragStart,
@@ -380,7 +409,10 @@ class _Stamp extends StatelessWidget {
       child: Transform.rotate(
         angle: angle,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(
+            horizontal: FacteurSpacing.space3,
+            vertical: 6,
+          ),
           decoration: BoxDecoration(
             color: color,
             borderRadius: BorderRadius.circular(FacteurRadius.small),
