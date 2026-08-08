@@ -49,12 +49,11 @@ class ProfileScreen extends ConsumerWidget {
                   subtitle: 'Gérer vos informations',
                   onTap: () => context.pushNamed(RouteNames.account),
                 ),
-                if (!kIsWeb)
-                  _Tile(
-                    icon: Icons.notifications_none,
-                    title: 'Notifications',
-                    onTap: () => context.pushNamed(RouteNames.notifications),
-                  ),
+                // La tuile « Notifications » a été retirée (story 30.5) : elle
+                // doublait la tuile « Mes alertes » de la sheet Réglages et
+                // ajoutait un 4ᵉ point d'entrée au même réglage. Les réglages
+                // de canal sont désormais atteints depuis le pied de
+                // « Mes alertes ».
               ],
             ),
             const SizedBox(height: FacteurSpacing.space6),
