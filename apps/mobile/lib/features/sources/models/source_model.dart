@@ -132,6 +132,13 @@ class Source {
   final double? scoreUx;
   final List<String> granularTopics;
   final List<String> secondaryThemes;
+
+  /// Thèmes que la source **publie réellement** (top couverture 90 j hors thème
+  /// principal, dérivée côté backend). Sert au recommander d'onboarding à
+  /// repérer les généralistes diluées (« 40 % de sport ») quand l'utilisateur
+  /// n'a pas coché ce thème. Liste vide = couverture inconnue (source récente
+  /// ou trop peu volumineuse) : jamais pénalisante.
+  final List<String> coverageThemes;
   final String sourceTier;
   final int followerCount;
 
@@ -174,6 +181,7 @@ class Source {
     this.scoreUx,
     this.granularTopics = const [],
     this.secondaryThemes = const [],
+    this.coverageThemes = const [],
     this.sourceTier = 'mainstream',
     this.followerCount = 0,
     this.articles30d = 0,
@@ -206,6 +214,7 @@ class Source {
     double? scoreUx,
     List<String>? granularTopics,
     List<String>? secondaryThemes,
+    List<String>? coverageThemes,
     String? sourceTier,
     int? followerCount,
     int? articles30d,
@@ -237,6 +246,7 @@ class Source {
       scoreUx: scoreUx ?? this.scoreUx,
       granularTopics: granularTopics ?? this.granularTopics,
       secondaryThemes: secondaryThemes ?? this.secondaryThemes,
+      coverageThemes: coverageThemes ?? this.coverageThemes,
       sourceTier: sourceTier ?? this.sourceTier,
       followerCount: followerCount ?? this.followerCount,
       articles30d: articles30d ?? this.articles30d,
@@ -281,6 +291,9 @@ class Source {
                 const [],
         secondaryThemes:
             (json['secondary_themes'] as List<dynamic>?)?.cast<String>() ??
+                const [],
+        coverageThemes:
+            (json['coverage_themes'] as List<dynamic>?)?.cast<String>() ??
                 const [],
         sourceTier: (json['source_tier'] as String?) ?? 'mainstream',
         followerCount: (json['follower_count'] as int?) ?? 0,

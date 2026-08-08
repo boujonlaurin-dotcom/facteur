@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Inscription",
+      "summary": "Les médias proposés pendant l'inscription collent enfin à tes centres d'intérêt : un quotidien très sportif ne t'ouvre plus la sélection si tu n'as pas coché Sport, et une source pointue sur un sujet que tu suis passe devant une grosse généraliste. Facteur regarde ce que chaque média publie vraiment, pas seulement son étiquette. Un média que tu gardes d'un geste reste prioritaire, quoi qu'il arrive."
+    },
+    {
       "tag": "Ton Essentiel",
       "summary": "Ta carte du jour devient une pile à trier : un article à la fois, glisse à droite pour le garder, à gauche pour passer, ou mets-le de côté pour plus tard. Chaque article se présente avec son image, le nombre de rédactions qui traitent le sujet et le niveau de divergence entre elles, de quoi choisir sans ouvrir. Un appui long ouvre l'aperçu. Ta liste de lecture se construit sous ton doigt, sans quitter le fil. Une fois le tri fini, la carte n'affiche que ce que tu as gardé, pas ce que tu as écarté. Tes choix ne changent rien à ce que l'appli te propose pour l'instant : ils servent d'abord à mesurer si le classement des articles tape juste."
     },

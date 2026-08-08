@@ -138,7 +138,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             onPressed: _toggleManifesto,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              foregroundColor: colors.textSecondary,
+              foregroundColor: colors.primary,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -149,6 +149,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       : OnboardingStrings.welcomeManifestoButton,
                   style: const TextStyle(
                     fontSize: 15,
+                    fontWeight: FontWeight.w600,
                     decoration: TextDecoration.underline,
                   ),
                 ),

@@ -13,6 +13,7 @@ import '../../../sources/widgets/source_type_badge.dart';
 import '../../data/source_recommender.dart';
 import '../../onboarding_strings.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../widgets/source_search_loader.dart';
 
 /// Q9c : swipe de calibration (inconditionnel, cœur du parcours v7).
 ///
@@ -334,7 +335,7 @@ class _SwipeDisambiguatorQuestionState
     final sourcesAsync = ref.watch(userSourcesProvider);
 
     return sourcesAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
+      loading: () => const SourceSearchLoader(),
       error: (_, __) => Center(
         child: Text(
           OnboardingStrings.q9LoadingError,
@@ -491,32 +492,9 @@ class _SwipeDisambiguatorQuestionState
     return Positioned.fill(
       child: ColoredBox(
         color: colors.backgroundPrimary.withOpacity(0.96),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: FacteurSpacing.space6),
-            Text(
-              OnboardingStrings.swipeRefiningTitle,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: FacteurSpacing.space2),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: FacteurSpacing.space6,
-              ),
-              child: Text(
-                OnboardingStrings.swipeRefiningSubtitle,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
+        child: const SourceSearchLoader(
+          title: OnboardingStrings.swipeRefiningTitle,
+          subtitle: OnboardingStrings.swipeRefiningSubtitle,
         ),
       ),
     );
@@ -524,7 +502,7 @@ class _SwipeDisambiguatorQuestionState
 
   Widget _buildCardArea(BuildContext context, List<SpanningSource> queue) {
     if (queue.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return const SourceSearchLoader();
     }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: FacteurSpacing.space4),

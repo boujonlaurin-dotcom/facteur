@@ -20,6 +20,7 @@ import '../../widgets/onboarding_toggle_section.dart';
 import '../../widgets/premium_sources_sheet.dart';
 import '../../widgets/source_carousel.dart';
 import '../../widgets/source_catalog_section.dart';
+import '../../widgets/source_search_loader.dart';
 
 /// Q10 : page sources « sur mesure », 4 blocs numérotés (①②③④).
 ///
@@ -269,7 +270,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
         // Content
         Expanded(
           child: sourcesAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
+            loading: () => const SourceSearchLoader(),
             error: (err, _) => Center(
               child: Text(
                 OnboardingStrings.q9LoadingError,
@@ -285,7 +286,7 @@ class _SourcesQuestionState extends ConsumerState<SourcesQuestion> {
 
               final reco = _recommendation;
               if (reco == null) {
-                return const Center(child: CircularProgressIndicator());
+                return const SourceSearchLoader();
               }
 
               return _buildContent(context, reco, sources);

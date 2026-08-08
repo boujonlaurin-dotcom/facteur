@@ -151,6 +151,16 @@ class SourceService:
             has_subscription=subscriptions.get(s.id, False),
             content_count=0,  # TODO
             articles_30d=(articles_30d_map or {}).get(s.id, 0),
+            # Inputs du scoring de reco d'onboarding (100 % côté client), tous
+            # déjà chargés sur l'objet `Source` → aucune requête en plus.
+            # `secondary_themes` / `granular_topics` / `source_tier` n'avaient
+            # jamais été sérialisés ici : le catalogue mobile ne voyait que
+            # `theme`, ce qui débranchait le match par sujet, les pépites (tier
+            # `deep`) et les badges « spécialiste ».
+            secondary_themes=s.secondary_themes,
+            granular_topics=s.granular_topics,
+            source_tier=s.source_tier or "mainstream",
+            coverage_themes=s.coverage_themes,
             follower_count=follower_count,
             bias_stance=getattr(s.bias_stance, "value", "unknown"),
             reliability_score=getattr(s.reliability_score, "value", "unknown"),

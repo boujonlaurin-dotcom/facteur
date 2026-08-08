@@ -1,95 +1,101 @@
-# feat(essentiel) : le tri dans le feed — carte « Ton Essentiel » triable au swipe (33.1)
+# feat(onboarding) : reco médias « interest-aware » + polish copy
 
-Base `main`. **Une migration Alembic** (`tr01_essentiel_triage_decisions`, additive).
-Backend + mobile. Story : `docs/stories/core/33.1.tri-dans-le-feed.md`.
+## Problème
 
-## Quoi
+Pendant l'onboarding, les **premiers** médias proposés (deck à swiper +
+carrousel « Tes médias, sur mesure ») ne collaient pas aux intérêts déclarés :
+un utilisateur **sans Sport** voyait l'Équipe et Ouest-France (≈ 40 % de sport
+publié) en tête.
 
-La carte « Ton Essentiel » en tête du Flux continu n'est plus une liste passive :
-elle devient une **pile à trier**. Un article à la fois — swipe droite « Je
-garde », swipe gauche « Pas pour moi », bouton signet « Plus tard ». La liste des
-gardés se construit sous la pile, dans le feed, sans écran supplémentaire.
+## Causes racines
 
-La PR embarque aussi deux décisions PO prises pendant la construction :
+Le ranking est **100 % côté client** (`source_recommender.dart`) :
 
-1. **La vue finale, c'est ce qu'on a gardé.** Le plan V0 rendait la liste
-   inchangée une fois le tri fini — les rejetés réapparaissaient. À la relecture,
-   la liste finale ne correspondait pas aux choix. En état `done`, la carte ne
-   rend plus que `keptContentIds` (« Je garde » + « Plus tard »), dans l'ordre du
-   slate ; état vide sobre si rien n'a été gardé. **Rien n'est retiré du digest
-   côté données** : le slate reste figé pour la journée et « Trier à nouveau » le
-   rejoue en entier. C'est purement l'affichage final.
-2. **La « Lettre du jour » ne gate plus l'accès à L'Essentiel.** Cold-open, tap
-   d'onglet et tap de push atterrissent directement sur le feed. La lettre reste
-   jouée **une fois**, en fin d'onboarding, et le rewind des éditions passées
-   subsiste dans le feed.
+1. **Scoring additif sans pénalité** : `reliability high` (+1) + volume ≥ 90/30 j
+   (+2) ⇒ une généraliste fiable et active atteint **3 sans aucun match
+   thématique**, à égalité avec un vrai match de thème.
+2. **Le deck du swipe n'utilise pas `_scoreSource`** : `buildSpanningSet`
+   complétait ses pôles avec le catalogue trié sur `followerCount` ⇒ les grosses
+   audiences menaient les thèmes peu couverts.
+3. **`sources.coverage_themes` (couverture réellement publiée) n'était pas
+   sérialisée** : le client ne pouvait pas voir la dilution.
+4. **Découvert en implémentant : `_build_source_response` ne sérialisait ni
+   `secondary_themes`, ni `granular_topics`, ni `source_tier`** (jamais, depuis
+   la création du helper). Le catalogue mobile ne voyait donc que `theme` :
+   match par sujet, badges « Spécialisé en X » et pépites (tier `deep`) étaient
+   **débranchés**. En base : 61/124 curées actives ont des `granular_topics`,
+   29 sont `deep`, 17 ont des `secondary_themes`, 74 ont des `coverage_themes`.
 
-## Pourquoi
+Les points 3 et 4 vont ensemble : sans thèmes secondaires ni sujets granulaires,
+une pénalité anti-hors-intérêt aurait dégradé la reco au lieu de l'améliorer.
 
-**V0 en collecte seule.** Chaque décision est enregistrée avec son rang dans le
-slate figé, mais **aucun poids de reco ne bouge**. Le but n'est pas de
-personnaliser tout de suite : c'est de produire le jeu de données que la jauge
-CTR ne peut pas produire — des **négatifs explicites sur des articles réellement
-vus**, avec leur position. C'est l'angle mort n°1 de
-`maintenance-feed-ranking-gauge.md`. Seule exception actée par le PO : « Plus
-tard » déclenche le save existant, exactement comme le bouton signet de la carte.
+## Ce que fait la PR
 
-Le piège que le code garde activement : l'action `not_interested` existante est à
-un enum de distance, et elle ajouterait la **source entière** à
-`user_personalization.muted_sources`, sans expiration. Un test de non-régression
-négative verrouille ça (voir plus bas).
+**Backend (additif, aucune migration).** `SourceResponse.coverage_themes` +
+sérialisation de `coverage_themes` / `secondary_themes` / `granular_topics` /
+`source_tier` dans `_build_source_response`. Les colonnes sont déjà chargées sur
+l'objet `Source` ⇒ **aucune requête supplémentaire, aucun N+1**.
 
-## Comment ça a été vérifié
+Deux convertisseurs `Source → SourceResponse` coexistent : celui du service
+(`GET /sources`) et `_source_to_response` dans `routers/sources.py` (liste curée,
+suggestions par thème, fiche source). `coverage_themes` est sérialisée **dans les
+deux**, sinon la même source aurait une forme différente selon l'endpoint et le
+client conclurait « couverture inconnue » là où la donnée existe — exactement la
+classe de bug corrigée ici. Un test verrouille la parité.
 
-- [x] **Backend** — `pytest` : **2913 passed, 18 skipped, 2 xfailed**. `ruff check` OK.
-      Tests neufs sur le routeur de tri : idempotence de l'upsert sur
-      `(user, article, jour)`, batch partiel, `slate_size` incohérent rejeté, et
-      surtout la **non-régression négative** — `POST /essentiel/triage` avec
-      `decision=pass` ne modifie ni `user_subtopics.weight`, ni
-      `user_entity_affinity`, ni `user_personalization.muted_sources`.
-- [x] **API locale** — `uvicorn` + `curl` : `GET /api/essentiel` et
-      `POST /api/essentiel/triage` répondent `403` sans auth (cas limite), et
-      `divergence_level` est bien exposé dans l'OpenAPI (`string | null`).
-- [x] **Alembic** — exactement **1 head** (`tr01_essentiel_triage`), `upgrade head`
-      local contre une DB vide. Migration **purement additive** (nouvelle table,
-      aucun `DROP`/rename/`NOT NULL`-sur-peuplé) ⇒ conforme expand-contract sur
-      la DB partagée staging/prod.
-- [x] **Mobile** — `flutter test` : **2011 passed**, 26 échecs **strictement
-      identiques à la baseline `main`** (topic_chip, bookmark, feed_sources,
-      notification, perspectives, theme_section, subscriptions, settings_sheet,
-      widget_test — aucun dans le périmètre touché). `flutter analyze` : **526
-      issues, exactement la baseline**, zéro `error`, zéro `warning` neuf.
-- [x] **Build web** — `flutter build web --release` (garde-fou de compilation, cf.
-      l'incident `firstPreparingIndex` d'un build rouge passé inaperçu).
-- [x] **`/simplify`** — 4 relectures parallèles, findings appliqués (détail dans la
-      story, section « Passe SIMPLIFY »), puis re-run complet de VERIFY.
-- [ ] **Playwright / `/validate-feature`** — **non exécuté** : chaque scénario de
-      tri exige un compte connecté avec un digest du jour, et je n'ai pas de
-      credentials. `.context/qa-handoff.md` est à jour ; à lancer avant merge.
+**Mobile — scoring.** Nouveau signal partagé `_InterestFit` :
+`declared` > `covered` (la source publie sur un thème choisi) > `unknown` >
+`offInterest`.
+- **Règle A (anti-pad)** : bonus fiabilité/volume réservés aux sources
+  pertinentes ⇒ une source hors-intérêt retombe à 0, sous toute source matchée ;
+  `-1` de plus si sa couverture connue est disjointe.
+- **Règle B (anti-dilution)** : `-1` par thème publié hors des intérêts, plafonné
+  à `-2` ⇒ Ouest-France passe **sous** une source focalisée sans être écartée.
+- **Garde-fous** : rien ne s'arme si l'utilisateur a « Passé » les thèmes ; une
+  source **likée au swipe** n'est jamais pénalisée (le révélé prime) ; une
+  couverture **inconnue** n'est jamais pénalisante.
 
-## Zones à risque
+**Mobile — deck du swipe.** `buildSpanningSet` trie par adéquation avant
+`followerCount`, exclut les sources hors-intérêt des pôles et ne les garde qu'en
+**filler de dernier recours** (fin de deck). Le fallback « thèmes pauvres » reste
+garanti (deck jamais vide).
 
-- **Router (zone à risque déclarée).** Le gate quotidien `/flux-continu → /edition`
-  est retiré du `redirect`, et `PushNotificationService.openRoute` ne dé-route plus
-  les push. C'étaient les deux seuls points d'application, coupés ensemble ; le
-  test de redirection le verrouille dans les deux sens. La sortie d'onboarding
-  passe toujours délibérément par `/edition?from=onboarding`.
-- **Migration sur DB partagée.** `tr01` est additive et idempotente, donc sans
-  risque pour le backend `production` qui tourne encore sur l'ancien code jusqu'à
-  la release hebdo suivante.
-- **Budget de hauteur du feed.** Le pic de tri passe de 542 à **628 px** pour un
-  slate de 5 (bandeau image 96 + titre 4 lignes + compteur). Si la vérification à
-  390×844 montre un débordement, les leviers de repli sont, dans cet ordre :
-  bandeau 96 → 80, puis `kTriageKeptSlotHeight` 64 → 56. **Ne pas réduire le
-  slate** — le verrouiller à 5 est une doctrine produit.
-- **Clés `SharedPreferences`.** Le compteur du nudge auto-grow change de mécanique
-  de purge (il fuyait une clé par jour ; il purge maintenant). Les **noms** de
-  clés persistées sont inchangés, donc aucune perte d'état à la mise à jour.
+**Polish copy/UI.** Doubles majuscules corrigées (« Lire notre manifeste »,
+« Notre manifeste », « Le projet », « Notre mission », « Notre approche ») ;
+lien manifeste en emphase légère (couleur d'accent + demi-gras, dépliage inline
+inchangé) ; « diversifier tes médias » → « diversifier tes **sources** » sur
+l'écran concentration ; nouveau `SourceSearchLoader` (« Recherche de tes
+médias » / « Basé sur tes intérêts ») à la place des 4 spinners nus.
+Le loader prend `title`/`subtitle` : l'overlay de calibration de fin de swipe
+l'utilise avec sa propre copy, ce qui supprime ~25 lignes de layout dupliqué et
+le dernier `CircularProgressIndicator` nu de ce parcours.
 
-## Ce que cette PR ne fait pas
+## Tests
 
-- Ne bouge **aucun poids de reco** : la V0 collecte, elle ne personnalise pas.
-- Ne retire rien du digest côté données — seul l'affichage final reflète les choix.
-- N'unifie pas le fait « l'utilisateur a découvert l'aperçu au long-press » entre
-  les trois surfaces qui le stockent aujourd'hui (décision produit, signalée dans
-  la story).
+- **Backend** : `pytest -q` complet ⇒ **3018 passed**, 18 skipped, 2 xfailed.
+  Nouveau test de sérialisation des signaux de reco (`None` conservé).
+- **Mobile** : `test/features/onboarding` + `test/features/sources` ⇒ **262
+  passed**. Suite complète : 2043 passed / 26 échecs **pré-existants**, tous hors
+  des zones touchées (custom_topics, digest, feed, settings, widget_test).
+- `flutter analyze` : aucune erreur ni warning.
+- Alembic : **1 seul head**, inchangé (aucune migration).
+- Tous les tests historiques du recommander sont conservés **sans modification
+  d'attente**, dont le fallback « thèmes vides → fiabilité ».
+
+## Points d'attention pour la review
+
+- **Deux sources de vérité pour « est-ce un match déclaratif »** : `_interestFit`
+  re-dérive le prédicat déjà calculé dans les boucles de `_scoreSource`. Unifier
+  changerait le scoring, donc laissé en l'état — mais une évolution des règles de
+  match devra être répercutée des deux côtés sous peine de désynchroniser la
+  pénalité du score qu'elle corrige.
+- **La règle anti-généraliste est la première règle éditoriale à vivre
+  uniquement côté client** : pas d'équivalent `SCORING_OVERRIDES` / harnais de
+  sensibilité, donc pas de tuning, d'A/B ni de rollback sans release.
+
+- **Effet de bord voulu du point 4** : les badges « Spécialisé en X » et la
+  section « Pépites » (tier `deep`) vont enfin s'activer dans l'onboarding.
+  À valider visuellement (`/validate-feature`, handoff dans
+  `.context/qa-handoff.md`).
+- Le payload de `GET /sources` grossit de 3 petits tableaux par source curée.
+- Story : `docs/stories/core/onboarding.reco-interest-aware.md`.
