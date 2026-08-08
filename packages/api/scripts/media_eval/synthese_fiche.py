@@ -3,7 +3,8 @@
 
 Depuis les évaluations d'un (média, run) :
 - ``score_renormalise = score_brut / score_max_applicable × 100`` où
-  ``score_max_applicable = Σ BAREMES[critères vague 1 évalués]`` (les N/A et
+  ``score_max_applicable = Σ barèmes[critères vague 1 évalués]`` de la grille
+  du run (`media_eval_runs.version_methodo`) (les N/A et
   ``revue_requise`` sont exclus du dénominateur — CNEWS : 54 ; Reporterre si
   C1 N/A : 34) ;
 - lettre A–E (`LETTRES`) ;
@@ -38,11 +39,12 @@ from app.models.media_eval import (
     ConfianceFiche,
     MediaEvalEvaluation,
     MediaEvalFiche,
+    MediaEvalRun,
     StatutEvaluation,
 )
 from scripts.cleanup_orphan_sources import _is_test_db
 from scripts.media_eval.ingest_artifacts import IngestError, resoudre_media
-from scripts.media_eval.schemas import BAREMES, CRITERES_VAGUE_1, LETTRES
+from scripts.media_eval.schemas import grille
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_FICHES_DIR = _REPO_ROOT / "docs" / "media-eval" / "fiches"
@@ -55,11 +57,11 @@ _FLAGS_BLOQUANTS = {
 }
 
 
-def lettre_pour(score_renormalise: float) -> str:
-    for seuil, lettre in LETTRES:
+def lettre_pour(score_renormalise: float, lettres: list[tuple[int, str]]) -> str:
+    for seuil, lettre in lettres:
         if score_renormalise >= seuil:
             return lettre
-    return LETTRES[-1][1]
+    return lettres[-1][1]
 
 
 def _meilleure_par_critere(evaluations: list[dict]) -> dict[str, dict]:
@@ -76,17 +78,19 @@ def _meilleure_par_critere(evaluations: list[dict]) -> dict[str, dict]:
     return par_critere
 
 
-def compute_fiche(evaluations: list[dict]) -> dict:
+def compute_fiche(evaluations: list[dict], version: str) -> dict:
     """Calcule la fiche — pur, testable sans DB.
 
     ``evaluations`` : dicts {critere, statut, score, flags, evaluateur, niveau}.
+    ``version`` : version méthodo du run (`media_eval_runs.version_methodo`).
     """
+    g = grille(version)
     par_critere = _meilleure_par_critere(evaluations)
 
     criteres_evalues, criteres_na, criteres_revue = [], [], []
     flags_toutes: set[str] = set()
     score_brut = 0.0
-    for critere in CRITERES_VAGUE_1:
+    for critere in g.criteres_vague_1:
         ev = par_critere.get(critere)
         if ev is None:
             continue
@@ -100,7 +104,7 @@ def compute_fiche(evaluations: list[dict]) -> dict:
         else:
             criteres_revue.append(critere)
 
-    score_max_applicable = float(sum(BAREMES[c] for c in criteres_evalues))
+    score_max_applicable = float(sum(g.baremes[c] for c in criteres_evalues))
     score_renormalise = (
         round(score_brut / score_max_applicable * 100, 1)
         if score_max_applicable
@@ -119,7 +123,7 @@ def compute_fiche(evaluations: list[dict]) -> dict:
         "score_brut": score_brut,
         "score_max_applicable": score_max_applicable,
         "score_renormalise": score_renormalise,
-        "lettre": lettre_pour(score_renormalise),
+        "lettre": lettre_pour(score_renormalise, g.lettres),
         "criteres_evalues": criteres_evalues,
         "criteres_na": criteres_na,
         "criteres_revue_requise": criteres_revue,
@@ -128,12 +132,13 @@ def compute_fiche(evaluations: list[dict]) -> dict:
             c: {
                 "statut": ev["statut"],
                 "score": ev.get("score"),
-                "score_max": BAREMES[c],
+                "score_max": g.baremes[c],
                 "niveau": ev.get("niveau"),
                 "flags": list(ev.get("flags") or []),
                 "evaluateur": ev.get("evaluateur"),
             }
             for c, ev in sorted(par_critere.items())
+            if c in g.baremes  # éval hors grille (ex. C11 sur run v1.3) ignorée
         },
     }
 
@@ -186,6 +191,14 @@ async def run(
     async with async_session_maker() as session:
         try:
             media = await resoudre_media(session, domaine)
+            run_row = (
+                await session.execute(
+                    select(MediaEvalRun).where(MediaEvalRun.run_id == run_id)
+                )
+            ).scalar_one_or_none()
+            if run_row is None:
+                print(f"REJET : run {run_id!r} inconnu (lancer create_run.py).")
+                return 1
             rows = await session.execute(
                 select(MediaEvalEvaluation).where(
                     MediaEvalEvaluation.media_id == media.id,
@@ -209,7 +222,7 @@ async def run(
                 print(f"REJET : aucune évaluation pour {domaine} / {run_id}.")
                 return 1
 
-            fiche = compute_fiche(evaluations)
+            fiche = compute_fiche(evaluations, run_row.version_methodo)
             media_dict = {"nom": media.nom, "domaine": media.domaine}
             print(json.dumps(fiche, indent=2, ensure_ascii=False))
 

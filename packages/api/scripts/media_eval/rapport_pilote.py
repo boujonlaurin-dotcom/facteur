@@ -51,10 +51,9 @@ from scripts.media_eval.build_eval_input import version_prompt
 from scripts.media_eval.evaluate_golden_agreement import evaluate
 from scripts.media_eval.export_evaluations import evaluations_to_goldenset
 from scripts.media_eval.schemas import (
-    BAREMES,
     CORROBORATION_MIN_SOURCES,
-    CRITERES_VAGUE_1,
     GoldenSet,
+    grille,
 )
 from scripts.media_eval.synthese_fiche import compute_fiche
 
@@ -290,6 +289,7 @@ def evaluer_proprete_donnees(
     signaux: list[dict],
     evaluations: list[dict],
     fiches: dict[str, dict],
+    version: str,
 ) -> dict:
     """Lentille « propreté des données » — pur, testable sans DB.
 
@@ -309,7 +309,7 @@ def evaluer_proprete_donnees(
     )
     cellules: list[dict] = []
     for media in medias:
-        for critere in CRITERES_VAGUE_1:
+        for critere in grille(version).criteres_vague_1:
             cle = (media, critere)
             cell_sig = par_cle.get(cle, [])
             st_eval = statut_eval.get(cle)
@@ -540,18 +540,19 @@ def _html_hero(run: dict, gl: dict, verdict: list[dict], accord: dict) -> str:
 </div></header>"""
 
 
-def _html_matrice(proprete: dict) -> str:
+def _html_matrice(proprete: dict, version: str) -> str:
+    g = grille(version)
     cellules = {(c["media"], c["critere"]): c for c in proprete["cellules"]}
     medias = sorted({c["media"] for c in proprete["cellules"]})
     head = "".join(
         f'<th>{c}<br><span style="font-weight:600;text-transform:none;'
-        f'color:var(--ink-soft)">{BAREMES[c]} pts</span></th>'
-        for c in CRITERES_VAGUE_1
+        f'color:var(--ink-soft)">{g.baremes[c]} pts</span></th>'
+        for c in g.criteres_vague_1
     )
     lignes = []
     for media in medias:
         cells = [f'<td class="media-cell">{_esc(media)}</td>']
-        for critere in CRITERES_VAGUE_1:
+        for critere in g.criteres_vague_1:
             c = cellules.get((media, critere))
             if c is None:
                 cells.append('<td><span class="mx-empty">—</span></td>')
@@ -805,7 +806,7 @@ def render_html(data: dict, proprete: dict) -> str:
         [
             _html_hero(run, proprete["global"], data["verdict"], data["accord_report"]),
             '<div class="wrap">',
-            _html_matrice(proprete),
+            _html_matrice(proprete, run["version_methodo"]),
             _html_signaux(data["signaux"]),
             _html_fiches(data["fiches"]),
             _html_accord(data["accord_report"]),
@@ -1022,13 +1023,16 @@ async def collecter_donnees_rapport(
     for ev in evaluations:
         par_media.setdefault(ev["media_domaine"], []).append(ev)
     for media, evs in par_media.items():
-        fiches[media] = compute_fiche(evs)
+        fiches[media] = compute_fiche(evs, run_row.version_methodo)
 
     # Preuve D4 : gold.note_at doit précéder l'ingestion des évals.
     min_evalue = min((e["evalue_at"] for e in evaluations), default=None)
     d4 = _verifier_d4(gold.note_at, min_evalue)
 
-    rubrics_sha = {c: version_prompt(c) for c in CRITERES_VAGUE_1}
+    version = run_row.version_methodo
+    rubrics_sha = {
+        c: version_prompt(c, version) for c in grille(version).criteres_vague_1
+    }
     garde_fous = _detecter_garde_fous(signaux, evaluations)
     metrics = construire_metrics(evaluations, accord_report, fiches)
     verdict = verdict_v0(metrics)
@@ -1060,7 +1064,10 @@ async def run(run_id: str, gold_path: Path, out: Path) -> int:
                 return 1
 
             proprete = evaluer_proprete_donnees(
-                data["signaux"], data["evaluations"], data["fiches"]
+                data["signaux"],
+                data["evaluations"],
+                data["fiches"],
+                data["run"]["version_methodo"],
             )
             texte_md = render_markdown(
                 run=data["run"],
