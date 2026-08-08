@@ -1,0 +1,64 @@
+{
+  "collected_at": "2026-08-08T13:21:38.963853+00:00",
+  "sources": [
+    {
+      "slug": "lesjours",
+      "name": "Les Jours",
+      "group": "false_negative",
+      "feed_url": "https://lesjours.fr/rss.xml",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "lesjours-ed6ca39b22",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep38-nouveau-temoin/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-8711892d67",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep39-emmanuel-charlot/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-dac459bec5",
+          "url": "https://lesjours.fr/obsessions/jeunesse-russe/ep2-moscou-niefors/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-63b467fc64",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep38-nouveau-temoin/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-f4bdef6fbc",
+          "url": "https://lesjours.fr/obsessions/rosalia/ep5-reggaeton/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-f7ea4d81ec",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep37-fin-de-peine/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-3593207e70",
+          "url": "https://lesjours.fr/obsessions/ase-protection-enfance-dysfonctionnements/ep8-exploitation-sexuelle/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-364dacc998",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep36-parler-cela-me-fatigue/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-93372dc057",
+          "url": "https://lesjours.fr/obsessions/ultradroite-france-angleterre-manche/ep4-arnaque-overlord/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-8316c92e21",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep35-je-veux-proteger-mes-enfants/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        }
+      ]
+    }
+  ]
+}

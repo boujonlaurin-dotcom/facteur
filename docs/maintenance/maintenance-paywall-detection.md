@@ -1,7 +1,8 @@
 # Maintenance : refonte mesurée de la détection paywall
 
 **Type** : Maintenance
-**Statut** : 🟡 EN COURS — instrumentation posée, corpus bloqué par l'egress
+**Statut** : 🟡 EN COURS — instrumentation posée ; 1 source sur 14 collectée
+(egress partiellement ouvert), HTML bloqué par Cloudflare
 **Périmètre** : `packages/api/app/services/paywall_detector.py`, `sync_service.py`
 **Hors périmètre** : le filtre d'affichage `Content.is_paid.is_not(True)`
 (`digest_selector.py`, `recommendation_service.py`) — fail-open volontaire,
@@ -63,10 +64,9 @@ Tant que le corpus n'est pas collecté et étiqueté, les trois tests se
 **skippent avec une raison explicite** : un corpus absent ne doit jamais passer
 pour un corpus sans erreur.
 
-### Bloqué — la collecte
+### Bloqué — la collecte (2 blocages distincts, à ne pas confondre)
 
-La politique d'egress de l'environnement d'agent bloque tous les domaines de
-presse (403 sur le CONNECT, `WebFetch` compris). Vérifiable à tout moment :
+Vérifiable à tout moment :
 
 ```bash
 cd packages/api
@@ -78,6 +78,62 @@ sources. Tant qu'on lit `BLOQUÉ … ProxyError 403`, la collecte produirait un
 corpus vide qu'on pourrait confondre avec « ces sources n'émettent aucun
 signal ».
 
+#### Blocage 1 — egress de l'environnement d'agent (13 sources sur 14)
+
+Une première ouverture d'allowlist a été faite le 08/08/2026 : `lesjours.fr`
+est passé de `BLOQUÉ` à `OK`. Les 13 autres restent en `ProxyError 403`
+(refus au CONNECT, confirmé par `recentRelayFailures` du proxy).
+
+**Piège identifié** : l'allowlist ne fait pas correspondre les sous-domaines
+sans préfixe explicite — `novethic.fr` **ne couvre pas** `www.novethic.fr`, il
+faut `*.novethic.fr`. C'est cohérent avec le fait que la seule source qui passe
+est la seule dont le flux est servi sur un domaine nu. Il faut donc lister les
+deux formes. Les hôtes exacts nécessaires (extraits du manifeste) :
+
+```
+lesjours.fr           *.lesjours.fr
+novethic.fr           *.novethic.fr
+philomag.com          *.philomag.com
+la-croix.com          *.la-croix.com
+journaldesfemmes.fr   *.journaldesfemmes.fr
+lemonde.fr            *.lemonde.fr
+lefigaro.fr           *.lefigaro.fr
+lesechos.fr           *.lesechos.fr
+lepoint.fr            *.lepoint.fr
+mediapart.fr          *.mediapart.fr
+liberation.fr         *.liberation.fr
+telerama.fr           *.telerama.fr
+contrepoints.org      *.contrepoints.org
+bonpote.com           *.bonpote.com
+```
+
+Se règle sur claude.ai/code → environnement → **Network access: Custom** →
+**Allowed domains**, en cochant « Also include default list of common package
+managers » (sinon PyPI saute et le collecteur ne s'installe plus).
+
+#### Blocage 2 — Cloudflare sur les pages articles (indépendant du précédent)
+
+Sur `lesjours.fr`, pourtant autorisé, le flux RSS répond `200` mais **toutes**
+les pages articles répondent `403` avec `server: cloudflare` et
+`cf-mitigated: challenge`. Ce n'est pas l'egress : c'est une protection anti-bot
+déclenchée sur l'IP du datacenter. Le comportement est identique avec ou sans
+l'en-tête `Range`, avec ou sans User-Agent de production.
+
+**Conséquence** : ouvrir l'allowlist ne suffira pas à collecter le HTML. La
+surface RSS sera collectable, la surface HTML probablement pas depuis une VM
+d'agent.
+
+Deux façons de contourner, par ordre de fidélité à la production :
+
+1. **Depuis Railway** (l'egress réel de la prod). C'est la seule collecte qui
+   mesure ce que `SyncService` voit vraiment. Si Cloudflare y répond aussi
+   `403`, ce n'est plus un problème de collecte mais **un résultat** : le
+   niveau 1 est mort en production sur ces sources, et c'est probablement la
+   cause première des faux négatifs.
+2. **Depuis un poste de dev** (IP résidentielle, peu challengée). Donne le
+   HTML le plus complet, mais mesure une surface que la prod n'a peut-être
+   jamais. À étiqueter comme tel si utilisé.
+
 Deux entrées du manifeste demandent en plus un accès base, indisponible dans
 cet environnement (`[secrets] aucune variable d'infra définie`, MCP Supabase
 non connecté) :
@@ -87,6 +143,40 @@ non connecté) :
   `source_id` connu par le catalogue repo : `92a33ad2-fdcc-43b2-83dc-03d6b95c1199`) ;
 - les 4 `paywall_config` custom, à recopier dans le manifeste — sans eux le
   harnais rejoue la config par défaut et la baseline ne reflète pas la prod.
+
+### Premières mesures réelles — Les Jours (08/08/2026)
+
+Seule source collectée à ce jour : 15 entrées RSS, **0 page HTML** (Cloudflare).
+Ce n'est pas une baseline — c'est 1 source sur 14, sans surface HTML, non
+étiquetée. Mais trois constats sont déjà solides.
+
+**1. Les 15 entrées sont détectées `False` (gratuit).** Les Jours est un site
+intégralement sur abonnement : ce sont donc 15 faux négatifs, ce qui confirme
+le signalement utilisateur par la mesure. Le mécanisme est net : aucun mot-clé
+du `DEFAULT_PAYWALL_CONFIG` n'apparaît dans le flux, et les résumés font 133 à
+182 caractères — sous `min_content_length` (200), donc `+2`. Le score plafonne
+à 2 pour un seuil à 5. **Aucun réglage du barème ne rattrape ça** : il n'y a
+qu'un seul signal disponible, et il en faut deux.
+
+**2. L'hypothèse de l'apostrophe est confirmée au niveau caractère, et
+écartée comme cause ici.** Le flux contient 33 apostrophes typographiques
+`’` (U+2019) et **zéro** apostrophe droite `'` (U+0027). Le mot-clé `"S'abonner"`
+du `DEFAULT_PAYWALL_CONFIG` ne peut donc jamais matcher ce contenu — le défaut
+est réel et vaut correction (normalisation avant matching, sans risque de FP
+puisqu'elle élargit un mot-clé existant). Mais elle **ne corrigerait pas Les
+Jours**, où aucun mot-clé n'est présent sous aucune forme. À vérifier sur les
+sources WordPress du corpus (Novethic, Bon Pote) quand elles seront accessibles.
+
+**3. Le niveau 1 ne s'exécute jamais sur Les Jours.** `_fetch_html_head` reçoit
+un `403` Cloudflare, donc `html_head` est vide et la détection tombe
+directement au scoring. À confirmer sur l'egress de production (cf. blocage 2) :
+si la prod est challengée pareil, c'est la cause première à traiter, avant tout
+travail sur les mots-clés.
+
+> Question ouverte pour le manifeste : Les Jours étant intégralement payant, le
+> quota « ≥ 3 gratuits par source » y est probablement intenable. Soit on
+> exempte la source, soit on l'accepte comme source à FN pur — à trancher avant
+> de geler la baseline.
 
 ### Reste à faire
 
@@ -113,14 +203,15 @@ Aucune n'est acquise : elles se jugent sur le corpus, pas sur l'intuition.
   plugins de restriction WordPress, attributs data, classes de conteneur
   paywall. **Chaque signal candidat doit être vérifié absent des articles
   gratuits du corpus** avant d'être retenu.
-- **Normalisation du texte avant matching.** Hypothèse identifiée mais **non
-  vérifiée** (aucun HTML réel n'a pu être inspecté) : les mots-clés du code
-  utilisent l'apostrophe droite `'` (U+0027) alors que les CMS français
-  génèrent l'apostrophe typographique `’` (U+2019). Si c'est confirmé,
-  `"S'abonner"` ne matche jamais aucune source WordPress française. Ce fix
-  élargit la reconnaissance de mots-clés existants sans en ajouter, donc il ne
-  peut pas créer de faux positifs — c'est la piste au meilleur rapport
-  risque/gain, à tester en priorité.
+- **Normalisation du texte avant matching.** ✅ **Confirmée au niveau
+  caractère** sur le premier flux réel collecté (Les Jours : 33 × `’` U+2019,
+  0 × `'` U+0027). Les mots-clés du code utilisent l'apostrophe droite, les CMS
+  français génèrent la typographique : `"S'abonner"` ne peut pas matcher ce
+  contenu. Le fix élargit la reconnaissance de mots-clés existants sans en
+  ajouter, donc il ne peut pas créer de faux positifs — meilleur rapport
+  risque/gain, à faire en premier. ⚠️ Mais **son gain reste à chiffrer** : sur
+  Les Jours il ne change rien (aucun mot-clé présent, sous aucune forme). Sa
+  valeur se mesurera sur les sources WordPress du corpus (Novethic, Bon Pote).
 - **Revoir la liste de mots-clés** à partir des formulations réellement
   observées. Privilégier les formulations longues et spécifiques (« réservé à
   nos abonnés », « débloquer l'article ») aux mots isolés (« abonnés »,
