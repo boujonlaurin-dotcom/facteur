@@ -37,6 +37,10 @@ class AlertsRepository {
 
   AlertsRepository(this._apiClient);
 
+  /// Cloches actives + leurs contenus déclencheurs (story 30.4).
+  ///
+  /// `contents` est **additif** : face à un backend v1 il est simplement
+  /// absent, et la carte de la Tournée retombe sur ses lignes « N nouveaux ».
   Future<AlertsState> listAlerts() async {
     final response = await _apiClient.dio.get<Map<String, dynamic>>('alerts');
     final data = response.data;

@@ -11,6 +11,7 @@ casse).
 import json
 from dataclasses import dataclass
 from datetime import date
+from uuid import UUID
 
 from app.services.source_alert_producer import SourceAlertCandidate
 from app.services.topic_alert_producer import TopicAlertCandidate
@@ -19,6 +20,24 @@ PUSH_TITLE = "Facteur"
 DAILY_DIGEST_INTRO = "À retenir aujourd'hui :"
 MAX_TEASERS = 3
 MAX_FACT_LEN = 90
+
+# Route article des deep links push.
+#
+# `/article/<id>` n'a JAMAIS été enregistrée dans le GoRouter mobile : les
+# alertes source et sujet émettaient une cible qui tombait sur « Page non
+# trouvée » à chaque tap (cf. docs/bugs/bug-alerte-push-lien-introuvable.md).
+# `/flux-continu/content/<id>` est la route article la plus ancienne encore
+# enregistrée côté client, présente aussi bien sur `main` que sur les binaires
+# `production` en circulation : un push émis maintenant s'ouvre correctement sur
+# les deux. Toute modification ici doit rester alignée sur `articleRouteFor`
+# (apps/mobile/lib/config/routes.dart) et sur les boutons QA de
+# `push_notification_service.dart`.
+ARTICLE_ROUTE_PREFIX = "/flux-continu/content"
+
+
+def article_route(content_id: UUID | str) -> str:
+    """Deep link vers le lecteur d'un article."""
+    return f"{ARTICLE_ROUTE_PREFIX}/{content_id}"
 
 
 @dataclass(frozen=True)
@@ -75,7 +94,7 @@ def compose_source_alert(
         title=f"Alerte : {candidate.source_name} vient de publier",
         body=body,
         data={
-            "route": f"/article/{candidate.content_id}",
+            "route": article_route(candidate.content_id),
             "kind": "source_alert",
             "source_id": str(candidate.source_id),
             "source_name": candidate.source_name,
@@ -100,7 +119,7 @@ def compose_topic_alert(
         title=f"Alerte : {candidate.topic_name}",
         body=body,
         data={
-            "route": f"/article/{candidate.content_id}",
+            "route": article_route(candidate.content_id),
             "kind": "topic_alert",
             "topic_id": str(candidate.topic_id),
             "topic_name": candidate.topic_name,

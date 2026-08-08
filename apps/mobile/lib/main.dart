@@ -194,10 +194,9 @@ Future<void> _bootstrap() async {
   // PushNotificationService.init() est différé post-runApp : il économise
   // ~100-400ms sur la 1ère frame (timezone DB load + platform channel).
   // Le tap de cold-launch (app tuée) est bien géré malgré ce report : init()
-  // lit `getNotificationAppLaunchDetails` et *seede* l'intent, rejoué une fois
-  // auth + navigator prêts (`setLaunchAuthReady`). Le couple seed/flush est
-  // auto-gaté et idempotent, donc l'ordre d'arrivée (init avant ou après
-  // l'auth) n'a pas d'importance.
+  // lit `getNotificationAppLaunchDetails` et applique l'intent dès que le
+  // navigator existe ; si l'auth n'est pas encore résolue, la cible est mise
+  // de côté et rejouée par le `redirect` (`takePendingRoute`).
   final initsSw = Stopwatch()..start();
   final posthog = PostHogService();
   String? appVersion;

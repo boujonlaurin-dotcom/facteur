@@ -274,4 +274,57 @@ void main() {
     expect(_currentPath(router), RoutePaths.fluxContinu);
     expect(_currentPath(router), isNot(RoutePaths.flaner));
   });
+
+  // ---------------------------------------------------------------------------
+  // Bug onboarding iOS — « J'ai déjà un compte » inerte. La session restaurée
+  // du keychain iOS peut être **non-anonyme** mais avoir encore besoin de faire
+  // son onboarding. Avant le fix, la garde « /login accessible avant compte »
+  // dépendait du strict `isAnonymous` → elle ne matchait pas, et la garde 3
+  // renvoyait sur /onboarding : le bouton restait inerte. `needsOnboarding`
+  // suffit désormais à autoriser la sortie /login.
+  // ---------------------------------------------------------------------------
+  testWidgets(
+      '« J\'ai déjà un compte » : /login reste accessible pour une session '
+      'non-anonyme qui doit encore s\'onboarder (keychain iOS)',
+      (WidgetTester tester) async {
+    _useTallSurface(tester);
+
+    final container = ProviderContainer(
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => FakeAuthStateNotifier(
+            AuthState(
+              // Session périmée restaurée : non-anonyme, confirmée, mais qui
+              // n'a jamais complété l'onboarding sur cet appareil.
+              user: _confirmedSocialUser(),
+              isLoading: false,
+              needsOnboarding: true,
+              onboardingStatusKnown: true,
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final router = container.read(routerProvider);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    // Résolution initiale : /splash → /onboarding (needsOnboarding).
+    await tester.pump();
+
+    // Tap « J'ai déjà un compte » (WelcomeScreen fait `context.go(/login)`).
+    router.go(RoutePaths.login);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    // Le fix : on reste sur /login (avant, la garde 3 rebondissait sur
+    // /onboarding et le bouton paraissait inerte).
+    expect(_currentPath(router), RoutePaths.login);
+  });
 }

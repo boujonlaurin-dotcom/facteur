@@ -16,6 +16,10 @@ void main() {
   // 10:00 Paris le 2026-08-08 → édition « aujourd'hui » = 2026-08-08.
   final now = DateTime.utc(2026, 8, 8, 8);
 
+  // La cible en attente est un statique : sans purge, elle fuit d'un test à
+  // l'autre (cf. push_route_resolution_test).
+  tearDown(PushNotificationService.clearPendingRoute);
+
   Future<ProviderContainer> pumpHarness(WidgetTester tester) async {
     final navKey = GlobalKey<NavigatorState>();
     final router = GoRouter(
@@ -118,5 +122,23 @@ void main() {
       container.read(selectedEditionDateProvider),
       EditionPastDay(DateTime(2026, 8, 6)),
     );
+  });
+
+  testWidgets('la cible est mise de côté pour le rejeu post-auth du redirect',
+      (tester) async {
+    await pumpHarness(tester);
+
+    PushNotificationService.routeIntent(
+      NotificationIntent.parseFromFcmData(
+        {'route': '/digest', 'target_date': '2026-08-07'},
+        now: now,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // `routeIntent` délègue à `openRoute`, donc une navigation absorbée par le
+    // splash (auth non résolue) reste rattrapable par le `redirect`. La route
+    // stockée est la route NORMALISÉE, pas le `/digest` legacy.
+    expect(PushNotificationService.takePendingRoute(), '/flux-continu');
   });
 }
