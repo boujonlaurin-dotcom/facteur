@@ -339,6 +339,33 @@ class AnalyticsService {
     await _capturePostHog('article_read', props);
   }
 
+  /// Passage d'un article au suivant/précédent **au swipe**, sans repasser par
+  /// la liste (Story 34.1).
+  ///
+  /// [toPosition] et [deckSize] sont ce qui rend l'event exploitable : ils
+  /// disent jusqu'où la lecture enchaînée descend dans une section, donc si le
+  /// geste sert vraiment à lire au-delà des cartes visibles sur la Tournée.
+  Future<void> trackArticleSwipeNav({
+    required String contentId,
+    required String sectionKey,
+    required String direction, // next | previous
+    required int fromPosition,
+    required int toPosition,
+    required int deckSize,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'content_id': contentId,
+      'section_key': sectionKey,
+      'direction': direction,
+      'from_position': fromPosition,
+      'to_position': toPosition,
+      'deck_size': deckSize,
+    };
+    await _logEvent('article_swipe_nav', props);
+    await _capturePostHog('article_swipe_nav', props);
+  }
+
   /// @deprecated Use [trackFeedSession] instead.
   Future<void> trackFeedScroll(
     double scrollDepthPercent,

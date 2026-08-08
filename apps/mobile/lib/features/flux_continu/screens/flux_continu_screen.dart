@@ -33,6 +33,7 @@ import '../../../core/providers/navigation_providers.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../custom_topics/widgets/topic_chip.dart';
 import '../../detail/content_preview_mapper.dart';
+import '../../detail/deck/models/article_deck.dart';
 import '../../digest/models/digest_models.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/widgets/explore_section.dart' show ExploreDiscoverySkeleton;
@@ -1230,25 +1231,30 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
 
   /// Opens an article. ReadSyncService propagates the read state after the
   /// one-second threshold; returning sooner must leave the card unread.
-  Future<void> _openArticle(BuildContext context, Object article) async {
-    if (article is DigestItem) {
-      await context.push(
-        '${RoutePaths.fluxContinu}/content/${article.contentId}',
-        extra: article.toPreviewContent(),
-      );
-    } else if (article is Content) {
-      await context.push(
-        '${RoutePaths.fluxContinu}/content/${article.id}',
-        extra: article,
-      );
-    } else if (article is EssentielArticle) {
-      await context.push(
-        '${RoutePaths.fluxContinu}/content/${article.contentId}',
-        extra: article.toPreviewContent(),
-      );
-    } else {
-      return;
-    }
+  ///
+  /// [section] — quand elle est fournie, l'article s'ouvre dans le deck de sa
+  /// section (Story 34.1) : glisser mène à l'article suivant **de la liste
+  /// complète**, y compris ceux que la Tournée n'affiche pas (`coreVisibleCount`)
+  /// et qu'il fallait aller chercher derrière « Tout lire ».
+  Future<void> _openArticle(
+    BuildContext context,
+    Object article, {
+    FluxSection? section,
+  }) async {
+    final (String id, Object extra) = switch (article) {
+      DigestItem() => (article.contentId, article.toPreviewContent()),
+      Content() => (article.id, article),
+      EssentielArticle() => (article.contentId, article.toPreviewContent()),
+      _ => ('', const Object()),
+    };
+    if (id.isEmpty) return;
+
+    final deck =
+        section == null ? null : articleDeckFromSection(section, id);
+    await context.push(
+      '${RoutePaths.fluxContinu}/content/$id',
+      extra: deck ?? extra,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -2037,7 +2043,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
                       sectionIndex: i,
                       globalPositionOffset: sectionGlobalOffset,
                       isSerene: state.isSerene,
-                      onTapArticle: (a) => _openArticle(context, a),
+                      onTapArticle: (a) =>
+                          _openArticle(context, a, section: section),
                       onDismissArticle: _onSwipeDismiss,
                       pendingFeedbackIds: _pendingFeedback,
                       onSelectFeedbackChip: (id, chip) =>
@@ -2217,7 +2224,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     return SliverToBoxAdapter(
       child: SectionBlock(
         section: section,
-        onTapArticle: (a) => _openArticle(context, a),
+        onTapArticle: (a) => _openArticle(context, a, section: section),
         onSeeAll: onSeeAll,
       ),
     );
@@ -2257,11 +2264,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     final sections = <Widget>[];
 
     if (edition.heroArticles.isNotEmpty) {
+      final heroSection = EssentielSection(articles: edition.heroArticles);
       sections.add(
         SliverToBoxAdapter(
           child: SectionBlock(
-            section: EssentielSection(articles: edition.heroArticles),
-            onTapArticle: (a) => _openArticle(context, a),
+            section: heroSection,
+            onTapArticle: (a) =>
+                _openArticle(context, a, section: heroSection),
           ),
         ),
       );

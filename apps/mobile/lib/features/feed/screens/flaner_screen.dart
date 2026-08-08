@@ -17,6 +17,7 @@ import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../detail/deck/models/article_deck.dart';
 import '../../flux_continu/widgets/flux_continu_article_card.dart';
 import '../../flux_continu/widgets/section_banner.dart';
 import '../../flux_continu/widgets/section_block.dart' show FluxFeedbackChip;
@@ -116,10 +117,31 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     await ref.read(feedProvider.notifier).refreshArticlesWithSnapshot(ids);
   }
 
-  Future<void> _openArticle(Content article) async {
+  /// [deckArticles] — liste dont l'article fait partie : il s'ouvre alors dans
+  /// un deck navigable au swipe (Story 34.1).
+  ///
+  /// `showPositionIndicator: false` ici, et seulement ici : Flâner est un feed
+  /// **ouvert**, sa fin n'est pas connue. Une barre segmentée y annoncerait un
+  /// nombre d'articles restants qui n'existe pas. Le geste marche, il ne promet
+  /// simplement rien.
+  Future<void> _openArticle(
+    Content article, {
+    List<Content>? deckArticles,
+    String deckLabel = 'Flâner',
+    String deckKey = 'flaner',
+  }) async {
+    final deck = deckArticles == null
+        ? null
+        : articleDeckFromContents(
+            deckArticles,
+            article.id,
+            sectionKey: deckKey,
+            sectionLabel: deckLabel,
+            showPositionIndicator: false,
+          );
     await context.push(
       '${RoutePaths.flaner}/content/${article.id}',
-      extra: article,
+      extra: deck ?? article,
     );
     if (!mounted) return;
     unawaited(ref.read(feedProvider.notifier).markContentAsConsumed(article));
@@ -473,7 +495,12 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
               padding: const EdgeInsets.only(bottom: 12),
               child: FeedCarousel(
                 data: carousel,
-                onArticleTap: _openArticle,
+                onArticleTap: (c) => _openArticle(
+                  c,
+                  deckArticles: carousel.items,
+                  deckLabel: carousel.title,
+                  deckKey: 'flaner_carousel_${carousel.carouselType}',
+                ),
                 onLongPressStart: (c, _) =>
                     ArticlePreviewOverlay.show(context, c),
                 onLongPressMoveUpdate: (details) =>
@@ -519,7 +546,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
           child: FluxContinuArticleCard(
             key: ValueKey('flaner_card_${article.id}'),
             article: article,
-            onTap: () => _openArticle(article),
+            onTap: () => _openArticle(article, deckArticles: contents),
             onSwipeDismiss: () => _onSwipeDismiss(article),
             enableSwipeHint:
                 articleIndex == firstSwipeableIndex && _showSwipeHint,
@@ -578,7 +605,12 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
               final article = discovery[index];
               return FluxContinuArticleCard(
                 article: article,
-                onTap: () => _openArticle(article),
+                onTap: () => _openArticle(
+                  article,
+                  deckArticles: discovery,
+                  deckLabel: 'Explorer de nouvelles sources',
+                  deckKey: 'flaner_discovery',
+                ),
               );
             }, childCount: discovery.length),
           ),

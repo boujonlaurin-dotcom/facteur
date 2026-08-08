@@ -4,6 +4,12 @@ import 'package:flutter/gestures.dart';
 
 const double wideBackGestureWidthFraction = 0.35;
 
+/// Bande de bord (≈ 6 % de largeur, soit ~24 px sur un écran de 390) réservée
+/// au retour quand la page possède elle-même un geste horizontal — c'est le cas
+/// du deck d'articles (Story 34.1), où glisser à gauche/droite change d'article.
+/// Sans ce rétrécissement, la zone large de 35 % mangerait le swipe de la page.
+const double edgeBackGestureWidthFraction = 0.06;
+
 /// Gesture set for platform views nested inside [FullSwipeCupertinoPage].
 ///
 /// Only vertical drags are claimed by the platform view.
@@ -33,10 +39,17 @@ class FullSwipeCupertinoPage<T> extends Page<T> {
   final Duration? transitionDurationOverride;
   final FullSwipePageTransition transition;
 
+  /// Largeur (en fraction de l'écran) de la zone où un glissement vers la
+  /// droite déclenche le retour. Défaut : [wideBackGestureWidthFraction].
+  /// Une page qui possède son propre geste horizontal passe
+  /// [edgeBackGestureWidthFraction] pour ne garder que la bande de bord.
+  final double backGestureWidthFraction;
+
   const FullSwipeCupertinoPage({
     required this.child,
     this.transitionDurationOverride,
     this.transition = FullSwipePageTransition.horizontal,
+    this.backGestureWidthFraction = wideBackGestureWidthFraction,
     super.key,
     super.name,
   });
@@ -96,6 +109,7 @@ class _FullSwipePageRoute<T> extends PageRoute<T>
       secondaryRouteAnimation: secondaryAnimation,
       linearTransition: popGestureInProgress,
       child: _FullScreenBackGestureDetector(
+        widthFraction: _page.backGestureWidthFraction,
         enabledCallback: () => popGestureEnabled,
         onStartPopGesture: () => _BackGestureController(
           navigator: navigator!,
@@ -176,15 +190,19 @@ class _BackGestureController {
 /// Wide-area gesture detector for back navigation.
 ///
 /// Unlike Flutter's built-in detector (limited to 20px from the left edge),
-/// this one covers the left third of the screen, giving a much larger
-/// swipe-back target without interfering with vertical scrolling in content.
+/// this one covers the left third of the screen by default, giving a much
+/// larger swipe-back target without interfering with vertical scrolling in
+/// content. La largeur est réglable ([widthFraction]) pour les pages qui
+/// portent elles-mêmes un geste horizontal.
 class _FullScreenBackGestureDetector extends StatefulWidget {
   final Widget child;
+  final double widthFraction;
   final ValueGetter<bool> enabledCallback;
   final ValueGetter<_BackGestureController> onStartPopGesture;
 
   const _FullScreenBackGestureDetector({
     required this.child,
+    required this.widthFraction,
     required this.enabledCallback,
     required this.onStartPopGesture,
   });
@@ -216,10 +234,9 @@ class _FullScreenBackGestureDetectorState
   }
 
   void _handlePointerDown(PointerDownEvent event) {
-    final width = context.size?.width;
-    if (width != null &&
-        event.localPosition.dx <= width * wideBackGestureWidthFraction &&
-        widget.enabledCallback()) {
+    // La zone est déjà bornée par la bande posée en overlay : il ne reste que
+    // la question de savoir si le geste de retour est armé sur cette route.
+    if (widget.enabledCallback()) {
       _recognizer.addPointer(event);
     }
   }
@@ -259,10 +276,29 @@ class _FullScreenBackGestureDetectorState
 
   @override
   Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: _handlePointerDown,
-      behavior: HitTestBehavior.translucent,
-      child: widget.child,
+    // La bande de retour est posée **au-dessus** de la page (et non en ancêtre
+    // translucide, comme dans une version antérieure). C'est ce qui rend la
+    // priorité de geste déterministe : posée au-dessus, elle est hit-testée en
+    // premier, donc son recognizer entre dans l'arène avant ceux de la page.
+    // En ancêtre, il y entrait en dernier et perdait tout arbitrage contre un
+    // recognizer horizontal interne — exactement le cas du deck d'articles.
+    // `translucent` laisse passer taps et scrolls verticaux vers la page,
+    // comme avant. Même montage que `_CupertinoBackGestureDetector` de Flutter.
+    return Stack(
+      fit: StackFit.passthrough,
+      children: [
+        widget.child,
+        PositionedDirectional(
+          start: 0,
+          top: 0,
+          bottom: 0,
+          width: MediaQuery.sizeOf(context).width * widget.widthFraction,
+          child: Listener(
+            onPointerDown: _handlePointerDown,
+            behavior: HitTestBehavior.translucent,
+          ),
+        ),
+      ],
     );
   }
 }

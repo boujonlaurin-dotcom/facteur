@@ -1,128 +1,120 @@
-# QA Handoff — PR-4 : ordre des blocs de la Tournée par le score top-3
+# QA Handoff — Navigation par swipe entre les articles d'une section (Story 34.1)
 
-> Rempli par l'agent dev. Input de `/validate-feature`. Lot :
-> `docs/maintenance/maintenance-reco-optimisation-lot2.md` (§ PR-4).
+> Story : `docs/stories/core/34.1.navigation-swipe-articles-section.md`
 
 ## Feature développée
 
-Les blocs de la Tournée (thèmes, sources, veille, « Choisie pour vous ») ne sont
-plus simplement **dépriorisés** quand ils sont maigres : ils sont **triés par la
-somme des 3 meilleurs `score_total` de leurs articles**. Les slots manquants
-comptant 0, un bloc à 1 article coule structurellement (≈ 1 × s contre 3 × s)
-sans avoir besoin d'être un cas spécial.
-
-L'ordre est calculé **une seule fois par journée tournée** (frontière 07h30
-Paris), à la complétion du fan-out, puis **gelé et persisté** — aucun bloc ne
-bouge pendant le remplissage progressif ni pendant la session.
-
-En prime, le champ `block_score` de l'event `article_impression` (PR-1), qui
-valait `null` en prod, est désormais renseigné : c'est lui qui reliera « ordre
-des blocs » et « CTR mesuré ».
+Depuis un article ouvert, glisser vers la gauche mène à l'article **suivant** de
+la section, vers la droite au **précédent**, sans repasser par la liste. Le deck
+porte la **liste complète** de la section (pas l'aperçu borné par
+`coreVisibleCount`) : depuis la 2ᵉ carte affichée sur la Tournée, le swipe atteint
+le 3ᵉ article, celui qui n'était visible qu'en passant par « Tout lire ».
 
 ## PR associée
 
-À créer (`--base main`).
+_(à compléter après ouverture)_
 
 ## Écrans impactés
 
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Tournée du jour (Flux continu) | `/flux-continu` | Modifié — **ordre** des blocs sous la carte héros |
-
-Aucun nouveau composant, aucune nouvelle UI : seuls l'**ordre** des sections et
-le contenu d'un event analytics changent.
+| Deck d'articles (hôte du reader) | `/flux-continu/content/:id`, `/flaner/content/:id` | Nouveau (passe-plat si 1 seul article) |
+| Reader | idem | Modifié (aperçu d'arrivée, barre segmentée, verrou WebView) |
+| L'Essentiel (Tournée) | `/flux-continu` | Modifié (passe la section au tap) |
+| Page section thème / sujet / veille | `/flux-continu/theme/:key` | Modifié |
+| Page section source | `/flux-continu/source/:id` | Modifié |
+| Page section digest | `/flux-continu/section/:key` | Modifié |
+| Flâner | `/flaner` | Modifié (deck **sans** repère de position) |
 
 ## Scénarios de test
 
-### Scénario 1 — Cold boot : aucun bloc ne saute pendant le remplissage
-**Parcours** :
-1. Vider les données de l'app (ou franchir 07h30), ouvrir la Tournée.
-2. Observer la page pendant tout le remplissage progressif (~10-15 recompositions).
+### Scénario 1 : Happy path — enchaîner la lecture d'une section
+1. Ouvrir **L'Essentiel**, repérer une section qui n'affiche que 2 cartes et
+   porte un « Tout lire ».
+2. Taper la **2ᵉ** carte.
+3. Glisser l'article vers la **gauche**.
 
-**Résultat attendu** : les blocs se remplissent **en place**, dans l'ordre par
-défaut. Une **seule** réorganisation survient, à la toute fin, quand tout est
-chargé. Aucun saut au milieu du remplissage.
+**Résultat attendu** : on arrive sur le **3ᵉ** article de la section — celui qui
+n'était pas affiché sur la Tournée. La transition suit le doigt : l'article
+quitté part moins vite (parallaxe), s'assombrit et se rétrécit légèrement ;
+l'article qui arrive glisse par-dessus avec des coins arrondis et une ombre
+d'arête pendant le seul mouvement.
 
-### Scénario 2 — Ré-ouverture dans la même journée
-**Parcours** :
-1. Après le scénario 1, quitter l'app et la rouvrir (puis pull-to-refresh).
+### Scénario 2 : Bornes de la séquence
+1. Depuis le **1ᵉʳ** article d'une section, glisser vers la **droite**.
+2. Depuis le **dernier**, glisser vers la **gauche**.
 
-**Résultat attendu** : l'ordre est **identique** à celui de la fin du scénario 1,
-et il l'est **dès la première frame de contenu** — aucune réorganisation visible,
-même après le refresh.
+**Résultat attendu** :
+- 1ᵉʳ article, tirage court → rebond, l'article revient en place.
+- 1ᵉʳ article, tirage franc (> ~56 px de course) → une affordance
+  « ← {nom de la section} » se révèle à gauche puis on **revient à la section**.
+- Dernier article → rebond, aucune page fantôme.
 
-### Scénario 3 — Les blocs pauvres sont en bas
-**Parcours** :
-1. Ouvrir la Tournée avec des favoris dont au moins un ne ramène qu'un article.
+### Scénario 3 : Repère de position (barre segmentée)
+1. Ouvrir un article depuis une section de N articles.
 
-**Résultat attendu** : le bloc à 1 article se trouve **sous** les blocs bien
-fournis. Actus du jour, Bonnes Nouvelles et La Grille gardent leur position
-habituelle — ils ne sont **jamais** poussés en queue (ils ne portent pas de
-score, donc ils tiennent leur place).
+**Résultat attendu** : la barre du header est découpée en **N segments** — les
+articles déjà passés pleins (vert atténué), le courant qui se remplit à la
+lecture, les suivants creux. Sur **Flâner**, la barre reste la barre classique
+(non segmentée) : le feed est ouvert, il n'y a pas de total à annoncer.
 
-### Scénario 4 — Compte personnalisé
-**Parcours** :
-1. Réordonner sa Tournée à la main via « Composer ma Tournée », puis recharger.
+### Scénario 4 : Un article entrevu n'est pas un article lu
+1. Depuis un article, commencer un glissement vers la gauche **à mi-course**,
+   puis relâcher pour revenir en arrière.
+2. Revenir à la Tournée.
 
-**Résultat attendu** : l'ordre manuel départage les blocs de **score égal** ; un
-bloc manuellement remonté mais nettement moins fourni peut descendre (risque
-tranché par le PO). Rien ne bouge dans la journée en cours après le premier
-chargement.
+**Résultat attendu** : l'article voisin **n'est pas marqué « Lu »** et son
+compteur d'ouverture n'a pas bougé. Pendant le geste, le voisin s'affiche en
+« aperçu d'arrivée » (header + vignette + titre + squelette de corps).
 
-### Scénario 5 — Réseau coupé / blocs vides
-**Parcours** :
-1. Passer en mode avion puis ouvrir la Tournée, puis revenir en ligne.
+### Scénario 5 : Retour et geste de bord
+1. Depuis un article de deck, glisser vers la droite **depuis le bord gauche**
+   (~24 px).
+2. Taper la flèche ← du header.
 
-**Résultat attendu** : aucun crash, aucune page vide anormale. Sans article
-scoré, aucun tri n'est appliqué (ordre par défaut). Au retour du réseau, tri
-normal au chargement suivant.
+**Résultat attendu** : les deux ramènent à la section. Attention : la zone de
+swipe-back large (35 %) est volontairement réduite à la bande de bord sur les
+articles ouverts en deck — c'est le prix du geste « précédent ».
 
-### Scénario 6 — Bascule de journée
-**Parcours** :
-1. Laisser l'app ouverte à cheval sur 07h30 Paris (ou décaler l'horloge), puis
-   recharger la Tournée.
+### Scénario 6 : Lecture sur le site
+1. Sur un article, scroller jusqu'à révéler la page du site (scroll-to-site).
+2. Tenter de glisser horizontalement.
 
-**Résultat attendu** : l'ordre de la veille est **jeté**, pas rejoué ; un ordre
-frais est calculé à la complétion du fan-out (donc à nouveau une seule
-réorganisation, en fin de chargement).
+**Résultat attendu** : le swipe du deck est **gelé** — le geste horizontal
+appartient à la page distante. Sortir du site (← du header) le réactive.
+
+### Scénario 7 : Non-régression des ouvertures hors section
+1. Ouvrir un article depuis une notification push / un deep link.
+2. Ouvrir un article depuis **Sauvegardés** et depuis la modal Source.
+
+**Résultat attendu** : reader **identique à avant** — pas de swipe horizontal,
+barre de progression classique, swipe-back large (35 %) conservé.
 
 ## Critères d'acceptation
 
-- [ ] Aucun bloc ne saute pendant le fan-out (une seule réorganisation, à la complétion)
-- [ ] L'ordre est stable toute la journée, identique à la ré-ouverture, dès la 1ʳᵉ frame
-- [ ] Un bloc à 1 article n'est plus au-dessus du pli quand des blocs denses existent
-- [ ] Actus / Bonnes Nouvelles / La Grille gardent leur position (jamais poussés en queue)
-- [ ] Le quota de 3 sections « Choisie pour vous » sous le cap 13 reste honoré après tri
-- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus
+- [ ] Glisser à gauche → article suivant de la section ; à droite → précédent
+- [ ] Le deck parcourt la liste **complète** (au-delà des cartes affichées)
+- [ ] 1ᵉʳ article : seul le suivant est atteignable ; tirage franc à droite = retour
+- [ ] Dernier article : seul le précédent est atteignable
+- [ ] Transition fluide, sans saccade, sur une section de 8 articles
+- [ ] Barre segmentée sur les sections, absente sur Flâner
+- [ ] Un article entrevu n'est ni marqué « Lu » ni compté comme ouvert
+- [ ] Aucune régression sur les ouvertures sans section
 
 ## Zones de risque
 
-- **Cap 13** : un bloc dégradé peut désormais tomber **hors** du cap et
-  disparaître de la page. C'est voulu — mais vérifier que le quota suggestions
-  survit au tri.
-- **Frontière 07h30 Paris** (scénario 6) : la clé `tournee_score_order_v1` porte
-  le jour dans sa valeur ; une entrée d'hier doit être ignorée, pas appliquée.
-- **Comptes personnalisés** : un bloc glissé en tête peut descendre **le
-  lendemain**. Jamais dans la même session.
-- **Kill-switch** `kTourneeScoreSortEnabled` (`tournee_order_prefs_provider.dart`) :
-  à `false`, retour exact au comportement d'avant (dépriorisation binaire
-  riches/maigres). C'est le rollback si l'ordre observé déplaît.
+- **Arène de gestes** : deux recognizers horizontaux coexistent (bande de retour
+  de la route + `PageView` du deck). Couvert par un test
+  (`swipe_back_page_test.dart`), mais à revérifier au doigt sur device.
+- **Fluidité du drag** : la page voisine est volontairement un aperçu léger, pas
+  le reader complet. Si une saccade apparaît, c'est là qu'il faut regarder.
+- **Android / platform views** : sur un article sans contenu in-app (webview
+  pleine page), le platform view passe sous la transformation du deck. À vérifier
+  visuellement sur Android.
+- **Flutter web** : `PageView` piloté à la souris — le glissement se fait par
+  drag maintenu, pas par molette.
 
 ## Dépendances
 
-- Aucun endpoint nouveau : le tri consomme `recommendation_reason.score_total`,
-  déjà servi par `GET /api/feed`.
-- **Aucune migration Alembic** (mobile-only).
-- Nouvelle clé `SharedPreferences` : `tournee_score_order_v1`, valeur
-  `{"day": "<dayKey>", "keys": [...]}` — clé unique day-stampée, auto-invalidante.
-- Event analytics `article_impression` : la propriété `block_score` passe de
-  `null` à une valeur réelle.
-
-## Notes pour l'agent QA
-
-- Viewport 390×844, sémantique activée au boot (skill `facteur-qa-web`).
-- Le gel de l'ordre se produit **après** la dernière tâche du fan-out : laisser
-  la page se poser complètement avant d'asserter l'ordre final.
-- Le comportement dépend des scores réels renvoyés par le backend. Sur un compte
-  sans favori bien fourni, il peut n'y avoir aucun changement visible — ce n'est
-  pas un échec, c'est le cas « rien à trier ».
+Aucune. Zéro changement backend, zéro migration Alembic. Un seul nouvel event
+analytics : `article_swipe_nav`.

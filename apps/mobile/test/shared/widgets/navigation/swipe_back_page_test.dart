@@ -6,10 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const viewportSize = Size(800, 600);
 
-  Future<void> openScrollablePage(
+  Future<void> openPage(
     WidgetTester tester, {
-    ScrollController? controller,
-    VoidCallback? onLeftTap,
+    required Widget page,
+    required String marker,
+    double widthFraction = wideBackGestureWidthFraction,
   }) async {
     await tester.binding.setSurfaceSize(viewportSize);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -23,10 +24,8 @@ void main() {
                 onPressed: () {
                   Navigator.of(context).push(
                     FullSwipeCupertinoPage<void>(
-                      child: _ScrollableTestPage(
-                        controller: controller,
-                        onLeftTap: onLeftTap,
-                      ),
+                      backGestureWidthFraction: widthFraction,
+                      child: page,
                     ).createRoute(context),
                   );
                 },
@@ -40,7 +39,33 @@ void main() {
 
     await tester.tap(find.text('Ouvrir'));
     await tester.pumpAndSettle();
-    expect(find.text('Page scrollable'), findsOneWidget);
+    expect(find.text(marker), findsOneWidget);
+  }
+
+  Future<void> openScrollablePage(
+    WidgetTester tester, {
+    ScrollController? controller,
+    VoidCallback? onLeftTap,
+    double widthFraction = wideBackGestureWidthFraction,
+  }) {
+    return openPage(
+      tester,
+      widthFraction: widthFraction,
+      marker: 'Page scrollable',
+      page: _ScrollableTestPage(
+        controller: controller,
+        onLeftTap: onLeftTap,
+      ),
+    );
+  }
+
+  Future<void> openPagedPage(WidgetTester tester) {
+    return openPage(
+      tester,
+      widthFraction: edgeBackGestureWidthFraction,
+      marker: 'Page 0',
+      page: const _PagedTestPage(),
+    );
   }
 
   Future<void> dragFrom(WidgetTester tester, Offset start, Offset delta) async {
@@ -127,6 +152,43 @@ void main() {
       expect(find.text('Page scrollable'), findsOneWidget);
     });
 
+    testWidgets(
+      'bande de bord : le retour ne part plus que du bord de l’écran',
+      (tester) async {
+        await openScrollablePage(
+          tester,
+          widthFraction: edgeBackGestureWidthFraction,
+        );
+
+        // 200 px = dans l’ancienne zone large (35 % de 800), hors de la bande.
+        await dragFrom(tester, const Offset(200, 300), const Offset(400, 0));
+        expect(find.text('Page scrollable'), findsOneWidget);
+
+        await dragFrom(tester, const Offset(10, 300), const Offset(500, 0));
+        expect(find.text('Page scrollable'), findsNothing);
+        expect(find.text('Ouvrir'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'un PageView horizontal dans la page ne vole pas la bande de retour',
+      (tester) async {
+        // Régression du deck d’articles (Story 34.1) : deux recognizers
+        // horizontaux en concurrence. La bande étant posée au-dessus de la
+        // page, son recognizer entre dans l’arène en premier et gagne.
+        await openPagedPage(tester);
+
+        // Au centre, c’est le PageView qui doit répondre.
+        await dragFrom(tester, const Offset(400, 300), const Offset(-500, 0));
+        expect(find.text('Page 1'), findsOneWidget);
+        expect(find.text('Ouvrir'), findsNothing);
+
+        // Sur la bande de bord, c’est le retour.
+        await dragFrom(tester, const Offset(10, 300), const Offset(500, 0));
+        expect(find.text('Ouvrir'), findsOneWidget);
+      },
+    );
+
     test('platform views claim vertical drags only', () {
       final recognizers = swipeBackCompatiblePlatformViewGestureRecognizers();
       expect(recognizers, hasLength(1));
@@ -136,6 +198,24 @@ void main() {
       );
     });
   });
+}
+
+/// Page portant son propre geste horizontal — miroir du deck d'articles.
+class _PagedTestPage extends StatelessWidget {
+  const _PagedTestPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: PageView.builder(
+        itemCount: 3,
+        itemBuilder: (context, index) => ColoredBox(
+          color: Colors.white,
+          child: Center(child: Text('Page $index')),
+        ),
+      ),
+    );
+  }
 }
 
 class _ScrollableTestPage extends StatelessWidget {
