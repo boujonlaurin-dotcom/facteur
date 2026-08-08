@@ -1,118 +1,80 @@
-# fix(essentiel) : la pile de tri passe la revue design — itération PO + passe pré-prod (33.1)
+# fix(essentiel): pile de tri — progression sous les boutons, carte au contenu, plus de carte vide
 
-Base `main`. **Mobile-only, aucune migration, aucun changement backend.**
-Suite de la PR #1051 (« le tri dans le feed »), déjà mergée.
-Story : `docs/stories/core/33.1.tri-dans-le-feed.md`.
+Reprise E2E de la story 33.1 : le PO a **infirmé** trois correctifs de la passe
+design. Mobile-only, aucune migration, aucun endpoint touché.
 
-## Quoi
+## La root cause du défaut « aucun squelette pendant le chargement » n'était pas la bonne
 
-Sur la pile livrée en #1051, le PO a relevé deux séries de défauts — une
-itération de fond sur capture, puis une passe de finition bloquante pour la mise
-en prod. Les deux sont ici.
+Le hand-off d'entrée attribuait l'aplat beige à « la vraie carte rendue avec
+`articles` vide ». **Ce chemin n'existe pas** : `_buildEssentielSection` renvoie
+`null` sur liste vide (la section n'est alors pas dans le feed, donc pas
+d'en-tête), et l'état squelette explicite rend `_HeroSkeleton`, du shimmer — or
+la capture PO montre le **vrai texte** de l'en-tête.
 
-**Itération PO — 6 retouches**
+La vraie cause : `EssentielTriageStack` sortait en `SizedBox.shrink()` quand
+l'article du haut du **slate figé** ne se résolvait plus dans le pool. En-tête
+rendu, corps de **0 px**, et c'est **persistant**, pas transitoire. Reproduit en
+test : slate `['x-99','c-1']` + pool `[c-1,c-2]` ⇒ hauteur de la pile = `0.0`.
 
-1. **Le swipe se figeait.** Un unique `TriageSwipeCardState` (réutilisé via
-   `GlobalKey`) laissait fuir l'état de drag d'un article sur le suivant, et
-   l'index n'avançait que dans le `.then()` de l'anim de sortie — piégé si
-   l'anim était interrompue. Fix : jeton `articleId` + reset complet dans
-   `didUpdateWidget`, avancée garantie par un `_completeExit` idempotent doublé
-   d'un Timer garde-fou, `onHorizontalDragCancel` pour la perte d'arène.
-2. **La carte épouse son contenu** — fin du vide de ~256 px sous la pile. La
-   kept-list grandit sous la barre d'actions (`AnimatedSize` aligné en haut), la
-   zone d'action reste figée, le feed ne saute pas.
-3. **Images beaucoup plus grandes** : bandeau 96 → 180 (format ~16:9), carte
-   272 → 360.
-4. **Squelette de pile réellement visible** : deux cartes décalées avec image et
-   lignes de titre, et réserve de la hauteur d'ouverture plutôt que du pic.
-5. **« Plus d'articles »** (passe de « hors scope V0 » à livré) : au tri
-   terminé, réinjecte le carrousel du jour **déjà chargé** dans la pile via
-   `extendSlate` (borné +5), sans réseau. Le slate reste figé — on allonge la
-   queue, `decide()` envoie le `slate_size` étendu donc `rank ≤ slate_size`.
-6. **Retrait de la pastille « X nouveaux articles »**.
+Comment on y arrive en vrai : « Plus d'articles » (`extendSlate`) persiste dans
+le slate des `contentId` **du carrousel du jour** ; au cold-boot suivant,
+l'hydratation depuis le cache ne rejoue pas le carrousel → l'id du haut de pile
+est introuvable. (Idem blend live story 9.8, ou tous les articles masqués.)
 
-**Passe pré-prod — 7 défauts de finition**
+## Ce que fait la PR
 
-- **Le squelette n'était jamais vu.** Sur un boot tiède (snapshot Hive frais ⇒
-  jamais de squelette d'écran), la carte rendait l'ancienne liste passive
-  pendant l'hydratation SharedPreferences, puis la pile. Nouvel état
-  `triagePending` + silhouette extraite dans `TriageStackSkeleton`, **partagée**
-  avec `_HeroSkeleton` : une seule définition, les deux attentes ne peuvent plus
-  diverger de la vraie pile.
-- **Promotion continue** de la carte du dessous (`onGestureProgress` →
-  `ValueNotifier`), clés de `Stack` stables, slot arrière toujours rendu :
-  l'appariement se fait par clé, jamais par position.
-- **Tampon gaté sur un geste réel** : un `effectiveDx` résiduel tamponnait la
-  carte fraîche le temps d'une frame, qui se lisait « déjà décidée ».
-- **Pas de placeholder sans image** (décision PO) : deux hauteurs discrètes
-  (360 avec image / 240 sans), titre sur 6 lignes, décidées à la composition.
-- **Coche « suivie » / étoile « favorite »** près du nom de source, sur la carte
-  et les lignes gardées (`InterestStateVisuals` réutilisé).
-- **Tampon plain** (fond plein + blanc) : il se pose sur une photo.
-- **`_TriageDoneActions`** (« Trier à nouveau » + « Plus d'articles ») remplace
-  l'encart conditionnel ; **compteur « N sur M » retiré**.
+**#4 — plus jamais de carte vide**
+- Haut de pile irrésolvable ⇒ la pile rend la **silhouette** partagée
+  (`TriageStackSkeleton`), jamais un corps vide.
+- `EssentielTriageNotifier.pruneUnavailable(poolIds)` retire du slate les ids
+  **non décidés** absents du pool (les décidés restent : leur décision est
+  partie). Strictement décroissant ⇒ pas de boucle. Posté après la frame par la
+  carte, et **uniquement** quand le haut de pile est irrésolvable — jamais sur
+  le chemin nominal.
+- Piège trouvé en relecture, corrigé et testé : un slate *entièrement*
+  introuvable se vide, or le gel du slate (`_scheduleStart`) est verrouillé une
+  fois par montage → la carte serait restée sur sa silhouette. Le verrou est
+  levé après la réparation.
 
-## Pourquoi
+**#3 — la carte épouse le contenu réellement affiché**
+Renversement assumé des « deux hauteurs discrètes » : le titre était un
+`Expanded` dans un slot de 360 px, donc un titre court **étirait du vide** et
+repoussait la méta en bas. Désormais `mainAxisSize: min` de bout en bout, plus
+d'`Expanded`, et le slot n'impose plus de hauteur (`SizedBox(height:)` retiré de
+la pile **et** de `TriageSwipeCard`). L'`AnimatedSize` déjà en place fait
+**glisser** la barre d'actions d'une hauteur à l'autre au lieu de la faire
+sauter. Hauteur bornée par construction (bandeau 180 fixe + `maxLines`), donc
+pas de plafond ajouté. La carte du dessous est ancrée en haut sans hauteur
+imposée — en `Positioned.fill` elle débordait dès qu'elle était la plus grande
+des deux (test dédié).
 
-La V0 reste en **collecte seule** : chaque décision est enregistrée avec son
-rang dans le slate figé, **aucun poids de reco ne bouge**. Ce que ces retouches
-protègent, c'est la qualité du signal — un swipe qui se fige ou une carte qui se
-lit comme « déjà décidée » produit des décisions fausses, pas juste une mauvaise
-impression.
+**#2 — progression sous les boutons**
+`_ProgressBar` passe après `_ActionBar` : `carte → actions → progression →
+gardés`, répercuté à l'identique dans la silhouette (sinon saut à
+l'hydratation).
 
-## Comment ça a été vérifié
+**Ménage** : `kTriageCardTextOnlyHeight` et `triageCardHeightFor` retirés (plus
+d'appelant) ; `kTriageCardHeight` redocumenté — il ne sert plus qu'à la réserve
+du squelette.
 
-- [x] **`flutter test`** — suite complète relancée après la passe `/simplify`.
-      Les échecs restants sont **strictement ceux de `main`** (vérifiés dans un
-      worktree sur `origin/main` pour le seul qui touchait un fichier partagé :
-      `theme_section_screen_test` échoue à l'identique, `Expected: <0.6> /
-      Actual: <0.8>`). Aucun échec dans le périmètre touché.
-- [x] **`flutter analyze`** — **0 erreur, 0 warning neuf**, total identique à la
-      baseline. Zéro issue dans les fichiers neufs/modifiés de la pile.
-- [x] **Tests neufs** : `triage_swipe_card_test.dart` (geste, tampons, avancée),
-      `flux_continu_hero_skeleton_test.dart` (groupe `TriageStackSkeleton`),
-      `essentiel_hi_fi_card_test.dart` (harnais refait + états `triagePending` /
-      tri terminé / « Plus d'articles »), `flux_continu_models_test.dart`
-      (`EssentielArticle.fromContent`), `essentiel_triage_provider_test.dart`
-      (`extendSlate`), `section_fit_test.dart` (géométrie partagée).
-- [x] **`/simplify`** — 4 relectures parallèles, findings convergents appliqués
-      (commit dédié, détail dans son message).
-- [x] **Alembic** — sans objet : aucune migration, aucun fichier `packages/api`
-      touché.
-- [ ] **Playwright / `/validate-feature`** — **non exécuté** : chaque scénario
-      de tri exige un compte connecté avec un digest du jour, et je n'ai pas de
-      credentials. `.context/qa-handoff.md` est à jour ; à lancer avant merge.
+## Vérification
 
-## Zones à risque
+- `flutter analyze lib/features/flux_continu` : **0 issue**.
+- `flutter test test/features/flux_continu` : **619 passés, 1 échec** —
+  `theme_section_screen_test` (`Expected: <0.6> / Actual: <0.8>`), échec de
+  baseline documenté, hors scope. Le 2ᵉ échec de baseline (purge cross-day)
+  passe aujourd'hui : il dépend de la frontière de date.
+- Tests neufs : 7 sur `pruneUnavailable`, 6 sur la carte (ordre
+  progression/actions, fit court vs long, méta collée au titre, carte du dessous
+  plus haute sans débordement, slate irrésolvable → silhouette puis reprise,
+  slate entièrement introuvable → re-gel), 1 sur l'ordre de la silhouette.
+  Les deux tests de piège ont été **vérifiés rouges** sans leur correctif.
 
-- **Chemin de geste.** C'est le cœur du correctif n°1 et il concentre trois
-  mécanismes qui se recouvrent (jeton `articleId`, `_completeExit` idempotent,
-  Timer garde-fou). Volontaire — chacun couvre un chemin que les autres ne
-  couvrent pas — mais c'est la zone à relire en priorité.
-- **Budget de hauteur.** La carte avec image passe à 360 px. Elle n'est plus
-  bornée par une réserve : le repli n'est plus « rétrécir » mais « ne pas
-  dépasser le viewport ». À vérifier à 390×844 pendant la QA.
-- **Squelette partagé.** `TriageStackSkeleton` sert **deux** points de
-  branchement (écran + carte). Une régression de silhouette se voit aux deux
-  endroits à la fois — c'est le but, mais ça double la surface d'un défaut.
-- **Aucune migration, aucun backend** ⇒ rien à craindre côté DB partagée
-  staging/prod ni côté backend `production` de la semaine en cours.
+## ⚠️ Ce qui reste à faire avant merge
 
-## Suites identifiées (pas dans cette PR)
-
-Remontées par la passe `/simplify`, volontairement laissées de côté parce que
-leur correctif restructure le chemin de geste ou touche des surfaces hors diff :
-
-- **Clé par article** (`GlobalObjectKey(currentId)`) au lieu du `GlobalKey`
-  unique : rendrait structurellement impossible la fuite d'état entre cartes et
-  déposerait ~25 lignes de garde. À faire avec une passe QA du swipe.
-- **Sortie animée portée par la pile** plutôt que par la carte : le notifier
-  avancerait immédiatement, le Timer garde-fou disparaîtrait.
-- **`hasImage` figé à la composition** : il dérive aujourd'hui de
-  `FacteurThumbnail.failedUrls`, un set statique mutable écrit pendant le paint.
-  L'invariant « jamais au milieu du geste » est en prose, pas en structure.
-- **Shimmer partagé** (`FacteurShimmer` + `SkeletonBar`) : la recette
-  `textTertiary @10 % / @4 %` est recopiée dans trois squelettes indépendants.
-- **`triageCardHasImage`** est la 3ᵉ copie du prédicat « cette image va-t-elle
-  rendre ? » ; sa place est sur `FacteurThumbnail`, qui revendique déjà la
-  propriété de la politique d'éviction.
+Le hand-off exige une repro **dans l'app qui tourne** (build web + Playwright).
+Elle **n'a pas été faite** : le build web public est celui de `main`, donc il
+faut builder cette branche en local et se connecter à l'API staging — ce qui
+demande un compte de test que je n'ai pas. Scénarios prêts dans
+`.context/qa-handoff.md` (13, 14, 15). Donne-moi des credentials et je fais la
+passe.

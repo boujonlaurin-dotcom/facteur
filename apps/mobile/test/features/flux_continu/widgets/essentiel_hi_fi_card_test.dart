@@ -907,9 +907,11 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const Key('triage-card-banner')), findsNothing);
+      // Sans bandeau, la carte ne réserve plus la hauteur d'une carte image :
+      // elle prend celle de son contenu (source + titre court + rien d'autre).
       expect(
         tester.getSize(find.byType(TriageSwipeCard)).height,
-        kTriageCardTextOnlyHeight,
+        lessThan(kTriageCardHeight - kTriageCardImageHeight),
       );
     });
 
@@ -938,19 +940,20 @@ void main() {
           )) {
         expect(size.height, kTriageCardImageHeight);
       }
-      expect(
-        tester.getSize(find.byType(TriageSwipeCard)).height,
-        kTriageCardHeight,
-      );
+      // Le bandeau est la seule part figée : la carte prend sa hauteur plus
+      // celle de son texte, et reste sous la borne réservée par le squelette.
+      final height = tester.getSize(find.byType(TriageSwipeCard)).height;
+      expect(height, greaterThan(kTriageCardImageHeight));
+      expect(height, lessThanOrEqualTo(kTriageCardHeight));
     });
 
     testWidgets(
         'un titre long tient ses 4 lignes dans la carte, sans déborder '
         'ni rogner le pied', (tester) async {
-      // Le point à ne pas rater du budget : la carte a une hauteur FIGÉE. Si
-      // l'arithmétique de `kTriageCardHeight` était trop serrée, le titre
-      // perdrait des lignes en silence (ou le pied sauterait). On vérifie sur
-      // le pire cas réel : un titre qui remplit ses 4 lignes.
+      // La carte épouse désormais son contenu, mais le titre reste plafonné à
+      // `maxLines` : ce test vérifie que le plafond n'est pas décoratif — les 4
+      // lignes sont bien rendues, et le pied reste sous le titre au lieu d'être
+      // repoussé ou rogné. Pire cas réel : un titre qui remplit ses 4 lignes.
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -1071,6 +1074,228 @@ void main() {
       expect(keptRowY, greaterThan(actionBarY));
       // Plus aucun « N sur M triés » nulle part.
       expect(find.textContaining('sur 3 triés'), findsNothing);
+    });
+
+    // ── Reprise E2E PO (08/08) ────────────────────────────────────────────
+    //
+    // Trois défauts que le PO a vus **dans l'app** alors que les tests
+    // passaient au vert : les états injectés couvraient un chemin que le
+    // chargement réel n'emprunte pas. Les tests ci-dessous visent donc l'état
+    // cassé lui-même (slate irrésolvable) et des invariants de mise en page
+    // mesurés, pas des libellés.
+
+    testWidgets(
+        'défaut #2 — la barre de progression est rendue SOUS les boutons',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      // Segments de progression : les seules boîtes de 4 ou 7 px de haut de la
+      // pile (le segment en cours est épaissi). On prend le plus haut placé.
+      final segments = tester
+          .widgetList<AnimatedContainer>(find.descendant(
+            of: find.byType(EssentielTriageStack),
+            matching: find.byType(AnimatedContainer),
+          ))
+          .map((w) => tester.getTopLeft(find.byWidget(w)).dy)
+          .toList();
+      expect(segments, isNotEmpty);
+      final progressY = segments.reduce((a, b) => a < b ? a : b);
+      final actionBarBottom =
+          tester.getBottomLeft(find.text('Je garde')).dy;
+      expect(progressY, greaterThan(actionBarBottom));
+    });
+
+    testWidgets(
+        'défaut #3 — la carte épouse son contenu : un titre court donne une '
+        'carte plus courte qu\'un titre long, et la méta reste collée au titre',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const longTitle =
+          'Un titre de presse particulièrement long qui occupe sans peine '
+          'quatre lignes entières sur un écran de trois cent quatre-vingt-dix '
+          'pixels de large, et même davantage si on le laissait faire';
+
+      Future<double> heightFor(String title) async {
+        await tester.pumpWidget(_wrap(
+          EssentielHiFiCard(
+            articles: [
+              _article(
+                rank: 1,
+                title: title,
+                thumbnailUrl: 'https://example.com/1.jpg',
+                sourceCount: 4,
+              ),
+              _article(rank: 2),
+            ],
+            onTapArticle: (_) {},
+          ),
+          overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        ));
+        await tester.pump();
+        return tester.getSize(find.byType(TriageSwipeCard)).height;
+      }
+
+      final shortHeight = await heightFor('Court');
+      final longHeight = await heightFor(longTitle);
+
+      // Le cœur du défaut : avec une hauteur figée, les deux valaient 360 — le
+      // titre court étirait du vide et repoussait la méta en bas de carte.
+      expect(shortHeight, lessThan(longHeight));
+
+      // Et la méta (pastille de couverture) suit le titre au lieu d'être
+      // plaquée au bas d'un slot surdimensionné : sur la carte à titre court,
+      // elle démarre bien avant le bas de la carte.
+      await heightFor('Court');
+      final chip = find.byKey(const Key('triage-coverage-chip'));
+      final cardBottom =
+          tester.getBottomLeft(find.byType(TriageSwipeCard)).dy;
+      expect(tester.getBottomLeft(chip).dy,
+          lessThanOrEqualTo(cardBottom - kTriageCardPaddingV));
+    });
+
+    testWidgets(
+        'défaut #3 — une carte du dessous plus haute que celle du dessus ne '
+        'déborde pas', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      // Le piège du slot intrinsèque : c'est la carte du DESSUS qui dimensionne
+      // la pile. Une carte du dessous plus grande (image + titre long sous une
+      // carte texte courte) débordait de la contrainte serrée qu'elle héritait.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(rank: 1, title: 'Court'),
+            _article(
+              rank: 2,
+              title: 'Un titre bien plus long qui, avec son bandeau image, '
+                  'fait une carte nettement plus haute que celle du dessus',
+              thumbnailUrl: 'https://example.com/2.jpg',
+              sourceCount: 4,
+              divergenceLevel: 'high',
+            ),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      // `pumpWidget` fait échouer le test sur une exception de layout : arriver
+      // ici sans erreur EST l'assertion. On vérifie en plus que la pile est
+      // bien dimensionnée par la carte du dessus (la courte).
+      expect(
+        tester.getSize(find.byType(EssentielTriageStack)).height,
+        lessThan(kTriageCardHeight + kTriageActionBarHeight),
+      );
+    });
+
+    testWidgets(
+        'défaut #4 — un slate figé qui pointe un article absent du pool rend '
+        'la silhouette, jamais un corps vide', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          // Pool du jour, SANS carrousel : `x-99` a été injecté hier par
+          // « Plus d'articles » et n'est plus adressable au cold-boot.
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['x-99', 'c-1', 'c-2'])],
+      ));
+      // Pas de `pump()` supplémentaire : on regarde la frame **avant** que la
+      // réparation postée ne s'applique — c'est la frame où l'ancienne version
+      // ne rendait rien du tout.
+
+      // Avant : `SizedBox.shrink()` → en-tête seul au-dessus d'un aplat de
+      // fond, indéfiniment. C'est la capture rapportée par le PO.
+      expect(find.byType(TriageStackSkeleton), findsOneWidget);
+      expect(tester.getSize(find.byType(EssentielTriageStack)).height,
+          greaterThan(kTriageCardHeight));
+    });
+
+    testWidgets(
+        'défaut #4 — le slate se répare tout seul : l\'article introuvable '
+        'est retiré et le tri reprend sur l\'article suivant', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['x-99', 'c-1', 'c-2'])],
+      ));
+      // La réparation est postée après la frame (muter un provider pendant le
+      // build est interdit) : c'est ce 2ᵉ pump qui la joue.
+      await tester.pump();
+      await tester.pump();
+
+      // La pile est repartie sur le premier article réellement adressable, et
+      // la progression ne compte plus l'article fantôme.
+      expect(find.byType(TriageStackSkeleton), findsNothing);
+      expect(find.text('Titre 1'), findsWidgets);
+      expect(find.text('Je garde'), findsOneWidget);
+    });
+
+    testWidgets(
+        'défaut #4 — un slate ENTIÈREMENT introuvable se re-gèle sur les '
+        'articles du jour au lieu de laisser la silhouette tourner en rond',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      // Le piège du correctif : vider le slate rend `hasStarted` faux, or le
+      // gel du slate est verrouillé **une fois par montage**. Il faut donc que
+      // le slate ait d'abord été gelé par cette carte-ci — sinon le verrou
+      // n'est pas encore posé et le scénario ne mord pas.
+      final triage = triageWith(slate: const []);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triage],
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Titre 1'), findsWidgets, reason: 'slate gelé sur c-1');
+
+      // Le blend live renvoie un jeu d'articles entièrement différent : plus
+      // aucun id du slate gelé n'est adressable.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 3), _article(rank: 4)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triage],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TriageStackSkeleton), findsNothing);
+      expect(find.text('Titre 3'), findsWidgets);
+      expect(find.text('Je garde'), findsOneWidget);
     });
 
     testWidgets(

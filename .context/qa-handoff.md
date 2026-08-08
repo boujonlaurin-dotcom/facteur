@@ -126,6 +126,54 @@ signal sur les lignes des articles gardés, sous la pile.
 la carte ni dans le squelette de chargement. La barre de progression segmentée est
 le seul indicateur d'avancement.
 
+---
+
+## Reprise E2E PO (08/08) — scénarios additionnels
+
+> Les trois défauts ci-dessous avaient été déclarés corrigés sur la foi de tests
+> verts, alors qu'aucun ne l'était à l'écran. **À vérifier dans l'app qui
+> tourne**, pas sur un test.
+
+### Scénario 13 : la barre de progression est SOUS les boutons (PRIORITÉ)
+**Parcours** :
+1. Ouvrir la Tournée du jour, pile de tri active.
+**Résultat attendu** : l'ordre vertical est **carte → boutons (✕ · signet · « Je
+garde ») → barre de progression segmentée → articles gardés**. Plus rien
+au-dessus de la carte. Même ordre pendant le chargement (silhouette).
+
+### Scénario 14 : la carte épouse le contenu réellement affiché (PRIORITÉ)
+**Parcours** :
+1. Trier plusieurs articles d'affilée : alterner titres courts / longs, avec et
+   sans image.
+**Résultat attendu** : aucune carte ne montre de **blanc interne** entre le titre
+et la ligne du bas (polarisation / « N sources ») — la méta est collée sous le
+titre. Une carte à titre court est visiblement **plus basse** qu'une carte à titre
+long. La barre d'actions **glisse** (transition animée) d'une hauteur à l'autre,
+elle ne saute pas sous le pouce. Une carte ne dépasse jamais l'écran.
+
+### Scénario 15 : plus jamais de carte vide (PRIORITÉ)
+**Contexte** : l'aplat beige rapporté en E2E n'était pas une attente, c'était un
+état cassé — le slate figé du jour désignait un article que la carte ne pouvait
+plus résoudre (typiquement un article ajouté la veille par « Plus d'articles » :
+le carrousel n'est pas rejoué à l'hydratation depuis le cache).
+
+**Parcours (repro dirigée)** :
+1. Trier partiellement, taper « Plus d'articles », **ne pas** finir le tri.
+2. Tuer l'app, la relancer (cold boot, cache chaud).
+   *Variante web* : avant rechargement, éditer dans `localStorage` la clé
+   `flutter.essentiel_triage_v1_<dayKey>` et remplacer un `content_id` du
+   `slate` par une valeur bidon, puis recharger.
+**Résultat attendu** : **jamais** d'en-tête « Ton Essentiel » seul au-dessus d'un
+aplat de fond. Au pire une **silhouette de pile** le temps d'une frame, puis le
+tri reprend sur le premier article réellement disponible ; la barre de progression
+ne compte plus l'article fantôme. Le tri déjà fait n'est pas perdu.
+
+### Critères d'acceptation additionnels
+- [ ] Progression rendue **sous** les boutons (pile réelle **et** silhouette).
+- [ ] Aucune carte avec du blanc interne ; hauteur qui suit le contenu ;
+      barre d'actions qui glisse au lieu de sauter.
+- [ ] Slate périmé → silhouette puis reprise automatique, jamais de carte vide.
+
 ## Critères d'acceptation
 - [ ] Le tri au swipe seul va jusqu'au bout, sans carte figée/grisée.
 - [ ] La carte grandit doucement sous la barre d'actions ; plus de grand vide.

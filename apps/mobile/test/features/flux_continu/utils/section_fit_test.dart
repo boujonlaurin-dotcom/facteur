@@ -279,18 +279,14 @@ void main() {
 
   // ── Pile de tri (Story 33.1) ───────────────────────────────────────────────
   //
-  // Ce que ces tests gardent : la carte de tri a deux hauteurs **discrètes**
-  // (avec / sans image) et jamais un fit-to-content, sans quoi la barre
-  // d'actions sauterait sous le pouce d'un article à l'autre. La géométrie
-  // partagée entre la vraie pile et sa silhouette vit dans ces constantes — si
-  // l'une des deux la re-transcrit à la main, l'attente cesse de ressembler au
-  // contenu (le défaut corrigé par l'itération PO 33.1).
+  // Ce que ces tests gardent : la géométrie partagée entre la vraie pile et sa
+  // silhouette vit dans ces constantes — si l'une des deux la re-transcrit à la
+  // main, l'attente cesse de ressembler au contenu (le défaut corrigé par
+  // l'itération PO 33.1). La carte, elle, n'a plus de hauteur figée depuis la
+  // reprise PO du 08/08 : elle épouse son contenu, et [kTriageCardHeight] ne
+  // sert plus qu'à la **réserve du squelette**.
 
   group('géométrie de la pile de tri', () {
-    test('la carte sans image est plus courte que la carte avec image', () {
-      expect(kTriageCardTextOnlyHeight, lessThan(kTriageCardHeight));
-    });
-
     test('la carte avec image réserve son bandeau en plus du texte', () {
       expect(kTriageCardHeight - kTriageCardImageHeight,
           greaterThan(kTriageCardPaddingV * 2));

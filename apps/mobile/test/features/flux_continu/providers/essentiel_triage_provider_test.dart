@@ -357,6 +357,98 @@ void main() {
     });
   });
 
+  // Réparation d'un slate qui a survécu aux articles qu'il désigne. C'est ce
+  // qui figeait la carte sur un corps vide (défaut E2E « aucun squelette
+  // pendant le chargement » : l'aplat n'était pas une attente mais un état
+  // cassé, typiquement un `extendSlate` d'hier dont le carrousel n'est pas
+  // rejoué à l'hydratation depuis le cache).
+  group('réparation du slate (pruneUnavailable)', () {
+    test('retire les ids non décidés absents du pool', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+      notifier.extendSlate(const ['x']);
+      expect(c.read(essentielTriageProvider).slate, [..._slate, 'x']);
+
+      notifier.pruneUnavailable(_slate.toSet());
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.slate, _slate);
+      expect(state.currentContentId, 'a', reason: 'le tri reprend son cours');
+    });
+
+    test('garde les ids déjà décidés, même absents du pool', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+      notifier.decide(TriageDecision.keep, via: TriageVia.swipe); // 'a'
+
+      notifier.pruneUnavailable(const {'b', 'c'});
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.slate, _slate, reason: 'la décision sur « a » reste comptée');
+      expect(state.keptContentIds, ['a']);
+    });
+
+    test('un pool complet est un no-op', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+      final before = c.read(essentielTriageProvider);
+
+      notifier.pruneUnavailable({..._slate, 'z'});
+
+      expect(identical(c.read(essentielTriageProvider), before), isTrue);
+    });
+
+    test('un pool vide est un no-op (jamais de purge sur une carte vide)',
+        () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+
+      notifier.pruneUnavailable(const {});
+
+      expect(c.read(essentielTriageProvider).slate, _slate);
+    });
+
+    test('sans tri commencé est un no-op', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+
+      notifier.pruneUnavailable(const {'a'});
+
+      expect(c.read(essentielTriageProvider).slate, isEmpty);
+    });
+
+    test('un slate entièrement introuvable se vide et se re-gèle', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(const ['vieux-1', 'vieux-2']);
+
+      notifier.pruneUnavailable(_slate.toSet());
+      expect(c.read(essentielTriageProvider).hasStarted, isFalse);
+
+      // La carte re-gèle alors sur les articles du jour, sans intervention.
+      notifier.startIfNeeded(_slate);
+      expect(c.read(essentielTriageProvider).slate, _slate);
+    });
+
+    test('la réparation survit à un cold-boot', () async {
+      final c1 = makeContainer();
+      final n1 = await hydrated(c1);
+      n1.startIfNeeded(_slate);
+      n1.extendSlate(const ['x']);
+      n1.pruneUnavailable(_slate.toSet());
+      await Future<void>.delayed(Duration.zero);
+
+      final c2 = makeContainer();
+      await hydrated(c2);
+
+      expect(c2.read(essentielTriageProvider).slate, _slate);
+    });
+  });
+
   group('envoi batché', () {
     test('la fin du tri flushe toutes les décisions en un batch', () async {
       final c = makeContainer();

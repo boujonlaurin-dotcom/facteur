@@ -44,7 +44,8 @@ class _HarnessState extends State<_Harness> {
     return TriageSwipeCard(
       key: _key,
       articleId: id,
-      height: 300,
+      // Plus de `height` : la carte prend celle de son enfant (reprise PO
+      // 08/08). C'est le `SizedBox` du child ci-dessous qui la dimensionne.
       onGestureProgress: widget.onGestureProgress,
       onKeep: () => _advance('keep-$id'),
       onPass: () => _advance('pass-$id'),

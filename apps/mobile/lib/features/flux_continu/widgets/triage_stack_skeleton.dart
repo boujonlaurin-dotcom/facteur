@@ -5,7 +5,8 @@ import '../../../config/theme.dart';
 import '../utils/section_fit.dart';
 
 /// Silhouette de la pile de tri (« Ton Essentiel » swipable, Story 33.1) :
-/// progression + pile de deux cartes + barre d'actions.
+/// pile de deux cartes + barre d'actions + progression — **dans cet ordre**, le
+/// même que la vraie pile depuis la reprise PO du 08/08.
 ///
 /// **Un seul widget pour deux points de branchement**, sans quoi les deux
 /// attentes divergent :
@@ -19,10 +20,11 @@ import '../utils/section_fit.dart';
 ///   asynchrone, `startIfNeeded` posté après la frame). Là il n'y a pas de
 ///   `Shimmer` ancêtre → `standalone: true`.
 ///
-/// La silhouette réserve [kTriageCardHeight] (la borne haute des deux hauteurs
-/// de carte) : à ce stade les URLs d'image ne sont pas encore connues, et
-/// sur-réserver fait descendre le contenu, jamais sauter la barre d'actions sous
-/// le doigt.
+/// La vraie carte, elle, **épouse son contenu** : la silhouette ne peut donc pas
+/// lui être pixel-identique. Elle réserve [kTriageCardHeight], la hauteur d'une
+/// carte pleine (bandeau image + titre long) — à ce stade ni l'URL d'image ni la
+/// longueur du titre ne sont connues, et sur-réserver fait *descendre* le
+/// contenu à l'hydratation, jamais sauter la barre d'actions sous le doigt.
 class TriageStackSkeleton extends StatelessWidget {
   /// `true` ⇒ le widget porte son propre [Shimmer.fromColors] (appelé hors d'un
   /// squelette d'écran). `false` ⇒ un ancêtre en fournit déjà un.
@@ -92,12 +94,6 @@ class TriageStackSkeleton extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: kTriageProgressHeight,
-          child: Center(
-            child: bar(width: double.infinity, height: 6, radius: 3),
-          ),
-        ),
-        SizedBox(
           height: kTriageCardHeight,
           child: Stack(
             children: [
@@ -147,6 +143,15 @@ class TriageStackSkeleton extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+        // Progression **sous** les boutons, exactement comme la vraie pile
+        // (reprise PO 08/08) : deux ordres différents feraient sauter la mise en
+        // page à l'hydratation, ce que cette silhouette existe pour empêcher.
+        SizedBox(
+          height: kTriageProgressHeight,
+          child: Center(
+            child: bar(width: double.infinity, height: 6, radius: 3),
           ),
         ),
       ],

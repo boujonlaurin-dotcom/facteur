@@ -20,6 +20,7 @@ import '../services/preview_nudge_scheduler.dart';
 import '../utils/section_fit.dart';
 import 'auto_grow_pulse.dart';
 import 'coverage_chip.dart';
+import 'triage_stack_skeleton.dart';
 import 'triage_swipe_card.dart';
 
 /// La pile à trier de la carte « Ton Essentiel » (Story 33.1).
@@ -31,14 +32,21 @@ import 'triage_swipe_card.dart';
 /// **La carte épouse son contenu** (itération PO 33.1) : au lieu de réserver la
 /// hauteur de pic (grand vide sous la pile), la colonne est dimensionnée par son
 /// contenu et enveloppée d'un [AnimatedSize] aligné en haut → la kept-list
-/// grandit **vers le bas, sous la barre d'actions**. La zone d'interaction
-/// (progression + carte + actions) reste figée en haut, donc le feed ne saute
-/// pas sous le doigt.
+/// grandit **vers le bas, sous la barre d'actions**.
 ///
-/// La carte du dessus prend l'une de **deux hauteurs discrètes**
-/// ([triageCardHeightFor]) : avec image ([kTriageCardHeight]) ou texte seul
-/// ([kTriageCardTextOnlyHeight]). Jamais du fit-to-content — la barre d'actions
-/// glisse d'un article à l'autre (`AnimatedSize`), elle ne saute pas.
+/// La carte du dessus est elle aussi **dimensionnée par son contenu** (reprise
+/// PO 08/08, qui renverse les deux hauteurs discrètes de la passe design) :
+/// bandeau image s'il y en a un, titre sur ses lignes réelles, méta juste
+/// dessous. Un titre court ne laisse plus de blanc interne. La bascule d'une
+/// hauteur à l'autre reste **glissée** par l'[AnimatedSize] : la barre d'actions
+/// se déplace de façon lisible sous le pouce, elle ne saute pas. La hauteur
+/// reste bornée par construction (bandeau [kTriageCardImageHeight] fixe + titre
+/// borné par `maxLines`) — aucun plafond explicite n'est donc nécessaire.
+///
+/// Ordre de la colonne (reprise PO 08/08) : **carte → actions → progression →
+/// gardés**. La barre de progression est passée *sous* les boutons ; la
+/// silhouette ([TriageStackSkeleton]) porte le même ordre, sans quoi la mise en
+/// page sauterait à l'hydratation.
 class EssentielTriageStack extends ConsumerStatefulWidget {
   /// Pool des articles adressables par la pile : le slate figé du jour, suivi
   /// des articles injectables par « Voir d'autres articles ». C'est une liste ;
@@ -179,7 +187,16 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
 
     final byId = {for (final a in widget.articles) a.contentId: a};
     final current = byId[currentId];
-    if (current == null) return const SizedBox.shrink();
+    // Haut de pile irrésolvable : le slate est figé pour la journée, mais le
+    // pool, lui, peut ne pas (encore) le porter — carrousel absent de
+    // l'hydratation cache après un « Plus d'articles », blend live qui rebat le
+    // jeu du jour, articles masqués au swipe. On rend alors la **silhouette**,
+    // jamais un corps vide : un `SizedBox.shrink()` ici laissait la carte
+    // réduite à son en-tête au-dessus d'un aplat de fond, indéfiniment (défaut
+    // « aucun squelette pendant le chargement » remonté en E2E). La carte
+    // déclenche en parallèle `pruneUnavailable`, donc cette attente est bornée :
+    // soit le pool se complète, soit le slate se répare.
+    if (current == null) return const TriageStackSkeleton(standalone: true);
 
     // Article suivant, rendu en dessous pour donner l'épaisseur de pile.
     final nextIndex = triage.index + 1;
@@ -215,11 +232,6 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
       return stateBySourceId[id] ?? InterestState.unfollowed;
     }
 
-    // Hauteur du slot : deux valeurs discrètes (avec / sans image), décidée à la
-    // composition et non pendant le geste — une carte ne se replie jamais sous
-    // le doigt.
-    final cardHeight = triageCardHeightFor(current.thumbnailUrl);
-
     // La carte épouse son contenu : croissance animée **vers le bas** (alignée
     // en haut) quand la kept-list s'allonge, zone d'action figée au-dessus.
     return AnimatedSize(
@@ -230,118 +242,131 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ProgressBar(
-            total: triage.slate.length,
-            decided: triage.decisions.length,
-            accent: colors.sectionEssentiel,
-          ),
-          // La bascule carte-image ↔ carte-texte glisse au lieu de sauter : la
-          // barre d'actions se déplace de façon lisible sous le pouce.
+          // Le slot n'impose plus de hauteur : il prend celle de la carte du
+          // dessus, qui prend celle de son contenu réel (image ou non, longueur
+          // vraie du titre, badges présents ou non). L'`AnimatedSize` fait
+          // glisser la barre d'actions d'une carte à l'autre au lieu de la
+          // faire sauter — c'est ce qui rend le fit-to-content tenable sous le
+          // pouce.
           AnimatedSize(
             duration: FacteurDurations.medium,
             curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
-            child: SizedBox(
-              height: cardHeight,
-              child: Stack(
-                // Clés fixes sur les trois slots : l'appariement d'un build à
-                // l'autre se fait alors **par clé**, jamais par position. Sans
-                // elles, le nombre d'enfants changeait (3 → 2 sur la dernière
-                // carte) et un élément glissait d'un slot à l'autre le temps
-                // d'une frame — d'où le tampon apparemment déjà posé sur la
-                // carte fraîche. Le slot arrière est toujours rendu, vide s'il
-                // n'y a plus d'article dessous.
-                children: [
-                  Positioned.fill(
-                    key: const ValueKey('triage-back'),
-                    child: next == null
-                        ? const SizedBox.shrink()
-                        : ValueListenableBuilder<double>(
-                            valueListenable: _promotion,
-                            builder: (context, p, child) => Transform.scale(
-                              scale: lerpDouble(0.96, 1.0, p)!,
-                              // Ancrée en haut, jamais centrée : centrée, elle
-                              // était rognée sur les quatre côtés pendant toute
-                              // la sortie de la carte du dessus (« carte
-                              // légèrement déplacée »). `topCenter` aligne aussi
-                              // correctement deux cartes de hauteurs
-                              // différentes (image / texte).
-                              alignment: Alignment.topCenter,
-                              // `RepaintBoundary` **sous** l'`Opacity` : avec un
-                              // enfant déjà composité, `RenderOpacity` pousse un
-                              // calque au compositeur au lieu de passer par
-                              // `saveLayer` (un tampon hors écran réalloué à
-                              // chaque peinture, donc à chaque frame de swipe).
-                              child: Opacity(
-                                opacity: lerpDouble(0.5, 1.0, p)!,
-                                child: child,
-                              ),
-                            ),
-                            child: IgnorePointer(
-                              child: RepaintBoundary(
-                                child: _TriageArticleCard(
-                                  article: next,
-                                  sourceState: sourceStateOf(next),
-                                ),
-                              ),
+            child: Stack(
+              // Clés fixes sur les trois slots : l'appariement d'un build à
+              // l'autre se fait alors **par clé**, jamais par position. Sans
+              // elles, le nombre d'enfants changeait (3 → 2 sur la dernière
+              // carte) et un élément glissait d'un slot à l'autre le temps
+              // d'une frame — d'où le tampon apparemment déjà posé sur la
+              // carte fraîche. Le slot arrière est toujours rendu, vide s'il
+              // n'y a plus d'article dessous.
+              //
+              // **La carte du dessus est le seul enfant non positionné** :
+              // c'est elle qui dimensionne le `Stack`, donc la pile entière.
+              // Le slot arrière est ancré en haut **sans hauteur imposée** :
+              // en `Positioned.fill` il héritait d'une contrainte serrée à la
+              // hauteur de la carte du dessus et débordait dès qu'il était le
+              // plus grand des deux (carte image sous une carte texte courte).
+              // Ancré, il prend sa hauteur réelle et le `Stack` rogne ce qui
+              // dépasse — de toute façon caché derrière la carte du dessus.
+              children: [
+                Positioned(
+                  key: const ValueKey('triage-back'),
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: next == null
+                      ? const SizedBox.shrink()
+                      : ValueListenableBuilder<double>(
+                          valueListenable: _promotion,
+                          builder: (context, p, child) => Transform.scale(
+                            scale: lerpDouble(0.96, 1.0, p)!,
+                            // Ancrée en haut, jamais centrée : centrée, elle
+                            // était rognée sur les quatre côtés pendant toute
+                            // la sortie de la carte du dessus (« carte
+                            // légèrement déplacée »). `topCenter` aligne aussi
+                            // correctement deux cartes de hauteurs
+                            // différentes (image / texte).
+                            alignment: Alignment.topCenter,
+                            // `RepaintBoundary` **sous** l'`Opacity` : avec un
+                            // enfant déjà composité, `RenderOpacity` pousse un
+                            // calque au compositeur au lieu de passer par
+                            // `saveLayer` (un tampon hors écran réalloué à
+                            // chaque peinture, donc à chaque frame de swipe).
+                            child: Opacity(
+                              opacity: lerpDouble(0.5, 1.0, p)!,
+                              child: child,
                             ),
                           ),
-                  ),
-                  Positioned.fill(
-                    key: const ValueKey('triage-top'),
-                    child: AutoGrowPulse(
-                      playToken: _pulseToken,
-                      child: TriageSwipeCard(
-                        key: _cardKey,
-                        // Jeton de « carte fraîche » : quand l'article du dessus
-                        // change, le State réutilisé (GlobalKey) repart d'un
-                        // geste propre au lieu de fuir le drag/anim du précédent.
-                        articleId: currentId,
-                        height: cardHeight,
-                        onGestureProgress: (p) => _promotion.value = p,
-                        onKeep: () =>
-                            _decide(TriageDecision.keep, TriageVia.swipe),
-                        onPass: () =>
-                            _decide(TriageDecision.pass, TriageVia.swipe),
-                        // L'aperçu est monté **dans** la carte qui swipe, pas
-                        // autour : l'arène de gestes départage alors un drag
-                        // horizontal (qui gagne dès le slop franchi) d'un appui
-                        // maintenu, au lieu de voir le parent capter les deux.
-                        child: ArticlePreviewGesture(
-                          contentBuilder: () => current.toPreviewContent(),
-                          onLongPressStart: _markPreviewDiscovered,
-                          child: _TriageArticleCard(
-                            article: current,
-                            sourceState: sourceStateOf(current),
+                          child: IgnorePointer(
+                            child: RepaintBoundary(
+                              child: _TriageArticleCard(
+                                article: next,
+                                sourceState: sourceStateOf(next),
+                              ),
+                            ),
                           ),
                         ),
+                ),
+                AutoGrowPulse(
+                  key: const ValueKey('triage-top'),
+                  playToken: _pulseToken,
+                  child: TriageSwipeCard(
+                    key: _cardKey,
+                    // Jeton de « carte fraîche » : quand l'article du dessus
+                    // change, le State réutilisé (GlobalKey) repart d'un
+                    // geste propre au lieu de fuir le drag/anim du précédent.
+                    articleId: currentId,
+                    onGestureProgress: (p) => _promotion.value = p,
+                    onKeep: () =>
+                        _decide(TriageDecision.keep, TriageVia.swipe),
+                    onPass: () =>
+                        _decide(TriageDecision.pass, TriageVia.swipe),
+                    // L'aperçu est monté **dans** la carte qui swipe, pas
+                    // autour : l'arène de gestes départage alors un drag
+                    // horizontal (qui gagne dès le slop franchi) d'un appui
+                    // maintenu, au lieu de voir le parent capter les deux.
+                    child: ArticlePreviewGesture(
+                      contentBuilder: () => current.toPreviewContent(),
+                      onLongPressStart: _markPreviewDiscovered,
+                      child: _TriageArticleCard(
+                        article: current,
+                        sourceState: sourceStateOf(current),
                       ),
                     ),
                   ),
-                  // Le libellé du nudge flotte au bas de la carte : le rendre
-                  // dans la colonne coûterait une ligne de hauteur permanente
-                  // pour un message qui vit 2,4 s.
-                  Positioned(
-                    key: const ValueKey('triage-hint'),
-                    left: 0,
-                    right: 0,
-                    bottom: 10,
-                    child: IgnorePointer(
-                      child: AnimatedOpacity(
-                        opacity: _showPreviewHint ? 1 : 0,
-                        duration: FacteurDurations.medium,
-                        child: const Center(child: _PreviewHint()),
-                      ),
+                ),
+                // Le libellé du nudge flotte au bas de la carte : le rendre
+                // dans la colonne coûterait une ligne de hauteur permanente
+                // pour un message qui vit 2,4 s.
+                Positioned(
+                  key: const ValueKey('triage-hint'),
+                  left: 0,
+                  right: 0,
+                  bottom: 10,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _showPreviewHint ? 1 : 0,
+                      duration: FacteurDurations.medium,
+                      child: const Center(child: _PreviewHint()),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           _ActionBar(
             onPass: () => _decideFromButton(TriageDecision.pass),
             onLater: () => _decideFromButton(TriageDecision.later),
             onKeep: () => _decideFromButton(TriageDecision.keep),
+          ),
+          // Progression **sous** les boutons (reprise PO 08/08) : l'avancement
+          // se lit au retour du pouce, pas au-dessus de la carte. Même position
+          // dans la silhouette, sinon la page saute à l'hydratation.
+          _ProgressBar(
+            total: triage.slate.length,
+            decided: triage.decisions.length,
+            accent: colors.sectionEssentiel,
           ),
           // La liste des gardés se construit sous la pile. Volontairement en
           // lignes compactes et non en `_LeadTile`/`_MediumTile` (les tuiles
@@ -485,10 +510,15 @@ class _KeptRow extends StatelessWidget {
   }
 }
 
-/// Barre de progression par segments. Le segment **en cours de décision** est
-/// épaissi (4 → 7 px) : le grossissement porte sur l'épaisseur, jamais sur la
-/// longueur — les `Expanded` gardent des segments de largeur égale, sans quoi
-/// la barre respirerait horizontalement à chaque geste.
+/// Barre de progression par segments, rendue **sous la barre d'actions**
+/// (reprise PO 08/08). Le segment **en cours de décision** est épaissi
+/// (4 → 7 px) : le grossissement porte sur l'épaisseur, jamais sur la longueur —
+/// les `Expanded` gardent des segments de largeur égale, sans quoi la barre
+/// respirerait horizontalement à chaque geste.
+///
+/// Centrée dans son slot (et non calée en haut comme lorsqu'elle coiffait la
+/// pile) : elle respire des deux côtés entre les boutons et la liste des
+/// gardés, et se superpose exactement à sa silhouette.
 class _ProgressBar extends StatelessWidget {
   final int total;
   final int decided;
@@ -505,8 +535,7 @@ class _ProgressBar extends StatelessWidget {
     final colors = context.facteurColors;
     return SizedBox(
       height: kTriageProgressHeight,
-      child: Align(
-        alignment: Alignment.topCenter,
+      child: Center(
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -734,68 +763,76 @@ class _TriageArticleCard extends StatelessWidget {
         border: Border.all(color: colors.border),
       ),
       clipBehavior: Clip.antiAlias,
+      // `min` de bout en bout : la carte prend la hauteur de ce qu'elle affiche
+      // vraiment. Le titre n'est plus un `Expanded` — il occupait tout l'espace
+      // restant d'un slot figé, donc un titre court étirait du vide et
+      // repoussait la méta en bas de carte (défaut « la carte ne s'adapte pas au
+      // contenu », E2E PO). Il reste borné par `maxLines`.
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Pas de bandeau du tout sans image (décision PO) : plus d'aplat
-          // gris imposé. La carte texte est simplement plus courte
-          // ([kTriageCardTextOnlyHeight]) et son titre respire sur 6 lignes.
+          // gris imposé. Une carte sans image est simplement plus courte, et son
+          // titre respire sur 6 lignes.
           if (hasImage) _TriageCardBanner(imageUrl: article.thumbnailUrl),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _SourceLine(
-                    name: article.sourceName,
-                    state: sourceState,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: colors.textSecondary,
-                    ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              kTriageCardPaddingH,
+              kTriageCardPaddingV,
+              kTriageCardPaddingH,
+              kTriageCardPaddingV,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SourceLine(
+                  name: article.sourceName,
+                  state: sourceState,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: colors.textSecondary,
                   ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  article.title,
+                  maxLines: hasImage ? 4 : 6,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.fraunces(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                // Mêmes gardes et même ordre que le pied des cartes du flux
+                // (`flux_continu_article_card`) : la polarisation d'abord,
+                // la couverture ensuite.
+                if (article.divergenceLevel != null || showCoverage) ...[
                   const SizedBox(height: 8),
-                  Expanded(
-                    child: Text(
-                      article.title,
-                      maxLines: hasImage ? 4 : 6,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.fraunces(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color: colors.textPrimary,
-                      ),
-                    ),
+                  Row(
+                    children: [
+                      if (article.divergenceLevel != null)
+                        DivergenceInlineBadge(
+                          divergenceLevel: article.divergenceLevel,
+                          iconOnly: true,
+                        ),
+                      if (article.divergenceLevel != null && showCoverage)
+                        const SizedBox(width: 8),
+                      if (showCoverage)
+                        CoverageChip(
+                          key: const Key('triage-coverage-chip'),
+                          sourceCount: article.coverageCount,
+                          sources: article.perspectiveSources,
+                          colors: colors,
+                        ),
+                    ],
                   ),
-                  // Mêmes gardes et même ordre que le pied des cartes du flux
-                  // (`flux_continu_article_card`) : la polarisation d'abord,
-                  // la couverture ensuite.
-                  if (article.divergenceLevel != null || showCoverage) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (article.divergenceLevel != null)
-                          DivergenceInlineBadge(
-                            divergenceLevel: article.divergenceLevel,
-                            iconOnly: true,
-                          ),
-                        if (article.divergenceLevel != null && showCoverage)
-                          const SizedBox(width: 8),
-                        if (showCoverage)
-                          CoverageChip(
-                            key: const Key('triage-coverage-chip'),
-                            sourceCount: article.coverageCount,
-                            sources: article.perspectiveSources,
-                            colors: colors,
-                          ),
-                      ],
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
           ),
         ],
@@ -804,8 +841,8 @@ class _TriageArticleCard extends StatelessWidget {
   }
 }
 
-/// L'article porte-t-il une image exploitable ? `false` ⇒ carte texte, plus
-/// courte, **sans bandeau du tout**.
+/// L'article porte-t-il une image exploitable ? `false` ⇒ carte texte,
+/// naturellement plus courte, **sans bandeau du tout**.
 ///
 /// `FacteurThumbnail.failedUrls` est le cache d'URLs mortes de la session : une
 /// URL déjà perdue vaut absence d'image, sans nouvelle tentative.
@@ -814,10 +851,6 @@ class _TriageArticleCard extends StatelessWidget {
 /// l'arithmétique pure sans binding Flutter — seule la constante y est exposée.
 bool triageCardHasImage(String? url) =>
     url != null && url.isNotEmpty && !FacteurThumbnail.failedUrls.contains(url);
-
-/// Laquelle des **deux hauteurs discrètes** ce slot de carte prend.
-double triageCardHeightFor(String? url) =>
-    triageCardHasImage(url) ? kTriageCardHeight : kTriageCardTextOnlyHeight;
 
 /// Bandeau image en tête de carte, rendu **uniquement quand il y a une image**
 /// ([triageCardHasImage]) : plus d'aplat de secours imposé (décision PO), une

@@ -86,6 +86,32 @@ void main() {
       expect(find.byType(Shimmer), findsNothing);
     });
 
+    testWidgets(
+        'porte le même ordre que la vraie pile : progression SOUS la barre '
+        'd\'actions', (tester) async {
+      await pump(tester);
+
+      // Segments d'action (44 px) puis segment de progression (6 px) : si la
+      // silhouette gardait l'ancien ordre, la mise en page sauterait à
+      // l'hydratation — c'est précisément ce qu'elle existe pour empêcher.
+      final boxes = tester
+          .widgetList<Container>(find.descendant(
+            of: find.byType(TriageStackSkeleton),
+            matching: find.byType(Container),
+          ))
+          .map((w) => tester.getRect(find.byWidget(w)))
+          .toList();
+      final actionBottom = boxes
+          .where((r) => r.height == kTriageActionButtonSize)
+          .map((r) => r.bottom)
+          .reduce((a, b) => a > b ? a : b);
+      final progressTop = boxes
+          .where((r) => r.height == 6)
+          .map((r) => r.top)
+          .reduce((a, b) => a < b ? a : b);
+      expect(progressTop, greaterThan(actionBottom));
+    });
+
     testWidgets('réserve la borne haute de hauteur de carte', (tester) async {
       await pump(tester);
       final stack = tester.getSize(find.byType(TriageStackSkeleton)).height;

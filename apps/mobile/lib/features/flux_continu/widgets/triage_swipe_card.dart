@@ -40,11 +40,6 @@ class TriageSwipeCard extends StatefulWidget {
   /// aucune source n'est mutée, aucun poids ne bouge.
   final VoidCallback onPass;
 
-  /// Hauteur de la carte du dessus. Deux valeurs discrètes selon que l'article
-  /// porte une image (`triageCardHeightFor`), jamais un fit-to-content : la
-  /// barre d'actions glisse d'un article à l'autre, elle ne saute pas.
-  final double height;
-
   /// Avancée du geste, normalisée `0..1` (0 = au repos, 1 = la carte a parcouru
   /// une demi-largeur d'écran ou est sortie). Émise à chaque frame de geste pour
   /// que la pile **promeuve la carte du dessous en continu** au lieu de la
@@ -57,7 +52,6 @@ class TriageSwipeCard extends StatefulWidget {
     required this.articleId,
     required this.onKeep,
     required this.onPass,
-    required this.height,
     this.onGestureProgress,
   });
 
@@ -332,9 +326,7 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
       onHorizontalDragUpdate: _handleDragUpdate,
       onHorizontalDragEnd: _handleDragEnd,
       onHorizontalDragCancel: _handleDragCancel,
-      child: SizedBox(
-        height: widget.height,
-        child: Transform.translate(
+      child: Transform.translate(
           offset: Offset(effectiveDx, 0),
           child: Transform.rotate(
             angle: (effectiveDx / _rotationDivisor) * math.pi / 180,
@@ -342,12 +334,22 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
               opacity: opacity,
               child: Stack(
                 children: [
+                  // **La carte est le seul enfant non positionné** : c'est elle
+                  // qui dimensionne le `Stack`, donc le slot de pile — la carte
+                  // épouse son contenu (reprise PO 08/08) au lieu de remplir une
+                  // hauteur imposée. `width: infinity` parce qu'un enfant non
+                  // positionné reçoit des contraintes lâches et se réduirait
+                  // sinon à la largeur de son texte.
+                  //
                   // Frontière de repeinture : le drag appelle `setState` à
                   // chaque frame et la carte est devenue lourde (image décodée,
                   // glyphe de divergence, pile d'avatars). Sans elle, chaque
                   // frame de geste re-enregistre la display list de tout ce qui
                   // est visible jusqu'au viewport du feed.
-                  Positioned.fill(child: RepaintBoundary(child: widget.child)),
+                  SizedBox(
+                    width: double.infinity,
+                    child: RepaintBoundary(child: widget.child),
+                  ),
                   if (keepStamp > 0)
                     Positioned(
                       top: 16,
@@ -378,7 +380,6 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
             ),
           ),
         ),
-      ),
     );
   }
 }

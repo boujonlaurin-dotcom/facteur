@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "tag": "Ton Essentiel",
+      "summary": "Trois finitions sur la pile de tri : l'avancement passe sous les boutons, là où ton pouce revient. Chaque carte prend exactement la hauteur de ce qu'elle affiche, donc plus de blanc entre le titre et le bas de la carte, et la rangée de boutons glisse d'un article à l'autre au lieu de sauter. Et si ta sélection du jour désigne un article qui n'est plus là, le tri repart tout seul sur le suivant au lieu de te laisser devant une carte vide."
+    },
+    {
       "tag": "Ta Tournée",
       "summary": "Les blocs de ta Tournée sont désormais classés par la qualité de ce qu'ils contiennent : un bloc qui n'a qu'un seul article ne prend plus la place d'un bloc bien fourni en haut de page. L'ordre est fixé une fois par jour, au chargement, donc rien ne bouge sous tes yeux pendant que tu lis. Si tu as arrangé ta Tournée à la main, ton ordre reste la base et départage les blocs à égalité."
     },

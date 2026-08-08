@@ -385,6 +385,38 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
     unawaited(_persist());
   }
 
+  /// Retire du slate figé les articles **non décidés** qui ne se résolvent plus
+  /// dans le pool adressable par la carte ([availableIds] = slate du jour +
+  /// articles du carrousel injectables).
+  ///
+  /// Sans ça, un slate qui référence un article disparu **fige la carte sur un
+  /// corps vide** : `EssentielTriageStack` ne sait pas rendre le haut de pile et
+  /// sortait en `SizedBox.shrink()` (l'aplat beige rapporté par le PO). Les
+  /// chemins qui y mènent sont réels et persistants :
+  ///
+  /// - « Plus d'articles » ([extendSlate]) persiste des `contentId` **du
+  ///   carrousel du jour** ; au cold-boot suivant, l'hydratation depuis le cache
+  ///   ne porte pas de carrousel → ces ids ne sont dans aucun pool ;
+  /// - le blend live (story 9.8) peut renvoyer un jeu d'articles différent du
+  ///   slate gelé le matin ;
+  /// - tous les articles de l'Essentiel masqués au swipe.
+  ///
+  /// Les ids **déjà décidés** sont conservés : leur décision est partie au
+  /// backend, et le rendu des gardés est déjà gardé par la résolution dans le
+  /// pool. L'opération est strictement décroissante ⇒ l'appelant peut la
+  /// rejouer sans risque de boucle. Slate vidé ⇒ [hasStarted] redevient faux et
+  /// [startIfNeeded] re-gèle sur les articles du jour.
+  void pruneUnavailable(Set<String> availableIds) {
+    if (!state.hasStarted || availableIds.isEmpty) return;
+    final kept = [
+      for (final id in state.slate)
+        if (availableIds.contains(id) || state.decisions.containsKey(id)) id,
+    ];
+    if (kept.length == state.slate.length) return;
+    state = state.copyWith(slate: List.unmodifiable(kept));
+    unawaited(_persist());
+  }
+
   void _trackSessionEnd() {
     final startedMs = _sessionStartMs;
     unawaited(_ref.read(analyticsServiceProvider).trackEssentielTriageSession(

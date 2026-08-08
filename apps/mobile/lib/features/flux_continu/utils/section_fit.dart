@@ -207,10 +207,11 @@ int fitHeroCount({
 
 /// Hauteur (px) du bandeau image en tête de la carte de tri, **quand l'article
 /// porte une image**. Un article sans image ne replie pas le bandeau sur un
-/// aplat de secours : il n'en rend aucun et la carte bascule sur l'autre hauteur
-/// discrète ([kTriageCardTextOnlyHeight]) — décision PO « pas de placeholder ».
-/// Deux hauteurs figées, jamais du fit-to-content : la carte ne change pas de
-/// taille en cours de geste, exactement le défaut que tout ce budget combat.
+/// aplat de secours : il n'en rend aucun (décision PO « pas de placeholder ») et
+/// la carte est simplement plus courte.
+///
+/// C'est la seule hauteur **figée** de la carte, et c'est ce qui borne sa
+/// croissance : le reste (titre, méta) est du contenu, borné par `maxLines`.
 ///
 /// Relevé 96 → 180 (itération PO 33.1 : « images trop petites ») : un vrai format
 /// éditorial ~16:9 sur la largeur utile (~330px → 185, arrondi à 180). Le levier
@@ -220,35 +221,21 @@ int fitHeroCount({
 /// donc une carte un peu haute pousse le feed vers le bas sans rien rogner.
 const double kTriageCardImageHeight = 180;
 
-/// Hauteur (px) de la carte du dessus de la pile de tri
-/// ([TriageSwipeCard]) : bandeau image [kTriageCardImageHeight] 180 + padding
-/// haut 12 + méta source ≈ 16 + gap 8 + titre 4 lignes (Fraunces 19 ·
-/// height 1.3 = 98,8) + gap 8 + pied (polarisation + couverture) ≈ 18 + padding
-/// bas 12 = 353, arrondi à 360 pour ~7 px de marge sur le titre. Le chapô a
-/// disparu de la carte : à ce niveau de tri, l'image et la couverture disent
-/// plus que deux lignes de description.
+/// Hauteur (px) d'une carte de tri **pleine** — bandeau image + titre long :
+/// bandeau [kTriageCardImageHeight] 180 + padding haut 12 + méta source ≈ 16 +
+/// gap 8 + titre 4 lignes (Fraunces 19 · height 1.3 = 98,8) + gap 8 + pied
+/// (polarisation + couverture) ≈ 18 + padding bas 12 = 353, arrondi à 360. Le
+/// chapô a disparu de la carte : à ce niveau de tri, l'image et la couverture
+/// disent plus que deux lignes de description.
 ///
-/// La marge sur le titre n'est pas cosmétique : la hauteur est **figée** pour
-/// une classe de carte donnée (seule la kept-list grandit en bas), donc un
-/// budget trop serré ne déborde pas, il **rogne silencieusement** la 4ᵉ ligne.
-/// `essentiel_hi_fi_card_test` mesure la boîte du titre sur un titre pire cas
-/// pour verrouiller ça.
-///
-/// Les cartes du dessous sont décalées mais **ne dépassent pas** (translation
-/// verticale compensée par le scale), donc la pile ne coûte pas plus qu'une carte.
+/// Depuis la reprise PO du 08/08, **la carte ne prend plus cette hauteur** : elle
+/// épouse son contenu réel (un titre court ne laisse plus de blanc interne,
+/// défaut « la carte ne s'adapte pas au contenu »). La constante ne sert donc
+/// plus qu'à la **réserve du squelette** ([TriageStackSkeleton]) : à l'attente,
+/// ni l'URL d'image ni la longueur du titre ne sont connues, et sur-réserver
+/// fait *descendre* le contenu à l'hydratation plutôt que sauter la barre
+/// d'actions sous le doigt.
 const double kTriageCardHeight = 360;
-
-/// Hauteur (px) de la carte de tri **sans image** : le bandeau ne laisse plus
-/// d'aplat de secours (décision PO : « pas de placeholder »), donc la carte
-/// texte est simplement plus courte. Décomposition : padding haut 12 + méta
-/// source ≈ 16 + gap 8 + titre 6 lignes (Fraunces 19 · height 1.3 ≈ 148) + gap 8
-/// + pied ≈ 18 + padding bas 12 = 222, arrondi à 240 pour la marge de titre.
-///
-/// Deux hauteurs **discrètes**, jamais du fit-to-content : la barre d'actions
-/// glisse (via `AnimatedSize`) entre une carte image et une carte texte, elle ne
-/// saute pas sous le pouce. Repli d'une ligne si le mouvement gêne à l'usage :
-/// rendre cette constante égale à [kTriageCardHeight].
-const double kTriageCardTextOnlyHeight = 240;
 
 /// Barre d'actions compacte (✕ · signet · bouton plein « Je garde ») :
 /// bouton [kTriageActionButtonSize] + marges (10+10) = 64.
@@ -267,7 +254,7 @@ const double kTriageActionGap = 10;
 
 /// Padding intérieur de la carte de tri, partagé avec sa silhouette pour la même
 /// raison — et parce que ces deux valeurs entrent dans la décomposition de
-/// [kTriageCardHeight] / [kTriageCardTextOnlyHeight].
+/// [kTriageCardHeight].
 const double kTriageCardPaddingH = 14;
 const double kTriageCardPaddingV = 12;
 
@@ -279,9 +266,11 @@ const double kTriageBackCardScale = 0.96;
 const double kTriageBackCardOpacity = 0.5;
 
 /// Barre de progression, **segments seuls** : le segment en cours de décision
-/// est épaissi (4 → 7 px), plus une marge basse de 7 = 14. Elle porte seule
-/// l'avancement du tri : le compteur « N sur M triés » a été retiré (décision
-/// PO), redondant avec les segments et avec la liste des gardés juste au-dessus.
+/// est épaissi (4 → 7 px), centré dans un slot de 14 (≈3,5 px de respiration de
+/// part et d'autre). Elle porte seule l'avancement du tri : le compteur « N sur
+/// M triés » a été retiré (décision PO), redondant avec les segments et avec la
+/// liste des gardés juste en dessous. Rendue **sous la barre d'actions** depuis
+/// la reprise PO du 08/08.
 const double kTriageProgressHeight = 14;
 
 /// Un article gardé dans la liste qui se construit sous la pile. Plus compact

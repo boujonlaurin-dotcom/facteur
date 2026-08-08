@@ -106,6 +106,7 @@ class EssentielHiFiCard extends ConsumerStatefulWidget {
 
 class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   bool _startScheduled = false;
+  bool _pruneScheduled = false;
 
   // Mémo du pool adressable (slate du jour + articles du carrousel adaptés).
   // Les deux entrées sont des champs du widget, qui ne dépendent d'aucun
@@ -118,6 +119,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   FeedCarouselData? _memoCarousel;
   List<EssentielArticle> _memoExtra = const [];
   List<EssentielArticle> _memoPool = const [];
+  Set<String> _memoPoolIds = const {};
 
   void _refreshPoolMemo() {
     final articles = widget.articles;
@@ -147,6 +149,36 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // du slate (`startIfNeeded`) n'utilise que `articles` (les 5) — les items du
     // carrousel ne rejoignent le slate que via `extendSlate`.
     _memoPool = List.unmodifiable([...articles, ...extra]);
+    _memoPoolIds = {for (final a in _memoPool) a.contentId};
+  }
+
+  /// Répare un slate figé qui référence un article que le pool ne porte plus.
+  ///
+  /// Sans ça la pile n'a pas de haut à rendre et la carte se réduit à son
+  /// en-tête au-dessus d'un aplat de fond, indéfiniment (défaut E2E « aucun
+  /// squelette pendant le chargement » : l'aplat n'était pas une attente, mais
+  /// un état cassé). Le cas le plus fréquent : « Plus d'articles » a persisté
+  /// dans le slate des `contentId` du **carrousel**, absent de l'hydratation
+  /// depuis le cache au cold-boot suivant.
+  ///
+  /// Posté après la frame (muter un provider pendant le build est interdit) et
+  /// déclenché **uniquement** quand le haut de pile est irrésolvable, donc
+  /// jamais sur le chemin nominal. `pruneUnavailable` est strictement
+  /// décroissant ⇒ aucune boucle possible.
+  void _schedulePruneUnavailable() {
+    if (_pruneScheduled) return;
+    _pruneScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pruneScheduled = false;
+      if (!mounted) return;
+      ref.read(essentielTriageProvider.notifier).pruneUnavailable(_memoPoolIds);
+      // Un slate **entièrement** introuvable se vide : le gel doit alors
+      // pouvoir rejouer sur les articles du jour. Sans ce déverrouillage, le
+      // verrou une-fois-par-montage de [_scheduleStart] laissait la carte sur
+      // sa silhouette indéfiniment — le bug qu'on vient de corriger, déplacé
+      // d'un cran.
+      _startScheduled = false;
+    });
   }
 
   /// Fige le slate du jour. Appelé depuis `build` **uniquement** quand toutes
@@ -219,6 +251,12 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     final canTriage = isToday && articles.isNotEmpty && triage.hydrated;
     if (canTriage && !triage.hasStarted) _scheduleStart();
     final showTriage = canTriage && triage.isActive;
+    // Haut de pile introuvable dans le pool ⇒ le slate a survécu à l'article
+    // qu'il désigne. La pile rend la silhouette (jamais un corps vide) et on
+    // programme la réparation du slate.
+    if (showTriage && !_memoPoolIds.contains(triage.currentContentId)) {
+      _schedulePruneUnavailable();
+    }
     final triageDone = canTriage && triage.done;
     // Tri **indéterminé** : SharedPrefs pas encore lu (`hydrated`) ou slate pas
     // encore figé (`startIfNeeded` est posté après la frame). Rendre la liste
