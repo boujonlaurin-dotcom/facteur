@@ -83,19 +83,44 @@ void main() {
       );
     });
 
-    test('« j\'ai déjà un compte » : /login reste accessible avant conversion',
-        () {
+    test(
+        '« j\'ai déjà un compte » : /login accessible même sur une session '
+        'non-anonyme périmée (keychain iOS)', () {
+      // Session anonyme fraîche → OK (identique à avant le fix).
       expect(
-        isAnonymousBeforeConversion(
+        canReachLoginBeforeAccount(
           isAnonymous: true,
+          needsOnboarding: false,
           pendingEmailConfirmation: null,
         ),
         isTrue,
       );
+      // Le cas iOS : session périmée non-anonyme restaurée du keychain, mais
+      // qui a encore besoin de faire son onboarding → /login doit rester
+      // accessible (sinon le bouton reste inerte, garde 3 rebondit).
       expect(
-        isAnonymousBeforeConversion(
+        canReachLoginBeforeAccount(
+          isAnonymous: false,
+          needsOnboarding: true,
+          pendingEmailConfirmation: null,
+        ),
+        isTrue,
+      );
+      // Compte déjà créé, email en attente → on force /emailConfirmation.
+      expect(
+        canReachLoginBeforeAccount(
           isAnonymous: true,
+          needsOnboarding: true,
           pendingEmailConfirmation: 'facteur@example.com',
+        ),
+        isFalse,
+      );
+      // Non-anonyme + onboarding terminé → pas une sortie pré-compte.
+      expect(
+        canReachLoginBeforeAccount(
+          isAnonymous: false,
+          needsOnboarding: false,
+          pendingEmailConfirmation: null,
         ),
         isFalse,
       );
