@@ -524,8 +524,9 @@ class PushNotificationService {
       return;
     }
 
-    // Alertes source et sujet (stories 30.2/30.3) : canal et ID dédiés, jamais
-    // le canal digest — elles doivent arriver sans son ni vibration.
+    // Alertes source et sujet (stories 30.2/30.3/30.5) : canal et ID dédiés,
+    // jamais le canal digest. Le canal `alerts_channel_v2` est sonore et
+    // vibrant depuis la 30.5 — une alerte silencieuse n'est pas une alerte.
     if (data['kind'] == 'source_alert' || data['kind'] == 'topic_alert') {
       await _showAlert(data, notification: notification);
       return;
