@@ -42,6 +42,27 @@ DEFAULT_PAYWALL_CONFIG: dict = {
 
 PAYWALL_THRESHOLD = 5
 
+# Types Schema.org qui décrivent un *fragment* de page, pas la page. La spec
+# Google place `isAccessibleForFree` à la fois sur l'article et dans `hasPart`
+# (le bloc payant, typé WebPageElement). Une page gratuite contenant un encart
+# payant porte donc `hasPart.isAccessibleForFree=false` : la lire produirait un
+# faux positif — la seule erreur irréversible ici, `_save_content` n'upgradant
+# `is_paid` que de False vers True.
+_LD_SUBELEMENT_TYPES = frozenset({"webpageelement"})
+
+# Clés qui, par la sémantique Schema.org, pointent vers l'entité principale de
+# la page — donc vers un nœud qui parle bien de CET article. On les traverse
+# pour rester générique : `@graph` est la forme Yoast, mais un CMS qui imbrique
+# l'article sous `WebPage.mainEntity` décrit exactement la même chose.
+# `itemListElement` en est volontairement absent : une liste renvoie vers
+# d'AUTRES articles, dont l'état d'accès ne dit rien de la page courante.
+_LD_CONTAINER_KEYS = ("@graph", "mainEntity", "mainEntityOfPage")
+
+# Certains CMS sérialisent le booléen en URI Schema.org plutôt qu'en littéral.
+_LD_FALSE_LITERALS = frozenset(
+    {"false", "0", "no", "http://schema.org/false", "https://schema.org/false"}
+)
+
 # In-memory cache: source_id -> (config, expiry_timestamp)
 _config_cache: dict[str, tuple[dict, float]] = {}
 _CACHE_TTL_SECONDS = 3600  # 1 hour
@@ -71,6 +92,47 @@ def _get_config(source_id: str, paywall_config: dict | None) -> dict:
     return config
 
 
+def _iter_ld_page_nodes(data: object):
+    """Parcourt les nœuds Schema.org décrivant la page, `@graph` inclus.
+
+    Yoast SEO (WordPress) n'émet jamais l'article au niveau racine : il
+    l'emballe dans `{"@context": ..., "@graph": [...]}`. Sans cette descente le
+    signal déclaratif est purement invisible, alors même que le média le
+    publie — c'est le mécanisme des faux négatifs constatés sur Novethic.
+
+    On ne descend délibérément pas dans `hasPart` (cf. `_LD_SUBELEMENT_TYPES`).
+    """
+    if isinstance(data, list):
+        for item in data:
+            yield from _iter_ld_page_nodes(item)
+        return
+    if not isinstance(data, dict):
+        return
+
+    for key in _LD_CONTAINER_KEYS:
+        nested = data.get(key)
+        if nested is not None:
+            yield from _iter_ld_page_nodes(nested)
+
+    raw_type = data.get("@type")
+    types = raw_type if isinstance(raw_type, list) else [raw_type]
+    types = {t.lower() for t in types if isinstance(t, str)}
+    # Un nœud sans `@type` reste lu : c'est le comportement historique sur les
+    # blocs JSON-LD racine, qu'on ne veut pas restreindre au passage.
+    if not types & _LD_SUBELEMENT_TYPES:
+        yield data
+
+
+def _ld_access_value(node: dict) -> bool | None:
+    """`isAccessibleForFree` d'un nœud, normalisé en is_paid. None si absent."""
+    access = node.get("isAccessibleForFree")
+    if isinstance(access, bool):
+        return not access  # isAccessibleForFree=false → is_paid=True
+    if isinstance(access, str):
+        return access.strip().lower() in _LD_FALSE_LITERALS
+    return None
+
+
 def detect_paywall_from_html(html_head: str) -> bool | None:
     """Detect paywall from article HTML head using structured data.
 
@@ -89,36 +151,41 @@ def detect_paywall_from_html(html_head: str) -> bool | None:
         r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
         re.DOTALL | re.IGNORECASE,
     )
+    ld_values: list[bool] = []
     for match in json_ld_pattern.finditer(html_head):
         try:
             data = json.loads(match.group(1))
-            # Handle both single object and array of objects
-            items = data if isinstance(data, list) else [data]
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                access = item.get("isAccessibleForFree")
-                if access is not None:
-                    # Handle bool, string "False"/"True", and "false"/"true"
-                    if isinstance(access, bool):
-                        return not access  # isAccessibleForFree=false → is_paid=True
-                    if isinstance(access, str):
-                        return access.lower() in ("false", "0", "no")
         except (json.JSONDecodeError, TypeError, AttributeError):
             continue
+        for node in _iter_ld_page_nodes(data):
+            value = _ld_access_value(node)
+            if value is not None:
+                ld_values.append(value)
 
-    # 2. Check og:article:content_tier meta tag
-    tier_pattern = re.compile(
-        r'<meta\s+property=["\']og:article:content_tier["\']\s+content=["\'](\w+)["\']',
-        re.IGNORECASE,
+    if ld_values:
+        # En cas de nœuds contradictoires, « gratuit » gagne. L'asymétrie des
+        # coûts l'impose : un faux négatif se rattrape au sync suivant, un faux
+        # positif retire définitivement un article gratuit de l'offre.
+        return all(ld_values)
+
+    # 2. Check og:article:content_tier meta tag.
+    # On isole la balise puis on en extrait `content` séparément : l'ordre des
+    # attributs est libre en HTML, et un `<meta content="locked" property=…>`
+    # est aussi valide que l'inverse. Exiger l'ordre ferait rater le marqueur
+    # chez tout média qui sérialise ses meta dans l'autre sens.
+    tier_tag = re.search(
+        r"<meta[^>]*\bog:article:content_tier\b[^>]*>", html_head, re.IGNORECASE
     )
-    tier_match = tier_pattern.search(html_head)
-    if tier_match:
-        tier_value = tier_match.group(1).lower()
-        if tier_value in ("locked", "metered"):
-            return True
-        if tier_value == "free":
-            return False
+    if tier_tag:
+        tier_content = re.search(
+            r'\bcontent\s*=\s*["\']([^"\']+)["\']', tier_tag.group(0), re.IGNORECASE
+        )
+        if tier_content:
+            tier_value = tier_content.group(1).strip().lower()
+            if tier_value in ("locked", "metered"):
+                return True
+            if tier_value == "free":
+                return False
 
     # 3. Check JS variable patterns (e.g., Le Figaro: window.FFF.isPremium = true)
     premium_js_pattern = re.compile(
