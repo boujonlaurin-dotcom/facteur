@@ -1,0 +1,729 @@
+{
+  "collected_at": "2026-08-08T16:32:18.518904+00:00",
+  "sources": [
+    {
+      "slug": "novethic",
+      "name": "Novethic",
+      "group": "false_negative",
+      "feed_url": "https://www.novethic.fr/feed",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "novethic-6c34a61c12",
+          "url": "https://www.novethic.fr/economie-et-social/transformation-de-leconomie/bonnes-nouvelles-transition-ecologique-sociale-ete-2026",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-18ce8c9b97",
+          "url": "https://www.novethic.fr/economie-et-social/conge-solidarite-ecologique-proposition-soigner-eco-anxiete-travail",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-442fb003d1",
+          "url": "https://www.novethic.fr/environnement/climat/une-semaine-de-pause-pour-mieux-repartir",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-1e04f47bef",
+          "url": "https://www.novethic.fr/economie-et-social/transformation-de-leconomie/economie-anthropocene-actifs-fondent-sentinelle-diego-landivar",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-54826a4bc4",
+          "url": "https://www.novethic.fr/environnement/colombie-nouveau-president-nouvelle-trajectoire-pour-la-protection-de-lenvironnement",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-2706c18c80",
+          "url": "https://www.novethic.fr/finance-durable/tendances-de-marche/capital-risque-rse-erige-facteur-differenciant-pme",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-0f62414f6d",
+          "url": "https://www.novethic.fr/economie-et-social/droits-humains/cinq-fictions-inventent-avenir-ia",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-166895f7af",
+          "url": "https://www.novethic.fr/environnement/climat/rhin-danube-fleuves-europeens-manque-eau-mettent-economie-sec",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-8ba2bc7b4b",
+          "url": "https://www.novethic.fr/environnement/climat/le-vrai-defi-nest-pas-de-decarboner-mais-dimaginer-la-societe-qui-va-avec-magali-reghezza-zitt",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "novethic-0e8f077193",
+          "url": "https://www.novethic.fr/economie-et-social/business-model-en-transition/totalenergies-rachete-activites-renouvelables-europeennes-shell",
+          "html_status": "ok 206"
+        }
+      ]
+    },
+    {
+      "slug": "philomag",
+      "name": "Philosophie Magazine",
+      "group": "false_negative",
+      "feed_url": "https://www.philomag.com/rss.xml",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "philomag-c4a23063a8",
+          "url": "https://www.philomag.com/articles/jonathan-haidt-lanxiete-est-le-trouble-dominant-de-la-generation-nee-avec-les-reseaux",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-3adce77b27",
+          "url": "https://www.philomag.com/articles/points-de-suspension-sur-nos-messageries-attendre-toujours-attendre",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-f1d7ff2a54",
+          "url": "https://www.philomag.com/articles/calypso-nausicaa-circe-penelope-les-femmes-puissantes-de-lodyssee",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-9e8d1f4ddf",
+          "url": "https://www.philomag.com/articles/qui-aime-bien-sengueule-bien-une-plongee-dans-lintimite-des-disputes",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-9ef50f1434",
+          "url": "https://www.philomag.com/articles/le-yoga-permet-une-forme-de-connexion-au-cosmos-le-sentiment-oceanique-par-jeanne",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-dc988112e4",
+          "url": "https://www.philomag.com/articles/la-religion-un-opium-du-peuple-benefique-et-necessaire-le-point-de-vue-de-denis-moreau",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-1fcc9ba444",
+          "url": "https://www.philomag.com/articles/un-nouvel-etat-de-conscience-avec-layahuasca-le-sentiment-oceanique-par-mathilde",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-7f4d495abf",
+          "url": "https://www.philomag.com/articles/que-pensaient-les-philosophes-du-general-de-gaulle",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-6a31f35e83",
+          "url": "https://www.philomag.com/articles/avec-james-joyce-dublin-une-odyssee-ethylique",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "philomag-b11a1885aa",
+          "url": "https://www.philomag.com/articles/rumi-sohrawardi-avicenne-la-decouverte-de-la-pensee-iranienne",
+          "html_status": "ok 206"
+        }
+      ]
+    },
+    {
+      "slug": "la-croix",
+      "name": "La Croix",
+      "group": "false_negative",
+      "feed_url": "https://www.la-croix.com/feeds/rss/site.xml",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "la-croix-7baab48ed0",
+          "url": "https://www.la-croix.com/societe/dons-financiers-aux-enfants-faut-il-toujours-pratiquer-l-egalite-20260802",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-0151e71d50",
+          "url": "https://www.la-croix.com/international/direct-guerre-iran-israel-usa-jour-162-moyen-orient-bilan-resume-aujourdhui-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-1c92c8432b",
+          "url": "https://www.la-croix.com/international/ukraine-russie-jour-1627-point-conflit-ukrainien-poutine-aujourdhui-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-93008a88cf",
+          "url": "https://www.la-croix.com/culture/lieux-d-artistes-le-mont-des-cats-le-tableau-paisible-de-colette-hus-david-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-ac820f1bbb",
+          "url": "https://www.la-croix.com/economie/tiktok-shop-une-bonne-affaire-pour-les-vendeurs-francais-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-df50076477",
+          "url": "https://www.la-croix.com/societe/trottinettes-electriques-le-port-d-un-casque-et-dun-gilet-fluo-desormais-obligatoire-a-paris-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-b8db5517b5",
+          "url": "https://www.la-croix.com/religion/voyage-de-leon-xiv-en-france-le-cadeau-d-air-france-au-pape-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-1ed8ce1253",
+          "url": "https://www.la-croix.com/societe/cofondatrice-de-sos-mediterranee-sophie-beau-prend-le-large-apres-une-decennie-a-la-tete-de-l-association-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-3a0b86d8ad",
+          "url": "https://www.la-croix.com/societe/la-loire-a-contre-courant-les-sternes-menacees-par-le-tourisme-nature-20260807",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "la-croix-09edfb4465",
+          "url": "https://www.la-croix.com/planete/feux-de-foret-la-gironde-de-nouveau-en-vigilance-rouge-20260808",
+          "html_status": "ok 200"
+        }
+      ]
+    },
+    {
+      "slug": "lesjours",
+      "name": "Les Jours",
+      "group": "false_negative",
+      "feed_url": "https://lesjours.fr/rss.xml",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "lesjours-ed6ca39b22",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep38-nouveau-temoin/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-8711892d67",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep39-emmanuel-charlot/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-dac459bec5",
+          "url": "https://lesjours.fr/obsessions/jeunesse-russe/ep2-moscou-niefors/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-63b467fc64",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep38-nouveau-temoin/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-f4bdef6fbc",
+          "url": "https://lesjours.fr/obsessions/rosalia/ep5-reggaeton/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-f7ea4d81ec",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep37-fin-de-peine/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-3593207e70",
+          "url": "https://lesjours.fr/obsessions/ase-protection-enfance-dysfonctionnements/ep8-exploitation-sexuelle/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-364dacc998",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep36-parler-cela-me-fatigue/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-93372dc057",
+          "url": "https://lesjours.fr/obsessions/ultradroite-france-angleterre-manche/ep4-arnaque-overlord/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        },
+        {
+          "id": "lesjours-8316c92e21",
+          "url": "https://lesjours.fr/obsessions/les-deux-megots-edwige-alessandri/ep35-je-veux-proteger-mes-enfants/?utm_source=rss-feed&utm_medium=RSS&utm_campaign=rss-feed",
+          "html_status": "http 403"
+        }
+      ]
+    },
+    {
+      "slug": "cuisiner-jdf",
+      "name": "Cuisiner (Le Journal des Femmes)",
+      "group": "false_negative",
+      "feed_url": "https://cuisine.journaldesfemmes.fr/rss/",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "cuisiner-jdf-6cb12f7247",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3272999-en-corse-cette-specialite-fait-de-l-ombre-a-la-brioche-au-petit-dejeuner/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-6016873861",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3264067-6-fois-moins-calorique-que-la-mayonnaise-jean-michel-cohen-prefere-ce-condiment-dans-les-sauces/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-54d2a1df35",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3258843-des-recettes-de-grands-meres-faites-par-des-grands-meres-ce-restaurant-provencal-n-emploie-que-des-seniors/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-356321a5a7",
+          "url": "https://cuisine.journaldesfemmes.fr/idees-recettes/1975546-le-menu-de-la-semaine/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-fb924e2031",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3273003-cette-combine-permet-de-profiter-d-un-petit-dejeuner-d-hotel-de-luxe-pour-moins-de-3-euros/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-a28e511142",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3235084-leger-et-cremeux-ce-veloute-de-courgettes-a-2-ingredients-passe-tout-seul-quand-il-fait-chaud/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-fca0ab7557",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3273713-un-restaurateur-italien-previent-il-ne-faut-jamais-acheter-une-mozzarella-qui/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-8d737979bd",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3273683-cette-recette-donne-une-seconde-vie-aux-salades-un-peu-fletries/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-5a02c88c63",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3262153-un-expert-en-securite-alimentaire-confirme-c-est-a-cette-temperature-precise-qu-il-faut-regler-son-refrigerateur/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "cuisiner-jdf-ec5500b271",
+          "url": "https://cuisine.journaldesfemmes.fr/gastronomie/3270599-en-italie-le-gateau-au-chocolat-a-plus-de-gout-grace-a-cet-ingredient-qui-remplace-la-farine/",
+          "html_status": "ok 200"
+        }
+      ]
+    },
+    {
+      "slug": "lemonde",
+      "name": "Le Monde",
+      "group": "regression_guard",
+      "feed_url": "https://www.lemonde.fr/rss/une.xml",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "lemonde-55b98997f3",
+          "url": "https://www.lemonde.fr/politique/article/2026/08/08/presidentielle-2027-dix-ans-apres-l-election-d-emmanuel-macron-les-candidats-parient-sur-une-prime-a-l-experience_6740710_823448.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-29d7f7172e",
+          "url": "https://www.lemonde.fr/societe/article/2026/08/08/dossiers-a-l-abandon-ou-perdus-malgre-des-auteurs-identifies-personnels-mal-formes-les-rapports-explosifs-des-magistrats-sur-les-enquetes-pour-atteintes-sexuelles-aux-mineurs_6740745_3224.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-62830018ab",
+          "url": "https://www.lemonde.fr/economie/article/2026/08/08/pourquoi-les-nationalisations-d-entreprises-font-leur-grand-retour-dans-le-monde_6740787_3234.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-598a1565ca",
+          "url": "https://www.lemonde.fr/planete/article/2026/08/08/incendie-dans-la-drome-pres-de-bellegarde-en-diois-la-situation-est-stabilisee-meme-si-une-vigilance-particuliere-demeure-sur-deux-secteurs_6741362_3244.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-8ee2d4f7ed",
+          "url": "https://www.lemonde.fr/politique/article/2026/08/08/le-projet-de-construction-d-un-nouveau-pavillon-d-accueil-a-l-assemblee-nationale-vire-a-la-polemique_6741405_823448.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-8991b57048",
+          "url": "https://www.lemonde.fr/sport/live/2026/08/08/en-direct-tour-de-france-femmes-2026-suivez-la-huitieme-etape-entre-sisteron-et-nice_6741361_3242.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-ce20792ea1",
+          "url": "https://www.lemonde.fr/international/live/2026/08/08/en-direct-guerre-en-ukraine-kiev-n-a-quasiment-aucune-centrale-thermique-intacte-a-cause-des-attaques-russes-selon-volodymyr-zelensky_6737250_3210.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-1bfd7d1a3d",
+          "url": "https://www.lemonde.fr/international/article/2026/08/08/crise-de-ceuta-en-espagne-debut-des-controles-aux-frontieres-pour-les-voyageurs-venant-d-italie-en-reponse-aux-mesures-similaires-prises-par-rome_6741510_3210.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-433c119f75",
+          "url": "https://www.lemonde.fr/politique/article/2026/08/08/trottinettes-electriques-casque-et-gilet-reflechissant-sont-desormais-obligatoires-a-paris-et-en-petite-couronne_6741401_823448.html",
+          "html_status": "http 402"
+        },
+        {
+          "id": "lemonde-c24a01c485",
+          "url": "https://www.lemonde.fr/disparitions/article/2026/08/08/la-mort-de-william-orbit-compositeur-electro-de-genie-et-producteur-de-l-album-ray-of-light-de-madonna_6741444_3382.html",
+          "html_status": "http 402"
+        }
+      ]
+    },
+    {
+      "slug": "lefigaro",
+      "name": "Le Figaro",
+      "group": "regression_guard",
+      "feed_url": "https://www.lefigaro.fr/rss/figaro_actualites.xml",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "lefigaro-c9a8f76992",
+          "url": "https://sante.lefigaro.fr/social/sante-publique/pourquoi-le-risque-de-traumatismes-craniens-est-plus-eleve-chez-les-conducteurs-de-trottinettes-electriques-que-chez-les-motards-20260807",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "lefigaro-67f27164eb",
+          "url": "https://www.lefigaro.fr/conso/casque-et-gilet-jaune-desormais-obligatoires-pour-les-trottinettes-a-paris-et-en-petite-couronne-20260808",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "lefigaro-3642ee94a0",
+          "url": "https://www.lefigaro.fr/actualite-france/pas-question-d-attendre-2027-pour-agir-le-gouvernement-veut-rendre-le-port-du-casque-obligatoire-pour-les-utilisateurs-de-trottinettes-20260807",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "lefigaro-dca33a6acf",
+          "url": "https://www.lefigaro.fr/conjoncture/groenland-comment-une-compagnie-petroliere-proche-de-donald-trump-s-apprete-a-forer-le-sous-sol-de-l-arctique-20260808",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "lefigaro-02abbd18b3",
+          "url": "https://www.lefigaro.fr/sports/football/en-direct-psg-manchester-united-les-parisiens-disputent-leur-deuxieme-et-dernier-match-de-preparation-20260808",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "lefigaro-6f654f022a",
+          "url": "https://avis-vin.lefigaro.fr/connaitre-deguster/certains-grands-presentent-leurs-vins-sans-afficher-la-medaille-pourquoi-les-domaines-prestigieux-ne-participent-presque-jamais-aux-concours-viticoles-20260808",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "lefigaro-6595295eed",
+          "url": "https://avis-vin.lefigaro.fr/tops-selections-vins-spiritueux/je-suis-un-chef-trois-etoiles-et-voici-les-vins-que-je-bois-au-quotidien-six-grands-chefs-devoilent-leurs-cuvees-secretes-entre-11-et-50-euros-20260321",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "lefigaro-59496ab986",
+          "url": "https://www.lefigaro.fr/actualite-france/modele-social-et-famille-irresponsabilite-ou-demagogie-ces-decisions-qui-ont-coule-la-france-depuis-50-ans-20260808",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "lefigaro-c625753a34",
+          "url": "https://www.lefigaro.fr/sports/cyclisme/tour-de-france/tour-de-france-femmes-vollering-frappe-un-premier-coup-a-nice-et-vole-le-maillot-jaune-a-niewiadoma-20260808",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "lefigaro-611ec5da25",
+          "url": "https://www.lefigaro.fr/international/le-rwanda-dit-avoir-entame-des-discussions-avec-des-pays-europeens-pour-recevoir-en-transit-des-migrants-expulses-20260808",
+          "html_status": "ok 206"
+        }
+      ]
+    },
+    {
+      "slug": "lesechos",
+      "name": "Les Échos",
+      "group": "regression_guard",
+      "feed_url": null,
+      "feed_error": "https://www.lesechos.fr/rss/rss_une_titres.xml: HTTPStatusError Client error '403 Forbidden' for url 'https://www.lesechos.fr/rss/rss_une_titres.xml'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+      "articles": []
+    },
+    {
+      "slug": "lepoint",
+      "name": "Le Point",
+      "group": "regression_guard",
+      "feed_url": null,
+      "feed_error": "https://www.lepoint.fr/rss.xml: HTTPStatusError Client error '404 Not Found' for url 'https://www.lepoint.fr/rss.xml'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404",
+      "articles": []
+    },
+    {
+      "slug": "mediapart",
+      "name": "Mediapart",
+      "group": "regression_guard",
+      "feed_url": "https://www.mediapart.fr/articles/feed",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "mediapart-83b4f76a17",
+          "url": "https://www.mediapart.fr/journal/international/080826/les-etats-du-golfe-tentent-de-dessiner-une-nouvelle-architecture-de-securite-regionale",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-ca3333fe75",
+          "url": "https://www.mediapart.fr/journal/international/080826/quatre-rappeurs-marocains-face-la-repression",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-da3343c137",
+          "url": "https://www.mediapart.fr/journal/culture-et-idees/080826/puerto-rico-bad-bunny-propulse-la-salsa-sur-la-plus-grande-scene-mondiale",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-17487b2cc5",
+          "url": "https://www.mediapart.fr/journal/ecologie/310726/c-est-chacun-pour-soi-dans-le-marais-poitevin-la-secheresse-exacerbe-les-tensions-liees-au-partage-de-l",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-7373bb239b",
+          "url": "https://www.mediapart.fr/journal/international/080826/derriere-le-tourisme-en-grece-l-exploitation-grande-echelle",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-6be2ec078b",
+          "url": "https://www.mediapart.fr/journal/politique/080826/au-feu-des-annees-1968-un-nouveau-psu",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-94a5a39a4e",
+          "url": "https://www.mediapart.fr/journal/international/080826/maghreb-la-demographie-bousculee-par-la-chute-de-la-natalite",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-f8b28212b6",
+          "url": "https://www.mediapart.fr/journal/france/070826/la-chute-de-1940-et-le-sursaut-gaulliste-par-julian-jackson",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-c3610c44de",
+          "url": "https://www.mediapart.fr/journal/france/070826/mayotte-un-prefet-en-mode-gouverneur",
+          "html_status": "ok 206"
+        },
+        {
+          "id": "mediapart-ef3074bac4",
+          "url": "https://www.mediapart.fr/journal/international/070826/aux-etats-unis-l-economie-est-dopee-l-intelligence-artificielle",
+          "html_status": "ok 206"
+        }
+      ]
+    },
+    {
+      "slug": "liberation",
+      "name": "Libération",
+      "group": "regression_guard",
+      "feed_url": "https://www.liberation.fr/arc/outboundfeeds/rss-all/",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "liberation-42b4bf6e71",
+          "url": "https://www.liberation.fr/plus/speciaux-cahier-ete/lepopee-du-studio-54-the-place-to-be-disco-20260808_EYUG2O2VKJHDZIAXZ73IAXTMXM/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-c7d1e39f62",
+          "url": "https://www.liberation.fr/international/europe/un-drone-entre-en-bulgarie-a-explose-pres-dun-gazoduc-a-la-frontiere-roumaine-20260808_XGY73WLYINEGNC6BRKCGJ7WK2E/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-93db083675",
+          "url": "https://www.liberation.fr/environnement/climat/en-direct-incendies-le-feu-est-fixe-dans-le-var-mais-poursuit-sa-progression-dans-la-drome-20260808_CLNZ3Y5XOZBVBAQUJGX7J4BODA/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-d29b7c9f23",
+          "url": "https://www.liberation.fr/sports/leon-marchand-forfait-sur-ses-courses-de-predilection-aux-championnats-deurope-de-natation-20260808_LIQXWOOTMRFTNA32XYDI3AW4XY/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-425917b796",
+          "url": "https://www.liberation.fr/sports/football/une-indemnite-a-six-chiffres-versee-a-une-maitresse-presumee-avec-largent-de-luefa-gianni-infantino-empetre-dans-une-enieme-affaire-20260808_VUIXTMKPQRFLRI5EEHEVZZFGGE/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-2c9a7a7c23",
+          "url": "https://www.liberation.fr/environnement/agriculture/plus-sucree-plus-verte-plus-petite-et-precoce-la-mirabelle-de-lorraine-souffre-mais-resiste-a-lassaut-des-vagues-de-chaleur-20260808_675JEJX4V5E57M6DA2OTF6CEW4/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-0d3476d3a3",
+          "url": "https://www.liberation.fr/sports/cyclisme/tour-de-france-la-laureate-sortante-pauline-ferrand-prevot-abandonne-avant-la-8e-etape-20260808_GMZ32KMRXZFQ7NTBSFKA62JXVQ/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-cb063a1b71",
+          "url": "https://www.liberation.fr/culture/arts/mort-de-catherine-daste-pionniere-du-theatre-pour-jeunes-20260808_BB7SRFI7SBB4JHWOAGERAGSLRU/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-b13e1f3850",
+          "url": "https://www.liberation.fr/international/moyen-orient/palestine-le-clash-entre-deux-stars-du-rap-miroir-des-fractures-identitaires-20260808_ZMBCD6SVD5B6PE3M74QIDNAAQY/",
+          "html_status": "http 403"
+        },
+        {
+          "id": "liberation-b4d85736be",
+          "url": "https://www.liberation.fr/societe/police-justice/dossiers-fantomes-enquetes-a-labandon-le-gouvernement-veut-corriger-les-defaillances-dans-la-prise-en-compte-des-violences-sexuelles-sur-mineurs-20260808_EO3TDI3CMBEYLOPB5SA5F2SM4E/",
+          "html_status": "http 403"
+        }
+      ]
+    },
+    {
+      "slug": "telerama",
+      "name": "Télérama",
+      "group": "regression_guard",
+      "feed_url": "https://www.telerama.fr/rss/une.xml",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "telerama-877238aae8",
+          "url": "https://www.telerama.fr/series-tv/ted-lasso-sterling-point-the-shards-que-valent-les-series-de-la-semaine-7032369.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-a55ed4ad05",
+          "url": "https://www.telerama.fr/arts-expositions/d-ou-viennent-nos-prejuges-aux-origines-l-expo-qui-dejoue-les-cliches-du-racisme-7032364.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-5c83de51df",
+          "url": "https://www.telerama.fr/debats-reportages/quarante-kilometres-a-pied-sur-le-dancefloor-7032368.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-9e35a62a64",
+          "url": "https://www.telerama.fr/restos-loisirs/ou-voir-l-eclipse-solaire-du-12-aout-a-paris-les-meilleurs-points-de-vue-pour-en-profiter-pleinement-7032366.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-e6f88fbd0c",
+          "url": "https://www.telerama.fr/cinema/le-dernier-refuge-greta-lee-et-wagner-moura-excellent-dans-ce-thriller-apocalyptique-a-la-sauce-netflix_cri-7045365.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-7bf1ac43ae",
+          "url": "https://www.telerama.fr/radio/profession-profileuse-sur-france-info-captivante-plongee-dans-la-psyche-des-criminels-7032367.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-45d5c6e1db",
+          "url": "https://www.telerama.fr/cinema/on-a-revu-jennifer-8-avec-uma-thurman-et-andy-garcia-et-le-charme-du-killer-movie-est-toujours-aussi-noir-7032359.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-21488f2da2",
+          "url": "https://www.telerama.fr/debats-reportages/le-blocage-du-chantier-de-la-salle-de-bal-de-donald-trump-confirme-en-appel-7032365.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-1939fb0c70",
+          "url": "https://www.telerama.fr/musique/le-rappeur-moha-la-squale-condamne-a-deux-ans-de-prison-pour-des-violences-sur-deux-femmes-7032363.php",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "telerama-218c684670",
+          "url": "https://www.telerama.fr/enfants/que-faire-cet-ete-a-paris-et-ses-environs-avec-les-enfants-de-6-a-12-ans-1330-7032093.php",
+          "html_status": "ok 200"
+        }
+      ]
+    },
+    {
+      "slug": "contrepoints",
+      "name": "Contrepoints",
+      "group": "false_positive_trap",
+      "feed_url": "https://www.contrepoints.org/feed",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "contrepoints-dfbb94839b",
+          "url": "https://contrepoints.org/chomage-sixieme-hausse-daffilee-et-toujours-linertie-francaise/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-45a4b06d5a",
+          "url": "https://contrepoints.org/milton-friedman-avait-raison/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-669c6c0413",
+          "url": "https://contrepoints.org/alexandre-clapier-redecouverte-dun-grand-liberal-oublie-du-xixe-siecle/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-4a989121c8",
+          "url": "https://contrepoints.org/liberte-economique-environnement/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-9423e994b9",
+          "url": "https://contrepoints.org/le-taux-de-pauvrete-est-a-son-plus-haut-niveau-depuis-1996/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-42cdbe2032",
+          "url": "https://contrepoints.org/reduire-les-couts-de-limmigration-diagnostic-et-pistes-daction/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-d92c321da7",
+          "url": "https://contrepoints.org/ceuta-lespagne-et-linvasion-migratoire-que-faire/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-9a81e3f29c",
+          "url": "https://contrepoints.org/pour-nous-proteger-des-incendies-arretons-de-surproteger-la-nature/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-8c3bd99370",
+          "url": "https://contrepoints.org/la-taxation-des-heritages-une-remise-en-cause-du-droit-de-propriete/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "contrepoints-e99aacf80e",
+          "url": "https://contrepoints.org/le-bien-commun-entre-construction-du-droit-et-derive-de-linterventionnisme/",
+          "html_status": "ok 200"
+        }
+      ]
+    },
+    {
+      "slug": "bonpote",
+      "name": "Bon Pote",
+      "group": "false_positive_trap",
+      "feed_url": "https://bonpote.com/feed/",
+      "feed_error": null,
+      "articles": [
+        {
+          "id": "bonpote-9b61f9fd1c",
+          "url": "https://bonpote.com/letat-a-delaisse-la-securite-civile-le-cri-de-colere-dun-pompier-face-aux-megafeux/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-0ff8cab051",
+          "url": "https://bonpote.com/confiance-rn-incendies-canicule/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-730f3dc4fd",
+          "url": "https://bonpote.com/comment-les-data-centers-rechauffent-nos-villes-1-2/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-65cf471d17",
+          "url": "https://bonpote.com/apres-les-feux-en-gironde-letat-autorise-le-projet-de-megaferme-de-saumons/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-7a679eaadc",
+          "url": "https://bonpote.com/recoltes-2026-canicule-monde-paysan/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-07cf74a8f8",
+          "url": "https://bonpote.com/canicules-comment-calculer-le-nombre-de-morts-de-la-chaleur/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-1be2813b3b",
+          "url": "https://bonpote.com/interdiction-des-reseaux-sociaux-aux-moins-de-15-ans-la-fin-de-lanonymat-en-ligne/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-0f5e84278f",
+          "url": "https://bonpote.com/marine-le-pen-recoit-laide-du-gouvernement-pour-financer-sa-campagne-presidentielle/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-925749d613",
+          "url": "https://bonpote.com/reponses-aux-6-fake-news-les-plus-repandues-sur-les-incendies-en-gironde/",
+          "html_status": "ok 200"
+        },
+        {
+          "id": "bonpote-ba25c708a1",
+          "url": "https://bonpote.com/foret-des-landes-pourquoi-ca-flambe-aussi-fort/",
+          "html_status": "ok 200"
+        }
+      ]
+    }
+  ]
+}

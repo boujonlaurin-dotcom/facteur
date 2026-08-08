@@ -105,3 +105,11 @@ facteur-release.jks
 .envrc.local
 result
 result-*
+
+# Corpus paywall — charges utiles collectées (cf. maintenance-paywall-detection.md)
+# Le HTML et le RSS sont du contenu de presse sous droits : ils restent locaux et
+# se régénèrent via `python scripts/build_paywall_corpus.py`. Les métadonnées
+# (labels.json, collection_report.json) sont versionnées, elles : l'étiquetage
+# est un travail humain qui ne doit pas se perdre à chaque clone.
+packages/api/tests/fixtures/paywall_corpus/html/
+packages/api/tests/fixtures/paywall_corpus/rss/
