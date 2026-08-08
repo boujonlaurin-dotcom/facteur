@@ -170,16 +170,23 @@ class RoutePaths {
   static const String soutienLinkSent = '/soutien/lien-envoye';
 }
 
-/// Story 31.1 — session anonyme qui n'a pas encore créé son compte.
+/// Story 31.1 — « J'ai déjà un compte » : /login doit rester accessible depuis
+/// l'onboarding pré-compte, que la session soit anonyme OU une session périmée
+/// non-anonyme (keychain iOS restauré après désinstallation → `is_anonymous ==
+/// false` au 1er lancement, cf. bug onboarding iOS). Sans ça, la garde 3 renvoie
+/// l'utilisateur sur /onboarding et le bouton reste inerte.
 ///
 /// `is_anonymous` reste `true` côté Supabase entre la conversion et la
 /// confirmation de l'adresse : c'est `pendingEmailConfirmation` (persisté), et
-/// lui seul, qui marque « le compte existe déjà ».
-bool isAnonymousBeforeConversion({
+/// lui seul, qui marque « le compte existe déjà ». Le seul cas où l'on force le
+/// retour est donc « compte déjà créé, email en attente » : direction
+/// /emailConfirmation.
+bool canReachLoginBeforeAccount({
   required bool isAnonymous,
+  required bool needsOnboarding,
   required String? pendingEmailConfirmation,
 }) =>
-    isAnonymous && pendingEmailConfirmation == null;
+    pendingEmailConfirmation == null && (isAnonymous || needsOnboarding);
 
 /// La garde « email non confirmé » doit se taire dans deux cas :
 ///
@@ -298,15 +305,17 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // À partir d'ici, l'utilisateur est connecté
 
-      final beforeConversion = isAnonymousBeforeConversion(
-        isAnonymous: authState.isAnonymous,
-        pendingEmailConfirmation: authState.pendingEmailConfirmation,
-      );
-
-      // « J'ai déjà un compte » : depuis une session anonyme, /login reste
+      // « J'ai déjà un compte » : depuis l'onboarding pré-compte, /login reste
       // accessible explicitement. Sans cette sortie, les gardes 3 et 4
-      // renverraient l'utilisateur sur /onboarding en boucle.
-      if (isOnLoginPage && beforeConversion) {
+      // renverraient l'utilisateur sur /onboarding en boucle. On ne dépend pas
+      // du strict `isAnonymous` : une session périmée non-anonyme (keychain iOS
+      // restauré) qui a encore `needsOnboarding` doit pouvoir sortir aussi.
+      if (isOnLoginPage &&
+          canReachLoginBeforeAccount(
+            isAnonymous: authState.isAnonymous,
+            needsOnboarding: authState.needsOnboarding,
+            pendingEmailConfirmation: authState.pendingEmailConfirmation,
+          )) {
         return null;
       }
 
