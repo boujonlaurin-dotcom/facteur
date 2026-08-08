@@ -5,8 +5,9 @@
 ## Feature développée
 6 retouches de la carte « Ton Essentiel » triable au swipe : fix du swipe qui se
 fige (priorité), carte qui épouse son contenu (fin du grand vide), images bien
-plus grandes, skeleton « cartes » visible au chargement, « Voir d'autres
-articles » quand on a gardé < 2 articles (réinjecte le carrousel du jour), retrait
+plus grandes, skeleton « cartes » visible au chargement, « Plus d'articles » au
+tri terminé dès qu'il reste des articles injectables (réinjecte le carrousel du
+jour ; le gate « moins de 2 gardés » a été retiré par la passe pré-prod), retrait
 de la pastille « X nouveaux articles ». Mobile-only, aucun changement backend.
 
 ## PR associée
@@ -130,7 +131,7 @@ le seul indicateur d'avancement.
 - [ ] La carte grandit doucement sous la barre d'actions ; plus de grand vide.
 - [ ] Images de tri nettement plus grandes (QA 390×844).
 - [ ] Skeleton lisible « cartes » pendant le chargement.
-- [ ] Encart « Voir d'autres articles » sur < 2 gardés, injecte + rouvre la pile.
+- [ ] « Plus d'articles » au tri terminé : injecte le carrousel + rouvre la pile.
 - [ ] Plus de pastille « nouveaux articles ».
 - [ ] Boot à froid : silhouette de pile → vraie pile, **sans** liste passive.
 - [ ] Carte du dessous stable pendant la sortie, jamais pré-tamponnée.
