@@ -142,6 +142,41 @@ Deux garde-fous accompagnent la descente, parce qu'elle élargit la surface lue 
   mais la structure autorise le cas.
 - Nœuds contradictoires → « gratuit » gagne, par l'asymétrie des coûts.
 
+### Portée : pourquoi le correctif vaut au-delà des sources listées
+
+Le niveau 1 ne peut pas être spécifique à une source, par construction :
+`detect_paywall_from_html()` ne reçoit que le HTML — ni `source_id`, ni
+`paywall_config`, ni domaine. Et son point d'appel
+(`sync_service.py` l.188) ne conditionne le fetch HTML qu'au
+`content_type == ARTICLE`, jamais à l'identité de la source. Toute source qui
+déclare `isAccessibleForFree` dans `@graph` en bénéficie donc
+automatiquement, qu'elle soit dans le corpus ou non.
+
+Trois fragilités de *forme* ont été levées pour que cette portée soit réelle et
+pas seulement théorique. Aucune n'apparaît dans le corpus — elles décrivent le
+même comportement déclaratif sous une sérialisation différente, et sont donc
+justifiées par la généricité, pas par un chiffre :
+
+| Forme | Avant | Après |
+|---|---|---|
+| Article sous `WebPage.mainEntity` | raté | lu |
+| Booléen en URI (`https://schema.org/False`) | lu comme « gratuit » | lu comme « payant » |
+| `<meta content="locked" property="og:article:content_tier">` (ordre inversé) | raté | lu |
+
+`itemListElement` est délibérément **non** traversé : une liste pointe vers
+d'autres articles, et leur état d'accès ne dit rien de la page courante — la
+traverser ferait basculer en payante une page de rubrique gratuite listant des
+articles payants.
+
+Vérification de non-régression : après ces trois généralisations, le corpus
+rend **exactement** les mêmes verdicts qu'avant sur les 90 fichiers.
+
+La preuve empirique sur des sources hors corpus n'a pas pu être faite : la
+politique d'egress est allowlistée **par domaine** et couvre les 14 sources du
+manifeste. Un test sur 16 médias du catalogue absents du corpus (L'Humanité,
+Politis, Élucid, Next, StreetPress, Vert, Blast…) rend 16 rejets CONNECT.
+Élargir l'allowlist à ces domaines permettrait de chiffrer le gain réel.
+
 ### Invalidé par les données — la piste des mots-clés
 
 L'hypothèse « apostrophe typographique » était présentée ici comme la piste

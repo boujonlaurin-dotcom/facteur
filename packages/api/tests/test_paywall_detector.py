@@ -136,3 +136,64 @@ def test_content_tier_still_decides_when_json_ld_is_silent():
         "</head></html>"
     )
     assert detect_paywall_from_html(html) is True
+
+
+# ── Généricité : mêmes marqueurs, autres formes ─────────────────────────────
+# Ces cas ne sont pas représentés dans le corpus des 12 sources collectées. Ils
+# décrivent le *même* comportement déclaratif sous une sérialisation différente,
+# et existent pour que la détection profite aux sources non observées.
+
+
+def test_article_nested_under_main_entity_is_detected():
+    """`WebPage.mainEntity` → l'article : même sens que `@graph`, autre forme."""
+    html = _ld(
+        {
+            "@type": "WebPage",
+            "mainEntity": {"@type": "NewsArticle", "isAccessibleForFree": False},
+        }
+    )
+    assert detect_paywall_from_html(html) is True
+
+
+def test_item_list_element_is_not_traversed():
+    """Une liste renvoie vers d'AUTRES articles : leur accès ne dit rien d'ici.
+
+    Les traverser ferait basculer en payante une page de rubrique gratuite qui
+    liste des articles payants — un faux positif.
+    """
+    html = _ld(
+        {
+            "@type": "CollectionPage",
+            "itemListElement": [
+                {"@type": "NewsArticle", "isAccessibleForFree": False},
+            ],
+        }
+    )
+    assert detect_paywall_from_html(html) is None
+
+
+def test_schema_org_uri_boolean_is_understood():
+    """Certains CMS sérialisent le booléen en URI plutôt qu'en littéral."""
+    paid = _ld({"@type": "NewsArticle", "isAccessibleForFree": "https://schema.org/False"})
+    free = _ld({"@type": "NewsArticle", "isAccessibleForFree": "https://schema.org/True"})
+    assert detect_paywall_from_html(paid) is True
+    assert detect_paywall_from_html(free) is False
+
+
+def test_content_tier_ignores_attribute_order():
+    """`content` avant `property` est du HTML aussi valide que l'inverse."""
+    html = (
+        "<html><head>"
+        '<meta content="locked" property="og:article:content_tier">'
+        "</head></html>"
+    )
+    assert detect_paywall_from_html(html) is True
+
+
+def test_content_tier_free_ignores_attribute_order():
+    html = (
+        "<html><head>"
+        "<meta content='free' property='og:article:content_tier'>"
+        "</head></html>"
+    )
+    assert detect_paywall_from_html(html) is False

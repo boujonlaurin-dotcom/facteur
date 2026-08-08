@@ -50,6 +50,17 @@ PAYWALL_THRESHOLD = 5
 # `is_paid` que de False vers True.
 _LD_SUBELEMENT_TYPES = frozenset({"webpageelement"})
 
+# Clés qui, par la sémantique Schema.org, pointent vers l'entité principale de
+# la page — donc vers un nœud qui parle bien de CET article. On les traverse
+# pour rester générique : `@graph` est la forme Yoast, mais un CMS qui imbrique
+# l'article sous `WebPage.mainEntity` décrit exactement la même chose.
+# `itemListElement` en est volontairement absent : une liste renvoie vers
+# d'AUTRES articles, dont l'état d'accès ne dit rien de la page courante.
+_LD_CONTAINER_KEYS = ("@graph", "mainEntity", "mainEntityOfPage")
+
+# Certains CMS sérialisent le booléen en URI Schema.org plutôt qu'en littéral.
+_LD_FALSE_LITERALS = frozenset({"false", "0", "no", "http://schema.org/false", "https://schema.org/false"})
+
 # In-memory cache: source_id -> (config, expiry_timestamp)
 _config_cache: dict[str, tuple[dict, float]] = {}
 _CACHE_TTL_SECONDS = 3600  # 1 hour
@@ -96,9 +107,10 @@ def _iter_ld_page_nodes(data: object):
     if not isinstance(data, dict):
         return
 
-    graph = data.get("@graph")
-    if graph is not None:
-        yield from _iter_ld_page_nodes(graph)
+    for key in _LD_CONTAINER_KEYS:
+        nested = data.get(key)
+        if nested is not None:
+            yield from _iter_ld_page_nodes(nested)
 
     raw_type = data.get("@type")
     types = raw_type if isinstance(raw_type, list) else [raw_type]
@@ -115,7 +127,7 @@ def _ld_access_value(node: dict) -> bool | None:
     if isinstance(access, bool):
         return not access  # isAccessibleForFree=false → is_paid=True
     if isinstance(access, str):
-        return access.lower() in ("false", "0", "no")
+        return access.strip().lower() in _LD_FALSE_LITERALS
     return None
 
 
@@ -154,18 +166,24 @@ def detect_paywall_from_html(html_head: str) -> bool | None:
         # positif retire définitivement un article gratuit de l'offre.
         return all(ld_values)
 
-    # 2. Check og:article:content_tier meta tag
-    tier_pattern = re.compile(
-        r'<meta\s+property=["\']og:article:content_tier["\']\s+content=["\'](\w+)["\']',
-        re.IGNORECASE,
+    # 2. Check og:article:content_tier meta tag.
+    # On isole la balise puis on en extrait `content` séparément : l'ordre des
+    # attributs est libre en HTML, et un `<meta content="locked" property=…>`
+    # est aussi valide que l'inverse. Exiger l'ordre ferait rater le marqueur
+    # chez tout média qui sérialise ses meta dans l'autre sens.
+    tier_tag = re.search(
+        r"<meta[^>]*\bog:article:content_tier\b[^>]*>", html_head, re.IGNORECASE
     )
-    tier_match = tier_pattern.search(html_head)
-    if tier_match:
-        tier_value = tier_match.group(1).lower()
-        if tier_value in ("locked", "metered"):
-            return True
-        if tier_value == "free":
-            return False
+    if tier_tag:
+        tier_content = re.search(
+            r'\bcontent\s*=\s*["\']([^"\']+)["\']', tier_tag.group(0), re.IGNORECASE
+        )
+        if tier_content:
+            tier_value = tier_content.group(1).strip().lower()
+            if tier_value in ("locked", "metered"):
+                return True
+            if tier_value == "free":
+                return False
 
     # 3. Check JS variable patterns (e.g., Le Figaro: window.FFF.isPremium = true)
     premium_js_pattern = re.compile(
