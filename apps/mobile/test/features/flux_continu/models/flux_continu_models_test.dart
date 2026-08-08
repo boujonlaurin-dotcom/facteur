@@ -479,4 +479,71 @@ void main() {
       expect(topic(sourceCount: 6, perspectiveCount: 1).coverageCount, 6);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // EssentielArticle.fromContent — adaptateur carrousel → article triable
+  // (« Voir d'autres articles », itération PO 33.1)
+  // ---------------------------------------------------------------------------
+  group('EssentielArticle.fromContent', () {
+    Content content({
+      String id = 'x-1',
+      String name = 'Le Monde',
+      String sourceId = 's-1',
+      ContentStatus status = ContentStatus.unseen,
+    }) =>
+        Content(
+          id: id,
+          title: 'Titre carrousel',
+          url: 'https://example.com/$id',
+          thumbnailUrl: 'https://example.com/$id.jpg',
+          description: 'Un chapô.',
+          contentType: ContentType.article,
+          publishedAt: DateTime(2026, 8, 6),
+          source: Source(id: sourceId, name: name, type: SourceType.article),
+          status: status,
+          isSaved: true,
+          isFollowedSource: true,
+        );
+
+    test('reprend les champs adressables du Content', () {
+      final a = EssentielArticle.fromContent(content(), rank: 6);
+      expect(a.contentId, 'x-1');
+      expect(a.title, 'Titre carrousel');
+      expect(a.url, 'https://example.com/x-1');
+      expect(a.thumbnailUrl, 'https://example.com/x-1.jpg');
+      expect(a.description, 'Un chapô.');
+      expect(a.sourceName, 'Le Monde');
+      expect(a.sourceId, 's-1');
+      expect(a.sourceLetter, 'L');
+      expect(a.rank, 6);
+      expect(a.isSaved, isTrue);
+      expect(a.isFollowedSource, isTrue);
+    });
+
+    test('les signaux propres à l\'Essentiel retombent en défaut → pied muet',
+        () {
+      final a = EssentielArticle.fromContent(content(), rank: 6);
+      // Couverture / divergence absentes du carrousel : la carte de tri ne
+      // rendra ni puce couverture ni badge de polarisation.
+      expect(a.coverageCount, 0);
+      expect(a.divergenceLevel, isNull);
+      expect(a.perspectiveSources, isEmpty);
+      expect(a.isActuDuJour, isFalse);
+    });
+
+    test('un source.id vide devient null (pas de fausse découpe CTR)', () {
+      final a = EssentielArticle.fromContent(content(sourceId: ''), rank: 6);
+      expect(a.sourceId, isNull);
+    });
+
+    test('status consommé → isRead', () {
+      final read = EssentielArticle.fromContent(
+        content(status: ContentStatus.consumed),
+        rank: 6,
+      );
+      expect(read.isRead, isTrue);
+      final unread = EssentielArticle.fromContent(content(), rank: 6);
+      expect(unread.isRead, isFalse);
+    });
+  });
 }

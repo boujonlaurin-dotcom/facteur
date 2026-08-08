@@ -1,128 +1,152 @@
-# QA Handoff — PR-4 : ordre des blocs de la Tournée par le score top-3
+# QA Handoff — Retouches carte « Ton Essentiel » triable (Story 33.1, itération PO)
 
-> Rempli par l'agent dev. Input de `/validate-feature`. Lot :
-> `docs/maintenance/maintenance-reco-optimisation-lot2.md` (§ PR-4).
+> Rempli par l'agent dev. Input de /validate-feature (Playwright Agent CLI, viewport 390×844, sémantique activée).
 
 ## Feature développée
-
-Les blocs de la Tournée (thèmes, sources, veille, « Choisie pour vous ») ne sont
-plus simplement **dépriorisés** quand ils sont maigres : ils sont **triés par la
-somme des 3 meilleurs `score_total` de leurs articles**. Les slots manquants
-comptant 0, un bloc à 1 article coule structurellement (≈ 1 × s contre 3 × s)
-sans avoir besoin d'être un cas spécial.
-
-L'ordre est calculé **une seule fois par journée tournée** (frontière 07h30
-Paris), à la complétion du fan-out, puis **gelé et persisté** — aucun bloc ne
-bouge pendant le remplissage progressif ni pendant la session.
-
-En prime, le champ `block_score` de l'event `article_impression` (PR-1), qui
-valait `null` en prod, est désormais renseigné : c'est lui qui reliera « ordre
-des blocs » et « CTR mesuré ».
+6 retouches de la carte « Ton Essentiel » triable au swipe : fix du swipe qui se
+fige (priorité), carte qui épouse son contenu (fin du grand vide), images bien
+plus grandes, skeleton « cartes » visible au chargement, « Plus d'articles » au
+tri terminé dès qu'il reste des articles injectables (réinjecte le carrousel du
+jour ; le gate « moins de 2 gardés » a été retiré par la passe pré-prod), retrait
+de la pastille « X nouveaux articles ». Mobile-only, aucun changement backend.
 
 ## PR associée
-
-À créer (`--base main`).
+À créer via /go (`--base main`).
 
 ## Écrans impactés
-
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Tournée du jour (Flux continu) | `/flux-continu` | Modifié — **ordre** des blocs sous la carte héros |
-
-Aucun nouveau composant, aucune nouvelle UI : seuls l'**ordre** des sections et
-le contenu d'un event analytics changent.
+| Flux Continu — carte héros « Ton Essentiel » | `/` (home) | Modifié |
+| Skeleton du héros au chargement | `/` (fenêtre de loading) | Modifié |
 
 ## Scénarios de test
 
-### Scénario 1 — Cold boot : aucun bloc ne saute pendant le remplissage
+### Scénario 1 : Swipe increvable (happy path, PRIORITÉ)
 **Parcours** :
-1. Vider les données de l'app (ou franchir 07h30), ouvrir la Tournée.
-2. Observer la page pendant tout le remplissage progressif (~10-15 recompositions).
+1. Ouvrir l'app sur la Tournée du jour (carte « Ton Essentiel » en pile à trier).
+2. Trier les 5 articles **au swipe seul**, rapidement, en alternant gauche/droite.
+**Résultat attendu** : chaque swipe fait avancer à l'article suivant ; aucune
+carte ne se fige ni ne reste « grisée » hors écran ; l'index avance à chaque
+décision jusqu'à la fin du tri. Le bouton « Je garde » ne doit jamais être requis
+pour « débloquer » une carte.
 
-**Résultat attendu** : les blocs se remplissent **en place**, dans l'ordre par
-défaut. Une **seule** réorganisation survient, à la toute fin, quand tout est
-chargé. Aucun saut au milieu du remplissage.
-
-### Scénario 2 — Ré-ouverture dans la même journée
+### Scénario 2 : Swipe pendant l'anim de sortie + swipe vs long-press
 **Parcours** :
-1. Après le scénario 1, quitter l'app et la rouvrir (puis pull-to-refresh).
+1. Glisser une carte pour la faire sortir, puis tenter un 2ᵉ geste pendant l'anim.
+2. Sur une carte, faire un appui long (aperçu) puis un glissé horizontal.
+**Résultat attendu** : le 2ᵉ geste pendant l'anim est ignoré (une seule décision).
+L'appui long ouvre l'aperçu ; un glissé horizontal n'ouvre jamais l'aperçu sous le
+doigt (l'arène départage bien swipe vs long-press).
 
-**Résultat attendu** : l'ordre est **identique** à celui de la fin du scénario 1,
-et il l'est **dès la première frame de contenu** — aucune réorganisation visible,
-même après le refresh.
-
-### Scénario 3 — Les blocs pauvres sont en bas
+### Scénario 3 : La carte épouse son contenu (fin du vide)
 **Parcours** :
-1. Ouvrir la Tournée avec des favoris dont au moins un ne ramène qu'un article.
+1. À « 0 sur 5 triés », observer la zone sous la barre d'actions.
+2. Garder des articles un à un et observer la croissance.
+**Résultat attendu** : plus de grand vide (~256px) sous « 0 sur N triés ». La
+kept-list grandit **en douceur vers le bas**, sous la barre d'actions (la zone
+progression + carte + actions ne saute pas sous le doigt).
 
-**Résultat attendu** : le bloc à 1 article se trouve **sous** les blocs bien
-fournis. Actus du jour, Bonnes Nouvelles et La Grille gardent leur position
-habituelle — ils ne sont **jamais** poussés en queue (ils ne portent pas de
-score, donc ils tiennent leur place).
-
-### Scénario 4 — Compte personnalisé
+### Scénario 4 : Images grandes + skeleton visible
 **Parcours** :
-1. Réordonner sa Tournée à la main via « Composer ma Tournée », puis recharger.
+1. Recharger avec le réseau throttlé (DevTools) pour voir la fenêtre de chargement.
+2. Observer la carte une fois chargée.
+**Résultat attendu** : au chargement, un skeleton en shimmer **qui lit comme des
+cartes** (pile de 2 cartes décalées, grande image + lignes de titre). Une fois
+chargée, l'image de chaque carte de tri est nettement plus grande (~format 16:9),
+sans saut de layout à l'hydratation.
 
-**Résultat attendu** : l'ordre manuel départage les blocs de **score égal** ; un
-bloc manuellement remonté mais nettement moins fourni peut descendre (risque
-tranché par le PO). Rien ne bouge dans la journée en cours après le premier
-chargement.
-
-### Scénario 5 — Réseau coupé / blocs vides
+### Scénario 5 : pied de fin de tri (« Trier à nouveau » + « Plus d'articles »)
 **Parcours** :
-1. Passer en mode avion puis ouvrir la Tournée, puis revenir en ligne.
+1. Trier les 5 articles jusqu'au bout.
+2. Observer le pied de carte, puis taper « Plus d'articles ».
+3. Refaire jusqu'à épuiser le carrousel du jour.
+**Résultat attendu** : le pied porte **toujours** « Trier à nouveau » (bien
+lisible, texte foncé, pas un gris qu'on rate) et, tant qu'il reste des articles
+injectables, « Plus d'articles » à sa droite. « Plus d'articles » réinjecte le
+carrousel du jour et **rouvre** la pile sur un nouvel article. Quand le pool est
+épuisé, le bouton **disparaît** (jamais un bouton mort). Plus aucun encart « Tu
+n'as gardé que N article(s). En voir d'autres ? ».
 
-**Résultat attendu** : aucun crash, aucune page vide anormale. Sans article
-scoré, aucun tri n'est appliqué (ordre par défaut). Au retour du réseau, tri
-normal au chargement suivant.
-
-### Scénario 6 — Bascule de journée
+### Scénario 6 : Retrait du badge
 **Parcours** :
-1. Laisser l'app ouverte à cheval sur 07h30 Paris (ou décaler l'horloge), puis
-   recharger la Tournée.
+1. Sur la carte héros, chercher une pastille « X nouveaux articles » près du titre.
+**Résultat attendu** : plus aucune pastille « N nouveaux articles ».
 
-**Résultat attendu** : l'ordre de la veille est **jeté**, pas rejoué ; un ordre
-frais est calculé à la complétion du fan-out (donc à nouveau une seule
-réorganisation, en fin de chargement).
+---
+
+## Passe pré-prod « design » (07/08) — scénarios additionnels
+
+### Scénario 7 : boot à froid, l'attente ressemble au contenu (PRIORITÉ)
+**Parcours** :
+1. Vider le stockage local, throttler le réseau (DevTools), recharger.
+2. Observer **sans cligner** la carte « Ton Essentiel » entre le chargement et
+   l'arrivée de la pile.
+**Résultat attendu** : on voit la **silhouette de la pile** (progression + pile de
+2 cartes + barre d'actions : 2 ronds puis une pilule large), puis **directement**
+la vraie pile. À aucun moment l'ancienne liste passive (gros article + petits
+titres) ne doit apparaître, même une fraction de seconde. Idem sur un rechargement
+« tiède » (snapshot déjà en cache).
+
+### Scénario 8 : la carte du dessous ne bouge plus, et n'est jamais pré-tamponnée
+**Parcours** :
+1. Glisser lentement la carte du dessus vers la droite, sans lâcher, puis lâcher.
+2. Répéter vers la gauche.
+**Résultat attendu** : la carte du dessous **grandit progressivement** pendant le
+geste et est déjà à sa taille pleine quand elle devient carte du dessus (aucun
+« claquement », aucune carte « légèrement décalée » qui saute). Elle n'est pas
+rognée en haut ni en bas. Aucun tampon (« JE GARDE » / « PAS POUR MOI ») n'est
+visible sur la carte fraîche qui arrive.
+
+### Scénario 9 : article sans image
+**Parcours** :
+1. Trier jusqu'à tomber sur un article sans vignette (ou couper les images).
+**Résultat attendu** : **aucun aplat gris** en tête de carte. La carte est plus
+courte, son titre s'étale sur plus de lignes, et la barre d'actions **glisse**
+vers le haut (transition animée), elle ne saute pas sous le pouce.
+
+### Scénario 10 : tampons lisibles sur photo
+**Parcours** :
+1. Glisser une carte **avec image** dans chaque direction, mi-course.
+**Résultat attendu** : le tampon est un **aplat plein** (orange « JE GARDE » /
+gris très foncé « PAS POUR MOI ») avec texte **blanc**, lisible par-dessus la
+photo. Plus de contour vide.
+
+### Scénario 11 : coche « suivie » / étoile « favorite »
+**Parcours** :
+1. Mettre une source en favori et une autre en « suivie » depuis Mes intérêts.
+2. Revenir sur la Tournée et trier jusqu'à voir ces sources.
+**Résultat attendu** : à droite du nom de source, une **étoile pleine** pour un
+favori, une **coche** pour une source suivie ; rien pour une source neutre. Même
+signal sur les lignes des articles gardés, sous la pile.
+
+### Scénario 12 : plus aucun compteur
+**Parcours** :
+1. Parcourir tout le tri, du début à la fin.
+**Résultat attendu** : plus aucun libellé « N sur M trié(s) » nulle part, ni dans
+la carte ni dans le squelette de chargement. La barre de progression segmentée est
+le seul indicateur d'avancement.
 
 ## Critères d'acceptation
-
-- [ ] Aucun bloc ne saute pendant le fan-out (une seule réorganisation, à la complétion)
-- [ ] L'ordre est stable toute la journée, identique à la ré-ouverture, dès la 1ʳᵉ frame
-- [ ] Un bloc à 1 article n'est plus au-dessus du pli quand des blocs denses existent
-- [ ] Actus / Bonnes Nouvelles / La Grille gardent leur position (jamais poussés en queue)
-- [ ] Le quota de 3 sections « Choisie pour vous » sous le cap 13 reste honoré après tri
-- [ ] Console sans erreurs, réseau sans 4xx/5xx inattendus
+- [ ] Le tri au swipe seul va jusqu'au bout, sans carte figée/grisée.
+- [ ] La carte grandit doucement sous la barre d'actions ; plus de grand vide.
+- [ ] Images de tri nettement plus grandes (QA 390×844).
+- [ ] Skeleton lisible « cartes » pendant le chargement.
+- [ ] « Plus d'articles » au tri terminé : injecte le carrousel + rouvre la pile.
+- [ ] Plus de pastille « nouveaux articles ».
+- [ ] Boot à froid : silhouette de pile → vraie pile, **sans** liste passive.
+- [ ] Carte du dessous stable pendant la sortie, jamais pré-tamponnée.
+- [ ] Article sans image : pas d'aplat gris, carte plus courte, barre qui glisse.
+- [ ] Étoile / coche selon l'état d'intérêt de la source.
+- [ ] Pied de fin : « Trier à nouveau » + « Plus d'articles » (masqué si pool vide).
+- [ ] Plus aucun « N sur M trié(s) » nulle part.
+- [ ] Console sans erreurs ; réseau sans 4xx/5xx inattendus.
 
 ## Zones de risque
-
-- **Cap 13** : un bloc dégradé peut désormais tomber **hors** du cap et
-  disparaître de la page. C'est voulu — mais vérifier que le quota suggestions
-  survit au tri.
-- **Frontière 07h30 Paris** (scénario 6) : la clé `tournee_score_order_v1` porte
-  le jour dans sa valeur ; une entrée d'hier doit être ignorée, pas appliquée.
-- **Comptes personnalisés** : un bloc glissé en tête peut descendre **le
-  lendemain**. Jamais dans la même session.
-- **Kill-switch** `kTourneeScoreSortEnabled` (`tournee_order_prefs_provider.dart`) :
-  à `false`, retour exact au comportement d'avant (dépriorisation binaire
-  riches/maigres). C'est le rollback si l'ordre observé déplaît.
+- Fluidité du swipe (le bug d'origine) : bien tester swipes rapides + interruptions.
+- Croissance `AnimatedSize` : vérifier l'absence de saut au-dessus de la barre
+  d'actions et la non-régression des ancres de snap du feed.
+- « Voir d'autres articles » ne doit pas réinjecter deux fois les mêmes articles.
 
 ## Dépendances
-
-- Aucun endpoint nouveau : le tri consomme `recommendation_reason.score_total`,
-  déjà servi par `GET /api/feed`.
-- **Aucune migration Alembic** (mobile-only).
-- Nouvelle clé `SharedPreferences` : `tournee_score_order_v1`, valeur
-  `{"day": "<dayKey>", "keys": [...]}` — clé unique day-stampée, auto-invalidante.
-- Event analytics `article_impression` : la propriété `block_score` passe de
-  `null` à une valeur réelle.
-
-## Notes pour l'agent QA
-
-- Viewport 390×844, sémantique activée au boot (skill `facteur-qa-web`).
-- Le gel de l'ordre se produit **après** la dernière tâche du fan-out : laisser
-  la page se poser complètement avant d'asserter l'ordre final.
-- Le comportement dépend des scores réels renvoyés par le backend. Sur un compte
-  sans favori bien fourni, il peut n'y avoir aucun changement visible — ce n'est
-  pas un échec, c'est le cas « rien à trier ».
+Aucune modif backend. La carte lit `GET /api/essentiel` (articles + `carousel`)
+déjà servi. Démarrer l'API locale si besoin (`uvicorn app.main:app --port 8080`).

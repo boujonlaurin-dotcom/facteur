@@ -189,6 +189,11 @@ String triagePrefsKey(String dayKey) => '$kTriagePrefsKeyPrefix$dayKey';
 /// couvre la fin de tri et le passage en arrière-plan.
 const Duration kTriageFlushDebounce = Duration(seconds: 2);
 
+/// Cap du nombre d'articles réinjectés en une fois par [EssentielTriageNotifier.extendSlate]
+/// (« Voir d'autres articles »). Le carrousel du jour en porte jusqu'à 5 : on ne
+/// gonfle pas le slate au-delà d'un tri qui reste court.
+const int kTriageExtendMax = 5;
+
 class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
   /// [initialState] court-circuite l'hydratation SharedPreferences. Réservé aux
   /// tests : sans lui, l'hydratation asynchrone rend le rendu de la carte
@@ -347,6 +352,36 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
     _sessionStartMs = DateTime.now().millisecondsSinceEpoch;
     _shownAt = DateTime.now();
     state = state.copyWith(decisions: const {});
+    unawaited(_persist());
+  }
+
+  /// « Voir d'autres articles » — ajoute au slate figé des `contentId`
+  /// supplémentaires (items du carrousel du jour non déjà présents), **sans**
+  /// toucher aux décisions déjà prises, borné à [kTriageExtendMax]. La pile se
+  /// **rouvre** d'elle-même : `index` repointe sur le premier ajout non décidé,
+  /// donc `done` redevient faux et `isActive` vrai. Persisté sous la même clé
+  /// jour (les ajouts survivent au cold-boot). No-op si le tri n'a pas démarré
+  /// ou si rien de neuf n'est à ajouter.
+  ///
+  /// Le slate reste **figé** au sens de la story (l'ordre existant ne bouge
+  /// pas) : on ne fait qu'allonger la queue. Les décisions envoyées ensuite
+  /// portent le `slate_size` étendu (via [decide], `state.slate.length`), ce qui
+  /// garde `rank ≤ slate_size` côté backend.
+  void extendSlate(List<String> extraIds) {
+    if (!state.hasStarted) return;
+    final existing = state.slate.toSet();
+    final additions = <String>[];
+    for (final id in extraIds) {
+      if (!existing.add(id)) continue; // déjà dans le slate (ou déjà ajouté)
+      additions.add(id);
+      if (additions.length >= kTriageExtendMax) break;
+    }
+    if (additions.isEmpty) return;
+    _sessionStartMs = DateTime.now().millisecondsSinceEpoch;
+    _shownAt = DateTime.now();
+    state = state.copyWith(
+      slate: List.unmodifiable([...state.slate, ...additions]),
+    );
     unawaited(_persist());
   }
 

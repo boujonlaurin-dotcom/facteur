@@ -1410,6 +1410,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   .where((a) => !_dismissedIds.contains(a.contentId))
                   .toList(growable: false),
               newSinceMorning: s.newSinceMorning,
+              carousel: s.carousel,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1479,6 +1480,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   .where((a) => seen.add(a.contentId))
                   .toList(growable: false),
               newSinceMorning: s.newSinceMorning,
+              carousel: s.carousel,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1570,6 +1572,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                     a,
               ],
               newSinceMorning: s.newSinceMorning,
+              carousel: s.carousel,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1877,6 +1880,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return EssentielSection(
       articles: articles,
       newSinceMorning: newSinceMorning,
+      // Carrousel du jour porté jusqu'à la carte pour « Voir d'autres articles »
+      // (réinjection dans la pile de tri, itération PO 33.1). Déjà mémorisé
+      // juste au-dessus (`_essentielCarousel = essentielCarousel`).
+      carousel: _essentielCarousel,
       illustrationAsset: _kEssentielIllustration,
       blurb: _kEssentielBlurb,
     );

@@ -66,16 +66,7 @@ import '../services/preview_nudge_scheduler.dart';
 import '../services/tournee_progress_service.dart'
     show TourneeProgressService;
 import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
-import '../utils/section_fit.dart'
-    show
-        kHeroLeadHeight,
-        kHeroMediumHeight,
-        kMinPlausibleUsableHeight,
-        kTriageActionBarHeight,
-        kTriageCardHeight,
-        kTriageCounterHeight,
-        kTriageProgressHeight,
-        triageReservedHeight;
+import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
 import '../widgets/citation_du_jour_card.dart';
 import '../widgets/closing_card_v18.dart';
@@ -86,6 +77,7 @@ import '../widgets/my_interests_intro.dart';
 import '../widgets/personalisation_cta_card.dart';
 import '../widgets/tournee_composer_sheet.dart';
 import '../widgets/section_banner.dart';
+import '../widgets/triage_stack_skeleton.dart';
 import '../widgets/section_block.dart';
 import '../widgets/sticky_tab_bar.dart';
 import '../widgets/suggestion_reason_sheet.dart';
@@ -2500,18 +2492,18 @@ Widget essentielHeroSkeletonForTest() => const _HeroSkeleton();
 
 /// Placeholder du hero « Ton Essentiel » pendant le squelette.
 ///
-/// Reproduit la géométrie de la **carte de tri au swipe** (Story 33.1), qui est
-/// le composant affiché par défaut : pastille date/météo, une **seule** carte à
-/// trier, barre d'actions. Il réserve la **hauteur de pic** que la vraie carte
-/// fige dès la 1ʳᵉ frame via [triageReservedHeight] — sinon le feed saute à
-/// l'hydratation. Respire en shimmer (mêmes teintes que [SectionSkeletonCard])
-/// pour se lire comme « l'Essentiel se prépare » et non comme une carte rognée.
+/// L'en-tête (pastille date/météo, filet accent, titre, chapô) est propre à
+/// l'écran ; la pile, elle, délègue à [TriageStackSkeleton] — **la même
+/// silhouette** que l'attente rendue dans [EssentielHiFiCard] quand le tri n'est
+/// pas encore déterminé. Une seule définition, donc les deux attentes ne peuvent
+/// pas diverger de la vraie pile. Il réserve la hauteur d'**ouverture** de la
+/// vraie carte (0 gardé) — celle-ci épouse son contenu et grandit ensuite vers
+/// le bas, donc réserver le pic de tri sur-réserverait et ferait sauter le feed
+/// à l'hydratation. Respire en shimmer (mêmes teintes que
+/// [SectionSkeletonCard]) pour se lire comme « l'Essentiel se prépare » et non
+/// comme une carte rognée.
 class _HeroSkeleton extends StatelessWidget {
   const _HeroSkeleton();
-
-  /// Slate nominal : la carte Essentiel est verrouillée à 5 articles. Sert
-  /// uniquement à réserver la hauteur de pic du tri — aucun contenu n'est rendu.
-  static const int _kNominalSlate = 5;
 
   @override
   Widget build(BuildContext context) {
@@ -2520,16 +2512,6 @@ class _HeroSkeleton extends StatelessWidget {
     final base = colors.textTertiary.withValues(alpha: 0.10);
     final highlight = colors.textTertiary.withValues(alpha: 0.04);
 
-    // Hauteur de la pile de tri, identique à celle réservée par la vraie carte
-    // (chrome=0 : la pastille/en-tête est rendue au-dessus de la pile).
-    final stackHeight = triageReservedHeight(
-      slateSize: _kNominalSlate,
-      chromeHeight: 0,
-      leadHeight: kHeroLeadHeight,
-      mediumHeight: kHeroMediumHeight,
-    );
-
-    // Barre shimmer neutre réutilisée pour chaque coquille.
     Widget bar({double? width, required double height, double radius = 6}) =>
         Container(
           width: width,
@@ -2574,59 +2556,11 @@ class _HeroSkeleton extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              // Pile de tri : progression + carte mono-article + barre d'actions.
-              // La place restante (futurs « gardés ») reste vide, comme la carte
-              // réelle dont la liste se construit vers le bas.
-              SizedBox(
-                height: stackHeight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      height: kTriageProgressHeight,
-                      child: Center(
-                        child: bar(
-                          width: double.infinity,
-                          height: 6,
-                          radius: 3,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      height: kTriageCardHeight,
-                      decoration: BoxDecoration(
-                        color: base,
-                        borderRadius:
-                            BorderRadius.circular(FacteurRadius.large),
-                      ),
-                    ),
-                    SizedBox(
-                      height: kTriageActionBarHeight,
-                      child: Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            bar(width: 52, height: 52, radius: FacteurRadius.pill),
-                            const SizedBox(width: FacteurSpacing.space6),
-                            bar(width: 52, height: 52, radius: FacteurRadius.pill),
-                            const SizedBox(width: FacteurSpacing.space6),
-                            bar(width: 52, height: 52, radius: FacteurRadius.pill),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // Compteur « N sur M triés », qui ferme la liste des gardés
-                    // — vide au boot, donc collé sous la barre d'actions.
-                    SizedBox(
-                      height: kTriageCounterHeight,
-                      child: Align(
-                        alignment: Alignment.bottomLeft,
-                        child: bar(width: 110, height: 11),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Silhouette de la pile, partagée avec l'attente **dans** la carte
+              // (`EssentielHiFiCard`) : une seule définition, donc les deux
+              // attentes ne peuvent pas diverger de la vraie pile. Le `Shimmer`
+              // est déjà fourni ici → `standalone: false`.
+              const TriageStackSkeleton(),
             ],
           ),
         ),
