@@ -174,8 +174,12 @@ def test_item_list_element_is_not_traversed():
 
 def test_schema_org_uri_boolean_is_understood():
     """Certains CMS sérialisent le booléen en URI plutôt qu'en littéral."""
-    paid = _ld({"@type": "NewsArticle", "isAccessibleForFree": "https://schema.org/False"})
-    free = _ld({"@type": "NewsArticle", "isAccessibleForFree": "https://schema.org/True"})
+    paid = _ld(
+        {"@type": "NewsArticle", "isAccessibleForFree": "https://schema.org/False"}
+    )
+    free = _ld(
+        {"@type": "NewsArticle", "isAccessibleForFree": "https://schema.org/True"}
+    )
     assert detect_paywall_from_html(paid) is True
     assert detect_paywall_from_html(free) is False
 

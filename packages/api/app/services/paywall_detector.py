@@ -59,7 +59,9 @@ _LD_SUBELEMENT_TYPES = frozenset({"webpageelement"})
 _LD_CONTAINER_KEYS = ("@graph", "mainEntity", "mainEntityOfPage")
 
 # Certains CMS sérialisent le booléen en URI Schema.org plutôt qu'en littéral.
-_LD_FALSE_LITERALS = frozenset({"false", "0", "no", "http://schema.org/false", "https://schema.org/false"})
+_LD_FALSE_LITERALS = frozenset(
+    {"false", "0", "no", "http://schema.org/false", "https://schema.org/false"}
+)
 
 # In-memory cache: source_id -> (config, expiry_timestamp)
 _config_cache: dict[str, tuple[dict, float]] = {}
