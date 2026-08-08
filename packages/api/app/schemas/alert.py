@@ -48,6 +48,30 @@ class TopicFrequencyResponse(BaseModel):
     noisy: bool = False
 
 
+class AlertContent(BaseModel):
+    """Un contenu déclencheur, embarqué dans la cloche (story 30.4).
+
+    Sans lui, la carte « Tes alertes » de la Tournée ne peut annoncer qu'un
+    compteur : elle cache l'article derrière un rappel, puis le fait recharger.
+    Avec lui, la carte *est* l'article et le tap ouvre le lecteur avec le titre
+    déjà peint.
+
+    `source_*` décrit la **source réelle de l'article**, pas la cible de la
+    cloche : une alerte sujet ramène des articles de médias variés, et c'est
+    exactement ce qui la rend lisible.
+    """
+
+    content_id: UUID
+    title: str
+    url: str | None = None
+    thumbnail_url: str | None = None
+    published_at: datetime | None = None
+    content_type: str | None = None
+    source_id: UUID | None = None
+    source_name: str = ""
+    source_logo_url: str | None = None
+
+
 class AlertItem(BaseModel):
     """Une cloche active, telle que rendue par l'écran « Mes alertes ».
 
@@ -58,6 +82,11 @@ class AlertItem(BaseModel):
     `source_name` portent l'identité du sujet (le client ne manipule qu'une
     liste). Les champs restent nommés `source_*` pour ne pas casser les clients
     de la v1, qui les lisent sans condition.
+
+    `contents` (30.4) est **additif** : `new_content` reste le compteur de la
+    pastille, et un client v1 qui ignore `contents` parse la réponse à
+    l'identique. C'est la contrainte du split staging/prod — le backend
+    `production` sert des clients qui ont une semaine de retard.
     """
 
     kind: Literal["source", "topic"] = "source"
@@ -70,6 +99,7 @@ class AlertItem(BaseModel):
     last_published_at: datetime | None = None
     last_alert_sent_at: datetime | None = None
     new_content: int = 0
+    contents: list[AlertContent] = []
 
 
 class AlertsResponse(BaseModel):
