@@ -21,10 +21,16 @@ import 'package:facteur/features/flux_continu/widgets/edition_timeline_sheet.dar
 import 'package:facteur/features/flux_continu/widgets/ephemeral_rattraper_label.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_hi_fi_card.dart';
 import 'package:facteur/features/flux_continu/widgets/essentiel_triage_stack.dart';
+import 'package:facteur/features/flux_continu/widgets/triage_stack_skeleton.dart';
+import 'package:facteur/features/flux_continu/widgets/triage_swipe_card.dart';
+import 'package:facteur/features/my_interests/models/user_interests_state.dart';
+import 'package:facteur/features/my_interests/models/user_sources_state.dart';
+import 'package:facteur/features/my_interests/providers/user_sources_state_provider.dart';
 import 'package:facteur/features/gamification/models/streak_activity_model.dart';
 import 'package:facteur/features/gamification/providers/streak_activity_provider.dart';
 import 'package:facteur/features/settings/models/display_mode_spec.dart';
 import 'package:facteur/features/settings/providers/display_mode_provider.dart';
+import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:facteur/shared/widgets/completion_stamp.dart' show kStampGreen;
 import 'package:facteur/shared/widgets/read_state_mark.dart';
 import 'package:facteur/widgets/design/facteur_thumbnail.dart';
@@ -36,10 +42,32 @@ import 'package:visibility_detector/visibility_detector.dart';
 /// nombre de frames imprévisible et la carte bascule en pile à trier au milieu
 /// d'un test — les assertions ci-dessous ne passeraient plus que par chance.
 /// Le rendu de la pile est couvert séparément (« pile à trier » plus bas).
+/// Neutralise le tri pour les tests qui portent sur la **liste passive** (lead
+/// + mediums) : un tri **déjà terminé, tout gardé** sur les `contentId`
+/// déterministes de [_article]. La carte rend alors ses tuiles habituelles,
+/// dans l'ordre du slate.
+///
+/// Un état vide ne convient plus : depuis la passe design, `hydrated == false`
+/// ou un slate pas encore figé rend la **silhouette** de la pile, pas la liste
+/// passive — précisément pour que l'attente ne montre plus une mise en page
+/// qui va disparaître.
 Override _inertTriage() => essentielTriageProvider.overrideWith(
       (ref) => EssentielTriageNotifier(
         ref,
-        initialState: const EssentielTriageState(dayKey: 'test'),
+        initialState: EssentielTriageState(
+          dayKey: 'test',
+          slate: const ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6'],
+          decisions: {
+            for (var i = 1; i <= 6; i++)
+              'c-$i': TriageEntry(
+                contentId: 'c-$i',
+                decision: TriageDecision.keep,
+                rank: i,
+                via: TriageVia.swipe,
+              ),
+          },
+          hydrated: true,
+        ),
       ),
     );
 
@@ -117,9 +145,11 @@ EssentielArticle _article({
   String? description,
   String? thumbnailUrl,
   String? title,
+  String? sourceId,
 }) {
   return EssentielArticle(
     contentId: 'c-$rank',
+    sourceId: sourceId,
     title: title ?? 'Titre $rank',
     url: 'https://example.com/$rank',
     description: description,
@@ -139,6 +169,25 @@ EssentielArticle _article({
     divergenceLevel: divergenceLevel,
   );
 }
+
+/// Item de carrousel (« Voir d'autres articles »).
+Content _carouselItem(String id) => Content(
+      id: id,
+      title: 'Carrousel $id',
+      url: 'https://example.com/$id',
+      contentType: ContentType.article,
+      publishedAt: DateTime(2026, 5, 23),
+      source: Source(id: 's-$id', name: 'Source $id', type: SourceType.article),
+    );
+
+FeedCarouselData _carousel(List<String> ids) => FeedCarouselData(
+      carouselType: 'test',
+      title: 'Le carrousel',
+      emoji: '',
+      position: 5,
+      items: [for (final id in ids) _carouselItem(id)],
+      badges: const [],
+    );
 
 void main() {
   setUpAll(() {
@@ -599,6 +648,11 @@ void main() {
             weatherLocationProvider.overrideWith(_FakeLocationNotifier.new),
             displayModeSpecProvider
                 .overrideWith((ref) => DisplayModeSpec.normal),
+            // Ce test porte sur la pastille météo (dans l'en-tête), pas sur la
+            // pile de tri : on garde la carte en liste passive (plus courte) —
+            // sans quoi la pile, plus haute depuis les grandes images (item 1),
+            // déborde ce Scaffold non scrollable de 600 px de haut.
+            _inertTriage(),
           ],
           child: MaterialApp(
             theme: ThemeData(extensions: [FacteurPalettes.light]),
@@ -719,46 +773,9 @@ void main() {
       }
     });
 
-    testWidgets('pastille « N nouveaux articles » rendue quand > 0',
-        (tester) async {
-      await tester.pumpWidget(_wrap(
-        EssentielHiFiCard(
-          articles: [_article(rank: 1)],
-          newSinceMorning: 3,
-          onTapArticle: (_) {},
-        ),
-      ));
-
-      expect(find.text('3'), findsOneWidget);
-      expect(find.textContaining('nouveaux articles'), findsOneWidget);
-    });
-
-    testWidgets('1 nouvel → libellé singulier', (tester) async {
-      await tester.pumpWidget(_wrap(
-        EssentielHiFiCard(
-          articles: [_article(rank: 1)],
-          newSinceMorning: 1,
-          onTapArticle: (_) {},
-        ),
-      ));
-
-      expect(find.text('1'), findsOneWidget);
-      expect(find.text('nouvel article'), findsOneWidget);
-    });
-
-    testWidgets('pastille masquée quand delta == 0', (tester) async {
-      await tester.pumpWidget(_wrap(
-        EssentielHiFiCard(
-          articles: [_article(rank: 1)],
-          onTapArticle: (_) {},
-        ),
-      ));
-
-      expect(find.textContaining('nouveaux article'), findsNothing);
-      expect(find.textContaining('nouvel article'), findsNothing);
-    });
-
-    testWidgets('delta au plafond (9) affiche « 9+ »', (tester) async {
+    testWidgets(
+        'la pastille « N nouveaux articles » a été retirée (décision PO 33.1) '
+        '— rendue nulle part, même avec un delta > 0', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
@@ -767,8 +784,9 @@ void main() {
         ),
       ));
 
-      expect(find.text('9+'), findsOneWidget);
-      expect(find.textContaining('nouveaux articles'), findsOneWidget);
+      expect(find.textContaining('nouveaux articles'), findsNothing);
+      expect(find.textContaining('nouvel article'), findsNothing);
+      expect(find.text('9+'), findsNothing);
     });
   });
 
@@ -806,7 +824,9 @@ void main() {
       // Le haut de la pile est rendu, la barre d'actions aussi.
       expect(find.text('Titre 1'), findsWidgets);
       expect(find.text('Je garde'), findsOneWidget);
-      expect(find.textContaining('0 sur 2 triés'), findsOneWidget);
+      // Plus de compteur « N sur M triés » (décision PO) : la barre de
+      // progression segmentée porte seule l'avancement.
+      expect(find.textContaining('sur 2 triés'), findsNothing);
     });
 
     testWidgets('un article gardé apparaît sous la pile', (tester) async {
@@ -831,8 +851,10 @@ void main() {
       ));
       await tester.pump();
 
-      expect(find.textContaining('1 sur 2 triés'), findsOneWidget);
-      expect(find.textContaining('1 gardé'), findsOneWidget);
+      // Ancre stable : la ligne du gardé elle-même, plutôt qu'un compteur
+      // (retiré) dont le libellé bougeait à chaque itération de copy.
+      expect(find.byKey(const ValueKey('triage-kept-row-c-1')), findsOneWidget);
+      expect(find.textContaining('sur 2 triés'), findsNothing);
     });
 
     testWidgets(
@@ -869,18 +891,40 @@ void main() {
     });
 
     testWidgets(
-        'le bandeau garde sa hauteur même sans image — la carte ne saute pas '
-        'd\'un article à l\'autre', (tester) async {
+        'un article sans image ne rend aucun bandeau : carte texte plus '
+        'courte, pas d\'aplat gris', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
-          // `c-1` sans image, `c-2` avec : les deux bandeaux doivent mesurer
-          // pareil, sinon la pile change de taille sous le doigt.
+          // Les deux cartes de la pile sont sans image : plus de placeholder
+          // imposé (décision PO), et le slot prend la hauteur « texte ».
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+      ));
+      await tester.pump();
+
+      expect(find.byKey(const Key('triage-card-banner')), findsNothing);
+      expect(
+        tester.getSize(find.byType(TriageSwipeCard)).height,
+        kTriageCardTextOnlyHeight,
+      );
+    });
+
+    testWidgets('un article avec image garde son bandeau pleine hauteur',
+        (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
           articles: [
-            _article(rank: 1),
+            _article(rank: 1, thumbnailUrl: 'https://example.com/1.jpg'),
             _article(rank: 2, thumbnailUrl: 'https://example.com/2.jpg'),
           ],
           onTapArticle: (_) {},
@@ -896,6 +940,10 @@ void main() {
           )) {
         expect(size.height, kTriageCardImageHeight);
       }
+      expect(
+        tester.getSize(find.byType(TriageSwipeCard)).height,
+        kTriageCardHeight,
+      );
     });
 
     testWidgets(
@@ -920,6 +968,9 @@ void main() {
             _article(
               rank: 1,
               title: longTitle,
+              // Avec image ⇒ carte pleine hauteur et titre plafonné à 4 lignes,
+              // le pire cas que `kTriageCardHeight` doit tenir.
+              thumbnailUrl: 'https://example.com/1.jpg',
               sourceCount: 4,
               divergenceLevel: 'high',
             ),
@@ -981,7 +1032,8 @@ void main() {
       expect(find.byType(FacteurThumbnail), findsNothing);
     });
 
-    testWidgets('le compteur se lit sous les articles gardés, pas au-dessus',
+    testWidgets(
+        'les gardés se construisent sous la barre d\'actions, sans compteur',
         (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
@@ -1012,10 +1064,15 @@ void main() {
       ));
       await tester.pump();
 
-      final keptRowY = tester.getTopLeft(find.text('Titre 1')).dy;
-      final counterY =
-          tester.getTopLeft(find.textContaining('1 sur 3 triés')).dy;
-      expect(counterY, greaterThan(keptRowY));
+      // Ancre stable (la ligne du gardé et le bouton « Je garde ») plutôt que
+      // le libellé d'un compteur : la zone d'interaction reste figée en haut,
+      // la liste grandit vers le bas.
+      final keptRowY =
+          tester.getTopLeft(find.byKey(const ValueKey('triage-kept-row-c-1'))).dy;
+      final actionBarY = tester.getTopLeft(find.text('Je garde')).dy;
+      expect(keptRowY, greaterThan(actionBarY));
+      // Plus aucun « N sur M triés » nulle part.
+      expect(find.textContaining('sur 3 triés'), findsNothing);
     });
 
     testWidgets(
@@ -1127,7 +1184,9 @@ void main() {
 
       expect(find.byType(EssentielTriageStack), findsOneWidget);
       expect(find.text('Je garde'), findsOneWidget);
-      expect(find.textContaining('0 sur 2 triés'), findsOneWidget);
+      // Plus de compteur « N sur M triés » (décision PO) : la barre de
+      // progression segmentée porte seule l'avancement.
+      expect(find.textContaining('sur 2 triés'), findsNothing);
     });
 
     testWidgets('une édition passée ne déclenche jamais le tri', (tester) async {
@@ -1148,5 +1207,234 @@ void main() {
       expect(find.text('Je garde'), findsNothing);
       expect(find.text('Titre 2'), findsOneWidget);
     });
+
+    testWidgets(
+        'tri terminé avec 0 gardé + carrousel : « Plus d\'articles » '
+        'injecte et rouvre la pile', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          carousel: _carousel(const ['x-1', 'x-2']),
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2'],
+            decisions: const {
+              'c-1': TriageEntry(
+                contentId: 'c-1',
+                decision: TriageDecision.pass,
+                rank: 1,
+                via: TriageVia.swipe,
+              ),
+              'c-2': TriageEntry(
+                contentId: 'c-2',
+                decision: TriageDecision.pass,
+                rank: 2,
+                via: TriageVia.swipe,
+              ),
+            },
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      // Le pied de fin de tri porte les deux actions, toujours (l'encart
+      // conditionnel « en voir d'autres ? » a disparu).
+      expect(find.text('Plus d\'articles'), findsOneWidget);
+      expect(find.text('Trier à nouveau'), findsOneWidget);
+      expect(find.text('Rien gardé aujourd\'hui.'), findsOneWidget);
+
+      await tester.tap(find.text('Plus d\'articles'));
+      await tester.pump(); // extendSlate synchrone + rebuild
+      await tester.pump(const Duration(milliseconds: 300)); // AnimatedSize
+
+      // La pile rouvre sur le 1er article injecté du carrousel.
+      expect(find.byType(EssentielTriageStack), findsOneWidget);
+      expect(find.text('Je garde'), findsOneWidget);
+      expect(find.text('Carrousel x-1'), findsWidgets);
+    });
+
+    testWidgets(
+        'tri terminé, 1 gardé + carrousel : « Plus d\'articles » proposé, le '
+        'gardé reste affiché', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          carousel: _carousel(const ['x-1']),
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2'],
+            decisions: const {
+              'c-1': TriageEntry(
+                contentId: 'c-1',
+                decision: TriageDecision.keep,
+                rank: 1,
+                via: TriageVia.swipe,
+              ),
+              'c-2': TriageEntry(
+                contentId: 'c-2',
+                decision: TriageDecision.pass,
+                rank: 2,
+                via: TriageVia.swipe,
+              ),
+            },
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.text('Plus d\'articles'), findsOneWidget);
+      expect(find.text('Trier à nouveau'), findsOneWidget);
+      expect(find.text('Titre 1'), findsOneWidget); // le gardé
+    });
+
+    testWidgets(
+        'tri terminé sans carrousel : « Plus d\'articles » est masqué (pool '
+        'injectable vide)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2'],
+            decisions: const {
+              'c-1': TriageEntry(
+                contentId: 'c-1',
+                decision: TriageDecision.pass,
+                rank: 1,
+                via: TriageVia.swipe,
+              ),
+              'c-2': TriageEntry(
+                contentId: 'c-2',
+                decision: TriageDecision.pass,
+                rank: 2,
+                via: TriageVia.swipe,
+              ),
+            },
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.text('Plus d\'articles'), findsNothing);
+      expect(find.text('Rien gardé aujourd\'hui.'), findsOneWidget);
+      expect(find.text('Trier à nouveau'), findsOneWidget);
+    });
+
+    testWidgets(
+        'tri indéterminé (SharedPrefs pas encore lu) : silhouette de pile, '
+        'jamais la liste passive', (tester) async {
+      // Le vrai bug : sur un boot tiède (snapshot frais ⇒ pas de squelette
+      // d'écran), la carte rendait l'ancienne mise en page puis la pile.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        inertTriage: false,
+        overrides: [
+          essentielTriageProvider.overrideWith(
+            (ref) => EssentielTriageNotifier(
+              ref,
+              // `hydrated: false` ⇒ tri indéterminé, l'échappatoire de test du
+              // notifier court-circuitant l'hydratation asynchrone.
+              initialState: const EssentielTriageState(dayKey: 'test'),
+            ),
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.byType(TriageStackSkeleton), findsOneWidget);
+      expect(find.byType(EssentielTriageStack), findsNothing);
+      // Aucune tuile de la liste passive n'a clignoté.
+      expect(find.text('Titre 1'), findsNothing);
+      expect(find.text('Titre 2'), findsNothing);
+    });
+
+    testWidgets(
+        'coche « suivie » / étoile « favorite » à droite du nom de source',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(rank: 1, sourceId: 's-fav'),
+            _article(rank: 2, sourceId: 's-followed'),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2']),
+          userSourcesStateProvider.overrideWith(_FakeSourcesState.new),
+        ],
+      ));
+      await tester.pump();
+
+      // Carte du dessus (favorite) et carte du dessous (suivie) portent chacune
+      // leur signal — l'idiome canonique `InterestStateVisuals`, pas un
+      // nouveau.
+      expect(
+        find.byIcon(PhosphorIcons.star(PhosphorIconsStyle.fill)),
+        findsOneWidget,
+      );
+      expect(
+        find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('une source neutre ne porte aucun signal', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(rank: 1, sourceId: 's-neutral'),
+            _article(rank: 2, sourceId: 's-neutral'),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2']),
+          userSourcesStateProvider.overrideWith(_FakeSourcesState.new),
+        ],
+      ));
+      await tester.pump();
+
+      expect(
+        find.byIcon(PhosphorIcons.star(PhosphorIconsStyle.fill)),
+        findsNothing,
+      );
+      expect(
+        find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
+        findsNothing,
+      );
+    });
   });
+}
+
+/// État de sources déterministe : `s-fav` favorite, `s-followed` suivie, tout
+/// le reste neutre.
+class _FakeSourcesState extends UserSourcesStateNotifier {
+  @override
+  Future<UserSourcesState> build() async => const UserSourcesState(
+        sources: [
+          SourceInterest(
+            sourceId: 's-fav',
+            state: InterestState.favorite,
+            priorityMultiplier: 1,
+          ),
+          SourceInterest(
+            sourceId: 's-followed',
+            state: InterestState.followed,
+            priorityMultiplier: 1,
+          ),
+        ],
+        favorites: [SourceFavoriteRef(sourceId: 's-fav', position: 0)],
+        favoriteCount: 1,
+        favoriteCap: 3,
+      );
 }

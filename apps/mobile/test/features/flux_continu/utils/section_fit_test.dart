@@ -304,8 +304,7 @@ void main() {
             kTriageProgressHeight +
             kTriageCardHeight +
             kTriageActionBarHeight +
-            (n - 1) * kTriageKeptSlotHeight +
-            kTriageCounterHeight;
+            (n - 1) * kTriageKeptSlotHeight;
         expect(reserved(n), greaterThanOrEqualTo(finalState));
         expect(reserved(n), greaterThanOrEqualTo(peak));
       }
@@ -315,24 +314,5 @@ void main() {
       expect(reserved(0), reserved(1));
     });
 
-    test('réserve la place du compteur passé sous la liste des gardés', () {
-      // Le compteur a quitté la barre de progression pour fermer la liste des
-      // gardés : s'il n'était pas ajouté au pic, la dernière ligne serait
-      // rognée par le `SizedBox` de hauteur figée.
-      final withCounter = triageReservedHeight(
-        slateSize: 5,
-        chromeHeight: 0,
-        leadHeight: kHeroLeadHeight,
-        mediumHeight: kHeroMediumHeight,
-      );
-      final withoutCounter = triageReservedHeight(
-        slateSize: 5,
-        chromeHeight: 0,
-        leadHeight: kHeroLeadHeight,
-        mediumHeight: kHeroMediumHeight,
-        counterHeight: 0,
-      );
-      expect(withCounter - withoutCounter, kTriageCounterHeight);
-    });
   });
 }

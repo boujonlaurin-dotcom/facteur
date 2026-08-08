@@ -267,6 +267,96 @@ void main() {
     });
   });
 
+  group('« Voir d\'autres articles » (extendSlate)', () {
+    test('ajoute des ids au slate figé et rouvre la pile', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+      for (var i = 0; i < _slate.length; i++) {
+        notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
+      }
+      expect(c.read(essentielTriageProvider).done, isTrue);
+
+      notifier.extendSlate(const ['x', 'y']);
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.slate, [..._slate, 'x', 'y']);
+      expect(state.done, isFalse, reason: 'la pile rouvre');
+      expect(state.isActive, isTrue);
+      expect(state.currentContentId, 'x');
+    });
+
+    test('n\'ajoute pas un id déjà présent dans le slate', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+
+      notifier.extendSlate(const ['a', 'x', 'b']); // a, b déjà présents
+
+      expect(c.read(essentielTriageProvider).slate, [..._slate, 'x']);
+    });
+
+    test('borne les ajouts à kTriageExtendMax', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+
+      notifier.extendSlate(List.generate(kTriageExtendMax + 3, (i) => 'x$i'));
+
+      final added =
+          c.read(essentielTriageProvider).slate.length - _slate.length;
+      expect(added, kTriageExtendMax);
+    });
+
+    test('ne touche pas aux décisions déjà prises', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+      notifier.decide(TriageDecision.keep, via: TriageVia.swipe); // a
+      notifier.decide(TriageDecision.pass, via: TriageVia.swipe); // b
+      notifier.decide(TriageDecision.pass, via: TriageVia.swipe); // c
+
+      notifier.extendSlate(const ['x']);
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.decisions.keys, containsAll(<String>['a', 'b', 'c']));
+      expect(state.keptContentIds, ['a']);
+      expect(state.currentContentId, 'x');
+    });
+
+    test('sans tri commencé est un no-op', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+
+      notifier.extendSlate(const ['x']);
+
+      expect(c.read(essentielTriageProvider).hasStarted, isFalse);
+    });
+
+    test('un ajout sans rien de neuf ne change pas l\'état', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.startIfNeeded(_slate);
+
+      notifier.extendSlate(const ['a', 'b']); // tous déjà présents
+
+      expect(c.read(essentielTriageProvider).slate, _slate);
+    });
+
+    test('les ajouts survivent à un cold-boot', () async {
+      final c1 = makeContainer();
+      final n1 = await hydrated(c1);
+      n1.startIfNeeded(_slate);
+      n1.extendSlate(const ['x', 'y']);
+      await Future<void>.delayed(Duration.zero);
+
+      final c2 = makeContainer();
+      await hydrated(c2);
+
+      expect(c2.read(essentielTriageProvider).slate, [..._slate, 'x', 'y']);
+    });
+  });
+
   group('envoi batché', () {
     test('la fin du tri flushe toutes les décisions en un batch', () async {
       final c = makeContainer();

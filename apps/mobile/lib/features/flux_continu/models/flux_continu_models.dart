@@ -280,6 +280,34 @@ class EssentielArticle {
         isCompleted: completedAt != null,
       );
 
+  /// Adapte un [Content] (item de carrousel déjà chargé) en article triable.
+  /// Sert à réinjecter des articles dans la pile de tri quand l'utilisateur a
+  /// gardé peu d'articles (« Voir d'autres articles », itération PO 33.1). Les
+  /// signaux propres à l'Essentiel (couverture, divergence, thème,
+  /// `is_actu_du_jour`) sont absents du carrousel → ils retombent sur leurs
+  /// valeurs par défaut et le pied de carte se tait, ce que gèrent déjà les
+  /// gardes existantes de `_TriageArticleCard`.
+  factory EssentielArticle.fromContent(Content content, {required int rank}) {
+    final source = content.source;
+    return EssentielArticle(
+      contentId: content.id,
+      title: content.title,
+      url: content.url,
+      description: content.description,
+      thumbnailUrl: content.thumbnailUrl,
+      publishedAt: content.publishedAt,
+      sourceName: source.name,
+      sourceId: source.id.isEmpty ? null : source.id,
+      sourceLetter: _initial(source.name),
+      sectionLabel: '',
+      rank: rank,
+      isRead: content.status == ContentStatus.consumed,
+      isSaved: content.isSaved,
+      isLiked: content.isLiked,
+      isFollowedSource: content.isFollowedSource,
+    );
+  }
+
   factory EssentielArticle.fromJson(Map<String, dynamic> json) {
     final source =
         (json['source'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -371,13 +399,22 @@ class EssentielSection extends FluxSection {
   final List<EssentielArticle> articles;
 
   /// Nb d'articles frais publiés depuis ce matin (`new_since_this_morning`,
-  /// borné backend). Rendu en pastille près du titre du héros quand `> 0`,
-  /// masqué à `0`. Alimente « L'Essentiel vivant » (surface dynamique au retour).
+  /// borné backend). Plomberie **inerte** depuis l'itération PO 33.1 (retrait de
+  /// la pastille « N nouveaux articles ») : conservé pour ne pas toucher la
+  /// chaîne provider→section→carte, plus rendu nulle part.
   final int newSinceMorning;
+
+  /// Carrousel du jour (`GET /api/essentiel`, champ `carousel`), mutualisé avec
+  /// la carte carrousel de fin de Tournée. Porté ici pour que « Voir d'autres
+  /// articles » (itération PO 33.1) puisse réinjecter ses items dans la pile de
+  /// tri quand l'utilisateur a gardé moins de 2 articles. `null` hors édition du
+  /// jour ou si le backend n'a rien servi d'éligible.
+  final FeedCarouselData? carousel;
 
   const EssentielSection({
     required this.articles,
     this.newSinceMorning = 0,
+    this.carousel,
     super.label = 'L’Essentiel du jour',
     super.accent = const Color(0xFFB0470A),
     super.blurb,

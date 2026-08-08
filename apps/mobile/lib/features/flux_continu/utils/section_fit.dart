@@ -208,58 +208,81 @@ int fitHeroCount({
 /// Hauteur (px) du bandeau image en tête de la carte de tri. **Slot fixe** : une
 /// image absente ou en erreur laisse un aplat teinté à la place, elle ne replie
 /// pas le bandeau — sans quoi la carte changerait de taille d'un article à
-/// l'autre, exactement le défaut que tout ce budget combat. Premier levier de
-/// repli si la carte déborde sur un petit écran (96 → 80).
-const double kTriageCardImageHeight = 96;
+/// l'autre, exactement le défaut que tout ce budget combat.
+///
+/// Relevé 96 → 180 (itération PO 33.1 : « images trop petites ») : un vrai format
+/// éditorial ~16:9 sur la largeur utile (~330px → 185, arrondi à 180). Le levier
+/// de repli n'est plus « rétrécir » (96 → 80) mais « ne pas dépasser le
+/// viewport » — tolérable depuis que la carte épouse son contenu (la kept-list
+/// grandit sous la barre d'actions, cf. [EssentielTriageStack] / `AnimatedSize`),
+/// donc une carte un peu haute pousse le feed vers le bas sans rien rogner.
+const double kTriageCardImageHeight = 180;
 
 /// Hauteur (px) de la carte du dessus de la pile de tri
-/// ([TriageSwipeCard]) : bandeau image [kTriageCardImageHeight] 96 + padding
-/// haut 12 + méta source ≈ 18 + gap 8 + titre 4 lignes (Fraunces 19 ·
-/// height 1.3 = 98,8) + gap 8 + pied (polarisation + couverture) ≈ 16 + padding
-/// bas 12 = 272. Le chapô a disparu de la carte : à ce niveau de tri, l'image
-/// et la couverture disent plus que deux lignes de description.
+/// ([TriageSwipeCard]) : bandeau image [kTriageCardImageHeight] 180 + padding
+/// haut 12 + méta source ≈ 16 + gap 8 + titre 4 lignes (Fraunces 19 ·
+/// height 1.3 = 98,8) + gap 8 + pied (polarisation + couverture) ≈ 18 + padding
+/// bas 12 = 353, arrondi à 360 pour ~7 px de marge sur le titre. Le chapô a
+/// disparu de la carte : à ce niveau de tri, l'image et la couverture disent
+/// plus que deux lignes de description.
 ///
-/// Les ~2 px de marge sur le titre ne sont pas cosmétiques : la carte a une
-/// hauteur **figée**, donc un budget trop serré ne déborde pas, il **rogne
+/// La marge sur le titre n'est pas cosmétique : le bandeau est un **slot figé**
+/// (la carte ne change pas de taille d'un article à l'autre, seule la kept-list
+/// grandit en bas), donc un budget trop serré ne déborde pas, il **rogne
 /// silencieusement** la 4ᵉ ligne. `essentiel_hi_fi_card_test` mesure la boîte
 /// du titre sur un titre pire cas pour verrouiller ça.
 ///
 /// Les cartes du dessous sont décalées mais **ne dépassent pas** (translation
 /// verticale compensée par le scale), donc la pile ne coûte pas plus qu'une carte.
-const double kTriageCardHeight = 272;
+const double kTriageCardHeight = 360;
+
+/// Hauteur (px) de la carte de tri **sans image** : le bandeau ne laisse plus
+/// d'aplat de secours (décision PO : « pas de placeholder »), donc la carte
+/// texte est simplement plus courte. Décomposition : padding haut 12 + méta
+/// source ≈ 16 + gap 8 + titre 6 lignes (Fraunces 19 · height 1.3 ≈ 148) + gap 8
+/// + pied ≈ 18 + padding bas 12 = 222, arrondi à 240 pour la marge de titre.
+///
+/// Deux hauteurs **discrètes**, jamais du fit-to-content : la barre d'actions
+/// glisse (via `AnimatedSize`) entre une carte image et une carte texte, elle ne
+/// saute pas sous le pouce. Repli d'une ligne si le mouvement gêne à l'usage :
+/// rendre cette constante égale à [kTriageCardHeight].
+const double kTriageCardTextOnlyHeight = 240;
 
 /// Barre d'actions compacte (✕ · signet · bouton plein « Je garde ») :
 /// bouton 44 + marges (10+10) = 64.
 const double kTriageActionBarHeight = 64;
 
 /// Barre de progression, **segments seuls** : le segment en cours de décision
-/// est épaissi (4 → 7 px), plus une marge basse de 7 = 14. Le compteur
-/// « N sur M triés » n'y vit plus — il est passé sous la liste des gardés
-/// ([kTriageCounterHeight]).
+/// est épaissi (4 → 7 px), plus une marge basse de 7 = 14. Elle porte seule
+/// l'avancement du tri : le compteur « N sur M triés » a été retiré (décision
+/// PO), redondant avec les segments et avec la liste des gardés juste au-dessus.
 const double kTriageProgressHeight = 14;
-
-/// Compteur « N sur M triés · K gardés », rendu **sous** les articles gardés
-/// (là où l'œil finit sa course) : libellé 12 ≈ 16 + marge haute 6 = 22.
-const double kTriageCounterHeight = 22;
 
 /// Un article gardé dans la liste qui se construit sous la pile. Plus compact
 /// qu'un medium ([kHeroMediumHeight]) : pas de hairline, titre sur 2 lignes
 /// serrées ≈ 64.
 const double kTriageKeptSlotHeight = 64;
 
-/// Hauteur (px) que la carte réserve pour trier [slateSize] articles **sans
-/// jamais changer de hauteur** entre le premier et le dernier geste. Exposée
-/// pour que le widget puisse figer sa hauteur (`SizedBox`) au lieu de la
-/// laisser suivre le contenu.
+/// Hauteur (px) du **pire des deux états** que la pile de tri traverse, pour
+/// [slateSize] articles.
 ///
-/// C'est la réponse directe au risque « le feed saute » : la carte réserve dès
-/// le départ le **pire des deux états** qu'elle traversera, et non l'état
-/// courant.
+/// **Changement d'usage (itération PO 33.1)** : la carte réelle n'impose plus
+/// cette réserve — elle **épouse son contenu** (la kept-list grandit sous la
+/// barre d'actions via `AnimatedSize`, cf. [EssentielTriageStack]), ce qui
+/// supprime le grand vide sous « 0 sur 5 triés ». Cette fonction reste la
+/// **source de vérité du squelette** `_HeroSkeleton` (flux_continu_screen.dart),
+/// qui, lui, doit réserver une hauteur stable avant l'arrivée du contenu pour
+/// que le feed ne saute pas à l'hydratation. Conservée aussi comme documentation
+/// de la décomposition des deux états.
+///
+/// C'était la réponse directe au risque « le feed saute » : réserver dès le
+/// départ le pire des deux états plutôt que l'état courant. Le fit-to-content
+/// atteint le même but autrement (croissance vers le bas, zone d'action figée en
+/// haut), donc la réserve n'a plus lieu d'être **côté carte**.
 ///
 /// - *pic de tri* : `chrome + progression + carte + barre d'actions +
-///   (n−1)·slot gardé + compteur` — juste avant la dernière décision, la pile
-///   est encore là et tous les autres articles sont déjà listés dessous, le
-///   compteur fermant la liste ;
+///   (n−1)·slot gardé` — juste avant la dernière décision, la pile est encore là
+///   et tous les autres articles sont déjà listés dessous ;
 /// - *état final* : `chrome + lead + (n−1)·medium` — le tri est fini, la liste
 ///   des gardés est rendue avec les tuiles existantes ([kHeroLeadHeight] /
 ///   [kHeroMediumHeight]).
@@ -276,15 +299,13 @@ double triageReservedHeight({
   double actionBarHeight = kTriageActionBarHeight,
   double progressHeight = kTriageProgressHeight,
   double keptSlotHeight = kTriageKeptSlotHeight,
-  double counterHeight = kTriageCounterHeight,
 }) {
   final n = slateSize < 1 ? 1 : slateSize;
   final triagePeak = chromeHeight +
       progressHeight +
       cardHeight +
       actionBarHeight +
-      (n - 1) * keptSlotHeight +
-      counterHeight;
+      (n - 1) * keptSlotHeight;
   final finalState = chromeHeight + leadHeight + (n - 1) * mediumHeight;
   return triagePeak > finalState ? triagePeak : finalState;
 }

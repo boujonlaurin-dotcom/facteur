@@ -6,6 +6,14 @@
     },
     {
       "tag": "Ton Essentiel",
+      "summary": "Le tri se tient mieux : pendant que ta sélection se prépare, tu vois la pile arriver au lieu d'une mise en page qui disparaît une seconde plus tard. La carte suivante ne bouge plus quand tu glisses la précédente, et elle n'affiche plus de tampon avant que tu l'aies touchée. Un article sans image n'a plus de rectangle gris : sa carte est simplement plus courte, avec un titre qui respire. Les sources que tu suis ou que tu as mises en favori portent maintenant leur coche ou leur étoile à côté de leur nom. Et une fois le tri fini, tu as les deux boutons attendus : « Trier à nouveau » et « Plus d'articles »."
+    },
+    {
+      "tag": "Ton Essentiel",
+      "summary": "La carte de tri gagne en confort : des images bien plus grandes pour reconnaître un article d'un coup d'œil, un glissé qui ne se bloque plus, et une carte qui épouse ce que tu gardes au lieu de réserver du vide sous les cartes. Et si tu n'as gardé qu'un article ou aucun, un bouton « Voir d'autres articles » te propose la sélection du jour, sans quitter le fil."
+    },
+    {
+      "tag": "Ton Essentiel",
       "summary": "Ta carte du jour devient une pile à trier : un article à la fois, glisse à droite pour le garder, à gauche pour passer, ou mets-le de côté pour plus tard. Chaque article se présente avec son image, le nombre de rédactions qui traitent le sujet et le niveau de divergence entre elles, de quoi choisir sans ouvrir. Un appui long ouvre l'aperçu. Ta liste de lecture se construit sous ton doigt, sans quitter le fil. Une fois le tri fini, la carte n'affiche que ce que tu as gardé, pas ce que tu as écarté. Tes choix ne changent rien à ce que l'appli te propose pour l'instant : ils servent d'abord à mesurer si le classement des articles tape juste."
     },
     {

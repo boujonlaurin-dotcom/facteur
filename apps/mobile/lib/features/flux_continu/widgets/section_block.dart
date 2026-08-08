@@ -182,6 +182,7 @@ class SectionBlock extends StatelessWidget {
             EssentielHiFiCard(
               articles: section.articles,
               newSinceMorning: section.newSinceMorning,
+              carousel: section.carousel,
               onTapArticle: (a) => onTapArticle(a),
               impressionDayKey: impressionDayKey,
               sectionIndex: sectionIndex,
