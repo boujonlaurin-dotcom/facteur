@@ -5,11 +5,10 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/routes.dart';
 import '../../../config/theme.dart';
-import '../../notifications/widgets/notification_activation_modal.dart';
-import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/utils/publication_frequency.dart';
 import '../models/alert_item.dart';
 import '../providers/alerts_provider.dart';
+import 'alert_activation_sheet.dart';
 
 /// Rangée « Alerte » partagée par la fiche source et la fiche sujet.
 ///
@@ -79,22 +78,11 @@ class _AlertToggleRowState extends ConsumerState<AlertToggleRow> {
   Future<void> _push(bool enabled, bool filtered) async {
     setState(() => _busy = true);
 
-    // Poser une cloche sans droit de notifier produirait une alerte muette.
-    if (enabled) {
-      final settings = ref.read(notificationsSettingsProvider);
-      if (!settings.pushEnabled) {
-        await showNotificationActivationModal(
-          context,
-          ref,
-          trigger: ActivationTrigger.alert,
-        );
-        if (!mounted) return;
-        if (!ref.read(notificationsSettingsProvider).pushEnabled) {
-          setState(() => _busy = false);
-          return;
-        }
-      }
+    if (enabled && !await ensureAlertPushPermission(context, ref)) {
+      if (mounted) setState(() => _busy = false);
+      return;
     }
+    if (!mounted) return;
 
     try {
       final notifier = ref.read(alertsProvider.notifier);

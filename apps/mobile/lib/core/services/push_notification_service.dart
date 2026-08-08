@@ -95,6 +95,8 @@ class PushNotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    await retireLegacyAlertsChannel();
+
     _initialized = true;
     debugPrint('PushNotificationService: Initialized successfully');
   }
@@ -522,8 +524,9 @@ class PushNotificationService {
       return;
     }
 
-    // Alertes source et sujet (stories 30.2/30.3) : canal et ID dédiés, jamais
-    // le canal digest — elles doivent arriver sans son ni vibration.
+    // Alertes source et sujet (stories 30.2/30.3/30.5) : canal et ID dédiés,
+    // jamais le canal digest. Le canal `alerts_channel_v2` est sonore et
+    // vibrant depuis la 30.5 — une alerte silencieuse n'est pas une alerte.
     if (data['kind'] == 'source_alert' || data['kind'] == 'topic_alert') {
       await _showAlert(data, notification: notification);
       return;
@@ -573,6 +576,31 @@ class PushNotificationService {
     );
   }
 
+  /// Canal Android des alertes — sonore et vibrant (story 30.5).
+  static const String alertsChannelId = 'alerts_channel_v2';
+
+  /// Canal muet de la v1, remplacé. Conservé comme constante le temps que le
+  /// parc migre : [retireLegacyAlertsChannel] le supprime au boot.
+  static const String legacyAlertsChannelId = 'alerts_channel';
+
+  /// Supprime le canal « Alertes » muet de la v1.
+  ///
+  /// Sans ça l'utilisateur voit **deux** entrées « Alertes » dans les réglages
+  /// Android : l'ancienne (muette, orpheline) et la neuve. Idempotent — Android
+  /// ignore la suppression d'un canal inexistant.
+  Future<void> retireLegacyAlertsChannel() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin == null) return;
+    try {
+      await androidPlugin.deleteNotificationChannel(
+        channelId: legacyAlertsChannelId,
+      );
+    } catch (e) {
+      debugPrint('PushNotificationService: legacy alerts channel: $e');
+    }
+  }
+
   /// Rend une alerte (source ou sujet) à partir du `data` du push.
   ///
   /// Chemin de rendu UNIQUE, partagé par [showRemoteNotification] et les
@@ -590,17 +618,19 @@ class PushNotificationService {
     final route = data['route'] as String? ?? '/digest';
 
     final androidDetails = AndroidNotificationDetails(
-      // Canal NEUF et non une variante silencieuse de `digest_channel` :
-      // Android fige son/importance à la création d'un canal et ignore toute
-      // modification ultérieure sur un ID existant — le silence n'est
-      // obtenable qu'avec un ID de canal jamais utilisé.
-      'alerts_channel',
+      // `_v2` et non `alerts_channel` : Android fige son et importance à la
+      // création d'un canal et **ignore** toute modification ultérieure sur un
+      // ID existant. Repasser les alertes en sonore (décision PO 30.5 : une
+      // alerte muette n'est pas une alerte) impose donc un ID neuf. L'ancien
+      // canal est supprimé au boot par [retireLegacyAlertsChannel] pour ne pas
+      // laisser deux entrées « Alertes » dans les réglages Android.
+      alertsChannelId,
       'Alertes',
       channelDescription: 'Alertes des sources et sujets que tu suis.',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      playSound: false,
-      enableVibration: false,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
       styleInformation: BigTextStyleInformation(bigText, contentTitle: title),
@@ -627,7 +657,7 @@ class PushNotificationService {
   }
 
   /// Injecte localement le payload EXACT qu'enverrait FCM pour une alerte
-  /// source. Valide le canal silencieux, la copy, l'id de notification et le
+  /// source. Valide le canal sonore, la copy, l'id de notification et le
   /// deep-link au tap. Ne valide PAS le transport FCM ni le producteur serveur.
   Future<void> showTestSourceAlert() async {
     const contentId = '00000000-0000-4000-8000-0000000000a1';
