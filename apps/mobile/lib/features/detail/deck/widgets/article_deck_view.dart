@@ -32,6 +32,12 @@ const double _kBackPullCommit = 56;
 /// Course à partir de laquelle l'affordance de retour est pleinement visible.
 const double _kBackPullReveal = 72;
 
+/// Mur de fin de deck : course de sur-défilement maximale au-delà du **dernier**
+/// article. Le rebond libre y révélait le fond de route (écran noir) et laissait
+/// croire à une page suivante ; borné à ce mur, le geste bute et revient — la
+/// pile de cartes s'arrête net, il n'y a rien derrière.
+const double _kEndBumpMax = 32;
+
 /// Pile d'articles navigable au swipe horizontal.
 ///
 /// Une page = un article. Le rendu de la page est délégué à [pageBuilder], qui
@@ -73,6 +79,11 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
   /// Course de sur-défilement en tête de deck (1ᵉʳ article tiré vers la droite).
   final ValueNotifier<double> _backPull = ValueNotifier<double>(0);
 
+  /// Vrai tant que le retour haptique du mur de fin n'a pas été rejoué : il ne
+  /// se réarme qu'une fois le geste revenu au repos, sinon un doigt maintenu
+  /// contre le mur ferait vibrer en continu.
+  bool _endBumpArmed = true;
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +123,7 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
       final metrics = notification.metrics;
       final overscroll = metrics.minScrollExtent - metrics.pixels;
       _backPull.value = overscroll > 0 ? overscroll : 0;
+      _handleEndBump(metrics.pixels - metrics.maxScrollExtent);
     }
 
     // L'article n'est « changé » qu'au repos : `onPageChanged` du PageView
@@ -130,6 +142,19 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
     return false;
   }
 
+  /// Coup sec quand le geste atteint le mur de fin — c'est lui qui dit « c'est
+  /// le dernier » sans rien ajouter à l'écran.
+  void _handleEndBump(double overscroll) {
+    if (overscroll >= _kEndBumpMax - 0.5) {
+      if (_endBumpArmed) {
+        _endBumpArmed = false;
+        unawaited(HapticFeedback.lightImpact());
+      }
+    } else if (overscroll <= 4) {
+      _endBumpArmed = true;
+    }
+  }
+
   void _onPointerUp() {
     if (_backPull.value >= _kBackPullCommit && _settledIndex == 0) {
       _backPull.value = 0;
@@ -144,6 +169,10 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
     return Stack(
       fit: StackFit.expand,
       children: [
+        // Fond du deck. Sans lui, la bande découverte par le rebond laisse voir
+        // le fond de route — noir — ce qui se lit comme un écran suivant vide
+        // plutôt que comme le bout de la pile.
+        ColoredBox(color: context.facteurColors.backgroundPrimary),
         // Révélée par le rebond du PageView en tête de deck : le fond de
         // l'écran apparaît sous la page qui glisse vers la droite.
         _buildBackAffordance(context),
@@ -157,10 +186,11 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
               itemCount: widget.deck.articles.length,
               // `BouncingScrollPhysics` sur les deux plateformes : c'est le
               // rebond qui porte l'affordance de retour en tête de deck, et il
-              // doit se comporter pareil sur Android et iOS.
+              // doit se comporter pareil sur Android et iOS. Borné en fin de
+              // deck (cf. `_DeckBumpScrollPhysics`).
               physics: locked
                   ? const NeverScrollableScrollPhysics()
-                  : const PageScrollPhysics(parent: BouncingScrollPhysics()),
+                  : const PageScrollPhysics(parent: _DeckBumpScrollPhysics()),
               itemBuilder: (context, index) {
                 final slot = ArticleDeckSlot(
                   index: index,
@@ -193,7 +223,12 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
   /// cours). Seules les *valeurs* varient.
   Widget _transformPage(int index, Widget child) {
     final width = MediaQuery.sizeOf(context).width;
-    final delta = (_page - index).clamp(-1.0, 1.0);
+    // La position est bornée au deck : en sur-défilement (tête ou fin), aucune
+    // page ne devient « celle de gauche d'un couple » — sans quoi le dernier
+    // article se voilait et reculait en butant sur le mur, exactement le noir
+    // qu'on veut supprimer. La page glisse alors telle quelle avec le rebond.
+    final last = (widget.deck.articles.length - 1).toDouble();
+    final delta = (_page.clamp(0.0, last) - index).clamp(-1.0, 1.0);
 
     // `delta > 0` ⇒ la page est celle de **gauche** du couple en mouvement,
     // quel que soit le sens du geste (le PageView interpole entre index et
@@ -305,5 +340,30 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
         );
       },
     );
+  }
+}
+
+/// Rebond libre en tête de deck (il porte l'affordance de retour), **mur** en
+/// fin de deck.
+///
+/// Au-delà du dernier article, le rebond `BouncingScrollPhysics` laissait la
+/// page partir sur presque une demi-largeur d'écran : la bande découverte se
+/// lisait comme une page suivante, vide. La course est bornée à
+/// [_kEndBumpMax] — assez pour que la pile bouge sous le doigt et revienne,
+/// trop peu pour promettre quoi que ce soit derrière.
+class _DeckBumpScrollPhysics extends BouncingScrollPhysics {
+  const _DeckBumpScrollPhysics({super.parent});
+
+  @override
+  _DeckBumpScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      _DeckBumpScrollPhysics(parent: buildParent(ancestor));
+
+  @override
+  double applyBoundaryConditions(ScrollMetrics position, double value) {
+    final wall = position.maxScrollExtent + _kEndBumpMax;
+    // Retourne la part du déplacement absorbée par la butée — le reste de la
+    // course du doigt est perdu, ce qui *est* la sensation de mur.
+    if (value > wall) return value - wall;
+    return super.applyBoundaryConditions(position, value);
   }
 }

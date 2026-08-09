@@ -57,15 +57,24 @@ d'arête pendant le seul mouvement.
 - 1ᵉʳ article, tirage court → rebond, l'article revient en place.
 - 1ᵉʳ article, tirage franc (> ~56 px de course) → une affordance
   « ← {nom de la section} » se révèle à gauche puis on **revient à la section**.
-- Dernier article → rebond, aucune page fantôme.
+- Dernier article → la pile **bute contre un mur** (~32 px de course maximum),
+  vibre brièvement (`lightImpact`) et revient : rien derrière, et **jamais
+  d'écran noir** — la bande découverte est le fond crème de l'app.
 
 ### Scénario 3 : Repère de position (barre segmentée)
 1. Ouvrir un article depuis une section de N articles.
 
 **Résultat attendu** : la barre du header est découpée en **N segments** — les
-articles déjà passés pleins (vert atténué), le courant qui se remplit à la
-lecture, les suivants creux. Sur **Flâner**, la barre reste la barre classique
-(non segmentée) : le feed est ouvert, il n'y a pas de total à annoncer.
+articles déjà passés pleins (vert atténué), le courant **plein lui aussi** d'un
+aplat clair que la progression de lecture vient assombrir, les suivants creux.
+Sur **Flâner**, la barre reste la barre classique (non segmentée) : le feed est
+ouvert, il n'y a pas de total à annoncer.
+
+2. Aller jusqu'au **dernier** article de la section.
+
+**Résultat attendu** : **plus aucun segment vide** — la barre est pleine de bout
+en bout. C'est le signal de fin de séquence ; s'il reste une case creuse, c'est
+le bug corrigé en v2.
 
 ### Scénario 4 : Un article entrevu n'est pas un article lu
 1. Depuis un article, commencer un glissement vers la gauche **à mi-course**,
@@ -104,7 +113,8 @@ barre de progression classique, swipe-back large (35 %) conservé.
 - [ ] Glisser à gauche → article suivant de la section ; à droite → précédent
 - [ ] Le deck parcourt la liste **complète** (au-delà des cartes affichées)
 - [ ] 1ᵉʳ article : seul le suivant est atteignable ; tirage franc à droite = retour
-- [ ] Dernier article : seul le précédent est atteignable
+- [ ] Dernier article : seul le précédent est atteignable, avec bump et sans écran noir
+- [ ] Dernier article : la barre segmentée est pleine, aucun segment vide
 - [ ] Transition fluide, sans saccade, sur une section de 8 articles
 - [ ] Barre segmentée sur les sections, absente sur Flâner
 - [ ] Un article entrevu n'est ni marqué « Lu » ni compté comme ouvert

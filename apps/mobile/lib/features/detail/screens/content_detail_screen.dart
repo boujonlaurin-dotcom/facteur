@@ -35,6 +35,7 @@ import '../../gamification/providers/gamification_preference_provider.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../lettres/widgets/progress_toast.dart';
 import '../deck/models/article_deck.dart';
+import '../deck/widgets/deck_progress_bar.dart';
 import '../models/article_completion_latch.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
@@ -3809,7 +3810,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         // Deck de section : la barre porte la position dans la séquence, elle
         // doit donc être là dès l'arrivée (c'est elle qui dit « il en reste »).
         if (segmented) {
-          return _buildSegmentedProgressBar(colors, slot, clamped, completed);
+          return DeckProgressBar(
+            index: slot.index,
+            length: slot.length,
+            progress: clamped,
+            completed: completed,
+          );
         }
         // Only show after 5% to avoid flashing on open
         if (progress < 0.05) return const SizedBox.shrink();
@@ -3846,69 +3852,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
           ),
         );
       },
-      ),
-    );
-  }
-
-  /// Barre de progression **segmentée** — un segment par article de la section
-  /// (Story 34.1).
-  ///
-  /// Les articles déjà passés sont pleins, celui qu'on lit suit la progression
-  /// réelle, les suivants restent creux. C'est le seul repère de position de la
-  /// feature : il réutilise un élément déjà présent dans le header plutôt que
-  /// d'y ajouter un compteur, et il dit d'un coup d'œil combien d'articles
-  /// restent derrière celui-ci — y compris ceux que la Tournée n'affichait pas.
-  Widget _buildSegmentedProgressBar(
-    FacteurColors colors,
-    ArticleDeckSlot slot,
-    double progress,
-    bool completed,
-  ) {
-    final barHeight = completed ? 6.0 : 3.5;
-    final target = completed ? colors.success : colors.primary;
-    final trackColor = colors.textTertiary.withValues(alpha: 0.12);
-
-    return SizedBox(
-      height: barHeight,
-      child: Row(
-        children: [
-          for (var i = 0; i < slot.length; i++) ...[
-            if (i > 0) const SizedBox(width: 2),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(barHeight),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ColoredBox(color: trackColor),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: FractionallySizedBox(
-                        widthFactor: i < slot.index
-                            ? 1.0
-                            : i == slot.index
-                                ? progress
-                                : 0.0,
-                        heightFactor: 1,
-                        child: ColoredBox(
-                          color: i < slot.index
-                              // Article déjà lu dans la séquence : présent mais
-                              // en retrait, il ne concurrence pas le courant.
-                              ? colors.success.withValues(alpha: 0.45)
-                              : target.withValues(
-                                  alpha: completed
-                                      ? 0.9
-                                      : 0.15 + (progress * 0.35),
-                                ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
       ),
     );
   }

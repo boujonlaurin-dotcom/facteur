@@ -131,6 +131,58 @@ void main() {
     });
 
     testWidgets(
+      'le dernier article : le sur-défilement bute sur le mur de fin',
+      (tester) async {
+        await pumpDeck(tester, deck: _deck(initialIndex: 2));
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position;
+
+        // Course longue vers la gauche, maintenue : sans mur, le rebond
+        // découvrait presque une demi-largeur d’écran — lu comme une page
+        // suivante vide (fond de route noir).
+        final gesture = await tester.startGesture(const Offset(195, 400));
+        var maxOverscroll = 0.0;
+        for (var i = 0; i < 12; i++) {
+          await gesture.moveBy(const Offset(-40, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+          final overscroll = position.pixels - position.maxScrollExtent;
+          if (overscroll > maxOverscroll) maxOverscroll = overscroll;
+        }
+
+        expect(maxOverscroll, greaterThan(0), reason: 'la pile doit bouger');
+        expect(maxOverscroll, lessThanOrEqualTo(32.5));
+
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        // Et la pile revient au repos sur le dernier article.
+        expect(position.pixels, moreOrLessEquals(position.maxScrollExtent));
+        expect(find.text('article-c2'), findsOneWidget);
+        expect(changes, isEmpty);
+      },
+    );
+
+    testWidgets(
+      'le fond du deck est peint — jamais le noir de la route',
+      (tester) async {
+        await pumpDeck(tester, deck: _deck(initialIndex: 2));
+
+        expect(
+          find.descendant(
+            of: find.byType(ArticleDeckView),
+            matching: find.byWidgetPredicate(
+              (w) =>
+                  w is ColoredBox &&
+                  w.color == FacteurPalettes.light.backgroundPrimary,
+            ),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
       'le 1ᵉʳ article : tirer vers la droite referme le deck',
       (tester) async {
         await pumpDeck(tester);
