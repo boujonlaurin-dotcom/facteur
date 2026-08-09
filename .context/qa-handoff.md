@@ -12,7 +12,16 @@ le 3ᵉ article, celui qui n'était visible qu'en passant par « Tout lire ».
 
 ## PR associée
 
-_(à compléter après ouverture)_
+[#1067](https://github.com/boujonlaurin-dotcom/facteur/pull/1067) → `main`
+
+## Preview web
+
+**https://boujonlaurin-dotcom.github.io/facteur/preview/swipe-nav/**
+
+Build de la branche sur l'API staging, publié par `deploy-web-preview.yml` à
+chaque push. La démo de `main` (`/facteur/`) n'est pas affectée : publication
+additive (`destination_dir` + `keep_files`). La preview disparaît au prochain
+push sur `main`, qui republie la racine sans `keep_files`.
 
 ## Écrans impactés
 
