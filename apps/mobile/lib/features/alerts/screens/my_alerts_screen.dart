@@ -9,6 +9,7 @@ import '../../../config/theme.dart';
 import '../../sources/widgets/source_logo_avatar.dart';
 import '../models/alert_item.dart';
 import '../providers/alerts_provider.dart';
+import '../widgets/alert_suggestions_list.dart';
 import '../widgets/alert_target_picker_sheet.dart';
 
 /// Écran « Mes alertes » — le poste de commande des cloches, sources **et**
@@ -166,15 +167,16 @@ class _Header extends ConsumerWidget {
   }
 }
 
-/// Emplacement réservé au moteur de suggestions (Lot D).
+/// Emplacement du moteur de suggestions, rempli par le Lot D (story 30.6).
 ///
-/// Volontairement vide ici : un écran ne doit pas afficher un bloc dont
-/// personne ne produit le contenu. Le Lot D remplace ce corps par sa liste.
+/// Le corps est délégué à [AlertSuggestionsList] : ni l'en-tête ni l'inventaire
+/// n'ont bougé, et le bloc s'efface de lui-même quand il n'a rien d'honnête à
+/// proposer (plafond atteint, aucun signal d'usage, erreur réseau).
 class AlertSuggestionsSlot extends StatelessWidget {
   const AlertSuggestionsSlot({super.key});
 
   @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
+  Widget build(BuildContext context) => const AlertSuggestionsList();
 }
 
 class _AlertCard extends ConsumerStatefulWidget {

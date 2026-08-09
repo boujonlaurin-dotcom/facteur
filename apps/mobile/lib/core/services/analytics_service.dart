@@ -767,6 +767,63 @@ class AnalyticsService {
     await _capturePostHog('custom_topic_save_failed', props);
   }
 
+  /// Bloc de suggestions d'alertes rendu, une fois par montage de l'écran
+  /// (story 30.6). `signals` porte les rangs de preuve effectivement affichés :
+  /// sans lui on saurait que le bloc convertit, mais pas quel rang, donc pas
+  /// quoi couper.
+  Future<void> trackAlertSuggestionsShown({
+    required int count,
+    required List<String> signals,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'count': count,
+      'signals': signals,
+    };
+    await _logEvent('alert_suggestions_shown', props);
+    await _capturePostHog('alert_suggestions_shown', props);
+  }
+
+  /// Une suggestion acceptée en un tap. `position` est l'index rendu (0 = en
+  /// tête) : c'est ce qui dit si le classement place bien la bonne cible.
+  Future<void> trackAlertSuggestionAccepted({
+    required String kind,
+    required String targetId,
+    required String signal,
+    required int position,
+    required bool filtered,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'kind': kind,
+      'target_id': targetId,
+      'signal': signal,
+      'position': position,
+      'filtered': filtered,
+    };
+    await _logEvent('alert_suggestion_accepted', props);
+    await _capturePostHog('alert_suggestion_accepted', props);
+  }
+
+  /// Une suggestion refusée. Le pendant du précédent : un rang qui se fait
+  /// écarter systématiquement est un rang à retirer du classement.
+  Future<void> trackAlertSuggestionDismissed({
+    required String kind,
+    required String targetId,
+    required String signal,
+    required int position,
+  }) async {
+    final props = {
+      'session_id': _sessionId,
+      'kind': kind,
+      'target_id': targetId,
+      'signal': signal,
+      'position': position,
+    };
+    await _logEvent('alert_suggestion_dismissed', props);
+    await _capturePostHog('alert_suggestion_dismissed', props);
+  }
+
   /// Generic settings/preference toggle. `key` is a stable snake_case identifier
   /// (e.g. 'notifications_daily_digest'), oldValue/newValue are coerced to string
   /// to keep the event payload shape uniform across bool/int/string toggles.
