@@ -1,0 +1,96 @@
+name: Deploy Web Preview
+
+# Preview web d'une branche, publiée dans un SOUS-CHEMIN des GitHub Pages :
+#   https://boujonlaurin-dotcom.github.io/facteur/preview/<slug>/
+#
+# Volontairement séparé de `build-web.yml` : celui-ci sert la démo de `main` à
+# la racine (`/facteur/`) et ne doit pas être touché. Ici, `destination_dir` +
+# `keep_files: true` garantissent une publication **additive** — rien d'existant
+# n'est supprimé, la démo de `main` reste en place.
+#
+# Déclenché au `push` de la branche (et non par `workflow_dispatch`) : un
+# workflow n'est dispatchable que s'il existe déjà sur la branche par défaut,
+# ce qui n'est pas le cas d'une preview de branche. Le `workflow_dispatch` est
+# quand même déclaré pour le jour où ce fichier atterrira sur `main`.
+#
+# Durée de vie : le prochain push sur `main` rejoue `build-web.yml`, qui publie
+# à la racine SANS `keep_files` — la preview est alors nettoyée d'elle-même.
+
+on:
+  push:
+    branches:
+      - 'claude/facteur-article-swipe-nav-cd6pv0'
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: 'Sous-chemin de la preview (ex. swipe-nav)'
+        required: true
+        default: 'swipe-nav'
+      api_base_url:
+        description: 'URL de l API visée par le build'
+        required: true
+        default: 'https://api-staging-40d3.up.railway.app/api'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: web-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Résoudre le slug de preview
+        id: cfg
+        run: |
+          SLUG="${{ github.event.inputs.slug || 'swipe-nav' }}"
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "base_href=/facteur/preview/$SLUG/" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.6'
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: |
+          cd apps/mobile
+          flutter pub get
+
+      - name: Build Web
+        run: |
+          cd apps/mobile
+          flutter build web --release \
+            --base-href "${{ steps.cfg.outputs.base_href }}" \
+            --dart-define="API_BASE_URL=${{ github.event.inputs.api_base_url || vars.API_BASE_URL || 'https://api-staging-40d3.up.railway.app/api' }}" \
+            --dart-define="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
+            --dart-define="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
+            --dart-define="REVENUECAT_IOS_KEY=${{ secrets.REVENUECAT_IOS_KEY }}" \
+            --dart-define="POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}" \
+            --dart-define="POSTHOG_HOST=${{ vars.POSTHOG_HOST || 'https://eu.i.posthog.com' }}" \
+            --dart-define="SENTRY_DSN=${{ secrets.SENTRY_DSN }}" \
+            --dart-define="SENTRY_ENVIRONMENT=${{ vars.SENTRY_ENVIRONMENT || 'staging' }}"
+
+      - name: Deploy preview to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: apps/mobile/build/web
+          destination_dir: preview/${{ steps.cfg.outputs.slug }}
+          # Additif : ne supprime AUCUN fichier existant sur gh-pages, donc la
+          # démo de `main` servie à la racine reste intacte.
+          keep_files: true
+          commit_message: 'preview(web): ${{ github.ref_name }} → /preview/${{ steps.cfg.outputs.slug }}/'
+
+      - name: Résumé
+        run: |
+          echo "### 🔎 Preview web déployée" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://boujonlaurin-dotcom.github.io/facteur/preview/${{ steps.cfg.outputs.slug }}/" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Branche : \`${{ github.ref_name }}\` — commit \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
