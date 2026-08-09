@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
@@ -40,7 +41,7 @@ const double _kEndBumpMax = 32;
 
 /// Course à laquelle le mur se signale au doigt. Volontairement **avant** le
 /// fond de course : l'amortissement étant asymptotique (cf.
-/// `_DeckBumpScrollPhysics`), les tout derniers pixels ne sont jamais atteints
+/// `DeckBumpScrollPhysics`), les tout derniers pixels ne sont jamais atteints
 /// et un retour haptique calé dessus ne se déclencherait jamais.
 const double _kEndBumpHapticAt = _kEndBumpMax * 0.6;
 
@@ -110,6 +111,9 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
   void _onWebViewLockChanged() {
     // Le verrou change la `physics` du PageView → rebuild nécessaire.
     if (mounted) setState(() {});
+    // Le gel arrive parfois en plein sur-défilement : la position resterait
+    // alors contre le mur, sans physique pour la ramener.
+    if (_controller.hasClients) _ensureResting(_controller.position);
   }
 
   /// Page courante en valeur continue, robuste avant le premier layout
@@ -132,6 +136,10 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
       _handleEndBump(metrics.pixels - metrics.maxScrollExtent);
     }
 
+    if (notification is ScrollEndNotification) {
+      _ensureResting(notification.metrics);
+    }
+
     // L'article n'est « changé » qu'au repos : `onPageChanged` du PageView
     // bascule dès le milieu du geste, donc sur de simples survols annulés
     // ensuite. Le reader ne doit ni compter une ouverture ni marquer « Lu »
@@ -151,6 +159,32 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
       }
     }
     return false;
+  }
+
+  /// Invariant : **le deck ne reste jamais décalé**. Au repos, une page est
+  /// pleine cadre.
+  ///
+  /// [DeckBumpScrollPhysics] garantit déjà le retour après un geste. Ce filet
+  /// couvre les chemins qui court-circuitent la physique — un `Scrollable` dont
+  /// la `physics` bascule sur `NeverScrollableScrollPhysics` en plein
+  /// sur-défilement (verrou WebView) conserve sa position telle quelle et ne
+  /// rejouera aucune trajectoire. Sans ça, la pile peut se figer contre le mur,
+  /// décalée vers la gauche, ce que l'utilisateur voit comme un écran cassé.
+  void _ensureResting(ScrollMetrics metrics) {
+    if (metrics.pixels - metrics.maxScrollExtent <= 0.5) return;
+    if (!_controller.hasClients) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final position = _controller.position;
+      if (position.pixels - position.maxScrollExtent <= 0.5) return;
+      unawaited(
+        _controller.animateToPage(
+          widget.deck.articles.length - 1,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
   }
 
   /// Coup sec quand le geste atteint le mur de fin — c'est lui qui dit « c'est
@@ -198,10 +232,10 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
               // `BouncingScrollPhysics` sur les deux plateformes : c'est le
               // rebond qui porte l'affordance de retour en tête de deck, et il
               // doit se comporter pareil sur Android et iOS. Borné en fin de
-              // deck (cf. `_DeckBumpScrollPhysics`).
+              // deck (cf. `DeckBumpScrollPhysics`).
               physics: locked
                   ? const NeverScrollableScrollPhysics()
-                  : const PageScrollPhysics(parent: _DeckBumpScrollPhysics()),
+                  : const PageScrollPhysics(parent: DeckBumpScrollPhysics()),
               itemBuilder: (context, index) {
                 final slot = ArticleDeckSlot(
                   index: index,
@@ -363,16 +397,25 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
 ///
 /// La course est ramenée sous [_kEndBumpMax], mais **jamais par une butée
 /// sèche** : le déplacement transmis au doigt fond progressivement à mesure
-/// qu'on approche du mur (`resistance²`, donc dérivée nulle à l'arrivée). La
-/// page décélère au lieu de se figer — on sent une matière qui résiste, pas un
-/// scroll qui casse. Insister ne fait plus rien avancer : on *reste* sur le
-/// dernier article, ce qui est précisément le message.
-class _DeckBumpScrollPhysics extends BouncingScrollPhysics {
-  const _DeckBumpScrollPhysics({super.parent});
+/// qu'on approche du mur. La page décélère au lieu de se figer — on sent une
+/// matière qui résiste, pas un scroll qui casse. Insister ne fait plus rien
+/// avancer : on *reste* sur le dernier article, ce qui est précisément le
+/// message.
+///
+/// **Aucune borne dure n'est posée sur la position** (pas d'override de
+/// `applyBoundaryConditions`), et c'est délibéré : une borne dure fait échouer
+/// `setPixels` pendant une trajectoire balistique, or `BallisticScrollActivity`
+/// abandonne — `goIdle()` — dès que `applyMoveTo` échoue. Le deck restait alors
+/// **collé contre le mur**, décalé vers la gauche, sans jamais revenir. Le
+/// plafond est tenu par l'amortissement du geste, le retour par
+/// [createBallisticSimulation] ; ni l'un ni l'autre ne peut échouer.
+@visibleForTesting
+class DeckBumpScrollPhysics extends BouncingScrollPhysics {
+  const DeckBumpScrollPhysics({super.parent});
 
   @override
-  _DeckBumpScrollPhysics applyTo(ScrollPhysics? ancestor) =>
-      _DeckBumpScrollPhysics(parent: buildParent(ancestor));
+  DeckBumpScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      DeckBumpScrollPhysics(parent: buildParent(ancestor));
 
   /// Course réellement parcourue par la pile pour [travel] pixels de doigt
   /// au-delà du dernier article : hyperbole `M·t/(t+M)`.
@@ -406,12 +449,28 @@ class _DeckBumpScrollPhysics extends BouncingScrollPhysics {
   }
 
   @override
-  double applyBoundaryConditions(ScrollMetrics position, double value) {
-    // Filet de sécurité pour les trajectoires balistiques (un lancer rapide ne
-    // passe pas par `applyPhysicsToUserOffset`). Au doigt, l'amortissement
-    // ci-dessus fait que cette butée n'est jamais atteinte.
-    final wall = position.maxScrollExtent + _kEndBumpMax;
-    if (value > wall) return value - wall;
-    return super.applyBoundaryConditions(position, value);
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    final overscroll = position.pixels - position.maxScrollExtent;
+    if (overscroll > 0) {
+      // Retour au repos **garanti** : ressort du mur vers le dernier article.
+      //
+      // La vitesse sortante du doigt au lâcher est jetée (`min(0, velocity)`) —
+      // c'est elle qui, relayée à `BouncingScrollSimulation`, relançait la page
+      // vers l'extérieur ; le mouvement repartait alors du mauvais côté et,
+      // combiné à l'ancienne borne dure, laissait la pile bloquée à gauche. Ici
+      // la trajectoire est monotone vers `maxScrollExtent` : elle ne peut ni
+      // dépasser le mur, ni s'arrêter en route.
+      return ScrollSpringSimulation(
+        spring,
+        position.pixels,
+        position.maxScrollExtent,
+        math.min(0.0, velocity),
+        tolerance: toleranceFor(position),
+      );
+    }
+    return super.createBallisticSimulation(position, velocity);
   }
 }

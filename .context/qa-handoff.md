@@ -63,6 +63,10 @@ d'arête pendant le seul mouvement.
   le dernier article. **Jamais d'écran noir** : la bande découverte est le fond
   crème de l'app. Repère de recette : 40 px de doigt → ~8 px de décalage,
   320 px → ~28 px. Si la pile se **fige d'un coup**, c'est la régression.
+  **À vérifier en priorité** : lâcher le doigt *en plein élan* (geste rapide, pas
+  ralenti avant de relâcher), plusieurs fois de suite. La pile doit **toujours**
+  revenir cadrée. Rester décalée vers la gauche, header tronqué, est le bug
+  corrigé — il venait de la butée dure qui tuait la trajectoire de retour.
 
 ### Scénario 3 : Repère de position (barre segmentée)
 1. Ouvrir un article depuis une section de N articles.

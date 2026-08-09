@@ -183,6 +183,47 @@ void main() {
     );
 
     testWidgets(
+      'relâché en plein élan contre le mur, le deck revient cadré',
+      (tester) async {
+        await pumpDeck(tester, deck: _deck(initialIndex: 2));
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position;
+
+        // Geste rapide (45 px / 8 ms) lâché SANS décélérer : la vitesse
+        // sortante du doigt partait dans la simulation de rebond et laissait
+        // la pile collée au mur, décalée vers la gauche.
+        final gesture = await tester.startGesture(const Offset(195, 400));
+        for (var i = 0; i < 15; i++) {
+          await gesture.moveBy(const Offset(-45, 0));
+          await tester.pump(const Duration(milliseconds: 8));
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(position.pixels, moreOrLessEquals(position.maxScrollExtent));
+        expect(find.text('article-c2'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'quelle qu’en soit la cause, un deck décalé se recadre',
+      (tester) async {
+        await pumpDeck(tester, deck: _deck(initialIndex: 2));
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position;
+
+        // Position forcée au-delà du mur, sans passer par un geste : c'est le
+        // filet `_ensureResting` qui doit rattraper.
+        position.jumpTo(position.maxScrollExtent + 60);
+        await tester.pumpAndSettle();
+
+        expect(position.pixels, moreOrLessEquals(position.maxScrollExtent));
+      },
+    );
+
+    testWidgets(
       'le fond du deck est peint — jamais le noir de la route',
       (tester) async {
         await pumpDeck(tester, deck: _deck(initialIndex: 2));
