@@ -130,8 +130,21 @@ barre de progression classique, swipe-back large (35 %) conservé.
 - **Android / platform views** : sur un article sans contenu in-app (webview
   pleine page), le platform view passe sous la transformation du deck. À vérifier
   visuellement sur Android.
-- **Flutter web** : `PageView` piloté à la souris — le glissement se fait par
-  drag maintenu, pas par molette.
+- **Flutter web : le deck ne se glisse PAS à la souris.** Les `dragDevices` par
+  défaut d'un `Scrollable` Flutter excluent `PointerDeviceKind.mouse` et l'app
+  ne surcharge pas `ScrollBehavior` — un drag souris (réel ou Playwright) ne
+  déplace donc jamais le `PageView`. C'est une limite du **rendu web**, pas un
+  bug du deck : sur mobile (le vrai support) le geste est tactile.
+  Pour tester la preview au navigateur, deux voies :
+  1. **DevTools → Device toolbar** (mode responsive) : active l'émulation
+     tactile, le glissement fonctionne à la souris ;
+  2. **Playwright** : émuler le tactile puis envoyer les événements en CDP —
+     `Emulation.setTouchEmulationEnabled` puis `Input.dispatchTouchEvent`
+     (`touchStart` / `touchMove` × N avec ~16 ms entre chaque / `touchEnd`).
+     Un `page.mouse.down()/move()` ne suffit pas.
+  Autre piège : **ne pas activer la sémantique** avant de glisser — les nœuds
+  DOM d'accessibilité posés au-dessus du canvas absorbent le geste. Sémantique
+  pour lire l'écran (`snapshot`), rechargement sans sémantique pour gester.
 
 ## Dépendances
 
