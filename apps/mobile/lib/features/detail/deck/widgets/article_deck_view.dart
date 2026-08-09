@@ -34,9 +34,15 @@ const double _kBackPullReveal = 72;
 
 /// Mur de fin de deck : course de sur-défilement maximale au-delà du **dernier**
 /// article. Le rebond libre y révélait le fond de route (écran noir) et laissait
-/// croire à une page suivante ; borné à ce mur, le geste bute et revient — la
-/// pile de cartes s'arrête net, il n'y a rien derrière.
+/// croire à une page suivante ; contre ce mur, la pile résiste puis revient —
+/// on reste sur le dernier article, il n'y a rien derrière.
 const double _kEndBumpMax = 32;
+
+/// Course à laquelle le mur se signale au doigt. Volontairement **avant** le
+/// fond de course : l'amortissement étant asymptotique (cf.
+/// `_DeckBumpScrollPhysics`), les tout derniers pixels ne sont jamais atteints
+/// et un retour haptique calé dessus ne se déclencherait jamais.
+const double _kEndBumpHapticAt = _kEndBumpMax * 0.6;
 
 /// Pile d'articles navigable au swipe horizontal.
 ///
@@ -136,6 +142,11 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
         final previous = _settledIndex;
         setState(() => _settledIndex = target);
         unawaited(HapticFeedback.selectionClick());
+        // La surface d'origine suit la lecture pour se rouvrir au bon endroit
+        // (cf. `ArticleDeckPayload.onArticleSettled`). Notifié d'ici, et non du
+        // haut : c'est le seul point qui distingue une page *validée* d'une
+        // page entrevue pendant le geste.
+        widget.deck.onArticleSettled?.call(widget.deck.articles[target]);
         widget.onArticleChanged?.call(previous, target);
       }
     }
@@ -145,7 +156,7 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
   /// Coup sec quand le geste atteint le mur de fin — c'est lui qui dit « c'est
   /// le dernier » sans rien ajouter à l'écran.
   void _handleEndBump(double overscroll) {
-    if (overscroll >= _kEndBumpMax - 0.5) {
+    if (overscroll >= _kEndBumpHapticAt) {
       if (_endBumpArmed) {
         _endBumpArmed = false;
         unawaited(HapticFeedback.lightImpact());
@@ -343,14 +354,19 @@ class _ArticleDeckViewState extends State<ArticleDeckView> {
   }
 }
 
-/// Rebond libre en tête de deck (il porte l'affordance de retour), **mur** en
-/// fin de deck.
+/// Rebond libre en tête de deck (il porte l'affordance de retour), **mur
+/// élastique** en fin de deck.
 ///
 /// Au-delà du dernier article, le rebond `BouncingScrollPhysics` laissait la
 /// page partir sur presque une demi-largeur d'écran : la bande découverte se
-/// lisait comme une page suivante, vide. La course est bornée à
-/// [_kEndBumpMax] — assez pour que la pile bouge sous le doigt et revienne,
-/// trop peu pour promettre quoi que ce soit derrière.
+/// lisait comme une page suivante, vide.
+///
+/// La course est ramenée sous [_kEndBumpMax], mais **jamais par une butée
+/// sèche** : le déplacement transmis au doigt fond progressivement à mesure
+/// qu'on approche du mur (`resistance²`, donc dérivée nulle à l'arrivée). La
+/// page décélère au lieu de se figer — on sent une matière qui résiste, pas un
+/// scroll qui casse. Insister ne fait plus rien avancer : on *reste* sur le
+/// dernier article, ce qui est précisément le message.
 class _DeckBumpScrollPhysics extends BouncingScrollPhysics {
   const _DeckBumpScrollPhysics({super.parent});
 
@@ -358,11 +374,43 @@ class _DeckBumpScrollPhysics extends BouncingScrollPhysics {
   _DeckBumpScrollPhysics applyTo(ScrollPhysics? ancestor) =>
       _DeckBumpScrollPhysics(parent: buildParent(ancestor));
 
+  /// Course réellement parcourue par la pile pour [travel] pixels de doigt
+  /// au-delà du dernier article : hyperbole `M·t/(t+M)`.
+  ///
+  /// Choisie pour ses trois propriétés, dans l'ordre où on les sent : pente 1
+  /// au départ (les premiers pixels suivent le doigt, le geste n'est pas mangé),
+  /// pente qui décroît continûment (la matière résiste de plus en plus), limite
+  /// [_kEndBumpMax] jamais franchie (le mur). Aucun palier, donc aucune saccade.
+  static double _wallTravel(double travel) =>
+      _kEndBumpMax * travel / (travel + _kEndBumpMax);
+
+  /// Réciproque : quelle course de doigt a produit ce sur-défilement.
+  static double _fingerTravel(double overscroll) =>
+      _kEndBumpMax * overscroll / (_kEndBumpMax - overscroll);
+
+  @override
+  double applyPhysicsToUserOffset(ScrollMetrics position, double offset) {
+    // `offset < 0` ⇒ le doigt pousse vers l'article suivant (les pixels du
+    // `PageView` augmentent). C'est le seul sens à amortir : vers l'arrière, le
+    // deck se navigue normalement.
+    final overscroll = position.pixels - position.maxScrollExtent;
+    if (offset < 0 && overscroll >= 0) {
+      // Dès le premier pixel au-delà du bord, sinon `BouncingScrollPhysics`
+      // transmet ce premier pas 1:1 (il n'amortit qu'un sur-défilement déjà
+      // constitué) et la pile saute dans le mur au lieu d'y arriver.
+      if (overscroll >= _kEndBumpMax) return 0;
+      final travel = _fingerTravel(overscroll) - offset;
+      return -(_wallTravel(travel) - overscroll);
+    }
+    return super.applyPhysicsToUserOffset(position, offset);
+  }
+
   @override
   double applyBoundaryConditions(ScrollMetrics position, double value) {
+    // Filet de sécurité pour les trajectoires balistiques (un lancer rapide ne
+    // passe pas par `applyPhysicsToUserOffset`). Au doigt, l'amortissement
+    // ci-dessus fait que cette butée n'est jamais atteinte.
     final wall = position.maxScrollExtent + _kEndBumpMax;
-    // Retourne la part du déplacement absorbée par la butée — le reste de la
-    // course du doigt est perdu, ce qui *est* la sensation de mur.
     if (value > wall) return value - wall;
     return super.applyBoundaryConditions(position, value);
   }

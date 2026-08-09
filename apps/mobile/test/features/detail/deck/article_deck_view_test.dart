@@ -16,12 +16,17 @@ Content _content(String id) => Content(
       source: Source(id: 's', name: 'S', type: SourceType.article),
     );
 
-ArticleDeckPayload _deck({int count = 3, int initialIndex = 0}) {
+ArticleDeckPayload _deck({
+  int count = 3,
+  int initialIndex = 0,
+  void Function(Content article)? onArticleSettled,
+}) {
   return ArticleDeckPayload(
     articles: List.generate(count, (i) => _content('c$i')),
     initialIndex: initialIndex,
     sectionKey: 'theme:tech',
     sectionLabel: 'Tech',
+    onArticleSettled: onArticleSettled,
   );
 }
 
@@ -143,15 +148,29 @@ void main() {
         // suivante vide (fond de route noir).
         final gesture = await tester.startGesture(const Offset(195, 400));
         var maxOverscroll = 0.0;
+        // Course gagnée par pas de doigt : c'est elle qui doit fondre.
+        final gains = <double>[];
         for (var i = 0; i < 12; i++) {
           await gesture.moveBy(const Offset(-40, 0));
           await tester.pump(const Duration(milliseconds: 16));
           final overscroll = position.pixels - position.maxScrollExtent;
-          if (overscroll > maxOverscroll) maxOverscroll = overscroll;
+          if (overscroll > maxOverscroll) {
+            gains.add(overscroll - maxOverscroll);
+            maxOverscroll = overscroll;
+          }
         }
 
         expect(maxOverscroll, greaterThan(0), reason: 'la pile doit bouger');
         expect(maxOverscroll, lessThanOrEqualTo(32.5));
+
+        // …et la butée n'est pas sèche : le mur est élastique, donc la course
+        // gagnée par 40 px de doigt fond à mesure qu'on s'en approche.
+        expect(
+          gains.last,
+          lessThan(gains.first / 4),
+          reason: 'le déplacement doit s’amortir, pas se figer d’un coup',
+        );
+        expect(gains.last, greaterThan(0), reason: 'jamais tout à fait bloqué');
 
         await gesture.up();
         await tester.pumpAndSettle();
@@ -229,6 +248,40 @@ void main() {
 
         await gesture.up();
         await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      'la surface d’origine est notifiée de l’article d’arrivée',
+      (tester) async {
+        final settled = <String>[];
+        await pumpDeck(
+          tester,
+          deck: _deck(onArticleSettled: (a) => settled.add(a.id)),
+        );
+
+        await dragBy(tester, -300);
+        await dragBy(tester, -300);
+
+        // C’est ce fil qui permet au feed de se rouvrir sur c2 et non sur c0.
+        expect(settled, ['c1', 'c2']);
+      },
+    );
+
+    testWidgets(
+      'un voisin seulement entrevu ne notifie pas d’arrivée',
+      (tester) async {
+        final settled = <String>[];
+        await pumpDeck(
+          tester,
+          deck: _deck(onArticleSettled: (a) => settled.add(a.id)),
+        );
+
+        // Geste annulé : le feed ne doit pas se repositionner sur un article
+        // qu’on n’a jamais ouvert.
+        await dragBy(tester, -40);
+
+        expect(settled, isEmpty);
       },
     );
 

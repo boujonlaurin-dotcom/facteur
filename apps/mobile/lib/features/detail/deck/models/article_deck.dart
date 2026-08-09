@@ -23,6 +23,7 @@ class ArticleDeckPayload {
     required this.sectionKey,
     required this.sectionLabel,
     this.showPositionIndicator = true,
+    this.onArticleSettled,
   });
 
   /// Articles de la section, dans l'ordre de lecture, dédupliqués par id.
@@ -43,6 +44,20 @@ class ArticleDeckPayload {
   /// mentirait, le feed n'a pas de fin connue. Le swipe y fonctionne quand même,
   /// simplement sans promettre un nombre d'articles restants.
   final bool showPositionIndicator;
+
+  /// Notifie la surface d'origine de l'article **validé** courant, à chaque
+  /// changement de page.
+  ///
+  /// C'est le fil qui permet à un feed de se rouvrir là où la lecture s'est
+  /// arrêtée : sortir du deck après avoir enchaîné 4 articles doit ramener sur
+  /// le 4ᵉ, pas sur celui qu'on avait tapé. Il passe par le payload plutôt que
+  /// par le résultat du `pop` parce que le deck se referme par quatre chemins
+  /// (flèche du header, geste de bord, back système, tirage en tête de deck) et
+  /// qu'un seul d'entre eux porte une valeur de retour.
+  ///
+  /// `null` quand l'appelant n'a rien à repositionner. Non transporté par un
+  /// deep link : l'`extra` perdu, le deck l'est aussi.
+  final void Function(Content article)? onArticleSettled;
 
   /// Un deck d'un seul article ne se navigue pas : la route rend alors le
   /// reader nu, sans `PageView` (zéro changement pour les appelants existants).
@@ -119,6 +134,7 @@ ArticleDeckPayload? articleDeckFromContents(
   required String sectionKey,
   required String sectionLabel,
   bool showPositionIndicator = true,
+  void Function(Content article)? onArticleSettled,
 }) {
   if (tappedContentId.isEmpty) return null;
 
@@ -140,5 +156,6 @@ ArticleDeckPayload? articleDeckFromContents(
     sectionKey: sectionKey,
     sectionLabel: sectionLabel,
     showPositionIndicator: showPositionIndicator,
+    onArticleSettled: onArticleSettled,
   );
 }

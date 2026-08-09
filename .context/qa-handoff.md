@@ -57,9 +57,12 @@ d'arête pendant le seul mouvement.
 - 1ᵉʳ article, tirage court → rebond, l'article revient en place.
 - 1ᵉʳ article, tirage franc (> ~56 px de course) → une affordance
   « ← {nom de la section} » se révèle à gauche puis on **revient à la section**.
-- Dernier article → la pile **bute contre un mur** (~32 px de course maximum),
-  vibre brièvement (`lightImpact`) et revient : rien derrière, et **jamais
-  d'écran noir** — la bande découverte est le fond crème de l'app.
+- Dernier article → la pile **résiste** : elle suit d'abord le doigt puis freine
+  de plus en plus, plafonne à ~32 px de course, vibre au passage
+  (`lightImpact`) et revient. Insister ne fait plus rien avancer — on reste sur
+  le dernier article. **Jamais d'écran noir** : la bande découverte est le fond
+  crème de l'app. Repère de recette : 40 px de doigt → ~8 px de décalage,
+  320 px → ~28 px. Si la pile se **fige d'un coup**, c'est la régression.
 
 ### Scénario 3 : Repère de position (barre segmentée)
 1. Ouvrir un article depuis une section de N articles.
@@ -108,12 +111,34 @@ appartient à la page distante. Sortir du site (← du header) le réactive.
 **Résultat attendu** : reader **identique à avant** — pas de swipe horizontal,
 barre de progression classique, swipe-back large (35 %) conservé.
 
+### Scénario 8 : Flâner — retrouver le feed où la lecture s'est arrêtée
+1. Dans **Flâner**, descendre de quelques cartes, en ouvrir une.
+2. Enchaîner 3 ou 4 articles au swipe vers la gauche.
+3. Sortir (flèche ← du header, geste de bord, ou back système).
+
+**Résultat attendu** : le feed rouvre **sur l'article qu'on vient de lire**,
+calé en haut de l'écran — pas sur celui qu'on avait tapé. Aucune animation de
+défilement : la position est rendue, pas rejouée.
+
+Cas limites à couvrir :
+- sortir **sans avoir swipé** → le feed ne bouge pas d'un pixel ;
+- revenir en arrière dans le deck jusqu'à l'article de départ, puis sortir → le
+  feed ne bouge pas non plus ;
+- article d'arrivée très bas dans le feed (6-8 swipes) → il doit quand même être
+  atteint (la liste est paresseuse, l'app va le construire en descendant) ;
+- ouvrir depuis un **carrousel** ou depuis « Explorer de nouvelles sources » →
+  comportement inchangé, aucun repositionnement (ces cartes n'ont pas de place
+  propre dans le fil).
+
 ## Critères d'acceptation
 
 - [ ] Glisser à gauche → article suivant de la section ; à droite → précédent
 - [ ] Le deck parcourt la liste **complète** (au-delà des cartes affichées)
 - [ ] 1ᵉʳ article : seul le suivant est atteignable ; tirage franc à droite = retour
-- [ ] Dernier article : seul le précédent est atteignable, avec bump et sans écran noir
+- [ ] Dernier article : seul le précédent est atteignable ; la pile résiste
+      progressivement (pas de blocage sec), vibre, revient, sans écran noir
+- [ ] Flâner : sortir du deck rouvre le feed sur l'article où la lecture s'est
+      arrêtée ; sans swipe, le feed ne bouge pas
 - [ ] Dernier article : la barre segmentée est pleine, aucun segment vide
 - [ ] Transition fluide, sans saccade, sur une section de 8 articles
 - [ ] Barre segmentée sur les sections, absente sur Flâner

@@ -15,6 +15,7 @@ import '../../../core/nudges/nudge_ids.dart';
 import '../../../core/nudges/widgets/feed_nudge_anchors.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../../../core/providers/navigation_providers.dart';
+import '../../../shared/utils/reveal_keyed_item.dart';
 import '../../../shared/widgets/loaders/loading_view.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../detail/deck/models/article_deck.dart';
@@ -57,6 +58,10 @@ class FlanerScreen extends ConsumerStatefulWidget {
 class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   final ScrollController _scroll = ScrollController();
   final Set<String> _visibleContentIds = <String>{};
+
+  /// Clés des cartes du feed, par id d'article — support du repositionnement
+  /// au retour d'un deck.
+  final Map<String, GlobalKey> _cardKeys = <String, GlobalKey>{};
   bool _loadingMore = false;
   final Set<String> _pendingFeedback = <String>{};
   bool _gestureNudgeRequested = false;
@@ -124,12 +129,21 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
   /// **ouvert**, sa fin n'est pas connue. Une barre segmentée y annoncerait un
   /// nombre d'articles restants qui n'existe pas. Le geste marche, il ne promet
   /// simplement rien.
+  ///
+  /// [revealOnReturn] — au retour, le feed se repositionne sur l'article où la
+  /// lecture s'est arrêtée. Réservé aux cartes de la **liste principale** : ce
+  /// sont les seules dont on connaît la place (les items de carrousel n'ont pas
+  /// de position verticale propre).
   Future<void> _openArticle(
     Content article, {
     List<Content>? deckArticles,
     String deckLabel = 'Flâner',
     String deckKey = 'flaner',
+    bool revealOnReturn = false,
   }) async {
+    // Article d'arrivée : celui de la dernière page validée du deck, ou celui
+    // qu'on a tapé si le lecteur n'a pas navigué.
+    var landing = article;
     final deck = deckArticles == null
         ? null
         : articleDeckFromContents(
@@ -138,6 +152,7 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
             sectionKey: deckKey,
             sectionLabel: deckLabel,
             showPositionIndicator: false,
+            onArticleSettled: revealOnReturn ? (a) => landing = a : null,
           );
     await context.push(
       '${RoutePaths.flaner}/content/${article.id}',
@@ -145,7 +160,18 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     );
     if (!mounted) return;
     unawaited(ref.read(feedProvider.notifier).markContentAsConsumed(article));
+    if (revealOnReturn && landing.id != article.id) {
+      await _revealCard(landing.id);
+    }
   }
+
+  /// Amène la carte [contentId] en haut du feed — voir [revealKeyedItem] pour
+  /// le pourquoi de la boucle (liste paresseuse : la carte d'arrivée n'est
+  /// souvent pas encore construite).
+  Future<void> _revealCard(String contentId) => revealKeyedItem(
+        controller: _scroll,
+        target: () => _cardKeys[contentId],
+      );
 
   Future<void> _scrollToTop() async {
     if (!_scroll.hasClients) return;
@@ -538,23 +564,34 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
         if (_pendingFeedback.contains(article.id)) {
           return _feedbackInline(article);
         }
-        return VisibilityDetector(
-          key: ValueKey('flaner_visible_${article.id}'),
-          onVisibilityChanged: (info) {
-            if (info.visibleFraction >= 0.9) _markVisible(article.id);
-          },
-          child: FluxContinuArticleCard(
-            key: ValueKey('flaner_card_${article.id}'),
-            article: article,
-            onTap: () => _openArticle(article, deckArticles: contents),
-            onSwipeDismiss: () => _onSwipeDismiss(article),
-            enableSwipeHint:
-                articleIndex == firstSwipeableIndex && _showSwipeHint,
-            onSwipeHintComplete: _onSwipeHintComplete,
-            nudgeAnchor:
-                articleIndex == firstSwipeableIndex ? flanerFirstCardKey : null,
-            onSwipeConversion: _recordSwipeConversion,
-            onLongPressConversion: _recordLongPressConversion,
+        return KeyedSubtree(
+          // Ancre de repositionnement au retour d'un deck : la `ValueKey` du
+          // `VisibilityDetector` est déjà prise et ne donne pas de contexte
+          // adressable depuis l'écran.
+          key: _cardKeys.putIfAbsent(article.id, GlobalKey.new),
+          child: VisibilityDetector(
+            key: ValueKey('flaner_visible_${article.id}'),
+            onVisibilityChanged: (info) {
+              if (info.visibleFraction >= 0.9) _markVisible(article.id);
+            },
+            child: FluxContinuArticleCard(
+              key: ValueKey('flaner_card_${article.id}'),
+              article: article,
+              onTap: () => _openArticle(
+                article,
+                deckArticles: contents,
+                revealOnReturn: true,
+              ),
+              onSwipeDismiss: () => _onSwipeDismiss(article),
+              enableSwipeHint:
+                  articleIndex == firstSwipeableIndex && _showSwipeHint,
+              onSwipeHintComplete: _onSwipeHintComplete,
+              nudgeAnchor: articleIndex == firstSwipeableIndex
+                  ? flanerFirstCardKey
+                  : null,
+              onSwipeConversion: _recordSwipeConversion,
+              onLongPressConversion: _recordLongPressConversion,
+            ),
           ),
         );
       }, childCount: contents.length + intercalations.length),
