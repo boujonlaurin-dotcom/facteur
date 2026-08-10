@@ -24,14 +24,19 @@ class OnboardingStrings {
   // Intro Screen 2
   static const String intro2Title = 'Ton espace de transparence.';
   static const String intro2Subtitle =
-      'Facteur est une app Open source et indépendante, pour retrouver le plaisir de s\'informer.\n\nUn espace de confiance, qui mêle transparence, contrôle et médias de qualité.';
+      'Facteur est une app ouverte et indépendante, pour retrouver le plaisir de s\'informer.\n\nPas à servir des intérêts privés\n\nUn espace de confiance, qui mêle transparence, contrôle et médias de qualité.';
   static const String intro2SubtitlePart1 = 'Facteur est une app ';
-  static const String intro2SubtitleBold1 = 'Open source';
+  static const String intro2SubtitleBold1 = 'ouverte';
   static const String intro2SubtitlePart2 = ' et ';
   static const String intro2SubtitleBold2 = 'indépendante';
   static const String intro2SubtitlePart3 = ', pour ';
-  static const String intro2SubtitleBold3 = 'retrouver le plaisir de s\'informer';
-  static const String intro2SubtitlePart4 = '.\n\nUn espace de ';
+  static const String intro2SubtitleBold3 =
+      'retrouver le plaisir de s\'informer';
+  static const String intro2SubtitlePrivateInterests =
+      'Pas à servir des intérêts privés';
+  static const String intro2SubtitlePart4 = '.\n\n';
+  static const String intro2SubtitlePartPrivateInterestsAfter =
+      '\n\nUn espace de ';
   static const String intro2SubtitleBold4 = 'confiance';
   static const String intro2SubtitlePart5 = ', qui mêle ';
   static const String intro2SubtitleBold5 = 'transparence';
@@ -198,8 +203,7 @@ class OnboardingStrings {
   // Digest Mode
   static const String digestModeTitle =
       'Quel mode de récap quotidien préfères-tu ?';
-  static const String digestModeSubtitle =
-      'Tu pourras changer à tout moment.';
+  static const String digestModeSubtitle = 'Tu pourras changer à tout moment.';
 
   // Digest Mode — Rester serein (rich subtitle parts)
   static const String digestModeSereinPart1 =
@@ -221,8 +225,7 @@ class OnboardingStrings {
 
   // Q10: Page sources « sur mesure »
   static const String sourcesSuggestionsTitle = 'Nos suggestions pour toi';
-  static const String sourcesAlreadyFollowTitle =
-      'Tu suis déjà un média ?';
+  static const String sourcesAlreadyFollowTitle = 'Tu suis déjà un média ?';
   static const String sourcesSeeAllCatalog = 'Voir tout le catalogue';
 
   // Q10: en-têtes des 4 blocs « sur mesure » (①②③④).
@@ -268,8 +271,7 @@ class OnboardingStrings {
   static const String q9SearchHint = 'Rechercher un média...';
   static const String q9LoadingError = 'Erreur de chargement des médias';
   static const String q9EmptyList = 'Aucun média disponible';
-  static const String q9NoMatch =
-      'Aucun média ne correspond à ta recherche';
+  static const String q9NoMatch = 'Aucun média ne correspond à ta recherche';
 
   // Message de pré-sélection automatique
   static const String q9PreselectionTitle =
@@ -327,7 +329,7 @@ class OnboardingStrings {
   // Finalize — création du compte depuis une session anonyme (story 31.1)
   static const String finalizeAccountTitle = 'Ta tournée est prête.';
   static const String finalizeAccountSubtitle =
-      'Il ne reste qu\'une adresse à laisser pour qu\'on sache où la déposer chaque matin.';
+      'Il ne reste qu\'une adresse email à laisser pour recevoir ta tournée chaque matin.';
   static const String finalizeAccountEmailHint = 'Ton adresse email';
   static const String finalizeAccountPasswordHint = 'Ton mot de passe';
   static const String finalizeAccountButton = 'Recevoir ma tournée';

@@ -23,7 +23,7 @@ class TourStrings {
   /// Corps du coach card par étape.
   static String body(TourStep step) => switch (step) {
         TourStep.essentielHero =>
-          'Chaque matin, L\'Essentiel réunit les quelques articles à ne pas manquer. C\'est ton point de départ.',
+          'Gardes les articles que tu veux vraiment lire aujourd\'hui.',
         TourStep.descendsCartes =>
           'En descendant, tu retrouves tes sujets et tes sources, rangés en sections.',
         TourStep.favorisSheet =>
@@ -34,7 +34,6 @@ class TourStrings {
           'Depuis ton profil, en haut à droite, tu ajustes tes réglages quand tu veux.',
         TourStep.courrier =>
           'Et toujours depuis ton profil, tu retrouves Mon courrier : tes articles sauvegardés et tes notes.',
-        TourStep.done =>
-          'Tu connais l\'essentiel. À toi de jouer, bonne lecture !',
+        TourStep.done => 'Tu connais l\'essentiel. À toi de jouer, bonne lecture !',
       };
 }
