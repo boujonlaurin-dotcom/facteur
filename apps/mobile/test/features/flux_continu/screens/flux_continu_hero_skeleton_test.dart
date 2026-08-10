@@ -91,9 +91,10 @@ void main() {
         'd\'actions', (tester) async {
       await pump(tester);
 
-      // Segments d'action (44 px) puis segment de progression (6 px) : si la
-      // silhouette gardait l'ancien ordre, la mise en page sauterait à
-      // l'hydratation — c'est précisément ce qu'elle existe pour empêcher.
+      // Segments d'action (44 px) puis silhouette de progression (barre de
+      // texte courte de 11 px, design 2A) : si la silhouette gardait l'ancien
+      // ordre, la mise en page sauterait à l'hydratation — c'est précisément
+      // ce qu'elle existe pour empêcher.
       final boxes = tester
           .widgetList<Container>(find.descendant(
             of: find.byType(TriageStackSkeleton),
@@ -106,7 +107,9 @@ void main() {
           .map((r) => r.bottom)
           .reduce((a, b) => a > b ? a : b);
       final progressTop = boxes
-          .where((r) => r.height == 6)
+          // 140×11 : la silhouette de progression — la barre de méta de la
+          // carte fait aussi 11 de haut, mais 96 de large.
+          .where((r) => r.height == 11 && r.width == 140)
           .map((r) => r.top)
           .reduce((a, b) => a < b ? a : b);
       expect(progressTop, greaterThan(actionBottom));

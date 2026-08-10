@@ -1,256 +1,153 @@
-# QA Handoff — Retouches carte « Ton Essentiel » triable (Story 33.1, itération PO)
+# QA Handoff — Essentiel v2 : pile de tri au design 2A + carte cliquable (Story 33.2)
 
-> Rempli par l'agent dev. Input de /validate-feature (Playwright Agent CLI, viewport 390×844, sémantique activée).
+> Rempli par l'agent dev. Input de /validate-feature (agent QA).
+> ⚠️ QA web : viewport 390x844, sémantique activée au boot (skill `facteur-qa-web`).
+> Compte de test : entrée mémoire `reference_qa_staging_account` (jamais créer de compte).
 
 ## Feature développée
-6 retouches de la carte « Ton Essentiel » triable au swipe : fix du swipe qui se
-fige (priorité), carte qui épouse son contenu (fin du grand vide), images bien
-plus grandes, skeleton « cartes » visible au chargement, « Plus d'articles » au
-tri terminé (réinjecte le carrousel du jour), retrait de la pastille « X nouveaux
-articles ». Mobile-only, aucun changement backend.
 
-> **MAJ passe PO 09/08** — « Plus d'articles » est de nouveau **gaté**, cette fois
-> à **3 gardés minimum** (`kTriageMoreArticlesMinKept`). La note « le gate a été
-> retiré » qui figurait ici est annulée. S'ajoutent : la carte ne se réduit plus
-> jamais à son en-tête, la pile ne tressaute plus au swipe, le pied de tri passe
-> en deux boutons pleine largeur, la liste des gardés devient homogène, et la
-> description de la carte change. Scénarios 16 à 20 ci-dessous.
+La carte « Ton Essentiel » passe au design 2A « Le jour décide, la pile compte » :
+contrôle « − N à lire aujourd'hui · Y à trier + » sous les boutons (cible
+persistée par jour, plus de segments), balises de pied de carte (1 avec image /
+2 sans), en-tête « TU
+GARDES » sur la liste des gardés, pied de tri terminé en zone pointillée
+« Plus d'articles ? » + ligne « Trier à nouveau ». Et, indépendant du design :
+**la carte du dessus est cliquable** — un tap ouvre l'article sans rien
+décider ; au retour, si l'article a été effectivement lu, il compte comme
+gardé (décision `keep`, modalité `read`) avec le marquage de lecture habituel.
 
 ## PR associée
-À créer via /go (`--base main`).
+
+À créer via /go après validation QA (`--base main`).
 
 ## Écrans impactés
+
 | Écran | Route | Modifié / Nouveau |
 |-------|-------|-------------------|
-| Flux Continu — carte héros « Ton Essentiel » | `/` (home) | Modifié |
-| Skeleton du héros au chargement | `/` (fenêtre de loading) | Modifié |
+| Feed (carte « Ton Essentiel », pile de tri) | `/` (Flux Continu, héros) | Modifié |
+| Lettres passées (carte figée) | timeline overlay depuis l'en-tête | Non-régression |
 
 ## Scénarios de test
 
-### Scénario 1 : Swipe increvable (happy path, PRIORITÉ)
+### Scénario 1 : stepper — régler la cible du jour
 **Parcours** :
-1. Ouvrir l'app sur la Tournée du jour (carte « Ton Essentiel » en pile à trier).
-2. Trier les 5 articles **au swipe seul**, rapidement, en alternant gauche/droite.
-**Résultat attendu** : chaque swipe fait avancer à l'article suivant ; aucune
-carte ne se fige ni ne reste « grisée » hors écran ; l'index avance à chaque
-décision jusqu'à la fin du tri. Le bouton « Je garde » ne doit jamais être requis
-pour « débloquer » une carte.
+1. Ouvrir le feed sur un compte avec un Essentiel du jour non trié.
+2. Repérer sous les boutons le contrôle « − 5 à lire aujourd'hui · 5 à trier + ».
+3. Taper « + » jusqu'à la borne haute, puis « − » jusqu'à la borne basse (3).
+**Résultat attendu** : le nombre suit chaque tap ; la ligne de progression suit
+(« 0 sur N triés ») ; à chaque borne le rond concerné est estompé et inerte.
+La borne haute = slate + articles du carrousel du jour ; la basse = 3.
 
-### Scénario 2 : Swipe pendant l'anim de sortie + swipe vs long-press
+### Scénario 2 : la cible survit au jour (persistance)
 **Parcours** :
-1. Glisser une carte pour la faire sortir, puis tenter un 2ᵉ geste pendant l'anim.
-2. Sur une carte, faire un appui long (aperçu) puis un glissé horizontal.
-**Résultat attendu** : le 2ᵉ geste pendant l'anim est ignoré (une seule décision).
-L'appui long ouvre l'aperçu ; un glissé horizontal n'ouvre jamais l'aperçu sous le
-doigt (l'arène départage bien swipe vs long-press).
+1. Régler la cible à 3 (ou 7 si le pool le permet).
+2. Trier 1 article, tuer l'app, relancer.
+**Résultat attendu** : la pile revient avec la même cible et la décision déjà
+prise ; aucune décision perdue, pas de re-mélange de l'ordre. Si le carrousel
+arrive après le héros, la cible complète se restaure dès son retour.
 
-### Scénario 3 : La carte épouse son contenu (fin du vide)
+### Scénario 3 : baisser la cible ne perd JAMAIS une décision
 **Parcours** :
-1. À « 0 sur 5 triés », observer la zone sous la barre d'actions.
-2. Garder des articles un à un et observer la croissance.
-**Résultat attendu** : plus de grand vide (~256px) sous « 0 sur N triés ». La
-kept-list grandit **en douceur vers le bas**, sous la barre d'actions (la zone
-progression + carte + actions ne saute pas sous le doigt).
+1. Cible à 5 ; trier 4 articles (mélange garde/passe).
+2. Baisser la cible à 3.
+**Résultat attendu** : le compteur affiche la taille réelle (il ne peut retirer
+que des non-décidés en fin de pile) — avec 4 décidés, la cible s'arrête à 4,
+jamais en dessous du nombre de décisions prises. Rien ne disparaît de la liste
+des gardés.
 
-### Scénario 4 : Images grandes + skeleton visible
+### Scénario 4 : tap sur la carte → l'article s'ouvre, AUCUNE décision
 **Parcours** :
-1. Recharger avec le réseau throttlé (DevTools) pour voir la fenêtre de chargement.
-2. Observer la carte une fois chargée.
-**Résultat attendu** : au chargement, un skeleton en shimmer **qui lit comme des
-cartes** (pile de 2 cartes décalées, grande image + lignes de titre). Une fois
-chargée, l'image de chaque carte de tri est nettement plus grande (~format 16:9),
-sans saut de layout à l'hydratation.
+1. Sur la pile, taper (tap court) la carte du dessus.
+**Résultat attendu** : l'article s'ouvre (reader). Revenir immédiatement SANS
+lire : la même carte est toujours en haut de pile, la progression n'a pas
+bougé, l'article n'est pas dans les gardés.
 
-### Scénario 5 : pied de fin de tri (« Trier à nouveau » + « Plus d'articles »)
-> Remplacé par les scénarios **18** et **19** (passe PO 09/08) : le pied a changé
-> de forme (deux boutons pleine largeur) **et** « Plus d'articles » est gaté à 3
-> gardés. Ne pas tester la version décrite ici.
-
-### Scénario 6 : Retrait du badge
+### Scénario 5 : lecture effective au retour = gardé (modalité `read`)
 **Parcours** :
-1. Sur la carte héros, chercher une pastille « X nouveaux articles » près du titre.
-**Résultat attendu** : plus aucune pastille « N nouveaux articles ».
+1. Taper la carte du dessus, lire l'article (rester dedans, scroller un peu).
+2. Revenir au feed.
+**Résultat attendu** : l'article a quitté la pile et apparaît dans « TU
+GARDES » **avec sa coche de lecture** (pastille verte) et l'opacité grisée ;
+le compteur avance (« 1 sur N triés · 1 gardé ») ; la carte suivante est en
+haut de pile.
 
----
-
-## Passe pré-prod « design » (07/08) — scénarios additionnels
-
-### Scénario 7 : boot à froid, l'attente ressemble au contenu (PRIORITÉ)
+### Scénario 6 : un article lu ailleurs n'est PAS auto-gardé
 **Parcours** :
-1. Vider le stockage local, throttler le réseau (DevTools), recharger.
-2. Observer **sans cligner** la carte « Ton Essentiel » entre le chargement et
-   l'arrivée de la pile.
-**Résultat attendu** : on voit la **silhouette de la pile** (progression + pile de
-2 cartes + barre d'actions : 2 ronds puis une pilule large), puis **directement**
-la vraie pile. À aucun moment l'ancienne liste passive (gros article + petits
-titres) ne doit apparaître, même une fraction de seconde. Idem sur un rechargement
-« tiède » (snapshot déjà en cache).
+1. Cold-boot avec un slate persisté contenant un article déjà lu la veille
+   (ou lu depuis une autre section du feed, pas depuis la pile).
+**Résultat attendu** : cet article reste dans la pile, à trier normalement.
+Seul un article **ouvert depuis la pile** (tap) est auto-gardé au retour.
 
-### Scénario 8 : la carte du dessous ne bouge plus, et n'est jamais pré-tamponnée
+### Scénario 7 : progression en ligne, plus de segments
 **Parcours** :
-1. Glisser lentement la carte du dessus vers la droite, sans lâcher, puis lâcher.
-2. Répéter vers la gauche.
-**Résultat attendu** : la carte du dessous **grandit progressivement** pendant le
-geste et est déjà à sa taille pleine quand elle devient carte du dessus (aucun
-« claquement », aucune carte « légèrement décalée » qui saute). Elle n'est pas
-rognée en haut ni en bas. Aucun tampon (« JE GARDE » / « PAS POUR MOI ») n'est
-visible sur la carte fraîche qui arrive.
+1. Trier au swipe et aux boutons, en alternant.
+**Résultat attendu** : sous la barre d'actions, une seule ligne
+« N à lire aujourd'hui · Y à trier » ; `Y` diminue à chaque décision et aucun
+segment de progression n'est rendu.
 
-### Scénario 9 : article sans image
+### Scénario 8 : balises du pied de carte (règle 1 avec image / 2 sans)
 **Parcours** :
-1. Trier jusqu'à tomber sur un article sans vignette (ou couper les images).
-**Résultat attendu** : **aucun aplat gris** en tête de carte. La carte est plus
-courte, son titre s'étale sur plus de lignes, et la barre d'actions **glisse**
-vers le haut (transition animée), elle ne saute pas sous le pouce.
+1. Observer une carte **avec** image portant couverture/polarisation.
+2. Observer une carte **sans** image.
+**Résultat attendu** : avec image → **une seule** balise (la pilule
+couverture/polarisation si dispo, sinon thème ou fraîcheur « Il y a Xh »).
+Sans image → jusqu'à **deux** balises, titre plus grand (22) et padding plus
+généreux. Jamais de débordement à droite, les libellés s'élident.
 
-### Scénario 10 : tampons lisibles sur photo
+### Scénario 9 : « TU GARDES »
 **Parcours** :
-1. Glisser une carte **avec image** dans chaque direction, mi-course.
-**Résultat attendu** : le tampon est un **aplat plein** (orange « JE GARDE » /
-gris très foncé « PAS POUR MOI ») avec texte **blanc**, lisible par-dessus la
-photo. Plus de contour vide.
+1. Garder un premier article.
+**Résultat attendu** : l'en-tête « TU GARDES » (petites capitales, filet, puis
+le compte en accent orange) apparaît **avec** la première ligne gardée, jamais
+seul, et le compte suit les gardés suivants.
 
-### Scénario 11 : coche « suivie » / étoile « favorite »
+### Scénario 10 : tri terminé — pied 2A
 **Parcours** :
-1. Mettre une source en favori et une autre en « suivie » depuis Mes intérêts.
-2. Revenir sur la Tournée et trier jusqu'à voir ces sources.
-**Résultat attendu** : à droite du nom de source, une **étoile pleine** pour un
-favori, une **coche** pour une source suivie ; rien pour une source neutre. Même
-signal sur les lignes des articles gardés, sous la pile.
+1. Finir le tri avec le carrousel du jour non épuisé.
+**Résultat attendu** : zone à **bord pointillé** « Plus d'articles ? / Deux de
+plus, tirés du même Essentiel » avec « + » orange, puis ligne discrète « Trier
+à nouveau » (icône flèche circulaire). Taper la zone rouvre la pile avec 2
+articles de plus ; le contrôle sous les actions reste visible et l'augmenter
+rouvre aussi la pile. Sans carrousel restant, seule la ligne « Trier à nouveau »
+apparaît.
 
-### Scénario 12 : plus aucun compteur
+### Scénario 11 : lettre passée = rien de tout ça
 **Parcours** :
-1. Parcourir tout le tri, du début à la fin.
-**Résultat attendu** : plus aucun libellé « N sur M trié(s) » nulle part, ni dans
-la carte ni dans le squelette de chargement. La barre de progression segmentée est
-le seul indicateur d'avancement.
-
----
-
-## Reprise E2E PO (08/08) — scénarios additionnels
-
-> Les trois défauts ci-dessous avaient été déclarés corrigés sur la foi de tests
-> verts, alors qu'aucun ne l'était à l'écran. **À vérifier dans l'app qui
-> tourne**, pas sur un test.
-
-### Scénario 13 : la barre de progression est SOUS les boutons (PRIORITÉ)
-**Parcours** :
-1. Ouvrir la Tournée du jour, pile de tri active.
-**Résultat attendu** : l'ordre vertical est **carte → boutons (✕ · signet · « Je
-garde ») → barre de progression segmentée → articles gardés**. Plus rien
-au-dessus de la carte. Même ordre pendant le chargement (silhouette).
-
-### Scénario 14 : la carte épouse le contenu réellement affiché (PRIORITÉ)
-**Parcours** :
-1. Trier plusieurs articles d'affilée : alterner titres courts / longs, avec et
-   sans image.
-**Résultat attendu** : aucune carte ne montre de **blanc interne** entre le titre
-et la ligne du bas (polarisation / « N sources ») — la méta est collée sous le
-titre. Une carte à titre court est visiblement **plus basse** qu'une carte à titre
-long. La barre d'actions **glisse** (transition animée) d'une hauteur à l'autre,
-elle ne saute pas sous le pouce. Une carte ne dépasse jamais l'écran.
-
-### Scénario 15 : plus jamais de carte vide (PRIORITÉ)
-**Contexte** : l'aplat beige rapporté en E2E n'était pas une attente, c'était un
-état cassé — le slate figé du jour désignait un article que la carte ne pouvait
-plus résoudre (typiquement un article ajouté la veille par « Plus d'articles » :
-le carrousel n'est pas rejoué à l'hydratation depuis le cache).
-
-**Parcours (repro dirigée)** :
-1. Trier partiellement, taper « Plus d'articles », **ne pas** finir le tri.
-2. Tuer l'app, la relancer (cold boot, cache chaud).
-   *Variante web* : avant rechargement, éditer dans `localStorage` la clé
-   `flutter.essentiel_triage_v1_<dayKey>` et remplacer un `content_id` du
-   `slate` par une valeur bidon, puis recharger.
-**Résultat attendu** : **jamais** d'en-tête « Ton Essentiel » seul au-dessus d'un
-aplat de fond. Au pire une **silhouette de pile** le temps d'une frame, puis le
-tri reprend sur le premier article réellement disponible ; la barre de progression
-ne compte plus l'article fantôme. Le tri déjà fait n'est pas perdu.
-
-### Critères d'acceptation additionnels
-- [ ] Progression rendue **sous** les boutons (pile réelle **et** silhouette).
-- [ ] Aucune carte avec du blanc interne ; hauteur qui suit le contenu ;
-      barre d'actions qui glisse au lieu de sauter.
-- [ ] Slate périmé → silhouette puis reprise automatique, jamais de carte vide.
-
----
-
-## Passe PO 09/08 — scénarios additionnels
-
-### Scénario 16 : jamais l'en-tête seul (PRIORITÉ)
-**Parcours** :
-1. Vider le stockage local **et** IndexedDB, recharger, se connecter.
-2. Regarder la carte « Ton Essentiel » **pendant** tout le chargement, sans
-   cligner. Refaire sur un rechargement « tiède » (snapshot déjà en cache).
-**Résultat attendu** : à aucun instant la carte ne se réduit à son en-tête
-au-dessus du vide. On voit soit la **silhouette de la pile** (deux cartes
-esquissées + barre d'actions + progression), soit du contenu. Jamais rien entre
-les deux.
-
-### Scénario 17 : la pile ne tressaute plus (PRIORITÉ)
-**Parcours** :
-1. Enchaîner **5 swipes** en alternant gauche/droite, en incluant au moins une
-   carte **sans image** (nettement plus courte) suivie d'une carte **avec image**.
-**Résultat attendu** : la carte promue ne bouge pas autrement qu'en montant en
-échelle et en opacité. La barre d'actions **glisse** d'un seul mouvement continu
-vers sa nouvelle position — pas de temps d'arrêt suivi d'un saut, pas de
-va-et-vient. La liste des gardés grandit sans à-coup.
-
-### Scénario 18 : gate « Plus d'articles » à 3 gardés
-**Parcours** :
-1. Trier les 5 articles en n'en gardant que **2** (« Je garde » ou « Plus tard »).
-2. Observer le pied. Puis « Trier à nouveau » et recommencer en gardant **3**.
-**Résultat attendu** : à 2 gardés, **aucun** bouton « Plus d'articles » — pas de
-version grisée, pas de message d'explication ; seul « Trier à nouveau » reste. À
-3 gardés, « Plus d'articles » apparaît.
-
-### Scénario 19 : pied de tri lisible et actionnable
-**Parcours** :
-1. Finir un tri avec au moins 3 gardés.
-2. Taper « Plus d'articles ».
-**Résultat attendu** : sous la liste des gardés, **deux boutons pleine largeur**
-séparés du contenu par une vraie marge : « Plus d'articles » plein orange (même
-allure que « Je garde ») puis « Trier à nouveau » bordé. Le tap réinjecte le
-carrousel du jour et **rouvre** la pile sur un nouvel article ; la barre de
-progression s'allonge et les gardés restent en dessous.
-
-### Scénario 20 : gardés homogènes + nouvelle description
-**Parcours** :
-1. Finir un tri avec 3 gardés ou plus ; observer la liste.
-2. Ouvrir une **lettre passée** depuis le rewind ⏪.
-**Résultat attendu** : dans la liste des gardés, toutes les lignes se
-ressemblent — aucun fond teinté, aucun filet vertical orange, aucune pastille
-« Actu du jour », pas de premier article mis en avant. Sur une **lettre passée**,
-au contraire, le premier article garde son traitement éditorial (fond teinté,
-filet, pastille). Sous le titre de la carte, la description lit **« Choisis les
-articles que tu liras aujourd'hui. »**
+1. Ouvrir une édition passée via le rewind de l'en-tête.
+**Résultat attendu** : ni stepper, ni pile, ni « TU GARDES » — la lettre
+passée garde son rendu éditorial figé (lead teinté + mediums).
 
 ## Critères d'acceptation
-- [ ] Le tri au swipe seul va jusqu'au bout, sans carte figée/grisée.
-- [ ] La carte grandit doucement sous la barre d'actions ; plus de grand vide.
-- [ ] Images de tri nettement plus grandes (QA 390×844).
-- [ ] Skeleton lisible « cartes » pendant le chargement.
-- [ ] « Plus d'articles » (≥ 3 gardés) : injecte le carrousel + rouvre la pile.
-- [ ] Plus de pastille « nouveaux articles ».
-- [ ] Boot à froid : silhouette de pile → vraie pile, **sans** liste passive.
-- [ ] Carte du dessous stable pendant la sortie, jamais pré-tamponnée.
-- [ ] Article sans image : pas d'aplat gris, carte plus courte, barre qui glisse.
-- [ ] Étoile / coche selon l'état d'intérêt de la source.
-- [ ] Pied de fin : deux boutons **pleine largeur** ; « Plus d'articles » absent
-      sous 3 gardés **ou** si le pool injectable est vide.
-- [ ] Jamais d'en-tête « Ton Essentiel » seul : silhouette ou contenu.
-- [ ] Aucun tressautement de la pile ni saut de la barre d'actions au swipe.
-- [ ] Gardés tous rendus à l'identique ; lettre passée conserve son lead.
-- [ ] Description « Choisis les articles que tu liras aujourd'hui. »
-- [ ] Plus aucun « N sur M trié(s) » nulle part.
-- [ ] Console sans erreurs ; réseau sans 4xx/5xx inattendus.
+
+- [ ] Contrôle cible/statut sous les boutons, uniquement aujourd'hui, bornes `[3, pool]`
+- [ ] Cible persistée par jour (cold-boot), baisse sans perte de décision
+- [ ] Tap carte → ouvre sans décider ; lecture au retour → gardé + coche
+- [ ] Ligne « N à lire aujourd'hui · Y à trier » sous les boutons, plus de segments
+- [ ] Balises : 1 avec image / 2 sans ; pilule couverture réutilise les
+      pastilles existantes
+- [ ] « TU GARDES » + filet + compte accent au-dessus des gardés
+- [ ] Tri terminé : zone pointillée « Plus d'articles ? » + ligne « Trier à
+      nouveau »
+- [ ] Aucune erreur console, aucun 4xx/5xx inattendu (le POST triage porte
+      `decided_via: "read"` pour les gardés par lecture)
 
 ## Zones de risque
-- Fluidité du swipe (le bug d'origine) : bien tester swipes rapides + interruptions.
-- Croissance `AnimatedSize` : vérifier l'absence de saut au-dessus de la barre
-  d'actions et la non-régression des ancres de snap du feed.
-- « Voir d'autres articles » ne doit pas réinjecter deux fois les mêmes articles.
+
+- **Auto-keep** : le filtre « ouvert depuis la pile » est le garde-fou contre
+  l'auto-garde massive au cold-boot (hydratation serveur des lus). Scénario 6
+  est le test clé.
+- **Silhouette** : la ligne de progression a changé de hauteur (14 → 26 px) ;
+  vérifier qu'aucun saut de layout n'apparaît à l'hydratation de la pile.
+  Limite connue : le stepper (34 px) n'a pas de silhouette — un léger
+  décalage de 34 px peut apparaître 1-3 frames à l'hydratation du tri.
+- **QA web** : le viewport reste bloqué à 1680px (mémoire
+  `project_qa_web_viewport_stuck_use_widget_getrect`) — valider les layouts
+  par getRect si besoin.
+- Les balises `newsource` / `social` / `durée de lecture` du design n'ont pas
+  de signal côté données : absentes, c'est voulu (hors périmètre 33.2).
 
 ## Dépendances
-Aucune modif backend. La carte lit `GET /api/essentiel` (articles + `carousel`)
-déjà servi. Démarrer l'API locale si besoin (`uvicorn app.main:app --port 8080`).
+
+- `POST /api/essentiel/triage` accepte `decided_via: "read"` (migration
+  `tr02_widen_triage_via`, CHECK élargi — déployée avec la PR).
+- `GET /api/essentiel` inchangé (slate + carrousel = pool du stepper).

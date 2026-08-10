@@ -145,10 +145,16 @@ class TriageDecisionKind(StrEnum):
 
 
 class TriageVia(StrEnum):
-    """Modalité du geste — sépare le swipe du mode boutons (accessibilité)."""
+    """Modalité du geste — sépare le swipe du mode boutons (accessibilité).
+
+    `READ` (Story 33.2) : la carte du dessus a été tapée, l'article ouvert et
+    lu — au retour, la lecture vaut « Je garde ». La décision reste un `keep`
+    ordinaire ; seule la modalité dit qu'elle vient d'une lecture.
+    """
 
     SWIPE = "swipe"
     BUTTON = "button"
+    READ = "read"
 
 
 class TriageDecisionItem(BaseModel):

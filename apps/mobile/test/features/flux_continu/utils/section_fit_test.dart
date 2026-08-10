@@ -299,9 +299,21 @@ void main() {
       );
     });
 
-    test('la carte du dessous est en retrait, jamais agrandie', () {
-      expect(kTriageBackCardScale, lessThan(1.0));
+    test('la carte du dessous est estompée (opacité), jamais mise à l\'échelle',
+        () {
+      // Plus de `kTriageBackCardScale` : la carte du dessous est à fleur du
+      // cadre (reprise PO 10/08), la profondeur est portée par l'opacité seule
+      // — une carte réduite laissait un jour d'un côté au swipe (« décalée »).
       expect(kTriageBackCardOpacity, lessThan(1.0));
+    });
+
+    test('le slot de progression tient une ligne de texte 12px + respiration',
+        () {
+      // Design 2A : la progression est une **ligne** (« N sur M triés · X
+      // gardés »), plus des segments. 12px de texte à height ~1.3 ≈ 16, plus
+      // la respiration de part et d'autre — le slot de 14 des segments la
+      // rognait.
+      expect(kTriageProgressHeight, 26);
     });
   });
 }

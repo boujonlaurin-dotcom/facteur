@@ -223,6 +223,33 @@ async def test_decision_inconnue_rejetee(client, slate):
 
 
 @pytest.mark.asyncio
+async def test_decided_via_read_accepte_et_persiste(client, db_session, slate):
+    """Story 33.2 : un `keep` venu d'une lecture depuis la pile porte la
+    modalité `read` — accepté par le schéma ET par le CHECK de la table."""
+    payload = _payload(slate["contents"], ["keep"])
+    payload["decisions"][0]["decided_via"] = "read"
+
+    resp = await client.post("/api/essentiel/triage", json=payload)
+
+    assert resp.status_code == 200
+    rows = await _rows(db_session)
+    assert len(rows) == 1
+    assert rows[0].decided_via == "read"
+    assert rows[0].decision == "keep"
+
+
+@pytest.mark.asyncio
+async def test_decided_via_inconnu_rejete(client, db_session, slate):
+    payload = _payload(slate["contents"], ["keep"])
+    payload["decisions"][0]["decided_via"] = "telepathy"
+
+    resp = await client.post("/api/essentiel/triage", json=payload)
+
+    assert resp.status_code == 422
+    assert await _rows(db_session) == []
+
+
+@pytest.mark.asyncio
 async def test_later_declenche_le_save_existant(client, db_session, slate):
     """Décision PO (a) : « Plus tard » fait exactement ce que fait le bouton
     signet de la carte, pour ne pas avoir deux « mettre de côté » divergents."""

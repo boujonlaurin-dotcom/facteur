@@ -14,6 +14,7 @@ import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/flux_continu/repositories/essentiel_repository.dart';
 import 'package:facteur/features/digest/widgets/divergence_inline_badge.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
+import 'package:facteur/features/feed/services/read_sync_service.dart';
 import 'package:facteur/features/flux_continu/models/flux_continu_models.dart';
 import 'package:facteur/features/flux_continu/models/weather_location.dart';
 import 'package:facteur/features/flux_continu/models/weather_snapshot.dart';
@@ -235,7 +236,8 @@ void main() {
       expect(find.text('Titre 1'), findsOneWidget);
     });
 
-    testWidgets('la tuile lead affiche le filet et la double coche quand '
+    testWidgets(
+        'la tuile lead affiche le filet et la double coche quand '
         'l\'article est lu jusqu\'au bout', (tester) async {
       // Impossible avant : la copie locale de la pastille codait `check` en
       // dur, et `AnimatedFeedCard` n'était monté nulle part.
@@ -353,8 +355,7 @@ void main() {
       expect(find.byType(FacteurThumbnail), findsNothing);
     });
 
-    testWidgets(
-        'long-press on a medium tile reopens the preview overlay',
+    testWidgets('long-press on a medium tile reopens the preview overlay',
         (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
@@ -374,7 +375,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(FacteurThumbnail), findsNothing);
     });
-
 
     testWidgets(
         'la puce de couverture est rendue sur les tuiles couvertes (>= 2 '
@@ -821,7 +821,8 @@ void main() {
 
     testWidgets(
         'la pastille « N nouveaux articles » a été retirée (décision PO 33.1) '
-        '— la carte ne l\'expose plus et n\'en rend aucune trace', (tester) async {
+        '— la carte ne l\'expose plus et n\'en rend aucune trace',
+        (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1)],
@@ -861,16 +862,18 @@ void main() {
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
       // Le haut de la pile est rendu, la barre d'actions aussi.
       expect(find.text('Titre 1'), findsWidgets);
       expect(find.text('Je garde'), findsOneWidget);
-      // Plus de compteur « N sur M triés » (décision PO) : la barre de
-      // progression segmentée porte seule l'avancement.
-      expect(find.textContaining('sur 2 triés'), findsNothing);
+      // Progression 2A : la ligne « N sur M triés » sous les boutons (les
+      // segments ont disparu avec le design 2A).
+      expect(find.text('2 à lire aujourd\'hui · 2 à trier'), findsOneWidget);
     });
 
     testWidgets('un article gardé apparaît sous la pile', (tester) async {
@@ -895,10 +898,11 @@ void main() {
       ));
       await tester.pump();
 
-      // Ancre stable : la ligne du gardé elle-même, plutôt qu'un compteur
-      // (retiré) dont le libellé bougeait à chaque itération de copy.
+      // La ligne du gardé, et la progression 2A qui compte le gardé.
       expect(find.byKey(const ValueKey('triage-kept-row-c-1')), findsOneWidget);
-      expect(find.textContaining('sur 2 triés'), findsNothing);
+      expect(find.text('2 à lire aujourd\'hui · 1 à trier'), findsOneWidget);
+      // L'en-tête « TU GARDES » apparaît avec la liste.
+      expect(find.text('TU GARDES'), findsOneWidget);
     });
 
     testWidgets(
@@ -922,7 +926,9 @@ void main() {
           ],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
@@ -948,7 +954,9 @@ void main() {
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
@@ -975,7 +983,9 @@ void main() {
           ],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
@@ -1025,7 +1035,9 @@ void main() {
           ],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
@@ -1052,7 +1064,9 @@ void main() {
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
@@ -1114,12 +1128,13 @@ void main() {
       // Ancre stable (la ligne du gardé et le bouton « Je garde ») plutôt que
       // le libellé d'un compteur : la zone d'interaction reste figée en haut,
       // la liste grandit vers le bas.
-      final keptRowY =
-          tester.getTopLeft(find.byKey(const ValueKey('triage-kept-row-c-1'))).dy;
+      final keptRowY = tester
+          .getTopLeft(find.byKey(const ValueKey('triage-kept-row-c-1')))
+          .dy;
       final actionBarY = tester.getTopLeft(find.text('Je garde')).dy;
       expect(keptRowY, greaterThan(actionBarY));
-      // Plus aucun « N sur M triés » nulle part.
-      expect(find.textContaining('sur 3 triés'), findsNothing);
+      // La ligne de progression 2A compte les triés et les gardés.
+      expect(find.text('3 à lire aujourd\'hui · 2 à trier'), findsOneWidget);
     });
 
     // ── Reprise E2E PO (08/08) ────────────────────────────────────────────
@@ -1142,23 +1157,17 @@ void main() {
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
-      // Segments de progression : les seules boîtes de 4 ou 7 px de haut de la
-      // pile (le segment en cours est épaissi). On prend le plus haut placé.
-      final segments = tester
-          .widgetList<AnimatedContainer>(find.descendant(
-            of: find.byType(EssentielTriageStack),
-            matching: find.byType(AnimatedContainer),
-          ))
-          .map((w) => tester.getTopLeft(find.byWidget(w)).dy)
-          .toList();
-      expect(segments, isNotEmpty);
-      final progressY = segments.reduce((a, b) => a < b ? a : b);
-      final actionBarBottom =
-          tester.getBottomLeft(find.text('Je garde')).dy;
+      // La progression 2A est une ligne de texte : elle doit se trouver SOUS
+      // la barre d'actions, jamais au-dessus de la pile.
+      final progressY =
+          tester.getTopLeft(find.text('2 à lire aujourd\'hui · 2 à trier')).dy;
+      final actionBarBottom = tester.getBottomLeft(find.text('Je garde')).dy;
       expect(progressY, greaterThan(actionBarBottom));
     });
 
@@ -1189,7 +1198,9 @@ void main() {
             ],
             onTapArticle: (_) {},
           ),
-          overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+          overrides: [
+            triageWith(slate: const ['c-1', 'c-2'])
+          ],
         ));
         await tester.pump();
         return tester.getSize(find.byType(TriageSwipeCard)).height;
@@ -1207,8 +1218,7 @@ void main() {
       // elle démarre bien avant le bas de la carte.
       await heightFor('Court');
       final chip = find.byKey(const Key('triage-coverage-chip'));
-      final cardBottom =
-          tester.getBottomLeft(find.byType(TriageSwipeCard)).dy;
+      final cardBottom = tester.getBottomLeft(find.byType(TriageSwipeCard)).dy;
       expect(tester.getBottomLeft(chip).dy,
           lessThanOrEqualTo(cardBottom - kTriageCardPaddingV));
     });
@@ -1238,7 +1248,9 @@ void main() {
           ],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
       ));
       await tester.pump();
 
@@ -1265,7 +1277,9 @@ void main() {
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['x-99', 'c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['x-99', 'c-1', 'c-2'])
+        ],
       ));
       // Pas de `pump()` supplémentaire : on regarde la frame **avant** que la
       // réparation postée ne s'applique — c'est la frame où l'ancienne version
@@ -1290,7 +1304,9 @@ void main() {
           articles: [_article(rank: 1), _article(rank: 2)],
           onTapArticle: (_) {},
         ),
-        overrides: [triageWith(slate: const ['x-99', 'c-1', 'c-2'])],
+        overrides: [
+          triageWith(slate: const ['x-99', 'c-1', 'c-2'])
+        ],
       ));
       // La réparation est postée après la frame (muter un provider pendant le
       // build est interdit) : c'est ce 2ᵉ pump qui la joue.
@@ -1396,6 +1412,38 @@ void main() {
     });
 
     testWidgets(
+        'tri terminé : tous les gardés restent accessibles au-delà du '
+        'cinquième', (tester) async {
+      final decisions = {
+        for (var i = 1; i <= 6; i++)
+          'c-$i': TriageEntry(
+            contentId: 'c-$i',
+            decision: TriageDecision.keep,
+            rank: i,
+            via: TriageVia.button,
+          ),
+      };
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [for (var i = 1; i <= 6; i++) _article(rank: i)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(
+            slate: const ['c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6'],
+            decisions: decisions,
+          ),
+        ],
+      ));
+      await tester.pump();
+
+      for (var i = 1; i <= 6; i++) {
+        expect(find.text('Titre $i'), findsOneWidget,
+            reason: 'le gardé #$i doit rester ouvrable dans la vue finale');
+      }
+    });
+
+    testWidgets(
         'tri terminé sans rien garder : état vide sobre + « Trier à nouveau »',
         (tester) async {
       await tester.pumpWidget(_wrap(
@@ -1453,12 +1501,12 @@ void main() {
 
       expect(find.byType(EssentielTriageStack), findsOneWidget);
       expect(find.text('Je garde'), findsOneWidget);
-      // Plus de compteur « N sur M triés » (décision PO) : la barre de
-      // progression segmentée porte seule l'avancement.
-      expect(find.textContaining('sur 2 triés'), findsNothing);
+      // La ligne de progression 2A part de zéro sur une journée fraîche.
+      expect(find.text('2 à lire aujourd\'hui · 2 à trier'), findsOneWidget);
     });
 
-    testWidgets('une édition passée ne déclenche jamais le tri', (tester) async {
+    testWidgets('une édition passée ne déclenche jamais le tri',
+        (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: [_article(rank: 1), _article(rank: 2)],
@@ -1478,13 +1526,12 @@ void main() {
     });
 
     /// Décisions déterministes sur `c-1..c-N` : les [keep] premiers gardés,
-    /// le reste passé. Sert les bancs du gate [kTriageMoreArticlesMinKept].
+    /// le reste passé. Sert les bancs du pied de tri (« Plus d'articles ? »).
     Map<String, TriageEntry> decisionsKeeping(int keep, int total) => {
           for (var i = 1; i <= total; i++)
             'c-$i': TriageEntry(
               contentId: 'c-$i',
-              decision:
-                  i <= keep ? TriageDecision.keep : TriageDecision.pass,
+              decision: i <= keep ? TriageDecision.keep : TriageDecision.pass,
               rank: i,
               via: TriageVia.swipe,
             ),
@@ -1494,9 +1541,9 @@ void main() {
         [for (var i = 1; i <= n; i++) _article(rank: i)];
 
     testWidgets(
-        'B1 — sous $kTriageMoreArticlesMinKept gardés, « Plus d\'articles » est '
-        'ABSENT même avec un carrousel plein', (tester) async {
-      for (final kept in [0, 1, 2]) {
+        'plus de gate : « Plus d\'articles ? » est PRÉSENT dès qu\'il reste des '
+        'articles à injecter, quel que soit le nombre gardé', (tester) async {
+      for (final kept in [0, 1, 2, 3]) {
         await tester.pumpWidget(_wrap(
           EssentielHiFiCard(
             articles: articlesUpTo(3),
@@ -1512,19 +1559,16 @@ void main() {
         ));
         await tester.pump();
 
-        expect(find.text('Plus d\'articles'), findsNothing,
-            reason: '$kept gardé(s) : le bouton doit être absent, '
-                'pas désactivé, pas remplacé par un message');
-        // Décision PO : ni version désactivée, ni encart d'explication.
-        expect(find.textContaining('En voir d\'autres'), findsNothing);
+        expect(find.text('Plus d\'articles ?'), findsOneWidget,
+            reason: '$kept gardé(s) : le gate est retiré, le bouton doit être '
+                'présent tant que le carrousel a de quoi injecter');
         // La sortie de secours, elle, reste toujours là.
         expect(find.text('Trier à nouveau'), findsOneWidget);
       }
     });
 
-    testWidgets(
-        'B1 — à $kTriageMoreArticlesMinKept gardés, « Plus d\'articles » '
-        'apparaît, injecte et rouvre la pile', (tester) async {
+    testWidgets('« Plus d\'articles ? » injecte le carrousel et rouvre la pile',
+        (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: articlesUpTo(3),
@@ -1534,16 +1578,16 @@ void main() {
         overrides: [
           triageWith(
             slate: const ['c-1', 'c-2', 'c-3'],
-            decisions: decisionsKeeping(kTriageMoreArticlesMinKept, 3),
+            decisions: decisionsKeeping(3, 3),
           ),
         ],
       ));
       await tester.pump();
 
-      expect(find.text('Plus d\'articles'), findsOneWidget);
+      expect(find.text('Plus d\'articles ?'), findsOneWidget);
       expect(find.text('Trier à nouveau'), findsOneWidget);
 
-      await tester.tap(find.text('Plus d\'articles'));
+      await tester.tap(find.text('Plus d\'articles ?'));
       await tester.pump(); // extendSlate synchrone + rebuild
       await tester.pump(const Duration(milliseconds: 300)); // AnimatedSize
 
@@ -1554,8 +1598,8 @@ void main() {
     });
 
     testWidgets(
-        'tri terminé avec 0 gardé : le message « rien gardé » reste, sans '
-        'proposition d\'élargir', (tester) async {
+        'tri terminé avec 0 gardé : « rien gardé » + « Plus d\'articles ? » '
+        '(gate retiré, un carrousel reste à injecter)', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
           articles: articlesUpTo(2),
@@ -1572,12 +1616,12 @@ void main() {
       await tester.pump();
 
       expect(find.text('Rien gardé aujourd\'hui.'), findsOneWidget);
-      expect(find.text('Plus d\'articles'), findsNothing);
+      expect(find.text('Plus d\'articles ?'), findsOneWidget);
       expect(find.text('Trier à nouveau'), findsOneWidget);
     });
 
     testWidgets(
-        'tri terminé sans carrousel : « Plus d\'articles » est masqué (pool '
+        'tri terminé sans carrousel : « Plus d\'articles ? » est masqué (pool '
         'injectable vide)', (tester) async {
       await tester.pumpWidget(_wrap(
         EssentielHiFiCard(
@@ -1606,7 +1650,7 @@ void main() {
       ));
       await tester.pump();
 
-      expect(find.text('Plus d\'articles'), findsNothing);
+      expect(find.text('Plus d\'articles ?'), findsNothing);
       expect(find.text('Rien gardé aujourd\'hui.'), findsOneWidget);
       expect(find.text('Trier à nouveau'), findsOneWidget);
     });
@@ -1697,6 +1741,275 @@ void main() {
         find.byIcon(PhosphorIcons.check(PhosphorIconsStyle.bold)),
         findsNothing,
       );
+    });
+
+    // ── Story 33.2 — stepper, balises, tap, auto-keep ─────────────────────
+
+    testWidgets('le stepper « articles aujourd\'hui » est rendu en tri du jour',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
+      ));
+      await tester.pump();
+      expect(find.text('2 à lire aujourd\'hui · 2 à trier'), findsOneWidget);
+    });
+
+    testWidgets('le stepper n\'apparaît jamais sur une lettre passée',
+        (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2']),
+          selectedEditionDateProvider.overrideWith(
+            (ref) => EditionPastDay(DateTime(2026, 5, 20)),
+          ),
+        ],
+      ));
+      await tester.pump();
+      expect(find.textContaining('à lire aujourd\'hui'), findsNothing,
+          reason: 'une lettre passée est figée, rien à régler');
+    });
+
+    testWidgets(
+        'le stepper règle la cible : + ajoute depuis le pool, − retire, '
+        'et les bornes désactivent les boutons', (tester) async {
+      // Pool de 4 (3 slate + 1 carrousel) : la borne haute est 4, la basse 3.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: articlesUpTo(3),
+          carousel: _carousel(const ['x-1']),
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2', 'c-3'])
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.text('3 à lire aujourd\'hui · 3 à trier'), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel('Plus d\'articles'));
+      await tester.pump();
+      expect(find.text('4 à lire aujourd\'hui · 4 à trier'), findsOneWidget,
+          reason: 'le carrousel a rejoint la pile');
+
+      // Borne haute atteinte (pool épuisé) : re-taper ne change rien.
+      await tester.tap(find.bySemanticsLabel('Plus d\'articles'));
+      await tester.pump();
+      expect(find.text('4 à lire aujourd\'hui · 4 à trier'), findsOneWidget);
+
+      await tester.tap(find.bySemanticsLabel('Moins d\'articles'));
+      await tester.pump();
+      expect(find.text('3 à lire aujourd\'hui · 3 à trier'), findsOneWidget);
+
+      // Borne basse (kTriageTargetMin = 3) : re-taper ne descend pas sous 3.
+      await tester.tap(find.bySemanticsLabel('Moins d\'articles'));
+      await tester.pump();
+      expect(find.text('3 à lire aujourd\'hui · 3 à trier'), findsOneWidget);
+    });
+
+    testWidgets(
+        'balises 2A — avec image : une seule (la primaire couverture), '
+        'le thème n\'apparaît pas', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(
+              rank: 1,
+              thumbnailUrl: 'https://example.com/1.jpg',
+              sourceCount: 4,
+              divergenceLevel: 'high',
+            ),
+            // Carte du dessous neutralisée (pas de thème) pour ne pas polluer
+            // les compteurs de balises.
+            _article(rank: 2, theme: null),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.byKey(const Key('triage-coverage-chip')), findsOneWidget);
+      expect(find.byType(DivergenceInlineBadge), findsOneWidget);
+      expect(find.text('Technologie'), findsNothing,
+          reason: 'avec image, une seule balise : la primaire suffit');
+    });
+
+    testWidgets(
+        'balises 2A — sans image : jusqu\'à deux (primaire puis thème), et '
+        'thème + fraîcheur quand il n\'y a pas de couverture', (tester) async {
+      // Cas 1 : couverture + thème.
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(rank: 1, sourceCount: 4, divergenceLevel: 'high'),
+            _article(rank: 2, theme: null),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.byKey(const Key('triage-coverage-chip')), findsOneWidget);
+      expect(find.text('Technologie'), findsOneWidget);
+
+      // Cas 2 : pas de couverture → thème + fraîcheur (horloge).
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [
+            _article(rank: 1),
+            _article(rank: 2, theme: null),
+          ],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
+      ));
+      await tester.pump();
+
+      expect(find.byKey(const Key('triage-coverage-chip')), findsNothing);
+      expect(find.text('Technologie'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(TriageSwipeCard),
+          matching: find.byIcon(PhosphorIcons.clock()),
+        ),
+        findsOneWidget,
+        reason: 'la fraîcheur complète le thème sur la carte du dessus',
+      );
+    });
+
+    testWidgets(
+        'un tap sur la carte du dessus appelle onTapArticle SANS décider',
+        (tester) async {
+      EssentielArticle? tapped;
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (a) => tapped = a,
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
+      ));
+      await tester.pump();
+
+      await tester.tap(find.byType(TriageSwipeCard));
+      await tester.pump();
+
+      expect(tapped?.contentId, 'c-1');
+      // Aucune décision : la pile n'a pas bougé.
+      expect(find.text('2 à lire aujourd\'hui · 2 à trier'), findsOneWidget);
+      expect(find.byKey(const ValueKey('triage-kept-row-c-1')), findsNothing);
+    });
+
+    testWidgets(
+        'lecture au retour = gardé : l\'id tapé passé dans consumed fait '
+        'avancer la pile et bascule l\'article dans « TU GARDES »',
+        (tester) async {
+      final repo = _MockEssentielRepository();
+      final analytics = _MockAnalytics();
+      when(() => repo.postTriage(
+            digestDate: any(named: 'digestDate'),
+            slateSize: any(named: 'slateSize'),
+            decisions: any(named: 'decisions'),
+          )).thenAnswer((_) async => true);
+      when(() => analytics.trackEssentielTriage(
+            decision: any(named: 'decision'),
+            contentId: any(named: 'contentId'),
+            rank: any(named: 'rank'),
+            slateSize: any(named: 'slateSize'),
+            decidedVia: any(named: 'decidedVia'),
+            latencyMs: any(named: 'latencyMs'),
+          )).thenAnswer((_) async {});
+      when(() => analytics.trackEssentielTriageSession(
+            slateSize: any(named: 'slateSize'),
+            kept: any(named: 'kept'),
+            later: any(named: 'later'),
+            passed: any(named: 'passed'),
+            durationMs: any(named: 'durationMs'),
+          )).thenAnswer((_) async {});
+
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          essentielRepositoryProvider.overrideWithValue(repo),
+          analyticsServiceProvider.overrideWithValue(analytics),
+          triageWith(slate: const ['c-1', 'c-2']),
+        ],
+      ));
+      await tester.pump();
+
+      // Ouvre depuis la pile — condition de l'auto-keep : un article lu qui
+      // n'a PAS été ouvert depuis la pile ne doit jamais être auto-gardé.
+      await tester.tap(find.byType(TriageSwipeCard));
+      await tester.pump();
+
+      // Retour de lecture : la session marque l'article consommé.
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(EssentielHiFiCard)),
+      );
+      container.read(consumedContentIdsProvider.notifier).state = {'c-1'};
+      await tester.pump(); // rebuild → auto-keep posté après la frame
+      await tester.pump(); // la décision s'applique
+      await tester.pump(const Duration(milliseconds: 300)); // AnimatedSize
+
+      expect(find.byKey(const ValueKey('triage-kept-row-c-1')), findsOneWidget);
+      expect(find.text('TU GARDES'), findsOneWidget);
+      expect(find.text('2 à lire aujourd\'hui · 1 à trier'), findsOneWidget);
+      // La pile a avancé sur la carte suivante.
+      expect(
+        find.descendant(
+          of: find.byType(TriageSwipeCard),
+          matching: find.text('Titre 2'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+        'un article lu SANS avoir été ouvert depuis la pile n\'est jamais '
+        'auto-gardé (hydratation serveur au cold-boot)', (tester) async {
+      await tester.pumpWidget(_wrap(
+        EssentielHiFiCard(
+          articles: [_article(rank: 1), _article(rank: 2)],
+          onTapArticle: (_) {},
+        ),
+        overrides: [
+          triageWith(slate: const ['c-1', 'c-2'])
+        ],
+      ));
+      await tester.pump();
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(EssentielHiFiCard)),
+      );
+      container.read(consumedContentIdsProvider.notifier).state = {'c-1'};
+      await tester.pump();
+      await tester.pump();
+
+      // Pas de tap préalable ⇒ pas d'auto-keep : la pile n'a pas bougé.
+      expect(find.text('2 à lire aujourd\'hui · 2 à trier'), findsOneWidget);
+      expect(find.byKey(const ValueKey('triage-kept-row-c-1')), findsNothing);
     });
   });
 
@@ -1822,25 +2135,37 @@ void main() {
       registerFallbackValue(<Map<String, dynamic>>[]);
     });
 
-    /// Échelle **rendue** de la carte du dessous (`Transform.scale`), lue sur
-    /// l'arbre plutôt que sur `_promotion` : c'est ce que l'œil voit.
-    double? backScale(WidgetTester tester) {
-      final finder = find
-          .descendant(
-            of: find.byKey(const ValueKey('triage-back')),
-            matching: find.byType(Transform),
-          )
-          .first;
+    /// L'`Opacity` **de promotion** de la carte du dessous (le wrapper le plus
+    /// externe du slot arrière) — depuis la reprise PO du 10/08, la profondeur
+    /// n'est plus portée que par elle (plus de `Transform.scale`).
+    Finder backCardFinder() => find
+        .descendant(
+          of: find.byKey(const ValueKey('triage-back')),
+          matching: find.byType(Opacity),
+        )
+        .first;
+
+    /// Opacité **rendue** de la carte du dessous, lue sur l'arbre (ce que l'œil
+    /// voit) plutôt que sur `_promotion`.
+    double? backOpacity(WidgetTester tester) {
+      final finder = backCardFinder();
       if (finder.evaluate().isEmpty) return null;
-      // `storage[0]` = l'échelle en X. Surtout pas `getMaxScaleOnAxis()` : il
-      // prend le max des **trois** axes, or `Transform.scale` laisse Z à 1.0 —
-      // il renvoie donc 1.0 quoi qu'il arrive et le banc serait vide.
-      return tester.widget<Transform>(finder).transform.storage[0];
+      return tester.widget<Opacity>(finder).opacity;
+    }
+
+    /// Rectangle **peint** (global, transformes d'ancêtres compris) de la carte
+    /// du dessous : `getRect` applique un éventuel `Transform.scale` d'ancêtre,
+    /// donc un retrait latéral s'y verrait. Sert à verrouiller « à fleur du
+    /// cadre ».
+    Rect? backRect(WidgetTester tester) {
+      final finder = backCardFinder();
+      if (finder.evaluate().isEmpty) return null;
+      return tester.getRect(finder);
     }
 
     testWidgets(
-        'la carte du dessous ne rétrécit jamais entre le début du geste et sa '
-        'promotion', (tester) async {
+        'la carte du dessous reste à fleur du cadre (jamais décalée) et monte '
+        'en opacité jusqu\'à sa promotion', (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -1896,12 +2221,29 @@ void main() {
       // **même** frame que la promotion — c'est la borne exacte de la fenêtre
       // « avant promotion ». (Ne pas se fier à la disparition de « Titre 1 » :
       // il reste rendu, justement dans cette ligne de gardé.)
-      bool promoted() =>
-          find.byKey(const ValueKey('triage-kept-row-c-1')).evaluate().isNotEmpty;
+      bool promoted() => find
+          .byKey(const ValueKey('triage-kept-row-c-1'))
+          .evaluate()
+          .isNotEmpty;
 
-      final samples = <double>[backScale(tester)!];
-      expect(samples.first, closeTo(kTriageBackCardScale, 0.001),
-          reason: 'au repos la carte du dessous est en retrait');
+      // Cadre de référence = la carte du dessus au repos (elle dimensionne la
+      // pile). La carte du dessous ne se translate pas : elle doit rester sur
+      // ces mêmes bords tout du long — sinon elle est « décalée » d'un côté,
+      // exactement le défaut corrigé (une carte réduite était en retrait).
+      final frame = tester.getRect(find.byType(TriageSwipeCard));
+      void expectFlush(String when) {
+        final back = backRect(tester);
+        expect(back, isNotNull, reason: 'carte du dessous introuvable ($when)');
+        expect(back!.left, closeTo(frame.left, 0.5),
+            reason: 'bord gauche décalé ($when) : $back vs $frame');
+        expect(back.right, closeTo(frame.right, 0.5),
+            reason: 'bord droit décalé ($when) : $back vs $frame');
+      }
+
+      expectFlush('au repos');
+      final opacities = <double>[backOpacity(tester)!];
+      expect(opacities.first, closeTo(kTriageBackCardOpacity, 0.001),
+          reason: 'au repos la carte du dessous est estompée');
 
       final gesture = await tester.startGesture(
         tester.getCenter(find.byType(TriageSwipeCard)),
@@ -1909,8 +2251,9 @@ void main() {
       for (var i = 0; i < 10 && !promoted(); i++) {
         await gesture.moveBy(const Offset(30, 0));
         await tester.pump(const Duration(milliseconds: 16));
-        final s = backScale(tester);
-        if (s != null) samples.add(s);
+        expectFlush('pendant le geste');
+        final o = backOpacity(tester);
+        if (o != null) opacities.add(o);
       }
       await gesture.up();
 
@@ -1918,26 +2261,27 @@ void main() {
       for (var i = 0; i < 60; i++) {
         await tester.pump(const Duration(milliseconds: 16));
         if (promoted()) break;
-        final s = backScale(tester);
-        if (s != null) samples.add(s);
+        expectFlush('pendant la sortie');
+        final o = backOpacity(tester);
+        if (o != null) opacities.add(o);
       }
       await tester.pumpAndSettle();
 
       expect(promoted(), isTrue, reason: 'le swipe doit avoir décidé');
-      expect(samples.length, greaterThan(4),
+      expect(opacities.length, greaterThan(4),
           reason: 'le geste doit produire des frames à échantillonner');
-      expect(samples.toSet().length, greaterThan(1),
-          reason: 'banc vide : l\'échelle rendue ne bouge jamais');
-      for (var i = 1; i < samples.length; i++) {
+      expect(opacities.toSet().length, greaterThan(1),
+          reason: 'banc vide : l\'opacité rendue ne bouge jamais');
+      for (var i = 1; i < opacities.length; i++) {
         expect(
-          samples[i],
-          greaterThanOrEqualTo(samples[i - 1] - 0.0001),
-          reason: 'la carte du dessous rétrécit à la frame $i : '
-              '${samples[i - 1]} → ${samples[i]} (suite complète : $samples)',
+          opacities[i],
+          greaterThanOrEqualTo(opacities[i - 1] - 0.0001),
+          reason: 'la carte du dessous s\'estompe à la frame $i : '
+              '${opacities[i - 1]} → ${opacities[i]} (suite : $opacities)',
         );
       }
-      // Elle finit pleinement promue, pas à mi-chemin.
-      expect(samples.last, closeTo(1.0, 0.001));
+      // Elle finit pleinement opaque, pas à mi-chemin.
+      expect(opacities.last, closeTo(1.0, 0.001));
     });
 
     testWidgets(

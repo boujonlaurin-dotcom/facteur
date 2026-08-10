@@ -97,16 +97,15 @@ class TriageStackSkeleton extends StatelessWidget {
           height: kTriageCardHeight,
           child: Stack(
             children: [
-              // Mêmes `scale`/`alignment` que la vraie pile (carte du dessous
-              // ancrée en haut) : la silhouette annonce la géométrie réelle.
+              // Carte du dessous **à fleur du cadre**, comme la vraie pile
+              // (reprise PO 10/08) : plus de mise à l'échelle, la profondeur est
+              // portée par l'opacité seule. La silhouette annonce la géométrie
+              // réelle — deux géométries divergentes feraient sauter la mise en
+              // page à l'hydratation.
               Positioned.fill(
-                child: Transform.scale(
-                  scale: kTriageBackCardScale,
-                  alignment: Alignment.topCenter,
-                  child: Opacity(
-                    opacity: kTriageBackCardOpacity,
-                    child: triageCard(detailed: false),
-                  ),
+                child: Opacity(
+                  opacity: kTriageBackCardOpacity,
+                  child: triageCard(detailed: false),
                 ),
               ),
               Positioned.fill(child: triageCard(detailed: true)),
@@ -146,12 +145,16 @@ class TriageStackSkeleton extends StatelessWidget {
           ),
         ),
         // Progression **sous** les boutons, exactement comme la vraie pile
-        // (reprise PO 08/08) : deux ordres différents feraient sauter la mise en
-        // page à l'hydratation, ce que cette silhouette existe pour empêcher.
+        // (reprise PO 08/08) : deux ordres différents feraient sauter la mise
+        // en page à l'hydratation, ce que cette silhouette existe pour
+        // empêcher. La cible et la progression sont une **ligne de texte**
+        // (« N à lire aujourd'hui · Y à trier »), pas des segments : la
+        // silhouette est donc une barre de texte courte, à la même place.
         SizedBox(
           height: kTriageProgressHeight,
-          child: Center(
-            child: bar(width: double.infinity, height: 6, radius: 3),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: bar(width: 140, height: 11),
           ),
         ),
       ],

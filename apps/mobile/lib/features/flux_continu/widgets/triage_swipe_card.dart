@@ -46,6 +46,11 @@ class TriageSwipeCard extends StatefulWidget {
   /// faire claquer de 0.96 à 1.0 quand elle devient carte du dessus.
   final ValueChanged<double>? onGestureProgress;
 
+  /// Tap sur la carte — ouvre l'article, **sans aucune décision** (Story 33.2).
+  /// Branché sur le `GestureDetector` qui porte déjà les handlers de drag :
+  /// l'arène départage tap / drag / long-press sans widget supplémentaire.
+  final VoidCallback? onTap;
+
   const TriageSwipeCard({
     super.key,
     required this.child,
@@ -53,6 +58,7 @@ class TriageSwipeCard extends StatefulWidget {
     required this.onKeep,
     required this.onPass,
     this.onGestureProgress,
+    this.onTap,
   });
 
   @override
@@ -322,6 +328,7 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
         : 0.0;
 
     return GestureDetector(
+      onTap: widget.onTap,
       onHorizontalDragStart: _handleDragStart,
       onHorizontalDragUpdate: _handleDragUpdate,
       onHorizontalDragEnd: _handleDragEnd,

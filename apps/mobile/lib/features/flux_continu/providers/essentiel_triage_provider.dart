@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,11 +37,25 @@ enum TriageDecision {
 /// écart fort entre les deux en dit plus sur le geste que sur l'article.
 enum TriageVia {
   swipe('swipe'),
-  button('button');
+  button('button'),
+
+  /// La carte du dessus a été **tapée**, l'article ouvert, et lu : au retour la
+  /// lecture vaut « Je garde » (Story 33.2). Aucune décision n'est prise au tap
+  /// lui-même — seul le retour d'une lecture effective décide.
+  read('read');
 
   const TriageVia(this.wire);
 
   final String wire;
+
+  /// Repli sur [swipe] : la valeur historique, et la seule qui existait avant
+  /// que le champ ne soit sérialisé en multi-valeurs.
+  static TriageVia fromWire(String? value) {
+    for (final v in TriageVia.values) {
+      if (v.wire == value) return v;
+    }
+    return TriageVia.swipe;
+  }
 }
 
 /// Une décision prise, en attente d'envoi.
@@ -79,9 +94,7 @@ class TriageEntry {
       contentId: contentId,
       decision: decision,
       rank: rank,
-      via: json['decided_via'] == TriageVia.button.wire
-          ? TriageVia.button
-          : TriageVia.swipe,
+      via: TriageVia.fromWire(json['decided_via'] as String?),
       latencyMs: json['latency_ms'] as int?,
     );
   }
@@ -105,6 +118,15 @@ class EssentielTriageState {
 
   final Map<String, TriageEntry> decisions;
 
+  /// Cible du jour réglée au stepper (« − N + articles aujourd'hui »),
+  /// persistée dans le blob jour. `null` ⇒ jamais touchée : le gel prend le
+  /// défaut ([kTriageTargetDefault] borné au pool). Une fois publiée, elle vaut
+  /// la taille choisie. Elle peut temporairement dépasser le slate si le héros
+  /// est restauré avant le carrousel ; la réconciliation complète le slate à
+  /// mesure que le pool revient. Après une baisse manuelle, elle reprend la
+  /// taille réelle (la baisse peut s'arrêter sur un article déjà décidé).
+  final int? target;
+
   /// `true` une fois l'état restauré depuis SharedPreferences — évite de rendre
   /// la pile puis de la faire disparaître au cold-boot.
   final bool hydrated;
@@ -113,6 +135,7 @@ class EssentielTriageState {
     required this.dayKey,
     this.slate = const [],
     this.decisions = const {},
+    this.target,
     this.hydrated = false,
   });
 
@@ -120,6 +143,7 @@ class EssentielTriageState {
       : dayKey = '',
         slate = const [],
         decisions = const {},
+        target = null,
         hydrated = false;
 
   bool get hasStarted => slate.isNotEmpty;
@@ -138,8 +162,7 @@ class EssentielTriageState {
   bool get isActive => hydrated && hasStarted && !done;
 
   /// `contentId` du haut de la pile, `null` si le tri est fini.
-  String? get currentContentId =>
-      index < slate.length ? slate[index] : null;
+  String? get currentContentId => index < slate.length ? slate[index] : null;
 
   /// Articles gardés, **dans l'ordre du slate**. `later` compte comme gardé :
   /// mettre de côté est un choix positif, pas un rejet.
@@ -152,24 +175,24 @@ class EssentielTriageState {
 
   int get keptCount => keptContentIds.length;
 
-  int get passedCount => decisions.values
-      .where((e) => e.decision == TriageDecision.pass)
-      .length;
+  int get passedCount =>
+      decisions.values.where((e) => e.decision == TriageDecision.pass).length;
 
-  int get laterCount => decisions.values
-      .where((e) => e.decision == TriageDecision.later)
-      .length;
+  int get laterCount =>
+      decisions.values.where((e) => e.decision == TriageDecision.later).length;
 
   EssentielTriageState copyWith({
     String? dayKey,
     List<String>? slate,
     Map<String, TriageEntry>? decisions,
+    int? target,
     bool? hydrated,
   }) =>
       EssentielTriageState(
         dayKey: dayKey ?? this.dayKey,
         slate: slate ?? this.slate,
         decisions: decisions ?? this.decisions,
+        target: target ?? this.target,
         hydrated: hydrated ?? this.hydrated,
       );
 
@@ -177,6 +200,7 @@ class EssentielTriageState {
         'day_key': dayKey,
         'slate': slate,
         'decisions': decisions.values.map((e) => e.toJson()).toList(),
+        if (target != null) 'target': target,
       };
 }
 
@@ -189,18 +213,26 @@ String triagePrefsKey(String dayKey) => '$kTriagePrefsKeyPrefix$dayKey';
 /// couvre la fin de tri et le passage en arrière-plan.
 const Duration kTriageFlushDebounce = Duration(seconds: 2);
 
-/// Nombre minimum d'articles gardés avant que l'app propose d'élargir le slate
-/// (« Plus d'articles »). `keptCount` compte « Je garde » **et** « Plus tard » :
-/// mettre de côté est un choix positif (cf. [EssentielTriageState.keptContentIds]).
-/// Sous ce seuil, le bouton est **absent** (décision PO 09/08) — pas désactivé,
-/// pas accompagné d'un message : proposer d'en voir plus à qui n'a presque rien
-/// gardé, c'est proposer plus de la même chose.
-const int kTriageMoreArticlesMinKept = 3;
+/// Cible par défaut du tri du jour — la doctrine du digest à 5 articles.
+/// N'est qu'un point de départ : le stepper (« − N + articles aujourd'hui »)
+/// la règle, et [effectiveTriageTarget] la borne au pool réellement adressable.
+const int kTriageTargetDefault = 5;
 
-/// Cap du nombre d'articles réinjectés en une fois par [EssentielTriageNotifier.extendSlate]
-/// (« Voir d'autres articles »). Le carrousel du jour en porte jusqu'à 5 : on ne
-/// gonfle pas le slate au-delà d'un tri qui reste court.
-const int kTriageExtendMax = 5;
+/// Plancher de la cible réglable. En dessous, la pile n'est plus un tri : c'est
+/// le pool lui-même qui borne quand il porte moins de 3 articles.
+const int kTriageTargetMin = 3;
+
+/// Cible **effective** du jour : [target] si le stepper a été touché, sinon
+/// [kTriageTargetDefault] — dans les deux cas bornée à ce que le pool permet
+/// (`[min(kTriageTargetMin, poolLength), poolLength]`). Arithmétique pure,
+/// partagée entre le gel du slate ([EssentielTriageNotifier.startIfNeeded]) et
+/// le stepper de l'en-tête, qui doivent annoncer le même nombre.
+int effectiveTriageTarget(int? target, int poolLength) {
+  if (poolLength <= 0) return 0;
+  final lo = math.min(kTriageTargetMin, poolLength);
+  final base = target ?? math.min(kTriageTargetDefault, poolLength);
+  return base.clamp(lo, poolLength);
+}
 
 class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
   /// [initialState] court-circuite l'hydratation SharedPreferences. Réservé aux
@@ -268,7 +300,13 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
           if (entry != null) entries[entry.contentId] = entry;
         }
       }
-      state = state.copyWith(slate: slate, decisions: entries, hydrated: true);
+      final target = decoded['target'];
+      state = state.copyWith(
+        slate: slate,
+        decisions: entries,
+        target: target is int ? target : null,
+        hydrated: true,
+      );
     } catch (e) {
       debugPrint('EssentielTriage: hydrate failed: $e');
       state = state.copyWith(hydrated: true);
@@ -297,14 +335,43 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
     }
   }
 
-  /// Fige le slate au **premier geste du jour**, à partir de l'ordre servi par
-  /// `GET /api/essentiel`. No-op si le tri a déjà commencé : c'est précisément
-  /// ce qui empêche un refetch de rebattre la pile en cours de tri.
-  void startIfNeeded(List<String> contentIds) {
-    if (state.hasStarted || contentIds.isEmpty) return;
+  /// Fige le slate à la première frame de la pile, sur les
+  /// [effectiveTriageTarget] **premiers** ids du pool adressable ([poolIds] =
+  /// slate servi par `GET /api/essentiel` **suivi** des articles injectables du
+  /// carrousel — c'est l'appelant qui passe le pool, pas seulement les 5).
+  /// Si le tri a déjà commencé, l'ordre existant reste figé. Seule exception :
+  /// une cible persistée plus grande que le slate momentanément disponible est
+  /// réconciliée quand le reste du pool revient (cold-boot avant carrousel).
+  void startIfNeeded(List<String> poolIds) {
+    if (poolIds.isEmpty) return;
+    if (state.hasStarted) {
+      final wanted = effectiveTriageTarget(state.target, poolIds.length);
+      if (state.slate.length < wanted) {
+        final slate = List<String>.from(state.slate);
+        final existing = slate.toSet();
+        for (final id in poolIds) {
+          if (slate.length >= wanted) break;
+          if (existing.add(id)) slate.add(id);
+        }
+        if (slate.length == state.slate.length) return;
+        _sessionStartMs = DateTime.now().millisecondsSinceEpoch;
+        _shownAt = DateTime.now();
+        state = state.copyWith(
+          slate: List.unmodifiable(slate),
+          // Ne pas publier `wanted` comme nouvelle cible : il peut n'être que
+          // la borne d'un pool encore partiel. La préférence restaurée (p. ex.
+          // 10) doit survivre aux étapes intermédiaires (5, puis 7, puis 10).
+        );
+        unawaited(_persist());
+      }
+      return;
+    }
     _sessionStartMs = DateTime.now().millisecondsSinceEpoch;
     _shownAt = DateTime.now();
-    state = state.copyWith(slate: List.unmodifiable(contentIds));
+    final count = effectiveTriageTarget(state.target, poolIds.length);
+    state = state.copyWith(
+      slate: List.unmodifiable(poolIds.take(count)),
+    );
     unawaited(_persist());
   }
 
@@ -363,32 +430,56 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
     unawaited(_persist());
   }
 
-  /// « Voir d'autres articles » — ajoute au slate figé des `contentId`
-  /// supplémentaires (items du carrousel du jour non déjà présents), **sans**
-  /// toucher aux décisions déjà prises, borné à [kTriageExtendMax]. La pile se
-  /// **rouvre** d'elle-même : `index` repointe sur le premier ajout non décidé,
-  /// donc `done` redevient faux et `isActive` vrai. Persisté sous la même clé
-  /// jour (les ajouts survivent au cold-boot). No-op si le tri n'a pas démarré
-  /// ou si rien de neuf n'est à ajouter.
+  /// Règle la cible du jour à [n] articles — le levier unique du stepper de
+  /// l'en-tête **et** de « Plus d'articles ? » au tri terminé (qui appelle
+  /// `setTarget(target + 2, poolIds)`).
   ///
-  /// Le slate reste **figé** au sens de la story (l'ordre existant ne bouge
-  /// pas) : on ne fait qu'allonger la queue. Les décisions envoyées ensuite
-  /// portent le `slate_size` étendu (via [decide], `state.slate.length`), ce qui
-  /// garde `rank ≤ slate_size` côté backend.
-  void extendSlate(List<String> extraIds) {
+  /// - **Hausse** : ajoute en fin de slate les ids du pool absents du slate,
+  ///   jusqu'à [n]. La pile se **rouvre** d'elle-même : `index` repointe sur le
+  ///   premier ajout non décidé, donc `done` redevient faux et `isActive` vrai.
+  /// - **Baisse** : retire les ids **non décidés** en **fin** de slate jusqu'à
+  ///   [n], et s'arrête dès qu'un décidé est en queue — jamais de décision
+  ///   perdue (contrainte PO).
+  ///
+  /// [n] est borné à `[min(kTriageTargetMin, pool), pool]`. La cible publiée
+  /// ([EssentielTriageState.target]) est la taille **réelle** du slate après
+  /// l'opération, persistée sous la même clé jour (survit au cold-boot). Le
+  /// slate reste **figé** au sens de la story : l'ordre existant ne bouge pas,
+  /// on allonge ou raccourcit la queue. Les décisions envoyées ensuite portent
+  /// le `slate_size` courant (via [decide]), ce qui garde `rank ≤ slate_size`
+  /// côté backend.
+  void setTarget(int n, List<String> poolIds) {
     if (!state.hasStarted) return;
-    final existing = state.slate.toSet();
-    final additions = <String>[];
-    for (final id in extraIds) {
-      if (!existing.add(id)) continue; // déjà dans le slate (ou déjà ajouté)
-      additions.add(id);
-      if (additions.length >= kTriageExtendMax) break;
+    final hi = math.max(poolIds.length, state.slate.length);
+    final lo = math.min(kTriageTargetMin, hi);
+    final wanted = n.clamp(lo, hi);
+
+    final slate = List<String>.from(state.slate);
+    if (wanted > slate.length) {
+      final existing = slate.toSet();
+      for (final id in poolIds) {
+        if (slate.length >= wanted) break;
+        if (existing.add(id)) slate.add(id);
+      }
+    } else {
+      while (
+          slate.length > wanted && !state.decisions.containsKey(slate.last)) {
+        slate.removeLast();
+      }
     }
-    if (additions.isEmpty) return;
-    _sessionStartMs = DateTime.now().millisecondsSinceEpoch;
-    _shownAt = DateTime.now();
+
+    final grew = slate.length > state.slate.length;
+    if (grew) {
+      // La pile rouvre sur les ajouts : nouvelle fenêtre de session, nouvelle
+      // mesure de latence — même règle que l'ancien « Voir d'autres articles ».
+      _sessionStartMs = DateTime.now().millisecondsSinceEpoch;
+      _shownAt = DateTime.now();
+    }
     state = state.copyWith(
-      slate: List.unmodifiable([...state.slate, ...additions]),
+      slate: List.unmodifiable(slate),
+      // Republie la taille réelle : une baisse arrêtée sur un décidé publie où
+      // elle s'est vraiment arrêtée, pas le n demandé.
+      target: slate.length,
     );
     unawaited(_persist());
   }
@@ -402,7 +493,7 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
   /// sortait en `SizedBox.shrink()` (l'aplat beige rapporté par le PO). Les
   /// chemins qui y mènent sont réels et persistants :
   ///
-  /// - « Plus d'articles » ([extendSlate]) persiste des `contentId` **du
+  /// - « Plus d'articles » ([setTarget]) persiste des `contentId` **du
   ///   carrousel du jour** ; au cold-boot suivant, l'hydratation depuis le cache
   ///   ne porte pas de carrousel → ces ids ne sont dans aucun pool ;
   /// - le blend live (story 9.8) peut renvoyer un jeu d'articles différent du
@@ -421,7 +512,12 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
         if (availableIds.contains(id) || state.decisions.containsKey(id)) id,
     ];
     if (kept.length == state.slate.length) return;
-    state = state.copyWith(slate: List.unmodifiable(kept));
+    state = state.copyWith(
+      slate: List.unmodifiable(kept),
+      // La cible est volontairement conservée : le pool peut être incomplet
+      // pendant un cold-boot (le héros arrive avant le carrousel). Quand le
+      // pool complet revient, `startIfNeeded` réinjecte jusqu'à cette cible.
+    );
     unawaited(_persist());
   }
 

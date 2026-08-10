@@ -62,7 +62,7 @@ class EssentielTriageDecision(Base):
             name="ck_essentiel_triage_decision",
         ),
         CheckConstraint(
-            "decided_via IN ('swipe', 'button')",
+            "decided_via IN ('swipe', 'button', 'read')",
             name="ck_essentiel_triage_decided_via",
         ),
         # Dénominateur de la jauge : « toutes les décisions d'un user sur un jour ».

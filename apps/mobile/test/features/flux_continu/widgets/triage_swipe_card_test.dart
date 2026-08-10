@@ -17,11 +17,13 @@ class _Harness extends StatefulWidget {
   final List<String> ids;
   final void Function(String decision) onDecision;
   final ValueChanged<double>? onGestureProgress;
+  final VoidCallback? onTap;
 
   const _Harness({
     required this.ids,
     required this.onDecision,
     this.onGestureProgress,
+    this.onTap,
   });
 
   @override
@@ -47,6 +49,7 @@ class _HarnessState extends State<_Harness> {
       // Plus de `height` : la carte prend celle de son enfant (reprise PO
       // 08/08). C'est le `SizedBox` du child ci-dessous qui la dimensionne.
       onGestureProgress: widget.onGestureProgress,
+      onTap: widget.onTap,
       onKeep: () => _advance('keep-$id'),
       onPass: () => _advance('pass-$id'),
       child: SizedBox(
@@ -178,6 +181,66 @@ void main() {
 
     expect(decisions, ['keep-a']);
     expect(find.text('card-b'), findsOneWidget);
+  });
+
+  // ── Tap (Story 33.2 : la carte ouvre l'article) ───────────────────────────
+
+  testWidgets('un tap appelle onTap sans déclencher AUCUNE décision',
+      (tester) async {
+    final taps = <String>[];
+    final decisions = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: [FacteurPalettes.light]),
+        home: Scaffold(
+          body: Center(
+            child: TriageSwipeCard(
+              articleId: 'a',
+              onTap: () => taps.add('a'),
+              onKeep: () => decisions.add('keep'),
+              onPass: () => decisions.add('pass'),
+              child: const SizedBox(height: 300, child: Text('card-a')),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('card-a'));
+    await tester.pumpAndSettle();
+
+    expect(taps, ['a']);
+    expect(decisions, isEmpty,
+        reason: 'le tap ouvre, il ne garde pas — la décision vient au retour');
+  });
+
+  testWidgets(
+      'avec onTap branché, un drag au-delà du seuil décide toujours '
+      '(non-régression de l\'arène tap × drag)', (tester) async {
+    final taps = <int>[];
+    final decisions = await pumpHarness(tester);
+    // Reconstruit le harnais avec onTap : on passe par un widget dédié pour ne
+    // pas dupliquer la mécanique — ici on vérifie surtout que le drag gagne.
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: [FacteurPalettes.light]),
+        home: Scaffold(
+          body: Center(
+            child: _Harness(
+              ids: const ['a', 'b'],
+              onDecision: decisions.add,
+              onTap: () => taps.add(1),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(TriageSwipeCard), swipeRight);
+    await tester.pumpAndSettle();
+
+    expect(decisions, ['keep-a']);
+    expect(taps, isEmpty, reason: 'un drag n\'est pas un tap');
   });
 
   // ── Tampons ───────────────────────────────────────────────────────────────

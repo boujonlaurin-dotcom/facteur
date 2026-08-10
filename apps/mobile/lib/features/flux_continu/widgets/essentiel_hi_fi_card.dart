@@ -4,8 +4,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:phosphor_flutter/phosphor_flutter.dart';
 
 import '../../../config/theme.dart';
+import '../../grille/widgets/dashed_border.dart';
 import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../feed/models/content_model.dart';
@@ -107,6 +109,7 @@ class EssentielHiFiCard extends ConsumerStatefulWidget {
 
 class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   bool _startScheduled = false;
+  bool _targetReconcileScheduled = false;
   bool _pruneScheduled = false;
 
   // Mémo du pool adressable (slate du jour + articles du carrousel adaptés).
@@ -132,10 +135,10 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     _memoArticles = articles;
     _memoCarousel = carousel;
 
-    // Articles réinjectables (« Voir d'autres articles ») : les items du
+    // Articles réinjectables (« Plus d'articles ? » / stepper) : les items du
     // carrousel du jour non déjà dans le slate, adaptés en articles triables.
     // Rangs au-delà du slate d'origine (le backend acceptera leur tri avec le
-    // `slate_size` **étendu** que `decide()` envoie après `extendSlate`).
+    // `slate_size` **étendu** que `decide()` envoie après `setTarget`).
     final seen = {for (final a in articles) a.contentId};
     final extra = <EssentielArticle>[];
     final items = carousel?.items ?? const [];
@@ -146,9 +149,10 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
       );
     }
     _memoExtra = List.unmodifiable(extra);
-    // Pool adressable par la pile : slate du jour + articles injectables. Le gel
-    // du slate (`startIfNeeded`) n'utilise que `articles` (les 5) — les items du
-    // carrousel ne rejoignent le slate que via `extendSlate`.
+    // Pool adressable par la pile : slate du jour + articles injectables. Le
+    // gel (`startIfNeeded`) reçoit ce pool **ordonné** et coupe lui-même à la
+    // cible effective du jour ; le stepper et « Plus d'articles ? » puisent
+    // ensuite dans la même liste via `setTarget`.
     _memoPool = List.unmodifiable([...articles, ...extra]);
     _memoPoolIds = {for (final a in _memoPool) a.contentId};
   }
@@ -189,14 +193,32 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   /// Le gel se fait à la première frame de la pile, pas au premier geste : un
   /// refetch glissé entre l'affichage et le premier swipe changerait sinon la
   /// carte du dessus sous le doigt.
+  ///
+  /// Le notifier reçoit le **pool ordonné** (slate backend puis carrousel),
+  /// pas seulement les 5 : c'est lui qui coupe à la cible effective du jour
+  /// (`effectiveTriageTarget`), et le même pool sert ensuite au stepper.
   void _scheduleStart() {
     if (_startScheduled) return;
     _startScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(essentielTriageProvider.notifier).startIfNeeded(
-            widget.articles.map((a) => a.contentId).toList(growable: false),
+            _memoPool.map((a) => a.contentId).toList(growable: false),
           );
+    });
+  }
+
+  /// Réapplique une cible persistée quand le carrousel arrive après le héros.
+  /// Le premier pool partiel a pu forcer `pruneUnavailable` à retirer ses ids ;
+  /// le second passage complète alors le slate sans rebattre son préfixe.
+  void _scheduleTargetReconciliation(List<String> poolIds) {
+    if (_targetReconcileScheduled) return;
+    _targetReconcileScheduled = true;
+    final snapshot = List<String>.unmodifiable(poolIds);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _targetReconcileScheduled = false;
+      if (!mounted) return;
+      ref.read(essentielTriageProvider.notifier).startIfNeeded(snapshot);
     });
   }
 
@@ -211,6 +233,9 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     _refreshPoolMemo();
     final carouselArticles = _memoExtra;
     final pool = _memoPool;
+    // Pool **ordonné** (slate puis carrousel) : le gel, le stepper et « Plus
+    // d'articles ? » raisonnent tous sur cette même liste.
+    final poolIds = [for (final a in pool) a.contentId];
 
     // Un seul point de lecture des providers de session : l'état dérivé descend
     // ensuite dans les tuiles, qui restent des `StatelessWidget`.
@@ -251,6 +276,13 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     final triage = ref.watch(essentielTriageProvider);
     final canTriage = isToday && articles.isNotEmpty && triage.hydrated;
     if (canTriage && !triage.hasStarted) _scheduleStart();
+    if (canTriage &&
+        triage.hasStarted &&
+        triage.target != null &&
+        triage.slate.length <
+            effectiveTriageTarget(triage.target, poolIds.length)) {
+      _scheduleTargetReconciliation(poolIds);
+    }
     final showTriage = canTriage && triage.isActive;
     // Haut de pile introuvable dans le pool ⇒ le slate a survécu à l'article
     // qu'il désigne. La pile rend la silhouette (jamais un corps vide) et on
@@ -304,22 +336,18 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     } else {
       passiveArticles = articles;
     }
-    // « Plus d'articles » : proposé au tri terminé dès qu'il reste des items de
-    // carrousel à injecter — jamais deux fois les mêmes, puisqu'après injection
-    // ils appartiennent au slate.
+    // « Plus d'articles ? » : proposé au tri terminé dès qu'il reste des items
+    // de carrousel à injecter — jamais deux fois les mêmes, puisqu'après
+    // injection ils appartiennent au slate.
     //
-    // Deux conditions, **un seul point de décision** : la liste. Elle est vide
-    // (⇒ bouton absent, `_TriageDoneActions` le dérive lui-même) quand il ne
-    // reste rien à injecter, **ou** quand le gate produit
-    // [kTriageMoreArticlesMinKept] n'est pas franchi. Élargir le slate pour qui
-    // n'a gardé qu'un ou deux articles, c'est répondre « en voici d'autres » à
-    // « rien ne m'intéresse » (décision PO 09/08).
-    final injectableIds = triage.keptCount < kTriageMoreArticlesMinKept
-        ? const <String>[]
-        : [
-            for (final a in carouselArticles)
-              if (!triage.slate.contains(a.contentId)) a.contentId,
-          ];
+    // **Un seul point de décision** : la liste. Elle est vide (⇒ bouton absent,
+    // `_TriageDoneActions` le dérive lui-même) quand il ne reste rien à injecter,
+    // et ce seul cas. Plus de gate sur le nombre de gardés : on propose d'élargir
+    // dès qu'on a de quoi, quel que soit le nombre gardé (décision PO 10/08).
+    final injectableIds = [
+      for (final a in carouselArticles)
+        if (!triage.slate.contains(a.contentId)) a.contentId,
+    ];
     // B2 (passe PO 09/08) — **la liste des gardés est homogène** : tous les
     // articles y sont des tuiles sobres ([_MediumTile]), le premier compris. Un
     // gardé n'est pas plus important qu'un autre : c'est l'utilisateur qui les a
@@ -330,7 +358,11 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // éditorial : lead teinté à filet + pastille « Actu du jour », puis mediums.
     // [_LeadTile], [_ActuBadge] et [_accentFor] restent donc vivants — ce n'est
     // pas du code mort, c'est l'autre moitié de cette bascule.
-    final visible = passiveArticles.take(5).toList(growable: false);
+    // La limite éditoriale à 5 ne vaut que pour la liste passive historique.
+    // Après le tri, chaque choix positif doit rester accessible, y compris le
+    // 6e (la cible réglable peut couvrir tout le pool, jusqu'à 10).
+    final visible = (triageDone ? passiveArticles : passiveArticles.take(5))
+        .toList(growable: false);
     final lead = triageDone || visible.isEmpty ? null : visible.first;
     final mediums = lead == null ? visible : visible.sublist(1);
 
@@ -338,137 +370,140 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
       key: tourEssentielHeroKey,
       child: Container(
-      // Marge/padding/chrome partagés avec `_HeroSkeleton` (theme.dart) : c'est
-      // ce qui garantit qu'aucun pixel ne bouge à l'hydratation.
-      margin: kEssentielCardMargin,
-      decoration: facteurSurfaceCardDecoration(colors),
-      child: Padding(
-        padding: kEssentielCardPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // En-tête « Ton Essentiel » (ou date sélectionnée) + pastille
-            // date/météo + rewind.
-            _Header(
-              accent: accent,
-              title: headerTitle,
-              rewind: EditionRewindTrigger(
-                onTap: () => EditionTimelineSheet.show(context),
-                // today à jour → icône seule ; lettre passée → « Revenir » fixe.
-                label: isToday ? null : 'Revenir',
-                // En retard → nudge éphémère « Rattraper ? » ; le point rouge
-                // persistant est dérivé de sa présence côté trigger.
-                ephemeralLabel: missedYesterday
-                    ? EphemeralRattraperLabel(
-                        dayKey:
-                            TourneeProgressService.dayKey(DateTime.now()),
-                      )
-                    : null,
+        // Marge/padding/chrome partagés avec `_HeroSkeleton` (theme.dart) : c'est
+        // ce qui garantit qu'aucun pixel ne bouge à l'hydratation.
+        margin: kEssentielCardMargin,
+        decoration: facteurSurfaceCardDecoration(colors),
+        child: Padding(
+          padding: kEssentielCardPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // En-tête « Ton Essentiel » (ou date sélectionnée) + pastille
+              // date/météo + rewind.
+              _Header(
+                accent: accent,
+                title: headerTitle,
+                rewind: EditionRewindTrigger(
+                  onTap: () => EditionTimelineSheet.show(context),
+                  // today à jour → icône seule ; lettre passée → « Revenir » fixe.
+                  label: isToday ? null : 'Revenir',
+                  // En retard → nudge éphémère « Rattraper ? » ; le point rouge
+                  // persistant est dérivé de sa présence côté trigger.
+                  ephemeralLabel: missedYesterday
+                      ? EphemeralRattraperLabel(
+                          dayKey: TourneeProgressService.dayKey(DateTime.now()),
+                        )
+                      : null,
+                ),
               ),
-            ),
-            // Compaction « cartes ≤ écran » (passe 2, validée UX) : gap
-            // header→lead 8→6 (le fond teinté du lead rétablit la séparation).
-            const SizedBox(height: 6),
-            if (showTriage)
-              // Pas de compteur d'impression sur la pile de tri : une décision
-              // de tri est déjà une impression, mesurée par sa propre jauge
-              // (`essentiel_triage_decisions`). Les tuiles ne comptent que
-              // lorsqu'elles sont réellement rendues, c'est-à-dire ici.
-              EssentielTriageStack(
-                // Le pool (slate + articles injectables) permet à la pile de
-                // résoudre les ids réinjectés par « Voir d'autres articles ».
-                articles: pool,
-                triage: triage,
-                onTapArticle: onTapArticle,
-              )
-            else if (contentPending)
-              const TriageStackSkeleton(standalone: true)
-            else ...[
-              if (lead != null)
-                widget._tracked(
-                  article: lead,
-                  position: 0,
-                  child: _LeadTile(
+              // Compaction « cartes ≤ écran » (passe 2, validée UX) : gap
+              // header→lead 8→6 (le fond teinté du lead rétablit la séparation).
+              const SizedBox(height: 6),
+              if (showTriage)
+                // Pas de compteur d'impression sur la pile de tri : une décision
+                // de tri est déjà une impression, mesurée par sa propre jauge
+                // (`essentiel_triage_decisions`). Les tuiles ne comptent que
+                // lorsqu'elles sont réellement rendues, c'est-à-dire ici.
+                EssentielTriageStack(
+                  // Le pool (slate + articles injectables) permet à la pile de
+                  // résoudre les ids réinjectés par « Voir d'autres articles ».
+                  articles: pool,
+                  triage: triage,
+                  onTapArticle: onTapArticle,
+                )
+              else if (contentPending)
+                const TriageStackSkeleton(standalone: true)
+              else ...[
+                if (lead != null)
+                  widget._tracked(
                     article: lead,
-                    accent: accent,
-                    spec: spec,
-                    readState: readStateFor(lead),
-                    onTap: () => onTapArticle(lead),
+                    position: 0,
+                    child: _LeadTile(
+                      article: lead,
+                      accent: accent,
+                      spec: spec,
+                      readState: readStateFor(lead),
+                      onTap: () => onTapArticle(lead),
+                    ),
                   ),
-                ),
-              for (var i = 0; i < mediums.length; i++) ...[
-                // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
-                // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
-                // Pas de filet **avant la première** tuile quand il n'y a pas de
-                // lead au-dessus (liste des gardés) : il pendrait sous l'en-tête.
-                if (i > 0 || lead != null) ...[
+                for (var i = 0; i < mediums.length; i++) ...[
+                  // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
+                  // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
+                  // Pas de filet **avant la première** tuile quand il n'y a pas de
+                  // lead au-dessus (liste des gardés) : il pendrait sous l'en-tête.
+                  if (i > 0 || lead != null) ...[
+                    const SizedBox(height: 6),
+                    const _Hairline(),
+                  ],
                   const SizedBox(height: 6),
-                  const _Hairline(),
-                ],
-                const SizedBox(height: 6),
-                widget._tracked(
-                  article: mediums[i],
-                  // Décalé de 1 quand un lead occupe le rang 0.
-                  position: lead == null ? i : i + 1,
-                  child: _MediumTile(
+                  widget._tracked(
                     article: mediums[i],
-                    spec: spec,
-                    readState: readStateFor(mediums[i]),
-                    onTap: () => onTapArticle(mediums[i]),
+                    // Décalé de 1 quand un lead occupe le rang 0.
+                    position: lead == null ? i : i + 1,
+                    child: _MediumTile(
+                      article: mediums[i],
+                      spec: spec,
+                      readState: readStateFor(mediums[i]),
+                      onTap: () => onTapArticle(mediums[i]),
+                    ),
                   ),
-                ),
-              ],
-              // Tri terminé : le pied de carte. « Trier à nouveau » est
-              // toujours là (upsert backend idempotent sur
-              // `(user, article, jour)`, donc re-trier écrase sans dupliquer) ;
-              // « Plus d'articles » ne s'y ajoute que si le gate produit et le
-              // pool injectable le permettent — d'où `injectableIds`, seul point
-              // de décision.
-              if (triageDone) ...[
-                if (visible.isEmpty) const _NothingKeptNotice(),
-                _TriageDoneActions(injectableIds: injectableIds),
+                ],
+                // Tri terminé : le pied de carte. « Trier à nouveau » est
+                // toujours là (upsert backend idempotent sur
+                // `(user, article, jour)`, donc re-trier écrase sans dupliquer) ;
+                // « Plus d'articles » ne s'y ajoute que si le gate produit et le
+                // pool injectable le permettent — d'où `injectableIds`, seul point
+                // de décision.
+                if (triageDone) ...[
+                  if (visible.isEmpty) const _NothingKeptNotice(),
+                  _TriageDoneActions(
+                    injectableIds: injectableIds,
+                    poolIds: poolIds,
+                    triage: triage,
+                  ),
+                ],
               ],
             ],
-          ],
+          ),
         ),
-      ),
       ),
     );
   }
 }
 
-/// Pied de carte du tri terminé : « Plus d'articles » quand il reste de quoi
-/// élargir, et « Trier à nouveau » toujours.
+/// Pied de carte du tri terminé (design 2A) : « Plus d'articles ? » quand il
+/// reste de quoi élargir, et « Trier à nouveau » toujours.
 ///
-/// **Deux boutons pleine largeur empilés** (passe PO 09/08). L'ancienne paire de
-/// `TextButton` inline collée à gauche sous la dernière ligne gardée se lisait
-/// comme une note de bas de page, pas comme deux actions : le PO ne les voyait
-/// pas. Les poids sont maintenant explicites et repris de la barre d'actions de
-/// la pile (`_ActionBar`), pas réinventés :
+/// - « Plus d'articles ? » est une **zone à bord pointillé** de 64px
+///   ([DashedRRectPainter], le peintre existant du masthead/sceau — aucun
+///   nouveau peintre) : icône `+` accent, titre, sous-titre « Deux de plus,
+///   tirés du même Essentiel ». C'est le même levier que le contrôle sous les
+///   actions : `setTarget(cible + 2)`.
+/// - « Trier à nouveau » est une **ligne** de 34px centrée, icône + libellé
+///   discret — une sortie de secours, pas un appel.
 ///
-/// - « Plus d'articles » est l'action **primaire** — plein `colors.primary`,
-///   texte blanc, rayon `pill`, même hauteur de cible que « Je garde » ;
-/// - « Trier à nouveau » est l'action **secondaire visible** — bouton bordé
-///   (idiome `outlinedButtonTheme` du thème, remis en rayon `pill` pour rester
-///   cohérent avec la pile).
-///
-/// Ordre stable : le primaire, quand il existe, se pose **au-dessus** ; le
-/// secondaire garde donc la même place que le bouton soit là ou non.
+/// Ordre stable : la zone, quand elle existe, se pose **au-dessus** ; la ligne
+/// garde donc la même place qu'elle soit là ou non.
 class _TriageDoneActions extends ConsumerWidget {
-  /// `contentId` des articles du carrousel du jour pas encore dans le slate,
-  /// **déjà gatés** par [kTriageMoreArticlesMinKept] côté carte. Vide ⇒ « Plus
-  /// d'articles » est **absent** : soit le pool est épuisé (bouton mort), soit
-  /// l'utilisateur n'a pas assez gardé pour qu'on lui en propose d'autres.
+  /// `contentId` des articles du carrousel du jour pas encore dans le slate.
+  /// Vide ⇒ « Plus d'articles ? » est **absent** : le pool injectable est épuisé
+  /// (bouton mort). C'est le seul cas — plus de gate sur le nombre de gardés.
   final List<String> injectableIds;
 
-  const _TriageDoneActions({required this.injectableIds});
+  /// Pool ordonné du jour (slate puis carrousel) — l'argument de `setTarget`.
+  final List<String> poolIds;
+  final EssentielTriageState triage;
+
+  const _TriageDoneActions({
+    required this.injectableIds,
+    required this.poolIds,
+    required this.triage,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(FacteurRadius.pill),
-    );
     return Padding(
       // La respiration au-dessus est le point : le pied ne doit plus toucher la
       // dernière ligne gardée.
@@ -477,41 +512,100 @@ class _TriageDoneActions extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (injectableIds.isNotEmpty) ...[
-            FilledButton(
-              // Réinjecte le carrousel du jour dans le slate (sans réseau) et
-              // **rouvre** la pile.
-              onPressed: () => ref
-                  .read(essentielTriageProvider.notifier)
-                  .extendSlate(injectableIds),
-              style: FilledButton.styleFrom(
-                backgroundColor: colors.primary,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(kTriageActionButtonSize),
-                shape: shape,
-                textStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+            Semantics(
+              button: true,
+              label: 'Plus d\'articles ?',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(FacteurRadius.large),
+                // Allonge la cible de deux articles du même pool et **rouvre**
+                // la pile (sans réseau) — même levier que le stepper.
+                onTap: () {
+                  final triage = ref.read(essentielTriageProvider);
+                  ref
+                      .read(essentielTriageProvider.notifier)
+                      .setTarget(triage.slate.length + 2, poolIds);
+                },
+                child: CustomPaint(
+                  painter: DashedRRectPainter(
+                    color: colors.border,
+                    strokeWidth: 1.2,
+                    radius: FacteurRadius.large,
+                    dashLength: 5,
+                    gapLength: 4,
+                  ),
+                  child: SizedBox(
+                    height: 64,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          PhosphorIcons.plus(),
+                          size: 18,
+                          color: colors.sectionEssentiel,
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Plus d\'articles ?',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: colors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Deux de plus, tirés du même Essentiel',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              child: const Text('Plus d\'articles'),
             ),
             const SizedBox(height: kTriageActionGap),
           ],
-          OutlinedButton(
-            onPressed: () =>
-                ref.read(essentielTriageProvider.notifier).restart(),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: colors.textPrimary,
-              side: BorderSide(color: colors.border),
-              minimumSize: const Size.fromHeight(kTriageActionButtonSize),
-              shape: shape,
-              textStyle: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+          Semantics(
+            button: true,
+            label: 'Trier à nouveau',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(FacteurRadius.pill),
+              onTap: () => ref.read(essentielTriageProvider.notifier).restart(),
+              child: SizedBox(
+                height: 34,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      PhosphorIcons.arrowCounterClockwise(),
+                      size: 14,
+                      color: colors.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Trier à nouveau',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: colors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: const Text('Trier à nouveau'),
           ),
+          const SizedBox(height: 4),
+          TriageTargetControl(triage: triage, poolIds: poolIds),
         ],
       ),
     );
@@ -990,72 +1084,74 @@ class _LeadTile extends StatelessWidget {
         child: ArticlePreviewGesture(
           contentBuilder: () => article.toPreviewContent(),
           child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FacteurRadius.medium),
-        // Lu : grise la tuile (0.8 « Ouvert » / 0.6 lu, cf. opacityForReadState)
-        // + coche verte, comme les autres sections
-        // (cf. flux_continu_article_card.dart). Le badge est inclus dans
-        // l'Opacity pour s'estomper de concert avec le contenu.
-        child: Opacity(
-          opacity: opacityForReadState(readState),
-          child: AnimatedFeedCard(
-            isCompleted: readState == ReadState.completed,
-            animate: false,
-            child: Stack(
-            children: [
-              Container(
-                // Compaction passe 2 (validée UX) : padding héro 12→10. Plancher
-                // dur à 10 — sous ce seuil le texte « fuit » du fond teinté.
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.circular(FacteurRadius.medium),
-                  border: Border(left: BorderSide(color: accent, width: 3)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(FacteurRadius.medium),
+            // Lu : grise la tuile (0.8 « Ouvert » / 0.6 lu, cf. opacityForReadState)
+            // + coche verte, comme les autres sections
+            // (cf. flux_continu_article_card.dart). Le badge est inclus dans
+            // l'Opacity pour s'estomper de concert avec le contenu.
+            child: Opacity(
+              opacity: opacityForReadState(readState),
+              child: AnimatedFeedCard(
+                isCompleted: readState == ReadState.completed,
+                animate: false,
+                child: Stack(
                   children: [
-                    // Bonus 10.1 — plus de chip section (allège la tuile) ;
-                    // seul le badge « Actu du jour » reste, quand pertinent.
-                    if (article.isActuDuJour) ...[
-                      _ActuBadge(
-                        accent: chipAccent,
-                        overrideBackground: colors.sectionEssentiel,
+                    Container(
+                      // Compaction passe 2 (validée UX) : padding héro 12→10. Plancher
+                      // dur à 10 — sous ce seuil le texte « fuit » du fond teinté.
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.06),
+                        borderRadius:
+                            BorderRadius.circular(FacteurRadius.medium),
+                        border:
+                            Border(left: BorderSide(color: accent, width: 3)),
                       ),
-                      const SizedBox(height: FacteurSpacing.space2),
-                    ],
-                    Text(
-                      article.title,
-                      // Compaction « cartes ≤ écran » : plafond 5→4 lignes pour
-                      // borner la hauteur du lead (cohérent avec section_fit).
-                      maxLines: 4 + spec.titleMaxLinesDelta,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.fraunces(
-                        fontSize: 16 * spec.fontScale,
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                        color: colors.textPrimary,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Bonus 10.1 — plus de chip section (allège la tuile) ;
+                          // seul le badge « Actu du jour » reste, quand pertinent.
+                          if (article.isActuDuJour) ...[
+                            _ActuBadge(
+                              accent: chipAccent,
+                              overrideBackground: colors.sectionEssentiel,
+                            ),
+                            const SizedBox(height: FacteurSpacing.space2),
+                          ],
+                          Text(
+                            article.title,
+                            // Compaction « cartes ≤ écran » : plafond 5→4 lignes pour
+                            // borner la hauteur du lead (cohérent avec section_fit).
+                            maxLines: 4 + spec.titleMaxLinesDelta,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.fraunces(
+                              fontSize: 16 * spec.fontScale,
+                              fontWeight: FontWeight.w700,
+                              height: 1.3,
+                              color: colors.textPrimary,
+                            ),
+                          ),
+                          // Titre→source 8→6 (le badge actu→titre reste à 8, délibéré).
+                          const SizedBox(height: 6),
+                          _SourceRow(article: article, accent: chipAccent),
+                        ],
                       ),
                     ),
-                    // Titre→source 8→6 (le badge actu→titre reste à 8, délibéré).
-                    const SizedBox(height: 6),
-                    _SourceRow(article: article, accent: chipAccent),
+                    if (readState != ReadState.unread)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: ReadStateMark(
+                          color: colors.success,
+                          state: readState,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              if (readState != ReadState.unread)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: ReadStateMark(
-                    color: colors.success,
-                    state: readState,
-                  ),
-                ),
-            ],
-          ),
-          ),
-        ),
+            ),
           ),
         ),
       ),
@@ -1088,78 +1184,78 @@ class _MediumTile extends StatelessWidget {
         child: ArticlePreviewGesture(
           contentBuilder: () => article.toPreviewContent(),
           child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FacteurRadius.small),
-        // Lu : grise la tuile (0.8/0.6) + petite coche verte (cf. _LeadTile).
-        child: Opacity(
-          opacity: opacityForReadState(readState),
-          child: AnimatedFeedCard(
-            isCompleted: readState == ReadState.completed,
-            animate: false,
-            child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(FacteurRadius.small),
+            // Lu : grise la tuile (0.8/0.6) + petite coche verte (cf. _LeadTile).
+            child: Opacity(
+              opacity: opacityForReadState(readState),
+              child: AnimatedFeedCard(
+                isCompleted: readState == ReadState.completed,
+                animate: false,
+                child: Stack(
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            article.sourceName,
-                            maxLines: 1,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  article.sourceName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: FacteurTypography.labelSmall(
+                                    colors.textTertiary,
+                                  ),
+                                ),
+                              ),
+                              if (article.coverageCount >=
+                                  kCoverageChipMinSources) ...[
+                                const SizedBox(width: 8),
+                                CoverageChip(
+                                  sourceCount: article.coverageCount,
+                                  sources: article.perspectiveSources,
+                                  colors: colors,
+                                ),
+                              ],
+                              // Réserve l'espace de la coche pour qu'elle ne
+                              // chevauche pas la source ellipsée.
+                              if (readState != ReadState.unread)
+                                const SizedBox(width: 22),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            article.title,
+                            // Compaction « cartes ≤ écran » : plafond 4→3 lignes.
+                            maxLines: 3 + spec.titleMaxLinesDelta,
                             overflow: TextOverflow.ellipsis,
-                            style: FacteurTypography.labelSmall(
-                              colors.textTertiary,
+                            style: GoogleFonts.fraunces(
+                              fontSize: 15 * spec.fontScale,
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                              color: colors.textPrimary,
                             ),
                           ),
-                        ),
-                        if (article.coverageCount >=
-                            kCoverageChipMinSources) ...[
-                          const SizedBox(width: 8),
-                          CoverageChip(
-                            sourceCount: article.coverageCount,
-                            sources: article.perspectiveSources,
-                            colors: colors,
-                          ),
                         ],
-                        // Réserve l'espace de la coche pour qu'elle ne
-                        // chevauche pas la source ellipsée.
-                        if (readState != ReadState.unread)
-                          const SizedBox(width: 22),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      article.title,
-                      // Compaction « cartes ≤ écran » : plafond 4→3 lignes.
-                      maxLines: 3 + spec.titleMaxLinesDelta,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.fraunces(
-                        fontSize: 15 * spec.fontScale,
-                        fontWeight: FontWeight.w600,
-                        height: 1.3,
-                        color: colors.textPrimary,
                       ),
                     ),
+                    if (readState != ReadState.unread)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: ReadStateMark(
+                          color: colors.success,
+                          state: readState,
+                          size: 18,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              if (readState != ReadState.unread)
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: ReadStateMark(
-                    color: colors.success,
-                    state: readState,
-                    size: 18,
-                  ),
-                ),
-            ],
-          ),
-          ),
-        ),
+            ),
           ),
         ),
       ),

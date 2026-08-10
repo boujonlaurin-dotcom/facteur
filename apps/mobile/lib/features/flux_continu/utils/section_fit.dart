@@ -258,20 +258,23 @@ const double kTriageActionGap = 10;
 const double kTriageCardPaddingH = 14;
 const double kTriageCardPaddingV = 12;
 
-/// Géométrie de la carte du **dessous** de la pile, au repos (avant toute
-/// promotion). La vraie pile interpole de ces valeurs vers `1.0` au fil du
-/// geste ; la silhouette les rend telles quelles, pour annoncer la géométrie
-/// réelle.
-const double kTriageBackCardScale = 0.96;
+/// Opacité de la carte du **dessous** de la pile, au repos (avant toute
+/// promotion) : la vraie pile interpole de cette valeur vers `1.0` au fil du
+/// geste, la silhouette la rend telle quelle pour annoncer la géométrie réelle.
+///
+/// Depuis la reprise PO du 10/08, la carte du dessous n'est **plus mise à
+/// l'échelle** : elle est à fleur du cadre (pleine largeur). Une carte réduite
+/// laissait, quand la carte du dessus glissait, apparaître son coin arrondi
+/// *dans* le cadre sur le bord de fuite — lu comme un décalage latéral. La
+/// profondeur est donc portée par l'**opacité seule**.
 const double kTriageBackCardOpacity = 0.5;
 
-/// Barre de progression, **segments seuls** : le segment en cours de décision
-/// est épaissi (4 → 7 px), centré dans un slot de 14 (≈3,5 px de respiration de
-/// part et d'autre). Elle porte seule l'avancement du tri : le compteur « N sur
-/// M triés » a été retiré (décision PO), redondant avec les segments et avec la
-/// liste des gardés juste en dessous. Rendue **sous la barre d'actions** depuis
-/// la reprise PO du 08/08.
-const double kTriageProgressHeight = 14;
+/// Ligne cible/statut : « N à lire aujourd'hui · Y à trier », avec les boutons
+/// −/+ et sa respiration, rendue **sous la barre
+/// d'actions** (reprise PO 08/08). Remplace l'ancienne barre segmentée de
+/// 14px. Partagée avec la silhouette ([TriageStackSkeleton]) : deux hauteurs
+/// divergentes feraient sauter la mise en page à l'hydratation.
+const double kTriageProgressHeight = 26;
 
 /// Un article gardé dans la liste qui se construit sous la pile. Plus compact
 /// qu'un medium ([kHeroMediumHeight]) : pas de hairline, titre sur 2 lignes
