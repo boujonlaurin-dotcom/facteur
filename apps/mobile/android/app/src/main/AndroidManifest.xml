@@ -92,6 +92,27 @@
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
 
+        <!-- androidx.glance:glance-appwidget:1.0.0 arrive en transitif via
+             home_widget ^0.7.0, dont le code runtime compile contre Glance —
+             on ne peut donc PAS l'exclure de la dépendance sans casser la
+             compilation du plugin. Or notre widget est 100 % RemoteViews
+             (FacteurWidget.kt : setPendingIntentTemplate + setOnClickFillInIntent,
+             PendingIntent directs vers MainActivity), zéro Glance : ces deux
+             ActionTrampolineActivity ne sont jamais empruntées par notre code.
+             Le manifest de l'AAR les déclare android:exported="false" (activités
+             internes, non appelables depuis l'extérieur), donc les retirer du
+             manifest mergé n'ouvre aucune surface. Cause du crash fatal
+             Sentry FLUTTER-1D « List adapter activity trampoline invoked without
+             specifying target intent » — cf. docs/bugs/bug-widget-fiabilite.md
+             (Lot 8). Les classes Glance restent sur le classpath : seule la
+             déclaration manifest disparaît. -->
+        <activity
+            android:name="androidx.glance.appwidget.action.ActionTrampolineActivity"
+            tools:node="remove" />
+        <activity
+            android:name="androidx.glance.appwidget.action.InvisibleActionTrampolineActivity"
+            tools:node="remove" />
+
         <!-- flutter_downloader : provider FileProvider pour partager l'APK
              téléchargé avec l'installeur Android, et init custom pour limiter
              à 1 tâche concurrente (téléchargement APK uniquement). -->
