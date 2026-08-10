@@ -1,80 +1,150 @@
-# fix(essentiel): pile de tri — progression sous les boutons, carte au contenu, plus de carte vide
+# fix(essentiel): pile de tri — en-tête nu, tressautement, pied de tri, gate à 3 gardés
 
-Reprise E2E de la story 33.1 : le PO a **infirmé** trois correctifs de la passe
-design. Mobile-only, aucune migration, aucun endpoint touché.
+Passe PO du 09/08 sur la story 33.1 : **trois régressions visuelles** encore
+présentes après une passe déclarée terminée sur des tests verts, et **trois
+demandes produit**. Mobile-only, aucune migration, aucun endpoint touché.
 
-## La root cause du défaut « aucun squelette pendant le chargement » n'était pas la bonne
+Règle de cette passe : **rien n'est coché sans preuve visuelle**. Un test widget
+ne voit ni un placeholder manquant, ni un bouton mal posé, ni un tressautement de
+deux frames. Tout ce qui suit a été reproduit puis vérifié sur le build web
+release (flavor staging, API `api-staging-40d3`), viewport 390×844, sémantique
+activée, compte QA. Traces et captures dans `.context/evidence-33.1/`.
 
-Le hand-off d'entrée attribuait l'aplat beige à « la vraie carte rendue avec
-`articles` vide ». **Ce chemin n'existe pas** : `_buildEssentielSection` renvoie
-`null` sur liste vide (la section n'est alors pas dans le feed, donc pas
-d'en-tête), et l'état squelette explicite rend `_HeroSkeleton`, du shimmer — or
-la capture PO montre le **vrai texte** de l'en-tête.
+## A1 — la carte se réduisait à son en-tête
 
-La vraie cause : `EssentielTriageStack` sortait en `SizedBox.shrink()` quand
-l'article du haut du **slate figé** ne se résolvait plus dans le pool. En-tête
-rendu, corps de **0 px**, et c'est **persistant**, pas transitoire. Reproduit en
-test : slate `['x-99','c-1']` + pool `[c-1,c-2]` ⇒ hauteur de la pile = `0.0`.
+Reproduit **au premier boot** (`a1-avant-entete-nu.png`), puis instrumenté.
 
-Comment on y arrive en vrai : « Plus d'articles » (`extendSlate`) persiste dans
-le slate des `contentId` **du carrousel du jour** ; au cold-boot suivant,
-l'hydratation depuis le cache ne rejoue pas le carrousel → l'id du haut de pile
-est introuvable. (Idem blend live story 9.8, ou tous les articles masqués.)
+`_buildSkeletonState` laisse dans le notifier une coquille
+`EssentielSection(articles: [])`. Elle **échappe au squelette d'écran** parce que
+`_reconcilePlacementThenSync` publie un `_compose()` **non-squelette** pendant le
+bootstrap — il n'est délibérément pas gardé par `_bootstrapping`, c'est le
+correctif « race 1 » de « Sources favorites absentes ». La trace le nomme :
 
-## Ce que fait la PR
+```
+[A1] _buildSkeletonState -> EssentielSection(articles: [])
+[A1] reconcile -> _refetchSourcesOnly (bootstrapping=true picked=4)
+[A1] screen isSkeleton=false ... sections=1 essentielArticles=[0]
+[A1] card articles=0 ... triagePending=false     ← ni pile, ni silhouette, ni tuile
+```
 
-**#4 — plus jamais de carte vide**
-- Haut de pile irrésolvable ⇒ la pile rend la **silhouette** partagée
-  (`TriageStackSkeleton`), jamais un corps vide.
-- `EssentielTriageNotifier.pruneUnavailable(poolIds)` retire du slate les ids
-  **non décidés** absents du pool (les décidés restent : leur décision est
-  partie). Strictement décroissant ⇒ pas de boucle. Posté après la frame par la
-  carte, et **uniquement** quand le haut de pile est irrésolvable — jamais sur
-  le chemin nominal.
-- Piège trouvé en relecture, corrigé et testé : un slate *entièrement*
-  introuvable se vide, or le gel du slate (`_scheduleStart`) est verrouillé une
-  fois par montage → la carte serait restée sur sa silhouette. Le verrou est
-  levé après la réparation.
+`articles.isEmpty` ⇒ `triagePending` était faux (il exigeait `articles.isNotEmpty`)
+⇒ la colonne s'arrêtait à `_Header` + `SizedBox(6)`.
 
-**#3 — la carte épouse le contenu réellement affiché**
-Renversement assumé des « deux hauteurs discrètes » : le titre était un
-`Expanded` dans un slot de 360 px, donc un titre court **étirait du vide** et
-repoussait la méta en bas. Désormais `mainAxisSize: min` de bout en bout, plus
-d'`Expanded`, et le slot n'impose plus de hauteur (`SizedBox(height:)` retiré de
-la pile **et** de `TriageSwipeCard`). L'`AnimatedSize` déjà en place fait
-**glisser** la barre d'actions d'une hauteur à l'autre au lieu de la faire
-sauter. Hauteur bornée par construction (bandeau 180 fixe + `maxLines`), donc
-pas de plafond ajouté. La carte du dessous est ancrée en haut sans hauteur
-imposée — en `Positioned.fill` elle débordait dès qu'elle était la plus grande
-des deux (test dédié).
+C'est le chemin que la passe du 08/08 avait déclaré inexistant (« Ce chemin
+n'existe pas »). **Cette affirmation était fausse** ; la story la corrige.
 
-**#2 — progression sous les boutons**
-`_ProgressBar` passe après `_ActionBar` : `carte → actions → progression →
-gardés`, répercuté à l'identique dans la silhouette (sinon saut à
-l'hydratation).
+**Correctifs**
+- `triagePending` → `contentPending`, qui couvre aussi `articles.isEmpty` :
+  garde-fou terminal, la carte rend la silhouette quelle que soit la cause amont.
+- Convention du héros écrite des deux côtés : `_essentiel == null` ⇒ *résolu à
+  rien* (aucune carte) ; `EssentielSection` **vide** ⇒ *pas encore résolu*
+  (silhouette). Les deux ne sont pas fusionnées parce qu'elles ne décrivent pas le
+  même état : fusionner ferait soit disparaître la carte pendant le fan-out (saut
+  de mise en page), soit laisser une silhouette éternelle sur un Essentiel
+  réellement vide.
+- `essentiel_triage_stack.dart` : `currentId == null` rend la silhouette au lieu
+  de `SizedBox.shrink()` (parité avec son cas frère).
 
-**Ménage** : `kTriageCardTextOnlyHeight` et `triageCardHeightFor` retirés (plus
-d'appelant) ; `kTriageCardHeight` redocumenté — il ne sert plus qu'à la réserve
-du squelette.
+`_reconcilePlacementThenSync` n'est **pas** touché : le rendre silencieux pendant
+le bootstrap rouvrirait la race qu'il existe pour fermer.
 
-## Vérification
+Écarté par la mesure : la piste « silhouette rendue mais invisible » — la sonde
+donne `TriageStackSkeleton(standalone: true)` à `Size(332.8, 438.0)`.
 
-- `flutter analyze lib/features/flux_continu` : **0 issue**.
-- `flutter test test/features/flux_continu` : **619 passés, 1 échec** —
-  `theme_section_screen_test` (`Expected: <0.6> / Actual: <0.8>`), échec de
-  baseline documenté, hors scope. Le 2ᵉ échec de baseline (purge cross-day)
-  passe aujourd'hui : il dépend de la frontière de date.
-- Tests neufs : 7 sur `pruneUnavailable`, 6 sur la carte (ordre
-  progression/actions, fit court vs long, méta collée au titre, carte du dessous
-  plus haute sans débordement, slate irrésolvable → silhouette puis reprise,
-  slate entièrement introuvable → re-gel), 1 sur l'ordre de la silhouette.
-  Les deux tests de piège ont été **vérifiés rouges** sans leur correctif.
+## A3 — la pile tressautait au swipe
 
-## ⚠️ Ce qui reste à faire avant merge
+Sonde de géométrie **par frame** (`Ticker` : les `AnimatedSize` animent sans
+reconstruire leur sous-arbre, une sonde branchée sur le build ne verrait rien).
+Position de la barre d'actions au changement de carte :
 
-Le hand-off exige une repro **dans l'app qui tourne** (build web + Playwright).
-Elle **n'a pas été faite** : le build web public est celui de `main`, donc il
-faut builder cette branche en local et se connecter à l'API staging — ce qui
-demande un compte de test que je n'ai pas. Scénarios prêts dans
-`.context/qa-handoff.md` (13, 14, 15). Donne-moi des credentials et je fais la
-passe.
+```
+607.3 → 572.2 → 542.9 → 518.8 → 485.3 → 474.0
+ pas :  35.1    29.3    24.1    33.5*   11.3      (*) rebond
+```
+
+Une easeOutCubic a des pas monotones décroissants. **Cause : deux `AnimatedSize`
+imbriqués animant la même hauteur.** Celui de la colonne avait pour enfant une
+colonne dont la hauteur bougeait à chaque frame ; `RenderAnimatedSize` bascule
+alors en état `unstable`, **cesse d'animer** et se cale sur son enfant, après une
+frame de stalle et un saut de re-ciblage.
+
+**Correctif** : les deux `AnimatedSize` deviennent **frères**, sur des hauteurs
+disjointes — l'un autour du slot de carte (la barre glisse d'une carte à
+l'autre), l'autre autour de la seule liste des gardés (elle grandit vers le bas).
+
+**Écarté par la mesure** : la remise à zéro de `_promotion` dans
+`_completeExit()`. Le banc qui lit l'échelle **rendue** de la carte du dessous
+frame par frame montre que la baisse 1.0 → 0.96 tombe exactement sur la frame de
+promotion. `_completeExit()` et les deux `didUpdateWidget` ne sont pas touchés.
+
+Après : `324 → 281 → 265 → 256 → 248 → 246` (43, 16, 9, 8, 2) — monotone.
+
+## B1 — « Plus d'articles » gaté à 3 gardés
+
+`kTriageMoreArticlesMinKept = 3`, accroché sur le calcul d'`injectableIds` : sous
+le seuil la liste est vide, donc le bouton est **absent** — pas désactivé, pas
+remplacé par un message (décision PO). Aucun second gate.
+`keptCount` = « Je garde » **+** « Plus tard » (définition conservée).
+`extendSlate` n'a qu'un seul appelant en production, ce bouton.
+
+Les docs qui portaient l'inverse depuis `9cad0816` / `019f7058` sont corrigées.
+
+## A2 — le carrousel était bien servi ; c'est le pied qui manquait
+
+`curl /api/essentiel` (JWT compte QA) : 5 articles **et** un `carousel` de 5 items
+distincts. Instrumentée, la chaîne mobile les porte jusqu'au bout
+(`carouselMemo=5`, `carouselItems=5`, `injectable=5`). **Aucun bug mobile** — donc
+aucun correctif spéculatif.
+
+L'hypothèse « le chemin SWR in-day remet `_essentielCarousel` à `null` » est
+exacte mais **inoffensive** : ce chemin ne s'exécute qu'à la première peinture,
+avant tout fetch, alors que le champ vaut déjà `null` ; `refresh()` passe par
+`_fetchAll`, qui porte toujours le carrousel. Laissé tel quel.
+
+Ce qui manquait, c'était la présentation. `_TriageDoneActions` passe de deux
+`TextButton` inline collés à gauche à **deux boutons pleine largeur empilés**,
+avec une vraie respiration au-dessus :
+- « Plus d'articles » → primaire, plein `colors.primary`, rayon `pill`, hauteur
+  `kTriageActionButtonSize` — l'idiome de « Je garde » ;
+- « Trier à nouveau » → `OutlinedButton` (thème), remis en rayon `pill`.
+
+## B2 — liste des gardés homogène
+
+Au tri terminé, **tous** les gardés sont des tuiles sobres, le premier compris :
+plus de fond teinté, plus de filet gauche, plus de pastille « Actu du jour ». Une
+**lettre passée** garde son rendu éditorial — `_LeadTile`, `_ActuBadge` et
+`_accentFor` restent vivants, la bascule se fait sur `triageDone`.
+
+## B3 — description de la carte
+
+« 5 articles du jour, basé sur tes intérêts » → **« Choisis les articles que tu
+liras aujourd'hui. »** L'ancienne devenait fausse dès « Plus d'articles ».
+Répercuté dans `changelog.json`.
+
+## Signalé, non touché
+
+`_fitHeroSection` est un no-op ; `fitHeroCount`, `kHeroLeadHeight` et
+`kHeroMediumHeight` n'ont plus d'appelant hors `section_fit_test.dart`. Nettoyage
+laissé à une passe dédiée plutôt que mêlé à des correctifs visuels.
+
+## Vérifications
+
+- `flutter analyze lib test` : **0 erreur**, 0 warning.
+- `flutter test` : voir le récapitulatif de la PR — comparé à la baseline connue
+  de **26 échecs pré-existants** hors périmètre (bookmark, feed_sources, topic
+  chips, notifications, premium, perspectives, smoke, `theme_section_screen_test`).
+  Aucun nouvel échec.
+- `pytest` backend : inchangé (aucune modification serveur).
+- Aucune migration Alembic.
+- E2E Playwright (390×844, sémantique activée, compte QA) rejoué **sur le build
+  livré**, instrumentation retirée : A1 avant/après, trace A3 avant/après, pied
+  de tri, gate à 2 gardés, « Plus d'articles » qui rouvre la pile, nouvelle
+  description, GIF de 5 swipes. Les fichiers sont dans le workspace, sous
+  `.context/evidence-33.1/` (répertoire gitignoré, non poussé) ; les chiffres qui
+  tranchent sont recopiés dans la story et ci-dessus.
+- Console : aucune erreur applicative. Les seuls 4xx sont pré-existants et hors
+  périmètre — `/api/veille/config` 404 (le compte QA n'a pas de veille
+  configurée) et `/api/images/proxy` 400/404 sur des favicons de sources morts.
+
+`CLAUDE.md` porte en plus un pointeur (déjà présent dans l'arbre de travail) vers
+le compte QA staging conservé hors dépôt.

@@ -189,6 +189,14 @@ String triagePrefsKey(String dayKey) => '$kTriagePrefsKeyPrefix$dayKey';
 /// couvre la fin de tri et le passage en arrière-plan.
 const Duration kTriageFlushDebounce = Duration(seconds: 2);
 
+/// Nombre minimum d'articles gardés avant que l'app propose d'élargir le slate
+/// (« Plus d'articles »). `keptCount` compte « Je garde » **et** « Plus tard » :
+/// mettre de côté est un choix positif (cf. [EssentielTriageState.keptContentIds]).
+/// Sous ce seuil, le bouton est **absent** (décision PO 09/08) — pas désactivé,
+/// pas accompagné d'un message : proposer d'en voir plus à qui n'a presque rien
+/// gardé, c'est proposer plus de la même chose.
+const int kTriageMoreArticlesMinKept = 3;
+
 /// Cap du nombre d'articles réinjectés en une fois par [EssentielTriageNotifier.extendSlate]
 /// (« Voir d'autres articles »). Le carrousel du jour en porte jusqu'à 5 : on ne
 /// gonfle pas le slate au-delà d'un tri qui reste court.

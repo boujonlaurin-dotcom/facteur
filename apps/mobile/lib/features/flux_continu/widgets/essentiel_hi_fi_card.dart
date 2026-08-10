@@ -22,6 +22,7 @@ import '../providers/essentiel_triage_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
+import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
 import 'article_impression_tracker.dart';
 import 'auto_grow_candidate.dart';
@@ -258,19 +259,33 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
       _schedulePruneUnavailable();
     }
     final triageDone = canTriage && triage.done;
-    // Tri **indéterminé** : SharedPrefs pas encore lu (`hydrated`) ou slate pas
-    // encore figé (`startIfNeeded` est posté après la frame). Rendre la liste
-    // passive ici ferait clignoter l'ancienne mise en page avant la pile — et
-    // sur un boot tiède (snapshot Hive frais, donc jamais de squelette d'écran)
-    // c'était le seul rendu que l'utilisateur voyait de l'attente. On montre la
-    // silhouette de ce qui arrive.
+    // Rien de **définitif** à rendre. Deux causes, une seule sortie : la
+    // silhouette. Aucun chemin ne doit laisser la carte se réduire à son
+    // en-tête au-dessus du vide (défaut A1, passe PO 09/08).
+    //
+    // 1. **Héros pas encore résolu** (`articles` vide). Convention du provider,
+    //    désormais explicite des deux côtés : `_buildEssentielSection` renvoie
+    //    `null` quand l'endpoint a répondu sans rien (dégradation gracieuse :
+    //    pas de carte du tout), tandis qu'une `EssentielSection` **vide**
+    //    signifie « pas encore résolu ». C'est la coquille posée par
+    //    `_buildSkeletonState` : elle échappe au squelette d'écran dès qu'un
+    //    `_compose()` non-squelette est publié pendant le bootstrap
+    //    (`_reconcilePlacementThenSync`, délibérément non gardé par
+    //    `_bootstrapping`), et la carte restait alors un en-tête nu pendant
+    //    tout le fan-out.
+    // 2. **Tri indéterminé** : SharedPrefs pas encore lu (`hydrated`) ou slate
+    //    pas encore figé (`startIfNeeded` est posté après la frame). Rendre la
+    //    liste passive ici ferait clignoter l'ancienne mise en page avant la
+    //    pile — et sur un boot tiède (snapshot Hive frais, donc jamais de
+    //    squelette d'écran) c'était le seul rendu que l'utilisateur voyait de
+    //    l'attente.
     //
     // Effet de bord assumé : qui a **déjà terminé** son tri voit la silhouette
     // 1 à 3 frames avant sa liste de gardés. Strictement mieux que la mise en
     // page fausse, et l'hydratation SharedPreferences est en cache mémoire dès
     // le premier appel du process.
-    final triagePending =
-        isToday && articles.isNotEmpty && (!triage.hydrated || !triage.hasStarted);
+    final contentPending = articles.isEmpty ||
+        (isToday && (!triage.hydrated || !triage.hasStarted));
 
     // Liste rendue en mode passif (hors pile de tri). Après un tri terminé, la
     // carte ne montre **que les articles gardés** (« Je garde » + « Plus tard »),
@@ -289,19 +304,35 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     } else {
       passiveArticles = articles;
     }
-    // « Voir d'autres articles » : proposé au tri terminé dès qu'il reste des
-    // items de carrousel à injecter — jamais deux fois les mêmes, puisqu'après
-    // injection ils appartiennent au slate. Liste vide ⇒ le bouton est masqué,
-    // c'est le seul gate (`_TriageDoneActions` le dérive lui-même).
-    final injectableIds = [
-      for (final a in carouselArticles)
-        if (!triage.slate.contains(a.contentId)) a.contentId,
-    ];
-    final lead = passiveArticles.isNotEmpty ? passiveArticles.first : null;
-    final remaining = passiveArticles.length > 1
-        ? passiveArticles.sublist(
-            1, passiveArticles.length > 5 ? 5 : passiveArticles.length)
-        : const <EssentielArticle>[];
+    // « Plus d'articles » : proposé au tri terminé dès qu'il reste des items de
+    // carrousel à injecter — jamais deux fois les mêmes, puisqu'après injection
+    // ils appartiennent au slate.
+    //
+    // Deux conditions, **un seul point de décision** : la liste. Elle est vide
+    // (⇒ bouton absent, `_TriageDoneActions` le dérive lui-même) quand il ne
+    // reste rien à injecter, **ou** quand le gate produit
+    // [kTriageMoreArticlesMinKept] n'est pas franchi. Élargir le slate pour qui
+    // n'a gardé qu'un ou deux articles, c'est répondre « en voici d'autres » à
+    // « rien ne m'intéresse » (décision PO 09/08).
+    final injectableIds = triage.keptCount < kTriageMoreArticlesMinKept
+        ? const <String>[]
+        : [
+            for (final a in carouselArticles)
+              if (!triage.slate.contains(a.contentId)) a.contentId,
+          ];
+    // B2 (passe PO 09/08) — **la liste des gardés est homogène** : tous les
+    // articles y sont des tuiles sobres ([_MediumTile]), le premier compris. Un
+    // gardé n'est pas plus important qu'un autre : c'est l'utilisateur qui les a
+    // choisis un par un, hiérarchiser le premier était un reste du temps où la
+    // carte affichait un classement éditorial.
+    //
+    // Une **lettre passée** (`isToday == false`), elle, garde son rendu
+    // éditorial : lead teinté à filet + pastille « Actu du jour », puis mediums.
+    // [_LeadTile], [_ActuBadge] et [_accentFor] restent donc vivants — ce n'est
+    // pas du code mort, c'est l'autre moitié de cette bascule.
+    final visible = passiveArticles.take(5).toList(growable: false);
+    final lead = triageDone || visible.isEmpty ? null : visible.first;
+    final mediums = lead == null ? visible : visible.sublist(1);
 
     return KeyedSubtree(
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
@@ -350,7 +381,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
                 triage: triage,
                 onTapArticle: onTapArticle,
               )
-            else if (triagePending)
+            else if (contentPending)
               const TriageStackSkeleton(standalone: true)
             else ...[
               if (lead != null)
@@ -365,31 +396,36 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
                     onTap: () => onTapArticle(lead),
                   ),
                 ),
-              for (var i = 0; i < remaining.length; i++) ...[
+              for (var i = 0; i < mediums.length; i++) ...[
                 // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
                 // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
-                const SizedBox(height: 6),
-                const _Hairline(),
+                // Pas de filet **avant la première** tuile quand il n'y a pas de
+                // lead au-dessus (liste des gardés) : il pendrait sous l'en-tête.
+                if (i > 0 || lead != null) ...[
+                  const SizedBox(height: 6),
+                  const _Hairline(),
+                ],
                 const SizedBox(height: 6),
                 widget._tracked(
-                  article: remaining[i],
-                  // +1 : le lead occupe le rang 0.
-                  position: i + 1,
+                  article: mediums[i],
+                  // Décalé de 1 quand un lead occupe le rang 0.
+                  position: lead == null ? i : i + 1,
                   child: _MediumTile(
-                    article: remaining[i],
+                    article: mediums[i],
                     spec: spec,
-                    readState: readStateFor(remaining[i]),
-                    onTap: () => onTapArticle(remaining[i]),
+                    readState: readStateFor(mediums[i]),
+                    onTap: () => onTapArticle(mediums[i]),
                   ),
                 ),
               ],
-              // Tri terminé : un pied de carte à deux actions, toujours le même
-              // (upsert backend idempotent sur `(user, article, jour)`, donc
-              // re-trier écrase sans dupliquer). L'ancien encart « en voir
-              // d'autres ? », qui n'apparaissait que sur `keptCount < 2`, est
-              // devenu redondant — la paire est là dans tous les cas.
+              // Tri terminé : le pied de carte. « Trier à nouveau » est
+              // toujours là (upsert backend idempotent sur
+              // `(user, article, jour)`, donc re-trier écrase sans dupliquer) ;
+              // « Plus d'articles » ne s'y ajoute que si le gate produit et le
+              // pool injectable le permettent — d'où `injectableIds`, seul point
+              // de décision.
               if (triageDone) ...[
-                if (lead == null) const _NothingKeptNotice(),
+                if (visible.isEmpty) const _NothingKeptNotice(),
                 _TriageDoneActions(injectableIds: injectableIds),
               ],
             ],
@@ -401,17 +437,28 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   }
 }
 
-/// Pied de carte du tri terminé : « Trier à nouveau » et, quand il reste de
-/// quoi élargir, « Plus d'articles ».
+/// Pied de carte du tri terminé : « Plus d'articles » quand il reste de quoi
+/// élargir, et « Trier à nouveau » toujours.
 ///
-/// Deux `TextButton` inline alignés à gauche, sans cadre : ce sont des sorties
-/// de secours, pas l'action principale de la carte. « Trier à nouveau » a
-/// simplement gagné en lisibilité (texte primaire w600 au lieu d'un gris
-/// secondaire), il ne s'encadre pas.
+/// **Deux boutons pleine largeur empilés** (passe PO 09/08). L'ancienne paire de
+/// `TextButton` inline collée à gauche sous la dernière ligne gardée se lisait
+/// comme une note de bas de page, pas comme deux actions : le PO ne les voyait
+/// pas. Les poids sont maintenant explicites et repris de la barre d'actions de
+/// la pile (`_ActionBar`), pas réinventés :
+///
+/// - « Plus d'articles » est l'action **primaire** — plein `colors.primary`,
+///   texte blanc, rayon `pill`, même hauteur de cible que « Je garde » ;
+/// - « Trier à nouveau » est l'action **secondaire visible** — bouton bordé
+///   (idiome `outlinedButtonTheme` du thème, remis en rayon `pill` pour rester
+///   cohérent avec la pile).
+///
+/// Ordre stable : le primaire, quand il existe, se pose **au-dessus** ; le
+/// secondaire garde donc la même place que le bouton soit là ou non.
 class _TriageDoneActions extends ConsumerWidget {
-  /// `contentId` des articles du carrousel du jour pas encore dans le slate.
-  /// Vide ⇒ « Plus d'articles » est **masqué** : proposer d'élargir un slate
-  /// déjà épuisé serait un bouton mort.
+  /// `contentId` des articles du carrousel du jour pas encore dans le slate,
+  /// **déjà gatés** par [kTriageMoreArticlesMinKept] côté carte. Vide ⇒ « Plus
+  /// d'articles » est **absent** : soit le pool est épuisé (bouton mort), soit
+  /// l'utilisateur n'a pas assez gardé pour qu'on lui en propose d'autres.
   final List<String> injectableIds;
 
   const _TriageDoneActions({required this.injectableIds});
@@ -419,40 +466,54 @@ class _TriageDoneActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
-    final style = TextButton.styleFrom(
-      minimumSize: const Size(0, 32),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(FacteurRadius.pill),
     );
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
-      children: [
-        TextButton(
-          style: style,
-          onPressed: () => ref.read(essentielTriageProvider.notifier).restart(),
-          child: Text(
-            'Trier à nouveau',
-            style: FacteurTypography.bodySmall(colors.textPrimary)
-                .copyWith(fontWeight: FontWeight.w600),
-          ),
-        ),
-        if (injectableIds.isNotEmpty) ...[
-          const SizedBox(width: 4),
-          TextButton(
-            style: style,
-            // Réinjecte le carrousel du jour dans le slate (sans réseau) et
-            // **rouvre** la pile.
-            onPressed: () => ref
-                .read(essentielTriageProvider.notifier)
-                .extendSlate(injectableIds),
-            child: Text(
-              'Plus d\'articles',
-              style: FacteurTypography.bodySmall(colors.sectionEssentiel)
-                  .copyWith(fontWeight: FontWeight.w600),
+    return Padding(
+      // La respiration au-dessus est le point : le pied ne doit plus toucher la
+      // dernière ligne gardée.
+      padding: const EdgeInsets.only(top: FacteurSpacing.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (injectableIds.isNotEmpty) ...[
+            FilledButton(
+              // Réinjecte le carrousel du jour dans le slate (sans réseau) et
+              // **rouvre** la pile.
+              onPressed: () => ref
+                  .read(essentielTriageProvider.notifier)
+                  .extendSlate(injectableIds),
+              style: FilledButton.styleFrom(
+                backgroundColor: colors.primary,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(kTriageActionButtonSize),
+                shape: shape,
+                textStyle: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              child: const Text('Plus d\'articles'),
             ),
+            const SizedBox(height: kTriageActionGap),
+          ],
+          OutlinedButton(
+            onPressed: () =>
+                ref.read(essentielTriageProvider.notifier).restart(),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: colors.textPrimary,
+              side: BorderSide(color: colors.border),
+              minimumSize: const Size.fromHeight(kTriageActionButtonSize),
+              shape: shape,
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            child: const Text('Trier à nouveau'),
           ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -537,8 +598,14 @@ class _Header extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
+              // Décrit la carte **telle qu'elle est** (passe PO 09/08) : une
+              // pile à trier, dont on choisit ce qu'on lira. L'ancien « 5
+              // articles du jour, basé sur tes intérêts » devenait faux dès
+              // qu'on touchait « Plus d'articles », et annonçait un sommaire
+              // là où il y a un geste. « Ton Essentiel » n'est pas répété : le
+              // titre juste au-dessus le porte déjà.
               Text(
-                '5 articles du jour, basé sur tes intérêts',
+                'Choisis les articles que tu liras aujourd\'hui.',
                 style: FacteurTypography.bodySmall(
                   colors.textSecondary,
                 ).copyWith(height: 1.35),

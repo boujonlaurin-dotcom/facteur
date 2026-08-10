@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "tag": "Ton Essentiel",
+      "summary": "Ta carte du jour se présente plus clairement : elle dit maintenant ce qu'on te demande, choisir les articles que tu liras aujourd'hui. Pendant qu'elle se prépare, tu vois toujours la silhouette de la pile arriver, jamais un titre au-dessus du vide. La pile ne tressaute plus quand tu glisses une carte : la rangée de boutons descend d'un seul mouvement. Une fois le tri fini, les deux actions sont enfin lisibles, en pleine largeur sous ta sélection : « Plus d'articles » quand il en reste à te proposer, et « Trier à nouveau ». Et tes articles gardés se présentent tous de la même façon, sans qu'un premier soit mis en avant plus que les autres."
+    },
+    {
+      "tag": "Ton Essentiel",
       "summary": "Trois finitions sur la pile de tri : l'avancement passe sous les boutons, là où ton pouce revient. Chaque carte prend exactement la hauteur de ce qu'elle affiche, donc plus de blanc entre le titre et le bas de la carte, et la rangée de boutons glisse d'un article à l'autre au lieu de sauter. Et si ta sélection du jour désigne un article qui n'est plus là, le tri repart tout seul sur le suivant au lieu de te laisser devant une carte vide."
     },
     {

@@ -6,9 +6,15 @@
 6 retouches de la carte « Ton Essentiel » triable au swipe : fix du swipe qui se
 fige (priorité), carte qui épouse son contenu (fin du grand vide), images bien
 plus grandes, skeleton « cartes » visible au chargement, « Plus d'articles » au
-tri terminé dès qu'il reste des articles injectables (réinjecte le carrousel du
-jour ; le gate « moins de 2 gardés » a été retiré par la passe pré-prod), retrait
-de la pastille « X nouveaux articles ». Mobile-only, aucun changement backend.
+tri terminé (réinjecte le carrousel du jour), retrait de la pastille « X nouveaux
+articles ». Mobile-only, aucun changement backend.
+
+> **MAJ passe PO 09/08** — « Plus d'articles » est de nouveau **gaté**, cette fois
+> à **3 gardés minimum** (`kTriageMoreArticlesMinKept`). La note « le gate a été
+> retiré » qui figurait ici est annulée. S'ajoutent : la carte ne se réduit plus
+> jamais à son en-tête, la pile ne tressaute plus au swipe, le pied de tri passe
+> en deux boutons pleine largeur, la liste des gardés devient homogène, et la
+> description de la carte change. Scénarios 16 à 20 ci-dessous.
 
 ## PR associée
 À créer via /go (`--base main`).
@@ -56,16 +62,9 @@ chargée, l'image de chaque carte de tri est nettement plus grande (~format 16:9
 sans saut de layout à l'hydratation.
 
 ### Scénario 5 : pied de fin de tri (« Trier à nouveau » + « Plus d'articles »)
-**Parcours** :
-1. Trier les 5 articles jusqu'au bout.
-2. Observer le pied de carte, puis taper « Plus d'articles ».
-3. Refaire jusqu'à épuiser le carrousel du jour.
-**Résultat attendu** : le pied porte **toujours** « Trier à nouveau » (bien
-lisible, texte foncé, pas un gris qu'on rate) et, tant qu'il reste des articles
-injectables, « Plus d'articles » à sa droite. « Plus d'articles » réinjecte le
-carrousel du jour et **rouvre** la pile sur un nouvel article. Quand le pool est
-épuisé, le bouton **disparaît** (jamais un bouton mort). Plus aucun encart « Tu
-n'as gardé que N article(s). En voir d'autres ? ».
+> Remplacé par les scénarios **18** et **19** (passe PO 09/08) : le pied a changé
+> de forme (deux boutons pleine largeur) **et** « Plus d'articles » est gaté à 3
+> gardés. Ne pas tester la version décrite ici.
 
 ### Scénario 6 : Retrait du badge
 **Parcours** :
@@ -174,18 +173,75 @@ ne compte plus l'article fantôme. Le tri déjà fait n'est pas perdu.
       barre d'actions qui glisse au lieu de sauter.
 - [ ] Slate périmé → silhouette puis reprise automatique, jamais de carte vide.
 
+---
+
+## Passe PO 09/08 — scénarios additionnels
+
+### Scénario 16 : jamais l'en-tête seul (PRIORITÉ)
+**Parcours** :
+1. Vider le stockage local **et** IndexedDB, recharger, se connecter.
+2. Regarder la carte « Ton Essentiel » **pendant** tout le chargement, sans
+   cligner. Refaire sur un rechargement « tiède » (snapshot déjà en cache).
+**Résultat attendu** : à aucun instant la carte ne se réduit à son en-tête
+au-dessus du vide. On voit soit la **silhouette de la pile** (deux cartes
+esquissées + barre d'actions + progression), soit du contenu. Jamais rien entre
+les deux.
+
+### Scénario 17 : la pile ne tressaute plus (PRIORITÉ)
+**Parcours** :
+1. Enchaîner **5 swipes** en alternant gauche/droite, en incluant au moins une
+   carte **sans image** (nettement plus courte) suivie d'une carte **avec image**.
+**Résultat attendu** : la carte promue ne bouge pas autrement qu'en montant en
+échelle et en opacité. La barre d'actions **glisse** d'un seul mouvement continu
+vers sa nouvelle position — pas de temps d'arrêt suivi d'un saut, pas de
+va-et-vient. La liste des gardés grandit sans à-coup.
+
+### Scénario 18 : gate « Plus d'articles » à 3 gardés
+**Parcours** :
+1. Trier les 5 articles en n'en gardant que **2** (« Je garde » ou « Plus tard »).
+2. Observer le pied. Puis « Trier à nouveau » et recommencer en gardant **3**.
+**Résultat attendu** : à 2 gardés, **aucun** bouton « Plus d'articles » — pas de
+version grisée, pas de message d'explication ; seul « Trier à nouveau » reste. À
+3 gardés, « Plus d'articles » apparaît.
+
+### Scénario 19 : pied de tri lisible et actionnable
+**Parcours** :
+1. Finir un tri avec au moins 3 gardés.
+2. Taper « Plus d'articles ».
+**Résultat attendu** : sous la liste des gardés, **deux boutons pleine largeur**
+séparés du contenu par une vraie marge : « Plus d'articles » plein orange (même
+allure que « Je garde ») puis « Trier à nouveau » bordé. Le tap réinjecte le
+carrousel du jour et **rouvre** la pile sur un nouvel article ; la barre de
+progression s'allonge et les gardés restent en dessous.
+
+### Scénario 20 : gardés homogènes + nouvelle description
+**Parcours** :
+1. Finir un tri avec 3 gardés ou plus ; observer la liste.
+2. Ouvrir une **lettre passée** depuis le rewind ⏪.
+**Résultat attendu** : dans la liste des gardés, toutes les lignes se
+ressemblent — aucun fond teinté, aucun filet vertical orange, aucune pastille
+« Actu du jour », pas de premier article mis en avant. Sur une **lettre passée**,
+au contraire, le premier article garde son traitement éditorial (fond teinté,
+filet, pastille). Sous le titre de la carte, la description lit **« Choisis les
+articles que tu liras aujourd'hui. »**
+
 ## Critères d'acceptation
 - [ ] Le tri au swipe seul va jusqu'au bout, sans carte figée/grisée.
 - [ ] La carte grandit doucement sous la barre d'actions ; plus de grand vide.
 - [ ] Images de tri nettement plus grandes (QA 390×844).
 - [ ] Skeleton lisible « cartes » pendant le chargement.
-- [ ] « Plus d'articles » au tri terminé : injecte le carrousel + rouvre la pile.
+- [ ] « Plus d'articles » (≥ 3 gardés) : injecte le carrousel + rouvre la pile.
 - [ ] Plus de pastille « nouveaux articles ».
 - [ ] Boot à froid : silhouette de pile → vraie pile, **sans** liste passive.
 - [ ] Carte du dessous stable pendant la sortie, jamais pré-tamponnée.
 - [ ] Article sans image : pas d'aplat gris, carte plus courte, barre qui glisse.
 - [ ] Étoile / coche selon l'état d'intérêt de la source.
-- [ ] Pied de fin : « Trier à nouveau » + « Plus d'articles » (masqué si pool vide).
+- [ ] Pied de fin : deux boutons **pleine largeur** ; « Plus d'articles » absent
+      sous 3 gardés **ou** si le pool injectable est vide.
+- [ ] Jamais d'en-tête « Ton Essentiel » seul : silhouette ou contenu.
+- [ ] Aucun tressautement de la pile ni saut de la barre d'actions au swipe.
+- [ ] Gardés tous rendus à l'identique ; lettre passée conserve son lead.
+- [ ] Description « Choisis les articles que tu liras aujourd'hui. »
 - [ ] Plus aucun « N sur M trié(s) » nulle part.
 - [ ] Console sans erreurs ; réseau sans 4xx/5xx inattendus.
 

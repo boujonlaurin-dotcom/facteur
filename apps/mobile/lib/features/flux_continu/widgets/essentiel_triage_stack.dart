@@ -183,7 +183,11 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
     final colors = context.facteurColors;
     final triage = widget.triage;
     final currentId = triage.currentContentId;
-    if (currentId == null) return const SizedBox.shrink();
+    // Inatteignable depuis la carte (`showTriage` ⇒ `triage.isActive` ⇒
+    // `!done` ⇒ `currentContentId != null`), mais fermé comme son cas frère
+    // ci-dessous : un `SizedBox.shrink()` ici rendrait la carte à son en-tête
+    // nu si un appelant futur montait la pile hors de ce gate.
+    if (currentId == null) return const TriageStackSkeleton(standalone: true);
 
     final byId = {for (final a in widget.articles) a.contentId: a};
     final current = byId[currentId];
@@ -232,13 +236,20 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
       return stateBySourceId[id] ?? InterestState.unfollowed;
     }
 
-    // La carte épouse son contenu : croissance animée **vers le bas** (alignée
-    // en haut) quand la kept-list s'allonge, zone d'action figée au-dessus.
-    return AnimatedSize(
-      duration: FacteurDurations.medium,
-      curve: Curves.easeOutCubic,
-      alignment: Alignment.topCenter,
-      child: Column(
+    // **Deux `AnimatedSize` frères, jamais imbriqués** (passe PO 09/08, défaut
+    // A3). Chacun anime une hauteur **disjointe** : le slot de carte pour l'un,
+    // la liste des gardés pour l'autre. La colonne, elle, n'est plus enveloppée.
+    //
+    // Pourquoi c'est structurel et pas cosmétique : `RenderAnimatedSize` bascule
+    // en état `unstable` dès que la taille de son enfant change plusieurs frames
+    // d'affilée — il **cesse alors d'animer** et se cale sur l'enfant, après une
+    // frame de stalle et un saut de re-ciblage. Un `AnimatedSize` enveloppant la
+    // colonne a pour enfant une colonne dont la hauteur bouge à chaque frame
+    // (puisque le slot de carte anime la sienne) : il était donc *toujours*
+    // instable au changement de carte. Mesuré sur le build cassé, la barre
+    // d'actions descendait par à-coups (495.9 → 460.8 → 431.5 → 407.4 → 373.9 →
+    // 362.6 : pas irréguliers avec rebond) au lieu d'une easeOutCubic monotone.
+    return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -378,32 +389,42 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
           // petit écran), elle défile en interne au lieu de pousser la carte
           // hors de l'écran. En deçà, rien à faire défiler → le geste passe au
           // feed.
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.5,
-            ),
-            child: ListView(
-              shrinkWrap: true,
-              padding: EdgeInsets.zero,
-              physics: const ClampingScrollPhysics(),
-              children: [
-                // Plus de compteur « N sur M triés » en pied de liste (décision
-                // PO) : la barre de progression segmentée porte déjà
-                // l'avancement, et les lignes gardées sont juste au-dessus.
-                for (final id in triage.keptContentIds)
-                  if (byId[id] != null)
-                    _KeptRow(
-                      key: ValueKey('triage-kept-row-$id'),
-                      article: byId[id]!,
-                      sourceState: sourceStateOf(byId[id]!),
-                      onTap: () => widget.onTapArticle(byId[id]!),
-                      onPreviewStart: _markPreviewDiscovered,
-                    ),
-              ],
+          //
+          // Son `AnimatedSize` est **frère** de celui du slot de carte, pas son
+          // parent : c'est lui qui fait grandir la liste « vers le bas » quand
+          // un gardé s'ajoute, sans jamais animer aussi la hauteur du slot (cf.
+          // l'explication de l'état `unstable` en tête de build).
+          AnimatedSize(
+            duration: FacteurDurations.medium,
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
+              ),
+              child: ListView(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                physics: const ClampingScrollPhysics(),
+                children: [
+                  // Plus de compteur « N sur M triés » en pied de liste
+                  // (décision PO) : la barre de progression segmentée porte
+                  // déjà l'avancement, et les lignes gardées sont juste
+                  // au-dessus.
+                  for (final id in triage.keptContentIds)
+                    if (byId[id] != null)
+                      _KeptRow(
+                        key: ValueKey('triage-kept-row-$id'),
+                        article: byId[id]!,
+                        sourceState: sourceStateOf(byId[id]!),
+                        onTap: () => widget.onTapArticle(byId[id]!),
+                        onPreviewStart: _markPreviewDiscovered,
+                      ),
+                ],
+              ),
             ),
           ),
         ],
-      ),
     );
   }
 }
