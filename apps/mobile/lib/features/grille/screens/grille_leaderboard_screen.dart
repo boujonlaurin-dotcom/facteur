@@ -14,6 +14,7 @@ import '../../../shared/widgets/states/friendly_error_view.dart';
 import '../models/grille_models.dart';
 import '../providers/grille_leaderboard_provider.dart';
 import '../providers/grille_provider.dart';
+import '../utils/grille_format.dart';
 import '../utils/grille_share_text.dart';
 import '../widgets/g_app_bar.dart';
 import '../widgets/grille_button.dart';
@@ -158,7 +159,7 @@ class _StreakStrip extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$streak jours d’affilée',
+                  '${formatStreakDays(streak)} d’affilée',
                   style: GoogleFonts.fraunces(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
