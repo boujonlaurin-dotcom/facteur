@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 
 import '../../../config/topic_labels.dart';
@@ -88,6 +90,31 @@ class SourceRecommendation {
   });
 }
 
+/// Adéquation d'une source aux intérêts déclarés, du plus au moins pertinent
+/// (l'ordre des valeurs EST l'ordre de préférence). Signal partagé par le
+/// scoring ([SourceRecommender.recommend]) et le deck du swipe
+/// ([SourceRecommender.buildSpanningSet]) pour qu'ils relèguent les mêmes
+/// sources.
+enum _InterestFit {
+  /// Match *déclaratif* : thème principal, thème secondaire ou sujet granulaire
+  /// ∈ choix de l'utilisateur.
+  declared,
+
+  /// Pas de match déclaratif, mais la source **publie réellement** sur un thème
+  /// choisi (`coverageThemes`) : pertinence prouvée par la data.
+  covered,
+
+  /// Aucun signal thématique connu (source récente ou à faible volume). On ne
+  /// pénalise jamais une couverture inconnue, sinon on punit les petites
+  /// sources au seul motif qu'on n'a pas encore dérivé leur couverture.
+  unknown,
+
+  /// Couverture connue et entièrement hors des intérêts : le cas « l'Équipe (ou
+  /// une généraliste très sportive) proposée à quelqu'un qui n'a pas coché
+  /// Sport ».
+  offInterest,
+}
+
 /// Pôle d'axe sondé par une carte du swipe désambiguateur. Chaque carte
 /// incarne un pôle distinct pour révéler les préférences "profondes".
 enum SwipeAxisPole { deep, mainstream, independent, established, perspective }
@@ -118,6 +145,11 @@ class SwipeGroup {
 ///
 /// Replaces the static ThemeToSourcesMapping with dynamic scoring using
 /// source.theme, source.granularTopics, source.secondaryThemes, and source.sourceTier.
+///
+/// Le scoring est **interest-aware** : les bonus génériques (fiabilité, volume)
+/// ne s'appliquent qu'aux sources qui collent aux intérêts déclarés, et la
+/// couverture réellement publiée (`source.coverageThemes`) fait reculer les
+/// généralistes diluées. Cf. [_InterestFit].
 class SourceRecommender {
   static const int _maxMatched = 20;
   static const int _minMatched = 10;
@@ -136,6 +168,49 @@ class SourceRecommender {
     if (articles30d >= 90) return 2; // ≈ 3/jour, source très active
     if (articles30d >= 20) return 1; // ≈ 0,7/jour, source régulière
     return 0;
+  }
+
+  /// Malus d'une source dont la couverture **connue** est entièrement hors des
+  /// intérêts déclarés. Volontairement léger : privée de ses bonus génériques
+  /// (fiabilité, volume) elle est déjà retombée à 0, donc sous toute source
+  /// matchée ; le malus la place juste en dessous des sources à couverture
+  /// *inconnue*, sans empêcher un signal révélé (like au swipe, vote de pôle)
+  /// de la faire remonter.
+  static const int _offInterestMalus = 1;
+
+  /// Plafond du malus de **dilution** (Règle anti-généraliste) : une source
+  /// matchée mais qui publie surtout ailleurs (Ouest-France ≈ 40 % de sport)
+  /// passe *sous* une source focalisée, sans être écrasée.
+  static const int _maxDilutionMalus = 2;
+
+  /// Adéquation d'une source aux intérêts déclarés (cf. [_InterestFit]).
+  ///
+  /// Sans aucun intérêt déclaré (bouton « Passer »), tout est traité comme
+  /// [_InterestFit.declared] : le comportement historique reste intact.
+  static _InterestFit _interestFit(
+    Source s,
+    List<String> themes,
+    List<String> subtopics,
+  ) {
+    if (themes.isEmpty && subtopics.isEmpty) return _InterestFit.declared;
+    if ((s.theme != null && themes.contains(s.theme)) ||
+        s.secondaryThemes.any(themes.contains) ||
+        s.granularTopics.any(subtopics.contains)) {
+      return _InterestFit.declared;
+    }
+    if (s.coverageThemes.any(themes.contains)) return _InterestFit.covered;
+    final noSignal = s.theme == null &&
+        s.secondaryThemes.isEmpty &&
+        s.coverageThemes.isEmpty;
+    return noSignal ? _InterestFit.unknown : _InterestFit.offInterest;
+  }
+
+  /// Malus de dilution : 1 point par thème **réellement publié** hors des
+  /// intérêts, plafonné à [_maxDilutionMalus]. Une couverture inconnue
+  /// (`coverageThemes` vide) ne coûte donc rien.
+  static int _dilutionMalus(Source s, List<String> themes) {
+    final off = s.coverageThemes.where((t) => !themes.contains(t)).length;
+    return math.min(off, _maxDilutionMalus);
   }
 
   /// Compute recommendations from user choices and available sources.
@@ -526,13 +601,36 @@ class SourceRecommender {
       }
     }
 
-    // Reliability bonus (+1)
-    if (source.reliabilityScore == 'high') {
-      score += 1;
+    // --- Pertinence thématique (anti « hors-intérêt ») ---
+    //
+    // N'agit que si l'utilisateur a *choisi* des thèmes (bouton « Passer » ⇒
+    // comportement historique inchangé) et jamais sur une source aimée au
+    // swipe : le signal *révélé* prime toujours sur le déclaratif.
+    final fit = _interestFit(source, themes, subtopics);
+    final penalizeOffInterest =
+        themes.isNotEmpty && !swipeLiked.contains(source.id);
+    final isRelevant =
+        fit == _InterestFit.declared || fit == _InterestFit.covered;
+
+    // Bonus génériques (fiabilité +1, volume +2) réservés aux sources
+    // pertinentes : sans ce garde-fou, une généraliste fiable et productive
+    // atteint 3 — le score d'un vrai match de thème — sans coller à aucun
+    // intérêt, et mène la file des suggestions.
+    if (isRelevant || !penalizeOffInterest) {
+      if (source.reliabilityScore == 'high') {
+        score += 1;
+      }
+      score += _volumeBonus(source.articles30d);
     }
 
-    // Volume bonus : favorise les sources productives (cf. _volumeBonus).
-    score += _volumeBonus(source.articles30d);
+    if (penalizeOffInterest) {
+      if (isRelevant) {
+        // Matchée mais diluée : elle publie surtout hors des intérêts.
+        score -= _dilutionMalus(source, themes);
+      } else if (fit == _InterestFit.offInterest) {
+        score -= _offInterestMalus;
+      }
+    }
 
     // --- Axes "profondeur" ré-aiguillés (v6) ---
 
@@ -720,8 +818,14 @@ class SourceRecommender {
   /// agrégé au reveal).
   ///
   /// Dégrade proprement : sur les thèmes pauvres, on complète depuis le
-  /// catalogue large (sources les plus suivies) ; un pôle sans candidat est
-  /// simplement omis (moins de cartes).
+  /// catalogue large ; un pôle sans candidat est simplement omis (moins de
+  /// cartes). Ce backfill est **interest-aware** (cf. [_InterestFit]) : les
+  /// pôles ne se remplissent qu'avec des sources dont les intérêts ou la
+  /// couverture publiée recoupent les choix de l'utilisateur, et les grosses
+  /// audiences clairement hors-intérêt ne servent que de filler de dernier
+  /// recours, en fin de deck. Sans ce garde-fou, le tri par `followerCount`
+  /// faisait mener le deck par l'Équipe ou Ouest-France sur les thèmes peu
+  /// couverts.
   static List<SpanningSource> buildSpanningSet({
     required List<String> selectedThemes,
     required List<String> selectedSubtopics,
@@ -732,23 +836,34 @@ class SourceRecommender {
     final curated = allSources.where((s) => s.isCurated).toList();
     if (curated.isEmpty) return const [];
 
-    bool matchesThemes(Source s) {
-      if (selectedThemes.isEmpty && selectedSubtopics.isEmpty) return true;
-      if (s.theme != null && selectedThemes.contains(s.theme)) return true;
-      if (s.secondaryThemes.any(selectedThemes.contains)) return true;
-      if (s.granularTopics.any(selectedSubtopics.contains)) return true;
-      return false;
-    }
+    // Rang d'adéquation (0 = match déclaratif … 3 = hors-intérêt avéré), mémoïsé
+    // car il sert de clé de tri primaire dans plusieurs comparateurs.
+    final fitCache = <String, _InterestFit>{};
+    _InterestFit fitOf(Source s) => fitCache.putIfAbsent(
+      s.id,
+      () => _interestFit(s, selectedThemes, selectedSubtopics),
+    );
+    int byFit(Source a, Source b) => fitOf(a).index.compareTo(fitOf(b).index);
 
-    final matched = curated.where(matchesThemes).toList();
+    // La pénalité ne s'arme qu'avec des intérêts déclarés (« Passer » ⇒
+    // comportement historique).
+    final interestAware = selectedThemes.isNotEmpty;
+
+    final matched = curated
+        .where((s) => fitOf(s) == _InterestFit.declared)
+        .toList();
     final matchedIds = matched.map((s) => s.id).toSet();
 
-    // Pool = matchés d'abord, complétés par le reste du curé (par audience)
+    // Pool = matchés d'abord, complétés par le reste du curé (couverture qui
+    // recoupe les intérêts d'abord, hors-intérêt en dernier, puis audience)
     // pour garantir un set étalé même sur thèmes pauvres.
     var pool = [...matched];
     if (pool.length < maxCards) {
       final extra = curated.where((s) => !matchedIds.contains(s.id)).toList()
-        ..sort((a, b) => b.followerCount.compareTo(a.followerCount));
+        ..sort((a, b) {
+          final fit = byFit(a, b);
+          return fit != 0 ? fit : b.followerCount.compareTo(a.followerCount);
+        });
       pool = [...pool, ...extra];
     }
 
@@ -768,7 +883,9 @@ class SourceRecommender {
     }
 
     // Sélectionne la meilleure source d'un pôle, en préférant les sources
-    // matchées thématiquement avant de puiser dans le catalogue large.
+    // matchées thématiquement avant de puiser dans le catalogue large. Les
+    // sources clairement hors-intérêt sont exclues des pôles : elles ne
+    // reviennent qu'en filler de fin de deck.
     void pick(
       SwipeAxisPole pole,
       bool Function(Source) test,
@@ -776,11 +893,17 @@ class SourceRecommender {
     ) {
       if (result.length >= maxCards) return;
       final candidates =
-          pool.where((s) => !used.contains(s.id) && test(s)).toList()
+          pool
+              .where(
+                (s) =>
+                    !used.contains(s.id) &&
+                    test(s) &&
+                    !(interestAware && fitOf(s) == _InterestFit.offInterest),
+              )
+              .toList()
             ..sort((a, b) {
-              final am = matchedIds.contains(a.id) ? 1 : 0;
-              final bm = matchedIds.contains(b.id) ? 1 : 0;
-              if (am != bm) return bm - am; // matchés d'abord
+              final fit = byFit(a, b); // matchés, puis couverture, puis inconnus
+              if (fit != 0) return fit;
               return rank(a, b);
             });
       if (candidates.isEmpty) return;
@@ -837,10 +960,14 @@ class SourceRecommender {
     }
 
     // Complète si des pôles manquaient (thèmes pauvres) avec les sources
-    // matchées restantes les plus suivies (pôle neutre = actu directe).
+    // restantes les plus productives (pôle neutre = actu directe), toujours par
+    // adéquation décroissante : les hors-intérêt ferment la marche.
     if (result.length < maxCards) {
       final fillers = pool.where((s) => !used.contains(s.id)).toList()
-        ..sort(byVolumeThenFollowers);
+        ..sort((a, b) {
+          final fit = byFit(a, b);
+          return fit != 0 ? fit : byVolumeThenFollowers(a, b);
+        });
       for (final s in fillers) {
         if (result.length >= maxCards) break;
         used.add(s.id);

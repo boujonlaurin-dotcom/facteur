@@ -344,6 +344,7 @@ def _source_to_response(
         bias_origin=getattr(s.bias_origin, "value", "unknown"),
         secondary_themes=s.secondary_themes,
         granular_topics=s.granular_topics,
+        coverage_themes=s.coverage_themes,
         source_tier=s.source_tier or "mainstream",
         score_independence=s.score_independence,
         score_rigor=s.score_rigor,

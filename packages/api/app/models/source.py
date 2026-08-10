@@ -119,7 +119,11 @@ class Source(Base):
     # Couverture éditoriale **data-driven** (top thèmes réellement publiés sur
     # 90j, hors primaire), recalculée par `recompute_source_coverage_themes`.
     # Sert la **découverte** (recall : « étoffer un thème », catalogue par
-    # thème) — jamais le scoring. NULL = pas encore dérivée / volume trop faible.
+    # thème) et, depuis la reco d'onboarding « interest-aware », le repérage des
+    # généralistes **diluées** hors des intérêts déclarés (malus, jamais bonus :
+    # la couverture ne crée pas de pertinence, elle en retire).
+    # NULL = pas encore dérivée / volume trop faible ⇒ signal *inconnu*, jamais
+    # pénalisant (sinon on punit les petites sources récentes).
     coverage_themes: Mapped[list[str] | None] = mapped_column(
         ARRAY(Text), nullable=True
     )

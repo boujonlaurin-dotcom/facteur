@@ -17,7 +17,7 @@ class OnboardingStrings {
   static const String welcomeTitle = 'Bienvenue sur Facteur !';
   static const String welcomeSubtitle =
       "L'information devrait nous aider à comprendre le monde.";
-  static const String welcomeManifestoButton = 'Lire notre Manifeste';
+  static const String welcomeManifestoButton = 'Lire notre manifeste';
   static const String welcomeStartButton = 'Commencer';
   static const String welcomeAlreadyHaveAccount = 'J\'ai déjà un compte';
 
@@ -45,11 +45,11 @@ class OnboardingStrings {
   // Media Concentration
   static const String mediaConcentrationTitle =
       'Sais-tu qui possède tes médias ?';
-  static const String mediaConcentrationText =
-      'Cette carte reflète la concentration des médias en France. \n\nFacteur t\'aide à comprendre comment se positionnent les médias pour mieux diversifier tes médias.';
+  // « médias » revenait 3 fois sur cet écran : la dernière occurrence devient
+  // « sources » (même sens, lecture moins répétitive).
   static const String mediaConcentrationTextPart1 =
       'Cette carte reflète la concentration des médias en France.\nFacteur t\'aide à comprendre comment se positionnent les médias pour mieux ';
-  static const String mediaConcentrationTextBold1 = 'diversifier tes médias';
+  static const String mediaConcentrationTextBold1 = 'diversifier tes sources';
   static const String mediaConcentrationTextPart2 = '.';
   static const String mediaConcentrationButton = 'Continuer';
 
@@ -151,6 +151,10 @@ class OnboardingStrings {
   static const String swipeReliabilityMedium = 'Moyenne';
   static const String swipeReliabilityLow = 'Limitée';
   static const String swipeReliabilityUnknown = 'Non évaluée';
+
+  // Attente pendant que la reco tourne (catalogue en vol, calcul du deck).
+  static const String sourceSearchLoaderTitle = 'Recherche de tes médias';
+  static const String sourceSearchLoaderSubtitle = 'Basé sur tes intérêts';
 
   // Moment de calibration en fin de tri + micro-indice pendant les swipes.
   static const String swipeRefiningTitle = 'On affine tes médias…';
@@ -373,14 +377,14 @@ class OnboardingStrings {
   }
 
   // Manifesto content
-  static const String manifestoTitle = 'Notre Manifeste';
-  static const String manifestoSection1Title = 'Le Projet';
+  static const String manifestoTitle = 'Notre manifeste';
+  static const String manifestoSection1Title = 'Le projet';
   static const String manifestoSection1Content =
       'Facteur est un projet open-source visant à créer un espace où l\'information redevient un bien commun, accessible et fiable.';
-  static const String manifestoSection2Title = 'Notre Mission';
+  static const String manifestoSection2Title = 'Notre mission';
   static const String manifestoSection2Content =
       'Redonner de la qualité, de l\'indépendance et de la pluralité à l\'information. Trier le signal du bruit pour informer en profondeur.';
-  static const String manifestoSection3Title = 'Notre Approche';
+  static const String manifestoSection3Title = 'Notre approche';
   static const String manifestoSection3Content =
       'La technologie doit servir l\'humain. Nous avançons pas-à-pas, avec transparence et avec notre communauté.';
   static const String manifestoCombatsTitle = 'Ce contre quoi nous luttons :';
