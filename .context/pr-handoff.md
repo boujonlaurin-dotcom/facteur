@@ -129,12 +129,17 @@ laissé à une passe dédiée plutôt que mêlé à des correctifs visuels.
 
 ## Vérifications
 
-- `flutter analyze lib test` : **0 erreur**, 0 warning.
-- `flutter test` : voir le récapitulatif de la PR — comparé à la baseline connue
-  de **26 échecs pré-existants** hors périmètre (bookmark, feed_sources, topic
-  chips, notifications, premium, perspectives, smoke, `theme_section_screen_test`).
-  Aucun nouvel échec.
-- `pytest` backend : inchangé (aucune modification serveur).
+- `flutter analyze lib test` : **0 erreur**, 0 warning (527 `info`, tous des
+  `deprecated_member_use` pré-existants hors périmètre).
+- `flutter test` : **2110 passés / 26 échecs**, contre **2104 / 26** en baseline
+  sur `4128d429` — **exactement le même jeu d'échecs** (bookmark, feed_sources,
+  topic chips, notifications, premium, perspectives, smoke,
+  `theme_section_screen_test`), tous hors périmètre. Aucun nouvel échec ; les 6
+  tests en plus sont ceux ajoutés par cette passe.
+- `pytest` backend : **aucun fichier de `packages/api` n'est touché** par cette
+  PR (`git diff origin/main...HEAD --name-only` → 0). Le run local s'arrête sur
+  692 erreurs de connexion à la base de test, non provisionnée dans ce
+  workspace ; c'est la CI qui fait foi pour le backend.
 - Aucune migration Alembic.
 - E2E Playwright (390×844, sémantique activée, compte QA) rejoué **sur le build
   livré**, instrumentation retirée : A1 avant/après, trace A3 avant/après, pied
