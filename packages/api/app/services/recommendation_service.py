@@ -2584,8 +2584,8 @@ class RecommendationService:
 
         async def _fetch_candidates(base_query) -> list[Content]:
             """Exécute le fetch (two-phase ou simple) sur une `base_query` déjà
-            filtrée (thème/topic/fenêtre). Isolé pour pouvoir rejouer la requête
-            avec une fenêtre élargie (Tournée — rareté de contenu)."""
+            filtrée (thème/topic/fenêtre), toujours bornée à
+            `limit_candidates`."""
             if _use_two_phase:
                 # Followed sources only — no curated enrichment in default feed.
                 # Curated enrichment is reserved for digest (digest_selector.py).
@@ -2609,11 +2609,10 @@ class RecommendationService:
                     user_query = user_query.order_by(
                         Content.topics.overlap(list(user_subtopics)).desc(),
                         Content.published_at.desc(),
-                    ).limit(limit_candidates)
-                else:
-                    user_query = user_query.order_by(Content.published_at.desc()).limit(
-                        limit_candidates
                     )
+                else:
+                    user_query = user_query.order_by(Content.published_at.desc())
+                user_query = user_query.limit(limit_candidates)
                 # The followed-only query on the default (unfiltered) view can
                 # hang under a bad plan when the user has many followed sources —
                 # other branches dodge it thanks to their `is_curated` narrowing.
@@ -2660,11 +2659,9 @@ class RecommendationService:
             return list(simple_result.all())
 
         if personalized_theme_mode:
-            # Tournée du jour : fenêtre de fraîcheur adaptative. On part de 24h
-            # (« fraîcheur du jour ») et on n'élargit (48h puis 72h) que si le
-            # pool reste sous THEMATIC_MIN_POOL_SIZE — évite la section quasi
-            # vide sur les thèmes rares sans dégrader les thèmes denses. On ne
-            # rejoue la requête que si nécessaire (pas 3 requêtes systématiques).
+            # Tournée du jour : élargit 24→48→72 h seulement tant que le pool
+            # est insuffisant. Chaque palier conserve la borne SQL afin qu'une
+            # section large ne charge jamais tous ses candidats sur 72 h.
             now_window = datetime.datetime.now(datetime.UTC)
             for tier_hours in ScoringWeights.THEMATIC_WINDOW_TIERS_HOURS:
                 since = now_window - datetime.timedelta(hours=tier_hours)
@@ -2673,7 +2670,7 @@ class RecommendationService:
                 )
                 if len(candidates_list) >= ScoringWeights.THEMATIC_MIN_POOL_SIZE:
                     break
-            # `tier_hours` reste le dernier palier essayé (tiers non vide).
+            # `tier_hours` reste le premier palier qui atteint le seuil, ou 72 h.
             logger.info(
                 "feed_thematic_adaptive_window",
                 user_id=str(user_id),
