@@ -1,8 +1,8 @@
 {
   "unreleased": [
     {
-      "tag": "Ta Tournée",
-      "summary": "Les blocs de ta Tournée sont désormais classés par la qualité de ce qu'ils contiennent : un bloc qui n'a qu'un seul article ne prend plus la place d'un bloc bien fourni en haut de page. L'ordre est fixé une fois par jour, au chargement, donc rien ne bouge sous tes yeux pendant que tu lis. Si tu as arrangé ta Tournée à la main, ton ordre reste la base et départage les blocs à égalité."
+      "tag": "Inscription",
+      "summary": "Les médias proposés pendant l'inscription collent enfin à tes centres d'intérêt : un quotidien très sportif ne t'ouvre plus la sélection si tu n'as pas coché Sport, et une source pointue sur un sujet que tu suis passe devant une grosse généraliste. Facteur regarde ce que chaque média publie vraiment, pas seulement son étiquette. Un média que tu gardes d'un geste reste prioritaire, quoi qu'il arrive."
     },
     {
       "tag": "Ton Essentiel",
