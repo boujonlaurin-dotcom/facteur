@@ -155,6 +155,37 @@ final redirectUrl = kIsWeb
      - Limites plus élevées
      - Meilleur tracking
      - Custom domain + SPF/DKIM
+   - **Statut actuel** : Custom SMTP **déjà configuré** (Resend, expéditeur
+     `laurin@facteur.app`).
+
+---
+
+## 📧 Templates d'email Auth — VERSIONNÉS + SCRIPT (ne plus coller à la main)
+
+Les templates d'email Auth ne sont **pas** config-as-code Supabase (pas de
+`supabase/config.toml` dans le repo). Pour éviter qu'une « étape manuelle PO »
+(coller le HTML dans le dashboard) soit oubliée — ce qui a laissé l'email de
+soutien sur le template Supabase par défaut « Your Magic Link » —, la config est
+poussée par un **script idempotent** à partir des sources versionnées :
+
+```bash
+# Pré-requis : SUPABASE_ACCESS_TOKEN (PAT avec scope écriture)
+bash scripts/apply-supabase-auth-templates.sh            # applique
+DRY_RUN=1 bash scripts/apply-supabase-auth-templates.sh  # prévisualise sans écrire
+```
+
+Ce que le script applique (via Management API `PATCH /v1/projects/{ref}/config/auth`) :
+
+| Champ | Source |
+|-------|--------|
+| Template **Magic Link** (= email de soutien) | `apps/landing/emails/soutien-magic-link.html` |
+| Objet Magic Link | `Merci pour ta demande de soutien` |
+| Redirect URLs (`uri_allow_list`) | merge + `https://facteur.app/**` (redirect `/soutenir` du parcours Stripe) |
+
+> Le template « Magic Link » est **exclusivement** l'email de soutien (seul flux via
+> `/auth/v1/otp` ; le reset password utilise un autre template). Le brander « soutien »
+> à 100 % est sans effet de bord.
+> Repli manuel (si le PAT est read-only) documenté en tête du script.
 
 ---
 
