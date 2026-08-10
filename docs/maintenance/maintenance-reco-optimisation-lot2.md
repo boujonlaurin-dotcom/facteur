@@ -51,8 +51,8 @@ ce lot, c'est un signal d'erreur de conception à réexaminer.
 |---|---|---|---|
 | PR-1 | Instrumentation d'impression | 3 | **livrée** |
 | PR-2 | `SCORING_OVERRIDES` + contexte de sweep | 1 (outillage) | **livrée** |
-| PR-3 | Personas, corpus gelé, harnais de sensibilité | 1 | **livrée** |
-| PR-4 | Ordre des blocs par score top-3 | 2 | à faire |
+| PR-3 | Personas, corpus gelé, harnais de sensibilité | 1 | à faire |
+| PR-4 | Ordre des blocs par score top-3 | 2 | **livrée** |
 | PR-5 | Shrinkage affinité source + `DIGEST_SPORT_PENALTY` | 4 (amorce) | à faire, gated sur PR-3 |
 | PR-6 | `evaluate_tournee_ctr.py` | 3 | à faire, ≈2 semaines après PR-1 |
 
@@ -81,7 +81,7 @@ Propriétés portées :
 | `position_in_section` | rang de la carte | |
 | `global_position` | compteur de page | porte l'effet de position |
 | `score_total` | `recommendation_reason.score_total` | `null` sur les blocs éditoriaux |
-| `block_score` | — | `null` **jusqu'à PR-4** : c'est ce champ qui reliera « ordre des blocs » et « CTR mesuré » |
+| `block_score` | `FluxContinuState.blockScores[sectionKey]` | **renseigné depuis PR-4** : somme des 3 meilleurs `score_total` du bloc — c'est le champ qui relie « ordre des blocs » et « CTR mesuré ». Recalculé à chaque recomposition, donc c'est le score du bloc **au moment de l'impression** ; l'ordre, lui, est gelé à la journée, donc les deux peuvent diverger dans la journée (load-more, refetch). Analyse : joindre sur le couple `(day_key, section)`, pas sur la valeur seule |
 | `theme`, `source_id` | carte | |
 | `is_serene`, `underfilled` | état | découpes de lecture |
 | `day_key` | `TourneeProgressService.dayKey` | frontière 4 h Paris |
@@ -297,74 +297,69 @@ Aucune migration Alembic (`ScoringWeights` n'expose que des attributs de classe)
 
 ---
 
-## PR-3 — Personas, corpus gelé, harnais de sensibilité
-
-Runbook complet :
-[`maintenance-scoring-tuning-harness.md`](./maintenance-scoring-tuning-harness.md).
-Trois scripts, deux fixtures, un test — **aucune constante modifiée, aucune
-migration, aucun changement de comportement en prod**.
+## PR-4 — Ordre des blocs par score top-3 (mobile)
 
 ### Ce qui est posé
 
+La **dépriorisation binaire** riches/maigres (partition stable gatée sur
+`richCount >= kThinDemotionRichThreshold`) ne classait pas, elle reléguait. Elle
+est remplacée par un tri sur la **somme des 3 meilleurs `score_total`** des
+articles du bloc — score que le backend renvoie déjà dans
+`recommendation_reason`. Les slots manquants comptant 0, un bloc à 1 article est
+pénalisé *structurellement* (≈ 1 × s vs 3 × s), ce qu'une moyenne n'aurait pas
+fait. Répond à la plainte PO « des blocs à 1 article remontent en tête ».
+
+**PR-4 boucle aussi PR-1** : `block_score` était câblé de bout en bout
+(`SectionBlock` → `ArticleImpressionTracker` → `analytics_service`) mais
+personne ne le renseignait — il valait `null` en prod. `FluxContinuState.blockScores`
+le remplit désormais depuis la même passe qui a fixé l'ordre.
+
+### Décisions et leurs raisons
+
+**Ordre gelé à la journée tournée** (frontière 07h30 Paris, clé
+`tournee_score_order_v1` stockant `{"day", "keys"}`).
+`_fanOutSectionsProgressive` émet après chaque tâche (~10-15 recompositions) :
+trier à chaque emit ferait sauter les blocs sous les yeux. L'ordre est calculé
+**une fois**, à la complétion du fan-out, puis rejoué tel quel par tous les
+composes suivants du jour (cache in-day, pull-to-refresh, refetch partiels).
+Clé unique day-stampée ⇒ auto-invalidante, rien à ajouter à `purgeOldPrefsKeys`.
+
+**Réinjection à position absolue via `mergeVisibleReorder`**, pas `applyOrder` :
+ce dernier pousse les clés inconnues en **fin**, ce qui ferait couler Actus /
+Bonnes Nouvelles (jamais scorées) jusqu'à les faire tomber hors du cap 13.
+
+**Portée plus large que la classification maigre/riche** : toute section résolue
+portant au moins un article scoré entre au classement — veille et « Choisie pour
+vous » comprises. Une veille pauvre coule donc désormais elle aussi (décision
+PO). Une section dont *aucun* article ne porte de `recommendation_reason`
+(éditorial, coquille de boot) n'entre pas dans la map et **garde sa place**
+plutôt que de couler à 0.
+
+**Le tri s'applique aussi aux comptes personnalisés** (décision PO) : l'ordre
+manuel reste la base d'entrée et départage à score égal (le tri est stable),
+mais il ne fait plus autorité au-delà. Risque assumé : un bloc glissé en tête
+peut descendre le lendemain — l'ordre étant figé à la journée, jamais dans la
+même session.
+
+**Kill-switch** `kTourneeScoreSortEnabled` : à `false`, aucun calcul, aucune
+persistance, et la dépriorisation binaire reprend à l'identique.
+`kThinDemotionRichThreshold` et le paramètre `demote` deviennent obsolètes mais
+**partent au cycle suivant** — la CI ne lance pas `flutter test`, on ne retire
+pas les deux filets d'un coup. `thinKeys` reste utilisé par le backfill et la
+modal favoris.
+
+### Fichiers
+
 | Fichier | Nature |
 |---|---|
-| `packages/api/scripts/build_persona_dataset.py` | nouveau — 8 personas (6 médoïdes + 2 extrêmes) depuis un dump MCP, k-medoids stdlib déterministe |
-| `packages/api/scripts/build_scoring_corpus.py` | nouveau — corpus 24 h append-only depuis `DATABASE_URL_RO` |
-| `packages/api/scripts/evaluate_scoring_personas.py` | nouveau — `--sensitivity` / `--invariants` / `--gold` / `--sweep` / `--compare` |
-| `packages/api/scripts/validate_personas.py` | **supprimé** (faux profils écrits dans une DB vivante) |
-| `packages/api/tests/fixtures/scoring_personas.json` | 8 personas anonymisés |
-| `packages/api/tests/fixtures/scoring_corpus_2026-08-03.json` | 200 articles, gelé |
-| `packages/api/tests/fixtures/scoring_gold_labels.json` | squelette vide + mode d'emploi |
-| `packages/api/tests/scripts/test_evaluate_scoring_personas.py` | 52 tests, ni DB ni réseau |
-| `packages/api/tests/scripts/test_build_persona_dataset.py` | 19 tests — déterminisme du clustering, anonymisation |
+| `apps/mobile/lib/features/flux_continu/utils/section_score_order.dart` | nouveau — `blockScore`, `rankKeysByBlockScore`, `applyScoreOrder` (pur, testable sans binding) |
+| `apps/mobile/lib/features/flux_continu/providers/flux_continu_provider.dart` | `blockScores` dans `_classifyFavoriteSections`, `scoreOrder` dans `_orderedTourneeKeys`, gel + persistance dans `_fanOutSectionsProgressive`, chargement dans `_buildStateFromPayload` |
+| `apps/mobile/lib/features/flux_continu/models/flux_continu_models.dart` | `FluxContinuState.blockScores` |
+| `apps/mobile/lib/features/flux_continu/providers/tournee_order_prefs_provider.dart` | `kTourneeScoreSortEnabled` |
+| `apps/mobile/lib/features/flux_continu/services/tournee_progress_service.dart` | `loadScoreOrderForToday` / `setScoreOrderToday` |
+| `apps/mobile/lib/features/flux_continu/screens/flux_continu_screen.dart` | 1 call site `SectionBlock(blockScore:)` (le seul portant `impressionDayKey`) |
 
-### Faits mesurés qui corrigent le cadrage
-
-1. **Le rôle RO lit `contents`/`sources` mais est refusé sur toutes les tables
-   `user_*`.** Corpus → lecture directe ; personas → dump MCP (convention
-   `--raw` de `build_event_dataset.py`).
-2. **2 comptes au plafond `weight = 3,0`, pas 32** (`users_at_cap = 2` sur 130
-   comptes ayant des intérêts). Le persona vétéran reste utile comme régime de
-   saturation de `THEME_MATCH`, mais il ne représente que 2 comptes.
-3. **64 des 112 constantes balayables sont hors du moteur de piliers.** Le
-   rapport distingue explicitement *hors-périmètre* (jamais lue par
-   `compute_score`) d'*inerte* (lue, sans effet mesurable) — les confondre
-   ferait passer un cap d'arrangement de la Tournée pour un dial de scoring.
-4. **`DIGEST_SPORT_PENALTY` ne vit pas dans le moteur de piliers** : elle est
-   appliquée par `digest_selector` après combinaison. Le harnais la rejoue à la
-   demande (`--sport-penalty`), et **le périmètre mesuré suit le régime du run** :
-   sans le drapeau elle est *hors-périmètre*, avec le drapeau elle entre dans le
-   classement de sensibilité. Sans ce couplage, le rapport l'aurait déclarée
-   « jamais lue par le moteur » dans un run qui l'appliquait à chaque article.
-5. **Le sport suivi est déjà enterré avant la pénalité digest.** Le meilleur
-   article sport d'une source suivie sort au rang **134** (`persona_01`) et
-   **50** (`persona_04`) *avant* les −80, et 187 / 172 après. La pénalité fait
-   son travail mais n'est pas la cause première : **PR-5 qui ne toucherait que
-   `DIGEST_SPORT_PENALTY` déplacerait peu de chose.** *(À reconfirmer sur le
-   corpus complet : le vivier sport est mince sur 200 articles.)*
-   Désormais **mesuré et plus seulement déduit** :
-   `--sensitivity --sport-penalty --only DIGEST_SPORT` la classe **inerte**
-   (churn 0 sur toute la grille) — la perturber ne déplace le top-5 d'aucun
-   persona.
-
-### Résultat de recette
-
-`--sweep ENTITY_AFFINITY_BASE=8,16,32,64` → **courbe plate**, churn 0,000 sur
-tout l'intervalle : le harnais **redécouvre l'inertie déjà établie** de
-l'affinité entités. C'était la condition d'acceptation.
-
-Première lecture : **20 constantes actives · 1 faible · 27 inertes · 64
-hors-périmètre**, dominées par `THEME_MATCH`, `recency_base` et `TOPIC_MATCH`.
-Les `MAX_*_RAW` remontent haut mais sont des dénominateurs de normalisation —
-architecture, pas dial.
-
-### Réponse à la question ouverte n°1
-
-**Non, `essentiel_service.py` ne passe pas par `PillarScoringEngine`.** Il
-réutilise les signaux du digest déjà scoré (docstring L7-14) et applique ses
-propres boosts. Conséquence : l'option « faire remonter un score pour les blocs
-éditoriaux », écartée en PR-4, aurait coûté un chemin de scoring entier — la
-décision d'écarter est confirmée.
+Aucune migration Alembic (mobile-only).
 
 ---
 

@@ -5,13 +5,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:flutter_timezone/flutter_timezone.dart';
 
+import '../../config/routes.dart';
+import '../../features/flux_continu/providers/pending_feed_section_provider.dart';
+import '../../features/flux_continu/providers/selected_edition_date_provider.dart';
+import '../../features/flux_continu/providers/tournee_order_prefs_provider.dart';
 import '../api/notification_preferences_api_service.dart';
+import 'notification_intent.dart';
 import 'posthog_service.dart';
 
 /// Variante de copy de la notification quotidienne.
@@ -95,8 +101,42 @@ class PushNotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    await retireLegacyAlertsChannel();
+
+    // Cold-launch depuis une notif LOCALE : tapée app tuée, elle n'emprunte pas
+    // le cold-launch FCM (`getInitialMessage`) mais ce chemin-ci, qui n'était
+    // jamais lu. Sans ça, une notif bonnes nouvelles / veille tapée app tuée ne
+    // posait aucun état de section. Le rejeu post-auth, lui, est déjà géré par
+    // le `redirect` via [takePendingRoute] — inutile de doubler ce gate ici.
+    try {
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp ?? false) {
+        _routeIntentWhenMounted(
+          NotificationIntent.parseFromLocalPayload(
+            launch!.notificationResponse?.payload,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('PushNotificationService: launch details failed: $e');
+    }
+
     _initialized = true;
     debugPrint('PushNotificationService: Initialized successfully');
+  }
+
+  /// Applique un intent de cold-launch dès que le navigator existe.
+  ///
+  /// [init] tourne juste après `runApp` : le navigator est en principe déjà
+  /// monté, mais une frame de battement suffit à le garantir au tout premier
+  /// boot. Pas d'attente de l'auth ici — [routeIntent] met la cible de côté et
+  /// le `redirect` la rejoue (cf. [takePendingRoute]).
+  static void _routeIntentWhenMounted(NotificationIntent intent) {
+    if (_navigatorKey?.currentContext != null) {
+      routeIntent(intent);
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => routeIntent(intent));
   }
 
   Future<bool> requestPermission() async {
@@ -368,7 +408,13 @@ class PushNotificationService {
       ),
       androidScheduleMode: scheduleMode,
       matchDateTimeComponents: DateTimeComponents.time,
-      payload: 'route:/digest?serein=1',
+      // Deep-link section (#2) : le tap scrolle vers la section Bonnes Nouvelles
+      // au lieu de retomber en haut de l'Essentiel. `serein` n'est plus forcé —
+      // la section s'affiche dans le flux normal, indépendamment du toggle.
+      payload: NotificationIntent.encodeLocalPayload(
+        RoutePaths.fluxContinu,
+        const {'section': kTourneeBonnesKey},
+      ),
     );
 
     debugPrint(
@@ -522,8 +568,9 @@ class PushNotificationService {
       return;
     }
 
-    // Alertes source et sujet (stories 30.2/30.3) : canal et ID dédiés, jamais
-    // le canal digest — elles doivent arriver sans son ni vibration.
+    // Alertes source et sujet (stories 30.2/30.3/30.5) : canal et ID dédiés,
+    // jamais le canal digest. Le canal `alerts_channel_v2` est sonore et
+    // vibrant depuis la 30.5 — une alerte silencieuse n'est pas une alerte.
     if (data['kind'] == 'source_alert' || data['kind'] == 'topic_alert') {
       await _showAlert(data, notification: notification);
       return;
@@ -569,8 +616,38 @@ class PushNotificationService {
         android: androidDetails,
         iOS: iosDetails,
       ),
-      payload: 'route:$route',
+      // Le digest FCM est data-only sur Android : la notif est rendue ICI, donc
+      // son tap emprunte le pipeline LOCAL (jamais `_openMessage`). On reporte
+      // donc les clés de routing du `data` sur le payload (cf.
+      // `NotificationIntent.encodeLocalPayload`) — sans ça `route:/digest` perd
+      // la date et un tap de la veille rouvrait l'Essentiel vivant du jour (#1).
+      payload: NotificationIntent.encodeLocalPayload(route, data),
     );
+  }
+
+  /// Canal Android des alertes — sonore et vibrant (story 30.5).
+  static const String alertsChannelId = 'alerts_channel_v2';
+
+  /// Canal muet de la v1, remplacé. Conservé comme constante le temps que le
+  /// parc migre : [retireLegacyAlertsChannel] le supprime au boot.
+  static const String legacyAlertsChannelId = 'alerts_channel';
+
+  /// Supprime le canal « Alertes » muet de la v1.
+  ///
+  /// Sans ça l'utilisateur voit **deux** entrées « Alertes » dans les réglages
+  /// Android : l'ancienne (muette, orpheline) et la neuve. Idempotent — Android
+  /// ignore la suppression d'un canal inexistant.
+  Future<void> retireLegacyAlertsChannel() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin == null) return;
+    try {
+      await androidPlugin.deleteNotificationChannel(
+        channelId: legacyAlertsChannelId,
+      );
+    } catch (e) {
+      debugPrint('PushNotificationService: legacy alerts channel: $e');
+    }
   }
 
   /// Rend une alerte (source ou sujet) à partir du `data` du push.
@@ -590,17 +667,19 @@ class PushNotificationService {
     final route = data['route'] as String? ?? '/digest';
 
     final androidDetails = AndroidNotificationDetails(
-      // Canal NEUF et non une variante silencieuse de `digest_channel` :
-      // Android fige son/importance à la création d'un canal et ignore toute
-      // modification ultérieure sur un ID existant — le silence n'est
-      // obtenable qu'avec un ID de canal jamais utilisé.
-      'alerts_channel',
+      // `_v2` et non `alerts_channel` : Android fige son et importance à la
+      // création d'un canal et **ignore** toute modification ultérieure sur un
+      // ID existant. Repasser les alertes en sonore (décision PO 30.5 : une
+      // alerte muette n'est pas une alerte) impose donc un ID neuf. L'ancien
+      // canal est supprimé au boot par [retireLegacyAlertsChannel] pour ne pas
+      // laisser deux entrées « Alertes » dans les réglages Android.
+      alertsChannelId,
       'Alertes',
       channelDescription: 'Alertes des sources et sujets que tu suis.',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      playSound: false,
-      enableVibration: false,
+      importance: Importance.high,
+      priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
       icon: '@drawable/ic_stat_facteur',
       color: const Color(0xFFD35400),
       styleInformation: BigTextStyleInformation(bigText, contentTitle: title),
@@ -627,13 +706,15 @@ class PushNotificationService {
   }
 
   /// Injecte localement le payload EXACT qu'enverrait FCM pour une alerte
-  /// source. Valide le canal silencieux, la copy, l'id de notification et le
+  /// source. Valide le canal sonore, la copy, l'id de notification et le
   /// deep-link au tap. Ne valide PAS le transport FCM ni le producteur serveur.
   Future<void> showTestSourceAlert() async {
     const contentId = '00000000-0000-4000-8000-0000000000a1';
     const body = "Le pantouflage discret d'un ex-ministre";
     await _showAlert(const {
-      'route': '/article/$contentId',
+      // Miroir EXACT de `compose_source_alert` (push_composer.py) : le bouton QA
+      // ne vaut que s'il porte le payload que FCM enverra vraiment.
+      'route': '/flux-continu/content/$contentId',
       'kind': 'source_alert',
       'source_id': '00000000-0000-4000-8000-0000000000b2',
       'source_name': 'Le Canard Enchaîné',
@@ -650,7 +731,8 @@ class PushNotificationService {
     const contentId = '00000000-0000-4000-8000-0000000000a2';
     const body = 'La finale se jouera sans son meilleur buteur';
     await _showAlert(const {
-      'route': '/article/$contentId',
+      // Miroir EXACT de `compose_topic_alert` (push_composer.py).
+      'route': '/flux-continu/content/$contentId',
       'kind': 'topic_alert',
       'topic_id': '00000000-0000-4000-8000-0000000000b3',
       'topic_name': 'Ligue 1',
@@ -679,7 +761,58 @@ class PushNotificationService {
     }
   }
 
+  /// Cible d'une push tapée dont la navigation n'a pas encore pu aboutir.
+  ///
+  /// Un tap sur notification en app FROIDE appelle [openRoute] depuis
+  /// `getInitialMessage()`, juste après `runApp` : ou bien le navigator n'existe
+  /// pas encore, ou bien la garde `authState.isLoading` du `redirect` renvoie
+  /// sur le splash. Dans les deux cas la cible était perdue et l'utilisateur
+  /// atterrissait sur L'Essentiel. On la met de côté ici, le `redirect` la
+  /// rejoue une fois l'auth résolue — exactement le chemin déjà retenu pour le
+  /// deep link widget (cf. docs/bugs/bug-widget-fiabilite.md C3), et pour la
+  /// même raison : ne jamais consommer un deep link avant l'auth.
+  static String? _pendingRoute;
+
+  /// Consomme la cible push en attente (`null` si aucune). Appelé par le
+  /// `redirect` du routeur une fois l'auth résolue.
+  static String? takePendingRoute() {
+    final pending = _pendingRoute;
+    _pendingRoute = null;
+    return pending;
+  }
+
+  /// Oublie la cible en attente : appelé par le `redirect` dès qu'un écran
+  /// réel est monté, pour qu'une cible périmée ne détourne pas une navigation
+  /// ultérieure repassant par le splash.
+  static void clearPendingRoute() {
+    _pendingRoute = null;
+  }
+
+  /// Applique un [NotificationIntent] : pose l'état d'édition + de section via
+  /// le container Riverpod (contexte du navigator racine) PUIS délègue la
+  /// navigation à [openRoute]. Poser avant de naviguer suffit parce que
+  /// `FluxContinuScreen` ne réinitialise pas ces providers à l'entrée
+  /// (invariant commenté dans son `initState`) — l'état survit donc aussi au
+  /// renvoi sur le splash, dont seule la *route* a besoin d'être rejouée.
+  /// Pattern container-driven repris de `morning_ritual_screen._openSection`.
+  static void routeIntent(NotificationIntent intent) {
+    final context = _navigatorKey?.currentContext;
+    if (context != null && intent.targetsFeed) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      container.read(selectedEditionDateProvider.notifier).state =
+          intent.edition;
+      // Section toujours explicite : `null` purge une clé restée d'un tap
+      // précédent, qui sinon se consommerait au prochain passage sur le feed.
+      container.read(pendingFeedSectionKeyProvider.notifier).state =
+          intent.section;
+    }
+    openRoute(intent.navigationPath);
+  }
+
   static void openRoute(String route) {
+    // Mise de côté AVANT la navigation : si le `go` ci-dessous est absorbé par
+    // le splash (auth pas encore résolue), le `redirect` reprendra la cible.
+    _pendingRoute = route;
     final context = _navigatorKey?.currentContext;
     if (context == null) return;
     // La « Lettre du jour » ne s'interpose plus au tap d'une push (décision PO
@@ -728,15 +861,9 @@ class PushNotificationService {
       'PushNotificationService: tapped (id: ${response.id}, payload: $payload)',
     );
 
-    final route = _routeFromPayload(payload);
-    notifOpenedTracker(route);
-    openRoute(route);
-  }
-
-  static String _routeFromPayload(String? payload) {
-    if (payload == null || !payload.startsWith('route:')) {
-      return '/flux-continu';
-    }
-    return payload.substring('route:'.length);
+    // Analytics : on garde la route brute du payload (avec sa query, ex.
+    // `?section=bonnes`) — plus discriminante que la seule route de navigation.
+    notifOpenedTracker(NotificationIntent.rawRouteFromPayload(payload));
+    routeIntent(NotificationIntent.parseFromLocalPayload(payload));
   }
 }

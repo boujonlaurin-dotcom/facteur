@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +24,14 @@ const String kEssentielViewedPrefsKeyPrefix = 'flux_continu_essentiel_viewed_';
 /// que l'écran enveloppe a été ouvert pour la journée tournée courante, pour
 /// ne le montrer qu'une fois par jour (cf. Story 28.1).
 const String kMorningRitualPrefsKeyPrefix = 'morning_ritual_shown_';
+
+/// Ordre des blocs de la Tournée trié par score, gelé pour la journée (PR-4).
+///
+/// Clé **unique** (pas de préfixe daté) stockant un blob JSON
+/// `{"day": ..., "keys": [...]}` : le jour vit dans la valeur, donc la clé
+/// s'auto-invalide au changement de journée tournée et n'a rien à faire dans
+/// `purgeOldPrefsKeys` — une seule entrée, jamais d'accumulation.
+const String kTourneeScoreOrderKey = 'tournee_score_order_v1';
 
 /// Boundary hour (Paris time) at which the "tournée day" flips.
 const int kTourneeDayBoundaryHour = 7;
@@ -129,6 +139,41 @@ class TourneeProgressService {
       await prefs.setBool(essentielViewedPrefsKey(now ?? DateTime.now()), true);
     } catch (e) {
       debugPrint('TourneeProgress: markEssentielViewedToday failed: $e');
+    }
+  }
+
+  /// Ordre des blocs gelé **pour la journée tournée courante**, ou `null` si
+  /// rien n'est stocké / si l'entrée date d'un jour précédent (auquel cas
+  /// l'appelant recalculera un ordre frais à la complétion du fan-out).
+  Future<List<String>?> loadScoreOrderForToday({DateTime? now}) async {
+    try {
+      final prefs = await _prefs();
+      final raw = prefs.getString(kTourneeScoreOrderKey);
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      if (decoded['day'] != dayKey(now ?? DateTime.now())) return null;
+      final keys = decoded['keys'];
+      if (keys is! List) return null;
+      return <String>[
+        for (final k in keys)
+          if (k is String) k,
+      ];
+    } catch (e) {
+      debugPrint('TourneeProgress: loadScoreOrderForToday failed: $e');
+      return null;
+    }
+  }
+
+  Future<void> setScoreOrderToday(List<String> keys, {DateTime? now}) async {
+    try {
+      final prefs = await _prefs();
+      await prefs.setString(
+        kTourneeScoreOrderKey,
+        jsonEncode({'day': dayKey(now ?? DateTime.now()), 'keys': keys}),
+      );
+    } catch (e) {
+      debugPrint('TourneeProgress: setScoreOrderToday failed: $e');
     }
   }
 

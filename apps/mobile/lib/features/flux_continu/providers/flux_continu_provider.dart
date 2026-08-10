@@ -42,6 +42,7 @@ import '../services/tournee_progress_service.dart';
 import 'essentiel_placement_sync.dart' show reconcileEssentielPlacement;
 import '../utils/notif_teasers.dart';
 import '../utils/section_fit.dart';
+import '../utils/section_score_order.dart';
 import '../utils/theme_color_mapping.dart';
 import 'tournee_order_prefs_provider.dart'; // tourneeOrderPrefsProvider, TourneeOrderState, applyOrder (réexporté)
 
@@ -193,6 +194,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// reseed complet ([_buildStateFromPayload]), augmenté au fil du fan-out et des
   /// refetch partiels.
   final Set<String> _resolvedSectionKeys = <String>{};
+
+  /// PR-4 — ordre des blocs par score **gelé pour la journée tournée**
+  /// ([_scoreOrderDayKey], frontière 07h30 Paris), lu **sync** par [_compose]
+  /// sur le modèle de `_closingDismissed`.
+  ///
+  /// Pourquoi geler : `_fanOutSectionsProgressive` émet après chaque tâche
+  /// (~10-15 recompositions) ; trier à chaque emit ferait sauter les blocs sous
+  /// les yeux de l'utilisateur. `null` ⇒ ordre par défaut. Il est calculé
+  /// **une seule fois**, à la complétion du fan-out, puis rejoué tel quel par
+  /// tous les composes suivants du jour (cache in-day, pull-to-refresh, refetch
+  /// partiels, load-more).
+  String? _scoreOrderDayKey;
+  List<String>? _scoreOrderKeys;
+
+  /// Armé à la complétion du fan-out, consommé par le [_compose] qui suit
+  /// immédiatement : c'est lui qui gèle l'ordre, à partir des scores qu'il a
+  /// déjà en main (cf. [_freezeScoreOrder]).
+  bool _freezeScoreOrderOnNextCompose = false;
 
   /// True du tout début de [build] jusqu'à la fin du 1er [_fetchAll]. Pendant
   /// cette fenêtre, l'état affiché peut être un **squelette** (sections vides) :
@@ -641,6 +660,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // le chemin cache n'a pas confirmé un contenu réel).
     _resolvedSectionKeys.clear();
     _closingDismissed = await _loadClosingDismissedForToday();
+    // PR-4 — avant le chemin cache in-day **comme** avant le fan-out : une
+    // ré-ouverture dans la journée rejoue l'ordre trié dès le premier emit
+    // (zéro saut), un ordre daté d'hier est ignoré.
+    await _loadScoreOrderForToday();
     unawaited(_purgeOldPrefsKeys());
     unawaited(_markEssentielViewedIfNeeded());
 
@@ -936,15 +959,29 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final grilleAvailable = ref.read(grilleProvider).valueOrNull?.today != null;
     final sectionByKey = _tourneeSectionByKey();
 
-    // Cohérence Tournée — classification maigre/riche sur l'ordre par défaut
-    // **non cappé** (la maigreur ne se connaît qu'après dédup, cf. plan). Elle
-    // pilote ensuite la dépriorisation des clés de l'ordre réel.
-    final (:thinKeys, :richCount) = _classifyFavoriteSections(
+    // Cohérence Tournée — classification maigre/riche **et** scores de bloc, sur
+    // l'ordre par défaut **non cappé** (la maigreur comme le score ne se
+    // connaissent qu'après dédup, cf. plan). `thinKeys` sert au backfill et à la
+    // modal favoris ; `blockScores` sert à l'ordre (gelé) et à la mesure.
+    final (:thinKeys, :richCount, :blockScores) = _classifyFavoriteSections(
       isSerene: isSerene,
       tournee: tournee,
       sectionByKey: sectionByKey,
     );
-    final demote = richCount >= kThinDemotionRichThreshold;
+    // PR-4 — le gel consomme les scores que l'on vient de calculer, **avant**
+    // [_orderedTourneeKeys] : l'ordre trié s'applique donc dès cette
+    // recomposition. Drapeau armé à la complétion du fan-out — seul moment où
+    // le set est stabilisé — plutôt qu'un 2ᵉ appel à [_classifyFavoriteSections]
+    // qui rejouerait la passe ordre+dédup entière pour le même résultat.
+    if (_freezeScoreOrderOnNextCompose) {
+      _freezeScoreOrderOnNextCompose = false;
+      _freezeScoreOrder(blockScores);
+    }
+    // PR-4 — le tri par score remplace la dépriorisation binaire et la subsume
+    // (un bloc à 1 article coule structurellement). Le kill-switch restaure
+    // l'ancienne partition à l'identique.
+    final demote =
+        !kTourneeScoreSortEnabled && richCount >= kThinDemotionRichThreshold;
 
     final orderedKeys = _orderedTourneeKeys(
       isSerene: isSerene,
@@ -955,6 +992,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       order: tournee.order,
       thinKeys: thinKeys,
       demote: demote,
+      // Ordre **gelé pour la journée** (null tant que le 1ᵉʳ fan-out du jour
+      // n'a pas abouti) : zéro saut de bloc pendant le remplissage progressif.
+      scoreOrder: _scoreOrderKeys,
     );
 
     // « Cartes ≤ écran » : décidé côté provider par estimation conservatrice
@@ -1019,6 +1059,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       // Toutes les clés maigres (affichées ou hors cap) → la modal sait
       // lesquelles signaler.
       thinFavoriteKeys: thinKeys,
+      // PR-1 — dénominateur du CTR par bloc : le screen le repasse au
+      // `SectionBlock` qui le porte jusqu'à l'event `article_impression`.
+      blockScores: Map.unmodifiable(blockScores),
     );
   }
 
@@ -1028,7 +1071,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// veille / éditorial / suggérées / Grille. N'inspecte que les sections au
   /// fetch résolu ([_resolvedSectionKeys]) → pas de faux positif sur des
   /// coquilles de boot.
-  ({Set<String> thinKeys, int richCount}) _classifyFavoriteSections({
+  ///
+  /// PR-4 — la même passe calcule les **scores de bloc** (`blockScores`, cf.
+  /// `section_score_order.dart`), sur une portée volontairement **plus large**
+  /// que la classification maigre/riche : toute `FeedThemeSection` résolue y
+  /// entre, veille et « Choisie pour vous » comprises (une veille pauvre coule
+  /// désormais elle aussi, décision PO). La map est en ordre d'affichage
+  /// (insertion = parcours de `deduped`) : ses clés servent telles quelles de
+  /// départage à score égal dans [rankKeysByBlockScore].
+  ///
+  /// Aucune circularité : cette passe appelle [_orderedTourneeKeys] **sans**
+  /// `scoreOrder` (ordre par défaut, non cappé) — les scores ne dépendent donc
+  /// pas de leur propre résultat. Corollaire assumé : la dédup inter-sections
+  /// arbitre ici les doublons dans l'ordre **par défaut**, donc un article
+  /// partagé peut être attribué à une autre section que dans le rendu trié. Le
+  /// score reste déterministe et c'est le comportement d'avant PR-4 ; l'inverse
+  /// (dédupliquer dans l'ordre trié) rendrait les scores fonction d'eux-mêmes.
+  ({Set<String> thinKeys, int richCount, Map<String, double> blockScores})
+      _classifyFavoriteSections({
     required bool isSerene,
     required TourneeOrderState tournee,
     required Map<String, FluxSection> sectionByKey,
@@ -1042,7 +1102,17 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final k in favKeys)
         if (_resolvedSectionKeys.contains(k) && sectionByKey.containsKey(k)) k,
     };
-    if (eligible.isEmpty) return (thinKeys: const <String>{}, richCount: 0);
+    // Sans favori résolu **ni** aucune autre section résolue (veille,
+    // suggérées), il n'y a ni maigreur ni score à calculer. La 2ᵉ condition est
+    // indispensable : un compte sans favori mais avec une veille résolue doit
+    // quand même produire ses `blockScores`.
+    if (eligible.isEmpty && _resolvedSectionKeys.isEmpty) {
+      return (
+        thinKeys: const <String>{},
+        richCount: 0,
+        blockScores: const <String, double>{},
+      );
+    }
 
     final orderedKeys = _orderedTourneeKeys(
       isSerene: isSerene,
@@ -1062,10 +1132,24 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     final deduped = _dedupeSectionsInOrder(_filterSections(rawOrdered));
 
     final thinKeys = <String>{};
+    final blockScores = <String, double>{};
     var richCount = 0;
     for (final s in deduped) {
       if (s is! FeedThemeSection) continue;
       final k = sectionKey(s);
+      // Score de bloc : toute section résolue portant au moins un article scoré.
+      // Une section dont **aucun** article n'a de `recommendationReason` (bloc
+      // éditorial, veille sans scoring, coquille de boot) reste hors de la map
+      // → elle garde sa place au lieu de couler à 0.
+      //
+      // Volontairement **hors** de [kTourneeScoreSortEnabled] : le kill-switch
+      // désarme le *tri*, pas la *mesure*. Le couper ferait retomber
+      // `block_score` à `null` sur `article_impression` (PR-1) — donc
+      // aveuglerait l'instrument même qui sert à juger le tri.
+      if (_resolvedSectionKeys.contains(k) &&
+          s.items.any((c) => c.recommendationReason != null)) {
+        blockScores[k] = blockScore(s.items);
+      }
       if (!eligible.contains(k)) continue;
       final n = s.items.length;
       if (n <= kThinSectionMaxItems) {
@@ -1074,7 +1158,11 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         richCount++;
       }
     }
-    return (thinKeys: thinKeys, richCount: richCount);
+    return (
+      thinKeys: thinKeys,
+      richCount: richCount,
+      blockScores: blockScores,
+    );
   }
 
   /// Réinjecte dans chaque section favorite **maigre affichée** (clé ∈
@@ -1670,6 +1758,52 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
 
   Future<void> _purgeOldPrefsKeys() async {
     await ref.read(tourneeProgressServiceProvider).purgeOldPrefsKeys();
+  }
+
+  /// Hydrate [_scoreOrderKeys] depuis les prefs pour la journée courante.
+  /// No-op si l'ordre du jour est déjà en mémoire — indispensable car la
+  /// persistance est `unawaited` : un refresh immédiat après le gel relirait
+  /// sinon une valeur périmée.
+  Future<void> _loadScoreOrderForToday() async {
+    if (!kTourneeScoreSortEnabled) {
+      _scoreOrderDayKey = null;
+      _scoreOrderKeys = null;
+      return;
+    }
+    final today = TourneeProgressService.dayKey(DateTime.now());
+    if (_scoreOrderDayKey == today) return;
+    _scoreOrderDayKey = null;
+    _scoreOrderKeys = null;
+    final loaded = await ref
+        .read(tourneeProgressServiceProvider)
+        .loadScoreOrderForToday();
+    if (loaded != null && loaded.isNotEmpty) {
+      _scoreOrderDayKey = today;
+      _scoreOrderKeys = loaded;
+    }
+  }
+
+  /// Gèle l'ordre des blocs pour la journée à partir des [scores] que
+  /// [_compose] vient de calculer, s'il ne l'est pas déjà. Armé **une fois**,
+  /// à la complétion du fan-out : tout est stabilisé, donc les scores sont ceux
+  /// du set complet.
+  ///
+  /// Le classement se fait sur les clés de [scores] — la map est en ordre
+  /// d'affichage, donc l'ordre manuel/par défaut départage à score égal (le tri
+  /// est stable). Les sections non scorées ne sont pas dans la map : elles
+  /// garderont leur place à l'application (cf. [applyScoreOrder]).
+  void _freezeScoreOrder(Map<String, double> scores) {
+    if (!kTourneeScoreSortEnabled) return;
+    final today = TourneeProgressService.dayKey(DateTime.now());
+    if (_scoreOrderDayKey == today) return;
+    if (scores.isEmpty) return; // rien de scoré ce cycle → ordre par défaut.
+
+    final frozen = rankKeysByBlockScore(scores);
+    _scoreOrderDayKey = today;
+    _scoreOrderKeys = frozen;
+    unawaited(
+      ref.read(tourneeProgressServiceProvider).setScoreOrderToday(frozen),
+    );
   }
 
   /// Marks that the user has actually loaded Essentiel content today, so the
@@ -2293,6 +2427,9 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     ];
 
     await _runWithConcurrency(tasks, _kPhase2FanoutConcurrency);
+    // PR-4 — tout est stabilisé : le compose ci-dessous est le seul du jour à
+    // (re)calculer l'ordre par score, et il l'applique dans la foulée.
+    _freezeScoreOrderOnNextCompose = true;
     // Recompose final : garantit un état cohérent même si toutes les tâches
     // ont renvoyé une section nulle (rien émis dans la boucle).
     emit();
@@ -2471,6 +2608,12 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     // personnalisé (`customized`) reste sticky via `applyOrder`.
     Set<String> thinKeys = const {},
     bool demote = false,
+    // PR-4 — ordre des blocs par score, **gelé pour la journée** (cf.
+    // [_freezeScoreOrderIfNeeded]). Appliqué après l'ordre manuel (`applyOrder`,
+    // qui reste la base et départage à score égal) et avant l'épingle Grille.
+    // `null` ⇒ pas encore calculé (fan-out en cours) ou kill-switch off : ordre
+    // par défaut inchangé.
+    List<String>? scoreOrder,
     // `null` ⇒ aucun cap (passe de classification non cappée) ; sinon plafonne à
     // [cap] après réordonnancement (seul un surplus coupe les maigres dépriorisés).
     int? cap = kTourneeVisibleCap,
@@ -2543,7 +2686,16 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
       for (final key in defaultKeys)
         if (!hiddenKeys.contains(key) && sectionByKey.containsKey(key)) key,
     ];
-    final ordered = applyOrder(availableKeys, order, (key) => key).toList();
+    var ordered = applyOrder(availableKeys, order, (key) => key).toList();
+
+    // PR-4 — tri par score du jour. Les clés non scorées (Actus, Bonnes, blocs
+    // sans `recommendationReason`) gardent leur **position absolue** : c'est
+    // exactement la sémantique de `mergeVisibleReorder`, réutilisée par
+    // [applyScoreOrder] (`applyOrder` les aurait poussées en queue → coupées
+    // par le cap).
+    if (scoreOrder != null) {
+      ordered = applyScoreOrder(ordered, scoreOrder);
+    }
 
     // Épingle la Grille immédiatement après les Actus du jour (ou en tête si
     // les Actus sont masqués/absents). C'est le seul point qui fixe la position

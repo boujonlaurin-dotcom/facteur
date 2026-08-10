@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../core/api/api_client.dart';
 import '../models/alert_item.dart';
+import '../models/alert_suggestion.dart';
 
 /// Devis de bruit d'un sujet, lu à l'ouverture de sa fiche.
 ///
@@ -37,11 +38,40 @@ class AlertsRepository {
 
   AlertsRepository(this._apiClient);
 
+  /// Cloches actives + leurs contenus déclencheurs (story 30.4).
+  ///
+  /// `contents` est **additif** : face à un backend v1 il est simplement
+  /// absent, et la carte de la Tournée retombe sur ses lignes « N nouveaux ».
   Future<AlertsState> listAlerts() async {
     final response = await _apiClient.dio.get<Map<String, dynamic>>('alerts');
     final data = response.data;
     if (data == null) return const AlertsState();
     return AlertsState.fromJson(data);
+  }
+
+  /// Cibles à mettre sous cloche, déduites de l'usage réel (story 30.6).
+  ///
+  /// Appelé à chaque ouverture de « Mes alertes ». Le serveur rend une liste
+  /// courte (3 à 5), déjà classée et déjà expurgée de tout ce qui ne doit pas
+  /// être proposé : le client n'a aucun filtre à refaire.
+  Future<AlertSuggestionsState> listSuggestions() async {
+    final response = await _apiClient.dio.get<Map<String, dynamic>>(
+      'alerts/suggestions',
+    );
+    final data = response.data;
+    if (data == null) return const AlertSuggestionsState();
+    return AlertSuggestionsState.fromJson(data);
+  }
+
+  /// Mémorise un refus : la cible ne sera plus proposée. Idempotent.
+  Future<void> dismissSuggestion(AlertKind kind, String targetId) async {
+    await _apiClient.dio.post<Map<String, dynamic>>(
+      'alerts/suggestions/dismiss',
+      data: {
+        'kind': kind == AlertKind.topic ? 'topic' : 'source',
+        'target_id': targetId,
+      },
+    );
   }
 
   /// Pose ou retire la cloche sur une source. Renvoie le nouveau compteur.
