@@ -139,7 +139,9 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   }
 
   @visibleForTesting
-  AuthStateNotifier.test(AuthState initialState) : super(initialState);
+  AuthStateNotifier.test(super.initialState, {SupabaseClient? supabase}) {
+    if (supabase != null) _supabase = supabase;
+  }
 
   late final SupabaseClient _supabase;
 
@@ -786,10 +788,11 @@ class AuthStateNotifier extends StateNotifier<AuthState>
   /// box locale ici (contrairement à [signOut], qui purge `onboarding` et
   /// `user_profile`).
   ///
-  /// Deux appels distincts : le mot de passe s'applique immédiatement, l'email
-  /// demande une confirmation. Tant qu'elle n'a pas eu lieu, `is_anonymous`
-  /// reste `true` côté Supabase — d'où la persistance de
-  /// [_pendingEmailConfirmationKey], seul marqueur fiable de « compte créé ».
+  /// Deux appels distincts : l'email doit être posé avant le mot de passe,
+  /// car GoTrue refuse d'ajouter un mot de passe à un utilisateur anonyme sans
+  /// email ni téléphone. Si la confirmation d'email est activée,
+  /// `is_anonymous` reste `true` jusqu'à la confirmation et
+  /// [_pendingEmailConfirmationKey] marque alors « compte créé ».
   ///
   /// Retourne `true` si la conversion a abouti ; l'erreur éventuelle est
   /// exposée via `state.error`.
@@ -798,17 +801,52 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     required String password,
   }) async {
     state = state.copyWith(isLoading: true, clearError: true);
+    var conversionStage = 'email';
 
     try {
-      await _supabase.auth.updateUser(UserAttributes(password: password));
-      await _supabase.auth.updateUser(
-        UserAttributes(email: email),
-        emailRedirectTo: _emailConfirmationRedirectUrl(),
-      );
+      final attachedEmail = _supabase.auth.currentUser?.email;
+      final isEmailAlreadyAttached =
+          attachedEmail != null &&
+          attachedEmail.trim().toLowerCase() == email.trim().toLowerCase();
+      if (!isEmailAlreadyAttached) {
+        await _supabase.auth.updateUser(
+          UserAttributes(email: email),
+          emailRedirectTo: _emailConfirmationRedirectUrl(),
+        );
+      }
 
+      conversionStage = 'password';
+      try {
+        await _supabase.auth.updateUser(UserAttributes(password: password));
+      } catch (e, stackTrace) {
+        // L'email est déjà attaché au compte. Ne jamais poser le marqueur de
+        // confirmation tant que le mot de passe n'a pas été enregistré.
+        await _cleanUpAfterPartialAnonymousConversion();
+        _captureAnonymousConversionFailure(
+          e,
+          stackTrace,
+          stage: 'password_after_email',
+        );
+        state = state.copyWith(
+          isLoading: false,
+          clearPendingEmail: true,
+          error: 'Impossible de définir ton mot de passe. Réessaie ou utilise '
+              '« Mot de passe oublié ».',
+        );
+        return false;
+      }
+
+      conversionStage = 'persistence';
       await _disableAnonymousAutoSignIn();
       final box = await Hive.openBox<dynamic>(_authPrefsBox);
-      await box.put(_pendingEmailConfirmationKey, email);
+      final currentUser = _supabase.auth.currentUser;
+      final isAwaitingEmailConfirmation =
+          currentUser != null && currentUser.emailConfirmedAt == null;
+      if (isAwaitingEmailConfirmation) {
+        await box.put(_pendingEmailConfirmationKey, email);
+      } else {
+        await box.delete(_pendingEmailConfirmationKey);
+      }
 
       // `$identify` ne part qu'une fois `is_anonymous` retombé (donc à la
       // confirmation de l'adresse) : cet event est le marqueur d'activation
@@ -822,23 +860,89 @@ class AuthStateNotifier extends StateNotifier<AuthState>
 
       state = state.copyWith(
         isLoading: false,
-        pendingEmailConfirmation: email,
+        pendingEmailConfirmation: isAwaitingEmailConfirmation ? email : null,
+        clearPendingEmail: !isAwaitingEmailConfirmation,
       );
       return true;
-    } on AuthException catch (e) {
-      debugPrint('AuthStateNotifier: Anonymous conversion failed: ${e.message}');
+    } on AuthException catch (e, stackTrace) {
+      debugPrint(
+        'AuthStateNotifier: Anonymous conversion failed: ${e.message}',
+      );
+      _captureAnonymousConversionFailure(
+        e,
+        stackTrace,
+        stage: conversionStage,
+      );
       state = state.copyWith(
         isLoading: false,
         error: AuthErrorMessages.translate(e.message),
       );
       return false;
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('AuthStateNotifier: Anonymous conversion unknown error: $e');
+      _captureAnonymousConversionFailure(
+        e,
+        stackTrace,
+        stage: conversionStage,
+      );
       state = state.copyWith(
         isLoading: false,
         error: 'Une erreur est survenue',
       );
       return false;
+    }
+  }
+
+  Future<void> _cleanUpAfterPartialAnonymousConversion() async {
+    try {
+      final box = await Hive.openBox<dynamic>(_authPrefsBox);
+      await box.put(_anonAutoSignInDisabledKey, true);
+      await box.delete(_pendingEmailConfirmationKey);
+    } catch (e, stackTrace) {
+      debugPrint('AuthStateNotifier: Partial conversion cleanup failed: $e');
+      unawaited(
+        _captureSentryExceptionSafely(
+          e,
+          stackTrace,
+          authEvent: 'anonymous_conversion_cleanup_failed',
+        ),
+      );
+    }
+  }
+
+  void _captureAnonymousConversionFailure(
+    Object error,
+    StackTrace stackTrace, {
+    required String stage,
+  }) {
+    unawaited(
+      _captureSentryExceptionSafely(
+        error,
+        stackTrace,
+        authEvent: 'anonymous_conversion_failed',
+        stage: stage,
+      ),
+    );
+  }
+
+  Future<void> _captureSentryExceptionSafely(
+    Object error,
+    StackTrace stackTrace, {
+    required String authEvent,
+    String? stage,
+  }) async {
+    try {
+      await Sentry.captureException(
+        error,
+        stackTrace: stackTrace,
+        withScope: (scope) {
+          scope.setTag('auth_event', authEvent);
+          if (stage != null) scope.setTag('conversion_stage', stage);
+        },
+      );
+    } catch (sentryError) {
+      // Le reporting ne doit jamais remplacer l'erreur auth à afficher.
+      debugPrint('AuthStateNotifier: Sentry capture failed: $sentryError');
     }
   }
 
