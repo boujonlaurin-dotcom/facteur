@@ -33,8 +33,14 @@ class AuthErrorMessages {
     // Erreurs d'inscription
     // ============================================
 
-    if (lowerMessage.contains('user already registered')) {
+    if (lowerMessage.contains('user already registered') ||
+        lowerMessage.contains('email address is already') ||
+        lowerMessage.contains('email_exists')) {
       return 'Cette adresse email est déjà utilisée.';
+    }
+
+    if (lowerMessage.contains('anonymous user')) {
+      return 'Impossible de finaliser ton compte. Réessaie.';
     }
 
     if (lowerMessage.contains('password should be at least')) {
@@ -55,7 +61,8 @@ class AuthErrorMessages {
 
     if (lowerMessage.contains('too many requests') ||
         lowerMessage.contains('rate limit') ||
-        lowerMessage.contains('email rate limit exceeded')) {
+        lowerMessage.contains('email rate limit exceeded') ||
+        lowerMessage.contains('over_email_send_rate_limit')) {
       return 'Trop de tentatives. Réessaie dans quelques minutes.';
     }
 
