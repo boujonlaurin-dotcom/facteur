@@ -98,6 +98,7 @@ async def test_personalized_theme_filters_to_followed_sources():
         "personalized theme mode should filter on followed sources via "
         f"two-phase. Got:\n{captured[0]}"
     )
+    assert "limit" in sql, f"candidate query must remain bounded. Got:\n{captured[0]}"
 
 
 @pytest.mark.asyncio
@@ -734,9 +735,8 @@ def _stub_scalars_by_call(captured: list, per_call: list):
     """`session.scalars` retournant un résultat différent par appel successif.
 
     `per_call[i]` = la liste d'items renvoyée au i-ème appel (le dernier élément
-    est réutilisé si plus d'appels sont émis). Permet de simuler « les paliers
-    24/48/72h ne ramènent rien, mais la fenêtre 30 j (4ᵉ appel) ramène des
-    articles anciens »."""
+    est réutilisé si nécessaire). Simule les paliers 24/48/72 h vides, puis le
+    repli 30 j qui ramène des articles anciens."""
 
     state = {"i": 0}
 
@@ -753,8 +753,8 @@ def _stub_scalars_by_call(captured: list, per_call: list):
 
 @pytest.mark.asyncio
 async def test_source_stale_fallback_when_no_recent_article():
-    """source + personalized : aucun article ≤72h (3 paliers vides) mais des
-    articles ≤30 j → la 4ᵉ requête (repli 720h) remplit la section et lève le
+    """source + personalized : aucun article ≤72h mais des articles ≤30 j → la
+    quatrième requête (repli 720h) remplit la section et lève le
     flag `source_no_recent_source`."""
     service, session = _make_service()
     captured: list[str] = []
@@ -775,7 +775,7 @@ async def test_source_stale_fallback_when_no_recent_article():
 
     assert result, "le repli 30 j doit remplir la section avec des articles anciens"
     assert service.source_no_recent_source is True
-    # 3 paliers adaptatifs + 1 requête de repli.
+    # Trois paliers adaptatifs + une requête de repli.
     assert len(captured) == 4, f"attendu 4 requêtes, vu {len(captured)}"
 
 
@@ -812,7 +812,7 @@ async def test_source_no_fallback_flag_when_totally_empty():
     récent. »)."""
     service, session = _make_service()
     captured: list[str] = []
-    # Tous les paliers ET le repli 30 j sont vides.
+    # Les trois paliers et le repli 30 j sont vides.
     session.scalars = _stub_scalars_by_call(captured, [[]])
 
     result = await asyncio.wait_for(
@@ -828,5 +828,27 @@ async def test_source_no_fallback_flag_when_totally_empty():
 
     assert result == []
     assert service.source_no_recent_source is False
-    # 3 paliers vides + 1 repli vide.
+    # Trois paliers adaptatifs + un repli vide.
     assert len(captured) == 4
+
+
+@pytest.mark.asyncio
+async def test_source_adaptive_window_keeps_each_tier_query_bounded():
+    """Une source pleine seulement à 72 h essaie chaque palier, tous bornés."""
+    service, session = _make_service()
+    captured: list[str] = []
+    only_in_72h = [_mock_content() for _ in range(8)]
+    session.scalars = _stub_scalars_by_call(captured, [[], [], only_in_72h])
+
+    result = await service._get_candidates(
+        user_id=uuid4(),
+        limit_candidates=500,
+        source_id=uuid4(),
+        personalized=True,
+        followed_source_ids={uuid4()},
+    )
+
+    assert result == only_in_72h
+    assert service.source_no_recent_source is False
+    assert len(captured) == 3, f"attendu les 3 paliers, vu {len(captured)}"
+    assert all("LIMIT" in sql for sql in captured)
