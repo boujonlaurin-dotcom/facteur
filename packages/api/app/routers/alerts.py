@@ -20,12 +20,23 @@ from app.models.enums import ContentStatus
 from app.models.push_notification import PushDelivery, PushDevice
 from app.models.source import Source, UserSource
 from app.models.user_topic_profile import UserTopicProfile
-from app.schemas.alert import AlertContent, AlertItem, AlertsResponse
+from app.schemas.alert import (
+    AlertContent,
+    AlertItem,
+    AlertsResponse,
+    AlertSuggestionsResponse,
+    DismissAlertSuggestionRequest,
+    DismissAlertSuggestionResponse,
+)
 from app.services.alert_cadence import (
     ALERT_CAP,
     ALERT_LOOKBACK,
     FREQUENCY_WINDOW_DAYS,
     cadence_per_week,
+)
+from app.services.alert_suggestions import (
+    build_alert_suggestions,
+    dismiss_alert_suggestion,
 )
 from app.services.source_alert_producer import (
     FOLLOWED_SOURCE_STATES,
@@ -391,3 +402,29 @@ async def list_alerts(
     )
 
     return AlertsResponse(cap=ALERT_CAP, active_count=len(items), items=items)
+
+
+@router.get("/suggestions", response_model=AlertSuggestionsResponse)
+async def list_alert_suggestions(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> AlertSuggestionsResponse:
+    """Cibles à mettre sous cloche, déduites de l'usage réel (story 30.6).
+
+    Appelé à chaque ouverture de « Mes alertes » : le coût est une passe
+    agrégée bornée, pas une boucle par cible (cf. `alert_suggestions.py`).
+    """
+    return await build_alert_suggestions(db, UUID(user_id), datetime.now(UTC))
+
+
+@router.post("/suggestions/dismiss", response_model=DismissAlertSuggestionResponse)
+async def dismiss_suggestion(
+    payload: DismissAlertSuggestionRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> DismissAlertSuggestionResponse:
+    """Une suggestion écartée ne revient pas le lendemain. Idempotent."""
+    await dismiss_alert_suggestion(
+        db, UUID(user_id), kind=payload.kind, target_id=payload.target_id
+    )
+    return DismissAlertSuggestionResponse(dismissed=True)

@@ -106,3 +106,60 @@ class AlertsResponse(BaseModel):
     cap: int
     active_count: int
     items: list[AlertItem] = []
+
+
+class AlertSuggestion(BaseModel):
+    """Une cible qu'il vaudrait la peine de mettre sous cloche (story 30.6).
+
+    Schéma **à côté** d'`AlertItem`, jamais dedans : l'inventaire et la
+    proposition ne se ressemblent que de loin, et le lot B n'a pas à bouger.
+
+    `reason` n'est pas cosmétique : c'est elle qui rend la suggestion
+    acceptable. Elle ne dit que ce que le signal prouve (« Tu as ouvert 8
+    articles sur 10 de cette source ce mois-ci »), jamais plus.
+
+    `signal` porte le rang de preuve qui a fait sortir la cible
+    (`source_read`, `topic_affinity`, `source_read_light`, `topic_weight`) :
+    sans lui, l'analytique saurait que le bloc convertit, mais pas quel rang,
+    donc pas quoi couper.
+
+    `prefill_filtered` est vrai dès que la cible est bruyante : la règle 30.3
+    veut que le mode filtré soit déjà coché plutôt qu'une cloche qui devient un
+    robinet au premier tap.
+    """
+
+    kind: Literal["source", "topic"]
+    target_id: UUID
+    target_name: str
+    target_logo_url: str | None = None
+    reason: str
+    signal: str
+    articles_30d: int = 0
+    cadence_per_week: float = 0.0
+    cadence_phrase: str = ""
+    noisy: bool = False
+    prefill_filtered: bool = False
+
+
+class AlertSuggestionsResponse(BaseModel):
+    """`at_cap` = « je ne propose rien, et voici pourquoi ».
+
+    Au plafond, la liste est vide **et** le drapeau est levé : proposer un ajout
+    impossible est pire que ne rien proposer.
+    """
+
+    cap: int
+    active_count: int
+    at_cap: bool = False
+    suggestions: list[AlertSuggestion] = []
+
+
+class DismissAlertSuggestionRequest(BaseModel):
+    """Refus d'une suggestion : elle ne doit pas revenir le lendemain."""
+
+    kind: Literal["source", "topic"]
+    target_id: UUID
+
+
+class DismissAlertSuggestionResponse(BaseModel):
+    dismissed: bool = True

@@ -60,6 +60,22 @@ class UserPersonalization(Base):
         Boolean, default=False, server_default="false"
     )
 
+    # Story 30.6 — suggestions d'alertes refusées. Une suggestion écartée ne
+    # doit pas revenir le lendemain ; une table neuve pour deux listes d'IDs
+    # aurait été du poids de schéma pour rien (cf. migration as01).
+    #
+    # Deux colonnes **typées** plutôt qu'un seul tableau de clés
+    # « source:<uuid> » : c'est la forme des colonnes voisines (`muted_sources`
+    # est déjà un `UUID[]`), et surtout un `UUID[]` reste joignable — le jour où
+    # l'exclusion devra descendre dans la requête candidate
+    # (`Source.id.notin_(...)`), elle le pourra sans parser des chaînes en SQL.
+    dismissed_alert_sources: Mapped[list[UUID]] = mapped_column(
+        ARRAY(PGUUID(as_uuid=True)), default=list, server_default="{}"
+    )
+    dismissed_alert_topics: Mapped[list[UUID]] = mapped_column(
+        ARRAY(PGUUID(as_uuid=True)), default=list, server_default="{}"
+    )
+
     # Story 13.2 — Carousel "Pépites" : rate-limit et cool-down dismiss
     pepite_carousel_dismissed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
