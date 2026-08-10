@@ -446,8 +446,7 @@ class SectionBlock extends StatelessWidget {
                       : _tracked(
                           position: index,
                           contentId: content.id,
-                          scoreTotal:
-                              content.recommendationReason?.scoreTotal,
+                          scoreTotal: content.recommendationReason?.scoreTotal,
                           theme: content.source.theme,
                           sourceId: content.source.id,
                           child: FluxContinuArticleCard(
@@ -575,7 +574,9 @@ class SectionBlock extends StatelessWidget {
     // Typo du DS (DM Sans via `labelMedium`) : le `TextStyle` brut précédent
     // n'avait pas de `fontFamily` → rendu dans la police système, hors DS. La
     // couleur reste portée par `foregroundColor` (texte + chevron).
-    textStyle: FacteurTypography.labelMedium(const Color(0xFF5D5B5A)),
+    textStyle: FacteurTypography.labelMedium(
+      const Color(0xFF5D5B5A),
+    ).copyWith(fontSize: 12.5),
   );
 
   Widget _seeAllFooter() {
@@ -787,8 +788,9 @@ class SectionSkeletonCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: base,
                   borderRadius: BorderRadius.circular(12),
-                  border:
-                      Border.all(color: Colors.black.withValues(alpha: 0.04)),
+                  border: Border.all(
+                    color: Colors.black.withValues(alpha: 0.04),
+                  ),
                 ),
               ),
             ),
@@ -797,9 +799,9 @@ class SectionSkeletonCard extends StatelessWidget {
                 child: Text(
                   label!,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.textSecondary,
-                        fontStyle: FontStyle.italic,
-                      ),
+                    color: colors.textSecondary,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
               ),
           ],
