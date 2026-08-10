@@ -26,6 +26,8 @@ Source _src(
   int articles30d = 0,
   SourceType type = SourceType.article,
   String? name,
+  List<String> coverage = const [],
+  List<String> secondary = const [],
 }) {
   return Source(
     id: id,
@@ -39,6 +41,8 @@ Source _src(
     biasStance: bias,
     followerCount: followers,
     articles30d: articles30d,
+    coverageThemes: coverage,
+    secondaryThemes: secondary,
   );
 }
 
@@ -500,6 +504,67 @@ void main() {
       expect(set, isNotEmpty);
     });
 
+    test('une grosse audience hors-intérêt ne mène pas le deck', () {
+      // Le backfill triait sur `followerCount` : une source très suivie mais
+      // hors des thèmes choisis ouvrait le deck. Elle ne doit plus servir que
+      // de filler de dernier recours.
+      final sources = [
+        _src(
+          'whale',
+          theme: 'sport',
+          reliability: 'high',
+          tier: 'mainstream',
+          followers: 100000,
+          articles30d: 500,
+          coverage: const ['sport'],
+        ),
+        _src('deep-1', theme: 'tech', tier: 'deep', articles30d: 30),
+        _src('indie-1', theme: 'tech', independence: 0.9, bias: 'alternative'),
+        _src('est-1', theme: 'tech', independence: 0.2, reliability: 'high'),
+        _src('main-1', theme: 'tech', tier: 'mainstream', articles30d: 40),
+      ];
+
+      final set = SourceRecommender.buildSpanningSet(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+      );
+
+      final ids = set.map((s) => s.source.id).toList();
+      expect(ids.first, isNot('whale'));
+      expect(
+        ids.indexOf('whale'),
+        ids.length - 1,
+        reason: 'la source hors-intérêt ferme la marche',
+      );
+    });
+
+    test('couverture inconnue : préférée à un hors-intérêt avéré', () {
+      // Une petite source récente (aucune couverture dérivée) ne doit pas être
+      // punie au même titre qu'une source dont on SAIT qu'elle publie ailleurs.
+      final sources = [
+        _src('unknown-cov', tier: 'mainstream', followers: 10),
+        _src(
+          'known-off',
+          theme: 'sport',
+          tier: 'mainstream',
+          followers: 5000,
+          articles30d: 500,
+          coverage: const ['sport'],
+        ),
+      ];
+
+      final set = SourceRecommender.buildSpanningSet(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+        maxCards: 1,
+        perPole: 1,
+      );
+
+      expect(set.first.source.id, 'unknown-cov');
+    });
+
     test('tiebreaker volume : à thème égal, la source productive remonte', () {
       // Deux sources mainstream identiques sauf le volume — la productive
       // (articles30d élevé) doit être préférée, même avec moins de followers.
@@ -575,6 +640,129 @@ void main() {
 
       final ids = reco.matched.map((r) => r.source.id).toList();
       expect(ids.indexOf('b'), lessThan(ids.indexOf('a')));
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Reco « interest-aware » : les bonus génériques (fiabilité, volume) ne
+  // hissent plus une source hors-intérêt au niveau d'un vrai match, et la
+  // couverture réellement publiée (`coverageThemes`) fait retomber les
+  // généralistes diluées.
+  // ─────────────────────────────────────────────────────────────────────────
+  group('SourceRecommender — pertinence thématique', () {
+    test('une source hors-intérêt à grosse audience ne mène pas la file', () {
+      // Cas « l'Équipe » : fiable, très productive, mais elle ne publie rien
+      // sur les thèmes choisis. Avant : +1 fiabilité +2 volume = 3, à égalité
+      // avec un vrai match de thème.
+      final sources = [
+        _src(
+          'lequipe',
+          theme: 'sport',
+          reliability: 'high',
+          articles30d: 300,
+          followers: 50000,
+          coverage: const ['sport'],
+        ),
+        _src('tech-1', theme: 'tech', reliability: 'unknown'),
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+      );
+
+      final matchedIds = reco.matched.map((r) => r.source.id).toList();
+      expect(matchedIds, contains('tech-1'));
+      expect(
+        matchedIds,
+        isNot(contains('lequipe')),
+        reason: 'aucun intérêt couvert : la fiabilité et le volume ne comptent '
+            'plus',
+      );
+    });
+
+    test('une généraliste diluée passe sous une source focalisée', () {
+      // Cas « Ouest-France » : match Société, mais elle publie surtout ailleurs
+      // (sport, culture, international...). Elle reste suggérée, derrière.
+      final sources = [
+        _src(
+          'ouest',
+          theme: 'society',
+          reliability: 'high',
+          articles30d: 300,
+          followers: 40000,
+          coverage: const ['sport', 'culture', 'international', 'politics'],
+        ),
+        _src(
+          'focus',
+          theme: 'society',
+          reliability: 'high',
+          articles30d: 120,
+        ),
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['society'],
+        selectedSubtopics: const [],
+        allSources: sources,
+      );
+
+      final ids = reco.matched.map((r) => r.source.id).toList();
+      expect(ids, containsAll(<String>['focus', 'ouest']));
+      expect(
+        ids.indexOf('focus'),
+        lessThan(ids.indexOf('ouest')),
+        reason: 'la dilution recule la généraliste sans l\'écarter',
+      );
+    });
+
+    test('un like au swipe rescape une source hors-intérêt', () {
+      final sources = [
+        _src('tech-1', theme: 'tech', articles30d: 120),
+        _src(
+          'off',
+          theme: 'sport',
+          reliability: 'high',
+          articles30d: 120,
+          coverage: const ['sport'],
+        ),
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+        swipeLiked: const ['off'],
+      );
+
+      expect(
+        reco.matched.first.source.id,
+        'off',
+        reason: 'le signal révélé prime sur la pénalité déclarative',
+      );
+    });
+
+    test('couverture recoupant les intérêts : source gardée pertinente', () {
+      // Pas de match déclaratif (thème principal « culture »), mais la source
+      // publie réellement sur Tech ⇒ elle garde ses bonus génériques.
+      final sources = [
+        _src(
+          'covered',
+          theme: 'culture',
+          reliability: 'high',
+          articles30d: 120,
+          coverage: const ['tech'],
+        ),
+      ];
+
+      final reco = SourceRecommender.recommend(
+        selectedThemes: const ['tech'],
+        selectedSubtopics: const [],
+        allSources: sources,
+      );
+
+      expect(reco.matched.map((r) => r.source.id), contains('covered'));
     });
   });
 

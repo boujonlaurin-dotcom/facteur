@@ -38,6 +38,10 @@ class SourceResponse(BaseModel):
     bias_origin: str = "unknown"
     secondary_themes: list[str] | None = None
     granular_topics: list[str] | None = None
+    # Couverture éditoriale réellement publiée (cf. `Source.coverage_themes`) :
+    # sert à la reco d'onboarding à repérer les généralistes diluées.
+    # `None` = couverture inconnue, jamais pénalisante côté client.
+    coverage_themes: list[str] | None = None
     source_tier: str = "mainstream"
     score_independence: float | None = None
     score_rigor: float | None = None

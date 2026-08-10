@@ -138,7 +138,9 @@ async def test_sends_alert_payload_and_is_idempotent(db_session, fake_session_ma
     assert data["kind"] == "source_alert"
     assert data["source_id"] == str(source.id)
     assert data["channel"] == "alerts"
-    assert data["route"].startswith("/article/")
+    # Route réellement enregistrée dans le GoRouter mobile : `/article/<id>` ne
+    # l'a jamais été (cf. docs/bugs/bug-alerte-push-lien-introuvable.md).
+    assert data["route"] == f"/flux-continu/content/{data['content_id']}"
     assert "Publie environ" in data["big_text"]
 
     delivery = await db_session.scalar(
