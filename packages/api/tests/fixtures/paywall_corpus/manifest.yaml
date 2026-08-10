@@ -60,7 +60,11 @@ sources:
   - slug: la-croix
     name: La Croix
     group: false_negative
+    # `/RSS`, `/rss` et `/feed` redirigent tous (301) vers le chemin legacy
+    # `http://www.la-croix.com/RSS/UNIVERS_ALL`, qui répond 403. Le flux réel,
+    # atteignable en direct, est `feeds/rss/site.xml` — vérifié le 2026-08-08.
     feed_candidates:
+      - https://www.la-croix.com/feeds/rss/site.xml
       - https://www.la-croix.com/RSS
       - https://www.la-croix.com/rss
       - https://www.la-croix.com/feed
