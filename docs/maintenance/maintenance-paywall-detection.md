@@ -239,13 +239,69 @@ le collecteur en fait un avertissement, le test un verdict. Elle est couverte
 par `tests/test_paywall_corpus_quota.py`, qui ne dépend d'aucune fixture — donc
 tourne en CI, là où le reste du harnais ne peut pas.
 
+### Fait — lot 1 d'étiquetage (2026-08-11) : 30 articles sur 120
+
+Étiquetés à la main, répartis sur les 12 sources du corpus pour observer le
+plus de sites possible avant d'approfondir une source.
+
+| Source | Payants | Gratuits | Source | Payants | Gratuits |
+|---|---|---|---|---|---|
+| novethic | 3 | 0 | lemonde | 1 | 1 |
+| philomag | 1 | 2 | lefigaro | 2 | 1 |
+| la-croix | 2 | 1 | mediapart | 2 | 0 |
+| lesjours | 3 | 0 | liberation | 1 | 1 |
+| cuisiner-jdf | 0 | 3 | telerama | 2 | 0 |
+| contrepoints | 0 | 2 | bonpote | 0 | 2 |
+
+Aucune source n'est encore complète, donc rien n'est mesurable : le harnais
+skippe, sans rougir — c'est exactement le comportement que le correctif
+ci-dessus a installé.
+
+Deux observations de ce lot, à confirmer sur le suivant : **Cuisiner** rend
+3 gratuits sur 3 alors qu'il figure au groupe « faux négatifs » ; **Les Jours**
+et **Novethic** rendent 3 payants sur 3, donc leur quota de gratuits exigera
+d'aller chercher plus loin dans le flux.
+
+### Découvert — le corpus décroît, et l'étiquetage se périme avec lui
+
+`labels.json` est versionné pour survivre au clone ; `html/` et `rss/` non. Or
+le collecteur reconstruit le corpus **à partir des flux vivants**, dont la
+fenêtre tourne vite. Mesuré le 2026-08-11 sur les 30 URL étiquetées du lot 1,
+collectées 3 jours plus tôt : **14 sur 30 sont encore au flux**, et les
+quotidiens sont à **0 sur 15** (Le Monde, Le Figaro, Libération, La Croix,
+Télérama, Mediapart ont intégralement tourné).
+
+Conséquence : dans un conteneur neuf, un label posé il y a plus de quelques
+jours n'a plus de charge utile à mesurer, et une simple recollecte ne la rend
+pas — elle ramène les articles *du jour*, qui sont non étiquetés. L'étiquetage
+humain, le seul travail non automatisable du chantier, se dévalue tout seul.
+
+La bonne nouvelle est que les pages, elles, restent servies hors flux. Vérifié
+par fetch direct des 15 URL de quotidiens :
+
+| Fetch direct de l'article, hors flux | Sources |
+|---|---|
+| 200, HTML récupéré | la-croix (3/3), **lemonde (2/2)**, telerama (2/2) |
+| 403 anti-bot | lefigaro (3/3), liberation (2/2) |
+| TooManyRedirects | mediapart (2/2) |
+
+À noter : **Le Monde répond 200 aujourd'hui**, là où la collecte du 2026-08-08
+rendait 402 sur tous ses articles. Le 402 n'est donc pas un signal stable de
+paywall — la piste « lire le 402 comme un marqueur », laissée ouverte plus
+haut, est à écarter tant qu'on n'a pas compris ce qui la fait varier.
+
+Le levier est simple et cadré : permettre au collecteur de re-fetcher le HTML
+**par URL depuis `labels.json`**, indépendamment de ce que rend le flux du jour.
+Le fetch par URL existe déjà (`fetch_html_head`) ; il ne lui manque qu'un mode
+d'appel qui ne parte pas des entrées de flux.
+
 ### Reste à faire
 
-1. **Étiqueter à la main** `labels.json` (120 articles, `"paid"` / `"free"`).
-   C'est le seul geste qui reste et il est délibérément humain : un label
-   déduit de l'algo ferait valider l'algo par lui-même. Le harnais mesure
-   dès qu'une source est complète ; le quota 3 payants / 3 gratuits se juge
-   source par source, une fois son étiquetage terminé.
+1. **Étiqueter à la main** le reste de `labels.json` (90 articles sur 120).
+   Geste délibérément humain : un label déduit de l'algo ferait valider l'algo
+   par lui-même. Le harnais mesure dès qu'une source est complète ; le quota
+   3 payants / 3 gratuits se juge source par source, une fois son étiquetage
+   terminé.
 2. Geler la baseline (`paywall_benchmark.py --write-baseline`) et la reporter
    dans la description de PR — elle tranchera la question jamais résolue :
    a-t-on **déjà** un problème de faux positifs aujourd'hui ?
