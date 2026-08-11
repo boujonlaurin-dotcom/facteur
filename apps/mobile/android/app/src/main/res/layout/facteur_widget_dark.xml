@@ -18,26 +18,39 @@
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
-        <TextView
-            android:id="@+id/masthead_mark"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
-            android:background="@drawable/widget_masthead_mark_dark"
-            android:text="F"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:gravity="center" />
-
-        <TextView
-            android:id="@+id/masthead_wordmark"
+        <!-- Marque + wordmark : zone de tap « ouvrir Flâner ». Groupés dans un
+             conteneur dédié pour que le 🔄, voisin dans la barre, garde son
+             propre clic (un setOnClickPendingIntent sur tout le masthead
+             englobait le bouton). -->
+        <LinearLayout
+            android:id="@+id/masthead_brand"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="7dp"
-            android:text="Facteur"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:textColor="@color/facteur_text_primary_dark" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <ImageView
+                android:id="@+id/masthead_mark"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_facteur_logo"
+                android:scaleType="fitCenter"
+                android:contentDescription="Facteur" />
+
+            <!-- Fraunces Bold : la police de titre du design system
+                 (res/font/fraunces_bold.ttf). Un android:textStyle="bold"
+                 rendait le wordmark en gras système, hors charte. -->
+            <TextView
+                android:id="@+id/masthead_wordmark"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="7dp"
+                android:text="Facteur"
+                android:textSize="17sp"
+                android:fontFamily="@font/fraunces_bold"
+                android:letterSpacing="-0.031"
+                android:textColor="@color/facteur_text_primary_dark" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="0dp"
@@ -54,13 +67,17 @@
             android:textColor="@color/facteur_text_tertiary_dark"
             android:maxLines="1" />
 
-        <!-- Bouton refresh : réveille l'app et force un refresh du flux Flâner
-             (qui re-pousse le widget). -->
+        <!-- Bouton refresh : rafraîchit le widget **en place** (broadcast vers
+             FacteurWidget.onReceive), sans ouvrir l'app. Le padding porte la
+             cible de tap à 40dp : à 18dp nus, le doigt tombait régulièrement à
+             côté et le bouton passait pour mort. -->
         <ImageView
             android:id="@+id/masthead_refresh"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_marginStart="10dp"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="-8dp"
+            android:padding="11dp"
             android:src="@drawable/ic_widget_refresh"
             android:tint="@color/facteur_text_tertiary_dark"
             android:scaleType="fitCenter"

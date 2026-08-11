@@ -10,13 +10,19 @@ import android.widget.RemoteViewsService
 import es.antonborri.home_widget.HomeWidgetPlugin
 
 /**
- * RemoteViewsService backing the unified Facteur widget feed.
+ * RemoteViewsService backing the Facteur widget feed.
  *
- * Reads `widget_articles_json` (the Essentiel-then-Flux merged payload, capped
- * at [WidgetRendering.MAX_ROWS]) from the SharedPreferences shared with Flutter
- * via `home_widget`. The `EXTRA_THEME` extra picks between the Clair / Sombre
- * row layouts; deeplink target per row is decided from the `source_kind` field
- * on the article (Essentiel → digest reader, Flux → feed reader).
+ * Reads `widget_articles_json` — a mirror of the in-app **Flâner** feed, sorted
+ * newest-first and capped at [WidgetRendering.MAX_ROWS] by Flutter — from the
+ * SharedPreferences shared via `home_widget`. The `EXTRA_THEME` extra picks
+ * between the Clair / Sombre row layouts.
+ *
+ * Every row deep-links to the same place: `feed/content/<id>`, which the router
+ * resolves to `/flaner/content/<id>`. There is no longer a second target: rows
+ * coming from the (now removed) Essentiel block used to point at the Tournée
+ * reader instead, which is why tapping the widget landed sometimes on the
+ * article and sometimes elsewhere in the app. Cf.
+ * docs/bugs/bug-widget-flaner-android.md (D1).
  */
 class FacteurWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory {
@@ -79,40 +85,7 @@ private class FacteurRemoteViewsFactory(
         }
         val rv = RemoteViews(context.packageName, rowLayoutId)
 
-        val isEssentiel = article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL
-
-        // En-tête (rang + thème + badge « À la Une ») : visible uniquement en
-        // Essentiel, comme repère positionnel dans les 5 du jour. En Flux il est
-        // masqué — le thème migre en pied (« source • thème ») pour donner une
-        // sensation de flux continu.
-        if (isEssentiel) {
-            val topicSegment = article.topicLabel.ifBlank { "Actu" }
-            rv.setViewVisibility(R.id.row_header, View.VISIBLE)
-            rv.setTextViewText(R.id.row_topic, "${article.rank} — $topicSegment")
-            rv.setViewVisibility(
-                R.id.row_a_la_une,
-                if (article.isMain) View.VISIBLE else View.GONE,
-            )
-        } else {
-            rv.setViewVisibility(R.id.row_header, View.GONE)
-        }
         rv.setTextViewText(R.id.row_title, article.title)
-
-        // Thumbnails: only Essentiel articles carry one (Flux is image-less
-        // to keep the merged payload under the Binder ceiling at MAX_ROWS=80).
-        if (isEssentiel) {
-            val thumb = WidgetRendering.loadBitmap(context, article.thumbnailPath, 72)?.let {
-                WidgetRendering.roundCorners(context, it, 8f)
-            }
-            if (thumb != null) {
-                rv.setImageViewBitmap(R.id.row_thumbnail, thumb)
-                rv.setViewVisibility(R.id.row_thumbnail, View.VISIBLE)
-            } else {
-                rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
-            }
-        } else {
-            rv.setViewVisibility(R.id.row_thumbnail, View.GONE)
-        }
 
         val logo = WidgetRendering.loadBitmap(context, article.sourceLogoPath, 18)
         if (logo != null) {
@@ -121,36 +94,22 @@ private class FacteurRemoteViewsFactory(
         } else {
             rv.setViewVisibility(R.id.row_source_logo, View.GONE)
         }
-        // Pied de row : Essentiel = source seule (le thème est déjà dans
-        // l'en-tête) ; Flux = « source • thème » (séparateur U+2022, pas d'em-dash).
-        val sourceLine = if (!isEssentiel && article.topicLabel.isNotBlank()) {
+
+        // Pied de row : « source • thème » (séparateur U+2022, pas d'em-dash).
+        val sourceLine = if (article.topicLabel.isNotBlank()) {
             "${article.sourceName} • ${article.topicLabel}"
         } else {
             article.sourceName
         }
         rv.setTextViewText(R.id.row_source_name, sourceLine)
 
-        if (article.perspectiveCount > 0) {
-            rv.setTextViewText(R.id.row_perspective, "+${article.perspectiveCount}")
-            rv.setViewVisibility(R.id.row_perspective, View.VISIBLE)
-        } else {
-            rv.setViewVisibility(R.id.row_perspective, View.GONE)
-        }
-
         rv.setTextViewText(R.id.row_time, WidgetRendering.formatTime(article.publishedAtIso))
 
         // Per-row tap → fillInIntent merged into the template PendingIntent
         // declared by FacteurWidget.onUpdate (setPendingIntentTemplate).
-        // Deep link host depends on the source_kind:
-        //  - Essentiel → digest reader (digest/<id>)
-        //  - Flux      → feed reader   (feed/content/<id>)
-        val baseUri = if (article.sourceKind == WidgetRendering.SOURCE_KIND_ESSENTIEL) {
-            Uri.parse("io.supabase.facteur://digest/${article.id}")
-        } else {
-            Uri.parse("io.supabase.facteur://feed/content/${article.id}")
-        }
         val fillIn = Intent().apply {
-            data = baseUri.buildUpon()
+            data = Uri.parse("io.supabase.facteur://feed/content/${article.id}")
+                .buildUpon()
                 .appendQueryParameter("pos", article.rank.toString())
                 .appendQueryParameter("topicId", article.topicId)
                 .build()

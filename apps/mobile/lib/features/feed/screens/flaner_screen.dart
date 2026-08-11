@@ -313,6 +313,18 @@ class _FlanerScreenState extends ConsumerState<FlanerScreen> {
     final colors = context.facteurColors;
     // Re-tap de l'onglet actif (depuis le shell) → remonter en haut.
     ref.listen(feedScrollTriggerProvider, (_, __) => _scrollToTop());
+    // Retour d'un article ouvert depuis le widget d'accueil → ramener sa carte
+    // en haut du feed, au lieu de reposer l'utilisateur en tête de Flâner.
+    // La consommation se fait au frame suivant : muter un provider pendant le
+    // build de l'écran qui l'écoute déclencherait une exception Riverpod.
+    ref.listen<String?>(flanerRevealArticleProvider, (_, id) {
+      if (id == null || id.isEmpty) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(flanerRevealArticleProvider.notifier).state = null;
+        unawaited(_revealCard(id));
+      });
+    });
     _watchEmptySearch();
     return Scaffold(
       backgroundColor: colors.backgroundPrimary,

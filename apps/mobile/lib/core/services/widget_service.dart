@@ -7,7 +7,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
 
 import '../../config/topic_labels.dart';
-import '../../features/digest/models/digest_models.dart';
 import '../../features/feed/models/content_model.dart';
 import '../../features/gamification/models/streak_model.dart';
 
@@ -26,24 +25,34 @@ enum WidgetPinResult {
   failed,
 }
 
-/// Service to push the unified Facteur feed (Essentiel + Flux) to the home
-/// screen widgets.
+/// Service qui pousse le flux **Flâner** vers les widgets d'écran d'accueil.
 ///
-/// Data flow: Flutter → SharedPreferences (via home_widget) → FacteurWidget.kt
+/// Chemin de données : Flutter → SharedPreferences (via home_widget) →
+/// FacteurWidget.kt
 ///
-/// Schema:
-/// - `widget_articles_json` : merged Essentiel-then-Flux payload (deduped by
-///   id, capped at [_maxTotal]). Each entry carries `source_kind` so the
-///   native side can pick the right deeplink target.
-/// - `articles_json` / `feed_articles_json` : per-source caches still written
-///   so that a later call with only one side (`updateWidget(digest:)` or
-///   `updateWidget(feedItems:)`) can reconstruct the merge without losing the
-///   other side after a cold start.
-/// - `articles_updated_at` : epoch millis of last successful refresh.
-/// - `digest_status` / `digest_progress` / `streak` : legacy keys kept stable.
+/// **Le widget est un miroir de Flâner, et rien d'autre.** Il a longtemps
+/// affiché « L'Essentiel du jour puis le Flux » : le bloc Essentiel venait de
+/// `articles_json`, écrit par le seul `DigestNotifier`. Depuis que L'Essentiel
+/// a fusionné dans la Tournée du jour, ce provider n'est plus construit dans
+/// le parcours nominal — la clé gardait donc **indéfiniment** son dernier
+/// snapshot, en tête du payload (jamais évincé par le cap), pendant que le
+/// refresh de fond ne rafraîchissait que la partie Flux, sous ce bloc fossile.
+/// C'est le « mon widget n'a pas bougé depuis 14 jours » de
+/// docs/bugs/bug-widget-flaner-android.md (D1).
+///
+/// Schéma :
+/// - `widget_articles_json` : payload rendu par le natif — Flâner dédupliqué,
+///   **trié par date décroissante**, capé à [_maxTotal].
+/// - `feed_articles_json` : cache de la source, relu par
+///   [updateWidgetMergingFlux] pour fusionner sans perdre la profondeur.
+/// - `articles_updated_at` : epoch millis du dernier push réussi — c'est
+///   l'heure affichée dans le masthead (« Maj 7h02 »).
+/// - `widget_last_push_count` : profondeur réelle du dernier payload
+///   (diagnostic).
+/// - `streak` : conservée, lue par personne côté natif aujourd'hui.
 /// - `widget_flux_max_scroll_position` / `widget_flux_total_count` /
-///   `widget_flux_max_scroll_at` : scroll metric written natively, flushed by
-///   the app on next foreground.
+///   `widget_flux_max_scroll_at` : métrique de scroll écrite nativement,
+///   remontée par l'app au prochain premier plan.
 class WidgetService {
   // Two AppWidgetProvider classes are registered in AndroidManifest.xml:
   // FacteurWidgetLight (parchment) and FacteurWidgetDark (charcoal). Each is
@@ -86,51 +95,24 @@ class WidgetService {
     ]);
   }
 
-  static const _maxEssentiel = 5;
   static const _maxFeedArticles = 80;
 
-  /// Total cap for the merged payload. Stays at 80 because Flux items are
-  /// image-less (cf. widget.5) — Essentiel adds at most 5 thumbnails on top,
-  /// still well under the ~1 MB Binder IPC ceiling.
+  /// Cap du payload rendu. 80 lignes tiennent largement sous le plafond IPC
+  /// Binder (~1 Mo) puisque les lignes ne portent pas de vignette — seulement
+  /// un logo de source (cf. widget.5).
   static const _maxTotal = 80;
-
-  // Mirror of WidgetRendering.SOURCE_KIND_* on the Kotlin side — both must
-  // agree for the deeplink router to pick the right reader per row.
-  static const _sourceKindEssentiel = 'essentiel';
-  static const _sourceKindFlux = 'flux';
 
   static final _dio = Dio();
 
-  /// Update the home screen widget with the latest digest, feed and/or streak.
-  /// Each parameter is independent — passing only one rebuilds that side and
-  /// re-merges with the cached other side, then pushes both Light and Dark
-  /// widgets.
+  /// Pousse le flux Flâner (et/ou la série) vers les deux widgets.
+  ///
+  /// [feedItems] doit être le flux **non filtré** : le widget est un miroir de
+  /// Flâner par défaut, pas de la vue filtrée en cours.
   static Future<void> updateWidget({
-    DigestResponse? digest,
     List<Content>? feedItems,
     StreakModel? streak,
   }) async {
     try {
-      if (digest != null) {
-        final articles = await _buildEssentielList(digest);
-        await HomeWidget.saveWidgetData(
-          'articles_json',
-          jsonEncode(articles),
-        );
-        await HomeWidget.saveWidgetData(
-          'articles_updated_at',
-          '${DateTime.now().millisecondsSinceEpoch}',
-        );
-        await HomeWidget.saveWidgetData(
-          'digest_status',
-          _computeStatus(digest),
-        );
-        await HomeWidget.saveWidgetData(
-          'digest_progress',
-          _computeProgress(digest),
-        );
-      }
-
       if (feedItems != null) {
         final items = await _buildFeedArticleList(feedItems);
         await HomeWidget.saveWidgetData(
@@ -143,11 +125,8 @@ class WidgetService {
         await HomeWidget.saveWidgetData('streak', '${streak.currentStreak}');
       }
 
-      // Always rebuild the merged payload from whichever per-source caches
-      // are currently in SharedPreferences — robust to cold starts where
-      // only one of digest/feed is delivered before the widget update.
-      if (digest != null || feedItems != null) {
-        await _rewriteMergedPayload();
+      if (feedItems != null) {
+        await _rewriteRenderedPayload();
       }
 
       await _pushUpdate();
@@ -172,27 +151,43 @@ class WidgetService {
           await HomeWidget.getWidgetData<String>('feed_articles_json') ?? '[]';
       final cached = _decodeList(cachedJson);
 
-      final merged = <Map<String, dynamic>>[];
-      final seen = <String>{};
-      for (final entry in [...fresh, ...cached]) {
-        if (merged.length >= _maxFeedArticles) break;
-        final id = (entry['id'] as String?) ?? '';
-        if (id.isEmpty || !seen.add(id)) continue;
-        merged.add({...entry, 'rank': merged.length + 1});
-      }
+      final merged = buildWidgetPayload([...fresh, ...cached]);
 
       await HomeWidget.saveWidgetData(
         'feed_articles_json',
         jsonEncode(merged),
       );
-      await HomeWidget.saveWidgetData(
-        'articles_updated_at',
-        '${DateTime.now().millisecondsSinceEpoch}',
-      );
-      await _rewriteMergedPayload();
+      await _rewriteRenderedPayload();
       await _pushUpdate();
     } catch (e) {
       debugPrint('WidgetService: updateWidgetMergingFlux failed: $e');
+    }
+  }
+
+  /// Purge le bloc « Essentiel » fossile laissé par les versions antérieures.
+  ///
+  /// Sans ça, une install existante garderait son `articles_json` vieux de
+  /// plusieurs jours **en tête** du payload rendu jusqu'à la prochaine
+  /// réécriture complète — soit exactement le bug qu'on corrige, mais après
+  /// mise à jour de l'app. Idempotent : no-op dès que les clés sont vides.
+  ///
+  /// Appelée au boot, **avant** [initWidgetIfNeeded] (qui, lui, s'abstient dès
+  /// qu'un payload non vide existe — y compris un payload fossile).
+  static Future<void> purgeLegacyEssentielPayload() async {
+    try {
+      final legacy =
+          await HomeWidget.getWidgetData<String>('articles_json') ?? '';
+      if (legacy.isEmpty || legacy == '[]') return;
+      await HomeWidget.saveWidgetData('articles_json', '[]');
+      await HomeWidget.saveWidgetData('digest_status', 'none');
+      await HomeWidget.saveWidgetData('digest_progress', '0/0');
+      // Réécrit le payload rendu depuis le seul cache Flâner, sinon le bloc
+      // fossile resterait affiché jusqu'au prochain push de feed.
+      await _rewriteRenderedPayload();
+      await _pushUpdate();
+      debugPrint('WidgetService: purged legacy Essentiel payload');
+    } catch (e) {
+      debugPrint('WidgetService: purgeLegacyEssentielPayload failed: $e');
     }
   }
 
@@ -206,7 +201,6 @@ class WidgetService {
       if (existing != null && existing.isNotEmpty && existing != '[]') {
         return;
       }
-      await HomeWidget.saveWidgetData('articles_json', jsonEncode(<dynamic>[]));
       await HomeWidget.saveWidgetData(
         'feed_articles_json',
         jsonEncode(<dynamic>[]),
@@ -215,10 +209,44 @@ class WidgetService {
         'widget_articles_json',
         jsonEncode(<dynamic>[]),
       );
-      await HomeWidget.saveWidgetData('digest_status', 'none');
       await _pushUpdate();
     } catch (e) {
       debugPrint('WidgetService: initWidgetIfNeeded failed: $e');
+    }
+  }
+
+  /// Clé du marqueur « rafraîchissement en cours », écrite par le natif au tap
+  /// sur 🔄 et effacée ici. Doit rester alignée avec
+  /// `FacteurWidget.REFRESHING_SINCE_KEY`.
+  static const _refreshingSinceKey = 'widget_refreshing_since';
+
+  /// Sort le widget de l'état « Mise à jour… » et le repeint.
+  ///
+  /// Appelée depuis le `finally` de `WidgetBackgroundRefresh.run()`, donc sur
+  /// **tous** les chemins — succès, absence de session, hors ligne, exception.
+  /// Sans ce point de sortie unique, un rafraîchissement infructueux laissait
+  /// le masthead bloqué sur son état transitoire jusqu'à la prochaine alarme
+  /// système (30 min).
+  static Future<void> finishRefresh() async {
+    try {
+      // `null` **supprime** la clé côté plugin. Écrire `0` la réécrirait en
+      // `Int` alors que le natif y met un `Long` : la clé changerait de type
+      // au fil des écritures, ce que le natif doit alors tolérer à la lecture.
+      // La retirer garde un seul écrivain, donc un seul type.
+      await HomeWidget.saveWidgetData<int>(_refreshingSinceKey, null);
+    } catch (e) {
+      debugPrint('WidgetService: clearing refresh marker failed: $e');
+    }
+    await repaint();
+  }
+
+  /// Re-diffuse `ACTION_APPWIDGET_UPDATE` sans toucher aux données — le natif
+  /// relit SharedPreferences et repeint le payload courant.
+  static Future<void> repaint() async {
+    try {
+      await _pushUpdate();
+    } catch (e) {
+      debugPrint('WidgetService: repaint failed: $e');
     }
   }
 
@@ -230,9 +258,8 @@ class WidgetService {
       await HomeWidget.saveWidgetData('feed_articles_json', '[]');
       await HomeWidget.saveWidgetData('widget_articles_json', '[]');
       await HomeWidget.saveWidgetData('articles_updated_at', '0');
-      await HomeWidget.saveWidgetData('digest_status', 'none');
-      await HomeWidget.saveWidgetData('digest_progress', '0/0');
       await HomeWidget.saveWidgetData('streak', '0');
+      await HomeWidget.saveWidgetData<int>(_refreshingSinceKey, null);
       await _pushUpdate();
     } catch (e) {
       debugPrint('WidgetService: clear failed: $e');
@@ -283,55 +310,89 @@ class WidgetService {
   }
 
   // ──────────────────────────────────────────────────────────────
-  // Merge — Essentiel-then-Flux, deduped, capped.
+  // Payload — dédup, tri chronologique, cap.
   // ──────────────────────────────────────────────────────────────
 
-  /// Combine Essentiel and Flux entries in order, dedup by `id`, cap at the
-  /// total ceiling and tag every entry with its `source_kind`. Pure function —
-  /// exposed for unit tests.
+  /// Dédup par `id`, **tri par `published_at_iso` décroissant**, cap à
+  /// [_maxTotal], puis réindexation des `rank`. Fonction pure — c'est la seule
+  /// définition de « l'ordre du widget », exposée pour les tests.
+  ///
+  /// Le tri est explicite parce qu'aucun des appelants ne le garantit :
+  /// [updateWidgetMergingFlux] concatène une page fraîche devant un buffer de
+  /// 80, et `FeedNotifier` fusionne dans son ordre d'arrivée réseau. Sans tri,
+  /// le widget affichait un ordre d'arrivée qui ne ressemblait plus à Flâner
+  /// dès la première fusion de fond.
+  ///
+  /// Une entrée sans date reconnaissable est **conservée** mais reléguée en
+  /// fin de liste : on ne jette pas un article parce que le serveur a omis sa
+  /// date, mais on ne le hisse pas non plus en tête.
   @visibleForTesting
-  static List<Map<String, dynamic>> mergeForWidget(
-    List<Map<String, dynamic>> essentiel,
-    List<Map<String, dynamic>> flux,
+  static List<Map<String, dynamic>> buildWidgetPayload(
+    List<Map<String, dynamic>> entries,
   ) {
-    final result = <Map<String, dynamic>>[];
+    final deduped = <({Map<String, dynamic> entry, int index})>[];
     final seenIds = <String>{};
-    for (final e in essentiel) {
+    for (final e in entries) {
       final id = (e['id'] as String?) ?? '';
-      if (id.isEmpty || seenIds.contains(id)) continue;
-      seenIds.add(id);
-      result.add({...e, 'source_kind': _sourceKindEssentiel});
-      if (result.length >= _maxTotal) return result;
+      if (id.isEmpty || !seenIds.add(id)) continue;
+      deduped.add((entry: e, index: deduped.length));
     }
-    for (final f in flux) {
-      final id = (f['id'] as String?) ?? '';
-      if (id.isEmpty || seenIds.contains(id)) continue;
-      seenIds.add(id);
-      result.add({...f, 'source_kind': _sourceKindFlux});
-      if (result.length >= _maxTotal) return result;
-    }
-    return result;
+
+    // Le rang d'entrée départage les ex æquo. `List.sort` n'est **pas** stable
+    // en Dart (quicksort au-delà de ~32 éléments) : sans ce départage, deux
+    // articles de même date — ou tout un lot sans date — se réordonnaient d'un
+    // push à l'autre, ce qui fait clignoter le widget et invalide le garde de
+    // signature de `_scheduleWidgetPush`.
+    deduped.sort((a, b) {
+      final da = _publishedAtOf(a.entry);
+      final db = _publishedAtOf(b.entry);
+      if (da != null && db != null) {
+        final byDate = db.compareTo(da);
+        if (byDate != 0) return byDate;
+      } else if (da == null && db != null) {
+        return 1;
+      } else if (da != null && db == null) {
+        return -1;
+      }
+      return a.index.compareTo(b.index);
+    });
+
+    final capped =
+        deduped.take(_maxTotal).map((e) => e.entry).toList(growable: false);
+    return [
+      for (var i = 0; i < capped.length; i++) {...capped[i], 'rank': i + 1},
+    ];
   }
 
-  static Future<void> _rewriteMergedPayload() async {
-    final essentielJson =
-        await HomeWidget.getWidgetData<String>('articles_json') ?? '[]';
+  static DateTime? _publishedAtOf(Map<String, dynamic> entry) {
+    final raw = entry['published_at_iso'];
+    if (raw is! String || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  static Future<void> _rewriteRenderedPayload() async {
     final fluxJson =
         await HomeWidget.getWidgetData<String>('feed_articles_json') ?? '[]';
-    final essentiel = _decodeList(essentielJson);
-    final flux = _decodeList(fluxJson);
-    final merged = mergeForWidget(essentiel, flux);
+    final rendered = buildWidgetPayload(_decodeList(fluxJson));
     await HomeWidget.saveWidgetData(
       'widget_articles_json',
-      jsonEncode(merged),
+      jsonEncode(rendered),
+    );
+    // L'heure lue par le masthead. Écrite ici — donc sur **tous** les chemins
+    // de push, et pas seulement sur la fusion de fond comme avant : sinon le
+    // widget affichait « Maj » d'un refresh de fond vieux de plusieurs heures
+    // juste après un push d'app tout frais.
+    await HomeWidget.saveWidgetData(
+      'articles_updated_at',
+      '${DateTime.now().millisecondsSinceEpoch}',
     );
     // Diagnostic « le widget n'affiche que 9 articles » : on persiste la
     // profondeur réelle du payload plutôt que de la déduire de l'écran.
     await HomeWidget.saveWidgetData<int>(
       'widget_last_push_count',
-      merged.length,
+      rendered.length,
     );
-    debugPrint('WidgetService: pushed ${merged.length} rows to widget');
+    debugPrint('WidgetService: pushed ${rendered.length} rows to widget');
   }
 
   static List<Map<String, dynamic>> _decodeList(String raw) {
@@ -350,82 +411,11 @@ class WidgetService {
   }
 
   // ──────────────────────────────────────────────────────────────
-  // Essentiel serialization
+  // Sérialisation Flâner
   // ──────────────────────────────────────────────────────────────
 
-  /// Build the list of widget articles (max 5) from a digest response.
-  ///
-  /// Strategy mirrors `topic_section.dart` `_pickSingleton`:
-  ///  - Iterate topics in rank order, take 1 article per topic
-  ///  - Prefer a followed-source article when available
-  ///  - Topic 1 article gets `is_main = true` (drives "À la Une" badge)
-  static Future<List<Map<String, dynamic>>> _buildEssentielList(
-    DigestResponse? digest,
-  ) async {
-    if (digest == null || digest.topics.isEmpty) return const [];
-
-    final picks = <({DigestItem article, DigestTopic topic, int rank})>[];
-    var rank = 1;
-    for (final topic in digest.topics) {
-      if (picks.length >= _maxEssentiel) break;
-      if (topic.articles.isEmpty) continue;
-      final article = _pickSingleton(topic);
-      if (article.isDismissed) continue;
-      picks.add((article: article, topic: topic, rank: rank));
-      rank++;
-    }
-    return Future.wait([
-      for (final p in picks)
-        _serializeArticle(
-          article: p.article,
-          topic: p.topic,
-          rank: p.rank,
-          isMain: p.rank == 1,
-        ),
-    ]);
-  }
-
-  static DigestItem _pickSingleton(DigestTopic topic) {
-    for (final a in topic.articles) {
-      if (a.isFollowedSource) return a;
-    }
-    return topic.articles.first;
-  }
-
-  static Future<Map<String, dynamic>> _serializeArticle({
-    required DigestItem article,
-    required DigestTopic topic,
-    required int rank,
-    required bool isMain,
-  }) async {
-    final thumbPath = await _downloadIfPresent(
-      article.thumbnailUrl,
-      'widget_thumbnail_$rank.jpg',
-    );
-    final logoPath = await _cachedLogo(article.source?.logoUrl);
-
-    return {
-      'id': article.contentId,
-      'rank': rank,
-      'topic_id': topic.topicId,
-      'topic_label': topic.label,
-      'is_main': isMain,
-      'title': article.title,
-      'source_name': article.source?.name ?? '',
-      'source_logo_path': logoPath ?? '',
-      'thumbnail_path': thumbPath ?? '',
-      'perspective_count': topic.perspectiveCount,
-      'published_at_iso': article.publishedAt?.toUtc().toIso8601String() ?? '',
-    };
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  // Flux serialization
-  // ──────────────────────────────────────────────────────────────
-
-  /// Build the Flux article list (max 80) from the current feed state.
-  /// Thumbnails are off in Flux (cf. widget.5) — only the source logo (much
-  /// smaller) is still inlined.
+  /// Sérialise le flux Flâner (max 80). Pas de vignette (cf. widget.5) — seul
+  /// le logo de source, bien plus léger, est inliné.
   static Future<List<Map<String, dynamic>>> _buildFeedArticleList(
     List<Content> items,
   ) async {
@@ -451,13 +441,14 @@ class WidgetService {
       'rank': rank,
       'topic_id': topicSlug,
       'topic_label': topicLabel,
-      'is_main': false,
       'title': item.title,
       'source_name': item.source.name,
       'source_logo_path': logoPath ?? '',
-      'thumbnail_path': '',
-      'perspective_count': 0,
-      'published_at_iso': item.publishedAt.toUtc().toIso8601String(),
+      // `publishedAtRaw`, pas `publishedAt` : ce dernier retombe sur
+      // `DateTime.now()` quand le serveur n'envoie pas de date, ce qui fige un
+      // « à l'instant » perpétuel dans un payload relu des jours plus tard.
+      // Chaîne vide ⇒ le natif n'affiche aucune date (cf. bug D2).
+      'published_at_iso': item.publishedAtRaw?.toUtc().toIso8601String() ?? '',
     };
   }
 
@@ -510,53 +501,6 @@ class WidgetService {
       debugPrint('WidgetService: readAndClearFluxScrollMetric failed: $e');
       return null;
     }
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  // Status helpers (kept stable for backward-compat header)
-  // ──────────────────────────────────────────────────────────────
-
-  static String _computeStatus(DigestResponse? digest) {
-    if (digest == null) return 'none';
-    if (digest.isCompleted) return 'completed';
-    final processed = _processedArticleCount(digest);
-    if (processed > 0) return 'in_progress';
-    return 'available';
-  }
-
-  static String _computeProgress(DigestResponse? digest) {
-    if (digest == null) return '0/0';
-    final total = _totalArticleCount(digest);
-    final processed = _processedArticleCount(digest);
-    return '$processed/$total';
-  }
-
-  static int _totalArticleCount(DigestResponse digest) {
-    if (digest.usesTopics) {
-      var count = digest.topics.length;
-      if (digest.usesEditorial) {
-        if (digest.pepite != null) count++;
-        if (digest.coupDeCoeur != null) count++;
-      }
-      return count;
-    }
-    return digest.items.length;
-  }
-
-  static int _processedArticleCount(DigestResponse digest) {
-    if (digest.usesTopics) {
-      var count = digest.topics.where((t) => t.isCovered).length;
-      if (digest.usesEditorial) {
-        final p = digest.pepite;
-        if (p != null && (p.isRead || p.isSaved || p.isDismissed)) count++;
-        final c = digest.coupDeCoeur;
-        if (c != null && (c.isRead || c.isSaved || c.isDismissed)) count++;
-      }
-      return count;
-    }
-    return digest.items
-        .where((i) => i.isRead || i.isDismissed || i.isSaved)
-        .length;
   }
 
   /// Logo de source, mis en cache **par URL** et non par rang.

@@ -32,6 +32,10 @@ class WidgetBackgroundRefresh {
   static const String taskName = 'facteur_widget_refresh';
   static const String uniqueName = 'facteur_widget_refresh_periodic';
 
+  /// Tâche one-shot du bouton 🔄 du widget, distincte de la périodique pour ne
+  /// pas annuler son cycle.
+  static const String immediateName = 'facteur_widget_refresh_now';
+
   /// WorkManager applique un plancher de 15 min ; 1 h est un compromis entre
   /// fraîcheur perçue et budget batterie/quota.
   static const Duration frequency = Duration(hours: 1);
@@ -61,6 +65,48 @@ class WidgetBackgroundRefresh {
     }
   }
 
+  /// Enfile un rafraîchissement **immédiat**, déclenché par le bouton 🔄 du
+  /// widget.
+  ///
+  /// Pourquoi passer par WorkManager plutôt que faire le travail sur place :
+  /// l'isolate qui exécute cette méthode est celui de `home_widget`, porté par
+  /// un `JobIntentService` dont le `onHandleWork` **poste** l'appel Dart puis
+  /// retourne aussitôt, sans attendre sa fin. Android considère alors le
+  /// travail terminé et peut tuer le process — ce qui coupait le
+  /// rafraîchissement en plein vol et laissait le masthead figé sur « Mise à
+  /// jour… », le repaint final n'arrivant jamais.
+  /// `BackgroundWorker` de WorkManager, lui, rend un `ListenableFuture` qui ne
+  /// se résout qu'à la fin de la tâche Dart : le process est maintenu en vie.
+  /// Cf. docs/bugs/bug-widget-flaner-android.md (D4-bis).
+  ///
+  /// Ce que fait cette méthode est donc volontairement minuscule (un enqueue,
+  /// quelques millisecondes) : elle tient largement dans la fenêtre incertaine
+  /// de l'isolate `home_widget`.
+  ///
+  /// `expedited` (via [OutOfQuotaPolicy]) demande à Android de la lancer sans
+  /// attendre — c'est ce qui rend le bouton perceptiblement rapide ; en cas de
+  /// quota épuisé elle retombe en tâche normale plutôt que d'être jetée.
+  static Future<void> requestImmediateRefresh() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      await Workmanager().initialize(widgetRefreshCallbackDispatcher);
+      await Workmanager().registerOneOffTask(
+        immediateName,
+        taskName,
+        constraints: Constraints(networkType: NetworkType.connected),
+        // `replace` : deux appuis rapprochés ne doivent pas empiler deux
+        // rafraîchissements réseau concurrents.
+        existingWorkPolicy: ExistingWorkPolicy.replace,
+        outOfQuotaPolicy: OutOfQuotaPolicy.runAsNonExpeditedWorkRequest,
+      );
+    } catch (e) {
+      debugPrint('WidgetBackgroundRefresh: immediate enqueue failed: $e');
+      // L'enqueue a échoué : on sort quand même le widget de « Mise à jour… »,
+      // sinon il resterait figé sur un état transitoire sans issue.
+      await WidgetService.finishRefresh();
+    }
+  }
+
   /// Annule la tâche. Appelé au logout, à côté de `WidgetService.clear()` :
   /// sans ça, le job continuerait à réécrire le widget avec le flux de
   /// l'utilisateur précédent.
@@ -71,6 +117,39 @@ class WidgetBackgroundRefresh {
     } catch (e) {
       debugPrint('WidgetBackgroundRefresh: cancel failed (non-critical): $e');
     }
+  }
+
+  /// `Supabase.initialize` est **une fois par isolate**, pas une fois par run.
+  ///
+  /// L'isolate de fond de `home_widget` réutilise son `FlutterEngine` d'un
+  /// réveil à l'autre (champ statique dans `HomeWidgetBackgroundService`) :
+  /// depuis que le bouton 🔄 passe par ce chemin, [run] peut être appelée
+  /// plusieurs fois dans la même vie d'isolate. Un second `initialize` lève —
+  /// l'exception était avalée par le `catch` général de [run], et le refresh
+  /// n'échouait qu'à partir du **deuxième** appui, ce qui donne exactement le
+  /// symptôme « le bouton marche une fois sur deux ».
+  static bool _supabaseReady = false;
+
+  static Future<void> _ensureSupabase(SupabaseHiveStorage storage) async {
+    if (_supabaseReady) return;
+    try {
+      await Supabase.initialize(
+        url: SupabaseConstants.url,
+        anonKey: SupabaseConstants.anonKey,
+        authOptions: FlutterAuthClientOptions(localStorage: storage),
+      );
+    } catch (e) {
+      // Déjà initialisé (deux réveils rapprochés dans le même isolate) : on
+      // relit l'instance pour confirmer qu'elle répond — si elle ne répond pas,
+      // l'exception remonte et [run] la traitera comme un échec franc plutôt
+      // que de poursuivre sur un client mort.
+      final client = Supabase.instance.client;
+      debugPrint(
+        'WidgetBackgroundRefresh: Supabase already initialized '
+        '(${client.runtimeType}) — $e',
+      );
+    }
+    _supabaseReady = true;
   }
 
   /// Le travail réel, exécuté dans l'isolate de fond.
@@ -88,11 +167,7 @@ class WidgetBackgroundRefresh {
         return true;
       }
 
-      await Supabase.initialize(
-        url: SupabaseConstants.url,
-        anonKey: SupabaseConstants.anonKey,
-        authOptions: FlutterAuthClientOptions(localStorage: storage),
-      );
+      await _ensureSupabase(storage);
 
       final session = Supabase.instance.client.auth.currentSession;
       if (session == null) {
@@ -149,6 +224,11 @@ class WidgetBackgroundRefresh {
       // job qui boucle en retry.
       debugPrint('WidgetBackgroundRefresh: run failed: $e');
       return true;
+    } finally {
+      // Quoi qu'il arrive — pas de session, hors ligne, feed vide, exception —
+      // le widget doit sortir de « Mise à jour… ». C'est le seul endroit qui
+      // le garantit : tous les chemins de [run] passent ici.
+      await WidgetService.finishRefresh();
     }
   }
 }
