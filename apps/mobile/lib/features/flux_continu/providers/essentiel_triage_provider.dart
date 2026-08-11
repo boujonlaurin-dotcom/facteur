@@ -125,8 +125,8 @@ class EssentielTriageState {
 
   final Map<String, TriageEntry> decisions;
 
-  /// Objectif du jour réglé au stepper (« Je veux lire − N + articles
-  /// aujourd'hui »), persisté dans le blob jour : le nombre d'articles à
+  /// Objectif du jour réglé au stepper (« Garder − N + articles »), persisté
+  /// dans le blob jour : le nombre d'articles à
   /// **garder**, jamais la taille du slate. `null` ⇒ jamais touché
   /// ([kTriageGoalDefault]).
   ///
@@ -525,7 +525,7 @@ class EssentielTriageNotifier extends StateNotifier<EssentielTriageState> {
   }
 
   /// Règle l'objectif du jour à [n] articles **à garder** — le levier du
-  /// stepper « Je veux lire − N + articles aujourd'hui ».
+  /// stepper « Garder − N + articles ».
   ///
   /// Ne touche **plus au slate du tout** : c'est tout l'intérêt de la 33.4.
   /// Baisser la cible ne détruit donc rien, et la contrainte « ne jamais

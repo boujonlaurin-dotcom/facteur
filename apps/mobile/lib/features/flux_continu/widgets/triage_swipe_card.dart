@@ -92,6 +92,25 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
   /// `MediaQuery` serait hors phase.
   double _screenWidth = 0;
 
+  /// Pointeurs physiquement posés sur la carte, vus par le [Listener] qui
+  /// enveloppe le `GestureDetector`. C'est le filet du bug « geste sans fin
+  /// détectée » : le `HorizontalDragGestureRecognizer` peut ne jamais délivrer
+  /// de `onEnd`/`onCancel` terminal (2ᵉ doigt qui atterrit en cours de swipe et
+  /// fait « tenir » le recognizer, perte de route d'arène) — `_dragUnderway`
+  /// restait alors `true` et la carte figée translatée, définitivement (aucune
+  /// décision ⇒ l'index n'avance pas ⇒ `didUpdateWidget` ne reset jamais).
+  /// Les événements bruts de pointeur, eux, arrivent toujours.
+  final Set<int> _activePointers = {};
+
+  /// Un microtask de réconciliation [_resolveLostDragEnd] est-il déjà planifié ?
+  bool _resolveScheduled = false;
+
+  /// Nombre de gestes résolus par le filet (fin jamais délivrée par le
+  /// recognizer). Doit rester à 0 sur tous les drags propres — c'est l'assertion
+  /// des tests de non-régression du filet.
+  @visibleForTesting
+  int lostGestureResolutions = 0;
+
   /// Aligné sur `SwipeToOpenCard._threshold`.
   static const double _threshold = 0.25;
 
@@ -101,8 +120,17 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
   /// Distance (px) au bout de laquelle un tampon est pleinement opaque.
   static const double _stampFullOpacityAt = 70;
 
-  /// Diviseur de rotation : `dx / 26` degrés, soit ~3° à 80px.
-  static const double _rotationDivisor = 26;
+  /// Diviseur de rotation : `dx / 50` degrés, soit ~1,6° à 80px. Était 26
+  /// (~3° à 80px) : à cette amplitude, la rotation **à origine centrée**
+  /// faisait balayer ~11px horizontalement aux coins de la carte en plus de la
+  /// translation — un « coin » de révélation en biais, asymétrique, que l'œil
+  /// lisait comme un décalage de la carte du dessous (bug « drift »). Réduite
+  /// et bornée ([_maxRotationDegrees]), avec pivot ancré en haut (cf. [build]).
+  static const double _rotationDivisor = 50;
+
+  /// Borne (degrés) de l'inclinaison de sortie : au-delà, l'angle n'apporte
+  /// plus rien au signal « la carte part » mais amplifie le balayage des coins.
+  static const double _maxRotationDegrees = 2.5;
 
   @override
   void initState() {
@@ -133,6 +161,10 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
       _dragUnderway = false;
       _hasTriggered = false;
       _dragExtent = 0;
+      // Le filet aussi repart à zéro : un pointeur encore posé (ou un microtask
+      // en vol) appartient à la carte précédente et fuirait sinon sur celle-ci.
+      _activePointers.clear();
+      _resolveScheduled = false;
       _resetController.reset();
       _exitController.reset();
       // La carte fraîche est au repos : la pile doit repartir d'une promotion
@@ -145,6 +177,11 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
   @override
   void dispose() {
     _exitGuard?.cancel();
+    // Un microtask [_resolveLostDragEnd] éventuellement en vol se no-op sur
+    // `!mounted` ; on éteint quand même l'état du filet par symétrie avec
+    // `didUpdateWidget`.
+    _activePointers.clear();
+    _resolveScheduled = false;
     _resetController.dispose();
     _exitController.dispose();
     super.dispose();
@@ -205,11 +242,18 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
 
   void _handleDragEnd(DragEndDetails details) {
     if (!_dragUnderway || _exitController.isAnimating) return;
+    _resolveDragEnd(velocity: details.primaryVelocity ?? 0);
+  }
+
+  /// Corps décisionnel de la fin de geste, partagé entre le `onEnd` réel du
+  /// recognizer ([_handleDragEnd]) et la réconciliation du filet
+  /// ([_resolveLostDragEnd]). `_dragUnderway = false` **d'abord** : c'est ce qui
+  /// rend les deux entrées mutuellement exclusives — la première qui passe
+  /// désarme l'autre.
+  void _resolveDragEnd({required double velocity}) {
     _dragUnderway = false;
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    final velocity = details.primaryVelocity ?? 0;
-    final ratio = _dragExtent / screenWidth;
+    final ratio = _screenWidth > 0 ? _dragExtent / _screenWidth : 0.0;
 
     if (!_hasTriggered &&
         _dragExtent > 0 &&
@@ -225,6 +269,39 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
     }
 
     _springBack();
+  }
+
+  void _trackPointerDown(PointerDownEvent event) {
+    _activePointers.add(event.pointer);
+  }
+
+  /// `onPointerUp` **et** `onPointerCancel` du filet. Quand plus aucun doigt
+  /// n'est posé alors que `_dragUnderway` est encore vrai, la fin de geste du
+  /// recognizer est peut-être perdue — on planifie une réconciliation
+  /// **différée** : le [Listener] s'exécute *avant* le `onEnd` du recognizer
+  /// dans la chaîne de dispatch, donc trancher ici doublerait le chemin normal.
+  void _trackPointerUp(PointerEvent event) {
+    _activePointers.remove(event.pointer);
+    if (_activePointers.isNotEmpty || !_dragUnderway || _resolveScheduled) {
+      return;
+    }
+    _resolveScheduled = true;
+    scheduleMicrotask(_resolveLostDragEnd);
+  }
+
+  /// Réconciliation du filet : ne tranche que si la fin de geste est **encore**
+  /// perdue au moment où le microtask s'exécute. Vélocité nulle — seule la
+  /// distance peut alors décider ; sous le seuil, la carte revient simplement
+  /// à sa place.
+  void _resolveLostDragEnd() {
+    _resolveScheduled = false;
+    if (!mounted) return;
+    // Le chemin normal (onEnd/onCancel) a résolu entre-temps, un nouveau geste
+    // a démarré, ou une sortie est déjà en cours : rien à réconcilier.
+    if (!_dragUnderway || _activePointers.isNotEmpty) return;
+    if (_hasTriggered || _exitController.isAnimating) return;
+    lostGestureResolutions++;
+    _resolveDragEnd(velocity: 0);
   }
 
   /// Perte d'arène de gestes (long-press qui gagne, scroll parent, annulation
@@ -286,7 +363,11 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
         _dragExtent = 0;
         _hasTriggered = false;
       });
-      _emitProgress();
+      // Pas de `_emitProgress()` ici : il pousserait la promotion à 0 — donc la
+      // carte entrante à son opacité de repos — **avant** que `onDone()` ne
+      // l'avance en carte du dessus (flash d'une frame). C'est
+      // `didUpdateWidget`, une fois l'index avancé, qui remet la promotion à
+      // zéro pour la nouvelle carte du dessous.
     }
     onDone();
   }
@@ -327,16 +408,34 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
         ? (-effectiveDx / _stampFullOpacityAt).clamp(0.0, 1.0).toDouble()
         : 0.0;
 
-    return GestureDetector(
-      onTap: widget.onTap,
-      onHorizontalDragStart: _handleDragStart,
-      onHorizontalDragUpdate: _handleDragUpdate,
-      onHorizontalDragEnd: _handleDragEnd,
-      onHorizontalDragCancel: _handleDragCancel,
-      child: Transform.translate(
+    // Filet de sécurité **passif** autour du `GestureDetector` (précédent
+    // maison : `article_preview_modal.dart`). `deferToChild` : le `Listener`
+    // ne rejoint pas l'arène de gestes — tap, long-press et drag restent
+    // intacts, il ne fait qu'observer les événements bruts de pointeur pour
+    // réconcilier une fin de geste que le recognizer aurait perdue.
+    return Listener(
+      behavior: HitTestBehavior.deferToChild,
+      onPointerDown: _trackPointerDown,
+      onPointerUp: _trackPointerUp,
+      onPointerCancel: _trackPointerUp,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onHorizontalDragStart: _handleDragStart,
+        onHorizontalDragUpdate: _handleDragUpdate,
+        onHorizontalDragEnd: _handleDragEnd,
+        onHorizontalDragCancel: _handleDragCancel,
+        child: Transform.translate(
           offset: Offset(effectiveDx, 0),
           child: Transform.rotate(
-            angle: (effectiveDx / _rotationDivisor) * math.pi / 180,
+            angle: (effectiveDx / _rotationDivisor)
+                    .clamp(-_maxRotationDegrees, _maxRotationDegrees) *
+                math.pi /
+                180,
+            // Pivot ancré en haut : les deux cartes de la pile partagent leur
+            // bord haut (`top: 0`), donc un pivot au centre faisait balayer le
+            // coin haut latéralement pendant la sortie — le « drift » perçu de
+            // la carte du dessous. Ancré, ce déplacement devient sub-pixel.
+            alignment: Alignment.topCenter,
             child: Opacity(
               opacity: opacity,
               child: Stack(
@@ -387,6 +486,7 @@ class TriageSwipeCardState extends State<TriageSwipeCard>
             ),
           ),
         ),
+      ),
     );
   }
 }

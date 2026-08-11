@@ -168,15 +168,15 @@ class TriageStackSkeleton extends StatelessWidget {
             ],
           ),
         ),
-        // Contrôle d'objectif : « Je veux lire », deux ronds de
+        // Contrôle d'objectif : « Garder », deux ronds de
         // [kTriageTargetRoundSize] centrés dans leur cible tactile de
-        // [kTriageTargetControlHeight] encadrant le chiffre, puis la fin de la
-        // phrase. Mêmes constantes que le vrai contrôle.
+        // [kTriageTargetControlHeight] encadrant le chiffre, puis « articles ».
+        // Mêmes constantes et mêmes largeurs de mots que le vrai contrôle.
         SizedBox(
           height: kTriageTargetControlHeight,
           child: Row(
             children: [
-              bar(width: 74, height: 11),
+              bar(width: 42, height: 11),
               SizedBox(
                 width: kTriageTargetControlHeight,
                 child: Center(
@@ -198,7 +198,7 @@ class TriageStackSkeleton extends StatelessWidget {
                   ),
                 ),
               ),
-              bar(width: 112, height: 11),
+              bar(width: 44, height: 11),
             ],
           ),
         ),
