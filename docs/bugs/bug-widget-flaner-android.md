@@ -325,6 +325,36 @@ cette moitié-là de la bascule.
 > redondants, ils sont une course en sommeil. Elle se réveille au premier
 > changement qui les fait diverger.
 
+### D8-ter — mauvais logo (bis), et wordmark maigre
+
+Le masthead affichait la marque *origami* extraite de `facteur_logo.png`.
+C'est l'**ancien** logo : l'identité actuelle du produit est le personnage du
+facteur, celui de l'icône d'application
+(`assets/icons/logo_android_icon.png`, référencé par `flutter_launcher_icons`
+comme `image_path_android` **et** `adaptive_icon_foreground`). C'est donc lui
+qui est désormais rastérisé.
+
+Deux différences de traitement par rapport à l'itération 2 :
+
+- **Toutes les composantes sont conservées.** L'ancien logo demandait de ne
+  garder que la plus grande, pour écarter un filigrane. Ici les trois petits
+  traits près de l'enveloppe font partie du dessin — les jeter aurait amputé
+  le logo. Le détourage se fait donc sur l'union des pixels opaques après
+  suppression du fond beige par remplissage depuis les bords.
+- **La base passe de 26 à 32 dp.** À 26 dp le visage du personnage se réduit à
+  une tache sur les deux fonds du widget ; 32 dp est le premier palier
+  lisible, et n'agrandit pas le masthead (sa hauteur est déjà fixée par la
+  cible de tap de 40 dp du bouton 🔄). Un test lit les dimensions dans
+  l'en-tête PNG de chaque densité, pour que le rapport dp/densité ne dérive
+  pas.
+
+**Wordmark.** `android:fontFamily="@font/fraunces_bold"` seul ne suffit pas :
+un layout `RemoteViews` est inflaté dans le process du **launcher**, et si la
+police embarquée n'y est pas résolue, le texte retombe sur la fonte système —
+en graisse *normale*. D'où un « Facteur » maigre sur device, alors que le
+fichier est bien Fraunces Bold. `android:textStyle="bold"` est ajouté en
+filet : Fraunces quand elle charge, du gras dans tous les cas.
+
 ---
 
 ## Correctifs
