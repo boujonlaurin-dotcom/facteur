@@ -146,4 +146,24 @@ void main() {
       expect(find.text('Bien joué !'), findsNothing);
     },
   );
+
+  testWidgets('pied « déjà joué » : série au singulier (« 1 jour »)', (t) async {
+    // Régression docs/bugs/bug-grille-streak-fige-apres-partie.md — le pluriel
+    // était figé dans la chaîne, d'où « 1 jours » qui se lisait comme une
+    // valeur en dur.
+    await t.pumpWidget(
+      _wrap(_FakeGrilleRepository(today: _todaySolved().copyWith(streak: 1))),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('1 jour'), findsOneWidget);
+    expect(find.text('1 jours'), findsNothing);
+  });
+
+  testWidgets('pied « déjà joué » : série au pluriel (« 3 jours »)', (t) async {
+    await t.pumpWidget(
+      _wrap(_FakeGrilleRepository(today: _todaySolved().copyWith(streak: 3))),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('3 jours'), findsOneWidget);
+  });
 }

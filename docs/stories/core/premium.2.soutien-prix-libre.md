@@ -183,8 +183,13 @@ qu'aucun message publié** (rendu `textContent` = pas d'injection HTML).
 3. RevenueCat : clé API **secrète v1** ; vérifier entitlement `premium`.
 4. `checkout_link_secret` aléatoire fort.
 5. Env vars sur Railway **staging ET prod**.
-6. **Coller `soutenir-magic-link.html`** dans Supabase Auth -> Email Templates ->
-   Magic Link (+ objet) et ajouter `/soutenir` à l'allow-list Redirect URLs.
+6. ~~**Coller `soutenir-magic-link.html`** dans Supabase Auth -> Email Templates ->
+   Magic Link (+ objet) et ajouter `/soutenir` à l'allow-list Redirect URLs.~~
+   ✅ **FAIT (2026-08-10)** — l'oubli de cette étape laissait l'email au template
+   Supabase par défaut. Désormais appliqué et reproductible via
+   `scripts/apply-supabase-auth-templates.sh` (objet « Merci pour ta demande de
+   soutien », template versionné poussé, allow-list + `https://facteur.app/**`).
+   Vérifié côté Supabase (subject/branding/allow-list OK).
 
 ## Tests & vérif
 

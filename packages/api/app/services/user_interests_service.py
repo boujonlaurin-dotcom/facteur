@@ -30,6 +30,7 @@ from app.schemas.user_interests import (
     UserInterestsResponse,
     UserSourcesStateResponse,
 )
+from app.services.user_service import UserService
 
 logger = structlog.get_logger(__name__)
 
@@ -147,6 +148,11 @@ class UserInterestsService:
 
         `essentiel_mode` (Thèmes uniquement) : placement Essentiel/Flâner durable.
         `None` = préserver l'existant (ne jamais écraser un placement connu)."""
+        # FK `user_interests` + `user_favorite_interests` → `user_profiles` : un
+        # compte authentifié sans profil (créé hors onboarding) ferait échouer le
+        # commit en 500. Idempotent et sans commit → composable ici.
+        await UserService(self.db).get_or_create_profile(str(user_id))
+
         prev_state: InterestState | None = None
 
         if kind == "theme":
@@ -452,6 +458,12 @@ class UserSourcesStateService:
     ) -> InterestState | None:
         """`essentiel_mode` : placement Essentiel/Flâner durable. `None` = préserver
         l'existant (ne jamais écraser un placement connu par un PATCH sans mode)."""
+        # FK `user_favorite_sources` + `user_personalization` → `user_profiles` :
+        # sans profil, le commit échouait en 500 sur
+        # `user_favorite_sources_user_id_fkey` (Sentry). Couvre les deux helpers
+        # `_sync_*` ci-dessous. Idempotent et sans commit → composable ici.
+        await UserService(self.db).get_or_create_profile(str(user_id))
+
         row = (
             await self.db.execute(
                 select(UserSource).where(
@@ -501,12 +513,8 @@ class UserSourcesStateService:
         (suivi/favori/neutre) pour rester réversible.
         """
         if state == InterestState.HIDDEN:
-            # FK user_personalization → user_profiles : garantir le profil
-            # avant l'upsert (un user peut masquer depuis le reader sans row
-            # de personnalisation préexistante).
-            from app.services.user_service import UserService
-
-            await UserService(self.db).get_or_create_profile(str(user_id))
+            # FK user_personalization → user_profiles : le profil est garanti en
+            # tête de `set_state` (seul appelant de ce helper).
             await self.db.execute(
                 insert(UserPersonalization)
                 .values(user_id=user_id, muted_sources=[source_id])

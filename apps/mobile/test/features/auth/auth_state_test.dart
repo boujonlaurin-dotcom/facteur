@@ -1,8 +1,33 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
+import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import 'package:facteur/core/auth/auth_state.dart';
 
+class _MockSupabaseClient extends Mock implements SupabaseClient {}
+
+class _MockGoTrueClient extends Mock implements GoTrueClient {}
+
+class _MockUserResponse extends Mock implements UserResponse {}
+
 void main() {
+  late Directory hiveDirectory;
+
+  setUpAll(() async {
+    registerFallbackValue(UserAttributes());
+    hiveDirectory = await Directory.systemTemp.createTemp(
+      'facteur-auth-state-test-',
+    );
+    Hive.init(hiveDirectory.path);
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    await hiveDirectory.delete(recursive: true);
+  });
+
   group('AuthState logic tests', () {
     test('isEmailConfirmed should return false if user is null', () {
       const state = AuthState(user: null);
@@ -247,6 +272,184 @@ void main() {
       const state = AuthState();
       final updated = state.copyWith(passwordRecoveryPending: true);
       expect(updated.passwordRecoveryPending, isTrue);
+    });
+  });
+
+  group('anonymous account conversion', () {
+    test('does not mark an auto-confirmed email as pending', () async {
+      final supabase = _MockSupabaseClient();
+      final auth = _MockGoTrueClient();
+      final response = _MockUserResponse();
+      final confirmedUser = User(
+        id: 'confirmed-user',
+        appMetadata: const {'providers': ['email']},
+        userMetadata: const {},
+        aud: 'authenticated',
+        createdAt: DateTime.now().toIso8601String(),
+        emailConfirmedAt: DateTime.now().toIso8601String(),
+      );
+
+      when(() => supabase.auth).thenReturn(auth);
+      when(() => auth.currentUser).thenReturn(confirmedUser);
+      when(
+        () => auth.updateUser(
+          any(),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
+        ),
+      ).thenAnswer((_) async => response);
+      final box = await Hive.openBox<dynamic>('auth_prefs');
+      await box.put('pending_email_confirmation', 'ancien@example.com');
+
+      final notifier = AuthStateNotifier.test(
+        const AuthState(pendingEmailConfirmation: 'ancien@example.com'),
+        supabase: supabase,
+      );
+      final converted = await notifier.convertAnonymousToAccount(
+        email: 'nouveau@example.com',
+        password: 'secret123',
+      );
+
+      expect(converted, isTrue);
+      expect(notifier.state.pendingEmailConfirmation, isNull);
+      expect(box.get('pending_email_confirmation'), isNull);
+    });
+
+    test('marks an unconfirmed email as pending', () async {
+      final supabase = _MockSupabaseClient();
+      final auth = _MockGoTrueClient();
+      final response = _MockUserResponse();
+      final unconfirmedUser = User(
+        id: 'unconfirmed-user',
+        appMetadata: const {'providers': ['email']},
+        userMetadata: const {},
+        aud: 'authenticated',
+        createdAt: DateTime.now().toIso8601String(),
+      );
+
+      when(() => supabase.auth).thenReturn(auth);
+      when(() => auth.currentUser).thenReturn(unconfirmedUser);
+      when(
+        () => auth.updateUser(
+          any(),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
+        ),
+      ).thenAnswer((_) async => response);
+
+      final notifier = AuthStateNotifier.test(
+        const AuthState(),
+        supabase: supabase,
+      );
+      final converted = await notifier.convertAnonymousToAccount(
+        email: 'nouveau@example.com',
+        password: 'secret123',
+      );
+
+      final box = Hive.box<dynamic>('auth_prefs');
+      expect(converted, isTrue);
+      expect(
+        notifier.state.pendingEmailConfirmation,
+        'nouveau@example.com',
+      );
+      expect(
+        box.get('pending_email_confirmation'),
+        'nouveau@example.com',
+      );
+    });
+
+    test('partial conversion retry skips an email already attached', () async {
+      final supabase = _MockSupabaseClient();
+      final auth = _MockGoTrueClient();
+      final response = _MockUserResponse();
+      final userWithEmail = User(
+        id: 'partial-user',
+        appMetadata: const {'providers': ['email']},
+        userMetadata: const {},
+        aud: 'authenticated',
+        createdAt: DateTime.now().toIso8601String(),
+        email: 'nouveau@example.com',
+        emailConfirmedAt: DateTime.now().toIso8601String(),
+      );
+      final seenAttributes = <UserAttributes>[];
+
+      when(() => supabase.auth).thenReturn(auth);
+      when(() => auth.currentUser).thenReturn(userWithEmail);
+      when(
+        () => auth.updateUser(
+          any(),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
+        ),
+      ).thenAnswer((invocation) async {
+        seenAttributes.add(
+          invocation.positionalArguments.single as UserAttributes,
+        );
+        return response;
+      });
+
+      final notifier = AuthStateNotifier.test(
+        const AuthState(),
+        supabase: supabase,
+      );
+      final converted = await notifier.convertAnonymousToAccount(
+        email: 'NOUVEAU@example.com',
+        password: 'secret123',
+      );
+
+      expect(converted, isTrue);
+      expect(seenAttributes, hasLength(1));
+      expect(seenAttributes.single.email, isNull);
+      expect(seenAttributes.single.password, 'secret123');
+      expect(notifier.state.pendingEmailConfirmation, isNull);
+    });
+
+    test('sets email before password and reports a partial failure', () async {
+      final supabase = _MockSupabaseClient();
+      final auth = _MockGoTrueClient();
+      final response = _MockUserResponse();
+      final seenAttributes = <UserAttributes>[];
+      final seenRedirects = <String?>[];
+
+      when(() => supabase.auth).thenReturn(auth);
+      when(
+        () => auth.updateUser(
+          any(),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
+        ),
+      ).thenAnswer((invocation) async {
+        seenAttributes.add(
+          invocation.positionalArguments.single as UserAttributes,
+        );
+        seenRedirects.add(
+          invocation.namedArguments[#emailRedirectTo] as String?,
+        );
+        if (seenAttributes.length == 2) {
+          throw const AuthException('Password update failed');
+        }
+        return response;
+      });
+
+      final notifier = AuthStateNotifier.test(
+        const AuthState(),
+        supabase: supabase,
+      );
+      final converted = await notifier.convertAnonymousToAccount(
+        email: 'nouveau@example.com',
+        password: 'secret123',
+      );
+
+      expect(converted, isFalse);
+      expect(seenAttributes, hasLength(2));
+      expect(seenAttributes[0].email, 'nouveau@example.com');
+      expect(seenAttributes[0].password, isNull);
+      expect(seenRedirects[0], isNotNull);
+      expect(seenAttributes[1].email, isNull);
+      expect(seenAttributes[1].password, 'secret123');
+      expect(seenRedirects[1], isNull);
+      expect(notifier.state.pendingEmailConfirmation, isNull);
+      expect(
+        notifier.state.error,
+        'Impossible de définir ton mot de passe. Réessaie ou utilise '
+        '« Mot de passe oublié ».',
+      );
     });
   });
 }

@@ -1,7 +1,9 @@
 # Maintenance : refonte mesurée de la détection paywall
 
 **Type** : Maintenance
-**Statut** : 🟡 EN COURS — instrumentation posée, corpus bloqué par l'egress
+**Statut** : 🟡 EN COURS — corpus collecté (12/14 sources), cause racine des faux
+négatifs Novethic identifiée et corrigée ; reste l'étiquetage manuel avant de
+pouvoir geler une baseline chiffrée
 **Périmètre** : `packages/api/app/services/paywall_detector.py`, `sync_service.py`
 **Hors périmètre** : le filtre d'affichage `Content.is_paid.is_not(True)`
 (`digest_selector.py`, `recommendation_service.py`) — fail-open volontaire,
@@ -63,42 +65,161 @@ Tant que le corpus n'est pas collecté et étiqueté, les trois tests se
 **skippent avec une raison explicite** : un corpus absent ne doit jamais passer
 pour un corpus sans erreur.
 
-### Bloqué — la collecte
+### Fait — la collecte (2026-08-08)
 
-La politique d'egress de l'environnement d'agent bloque tous les domaines de
-presse (403 sur le CONNECT, `WebFetch` compris). Vérifiable à tout moment :
+L'egress vers les domaines de presse est ouvert. 120 articles collectés sur
+12 des 14 sources ; **les 5 sources du groupe « faux négatifs » passent toutes**,
+c'est-à-dire tout le périmètre utile de la refonte.
+
+Deux sources restent hors corpus, et ce n'est pas une question de
+configuration : `lesechos` et `lepoint` répondent **403 sur tous les chemins
+testés** (flux et pages), y compris avec le User-Agent de prod. C'est leur
+anti-bot qui refuse l'IP datacenter, pas la politique d'egress — le proxy
+n'enregistre aucun rejet CONNECT pour ces hôtes. Les rejouer exigerait de
+sortir par une IP résidentielle ; en attendant, le garde-fou anti-régression
+couvre 5 des 7 sources du groupe B.
+
+**Le corpus lui-même n'est pas versionné.** `html/` et `rss/` sont du contenu de
+presse sous droits et le repo est public : ils sont gitignorés et se
+régénèrent en une commande. Les métadonnées, elles, sont versionnées —
+`labels.json` porte l'étiquetage humain, qui ne doit pas se perdre au clone.
 
 ```bash
 cd packages/api
-PYTHONPATH=. python scripts/build_paywall_corpus.py --check
+PYTHONPATH=. python scripts/build_paywall_corpus.py           # collecte
+PYTHONPATH=. python scripts/build_paywall_corpus.py --check   # accès seul
 ```
 
-Sortie attendue une fois l'egress ouvert : `OK <slug> <feed_url>` pour les 14
-sources. Tant qu'on lit `BLOQUÉ … ProxyError 403`, la collecte produirait un
-corpus vide qu'on pourrait confondre avec « ces sources n'émettent aucun
-signal ».
+Conséquence à assumer : le garde-fou `test_paywall_corpus_benchmark.py` se
+skippe en CI faute de corpus. Il ne mesure qu'en local, après collecte et
+étiquetage.
 
-Deux entrées du manifeste demandent en plus un accès base, indisponible dans
-cet environnement (`[secrets] aucune variable d'infra définie`, MCP Supabase
-non connecté) :
+Correctif de manifeste au passage : les 3 candidates de La Croix redirigeaient
+(301) vers le chemin legacy `http://www.la-croix.com/RSS/UNIVERS_ALL`, qui
+répond 403. Le flux réel est `https://www.la-croix.com/feeds/rss/site.xml`.
 
-- le `feed_url` réel de Cuisiner
-  (`SELECT name, feed_url FROM sources WHERE name ILIKE '%cuisin%'` ;
-  `source_id` connu par le catalogue repo : `92a33ad2-fdcc-43b2-83dc-03d6b95c1199`) ;
-- les 4 `paywall_config` custom, à recopier dans le manifeste — sans eux le
-  harnais rejoue la config par défaut et la baseline ne reflète pas la prod.
+État du HTML par source — le niveau 1 ne peut rien dire sans lui :
+
+| HTML récupéré | Sources |
+|---|---|
+| oui | novethic, philomag, la-croix, cuisiner-jdf, lefigaro, mediapart, telerama, contrepoints, bonpote |
+| non — 403 anti-bot | lesjours, liberation |
+| non — **402 Payment Required** | lemonde |
+
+Le 402 du Monde est un signal de paywall exploitable, qu'aucun des 3 niveaux
+ne lit aujourd'hui (`_fetch_html_head` traite tout ce qui n'est pas 200/206
+comme une absence de HTML). Piste à évaluer, non retenue à ce stade.
+
+### Fait — la cause racine des faux négatifs Novethic
+
+Mesuré en rejouant `detect_paywall_from_html()` sur les 90 HTML du corpus :
+Novethic sortait `None` (aucun signal) sur **10 fichiers sur 10**, alors que
+6 d'entre eux contiennent bien `"isAccessibleForFree": false`.
+
+Le marqueur est présent mais illisible : Yoast SEO (WordPress) n'émet jamais
+l'article au niveau racine du JSON-LD, il l'emballe dans
+`{"@context": …, "@graph": [ … ]}`. Le parseur n'inspectait que la racine et ne
+descendait pas dans `@graph`. Le média déclarait l'article payant, on ne
+l'entendait pas.
+
+Le correctif descend dans `@graph`. Effet mesuré sur le corpus, à étiquetage
+constant :
+
+| Source | Avant | Après |
+|---|---|---|
+| novethic | 10 sans signal | **6 payants**, 4 sans signal |
+| les 8 autres sources avec HTML | — | **inchangées** |
+
+C'est bien un gain générique — Yoast équipe une grande partie de la presse
+en ligne française — et non un `paywall_config` de plus.
+
+Deux garde-fous accompagnent la descente, parce qu'elle élargit la surface lue :
+
+- `isAccessibleForFree` n'est plus lu sur les nœuds `WebPageElement`. La spec
+  Google le place aussi dans `hasPart` pour décrire le bloc payant : une page
+  **gratuite** contenant un encart payant y porte `false`, et la lire créerait
+  un faux positif. Aucune divergence page/`hasPart` dans le corpus actuel,
+  mais la structure autorise le cas.
+- Nœuds contradictoires → « gratuit » gagne, par l'asymétrie des coûts.
+
+### Portée : pourquoi le correctif vaut au-delà des sources listées
+
+Le niveau 1 ne peut pas être spécifique à une source, par construction :
+`detect_paywall_from_html()` ne reçoit que le HTML — ni `source_id`, ni
+`paywall_config`, ni domaine. Et son point d'appel
+(`sync_service.py` l.188) ne conditionne le fetch HTML qu'au
+`content_type == ARTICLE`, jamais à l'identité de la source. Toute source qui
+déclare `isAccessibleForFree` dans `@graph` en bénéficie donc
+automatiquement, qu'elle soit dans le corpus ou non.
+
+Trois fragilités de *forme* ont été levées pour que cette portée soit réelle et
+pas seulement théorique. Aucune n'apparaît dans le corpus — elles décrivent le
+même comportement déclaratif sous une sérialisation différente, et sont donc
+justifiées par la généricité, pas par un chiffre :
+
+| Forme | Avant | Après |
+|---|---|---|
+| Article sous `WebPage.mainEntity` | raté | lu |
+| Booléen en URI (`https://schema.org/False`) | lu comme « gratuit » | lu comme « payant » |
+| `<meta content="locked" property="og:article:content_tier">` (ordre inversé) | raté | lu |
+
+`itemListElement` est délibérément **non** traversé : une liste pointe vers
+d'autres articles, et leur état d'accès ne dit rien de la page courante — la
+traverser ferait basculer en payante une page de rubrique gratuite listant des
+articles payants.
+
+Vérification de non-régression : après ces trois généralisations, le corpus
+rend **exactement** les mêmes verdicts qu'avant sur les 90 fichiers.
+
+La preuve empirique sur des sources hors corpus n'a pas pu être faite : la
+politique d'egress est allowlistée **par domaine** et couvre les 14 sources du
+manifeste. Un test sur 16 médias du catalogue absents du corpus (L'Humanité,
+Politis, Élucid, Next, StreetPress, Vert, Blast…) rend 16 rejets CONNECT.
+Élargir l'allowlist à ces domaines permettrait de chiffrer le gain réel.
+
+### Invalidé par les données — la piste des mots-clés
+
+L'hypothèse « apostrophe typographique » était présentée ici comme la piste
+prioritaire, au meilleur rapport risque/gain. **Les données l'écartent, et
+montrent que l'appliquer aurait été dangereux.**
+
+Sur la forme, elle est exacte : 30 fichiers HTML contiennent `s’abonner`
+(U+2019), **zéro** contiennent `s'abonner` (U+0027). Le mot-clé
+`"S'abonner"` de `DEFAULT_PAYWALL_CONFIG` ne matche donc jamais rien.
+
+Mais deux mesures la vident de son intérêt :
+
+1. **Mauvaise surface.** Les mots-clés sont matchés sur `title + description +
+   html_content`, c'est-à-dire le **RSS** — jamais sur `html_head`. Or sur les
+   301 entrées RSS collectées, **aucun** des mots-clés de la config par défaut
+   n'apparaît, dans aucune variante d'apostrophe, sur aucune des 12 sources.
+   Le niveau 2 par mots-clés est du code mort en pratique.
+2. **Le « fix » aurait créé des faux positifs.** Dans le HTML, `s’abonner`
+   apparaît sur **10 articles sur 10** chez Novethic comme chez Mediapart :
+   c'est une chaîne de navigation/pied de page, présente sur les articles
+   gratuits comme payants. Corriger l'apostrophe pour ensuite matcher cette
+   surface transformerait un mot-clé inerte en générateur de faux positifs —
+   exactement l'erreur irréversible que la refonte doit éviter.
+
+Conclusion : ne pas toucher aux mots-clés tant qu'aucune mesure ne montre un
+gain. Le levier est le niveau 1, pas le niveau 2.
 
 ### Reste à faire
 
-1. Collecter (`build_paywall_corpus.py`), puis **étiqueter à la main**
-   `labels.json` — 3 payants et 3 gratuits minimum par source.
+1. **Étiqueter à la main** `labels.json` (120 articles, `"paid"` / `"free"`).
+   C'est le seul geste qui reste et il est délibérément humain : un label
+   déduit de l'algo ferait valider l'algo par lui-même. Le harnais refuse de
+   mesurer tant que le quota 3 payants / 3 gratuits par source n'est pas tenu.
 2. Geler la baseline (`paywall_benchmark.py --write-baseline`) et la reporter
-   dans la description de PR. Elle répond à une question jamais tranchée :
-   a-t-on déjà un problème de faux positifs aujourd'hui ?
-3. Améliorer les niveaux 1 et 2 génériquement, chaque changement justifié par
-   un chiffre sur le corpus complet.
-4. Re-mesurer, documenter les pistes écartées et **pourquoi**.
-5. Remplir la section « Où se trouve le signal, par source » ci-dessous.
+   dans la description de PR — elle tranchera la question jamais résolue :
+   a-t-on **déjà** un problème de faux positifs aujourd'hui ?
+3. Instruire les faux négatifs restants : philomag (9 HTML sur 10 sans aucun
+   signal déclaratif) et lesjours/liberation (HTML inaccessible → seul le
+   niveau 2 peut jouer, et il est inerte).
+4. Récupérer les 4 `paywall_config` custom en base pour que le harnais rejoue
+   la prod, et le `feed_url` réel de Cuisiner
+   (`SELECT name, feed_url FROM sources WHERE name ILIKE '%cuisin%'` ;
+   `source_id` : `92a33ad2-fdcc-43b2-83dc-03d6b95c1199`).
 
 ---
 
@@ -141,9 +262,29 @@ Le custom par source reste un dernier recours, à justifier explicitement.
 
 ## Où se trouve le signal, par source
 
-À remplir après la collecte. Le RSS et le HTML sont deux surfaces distinctes :
-un marqueur visible sur la page peut être absent du flux, et l'inverse arrive.
+Relevé sur le corpus du 2026-08-08 (10 articles par source). Le RSS et le HTML
+sont deux surfaces distinctes — et le constat le plus net de ce tableau est que
+**le RSS ne porte aucun signal, nulle part**. Tout se joue sur le HTML.
 
 | Source | Signal RSS | Signal HTML | Niveau qui décide |
 |---|---|---|---|
-| _(à remplir après collecte)_ | | | |
+| novethic | aucun | `isAccessibleForFree` dans `@graph` (6/10) | 1 — depuis le correctif `@graph` |
+| philomag | aucun | `isAccessibleForFree` (1/10 seulement) | 1 quand présent, sinon aucun |
+| la-croix | aucun | `isAccessibleForFree` (10/10, 5 payants / 5 gratuits) | 1 |
+| lesjours | aucun | HTML inaccessible (403 Cloudflare) | aucun |
+| cuisiner-jdf | aucun | `isAccessibleForFree: true` (2/10) | 1 quand présent |
+| lemonde | aucun | HTML inaccessible (**402**) | aucun |
+| lefigaro | aucun | `isPremium` JS (10/10, 6 payants / 4 gratuits) | 1 |
+| lesechos | _hors corpus (403 anti-bot)_ | | |
+| lepoint | _hors corpus (403 anti-bot)_ | | |
+| mediapart | aucun | `isAccessibleForFree: false` (9/10) | 1 |
+| liberation | aucun | HTML inaccessible (403) | aucun |
+| telerama | aucun | `og:article:content_tier` (10/10, 5 free / 5 locked) | 1 |
+| contrepoints | aucun | aucun marqueur | aucun (média gratuit — attendu) |
+| bonpote | aucun | aucun marqueur | aucun (média gratuit — attendu) |
+
+Lecture : sur les 9 sources dont le HTML est récupérable, 7 émettent un signal
+déclaratif exploitable. Les faux négatifs restants ne viennent donc pas d'un
+manque de mots-clés mais de trois causes distinctes — un signal illisible
+(Novethic, corrigé), un HTML inaccessible (lesjours, liberation, lemonde), ou
+un média qui ne déclare rien (philomag sur 9 articles sur 10).

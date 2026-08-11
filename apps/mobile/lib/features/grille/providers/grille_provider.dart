@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -208,6 +210,10 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
           justFinished: res.isFinished,
         ),
       );
+
+      // La partie du jour vient d'entrer dans la série : le serveur ne la
+      // comptait pas encore au `getToday()` d'ouverture (cf. `_refreshStreak`).
+      if (res.isFinished) unawaited(_refreshStreak());
     } on GrilleAlreadyFinishedException {
       // Le serveur considère la partie finie : on resynchronise.
       await refresh();
@@ -223,6 +229,34 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
         after.copyWith(submitting: false, networkError: true),
       );
       await _reconcileToday();
+    }
+  }
+
+  /// Re-synchronise **le seul compteur de série** après la fin de la partie.
+  ///
+  /// `GET grille/today` calcule le streak *avant* que la journée ne soit jouée
+  /// (une ligne `in_progress`/`attempts = 0` créée à l'ouverture de l'écran ne
+  /// compte volontairement pas comme un jour joué), et le POST `guess`/`reveal`
+  /// ne renvoie pas de streak. Sans ce re-fetch, le compteur affiché (app bar,
+  /// carte CTA, pied « déjà joué ») restait bloqué sur la valeur de la veille
+  /// jusqu'au prochain cold start — d'où l'impression d'un « 1 jour » figé
+  /// (cf. docs/bugs/bug-grille-streak-fige-apres-partie.md).
+  ///
+  /// Volontairement silencieux : pas d'`AsyncLoading` (aucun clignotement) et
+  /// seul `streak` est recopié — essais, statut et flags transitoires posés par
+  /// l'appelant restent intacts. Best-effort : en cas d'échec réseau on garde
+  /// l'ancienne valeur, recalée au prochain chargement.
+  Future<void> _refreshStreak() async {
+    if (_current == null) return;
+    try {
+      final fresh = await _repo.getToday();
+      final after = _current;
+      if (after == null || after.today.streak == fresh.streak) return;
+      state = AsyncData(
+        after.copyWith(today: after.today.copyWith(streak: fresh.streak)),
+      );
+    } catch (_) {
+      // Compteur non rafraîchi — sans conséquence sur la partie jouée.
     }
   }
 
@@ -281,6 +315,9 @@ class GrilleNotifier extends AsyncNotifier<GrilleState> {
           justFinished: false,
         ),
       );
+
+      // « Langue au chat » = journée jouée : la série avance aussi ici.
+      unawaited(_refreshStreak());
     } on GrilleAlreadyFinishedException {
       await refresh();
     } catch (e) {

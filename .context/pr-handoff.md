@@ -1,138 +1,101 @@
-# feat(tournée) : ordre des blocs par le score top-3 (lot reco, PR-4)
+# feat(onboarding) : reco médias « interest-aware » + polish copy
 
-Base `main`. **Mobile uniquement, aucune migration Alembic.** Lot :
-`docs/maintenance/maintenance-reco-optimisation-lot2.md` (§ PR-4).
+## Problème
 
-## Quoi
+Pendant l'onboarding, les **premiers** médias proposés (deck à swiper +
+carrousel « Tes médias, sur mesure ») ne collaient pas aux intérêts déclarés :
+un utilisateur **sans Sport** voyait l'Équipe et Ouest-France (≈ 40 % de sport
+publié) en tête.
 
-Les blocs de la Tournée (thèmes, sources, veille, « Choisie pour vous ») ne sont
-plus simplement **dépriorisés** quand ils sont maigres : ils sont **triés par la
-somme des 3 meilleurs `score_total` de leurs articles** — score que le backend
-renvoie déjà dans `recommendation_reason`.
+## Causes racines
 
-Les slots manquants comptant 0, un bloc à 1 article coule **structurellement**
-(≈ 1 × s contre 3 × s) sans avoir besoin d'être un cas spécial. C'est ce qui
-répond à la plainte PO « des blocs à 1 article remontent en tête de Tournée » :
-la règle historique (`thinKeys` + `demote`) ne *classait* pas, elle se contentait
-de reléguer les blocs à ≤ 1 article sous les autres.
+Le ranking est **100 % côté client** (`source_recommender.dart`) :
 
-**La PR boucle aussi PR-1** : le champ `block_score` de l'event
-`article_impression` était câblé de bout en bout (`SectionBlock` →
-`ArticleImpressionTracker` → `analytics_service`) mais **personne ne le
-renseignait** — il valait `null` en prod. C'est le champ qui relie « ordre des
-blocs » et « CTR mesuré », donc celui dont PR-6 (`evaluate_tournee_ctr.py`) a
-besoin.
+1. **Scoring additif sans pénalité** : `reliability high` (+1) + volume ≥ 90/30 j
+   (+2) ⇒ une généraliste fiable et active atteint **3 sans aucun match
+   thématique**, à égalité avec un vrai match de thème.
+2. **Le deck du swipe n'utilise pas `_scoreSource`** : `buildSpanningSet`
+   complétait ses pôles avec le catalogue trié sur `followerCount` ⇒ les grosses
+   audiences menaient les thèmes peu couverts.
+3. **`sources.coverage_themes` (couverture réellement publiée) n'était pas
+   sérialisée** : le client ne pouvait pas voir la dilution.
+4. **Découvert en implémentant : `_build_source_response` ne sérialisait ni
+   `secondary_themes`, ni `granular_topics`, ni `source_tier`** (jamais, depuis
+   la création du helper). Le catalogue mobile ne voyait donc que `theme` :
+   match par sujet, badges « Spécialisé en X » et pépites (tier `deep`) étaient
+   **débranchés**. En base : 61/124 curées actives ont des `granular_topics`,
+   29 sont `deep`, 17 ont des `secondary_themes`, 74 ont des `coverage_themes`.
 
-## Pourquoi
+Les points 3 et 4 vont ensemble : sans thèmes secondaires ni sujets granulaires,
+une pénalité anti-hors-intérêt aurait dégradé la reco au lieu de l'améliorer.
 
-Sans lui, PR-6 ne peut pas mesurer si le classement tape juste : on saurait
-qu'un bloc a été vu et cliqué, sans savoir quel score l'avait mis là.
+## Ce que fait la PR
 
-## Décisions structurantes
+**Backend (additif, aucune migration).** `SourceResponse.coverage_themes` +
+sérialisation de `coverage_themes` / `secondary_themes` / `granular_topics` /
+`source_tier` dans `_build_source_response`. Les colonnes sont déjà chargées sur
+l'objet `Source` ⇒ **aucune requête supplémentaire, aucun N+1**.
 
-**L'ordre est gelé pour la journée tournée** (frontière 07h30 Paris, clé
-`tournee_score_order_v1` stockant `{"day", "keys"}`). `_fanOutSectionsProgressive`
-émet après chaque tâche (~10-15 recompositions) : trier à chaque emit ferait
-**sauter les blocs sous les yeux**. L'ordre est calculé une seule fois, à la
-complétion du fan-out, puis rejoué tel quel par tous les composes du jour (cache
-in-day, pull-to-refresh, refetch partiels, load-more). Clé unique day-stampée ⇒
-auto-invalidante, rien à ajouter à `purgeOldPrefsKeys`.
+Deux convertisseurs `Source → SourceResponse` coexistent : celui du service
+(`GET /sources`) et `_source_to_response` dans `routers/sources.py` (liste curée,
+suggestions par thème, fiche source). `coverage_themes` est sérialisée **dans les
+deux**, sinon la même source aurait une forme différente selon l'endpoint et le
+client conclurait « couverture inconnue » là où la donnée existe — exactement la
+classe de bug corrigée ici. Un test verrouille la parité.
 
-**Réinjection à position absolue via `mergeVisibleReorder`**, pas `applyOrder` :
-ce dernier pousse les clés inconnues en **fin**, ce qui ferait couler Actus /
-Bonnes Nouvelles (jamais scorées) jusqu'à les faire tomber hors du cap 13.
+**Mobile — scoring.** Nouveau signal partagé `_InterestFit` :
+`declared` > `covered` (la source publie sur un thème choisi) > `unknown` >
+`offInterest`.
+- **Règle A (anti-pad)** : bonus fiabilité/volume réservés aux sources
+  pertinentes ⇒ une source hors-intérêt retombe à 0, sous toute source matchée ;
+  `-1` de plus si sa couverture connue est disjointe.
+- **Règle B (anti-dilution)** : `-1` par thème publié hors des intérêts, plafonné
+  à `-2` ⇒ Ouest-France passe **sous** une source focalisée sans être écartée.
+- **Garde-fous** : rien ne s'arme si l'utilisateur a « Passé » les thèmes ; une
+  source **likée au swipe** n'est jamais pénalisée (le révélé prime) ; une
+  couverture **inconnue** n'est jamais pénalisante.
 
-**Le tri s'applique aussi aux comptes personnalisés** (décision PO) : l'ordre
-manuel reste la base d'entrée et **départage à score égal** (le tri est stable),
-mais il ne fait plus autorité au-delà. Risque assumé : un bloc glissé en tête
-peut descendre le lendemain — jamais dans la même session, l'ordre étant figé.
+**Mobile — deck du swipe.** `buildSpanningSet` trie par adéquation avant
+`followerCount`, exclut les sources hors-intérêt des pôles et ne les garde qu'en
+**filler de dernier recours** (fin de deck). Le fallback « thèmes pauvres » reste
+garanti (deck jamais vide).
 
-**Portée plus large que la classification maigre/riche** : toute section résolue
-portant au moins un article scoré entre au classement, veille comprise. Une
-section dont *aucun* article n'a de `recommendation_reason` (éditorial, coquille
-de boot) n'entre pas dans la map et **garde sa place** plutôt que de couler à 0.
+**Polish copy/UI.** Doubles majuscules corrigées (« Lire notre manifeste »,
+« Notre manifeste », « Le projet », « Notre mission », « Notre approche ») ;
+lien manifeste en emphase légère (couleur d'accent + demi-gras, dépliage inline
+inchangé) ; « diversifier tes médias » → « diversifier tes **sources** » sur
+l'écran concentration ; nouveau `SourceSearchLoader` (« Recherche de tes
+médias » / « Basé sur tes intérêts ») à la place des 4 spinners nus.
+Le loader prend `title`/`subtitle` : l'overlay de calibration de fin de swipe
+l'utilise avec sa propre copy, ce qui supprime ~25 lignes de layout dupliqué et
+le dernier `CircularProgressIndicator` nu de ce parcours.
 
-**Kill-switch `kTourneeScoreSortEnabled`** : à `false`, aucun ordre trié ni
-persisté, et la dépriorisation binaire reprend à l'identique. Il désarme le
-**tri**, pas la **mesure** — `block_score` reste renseigné, pour ne pas aveugler
-l'instrument qui sert à juger le tri. `kThinDemotionRichThreshold` et `demote`
-partiront au cycle suivant : la CI ne lance pas `flutter test`, on ne retire pas
-les deux filets d'un coup.
+## Tests
 
-## Comment ça a été vérifié
+- **Backend** : `pytest -q` complet ⇒ **3018 passed**, 18 skipped, 2 xfailed.
+  Nouveau test de sérialisation des signaux de reco (`None` conservé).
+- **Mobile** : `test/features/onboarding` + `test/features/sources` ⇒ **262
+  passed**. Suite complète : 2043 passed / 26 échecs **pré-existants**, tous hors
+  des zones touchées (custom_topics, digest, feed, settings, widget_test).
+- `flutter analyze` : aucune erreur ni warning.
+- Alembic : **1 seul head**, inchangé (aucune migration).
+- Tous les tests historiques du recommander sont conservés **sans modification
+  d'attente**, dont le fallback « thèmes vides → fiabilité ».
 
-- [x] **`flutter test`** — **2057 passed**, 26 échecs **strictement identiques à
-      la baseline `main`** (`origin/main` rejoué dans un worktree propre et
-      comparé test par test : `IDENTICAL: True`, aucun échec neuf, aucun réparé).
-      Aucun des 26 n'est dans le périmètre touché.
-- [x] **Tests neufs** — 33 cas : `blockScore` (top-3 des *meilleurs* et non des
-      premiers affichés, slots manquants à 0, clamp des scores négatifs),
-      `rankKeysByBlockScore` (tri stable, ex æquo départagés par l'ordre
-      d'affichage), `applyScoreOrder` (clés éditoriales de tête et de queue qui
-      ne coulent pas, clé obsolète ignorée), et côté provider : gel à la journée,
-      persistance sous `tournee_score_order_v1`, ordre daté d'hier ignoré et
-      recalculé, ordre rejoué à l'identique dans la journée, `blockScores`
-      exposés à la mesure.
-- [x] **`flutter analyze`** — **526 issues, exactement la baseline**, zéro
-      `error`, zéro `warning` neuf, rien dans les fichiers touchés.
-- [x] **`/simplify`** — 4 relectures parallèles (reuse / simplification /
-      efficiency / altitude), findings appliqués puis re-run complet de VERIFY.
-      Détail dans la section ci-dessous.
-- [ ] **Playwright / `/validate-feature`** — **non exécuté** : pas de build web ni
-      d'API locale dans ce workspace, et les scénarios exigent un compte connecté
-      avec ≥ 5 blocs favoris portant des articles **scorés** — donnée que je ne
-      peux pas fabriquer localement. `.context/qa-handoff.md` est à jour et
-      décrit les 6 scénarios ; **à lancer avant merge**.
+## Points d'attention pour la review
 
-### Passe SIMPLIFY — ce qui a été corrigé
+- **Deux sources de vérité pour « est-ce un match déclaratif »** : `_interestFit`
+  re-dérive le prédicat déjà calculé dans les boucles de `_scoreSource`. Unifier
+  changerait le scoring, donc laissé en l'état — mais une évolution des règles de
+  match devra être répercutée des deux côtés sous peine de désynchroniser la
+  pénalité du score qu'elle corrige.
+- **La règle anti-généraliste est la première règle éditoriale à vivre
+  uniquement côté client** : pas d'équivalent `SCORING_OVERRIDES` / harnais de
+  sensibilité, donc pas de tuning, d'A/B ni de rollback sans release.
 
-1. **Le kill-switch aveuglait sa propre mesure.** `blockScores` n'était rempli
-   que si `kTourneeScoreSortEnabled` — donc couper le tri en prod aurait fait
-   retomber `block_score` à `null`, soit exactement le trou que PR-4 bouche. Le
-   calcul est désormais **hors** du flag ; seule l'*application* de l'ordre est
-   gatée.
-2. **Une passe ordre+dédup complète était jouée deux fois.**
-   `_freezeScoreOrderIfNeeded` rappelait `_classifyFavoriteSections` (donc
-   `_orderedTourneeKeys` + `_filterSections` + `_dedupeSectionsInOrder` sur
-   toutes les sections) juste avant un `emit()` dont le `_compose` refaisait la
-   même passe sur un état identique. Le gel est maintenant consommé **dans**
-   `_compose`, à partir des scores déjà en main, via un drapeau one-shot armé à
-   la complétion du fan-out — une passe au lieu de deux, et l'ordre trié
-   s'applique dans la recomposition même.
-3. **`rankKeysByBlockScore`** prenait une liste de clés que son unique appelant
-   dérivait de la map elle-même : paramètre dégénéré, supprimé.
-4. **`applyScoreOrder`** portait trois gardes déjà assurées par
-   `mergeVisibleReorder` — la fonction fait trois lignes.
-5. **Doc corrigée** : `block_score` est recalculé à chaque recomposition alors
-   que l'ordre est gelé ; le doc affirmait que c'était « celui-là même qui a fixé
-   son rang ». Les deux peuvent diverger dans la journée (load-more, refetch) —
-   l'analyse doit joindre sur `(day_key, section)`, pas sur la valeur seule.
-
-Non appliqué, volontairement : la duplication du harnais de test avec
-`flux_continu_sources_test.dart` (convention pré-existante à 6 fichiers du même
-répertoire, hors périmètre) et le passage de la clé de prefs au couple
-`setStringList` + `purgeDatedPrefsKeys` (le blob JSON day-stampé est
-auto-invalidant, deux relecteurs sur quatre le préféraient tel quel).
-
-## Zones à risque
-
-- **Ordre de la Tournée = surface la plus visible de l'app.** Le filet est le
-  gel journalier : même si le classement est mauvais, il ne *bouge* jamais en
-  cours de session. Rollback = `kTourneeScoreSortEnabled = false`, qui restaure
-  la dépriorisation binaire à l'identique sans toucher à la mesure.
-- **Comptes personnalisés.** Un ordre manuel n'est plus souverain : il devient la
-  base d'entrée et le départage des ex æquo. C'est une décision PO explicite, pas
-  un effet de bord — mais c'est le changement le plus susceptible d'être
-  remonté par un utilisateur qui a rangé sa Tournée à la main.
-- **`SharedPreferences`.** Une seule clé neuve (`tournee_score_order_v1`), aucune
-  clé existante renommée ni purgée différemment ⇒ aucune perte d'état à la MAJ.
-- **Aucune migration Alembic**, aucun fichier backend touché.
-
-## Ce que cette PR ne fait pas
-
-- Ne touche **aucun poids de scoring backend** : elle consomme `score_total` tel
-  quel, elle ne le recalcule pas.
-- Ne retire pas encore `kThinDemotionRichThreshold` / `demote` (cycle suivant,
-  une fois le tri observé en prod).
-- Ne fige pas le `block_score` rapporté à la mesure sur celui qui a fixé le rang
-  (documenté ; PR-6 joint sur `(day_key, section)`).
+- **Effet de bord voulu du point 4** : les badges « Spécialisé en X » et la
+  section « Pépites » (tier `deep`) vont enfin s'activer dans l'onboarding.
+  À valider visuellement (`/validate-feature`, handoff dans
+  `.context/qa-handoff.md`).
+- Le payload de `GET /sources` grossit de 3 petits tableaux par source curée.
+- Story : `docs/stories/core/onboarding.reco-interest-aware.md`.

@@ -54,6 +54,7 @@ import '../features/saved/screens/collection_detail_screen.dart';
 import '../core/auth/auth_state.dart';
 import '../core/nudges/widgets/nudge_host.dart';
 import '../core/services/deep_link_service.dart';
+import '../core/services/push_notification_service.dart';
 import '../core/ui/notification_service.dart';
 import '../shared/widgets/navigation/modal_bottom_sheet_page.dart';
 
@@ -142,6 +143,17 @@ class RoutePaths {
   static const String fluxContinu = '/flux-continu';
   static const String edition = '/edition';
   static const String contentDetail = '/content/:id';
+
+  /// Alias historique `/article/<id>` des deep links push.
+  ///
+  /// Les alertes source et sujet (stories 30.2/30.3) ont émis cette route dès
+  /// leur mise en service alors qu'elle n'a jamais été enregistrée : chaque tap
+  /// tombait sur « Page non trouvée ». Le serveur émet désormais la route
+  /// canonique ([articleRouteFor]), mais l'alias reste — comme
+  /// `/feed/content/:id` — pour absorber les notifications déjà posées dans les
+  /// tiroirs et les binaires plus anciens en circulation.
+  /// Cf. docs/bugs/bug-alerte-push-lien-introuvable.md.
+  static const String articleAlias = '/article/:id';
   static const String contentExternal = '/content-external';
   static const String saved = '/saved';
   static const String sources = '/settings/sources'; // Moved to settings
@@ -171,6 +183,16 @@ class RoutePaths {
   static const String veilleWall = '/soutien/veille-wall';
   static const String soutienLinkSent = '/soutien/lien-envoye';
 }
+
+/// Route article canonique d'un deep link entrant (push, widget).
+///
+/// Point unique de vérité côté client : `/flux-continu/content/<id>` est la
+/// route article la plus ancienne encore enregistrée (`RouteNames.contentDetail`)
+/// et elle existe aussi bien sur `main` que sur les binaires `production` en
+/// circulation. Le retour depuis le lecteur repose donc sur L'Essentiel, la
+/// surface d'atterrissage post-auth.
+String articleRouteFor(String contentId) =>
+    '${RoutePaths.fluxContinu}/content/$contentId';
 
 /// Story 31.1 — « J'ai déjà un compte » : /login doit rester accessible depuis
 /// l'onboarding pré-compte, que la session soit anonyme OU une session périmée
@@ -346,6 +368,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (authState.needsOnboarding) {
           return RoutePaths.onboarding;
         }
+        // Push tapée en app froide : `getInitialMessage()` appelle `openRoute`
+        // avant que l'auth soit résolue, la garde `isLoading` ci-dessus renvoie
+        // alors sur le splash et la cible était perdue (atterrissage sur
+        // L'Essentiel au lieu de l'article). On la rejoue ici, une fois l'auth
+        // résolue — jamais avant, pour ne pas rejouer l'incident du deep link
+        // widget consommé session nulle (cf. bug-widget-fiabilite C3).
+        final pendingPushRoute = PushNotificationService.takePendingRoute();
+        if (pendingPushRoute != null) {
+          return pendingPushRoute;
+        }
         // Deep link de cold-start (widget) : il est la source de vérité de
         // l'atterrissage. On le consomme ici pour éviter la course avec
         // `flushPendingIfReady` (qui redeviendrait no-op après clearPending).
@@ -381,6 +413,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       // 02/08/2026) : /flux-continu est atteint directement, aucun dé-routage
       // vers /edition. La route /edition reste servie pour l'onboarding et le
       // navigateur d'éditions passées (rewind), pas comme sas quotidien.
+
+      // Un écran réel est monté : la cible push, si elle existait, a abouti.
+      // On la libère pour qu'un passage ultérieur par le splash (relance,
+      // reconnexion) ne rejoue pas un article déjà ouvert.
+      PushNotificationService.clearPendingRoute();
 
       return null;
     },
@@ -619,6 +656,19 @@ final routerProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id']!;
           return '${RoutePaths.flaner}/content/$id';
         },
+      ),
+
+      // Alias `/article/<id>` — même raison d'être que `/feed/content/:id`.
+      // Les alertes push (stories 30.2/30.3) ont émis cette route dès leur mise
+      // en service sans qu'elle soit enregistrée : 100 % des taps tombaient sur
+      // l'errorBuilder. Le serveur émet désormais `articleRouteFor`, mais
+      // l'alias est le vrai correctif — il rattrape les notifications déjà
+      // posées dans les tiroirs et les binaires plus anciens.
+      GoRoute(
+        path: RoutePaths.articleAlias,
+        redirect: (context, state) => articleRouteFor(
+          state.pathParameters['id']!,
+        ),
       ),
 
       // Feed (legacy) — redirige vers Flâner pour préserver les deep

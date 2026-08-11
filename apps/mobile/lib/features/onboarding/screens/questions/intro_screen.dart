@@ -73,23 +73,23 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             const SizedBox(height: FacteurSpacing.space3),
             Text(
               OnboardingStrings.welcomeSubtitle,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               textAlign: TextAlign.center,
             ),
             const Spacer(flex: 2),
           ] else ...[
             Expanded(
               child: Container(
-                margin:
-                    const EdgeInsets.symmetric(vertical: FacteurSpacing.space4),
+                margin: const EdgeInsets.symmetric(
+                  vertical: FacteurSpacing.space4,
+                ),
                 padding: const EdgeInsets.all(FacteurSpacing.space4),
                 decoration: BoxDecoration(
                   color: colors.surfaceElevated.withOpacity(0.5),
                   borderRadius: BorderRadius.circular(12),
-                  border:
-                      Border.all(color: colors.primary.withOpacity(0.1)),
+                  border: Border.all(color: colors.primary.withOpacity(0.1)),
                 ),
                 child: SingleChildScrollView(
                   controller: _scrollController,
@@ -98,11 +98,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                     children: [
                       Text(
                         OnboardingStrings.manifestoTitle,
-                        style:
-                            Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: colors.primary,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: colors.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
                       const SizedBox(height: FacteurSpacing.space4),
                       _buildManifestoSection(
@@ -126,8 +126,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                         ),
                       ),
                       const SizedBox(height: FacteurSpacing.space2),
-                      ...OnboardingStrings.manifestoCombatTags
-                          .map((tag) => _buildCombatTag(tag)),
+                      ...OnboardingStrings.manifestoCombatTags.map(
+                        (tag) => _buildCombatTag(tag),
+                      ),
                     ],
                   ),
                 ),
@@ -138,7 +139,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
             onPressed: _toggleManifesto,
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              foregroundColor: colors.textSecondary,
+              foregroundColor: colors.primary,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -149,6 +150,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       : OnboardingStrings.welcomeManifestoButton,
                   style: const TextStyle(
                     fontSize: 15,
+                    fontWeight: FontWeight.w600,
                     decoration: TextDecoration.underline,
                   ),
                 ),
@@ -209,8 +211,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          Icon(Icons.check_circle_outline,
-              size: 14, color: context.facteurColors.primary),
+          Icon(
+            Icons.check_circle_outline,
+            size: 14,
+            color: context.facteurColors.primary,
+          ),
           const SizedBox(width: 8),
           Text(text, style: const TextStyle(fontSize: 13)),
         ],
@@ -241,9 +246,9 @@ class IntroScreen2 extends ConsumerWidget {
           const SizedBox(height: FacteurSpacing.space3),
           Text.rich(
             TextSpan(
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: colors.textSecondary),
               children: const [
                 TextSpan(text: OnboardingStrings.intro2SubtitlePart1),
                 TextSpan(
@@ -261,6 +266,14 @@ class IntroScreen2 extends ConsumerWidget {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 TextSpan(text: OnboardingStrings.intro2SubtitlePart4),
+                TextSpan(
+                  text: OnboardingStrings.intro2SubtitlePrivateInterests,
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                TextSpan(
+                  text:
+                      OnboardingStrings.intro2SubtitlePartPrivateInterestsAfter,
+                ),
                 TextSpan(
                   text: OnboardingStrings.intro2SubtitleBold4,
                   style: TextStyle(fontWeight: FontWeight.w700),

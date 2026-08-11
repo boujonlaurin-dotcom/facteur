@@ -116,6 +116,7 @@ from app.routers import (
     well_informed,
     youtube_player,
 )
+from app.sentry_filters import before_send_transaction
 from app.workers.scheduler import start_scheduler, stop_scheduler
 
 # Configuration
@@ -207,6 +208,7 @@ if settings.sentry_dsn:
         ],
         send_default_pii=False,
         before_send=_sentry_before_send,
+        before_send_transaction=before_send_transaction,
     )
     sentry_sdk.set_tag("alembic_head", _get_alembic_head())
     sentry_sdk.set_tag(

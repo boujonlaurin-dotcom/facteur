@@ -2,17 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/api/notification_preferences_api_service.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../alerts/providers/alerts_provider.dart';
 import '../../notifications/widgets/time_slot_selector.dart';
 import '../providers/notifications_settings_provider.dart';
 
-/// Écran de gestion des préférences de notifications.
+/// Réglages **de canal** : interrupteur push, horaire du récap, bonnes
+/// nouvelles.
+///
+/// Story 30.5 — l'écran est conservé mais sort du chemin des alertes. Il ne
+/// porte que des réglages qui existent vraiment et qui n'ont pas leur place
+/// dans « Mes alertes » (fusionner les deux aurait re-transformé le poste de
+/// commande en écran de paramétrage, exactement le reproche PO). Il n'est plus
+/// un péage : on y accède depuis le pied de « Mes alertes », pas l'inverse.
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({super.key});
 
@@ -51,11 +55,7 @@ class NotificationsScreen extends ConsumerWidget {
             ),
             const SizedBox(height: FacteurSpacing.space4),
             if (settings.pushEnabled) ...[
-              _SectionHeader(title: 'Alertes'),
-              const SizedBox(height: FacteurSpacing.space3),
-              const _AlertsRow(),
-              const SizedBox(height: FacteurSpacing.space6),
-              _SectionHeader(title: 'Horaire'),
+              const _SectionHeader(title: 'Horaire'),
               const SizedBox(height: FacteurSpacing.space3),
               TimeSlotSelector(
                 value: settings.timeSlot,
@@ -88,78 +88,12 @@ class NotificationsScreen extends ConsumerWidget {
 
   String _scheduleDescription(NotifTimeSlot slot) {
     final hour = slot == NotifTimeSlot.morning ? '07:30' : '19:00';
-    // « Rien d'autre » ne tient plus depuis que les alertes existent : elles
-    // partent dans la même passe. Autant le dire, c'est justement l'argument.
+    // Les alertes ne partent PAS dans cette passe : elles partent à la
+    // parution, toutes les 5 minutes côté serveur. L'ancienne phrase
+    // (« au même moment, sans bruit ») décrivait un comportement qui n'a
+    // jamais existé.
     return "Tu reçois ton récap chaque jour à $hour. "
-        "Tes alertes arrivent au même moment, sans bruit.";
-  }
-}
-
-/// Accès à l'écran « Mes alertes » — le réglage qui a remplacé le sélecteur
-/// de rythme (le préset ne pilotait plus que la pépite hebdo, supprimée).
-///
-/// Le compteur « x/5 » est affiché dès que la liste est chargée ; en cours de
-/// chargement ou en erreur on n'affiche rien plutôt qu'un compte faux.
-class _AlertsRow extends ConsumerWidget {
-  const _AlertsRow();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = context.facteurColors;
-    final theme = Theme.of(context);
-    final countLabel = ref.watch(alertsProvider).maybeWhen(
-          data: (alerts) => '${alerts.activeCount}/${alerts.cap}',
-          orElse: () => '',
-        );
-
-    return Material(
-      color: colors.surface,
-      borderRadius: BorderRadius.circular(FacteurRadius.large),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(FacteurRadius.large),
-        onTap: () => context.pushNamed(RouteNames.alerts),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(FacteurRadius.large),
-            border: Border.all(color: colors.surfaceElevated),
-          ),
-          padding: const EdgeInsets.all(FacteurSpacing.space4),
-          child: Row(
-            children: [
-              Icon(Icons.notifications_none, color: colors.primary, size: 24),
-              const SizedBox(width: FacteurSpacing.space4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mes alertes',
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Être prévenu quand une source rare publie.',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: colors.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              if (countLabel.isNotEmpty) ...[
-                Text(
-                  countLabel,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: colors.textTertiary),
-                ),
-                const SizedBox(width: FacteurSpacing.space2),
-              ],
-              Icon(Icons.chevron_right, color: colors.textTertiary, size: 20),
-            ],
-          ),
-        ),
-      ),
-    );
+        "Tes alertes, elles, partent à la parution.";
   }
 }
 

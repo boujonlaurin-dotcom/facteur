@@ -11,6 +11,7 @@ import '../../../config/routes.dart';
 import '../../../config/serein_colors.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/analytics_provider.dart';
+import '../../alerts/providers/alerts_provider.dart';
 import '../../app_update/providers/app_update_provider.dart';
 import '../../app_update/widgets/update_bottom_sheet.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
@@ -226,25 +227,36 @@ String _frMonthYear(DateTime date) {
 /// Entrée Soutien « Fact·eur·isse » : porte 1 du système de monétisation.
 /// Free → invite à rejoindre (écran Soutien) ; premium → remerciement +
 /// gestion de l'abonnement.
-/// Raccourci direct vers les réglages de notifications.
+/// **Chemin canonique** vers les alertes (story 30.5).
 ///
-/// Le test PO l'a remontée comme introuvable : la page existait, mais enterrée
-/// à trois niveaux (avatar → Réglages → Mon profil → COMPTE → Notifications),
-/// et la refonte de la 30.2 en avait retiré le repère visuel habituel. La tuile
-/// du `ProfileScreen` reste en place — c'est un raccourci, pas un déplacement.
-class _NotificationsTile extends StatelessWidget {
+/// Avant, quatre entrées menaient au même réglage (cette tuile, la tuile
+/// « Notifications » du `ProfileScreen`, la section « Alertes » de l'écran
+/// Notifications, puis « Mes alertes »). Le PO a lu ça comme de la
+/// prolifération. Il n'en reste qu'une, et elle va **directement** à « Mes
+/// alertes » : les réglages de notification (horaire, bonnes nouvelles, push
+/// général) sont désormais un lien discret en pied de cet écran, pas un péage
+/// sur le chemin.
+///
+/// Visible aussi sur le web : la cloche est un réglage de compte, pas
+/// d'appareil, et l'inventaire se lit partout (seul le rendu local du push
+/// manque au web).
+class _NotificationsTile extends ConsumerWidget {
   const _NotificationsTile();
 
   @override
-  Widget build(BuildContext context) {
-    // Pas de push sur le web : la tuile mènerait à un écran sans effet.
-    if (kIsWeb) return const SizedBox.shrink();
-
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
+    // Compteur « x/5 » dès que la liste est chargée : le plafond devient
+    // lisible avant le geste, pas au moment du refus serveur.
+    final countLabel = ref.watch(alertsProvider).maybeWhen(
+          data: (alerts) => '${alerts.activeCount}/${alerts.cap}',
+          orElse: () => '',
+        );
+
     return Padding(
       padding: const EdgeInsets.only(bottom: FacteurSpacing.space4),
       child: _SheetCard(
-        onTap: () => context.pushNamed(RouteNames.notifications),
+        onTap: () => context.pushNamed(RouteNames.alerts),
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: FacteurSpacing.space4,
@@ -260,12 +272,21 @@ class _NotificationsTile extends StatelessWidget {
               const SizedBox(width: FacteurSpacing.space3),
               Expanded(
                 child: Text(
-                  'Notifications et alertes',
+                  'Mes alertes',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                 ),
               ),
+              if (countLabel.isNotEmpty) ...[
+                Text(
+                  countLabel,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.textTertiary,
+                      ),
+                ),
+                const SizedBox(width: FacteurSpacing.space2),
+              ],
               Icon(
                 PhosphorIcons.caretRight(PhosphorIconsStyle.regular),
                 color: colors.textTertiary,

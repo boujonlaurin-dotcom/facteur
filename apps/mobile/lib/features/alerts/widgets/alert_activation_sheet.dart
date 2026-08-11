@@ -2,12 +2,39 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../config/theme.dart';
+import '../../../core/web/web_perf.dart';
 import '../../notifications/widgets/notification_activation_modal.dart';
 import '../../settings/providers/notifications_settings_provider.dart';
 import '../../sources/providers/sources_providers.dart';
 import '../../sources/utils/publication_frequency.dart';
 import '../models/alert_item.dart';
 import '../providers/alerts_provider.dart';
+
+/// Garde-fou partagé par tous les chemins de pose de cloche.
+///
+/// Poser une cloche sans droit de notifier produirait une alerte qui ne sonne
+/// jamais : on demande la permission OS **avant** l'appel serveur, et on
+/// renonce si l'utilisateur refuse.
+///
+/// Retourne `true` si la pose peut continuer. Sur le web il n'y a pas de push
+/// local (`flutter_local_notifications` n'a pas de plugin Web) : la cloche est
+/// un réglage de compte, pas d'appareil, donc on laisse passer plutôt que de
+/// bloquer sur une modale qui ne s'affiche pas.
+Future<bool> ensureAlertPushPermission(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  if (!kSupportsPushNotifications) return true;
+  if (ref.read(notificationsSettingsProvider).pushEnabled) return true;
+
+  await showNotificationActivationModal(
+    context,
+    ref,
+    trigger: ActivationTrigger.alert,
+  );
+  if (!context.mounted) return false;
+  return ref.read(notificationsSettingsProvider).pushEnabled;
+}
 
 /// Propose la cloche juste après un suivi réussi, source **ou** sujet.
 ///
@@ -119,21 +146,11 @@ class _AlertActivationSheetState extends ConsumerState<_AlertActivationSheet> {
   Future<void> _activate() async {
     setState(() => _busy = true);
 
-    // Permission OS d'abord : poser la cloche sans droit de notifier
-    // produirait une alerte qui ne sonne jamais.
-    final settings = ref.read(notificationsSettingsProvider);
-    if (!settings.pushEnabled) {
-      await showNotificationActivationModal(
-        context,
-        ref,
-        trigger: ActivationTrigger.alert,
-      );
-      if (!mounted) return;
-      if (!ref.read(notificationsSettingsProvider).pushEnabled) {
-        setState(() => _busy = false);
-        return;
-      }
+    if (!await ensureAlertPushPermission(context, ref)) {
+      if (mounted) setState(() => _busy = false);
+      return;
     }
+    if (!mounted) return;
 
     try {
       final notifier = ref.read(alertsProvider.notifier);

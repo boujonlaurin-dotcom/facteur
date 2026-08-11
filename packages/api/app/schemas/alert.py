@@ -48,6 +48,30 @@ class TopicFrequencyResponse(BaseModel):
     noisy: bool = False
 
 
+class AlertContent(BaseModel):
+    """Un contenu déclencheur, embarqué dans la cloche (story 30.4).
+
+    Sans lui, la carte « Tes alertes » de la Tournée ne peut annoncer qu'un
+    compteur : elle cache l'article derrière un rappel, puis le fait recharger.
+    Avec lui, la carte *est* l'article et le tap ouvre le lecteur avec le titre
+    déjà peint.
+
+    `source_*` décrit la **source réelle de l'article**, pas la cible de la
+    cloche : une alerte sujet ramène des articles de médias variés, et c'est
+    exactement ce qui la rend lisible.
+    """
+
+    content_id: UUID
+    title: str
+    url: str | None = None
+    thumbnail_url: str | None = None
+    published_at: datetime | None = None
+    content_type: str | None = None
+    source_id: UUID | None = None
+    source_name: str = ""
+    source_logo_url: str | None = None
+
+
 class AlertItem(BaseModel):
     """Une cloche active, telle que rendue par l'écran « Mes alertes ».
 
@@ -58,6 +82,11 @@ class AlertItem(BaseModel):
     `source_name` portent l'identité du sujet (le client ne manipule qu'une
     liste). Les champs restent nommés `source_*` pour ne pas casser les clients
     de la v1, qui les lisent sans condition.
+
+    `contents` (30.4) est **additif** : `new_content` reste le compteur de la
+    pastille, et un client v1 qui ignore `contents` parse la réponse à
+    l'identique. C'est la contrainte du split staging/prod — le backend
+    `production` sert des clients qui ont une semaine de retard.
     """
 
     kind: Literal["source", "topic"] = "source"
@@ -70,9 +99,67 @@ class AlertItem(BaseModel):
     last_published_at: datetime | None = None
     last_alert_sent_at: datetime | None = None
     new_content: int = 0
+    contents: list[AlertContent] = []
 
 
 class AlertsResponse(BaseModel):
     cap: int
     active_count: int
     items: list[AlertItem] = []
+
+
+class AlertSuggestion(BaseModel):
+    """Une cible qu'il vaudrait la peine de mettre sous cloche (story 30.6).
+
+    Schéma **à côté** d'`AlertItem`, jamais dedans : l'inventaire et la
+    proposition ne se ressemblent que de loin, et le lot B n'a pas à bouger.
+
+    `reason` n'est pas cosmétique : c'est elle qui rend la suggestion
+    acceptable. Elle ne dit que ce que le signal prouve (« Tu as ouvert 8
+    articles sur 10 de cette source ce mois-ci »), jamais plus.
+
+    `signal` porte le rang de preuve qui a fait sortir la cible
+    (`source_read`, `topic_affinity`, `source_read_light`, `topic_weight`) :
+    sans lui, l'analytique saurait que le bloc convertit, mais pas quel rang,
+    donc pas quoi couper.
+
+    `prefill_filtered` est vrai dès que la cible est bruyante : la règle 30.3
+    veut que le mode filtré soit déjà coché plutôt qu'une cloche qui devient un
+    robinet au premier tap.
+    """
+
+    kind: Literal["source", "topic"]
+    target_id: UUID
+    target_name: str
+    target_logo_url: str | None = None
+    reason: str
+    signal: str
+    articles_30d: int = 0
+    cadence_per_week: float = 0.0
+    cadence_phrase: str = ""
+    noisy: bool = False
+    prefill_filtered: bool = False
+
+
+class AlertSuggestionsResponse(BaseModel):
+    """`at_cap` = « je ne propose rien, et voici pourquoi ».
+
+    Au plafond, la liste est vide **et** le drapeau est levé : proposer un ajout
+    impossible est pire que ne rien proposer.
+    """
+
+    cap: int
+    active_count: int
+    at_cap: bool = False
+    suggestions: list[AlertSuggestion] = []
+
+
+class DismissAlertSuggestionRequest(BaseModel):
+    """Refus d'une suggestion : elle ne doit pas revenir le lendemain."""
+
+    kind: Literal["source", "topic"]
+    target_id: UUID
+
+
+class DismissAlertSuggestionResponse(BaseModel):
+    dismissed: bool = True

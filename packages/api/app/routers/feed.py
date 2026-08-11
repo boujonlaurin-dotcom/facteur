@@ -574,13 +574,12 @@ async def refresh_feed(
         for cid in body.content_ids
     ]
 
-    # 2. UPSERT last_impressed_at = now() — fix N+1 (famille Sentry PYTHON-5Q).
-    # Avant : un `db.execute()` par content_id dans une boucle → N requêtes
-    # (et, sous le wrapper de session qui arme les timeouts par statement, un
-    # `SET LOCAL` répété par itération). Désormais un seul `INSERT ... ON
-    # CONFLICT DO UPDATE` multi-lignes. `dict.fromkeys` dédoublonne en gardant
-    # l'ordre : un `ON CONFLICT DO UPDATE` ne peut pas viser deux fois la même
-    # ligne cible dans un même statement.
+    # 2. UPSERT last_impressed_at = now() — un seul statement bulk.
+    # Avant : un `db.execute()` par content_id dans une boucle → N requêtes.
+    # Désormais un seul `INSERT ... ON CONFLICT DO UPDATE` multi-lignes.
+    # `dict.fromkeys` dédoublonne en gardant l'ordre : un `ON CONFLICT DO
+    # UPDATE` ne peut pas viser deux fois la même ligne cible dans un même
+    # statement.
     unique_content_ids = list(dict.fromkeys(body.content_ids))
     refreshed = 0
     if unique_content_ids:
@@ -640,7 +639,7 @@ async def undo_refresh(
     user_uuid = UUID(current_user_id)
     now = datetime.now(UTC)
 
-    # Fix N+1 (famille Sentry PYTHON-5Q) : upsert bulk au lieu d'un
+    # Upsert bulk au lieu d'un
     # `db.execute()` par entrée. `stmt.excluded.last_impressed_at` restaure la
     # valeur propre à chaque ligne (y compris NULL) via la pseudo-table
     # EXCLUDED, ce qui préserve la sémantique per-row de la boucle. Dédup en
