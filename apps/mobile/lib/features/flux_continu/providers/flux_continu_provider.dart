@@ -723,6 +723,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// Les sections sont des coquilles vides (items/topics vides) ; le screen rend
   /// un placeholder par section. Jamais de contenu périmé. Pas de réseau.
   FluxContinuState _buildSkeletonState(bool isSerene) {
+    // Coquille « héros pas encore résolu » — **pas** « héros vide » (cf. la
+    // convention documentée sur [_buildEssentielSection]). Elle survit à un
+    // `_compose()` non-squelette publié pendant le bootstrap ; c'est
+    // `EssentielHiFiCard` qui garantit qu'elle se rend en silhouette.
     _essentiel = const EssentielSection(
       articles: <EssentielArticle>[],
       illustrationAsset: _kEssentielIllustration,
@@ -1410,6 +1414,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   .where((a) => !_dismissedIds.contains(a.contentId))
                   .toList(growable: false),
               newSinceMorning: s.newSinceMorning,
+              carousel: s.carousel,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1479,6 +1484,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                   .where((a) => seen.add(a.contentId))
                   .toList(growable: false),
               newSinceMorning: s.newSinceMorning,
+              carousel: s.carousel,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1570,6 +1576,7 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
                     a,
               ],
               newSinceMorning: s.newSinceMorning,
+              carousel: s.carousel,
               blurb: s.blurb,
               illustrationAsset: s.illustrationAsset,
             ),
@@ -1869,6 +1876,23 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// returned by `GET /api/essentiel`. Returns `null` when the endpoint hasn't
   /// produced anything yet (202 preparing or transient failure) so the screen
   /// degrades gracefully — Bonnes Nouvelles + thèmes restent visibles.
+  ///
+  /// **Convention du héros, une seule règle, deux états distincts** (passe PO
+  /// 09/08, défaut A1) :
+  ///
+  /// - `_essentiel == null` ⇒ **résolu à rien** : aucune carte héros n'est
+  ///   rendue. C'est ce que renvoie cette fonction sur une liste vide.
+  /// - `EssentielSection(articles: [])` ⇒ **pas encore résolu** : la coquille
+  ///   posée par [_buildSkeletonState]. La carte rend alors la **silhouette**
+  ///   de la pile (cf. `contentPending` dans `EssentielHiFiCard`), jamais son
+  ///   en-tête seul.
+  ///
+  /// La distinction compte parce que la coquille **échappe** au squelette
+  /// d'écran : [_reconcilePlacementThenSync] publie un `_compose()`
+  /// non-squelette pendant le bootstrap (délibérément non gardé par
+  /// `_bootstrapping`, cf. « race 1 »), donc un état `isSkeleton: false` peut
+  /// porter le héros vide bien avant que `_fetchAll` n'ait résolu quoi que ce
+  /// soit.
   FluxSection? _buildEssentielSection(
     List<EssentielArticle> articles, {
     int newSinceMorning = 0,
@@ -1877,6 +1901,10 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
     return EssentielSection(
       articles: articles,
       newSinceMorning: newSinceMorning,
+      // Carrousel du jour porté jusqu'à la carte pour « Voir d'autres articles »
+      // (réinjection dans la pile de tri, itération PO 33.1). Déjà mémorisé
+      // juste au-dessus (`_essentielCarousel = essentielCarousel`).
+      carousel: _essentielCarousel,
       illustrationAsset: _kEssentielIllustration,
       blurb: _kEssentielBlurb,
     );

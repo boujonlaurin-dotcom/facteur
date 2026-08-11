@@ -1,101 +1,150 @@
-# feat(onboarding) : reco médias « interest-aware » + polish copy
+# Essentiel — l'objectif devient « articles à garder », la pile alimente jusqu'à la cible
 
-## Problème
+Story : `docs/stories/core/33.4.essentiel-objectif-articles-gardes.md`
+(suit 33.3, même branche)
 
-Pendant l'onboarding, les **premiers** médias proposés (deck à swiper +
-carrousel « Tes médias, sur mesure ») ne collaient pas aux intérêts déclarés :
-un utilisateur **sans Sport** voyait l'Équipe et Ouest-France (≈ 40 % de sport
-publié) en tête.
+## Le problème
 
-## Causes racines
+Le stepper `[−] N [+] articles à lire aujourd'hui` réglait en réalité **la
+taille du slate à trier**. Pour l'utilisateur ça n'a aucun sens : il annonce
+« je veux lire 5 articles », on lui en présente 5, il en refuse 3, il termine sa
+journée avec 2.
 
-Le ranking est **100 % côté client** (`source_recommender.dart`) :
+## 1. `target` (taille du slate) → `goal` (nombre de gardés)
 
-1. **Scoring additif sans pénalité** : `reliability high` (+1) + volume ≥ 90/30 j
-   (+2) ⇒ une généraliste fiable et active atteint **3 sans aucun match
-   thématique**, à égalité avec un vrai match de thème.
-2. **Le deck du swipe n'utilise pas `_scoreSource`** : `buildSpanningSet`
-   complétait ses pôles avec le catalogue trié sur `followerCount` ⇒ les grosses
-   audiences menaient les thèmes peu couverts.
-3. **`sources.coverage_themes` (couverture réellement publiée) n'était pas
-   sérialisée** : le client ne pouvait pas voir la dilution.
-4. **Découvert en implémentant : `_build_source_response` ne sérialisait ni
-   `secondary_themes`, ni `granular_topics`, ni `source_tier`** (jamais, depuis
-   la création du helper). Le catalogue mobile ne voyait donc que `theme` :
-   match par sujet, badges « Spécialisé en X » et pépites (tier `deep`) étaient
-   **débranchés**. En base : 61/124 curées actives ont des `granular_topics`,
-   29 sont `deep`, 17 ont des `secondary_themes`, 74 ont des `coverage_themes`.
+`essentiel_triage_provider.dart` — c'est le cœur du lot.
 
-Les points 3 et 4 vont ensemble : sans thèmes secondaires ni sujets granulaires,
-une pénalité anti-hors-intérêt aurait dégradé la reco au lieu de l'améliorer.
+`effectiveTriageTarget(target, poolLength)` **disparaît** : la cible ne dépend
+plus du pool. C'est cette dépendance qui rendait le slate et l'objectif
+indissociables.
 
-## Ce que fait la PR
+| Avant | Après |
+|---|---|
+| `startIfNeeded(pool)` — gèle `pool.take(cible)` + branche de réconciliation cold-boot | `syncSlate(pool)` — gèle l'ordre au 1er appel, puis **append en queue**. Plus de `take`, plus de réordonnancement. La réconciliation devient sans objet |
+| `setTarget(n, pool)` — allonge/raccourcit le slate | `setGoal(n)` — ne touche **plus au slate**. Baisser la cible ne détruit donc plus rien, et « ne jamais perdre une décision » devient structurellement impossible à violer |
+| — | `extendGoal(delta)` (le CTA, sans plafond haut), `stopTriage()`, `dismissStopNudge()` |
 
-**Backend (additif, aucune migration).** `SourceResponse.coverage_themes` +
-sérialisation de `coverage_themes` / `secondary_themes` / `granular_topics` /
-`source_tier` dans `_build_source_response`. Les colonnes sont déjà chargées sur
-l'objet `Source` ⇒ **aucune requête supplémentaire, aucun N+1**.
+`done = stopped || goalReached || poolExhausted`. `later` continue de compter
+comme gardé (décision PO reconduite), et l'auto-keep lecture aussi.
 
-Deux convertisseurs `Source → SourceResponse` coexistent : celui du service
-(`GET /sources`) et `_source_to_response` dans `routers/sources.py` (liste curée,
-suggestions par thème, fiche source). `coverage_themes` est sérialisée **dans les
-deux**, sinon la même source aurait une forme différente selon l'endpoint et le
-client conclurait « couverture inconnue » là où la donnée existe — exactement la
-classe de bug corrigée ici. Un test verrouille la parité.
+`consecutivePassCount` est un **getter dérivé du slate**, sans champ persisté :
+il se réinitialise seul dès qu'un article est gardé et survit au cold-boot.
 
-**Mobile — scoring.** Nouveau signal partagé `_InterestFit` :
-`declared` > `covered` (la source publie sur un thème choisi) > `unknown` >
-`offInterest`.
-- **Règle A (anti-pad)** : bonus fiabilité/volume réservés aux sources
-  pertinentes ⇒ une source hors-intérêt retombe à 0, sous toute source matchée ;
-  `-1` de plus si sa couverture connue est disjointe.
-- **Règle B (anti-dilution)** : `-1` par thème publié hors des intérêts, plafonné
-  à `-2` ⇒ Ouest-France passe **sous** une source focalisée sans être écartée.
-- **Garde-fous** : rien ne s'arme si l'utilisateur a « Passé » les thèmes ; une
-  source **likée au swipe** n'est jamais pénalisée (le révélé prime) ; une
-  couverture **inconnue** n'est jamais pénalisante.
+**Bump de clé `essentiel_triage_v2_`** + purge one-shot des clés `v1` : leur
+champ `target` était une taille de slate ; le relire comme un objectif donnerait
+« garde 7 articles » à qui avait demandé une pile de 7. Coût assumé : un tri en
+cours le jour du déploiement repart à zéro.
 
-**Mobile — deck du swipe.** `buildSpanningSet` trie par adéquation avant
-`followerCount`, exclut les sources hors-intérêt des pôles et ne les garde qu'en
-**filler de dernier recours** (fin de deck). Le fallback « thèmes pauvres » reste
-garanti (deck jamais vide).
+## 2. [Le point critique] La pile peut réellement délivrer plus d'articles
 
-**Polish copy/UI.** Doubles majuscules corrigées (« Lire notre manifeste »,
-« Notre manifeste », « Le projet », « Notre mission », « Notre approche ») ;
-lien manifeste en emphase légère (couleur d'accent + demi-gras, dépliage inline
-inchangé) ; « diversifier tes médias » → « diversifier tes **sources** » sur
-l'écran concentration ; nouveau `SourceSearchLoader` (« Recherche de tes
-médias » / « Basé sur tes intérêts ») à la place des 4 spinners nus.
-Le loader prend `title`/`subtitle` : l'overlay de calibration de fin de swipe
-l'utilise avec sa propre copy, ce qui supprime ~25 lignes de layout dupliqué et
-le dernier `CircularProgressIndicator` nu de ce parcours.
+Sans ça, « N articles à garder » n'aurait été qu'une promesse.
 
-## Tests
+**Mobile** — `/more` n'était appelé que par le tap sur « Plus d'articles ? ». Il
+part maintenant **avant** que la pile ne sèche : moins de 2 articles à proposer
++ cible non atteinte ⇒ lot de 5, posté après la frame, **aucune UI d'attente**.
+Trois gardes cumulées contre la boucle réseau : `_inFlight`, cooldown
+d'épuisement de 10 min (en mémoire, forcé par un geste utilisateur), plafond de
+6 prefetchs. Un échec réseau n'est **pas** un épuisement : une coupure de 3 s ne
+doit pas figer la pile 10 min.
 
-- **Backend** : `pytest -q` complet ⇒ **3018 passed**, 18 skipped, 2 xfailed.
-  Nouveau test de sérialisation des signaux de reco (`None` conservé).
-- **Mobile** : `test/features/onboarding` + `test/features/sources` ⇒ **262
-  passed**. Suite complète : 2043 passed / 26 échecs **pré-existants**, tous hors
-  des zones touchées (custom_topics, digest, feed, settings, widget_test).
-- `flutter analyze` : aucune erreur ni warning.
-- Alembic : **1 seul head**, inchangé (aucune migration).
-- Tous les tests historiques du recommander sont conservés **sans modification
-  d'attente**, dont le fallback « thèmes vides → fiabilité ».
+**Backend** (read-only, aucune migration) :
 
-## Points d'attention pour la review
+1. **Les exclusions partent dans le SQL, avant le `LIMIT`.** C'est la correction
+   la plus rentable du lot : les ids déjà détenus par le client étaient filtrés
+   en Python *après* le cap de 30 candidats, donc ils consommaient les slots et
+   la fenêtre utile rétrécissait à chaque tour — au bout de deux
+   élargissements, « Plus d'articles ? » ne trouvait plus rien alors que la base
+   en avait. Test : 40 articles dont 35 exclus (et les plus frais) ⇒ les 5
+   restants sortent quand même.
+2. Cap de candidats dédié `ESSENTIEL_MORE_CANDIDATE_CAP = 80` (le blend digest
+   garde ses 30).
+3. Fenêtre en paliers `24h → 48h → 72h`, qui s'arrête dès que `limit` est tenu.
+   L'`ORDER BY published_at DESC` garde la fraîcheur en tête.
 
-- **Deux sources de vérité pour « est-ce un match déclaratif »** : `_interestFit`
-  re-dérive le prédicat déjà calculé dans les boucles de `_scoreSource`. Unifier
-  changerait le scoring, donc laissé en l'état — mais une évolution des règles de
-  match devra être répercutée des deux côtés sous peine de désynchroniser la
-  pénalité du score qu'elle corrige.
-- **La règle anti-généraliste est la première règle éditoriale à vivre
-  uniquement côté client** : pas d'équivalent `SCORING_OVERRIDES` / harnais de
-  sensibilité, donc pas de tuning, d'A/B ni de rollback sans release.
+**Bornes de schéma élargies — jamais resserrées** (compat prod, DB partagée) :
 
-- **Effet de bord voulu du point 4** : les badges « Spécialisé en X » et la
-  section « Pépites » (tier `deep`) vont enfin s'activer dans l'onboarding.
-  À valider visuellement (`/validate-feature`, handoff dans
-  `.context/qa-handoff.md`).
-- Le payload de `GET /sources` grossit de 3 petits tableaux par source curée.
-- Story : `docs/stories/core/onboarding.reco-interest-aware.md`.
+| Champ | Avant | Après | Pourquoi |
+|---|---|---|---|
+| `EssentielArticle.rank` | `le=5` | `le=50` | avec `limit=10`, les rangs 6..10 levaient une `ValidationError` **en production** (piège n°3 de la 33.3, rejoué) |
+| `TriageBatchRequest.slate_size` | `le=20` | `le=200` | le slate n'est plus borné par la cible ; le routeur valide `rank <= slate_size` ⇒ 422 en pleine session |
+| `MAX_MORE_EXCLUDE_IDS` | 100 | 300 | la troncature `split(",")[:N]` est silencieuse : au-delà, on reproposait des articles déjà écartés |
+| `/more?limit=` | `le=5` | `le=10` | lots de prefetch |
+
+## 3. UI
+
+- **Barre de progression** → compte les **gardés**, pas les triés. Plus de
+  segment « courant » : la progression n'est plus positionnelle, elle est
+  cumulative. Tokens plus discrets (segment 4→2, slot 8→4, écart 3→4,
+  remplissage `alpha 0.7`) — des traits fins et espacés se lisent comme un
+  repère, pas comme une jauge de jeu. Le chiffre passe dans la sémantique
+  (« Articles gardés : 2 sur 5 »).
+- **Stepper** → `Je veux lire [−] N [+] articles aujourd'hui`. Bornes
+  `[3, 10]`, plus aucune dépendance au pool (`poolIds` sort de la signature).
+  Le fragment `· Y à trier` **disparaît** : le reste à trier n'est plus
+  déterminé, l'afficher mentirait.
+- **« Trier à nouveau » → « Refaire ? »**, 12/w500/`textTertiary`, hauteur
+  34→28. La sémantique reste « Refaire le tri » (« Refaire ? » seul est trop
+  pauvre pour un lecteur d'écran).
+- **Fin de tri : l'objectif n'est plus affiché.** Un tri qui s'arrête en deçà de
+  la cible ne doit jamais se lire comme un échec.
+- **CTA « Plus d'articles ? »** simplifié : plus de branche « réserve locale vs
+  réseau » (le slate porte déjà tout le pool local), juste `extendGoal(2)` ; si
+  le slate est épuisé, un `fetchMore(force: true)`. `injectableIds` devient mort
+  et est retiré.
+
+## 4. Nudge « tu peux t'arrêter là »
+
+5 refus enchaînés (décision PO) ⇒ bandeau inline sous la barre d'actions :
+« Rien ne t'accroche ? Tu peux t'arrêter là. » + « Arrêter le tri » + croix.
+
+Réutilise `NudgeInlineBanner` **sans passer par `NudgeCoordinator`** : son
+cooldown global de 24 h et son budget de session sont faits pour des
+sollicitations transverses, pas pour un signal contextuel intra-session qui doit
+apparaître au moment exact où l'utilisateur s'entête. Même justification que
+`preview_nudge_scheduler.dart`.
+
+Il disparaît de lui-même dès qu'un article est gardé — aucun code de nettoyage,
+le getter repart à 0.
+
+## 5. Analytics
+
+- `essentiel_triage_decision` : + `goal`. ⚠️ `slate_size` garde son nom mais
+  change de sens (taille du pool proposé, **croissante**) — documenté dans le
+  docstring pour les requêtes historiques.
+- `essentiel_triage_session` : + `goal`, `goal_reached`, `ended_by`
+  (`goal` | `exhausted` | `stopped`), `auto_fetches`. **C'est la mesure du
+  lot** : la part de `exhausted` dira si la pile sèche encore avant la cible,
+  donc si l'élargissement du pool a suffi.
+- nouvel event `essentiel_triage_stop_nudge` (`shown` / `accepted` /
+  `dismissed`) : le ratio accepted/shown dira si le seuil de 5 est le bon.
+
+## Vérification
+
+- `pytest -q` → **3084 passed**, 21 skipped, 2 xfailed. Dont 8 tests neufs :
+  exclusions poussées en SQL, paliers 24/48/72 h, rangs 1..10 sérialisés,
+  `limit=10` accepté / `limit=11` rejeté, 250 exclusions non tronquées,
+  `slate_size=60` + `rank=57` ⇒ 200.
+- `flutter test` sur le périmètre : `essentiel_triage_provider_test` **54
+  passed** (groupe « cible du jour » réécrit en entier), `essentiel_hi_fi_card_test`
+  **83 passed**, `essentiel_extra_articles_provider_test` **14 passed**,
+  `section_fit_test` + squelette OK.
+- `flutter test` complet : 2268 passed / **26 échecs pré-existants**, tous hors
+  périmètre (settings, custom_topics, digest bookmarks, feed, notification,
+  `widget_test` — Hive/Supabase non initialisés). Aucun échec dans
+  `flux_continu/{widgets,providers,utils}`.
+- `flutter analyze` → **0 erreur**, aucun warning sur les fichiers touchés.
+
+## Migration
+
+Aucun DDL, aucune migration Alembic. Le backend est read-only et toutes les
+bornes de schéma sont **élargies**, jamais resserrées ⇒ l'ancien backend `prod`
+continue d'accepter les payloads de l'ancien mobile pendant la semaine de
+décalage (règle expand-contract, DB Supabase partagée).
+
+## Limite connue, hors scope
+
+Un utilisateur sans source suivie ni thème apprécié fait sortir
+`_fetch_live_supplements` sur `return [], 0` : pool vide quoi qu'on élargisse.
+La pile se termine alors proprement sur `poolExhausted`, et comme la fin de tri
+n'affiche plus l'objectif, rien ne se lit comme un échec. À traiter dans un lot
+« pool de repli » séparé.

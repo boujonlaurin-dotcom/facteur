@@ -23,6 +23,9 @@ from app.dependencies import get_current_user_id
 from app.models.content import Content
 from app.models.essentiel_triage import EssentielTriageDecision
 from app.schemas.essentiel import (
+    DEFAULT_MORE_LIMIT,
+    MAX_MORE_EXCLUDE_IDS,
+    EssentielMoreResponse,
     EssentielResponse,
     TriageBatchRequest,
     TriageBatchResponse,
@@ -33,6 +36,7 @@ from app.services.digest_service import DigestService, read_digest_or_fallback
 from app.services.essentiel_service import (
     ESSENTIEL_MIN_ARTICLES,
     build_essentiel_response_with_supplements,
+    fetch_essentiel_more,
     fetch_user_essentiel_context,
 )
 from app.services.recommendation.carousel_catalog import (
@@ -190,6 +194,85 @@ async def get_essentiel(
         topic_weights_count=len(user_context.topic_weights),
     )
     return response
+
+
+@router.get("/more", response_model=EssentielMoreResponse)
+async def get_essentiel_more(
+    limit: int = Query(
+        DEFAULT_MORE_LIMIT,
+        ge=1,
+        le=10,
+        description=(
+            "Nb d'articles inédits demandés. 2 par défaut (« Deux de plus ») ; "
+            "le prefetch de la pile de tri (Story 33.4) demande des lots de 5."
+        ),
+    ),
+    exclude: str | None = Query(
+        None,
+        description=(
+            "content_id déjà portés par le client (slate ∪ décidés ∪ pool "
+            f"local), séparés par des virgules. Cap {MAX_MORE_EXCLUDE_IDS}."
+        ),
+    ),
+    serein: bool | None = Query(
+        None, description="Force le mode serein (cf. `GET /api/essentiel`)."
+    ),
+    db: AsyncSession = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """Sert « Plus d'articles ? » quand la réserve locale du client est vide.
+
+    Story 33.3 — le CTA de fin de tri ne disparaît plus quand le carrousel du
+    jour n'a plus rien à injecter : il vient chercher ici deux recommandations
+    Essentiel inédites.
+
+    Strictement read-only, aucune écriture, aucun pipeline LLM : réutilise le
+    pool live du blend « Essentiel vivant » (`fetch_essentiel_more`).
+
+    Une liste **vide** est une réponse 200 normale — pool épuisé, ou
+    utilisateur sans source suivie ni thème apprécié. Le client garde son CTA
+    visible et affiche un retour sobre ; un 202/404 le pousserait à traiter ça
+    comme une panne.
+    """
+    user_uuid = UUID(current_user_id)
+
+    exclude_ids: set[UUID] = set()
+    if exclude:
+        for raw in exclude.split(",")[:MAX_MORE_EXCLUDE_IDS]:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                exclude_ids.add(UUID(raw))
+            except ValueError:
+                # Un id illisible ne peut de toute façon matcher aucun contenu :
+                # on le laisse tomber plutôt que de refuser tout le lot.
+                logger.warning("essentiel_more_bad_exclude_id", raw=raw)
+
+    service = DigestService(db)
+    serein_enabled = (
+        serein
+        if serein is not None
+        else await service.get_user_serein_enabled(user_uuid)
+    )
+    user_context = await fetch_user_essentiel_context(db, user_uuid)
+    articles = await fetch_essentiel_more(
+        db,
+        user_uuid,
+        user_context,
+        is_serene=serein_enabled,
+        exclude_ids=exclude_ids,
+        limit=limit,
+    )
+
+    logger.info(
+        "essentiel_more_served",
+        user_id=current_user_id,
+        requested=limit,
+        excluded=len(exclude_ids),
+        served=len(articles),
+    )
+    return EssentielMoreResponse(articles=articles)
 
 
 @router.post("/triage", response_model=TriageBatchResponse)

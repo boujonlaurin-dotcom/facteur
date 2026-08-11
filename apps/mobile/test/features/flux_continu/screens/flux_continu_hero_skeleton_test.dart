@@ -5,6 +5,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/flux_continu/screens/flux_continu_screen.dart';
 import 'package:facteur/features/flux_continu/utils/section_fit.dart';
+import 'package:facteur/features/flux_continu/widgets/triage_stack_skeleton.dart';
 
 /// Garde-fou du squelette « Ton Essentiel ». Le bug : l'ancien placeholder était
 /// un bloc plat de 260 px, bien plus court que la carte de tri réelle → carte
@@ -34,22 +35,137 @@ void main() {
     expect(find.byType(Shimmer), findsOneWidget);
   });
 
-  testWidgets('réserve la hauteur de la carte de tri, bien au-delà de 260 px',
+  testWidgets('réserve la géométrie de la carte de tri, bien au-delà de 260 px',
       (tester) async {
     await pumpSkeleton(tester);
 
-    // Hauteur de la seule pile de tri déjà supérieure à l'ancien bloc plat.
-    final stackHeight = triageReservedHeight(
-      slateSize: 5,
-      chromeHeight: 0,
-      leadHeight: kHeroLeadHeight,
-      mediumHeight: kHeroMediumHeight,
-    );
-    expect(stackHeight, greaterThan(260));
+    // La seule carte silhouette, au nouveau format éditorial (grande image),
+    // dépasse déjà l'ancien bloc plat de 260 px.
+    expect(kTriageCardHeight, greaterThan(260));
 
-    // La carte rendue (chrome + en-tête/pastille + pile) dépasse encore la pile,
-    // donc largement l'ancien 260 px : plus de tranche rognée.
+    // La carte rendue (en-tête/pastille + pile de 2 cartes + barre d'actions)
+    // dépasse encore une carte silhouette : plus de tranche rognée.
     final rendered = tester.getSize(find.byType(Shimmer)).height;
-    expect(rendered, greaterThan(stackHeight));
+    expect(rendered, greaterThan(kTriageCardHeight));
+  });
+
+  testWidgets('délègue sa pile à la silhouette partagée', (tester) async {
+    await pumpSkeleton(tester);
+
+    // Une seule définition de la silhouette, partagée avec l'attente rendue
+    // **dans** `EssentielHiFiCard` : les deux attentes ne peuvent pas diverger
+    // de la vraie pile.
+    expect(find.byType(TriageStackSkeleton), findsOneWidget);
+  });
+
+  group('TriageStackSkeleton', () {
+    Future<void> pump(WidgetTester tester, {bool standalone = true}) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: FacteurTheme.lightTheme,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: TriageStackSkeleton(standalone: standalone),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('porte son propre shimmer en mode standalone', (tester) async {
+      await pump(tester);
+      expect(find.byType(Shimmer), findsOneWidget);
+    });
+
+    testWidgets('n\'ajoute pas de shimmer quand un ancêtre en fournit un',
+        (tester) async {
+      await pump(tester, standalone: false);
+      expect(find.byType(Shimmer), findsNothing);
+    });
+
+    testWidgets(
+        'porte le même ordre que la vraie pile : barre de progression puis '
+        'contrôle d\'objectif, SOUS la barre d\'actions', (tester) async {
+      await pump(tester);
+
+      // Ronds d'action (44 px) → segments de progression (4 px) → contrôle
+      // d'objectif (ronds de 26 + phrase de 150×11) : si la silhouette gardait
+      // un autre ordre, la mise en page sauterait à l'hydratation — c'est
+      // précisément ce qu'elle existe pour empêcher.
+      final boxes = tester
+          .widgetList<Container>(find.descendant(
+            of: find.byType(TriageStackSkeleton),
+            matching: find.byType(Container),
+          ))
+          .map((w) => tester.getRect(find.byWidget(w)))
+          .toList();
+      final actionBottom = boxes
+          .where((r) => r.height == kTriageActionButtonSize)
+          .map((r) => r.bottom)
+          .reduce((a, b) => a > b ? a : b);
+      final progressTop = boxes
+          .where((r) => r.height == kTriageProgressSegmentHeight)
+          .map((r) => r.top)
+          .reduce((a, b) => a < b ? a : b);
+      final controlTop = boxes
+          // Les deux moitiés de la phrase du contrôle (« Je veux lire » puis
+          // « articles aujourd'hui ») — la barre de méta de la carte fait aussi
+          // 11 de haut, mais 96 de large.
+          .where((r) => r.height == 11 && r.width != 96)
+          .map((r) => r.top)
+          .reduce((a, b) => a < b ? a : b);
+      expect(progressTop, greaterThan(actionBottom));
+      expect(controlTop, greaterThan(progressTop));
+    });
+
+    testWidgets('réserve la borne haute de hauteur de carte', (tester) async {
+      await pump(tester);
+      final stack = tester.getSize(find.byType(TriageStackSkeleton)).height;
+      expect(stack, greaterThan(kTriageCardHeight));
+      expect(
+        stack,
+        kTriageCardHeight +
+            kTriageActionBarHeight +
+            kTriageProgressBarHeight +
+            kTriageTargetControlHeight,
+      );
+    });
+
+    testWidgets(
+        'annonce la VRAIE barre d\'actions : 2 ronds de 44 + 1 pilule '
+        'extensible, et plus aucune barre de compteur', (tester) async {
+      await pump(tester);
+
+      // L'ancienne silhouette (3 pastilles de 52 centrées) annonçait une barre
+      // qui n'existe pas : l'attente ne ressemblait pas au contenu.
+      final bars = tester
+          .widgetList<Container>(find.descendant(
+            of: find.byType(TriageStackSkeleton),
+            matching: find.byType(Container),
+          ))
+          .toList();
+      final actionBarBoxes = [
+        for (final b in bars)
+          if (tester.getSize(find.byWidget(b)).height == 44)
+            tester.getSize(find.byWidget(b)),
+      ];
+      expect(actionBarBoxes.length, 3);
+      expect(actionBarBoxes.where((s) => s.width == 44).length, 2);
+      // La pilule prend tout le reste de la largeur.
+      expect(actionBarBoxes.where((s) => s.width > 44).length, 1);
+
+      // La colonne réserve exactement carte + actions + barre de progression +
+      // contrôle d'objectif : aucun pixel de plus, aucun de moins.
+      expect(
+        tester.getSize(find.byType(TriageStackSkeleton)).height,
+        kTriageCardHeight +
+            kTriageActionBarHeight +
+            kTriageProgressBarHeight +
+            kTriageTargetControlHeight,
+      );
+    });
   });
 }

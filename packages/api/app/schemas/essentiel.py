@@ -66,7 +66,12 @@ class EssentielArticle(BaseModel):
     # `None` quand le topic ne la porte pas (article hors sujet transversal) :
     # le mobile reste alors silencieux.
     divergence_level: str | None = None
-    rank: int = Field(..., ge=1, le=5, description="Position dans l'essentiel (1..5)")
+    # `le=50` et non 5 (Story 33.4) : la pile de tri n'est plus bornée à 5
+    # articles — `GET /api/essentiel/more` sert jusqu'à 10 articles par lot,
+    # rangés 1..limit, et les compléments du blend digest prolongent les slots
+    # du digest. Un `le=5` levait une `ValidationError` en production dès le 6e
+    # rang sérialisé (piège n°3 de la story 33.3, rejoué au premier lot de 10).
+    rank: int = Field(..., ge=1, le=50, description="Position dans l'essentiel")
     is_read: bool = False
     is_saved: bool = False
     is_liked: bool = False
@@ -122,12 +127,48 @@ class EssentielResponse(BaseModel):
         from_attributes = True
 
 
+# --- « Plus d'articles ? » (Story 33.3) ---------------------------------------
+
+# Borne de la liste d'exclusion de `GET /api/essentiel/more`. Le client envoie
+# son slate ∪ ses décidés ∪ son pool local ; l'URL doit rester finie.
+#
+# 300 et non 100 (Story 33.4) : le slate n'est plus coupé à la cible, il porte
+# tout le pool proposé et dépasse 100 ids sur une grosse journée de tri. La
+# troncature `exclude.split(",")[:N]` du routeur est **silencieuse** — au-delà
+# de la borne, on se remettait à proposer des articles déjà écartés.
+MAX_MORE_EXCLUDE_IDS = 300
+
+# Nb d'articles servis par défaut — « Deux de plus, tirés du même Essentiel ».
+DEFAULT_MORE_LIMIT = 2
+
+
+class EssentielMoreResponse(BaseModel):
+    """Réponse pour `GET /api/essentiel/more` (Story 33.3).
+
+    Deux recommandations Essentiel supplémentaires, servies quand la réserve
+    locale du client (carrousel du jour) est épuisée et qu'il faut malgré tout
+    honorer « Plus d'articles ? ». Même forme d'article que
+    [EssentielResponse] : le client réutilise son parseur.
+
+    Liste **vide** = pas d'inédit disponible, pas une erreur : le client garde
+    son CTA visible et affiche un retour sobre.
+    """
+
+    articles: list[EssentielArticle] = Field(default_factory=list)
+
+
 # --- Tri de l'Essentiel (Story 33.1) ------------------------------------------
 
-# Borne du batch : le slate est verrouillé à 5 par doctrine produit, mais le
-# client peut renvoyer un batch qui recouvre des décisions déjà envoyées
-# (re-tri, flush après reprise). Large, mais fini.
+# Borne du batch : le client peut renvoyer un batch qui recouvre des décisions
+# déjà envoyées (re-tri, flush après reprise). Large, mais fini.
 MAX_TRIAGE_DECISIONS_PER_BATCH = 50
+
+# Borne de `slate_size`. 200 et non 20 (Story 33.4) : le slate n'est plus borné
+# par la cible du jour, il porte tout le pool proposé et grandit à chaque
+# prefetch. Le routeur valide `rank <= slate_size` — laisser 20 aurait produit
+# des 422 en pleine session de tri, exactement au moment où l'utilisateur
+# s'investit le plus.
+MAX_TRIAGE_SLATE_SIZE = 200
 
 
 class TriageDecisionKind(StrEnum):
@@ -145,10 +186,16 @@ class TriageDecisionKind(StrEnum):
 
 
 class TriageVia(StrEnum):
-    """Modalité du geste — sépare le swipe du mode boutons (accessibilité)."""
+    """Modalité du geste — sépare le swipe du mode boutons (accessibilité).
+
+    `READ` (Story 33.2) : la carte du dessus a été tapée, l'article ouvert et
+    lu — au retour, la lecture vaut « Je garde ». La décision reste un `keep`
+    ordinaire ; seule la modalité dit qu'elle vient d'une lecture.
+    """
 
     SWIPE = "swipe"
     BUTTON = "button"
+    READ = "read"
 
 
 class TriageDecisionItem(BaseModel):
@@ -182,8 +229,12 @@ class TriageBatchRequest(BaseModel):
     slate_size: int = Field(
         ...,
         ge=1,
-        le=20,
-        description="Taille du slate figé — dénominateur de la jauge.",
+        le=MAX_TRIAGE_SLATE_SIZE,
+        description=(
+            "Taille du slate au moment de la décision. Croissante depuis la "
+            "story 33.4 : le slate porte tout le pool proposé, plus seulement "
+            "la cible du jour (qui compte désormais les articles gardés)."
+        ),
     )
     decisions: list[TriageDecisionItem] = Field(
         ...,

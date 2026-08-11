@@ -84,6 +84,12 @@ Après le GO utilisateur, implémente et teste en autonomie :
 
 ## Outillage UI/E2E & MCP Servers
 
+**Compte de test QA** : un compte staging existe pour les scénarios qui exigent
+d'être connecté. Ses identifiants sont **volontairement hors dépôt** (ce fichier
+est poussé sur GitHub, GitGuardian tourne en CI) : ils sont dans la mémoire
+locale de l'agent, entrée `reference_qa_staging_account`. Ne jamais créer de
+compte soi-même — staging et prod partagent la DB Supabase de prod.
+
 **Tests UI/E2E** : **Playwright Agent CLI** (`playwright-cli`, épinglé dans `package.json`).
 Skills : `.claude/skills/facteur-qa-web/` (spécificités Facteur) + `.claude/skills/playwright-cli/`
 (syntaxe). Pilote le build web Flutter ; voir aussi `/validate-feature`. (Le MCP `@playwright/mcp`

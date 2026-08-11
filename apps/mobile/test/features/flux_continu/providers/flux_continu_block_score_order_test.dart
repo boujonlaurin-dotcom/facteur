@@ -42,6 +42,15 @@ class _MockFluxContinuRepository extends Mock
     implements FluxContinuRepository {}
 
 class _StubEssentielRepository implements EssentielRepository {
+  // Story 33.3 — « Plus d'articles ? » ne concerne pas ces tests ; le stub
+  // renvoie « rien d'inédit » pour rester conforme à l'interface.
+  @override
+  Future<List<Map<String, dynamic>>?> fetchMore({
+    required List<String> excludeIds,
+    int limit = 2,
+  }) async =>
+      const [];
+
   @override
   Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
       (articles: const <EssentielArticle>[], newSinceMorning: 0, carousel: null);

@@ -279,60 +279,62 @@ void main() {
 
   // ── Pile de tri (Story 33.1) ───────────────────────────────────────────────
   //
-  // Ce que ces tests gardent, au-delà de l'arithmétique : la carte réserve dès
-  // le départ le **pire des deux états** qu'elle traversera (pic de tri vs état
-  // final). Sans ça la carte grandit sous le doigt et le feed saute.
+  // Ce que ces tests gardent : la géométrie partagée entre la vraie pile et sa
+  // silhouette vit dans ces constantes — si l'une des deux la re-transcrit à la
+  // main, l'attente cesse de ressembler au contenu (le défaut corrigé par
+  // l'itération PO 33.1). La carte, elle, n'a plus de hauteur figée depuis la
+  // reprise PO du 08/08 : elle épouse son contenu, et [kTriageCardHeight] ne
+  // sert plus qu'à la **réserve du squelette**.
 
-  group('triageReservedHeight', () {
-    double reserved(int n) => triageReservedHeight(
-          slateSize: n,
-          chromeHeight: kHeroChromeHeight,
-          leadHeight: kHeroLeadHeight,
-          mediumHeight: kHeroMediumHeight,
-        );
-
-    test('croît avec la taille du slate', () {
-      expect(reserved(2), greaterThan(reserved(1)));
-      expect(reserved(5), greaterThan(reserved(2)));
+  group('géométrie de la pile de tri', () {
+    test('la carte avec image réserve son bandeau en plus du texte', () {
+      expect(kTriageCardHeight - kTriageCardImageHeight,
+          greaterThan(kTriageCardPaddingV * 2));
     });
 
-    test('couvre l\'état final autant que le pic de tri', () {
-      for (var n = 1; n <= 5; n++) {
-        final finalState =
-            kHeroChromeHeight + kHeroLeadHeight + (n - 1) * kHeroMediumHeight;
-        final peak = kHeroChromeHeight +
-            kTriageProgressHeight +
-            kTriageCardHeight +
-            kTriageActionBarHeight +
-            (n - 1) * kTriageKeptSlotHeight +
-            kTriageCounterHeight;
-        expect(reserved(n), greaterThanOrEqualTo(finalState));
-        expect(reserved(n), greaterThanOrEqualTo(peak));
-      }
-    });
-
-    test('traite un slate vide comme un slate de 1', () {
-      expect(reserved(0), reserved(1));
-    });
-
-    test('réserve la place du compteur passé sous la liste des gardés', () {
-      // Le compteur a quitté la barre de progression pour fermer la liste des
-      // gardés : s'il n'était pas ajouté au pic, la dernière ligne serait
-      // rognée par le `SizedBox` de hauteur figée.
-      final withCounter = triageReservedHeight(
-        slateSize: 5,
-        chromeHeight: 0,
-        leadHeight: kHeroLeadHeight,
-        mediumHeight: kHeroMediumHeight,
+    test('la barre d\'actions contient ses boutons ronds et leurs marges', () {
+      expect(
+        kTriageActionBarHeight,
+        greaterThanOrEqualTo(kTriageActionButtonSize + kTriageActionGap * 2),
       );
-      final withoutCounter = triageReservedHeight(
-        slateSize: 5,
-        chromeHeight: 0,
-        leadHeight: kHeroLeadHeight,
-        mediumHeight: kHeroMediumHeight,
-        counterHeight: 0,
+    });
+
+    test('la carte du dessous est estompée (opacité), jamais mise à l\'échelle',
+        () {
+      // Plus de `kTriageBackCardScale` : la carte du dessous est à fleur du
+      // cadre (reprise PO 10/08), la profondeur est portée par l'opacité seule
+      // — une carte réduite laissait un jour d'un côté au swipe (« décalée »).
+      expect(kTriageBackCardOpacity, lessThan(1.0));
+    });
+
+    test('le contrôle d\'objectif réserve la cible tactile, pas le cercle', () {
+      // Reprise PO 10/08 : cercle **visible** de 26, cible tactile de 44. Le
+      // slot doit réserver la seconde, sinon les ronds débordent de la ligne
+      // ou perdent leur zone de préhension.
+      expect(kTriageTargetRoundSize, 26);
+      expect(kTriageTargetControlHeight, 44);
+      expect(
+        kTriageTargetControlHeight,
+        greaterThanOrEqualTo(kTriageTargetRoundSize),
       );
-      expect(withCounter - withoutCounter, kTriageCounterHeight);
+    });
+
+    test('la barre de progression est un repère, pas une jauge de jeu', () {
+      // 33.4 : elle compte les **gardés**, il n'y a plus de segment courant à
+      // loger — des traits plus fins et plus espacés se lisent comme un repère.
+      expect(kTriageProgressSegmentHeight, 2);
+      expect(
+        kTriageProgressSegmentGap,
+        greaterThan(kTriageProgressSegmentHeight),
+        reason: 'plus d\'écart que d\'épaisseur : ça se lit comme un repère',
+      );
+      expect(
+        kTriageProgressBarHeight,
+        greaterThanOrEqualTo(kTriageProgressSegmentHeight),
+      );
+      expect(kTriageProgressMaxSegments, 10,
+          reason: 'au-delà, les traits deviendraient illisibles et le '
+              'remplissage est proratisé');
     });
   });
 }

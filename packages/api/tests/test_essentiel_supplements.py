@@ -21,6 +21,7 @@ from app.services.essentiel_service import (
     ESSENTIEL_READ_EVICTION_GRACE,
     EssentielUserContext,
     build_essentiel_response_with_supplements,
+    fetch_essentiel_more,
 )
 
 
@@ -633,3 +634,268 @@ async def test_read_at_exactly_at_grace_boundary_is_evicted(db_session, make_sou
     )
 
     assert live_extra.id in {a.content_id for a in response.articles}
+
+
+# ── « Plus d'articles ? » — `fetch_essentiel_more` (Story 33.3) ───────────────
+
+
+@pytest.mark.asyncio
+async def test_more_returns_fresh_articles_excluding_what_client_holds(
+    db_session, make_source
+):
+    """Sert des inédits, jamais un `content_id` déjà porté par le client.
+
+    C'est l'invariant du CTA « Plus d'articles ? » quand la réserve locale est
+    vide : ce qui est déjà dans le slate ou déjà trié ne doit jamais revenir.
+    """
+    user_id = uuid4()
+    source = await make_source("Mediapart")
+    held = await _add_content(db_session, source, title="Deja dans la pile")
+    decided = await _add_content(db_session, source, title="Deja rejete")
+    fresh = await _add_content(db_session, source, title="Inedit du jour")
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset({source.id}))
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        user_id,
+        ctx,
+        is_serene=False,
+        exclude_ids={held.id, decided.id},
+        limit=2,
+    )
+
+    ids = {a.content_id for a in articles}
+    assert held.id not in ids
+    assert decided.id not in ids
+    assert fresh.id in ids
+
+
+@pytest.mark.asyncio
+async def test_more_respects_limit_and_ranks_from_one(db_session, make_source):
+    """`limit` borne la réponse, et les rangs repartent de 1.
+
+    Le rang d'un article servi ici n'a pas de rapport avec la longueur du slate
+    du client — et `EssentielArticle.rank` est borné à 5 côté schéma : le faire
+    suivre les exclusions ferait planter la sérialisation dès 5 exclusions.
+    """
+    user_id = uuid4()
+    titles = ["Politique", "Economie", "Climat", "Cuisine", "Sciences", "Musique"]
+    sources = [await make_source(f"More{i}") for i in range(6)]
+    for src, title in zip(sources, titles, strict=True):
+        await _add_content(db_session, src, title=title)
+    # 6 exclusions : sous l'ancien rang « len(existing) + 1 » on partirait à 7.
+    extra_sources = [await make_source(f"Held{i}") for i in range(6)]
+    held = [
+        await _add_content(db_session, src, title=f"Tenu{i}")
+        for i, src in enumerate(extra_sources)
+    ]
+
+    ctx = EssentielUserContext(
+        followed_source_ids=frozenset(
+            [*(s.id for s in sources), *(s.id for s in extra_sources)]
+        ),
+    )
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        user_id,
+        ctx,
+        is_serene=False,
+        exclude_ids={c.id for c in held},
+        limit=2,
+    )
+
+    assert len(articles) == 2
+    assert [a.rank for a in articles] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_more_returns_empty_without_followed_sources_or_topics(
+    db_session, make_source
+):
+    """Aucun signal utilisateur ⇒ liste vide, pas une erreur.
+
+    C'est le cas « Pas de nouvel article pour l'instant. » côté mobile : le CTA
+    reste visible, il ne devient jamais un bouton mort.
+    """
+    source = await make_source("Inconnue")
+    await _add_content(db_session, source, title="Article orphelin")
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        uuid4(),
+        EssentielUserContext(),
+        is_serene=False,
+        exclude_ids=set(),
+        limit=2,
+    )
+
+    assert articles == []
+
+
+@pytest.mark.asyncio
+async def test_more_excludes_read_content(db_session, make_source):
+    """Un article déjà lu n'est jamais proposé comme inédit."""
+    user_id = uuid4()
+    source = await make_source("Mediapart")
+    read = await _add_content(db_session, source, title="Article deja lu")
+    db_session.add(
+        UserContentStatus(
+            id=uuid4(),
+            user_id=user_id,
+            content_id=read.id,
+            status=ContentStatus.CONSUMED,
+        )
+    )
+    await db_session.commit()
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset({source.id}))
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        user_id,
+        ctx,
+        is_serene=False,
+        exclude_ids=set(),
+        limit=2,
+    )
+
+    assert read.id not in {a.content_id for a in articles}
+
+
+# ── Élargissement du pool `/more` (Story 33.4) ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_more_pushes_exclusions_into_sql_before_the_candidate_cap(
+    db_session, make_source
+):
+    """Les ids déjà détenus ne consomment plus de slot du pool de candidats.
+
+    C'est le bug que la 33.4 corrige : les exclusions étaient filtrées en Python
+    **après** le `LIMIT`, donc 35 articles frais déjà connus du client mangeaient
+    tout le top-30 et « Plus d'articles ? » répondait « rien de neuf » alors que
+    la base en avait. Ici les 35 exclus sont aussi les **plus frais** : sous
+    l'ancien code, le SELECT ne voyait qu'eux.
+    """
+    user_id = uuid4()
+    held_source = await make_source("DejaVu")
+    held = [
+        await _add_content(
+            db_session, held_source, title=f"Tenu{i}", minutes_ago=10 + i
+        )
+        for i in range(35)
+    ]
+    # Plus anciens (donc hors du top-30 sous l'ancien tri) mais toujours dans la
+    # fenêtre de 24 h, et sur des sources distinctes pour ne pas buter sur le
+    # cap par source.
+    fresh_sources = [await make_source(f"Frais{i}") for i in range(5)]
+    fresh = [
+        await _add_content(db_session, src, title=title, minutes_ago=600)
+        for src, title in zip(
+            fresh_sources,
+            ["Politique", "Economie", "Climat", "Sciences", "Musique"],
+            strict=True,
+        )
+    ]
+
+    ctx = EssentielUserContext(
+        followed_source_ids=frozenset([held_source.id, *(s.id for s in fresh_sources)]),
+    )
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        user_id,
+        ctx,
+        is_serene=False,
+        exclude_ids={c.id for c in held},
+        limit=5,
+    )
+
+    assert {a.content_id for a in articles} == {c.id for c in fresh}
+
+
+@pytest.mark.asyncio
+async def test_more_widens_the_window_by_steps_up_to_72h(db_session, make_source):
+    """Rien dans les 24 h, un article à 40 h ⇒ servi (palier 48 h)."""
+    user_id = uuid4()
+    source = await make_source("Mediapart")
+    older = await _add_content(
+        db_session, source, title="Papier de mercredi", minutes_ago=40 * 60
+    )
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset({source.id}))
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        user_id,
+        ctx,
+        is_serene=False,
+        exclude_ids=set(),
+        limit=2,
+    )
+
+    assert [a.content_id for a in articles] == [older.id]
+
+
+@pytest.mark.asyncio
+async def test_more_stops_at_72h(db_session, make_source):
+    """Au-delà du dernier palier, la liste reste vide — pas de fond de tiroir."""
+    user_id = uuid4()
+    source = await make_source("Mediapart")
+    await _add_content(
+        db_session, source, title="Papier de la semaine derniere", minutes_ago=80 * 60
+    )
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset({source.id}))
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        user_id,
+        ctx,
+        is_serene=False,
+        exclude_ids=set(),
+        limit=2,
+    )
+
+    assert articles == []
+
+
+@pytest.mark.asyncio
+async def test_more_serialises_ranks_beyond_five(db_session, make_source):
+    """Un lot de 10 se sérialise sans `ValidationError`.
+
+    `EssentielArticle.rank` était borné à 5 : le prefetch de la pile (lots de 5,
+    et jusqu'à 10 côté endpoint) aurait planté en production dès le 6e rang.
+    """
+    user_id = uuid4()
+    titles = [
+        "Politique",
+        "Economie",
+        "Climat",
+        "Sciences",
+        "Musique",
+        "Cinema",
+        "Justice",
+        "Sante",
+        "Ecole",
+        "Transports",
+    ]
+    sources = [await make_source(f"Lot{i}") for i in range(10)]
+    for src, title in zip(sources, titles, strict=True):
+        await _add_content(db_session, src, title=title)
+
+    ctx = EssentielUserContext(followed_source_ids=frozenset(s.id for s in sources))
+
+    articles = await fetch_essentiel_more(
+        db_session,
+        user_id,
+        ctx,
+        is_serene=False,
+        exclude_ids=set(),
+        limit=10,
+    )
+
+    assert len(articles) == 10
+    assert [a.rank for a in articles] == list(range(1, 11))
