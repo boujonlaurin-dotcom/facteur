@@ -30,12 +30,22 @@ les articles nouvellement découverts avec `label: null`, et ne réécrit jamais
 label existant. Un label ne se déduit pas de l'algo — sinon la mesure valide
 l'algo par lui-même.
 
+### Deux modes, deux registres
+
+Par défaut le collecteur découvre les articles dans le **flux du jour**. La
+fenêtre d'un flux tourne en quelques jours, et `html/` n'est pas versionné :
+un clone neuf hérite donc d'un `labels.json` sans charges utiles, qu'une
+recollecte ne rend pas — elle ramène les articles du jour, non étiquetés.
+`--refetch-from-labels` part de `labels.json` au lieu du flux et re-fetch le
+HTML par URL, ce qui rend un étiquetage ancien à nouveau mesurable.
+
 Usage :
     cd packages/api
     PYTHONPATH=. python scripts/build_paywall_corpus.py --check
     PYTHONPATH=. python scripts/build_paywall_corpus.py
     PYTHONPATH=. python scripts/build_paywall_corpus.py --source novethic
     PYTHONPATH=. python scripts/build_paywall_corpus.py --refresh-html
+    PYTHONPATH=. python scripts/build_paywall_corpus.py --refetch-from-labels
 
 Sorties (toutes sous tests/fixtures/paywall_corpus/) :
     rss/<slug>.json            entrées de flux brutes, telles que feedparser les voit
@@ -227,6 +237,62 @@ async def collect_source(
     return report
 
 
+async def refetch_from_labels(
+    client: httpx.AsyncClient,
+    labels: dict[str, dict],
+    slugs: set[str] | None,
+    *,
+    refresh_html: bool,
+) -> list[dict[str, Any]]:
+    """Re-fetch le HTML des articles déjà au corpus, par URL, sans passer par le flux.
+
+    La collecte normale découvre les articles dans le flux **du jour**, et la
+    fenêtre d'un flux tourne vite : mesuré le 2026-08-11, 14 des 30 URL
+    étiquetées 3 jours plus tôt y figuraient encore, et **aucune** des 15 URL de
+    quotidiens. Comme `html/` n'est pas versionné alors que `labels.json` l'est,
+    un clone neuf hérite d'un étiquetage sans charges utiles — qu'aucune
+    recollecte ne rend, puisqu'elle ramène les articles du jour, non étiquetés.
+    L'étiquetage humain, seul travail non automatisable du chantier, se
+    dévaluait donc tout seul.
+
+    Ce mode part de `labels.json`, qui est le vrai registre du corpus : le flux
+    n'est que la façon dont les articles y sont entrés. Il ne touche ni aux
+    labels (il n'y a rien de nouveau à découvrir) ni au rapport de collecte (qui
+    décrit une collecte par flux, pas celle-ci).
+
+    Limite assumée : le RSS d'un article sorti du flux est perdu sans recours,
+    donc le harnais rejouera ces cas avec un titre et une description vides.
+    C'est sans effet tant que le niveau 2 est inerte — aucun mot-clé de
+    `DEFAULT_PAYWALL_CONFIG` n'apparaît dans les 301 entrées RSS collectées —
+    mais ça invaliderait une mesure qui porterait sur le niveau 2.
+    """
+    par_source: dict[str, dict[str, Any]] = {}
+    for aid, row in sorted(labels.items()):
+        slug = row["source"]
+        if slugs is not None and slug not in slugs:
+            continue
+
+        stats = par_source.setdefault(
+            slug, {"slug": slug, "ok": 0, "cached": 0, "failed": 0, "failures": []}
+        )
+        html_path = HTML_DIR / f"{aid}.html"
+        if html_path.exists() and not refresh_html:
+            stats["cached"] += 1
+            continue
+
+        html, status = await fetch_html_head(client, row["url"])
+        if html is None:
+            stats["failed"] += 1
+            stats["failures"].append({"url": row["url"], "status": status})
+            continue
+
+        HTML_DIR.mkdir(parents=True, exist_ok=True)
+        html_path.write_text(html, encoding="utf-8")
+        stats["ok"] += 1
+
+    return [par_source[slug] for slug in sorted(par_source)]
+
+
 def _now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
 
@@ -273,8 +339,7 @@ def quota_status(manifest: dict, labels: dict[str, dict]) -> dict[str, dict]:
             "unlabeled": unlabeled,
             "expects_paid": expects_paid,
             "complete": unlabeled == 0,
-            "meets_quota": free >= min_free
-            and (paid >= min_paid or not expects_paid),
+            "meets_quota": free >= min_free and (paid >= min_paid or not expects_paid),
         }
     return status
 
@@ -321,6 +386,23 @@ async def run(args: argparse.Namespace) -> int:
         if args.check:
             return await run_check(client, sources)
 
+        if args.refetch_from_labels:
+            if not labels:
+                print(
+                    "labels.json est vide : rien à re-fetcher. Lance d'abord une "
+                    "collecte par flux.",
+                    file=sys.stderr,
+                )
+                return 2
+            return _report_refetch(
+                await refetch_from_labels(
+                    client,
+                    labels,
+                    {s["slug"] for s in sources} if args.source else None,
+                    refresh_html=args.refresh_html,
+                )
+            )
+
         reports = []
         for source in sources:
             print(f"→ {source['name']}")
@@ -359,6 +441,38 @@ async def run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _report_refetch(stats: list[dict[str, Any]]) -> int:
+    """Affiche le résultat du re-fetch. Un HTML manquant n'est pas un échec.
+
+    Les 403 anti-bot et les redirections en boucle font partie du terrain : le
+    corpus vit avec des sources dont le HTML est inatteignable, et le harnais
+    les mesure au niveau 2. Le code de retour ne signale donc que l'absence
+    totale de récupération, qui elle trahit un problème d'egress.
+    """
+    print(f"{'source':<16}{'récupérés':>10}{'en cache':>10}{'échecs':>8}")
+    for row in stats:
+        print(f"{row['slug']:<16}{row['ok']:>10}{row['cached']:>10}{row['failed']:>8}")
+
+    echecs = [(row["slug"], f) for row in stats for f in row["failures"]]
+    if echecs:
+        print("\nHTML inatteignable (attendu sur les sources anti-bot) :")
+        for slug, failure in echecs:
+            # Un motif d'échec peut dépasser la colonne (TooManyRedirects et sa
+            # phrase) : le séparateur explicite évite qu'il colle à l'URL.
+            print(f"  {slug:<16}{failure['status']:<24}  {failure['url']}")
+
+    total_ok = sum(row["ok"] for row in stats)
+    total_cache = sum(row["cached"] for row in stats)
+    print(f"\n{total_ok} HTML récupérés, {total_cache} déjà en cache.")
+    if total_ok == 0 and total_cache == 0:
+        print(
+            "Aucun HTML récupéré : vérifie l'egress avec --check.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 async def run_check(client: httpx.AsyncClient, sources: list[dict]) -> int:
     """Teste l'accès réseau à chaque domaine sans rien écrire.
 
@@ -392,6 +506,15 @@ def main() -> int:
         "--refresh-html",
         action="store_true",
         help="re-fetch les HTML déjà présents (par défaut ils sont conservés)",
+    )
+    parser.add_argument(
+        "--refetch-from-labels",
+        action="store_true",
+        help=(
+            "re-fetch le HTML des articles déjà au corpus par URL, sans passer "
+            "par le flux (récupère un étiquetage dont les charges utiles ont "
+            "été perdues au clone)"
+        ),
     )
     parser.add_argument(
         "--check",

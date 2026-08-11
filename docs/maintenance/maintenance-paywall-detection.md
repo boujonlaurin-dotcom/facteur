@@ -276,24 +276,102 @@ jours n'a plus de charge utile à mesurer, et une simple recollecte ne la rend
 pas — elle ramène les articles *du jour*, qui sont non étiquetés. L'étiquetage
 humain, le seul travail non automatisable du chantier, se dévalue tout seul.
 
-La bonne nouvelle est que les pages, elles, restent servies hors flux. Vérifié
-par fetch direct des 15 URL de quotidiens :
+La bonne nouvelle est que les pages, elles, restent servies hors flux. D'où
+`--refetch-from-labels` (`build_paywall_corpus.py`), qui part de `labels.json`
+— le vrai registre du corpus — au lieu du flux du jour, et re-fetch le HTML par
+URL. Résultat sur les 120 articles : **90 HTML récupérés**, soit les 9 sources
+dont la page est atteignable.
 
-| Fetch direct de l'article, hors flux | Sources |
+| Re-fetch par URL | Sources |
 |---|---|
-| 200, HTML récupéré | la-croix (3/3), **lemonde (2/2)**, telerama (2/2) |
-| 403 anti-bot | lefigaro (3/3), liberation (2/2) |
-| TooManyRedirects | mediapart (2/2) |
+| récupéré (10/10) | novethic, philomag, la-croix, cuisiner-jdf, lefigaro, telerama, contrepoints, bonpote, lemonde\* |
+| 403 anti-bot | lesjours, liberation |
+| TooManyRedirects | mediapart |
 
-À noter : **Le Monde répond 200 aujourd'hui**, là où la collecte du 2026-08-08
-rendait 402 sur tous ses articles. Le 402 n'est donc pas un signal stable de
-paywall — la piste « lire le 402 comme un marqueur », laissée ouverte plus
-haut, est à écarter tant qu'on n'a pas compris ce qui la fait varier.
+Limite assumée du mode : le RSS d'un article sorti du flux est perdu sans
+recours, donc ces cas se rejouent avec titre et description vides. Sans effet
+tant que le niveau 2 est inerte, mais rédhibitoire pour qui voudrait mesurer le
+niveau 2.
 
-Le levier est simple et cadré : permettre au collecteur de re-fetcher le HTML
-**par URL depuis `labels.json`**, indépendamment de ce que rend le flux du jour.
-Le fetch par URL existe déjà (`fetch_html_head`) ; il ne lui manque qu'un mode
-d'appel qui ne parte pas des entrées de flux.
+Deux constats de terrain, qui corrigent des affirmations antérieures de ce
+document :
+
+- **Mediapart est devenu inatteignable** (boucle de redirection) alors que la
+  collecte du 2026-08-08 en tirait 9 signaux sur 10. La posture anti-bot d'une
+  source change sans prévenir : le corpus ne décroît pas seulement par rotation
+  des flux, mais aussi par durcissement des sources.
+- **\*Le Monde répond 200 — mais ce n'est pas l'article.** Les 10 fichiers sont
+  identiques, 3 038 octets, `<title>Client Challenge</title>` : une page de
+  défi anti-bot servie avec un code de succès. C'est **pire que le 402** de la
+  collecte précédente, qui au moins s'annonçait comme un échec. Ici
+  `_fetch_html_head` accepte le 200, passe la page au niveau 1, qui n'y trouve
+  évidemment aucun marqueur et conclut « gratuit ». Un faux négatif silencieux,
+  indiscernable d'un article réellement sans marqueur.
+
+  Conséquence à instruire côté production : si l'IP Railway est challengée de
+  la même façon, tous les articles du Monde passent le niveau 1 sans signal.
+  Et la piste « lire le 402 comme marqueur de paywall », laissée ouverte plus
+  haut, est à écarter — le code varie d'une IP et d'un jour à l'autre.
+
+### Mesuré — première matrice de confusion réelle (2026-08-11, 30 articles)
+
+Corpus reconstitué par `--refetch-from-labels`, rejoué par `paywall_benchmark.py`
+sur les 30 articles étiquetés. **C'est la première mesure du chantier appuyée
+sur une vérité terrain humaine**, et elle tranche la question restée ouverte
+depuis février : *a-t-on déjà un problème de faux positifs ?*
+
+| Source | Articles | TP | FP | TN | FN |
+|---|---|---|---|---|---|
+| novethic | 3 | 3 | 0 | 0 | 0 |
+| philomag | 3 | 1 | 0 | 2 | 0 |
+| la-croix | 3 | 2 | 0 | 1 | 0 |
+| lefigaro | 3 | 2 | 0 | 1 | 0 |
+| cuisiner-jdf | 3 | 0 | 0 | 3 | 0 |
+| contrepoints | 2 | 0 | 0 | 2 | 0 |
+| bonpote | 2 | 0 | 0 | 2 | 0 |
+| lemonde | 2 | 0 | 0 | 1 | 1 |
+| liberation | 2 | 0 | 0 | 1 | 1 |
+| telerama | 2 | 0 | 0 | 0 | 2 |
+| mediapart | 2 | 0 | 0 | 0 | 2 |
+| lesjours | 3 | 0 | 0 | 0 | 3 |
+| **Global** | **30** | **8** | **0** | **13** | **9** |
+
+**Réponse : non, pas de faux positif.** 0 FP sur 13 articles gratuits, dont les
+4 du groupe piège (Contrepoints, Bon Pote). Le taux de faux négatifs est de
+53 % (9 sur 17 payants).
+
+Le correctif `@graph` est validé sur vérité terrain : **Novethic est à 3/3**,
+là où il ne produisait aucun signal avant.
+
+Les 9 faux négatifs se répartissent en deux familles, et une seule est un vrai
+défaut de détection :
+
+| Cause | FN | Détail |
+|---|---|---|
+| HTML inatteignable — le niveau 1 ne peut pas jouer | 6 | lesjours (3), mediapart (2), liberation (1) |
+| HTML présent, aucun marqueur exploitable | 3 | telerama (2), lemonde (1) |
+
+Sur les 3 derniers : Le Monde est le faux 200 décrit plus haut (page de défi,
+donc en réalité un HTML inatteignable déguisé). Télérama, lui, est un vrai
+angle mort : `og:article:content_tier` n'apparaît plus que sur **2 des 10**
+pages collectées, contre 10/10 le 2026-08-08, et les deux articles payants
+étiquetés n'en portent pas. Leur seul indice est un `tlr.user.subscriber ===
+false` en JavaScript — qui décrit l'**utilisateur**, pas l'article, et ne peut
+donc pas servir de marqueur.
+
+Relevé des marqueurs sur les 90 HTML, à jour du 2026-08-11 :
+
+| Marqueur | Sources qui l'émettent |
+|---|---|
+| `isAccessibleForFree` | la-croix 10/10, novethic 6/10, cuisiner-jdf 2/10, philomag 1/10 |
+| `isPremium` | lefigaro 10/10, **cuisiner-jdf 10/10** |
+| `og:article:content_tier` | telerama 2/10 (contre 10/10 le 2026-08-08) |
+
+**Baseline volontairement non gelée.** `--write-baseline` encoderait les
+accidents de collecte du jour — Mediapart devenu inatteignable, Télérama qui a
+changé de balisage, Le Monde qui sert un défi. Une baseline doit se figer sur
+un corpus stable et complètement étiqueté, sinon elle transforme une avarie
+réseau en contrat d'anti-régression.
 
 ### Reste à faire
 
