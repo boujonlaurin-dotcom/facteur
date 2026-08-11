@@ -93,10 +93,15 @@ class WidgetBackgroundRefresh {
         authOptions: FlutterAuthClientOptions(localStorage: storage),
       );
     } catch (e) {
-      // Déjà initialisé (course entre deux réveils rapprochés) : on vérifie que
-      // l'instance répond avant de considérer que c'est bénin.
-      Supabase.instance.client;
-      debugPrint('WidgetBackgroundRefresh: Supabase already initialized ($e)');
+      // Déjà initialisé (deux réveils rapprochés dans le même isolate) : on
+      // relit l'instance pour confirmer qu'elle répond — si elle ne répond pas,
+      // l'exception remonte et [run] la traitera comme un échec franc plutôt
+      // que de poursuivre sur un client mort.
+      final client = Supabase.instance.client;
+      debugPrint(
+        'WidgetBackgroundRefresh: Supabase already initialized '
+        '(${client.runtimeType}) — $e',
+      );
     }
     _supabaseReady = true;
   }

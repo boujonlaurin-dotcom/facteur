@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../config/routes.dart';
@@ -285,6 +285,15 @@ class DeepLinkService {
         if (route.startsWith('${RoutePaths.flaner}/') &&
             !_isUnderFlaner(router)) {
           router.go(RoutePaths.flaner);
+          // `go` n'est pas garanti appliqué de façon synchrone (go_router parse
+          // la route et rejoue les redirects avant de publier la nouvelle
+          // matchList). Empiler dans la foulée poserait le lecteur sur
+          // l'**ancienne** pile, et le retour arrière retomberait sur l'onglet
+          // qu'on voulait justement quitter. On laisse la frame se terminer.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            pushArticleRoute(route);
+          });
+          return;
         }
         // push (not go) so the reader STACKS on top of what's showing — even an
         // already-open reader. Lets the user chain article reads from the widget

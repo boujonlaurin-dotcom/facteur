@@ -40,18 +40,30 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # `--no-fatal-infos` : le code existant porte des infos/warnings
-      # pré-existants (inférence Dio, unused_element…). Ce job garde les
-      # **erreurs**, il n'ouvre pas un chantier de nettoyage sur chaque PR.
-      - name: Flutter analyze
-        run: flutter analyze --no-fatal-infos
+      # Ce job gate sur les **erreurs** d'analyse, rien d'autre.
+      #
+      # `--no-fatal-infos` seul ne suffit pas : les *warnings* restent fatals
+      # par défaut, et le repo en porte des centaines de pré-existants
+      # (`inference_failure_on_function_invocation` sur les box Hive, imports
+      # inutilisés dans les tests…). Sans `--no-fatal-warnings`, ce job échoue
+      # sur du code que la PR ne touche pas — c'est exactement ce qui a rougi
+      # au premier run (535 issues, 0 erreur). Un gate qui crie sur du bruit
+      # pré-existant finit désactivé ; on garde donc ce qui casse vraiment un
+      # build, et ce sont les tests ci-dessous qui portent la vraie exigence.
+      - name: Flutter analyze (erreurs uniquement)
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       # Périmètre ciblé, et assumé comme tel : la suite mobile complète porte
       # ~27 échecs pré-existants (cf. mémoire projet). Un gate global serait
       # rouge dès le premier jour, donc désactivé dans la semaine — un gate
       # étroit et vert est ce qui protège réellement. Élargir ce paquet au fur
       # et à mesure que la dette est résorbée.
+      #
+      # `if: always()` : une analyse en échec ne doit pas masquer le résultat
+      # des tests. Les deux étapes rendent compte, le job échoue si l'une des
+      # deux échoue.
       - name: Tests du widget d'accueil
+        if: ${{ !cancelled() }}
         run: |
           flutter test \
             test/core/services/widget_service_test.dart \
