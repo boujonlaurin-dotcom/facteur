@@ -560,3 +560,35 @@ async def test_streak_excludes_screen_view_without_attempt(db_session):
 async def test_streak_zero_when_never_played(db_session):
     service = GrilleService(db_session)
     assert await service._compute_streak(str(uuid4())) == 0
+
+
+@pytest.mark.asyncio
+async def test_today_streak_includes_today_once_finished(db_session):
+    """`GET /today` renvoie N-1 avant la partie, N une fois la partie finie.
+
+    C'est le contrat sur lequel repose le re-fetch silencieux du mobile
+    (`GrilleNotifier._refreshStreak`) : à l'ouverture de l'écran la journée
+    n'est pas encore jouée (ligne `in_progress`/`attempts=0`, volontairement
+    exclue), donc le streak servi s'arrête à hier. Sans re-fetch après la
+    partie, le compteur affiché restait bloqué sur cette valeur
+    (cf. docs/bugs/bug-grille-streak-fige-apres-partie.md).
+    """
+    await _make_puzzle(db_session)
+    service = GrilleService(db_session)
+    user_id = uuid4()
+    # Hier joué → série de 1 acquise.
+    await _add_game(
+        db_session,
+        user_id,
+        status=STATUS_SOLVED,
+        attempts=3,
+        on_date=today_paris() - timedelta(days=1),
+    )
+
+    before = await service.get_today(str(user_id))
+    assert before.streak == 1, "l'écran ouvert sans essai ne compte pas"
+
+    await service.submit_guess(str(user_id), "CLIMAT")
+
+    after = await service.get_today(str(user_id))
+    assert after.streak == 2

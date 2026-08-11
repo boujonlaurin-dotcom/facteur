@@ -19,3 +19,11 @@ String formatCountdown(int totalSeconds) {
   if (minutes > 0) return '$minutes${nbsp}min';
   return '$seconds${nbsp}s';
 }
+
+/// Formate une série en jours avec le bon pluriel : « 0 jour », « 1 jour »,
+/// « 3 jours ».
+///
+/// Le pluriel était figé dans les chaînes (« 1 jours d'affilée »), ce qui
+/// faisait lire le compteur comme une valeur en dur.
+String formatStreakDays(int streak) =>
+    '$streak jour${streak > 1 ? 's' : ''}';

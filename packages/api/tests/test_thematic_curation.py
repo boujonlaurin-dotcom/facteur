@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import event
 
 from app.models.content import Content
 from app.models.enums import ContentType, ReliabilityScore
@@ -141,6 +142,47 @@ async def test_adaptive_window_stays_24h_when_pool_sufficient(
     assert not (older & ids), "le pool 24h suffit, pas d'élargissement à 48h"
 
 
+async def test_source_adaptive_window_queries_each_bounded_tier_when_only_72h_is_full(
+    db_session, followed_tech_source, user_id
+):
+    """Une section source vide à 24/48 h et pleine à 72 h interroge les trois
+    paliers bornés, et ne charge les sources que pour le palier non vide."""
+    source_id = followed_tech_source.id
+    only_in_72h = await _add_tech_contents(db_session, source_id, count=8, hours_ago=60)
+    db_session.sync_session.expunge_all()
+    emitted_sql: list[str] = []
+    engine = db_session.get_bind()
+
+    def _capture_sql(conn, cursor, statement, parameters, context, executemany):
+        emitted_sql.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _capture_sql)
+    try:
+        service = RecommendationService(db_session)
+        candidates = await service._get_candidates(
+            user_id=user_id,
+            limit_candidates=100,
+            source_id=source_id,
+            personalized=True,
+            followed_source_ids={source_id},
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", _capture_sql)
+
+    assert {candidate.id for candidate in candidates} == only_in_72h
+    candidate_queries = [
+        sql for sql in emitted_sql if "FROM contents JOIN sources" in sql
+    ]
+    source_queries = [
+        sql
+        for sql in emitted_sql
+        if "FROM sources" in sql and "WHERE sources.id IN" in sql
+    ]
+    assert len(candidate_queries) == 3
+    assert all("LIMIT" in sql for sql in candidate_queries)
+    assert len(source_queries) == 1
+
+
 def test_thematic_window_tiers_and_floor_config():
     """Paliers (24,48,72) — plafond 72h, pas de palier 7j (décision PO) — et
     le plancher absolu THEMATIC_HARD_FLOOR=5 existe."""
@@ -203,9 +245,7 @@ async def test_no_backfill_when_followed_pool_sufficient_db(
     db_session, followed_tech_source, curated_unfollowed_tech_source, user_id
 ):
     """Pool suivi ≥ plancher → aucun article de source non-suivie n'est ajouté."""
-    await _add_tech_contents(
-        db_session, followed_tech_source.id, count=6, hours_ago=10
-    )
+    await _add_tech_contents(db_session, followed_tech_source.id, count=6, hours_ago=10)
     unfollowed = await _add_tech_contents(
         db_session, curated_unfollowed_tech_source.id, count=6, hours_ago=20
     )

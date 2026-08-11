@@ -15,6 +15,15 @@ class _FakeGrilleRepository implements GrilleRepository {
 
   /// Simule un échec réseau (timeout) sur le POST guess.
   bool throwOnGuess;
+
+  /// `today` servi à partir du 2e `getToday()` — modélise le re-fetch
+  /// silencieux du streak, que le serveur sert incrémenté une fois la partie
+  /// du jour terminée.
+  GrilleTodayResponse? todayOnRefetch;
+
+  /// Simule un échec réseau sur ce même re-fetch (2e appel et suivants).
+  bool throwOnRefetch = false;
+
   int guessCalls = 0;
   int revealCalls = 0;
   int getTodayCalls = 0;
@@ -22,6 +31,10 @@ class _FakeGrilleRepository implements GrilleRepository {
   @override
   Future<GrilleTodayResponse> getToday() async {
     getTodayCalls++;
+    if (getTodayCalls > 1) {
+      if (throwOnRefetch) throw Exception('network timeout');
+      if (todayOnRefetch != null) return todayOnRefetch!;
+    }
     return today;
   }
 
@@ -65,6 +78,20 @@ GrilleTodayResponse _todayInProgress() => const GrilleTodayResponse(
       streak: 5,
       prochainMotDansSec: 1000,
     );
+
+/// Même journée, mais servie par le serveur avec la série incrémentée (la
+/// partie du jour est terminée côté base).
+GrilleTodayResponse _todayWithStreak(int streak) =>
+    _todayInProgress().copyWith(streak: streak);
+
+const _guessSolved = GrilleGuessResponse(
+  valide: true,
+  etats: ['place', 'place', 'place', 'place', 'place', 'place'],
+  statut: 'solved',
+  nbEssais: 1,
+  mot: 'CLIMAT',
+  pourquoi: 'parce que',
+);
 
 Future<ProviderContainer> _container(_FakeGrilleRepository repo) async {
   final c = ProviderContainer(
@@ -237,6 +264,95 @@ void main() {
     // Une nouvelle frappe efface l'état d'erreur réseau.
     notifier.addLetter('Z');
     expect(c.read(grilleProvider).value!.networkError, isFalse);
+  });
+
+  // ----- série (streak) : re-sync après la partie ---------------------------
+  // Régression : docs/bugs/bug-grille-streak-fige-apres-partie.md — le streak
+  // servi par `getToday()` s'arrête à hier (la journée n'est pas encore jouée)
+  // et le POST guess/reveal n'en renvoie pas, d'où un compteur figé sur N-1.
+
+  test('partie terminée : le streak est re-synchronisé depuis le serveur',
+      () async {
+    final repo = _FakeGrilleRepository(
+      _todayInProgress(),
+      guessResult: _guessSolved,
+    )..todayOnRefetch = _todayWithStreak(6);
+    final c = await _container(repo);
+    final notifier = c.read(grilleProvider.notifier);
+
+    for (final l in 'LIMAT'.split('')) {
+      notifier.addLetter(l);
+    }
+    await notifier.submitGuess();
+    await pumpEventQueue();
+
+    final s = c.read(grilleProvider).value!;
+    expect(repo.getTodayCalls, 2, reason: 'un re-fetch après la fin de partie');
+    expect(s.today.streak, 6, reason: 'la série intègre la journée jouée');
+    // Le re-fetch ne recopie QUE le streak : l'état de la partie est intact.
+    expect(s.today.essais.length, 1);
+    expect(s.today.isSolved, isTrue);
+    expect(s.today.mot, 'CLIMAT');
+    expect(s.justFinished, isTrue);
+  });
+
+  test('partie en cours : aucun re-fetch de streak', () async {
+    final repo = _FakeGrilleRepository(
+      _todayInProgress(),
+      guessResult: const GrilleGuessResponse(
+        valide: true,
+        etats: ['place', 'absent', 'absent', 'absent', 'absent', 'absent'],
+        statut: 'in_progress',
+        nbEssais: 1,
+      ),
+    )..todayOnRefetch = _todayWithStreak(6);
+    final c = await _container(repo);
+    final notifier = c.read(grilleProvider.notifier);
+
+    for (final l in 'LACER'.split('')) {
+      notifier.addLetter(l);
+    }
+    await notifier.submitGuess();
+    await pumpEventQueue();
+
+    expect(repo.getTodayCalls, 1);
+    expect(c.read(grilleProvider).value!.today.streak, 5);
+  });
+
+  test('reveal : le streak est re-synchronisé (journée jouée)', () async {
+    final repo = _FakeGrilleRepository(_todayInProgress())
+      ..todayOnRefetch = _todayWithStreak(6);
+    final c = await _container(repo);
+    final notifier = c.read(grilleProvider.notifier);
+
+    await notifier.reveal();
+    await pumpEventQueue();
+
+    final s = c.read(grilleProvider).value!;
+    expect(repo.getTodayCalls, 2);
+    expect(s.today.streak, 6);
+    expect(s.today.isRevealed, isTrue, reason: 'statut révélé conservé');
+    expect(s.today.mot, 'CLIMAT');
+  });
+
+  test('re-fetch du streak en échec : la partie jouée reste intacte', () async {
+    final repo = _FakeGrilleRepository(
+      _todayInProgress(),
+      guessResult: _guessSolved,
+    )..throwOnRefetch = true;
+    final c = await _container(repo);
+    final notifier = c.read(grilleProvider.notifier);
+
+    for (final l in 'LIMAT'.split('')) {
+      notifier.addLetter(l);
+    }
+    await notifier.submitGuess();
+    await pumpEventQueue();
+
+    final s = c.read(grilleProvider).value!;
+    expect(s.today.streak, 5, reason: 'best-effort : ancienne valeur conservée');
+    expect(s.today.isSolved, isTrue);
+    expect(s.today.essais.length, 1);
   });
 
   test('addLetter borné à longueur ; removeLetter ne supprime jamais la 1re',

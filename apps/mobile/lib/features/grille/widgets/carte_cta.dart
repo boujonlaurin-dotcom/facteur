@@ -8,6 +8,7 @@ import '../../../config/theme.dart';
 import '../grille_constants.dart';
 import '../models/grille_models.dart';
 import '../models/tile_state.dart';
+import '../utils/grille_format.dart';
 import 'grille_button.dart';
 import 'grille_countdown.dart';
 
@@ -288,7 +289,7 @@ class CarteCta extends StatelessWidget {
         ),
         const SizedBox(width: 4),
         Text(
-          '${today.streak} jours',
+          formatStreakDays(today.streak),
           style: FacteurTypography.bodySmall(c.textSecondary)
               .copyWith(fontSize: 12, fontWeight: FontWeight.w700),
         ),

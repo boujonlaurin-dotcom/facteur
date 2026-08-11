@@ -28,6 +28,7 @@ class _FinalizeQuestionState extends ConsumerState<FinalizeQuestion> {
   bool _obscurePassword = true;
   bool _submitting = false;
   String? _validationError;
+  String? _accountCreationError;
 
   @override
   void dispose() {
@@ -61,6 +62,7 @@ class _FinalizeQuestionState extends ConsumerState<FinalizeQuestion> {
 
     setState(() {
       _validationError = null;
+      _accountCreationError = null;
       _submitting = true;
     });
 
@@ -69,7 +71,12 @@ class _FinalizeQuestionState extends ConsumerState<FinalizeQuestion> {
         .convertAnonymousToAccount(email: email, password: password);
 
     if (!mounted) return;
-    setState(() => _submitting = false);
+    setState(() {
+      _submitting = false;
+      if (!converted) {
+        _accountCreationError = ref.read(authStateProvider).error;
+      }
+    });
     if (!converted) return;
 
     // Le profil est enregistré par l'écran de conclusion, sous le même user id.
@@ -157,7 +164,11 @@ class _FinalizeQuestionState extends ConsumerState<FinalizeQuestion> {
 
           const SizedBox(height: FacteurSpacing.space6),
 
-          if (isAnonymous)
+          // L'ajout de l'email peut rendre le compte non anonyme avant que
+          // l'appel suivant ait fini de poser le mot de passe. Garder le
+          // formulaire et son loader pendant toute la conversion évite alors
+          // d'afficher prématurément le bouton de conclusion.
+          if (isAnonymous || _submitting || _accountCreationError != null)
             ..._buildAccountForm(context, colors)
           else
             ElevatedButton(

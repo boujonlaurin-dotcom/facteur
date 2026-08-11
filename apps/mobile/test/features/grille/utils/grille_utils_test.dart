@@ -27,6 +27,20 @@ void main() {
     });
   });
 
+  group('formatStreakDays (pluriel)', () {
+    // Régression docs/bugs/bug-grille-streak-fige-apres-partie.md : le « s »
+    // était figé dans la chaîne (« 1 jours d'affilée »).
+    test('0 et 1 restent au singulier', () {
+      expect(formatStreakDays(0), '0 jour');
+      expect(formatStreakDays(1), '1 jour');
+    });
+
+    test('à partir de 2 : pluriel', () {
+      expect(formatStreakDays(2), '2 jours');
+      expect(formatStreakDays(12), '12 jours');
+    });
+  });
+
   group('grille emoji sans spoiler', () {
     final today = GrilleTodayResponse.fromJson({
       'date': '2026-05-30',

@@ -131,7 +131,7 @@ no-op assumé. `firebaseMessagingBackgroundHandler` ne touche jamais
 (`onUpdate` relit SharedPreferences, aucun réseau). `initWidgetIfNeeded()` était
 **du code mort** — zéro appelant → un widget fraîchement épinglé restait vide.
 
-### C7 (suivi, non corrigé) — Sentry FLUTTER-1D, 3 users, fatal
+### C7 (corrigé au Lot 8) — Sentry FLUTTER-1D, 3 users, fatal
 
 `RuntimeException: Unable to start activity ComponentInfo{facteur.app/androidx.glance.appwidget.action.ActionTrampolineActivity}`
 → `IllegalArgumentException: List adapter activity trampoline invoked without
@@ -139,10 +139,10 @@ specifying target intent`.
 
 Vérifié : `home_widget` 0.7 tire bien `androidx.glance:glance-appwidget:1.0.0`
 (`android/build.gradle:54`) alors que nous n'utilisons que RemoteViews et
-n'enregistrons aucun receiver Glance. Mais l'AAR n'est pas dans le cache Gradle
-local et Conductor n'a pas de JDK : **le manifest mergé n'a pas pu être
-inspecté**. Conformément au plan, on ne retire rien sur une activité tierce
-exportée sans preuve. À reprendre avec un build Android disponible.
+n'enregistrons aucun receiver Glance. Le manifest de l'AAR (cache Gradle local)
+déclare les deux activités de trampoline `android:exported="false"` : la preuve
+manquante existe désormais. Corrigé au **Lot 8** ci-dessous
+(`tools:node="remove"` sur les deux activités).
 
 ---
 
@@ -275,10 +275,65 @@ distinct des applicationId des deux flavors.
   toujours compte du résultat (`unsupported` → explication, `failed` → erreur).
   L'entrée Compte est branchée dessus.
 
-### Lot 8 — C7 : trampoline Glance
+### Lot 8 — C7 : trampoline Glance (corrigé)
 
-Non corrigé, documenté ci-dessus. Dépendance confirmée, manifest mergé non
-inspectable sans JDK. FLUTTER-1D reste en suivi.
+**Décision : `tools:node="remove"` sur les deux activités de trampoline Glance**
+dans `apps/mobile/android/app/src/main/AndroidManifest.xml`
+(`androidx.glance.appwidget.action.ActionTrampolineActivity` +
+`InvisibleActionTrampolineActivity`). Idiome déjà utilisé dans ce manifest
+(READ_MEDIA_*, WorkManagerInitializer).
+
+**Preuve manquante trouvée.** L'AAR est désormais dans le cache Gradle local
+(`~/.gradle/caches/.../glance-appwidget-1.0.0/AndroidManifest.xml`) : les deux
+activités y sont déclarées `android:exported="false"`. Activités internes, non
+appelables depuis l'extérieur — les retirer du manifest mergé n'ouvre aucune
+surface. La réserve « on ne retire rien sur une activité tierce exportée sans
+preuve » (C7 ci-dessus) est levée.
+
+**Pourquoi `remove` et pas `exclude group: "androidx.glance"`.** Le code
+*runtime* du plugin `home_widget` compile contre Glance
+(`HomeWidgetGlanceWidgetReceiver.kt`, `HomeWidgetIntent.kt`,
+`HomeWidgetGlanceState.kt` importent `androidx.glance.*`) et est compilé depuis
+les sources dans notre build. Exclure le groupe casserait la compilation du
+plugin. `remove` ne touche que la déclaration manifest : les classes Glance
+restent sur le classpath, `home_widget` compile toujours.
+
+Notre widget est 100 % RemoteViews (`FacteurWidget.kt` :
+`setPendingIntentTemplate` + `setOnClickFillInIntent`, `PendingIntent.getActivity`
+directs vers `MainActivity`) : le chemin de clic n'emprunte jamais la
+trampoline. Seules les deux activités du crash sont retirées ; les autres
+composants Glance mergés (`GlanceRemoteViewsService`, `MyPackageReplacedReceiver`,
+`ActionCallbackBroadcastReceiver`) sont laissés — inertes, hors chemin de crash.
+
+**Vérification (JDK dispo : `brew install openjdk@17` + `JAVA_HOME`).**
+
+1. `flutter build apk --debug --flavor beta` → OK (les flavors sont `beta` /
+   `playstore`, pas `staging`). Le manifest merger accepte les deux `remove`.
+2. Manifest mergé de l'APK (`aapt2 dump xmltree`) : **0** occurrence de
+   `TrampolineActivity` ; `FacteurWidgetLight` / `FacteurWidgetDark` /
+   `FacteurWidgetService` intacts. Le `ComponentInfo` de la stack FLUTTER-1D
+   n'existe plus dans le paquet → ce crash est structurellement impossible.
+3. Émulateur (`Pixel_5_API_33`), APK installé (`com.example.facteur.staging`) :
+   les deux providers s'enregistrent auprès de l'`AppWidgetService`
+   (`dumpsys appwidget`) ; `pm dump` → **0** Trampoline. App bootée sans FATAL.
+4. Tap de ligne simulé par l'intent équivalent (template `MainActivity` +
+   fillInIntent `io.supabase.facteur://feed/content/<id>`) → résolu et délivré à
+   `MainActivity` (`topResumedActivity`), aucun crash, aucune trampoline dans
+   logcat. Le clic de ligne fonctionne toujours.
+
+> Réserve honnête : le glisser-déposer GUI du widget sur l'écran d'accueil n'a
+> pas été scripté (interaction launcher non automatisable de façon fiable). Tous
+> les aspects fonctionnels du clic ont été prouvés via l'intent équivalent.
+
+**Alternative écartée : régle d'ignore Sentry.** Envisageable vu le volume
+(1-2 events, dernier 2026-07-18, profil émulateur/sideload/poking manuel), et
+aucune règle n'existe aujourd'hui (`SentryFlutter.init`, `main.dart:45-56`, n'a
+ni `beforeSend` ni `ignoreErrors`). Mais le fix manifest **supprime la cause
+racine** plutôt que de masquer le symptôme : pas besoin d'ignore. Si un event
+résiduel remontait post-merge, en parler au PO plutôt que d'ajouter un ignore
+seul.
+
+FLUTTER-1D : surveiller la mise à zéro après merge sur `main` (staging).
 
 ---
 

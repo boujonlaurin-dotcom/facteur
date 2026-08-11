@@ -34,6 +34,8 @@ import '../../feed/widgets/perspectives_bottom_sheet.dart';
 import '../../gamification/providers/gamification_preference_provider.dart';
 import '../../gamification/providers/streak_provider.dart';
 import '../../lettres/widgets/progress_toast.dart';
+import '../deck/models/article_deck.dart';
+import '../deck/widgets/deck_progress_bar.dart';
 import '../models/article_completion_latch.dart';
 import '../../my_interests/models/user_interests_state.dart' show InterestState;
 import '../../my_interests/providers/user_sources_state_provider.dart';
@@ -165,11 +167,21 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
   /// (query param `from=pdr`) → header contextuel (lavis bleu + médaillon 🔭).
   final bool fromDeepReco;
 
+  /// Place de cet article dans un deck de section (Story 34.1) — `null` quand
+  /// le reader est ouvert seul (deep link, notification, liste sans section).
+  ///
+  /// Deux conséquences dans cet écran, et elles seules : une page **inactive**
+  /// ne rend qu'un aperçu d'arrivée ([_buildDeckPreview]) et ne joue aucun
+  /// effet d'engagement ([_startEngagement]) — un article entrevu pendant un
+  /// geste n'est pas un article ouvert.
+  final ArticleDeckSlot? deckSlot;
+
   const ContentDetailScreen({
     super.key,
     required this.contentId,
     this.content,
     this.fromDeepReco = false,
+    this.deckSlot,
   })  : externalUrl = null,
         sourceName = null,
         sourceDomain = null,
@@ -191,7 +203,8 @@ class ContentDetailScreen extends ConsumerStatefulWidget {
         externalUrl = url,
         externalTitle = title,
         isExternal = true,
-        fromDeepReco = false;
+        fromDeepReco = false,
+        deckSlot = null;
 
   @override
   ConsumerState<ContentDetailScreen> createState() =>
@@ -593,6 +606,14 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   /// Content backend ⇒ pas de fetch / perspectives / tracking.
   bool get _isExternal => widget.isExternal;
 
+  /// Page au premier plan du deck — toujours vrai hors deck (Story 34.1).
+  bool get _isDeckActive => widget.deckSlot?.isActive ?? true;
+
+  /// Les effets d'engagement ont déjà été joués pour cette page (one-shot).
+  /// Porte aussi la remontée analytics de `dispose()` : une page jamais
+  /// activée n'a pas été lue, elle n'a donc aucune durée à remonter.
+  bool _engagementStarted = false;
+
   /// Construit un [Content] synthétique pour le mode externe. Le levier qui
   /// force la webview du site est `_showWebView = true` (initState), PAS
   /// `hasInAppContent` — on ne bricole pas ce flag.
@@ -645,11 +666,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         _fetchPerspectives();
       }
     }
-
-    // Délai anti-pop du nudge de scroll : démarré ici (et non après le fetch
-    // des perspectives) pour qu'il s'écoule en parallèle du réseau. La
-    // visibilité reste conditionnée à une cible montée + son cooldown 24 h.
-    _armScrollNudgeDelay();
 
     // Bookmark bounce animation (triggered on first note character)
     _bookmarkBounceController = AnimationController(
@@ -736,6 +752,64 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     WidgetsBinding.instance.addObserver(this);
 
+    // Effets d'engagement (« Lu », compteurs d'ouverture, nudges, chrono de
+    // lecture, WebView) : joués tout de suite hors deck, différés à
+    // l'activation quand cette page n'est qu'un voisin de section entrevu
+    // pendant un swipe. Cf. [_startEngagement].
+    if (_isDeckActive) _startEngagement();
+
+    // Scroll-to-site: attach scroll listener
+    _scrollController.addListener(_onScrollToSite);
+
+    // Reading progress + « lire sur le site » nudge : pilotés par l'unique
+    // NotificationListener du build (un seul calcul de progression par frame).
+    // L'ancien 2e listener `_onScrollReadingProgress` faisait double emploi.
+
+    // End-of-article nudge: show contextual action when progress >= 90%
+    _readingProgress.addListener(_onReadingProgressNudge);
+
+    // Detect short articles after the first layout pass has had time to
+    // render the article HTML. A naive postFrame callback fires before
+    // `flutter_html` finishes laying out, which made long articles look
+    // "short" (maxScrollExtent < 50) and locked the CTA orange on open.
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      _checkShortArticle();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ContentDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Le deck vient de valider cette page : elle devient un article ouvert.
+    if (_isDeckActive && !_engagementStarted) _startEngagement();
+  }
+
+  /// Tout ce qui fait d'un article affiché un article **ouvert** : le statut
+  /// « Lu », les compteurs d'ouverture, les nudges, le chrono de lecture, la
+  /// préparation du WebView.
+  ///
+  /// Séparé de `initState` pour le deck de section (Story 34.1) : pendant un
+  /// swipe, la page voisine est construite pour être *montrée*, pas pour être
+  /// lue. La jouer au montage marquerait « Lu » un article seulement entrevu
+  /// puis abandonné, et gonflerait le dénominateur du CTR de la Tournée.
+  ///
+  /// Ce qui reste délibérément au montage : `_fetchContent` et
+  /// `_fetchPerspectives`. Ce sont eux qui rendent l'arrivée sur l'article
+  /// suivant instantanée — ils préchargent pendant le geste, sans rien
+  /// enregistrer.
+  void _startEngagement() {
+    if (_engagementStarted) return;
+    _engagementStarted = true;
+
+    // Le chrono de lecture part à l'activation, pas au montage : sinon la page
+    // voisine, construite avant le geste, compterait le temps du geste.
+    _startTime = DateTime.now();
+
+    // Délai anti-pop du nudge de scroll : s'écoule en parallèle du réseau. La
+    // visibilité reste conditionnée à une cible montée + son cooldown 24 h.
+    _armScrollNudgeDelay();
+
     // Persist article open count for triggers (read_on_site 4th article,
     // feed_preview_longpress ≥2 articles opened).
     NudgeCounters.increment(NudgeCounters.articleOpenCount).then((count) {
@@ -744,6 +818,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
     // 🌻 Nudge: record article open and start 30s timer
     NudgeTracker.recordArticleOpen();
+    _sunflowerNudgeTimer?.cancel();
     _sunflowerNudgeTimer = Timer(const Duration(seconds: 30), () async {
       if (!mounted) return;
       final isLiked = _content?.isLiked ?? false;
@@ -770,6 +845,7 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     }
 
     // Note nudge: bounce merged bookmark FAB after 20s if user hasn't opened note
+    _noteNudgeTimer?.cancel();
     _noteNudgeTimer = Timer(const Duration(seconds: _noteNudgeDelay), () {
       if (mounted && !_hasOpenedNote) {
         _bookmarkBounceController.forward(from: 0);
@@ -786,25 +862,6 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         if (mounted) _bookmarkBounceController.forward(from: 0);
       });
     }
-
-    // Scroll-to-site: attach scroll listener
-    _scrollController.addListener(_onScrollToSite);
-
-    // Reading progress + « lire sur le site » nudge : pilotés par l'unique
-    // NotificationListener du build (un seul calcul de progression par frame).
-    // L'ancien 2e listener `_onScrollReadingProgress` faisait double emploi.
-
-    // End-of-article nudge: show contextual action when progress >= 90%
-    _readingProgress.addListener(_onReadingProgressNudge);
-
-    // Detect short articles after the first layout pass has had time to
-    // render the article HTML. A naive postFrame callback fires before
-    // `flutter_html` finishes laying out, which made long articles look
-    // "short" (maxScrollExtent < 50) and locked the CTA orange on open.
-    Future.delayed(const Duration(milliseconds: 600), () {
-      if (!mounted) return;
-      _checkShortArticle();
-    });
 
     // Pre-load WebView for articles
     _initScrollToSiteWebView();
@@ -2125,7 +2182,10 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
     try {
       // Mode externe : id synthétique vide ⇒ ne jamais polluer
       // user_content_status ni les analytics (trackArticleRead).
-      if (_content != null && !_isExternal) {
+      // `_engagementStarted` exclut en plus les pages de deck jamais activées
+      // (article entrevu pendant un swipe puis abandonné) : elles n'ont pas de
+      // durée de lecture, et en remonter une fausserait `article_read`.
+      if (_content != null && !_isExternal && _engagementStarted) {
         final duration = DateTime.now().difference(_startTime).inSeconds;
 
         final supabase = Supabase.instance.client;
@@ -2225,7 +2285,11 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if ((state == AppLifecycleState.paused ||
+    // `_engagementStarted` : une page de deck jamais activée est montée pour
+    // être montrée pendant un geste, pas lue. Sans ce garde, mettre l'app en
+    // arrière-plan au milieu d'un swipe marquerait « Lu » l'article voisin.
+    if (_engagementStarted &&
+        (state == AppLifecycleState.paused ||
             state == AppLifecycleState.inactive ||
             state == AppLifecycleState.detached) &&
         shouldCommitReadOnBackground(
@@ -2563,6 +2627,13 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
       );
     }
 
+    // Page de deck seulement entrevue pendant le geste : aperçu d'arrivée.
+    // Rendre ici le reader complet (HTML `flutter_html`, WebView, couverture
+    // médiatique) ferait tomber des frames en plein swipe, pour un article que
+    // l'utilisateur n'a pas encore choisi. Le fetch, lui, tourne déjà en fond
+    // depuis `initState` : à l'activation le corps est le plus souvent déjà là.
+    if (!_isDeckActive) return _buildDeckPreview(context, content);
+
     // Determine display mode:
     // - Articles with in-app content: progressive scroll-to-site
     // - Non-articles or explicit WebView toggle: old behavior
@@ -2599,6 +2670,12 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         content.url.isNotEmpty) {
       return _buildWebOpenPrompt(context, content);
     }
+
+    // Gèle le swipe du deck dès que la page du site a pris la main : à ce
+    // moment le geste horizontal appartient au site, pas à la pile d'articles.
+    // Reporté après la frame — écrire un ValueNotifier pendant `build` relance
+    // une construction dans la construction en cours.
+    _syncDeckWebViewLock(_isWebViewActive);
 
     return PopScope(
       // En mode WebView, on intercepte le retour système pour remonter
@@ -2775,6 +2852,84 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
         ),
         // All actions migrated to the persistent footer (article + video/audio).
         floatingActionButton: null,
+      ),
+    );
+  }
+
+  /// Reporte l'état du verrou de swipe au deck, hors de la frame en cours.
+  void _syncDeckWebViewLock(bool locked) {
+    final lock = widget.deckSlot?.webViewLock;
+    if (lock == null || !_isDeckActive || lock.value == locked) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) lock.value = locked;
+    });
+  }
+
+  /// Aperçu d'arrivée d'une page de deck non active (Story 34.1).
+  ///
+  /// Reprend au pixel près la tête du reader in-app — dégagement du header,
+  /// vignette 16/9, titre — puis le squelette de corps déjà utilisé pendant le
+  /// chargement. La page qui arrive sous le doigt est donc *le* reader en train
+  /// de se remplir, et pas un écran intermédiaire : à l'activation, seul le
+  /// corps se substitue au squelette.
+  Widget _buildDeckPreview(BuildContext context, Content content) {
+    final colors = context.facteurColors;
+    final textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      backgroundColor: colors.backgroundPrimary,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(height: _headerHeight),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4,
+                    ),
+                    child: Column(
+                      spacing: 12,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (content.thumbnailUrl != null)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              FacteurRadius.large,
+                            ),
+                            child: FacteurThumbnail(
+                              imageUrl: content.thumbnailUrl,
+                              aspectRatio: 16 / 9,
+                            ),
+                          ),
+                        Text(
+                          content.title,
+                          style: textTheme.displayLarge?.copyWith(fontSize: 24),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FacteurSpacing.space4,
+                    ),
+                    child: _buildArticleBodySkeleton(colors),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: RepaintBoundary(
+              child: _buildHeader(context, content, showProgressBar: false),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -3643,15 +3798,27 @@ class _ContentDetailScreenState extends ConsumerState<ContentDetailScreen>
   }
 
   Widget _buildReadingProgressBar(FacteurColors colors) {
+    final slot = widget.deckSlot;
+    final segmented = slot != null && slot.showSegments && slot.length > 1;
     return ValueListenableBuilder<bool>(
       valueListenable: _articleCompleted,
       builder: (context, _, __) => ValueListenableBuilder<double>(
       valueListenable: _readingProgress,
       builder: (context, progress, _) {
-        // Only show after 5% to avoid flashing on open
-        if (progress < 0.05) return const SizedBox.shrink();
         final clamped = progress.clamp(0.0, 1.0);
         final completed = _completion.completed;
+        // Deck de section : la barre porte la position dans la séquence, elle
+        // doit donc être là dès l'arrivée (c'est elle qui dit « il en reste »).
+        if (segmented) {
+          return DeckProgressBar(
+            index: slot.index,
+            length: slot.length,
+            progress: clamped,
+            completed: completed,
+          );
+        }
+        // Only show after 5% to avoid flashing on open
+        if (progress < 0.05) return const SizedBox.shrink();
         // Grey→target lerp. Article terminé : la barre devient le signal de
         // complétion principal (elle remplace le cachet retiré du reader) — vert
         // `success` plein et opacité relevée. Sinon elle reste discrète : opacité

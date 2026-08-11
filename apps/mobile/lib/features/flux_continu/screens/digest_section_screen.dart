@@ -6,6 +6,7 @@ import '../../../config/routes.dart';
 import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../detail/content_preview_mapper.dart';
+import '../../detail/deck/models/article_deck.dart';
 import '../../digest/models/digest_models.dart';
 import '../models/flux_continu_models.dart';
 import '../providers/flux_continu_provider.dart';
@@ -74,10 +75,19 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
     return widget.initialSection;
   }
 
-  Future<void> _openArticle(BuildContext context, DigestItem article) async {
+  /// [section] ouvre l'article dans le deck de sa section (Story 34.1) : le
+  /// swipe parcourt tous les sujets de la page, dans l'ordre affiché.
+  Future<void> _openArticle(
+    BuildContext context,
+    DigestItem article, {
+    DigestTopicSection? section,
+  }) async {
+    final deck = section == null
+        ? null
+        : articleDeckFromSection(section, article.contentId);
     await context.push(
       '${RoutePaths.fluxContinu}/content/${article.contentId}',
-      extra: article.toPreviewContent(),
+      extra: deck ?? article.toPreviewContent(),
     );
     if (mounted) setState(() {});
   }
@@ -169,7 +179,7 @@ class _DigestSectionScreenState extends ConsumerState<DigestSectionScreen> {
               sourceCount: topic.coverageCount,
               perspectiveSources: topic.perspectiveSources,
               divergenceLevel: topic.divergenceLevel,
-              onTap: () => _openArticle(context, lead),
+              onTap: () => _openArticle(context, lead, section: section),
             );
           }, childCount: section.topics.length),
         ),
