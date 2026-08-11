@@ -231,22 +231,72 @@ def _now() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
 
 
-def summarize_quota(manifest: dict, labels: dict[str, dict]) -> list[str]:
-    """Signale les sources qui ne tiennent pas le quota 3 payants / 3 gratuits."""
-    warnings = []
+def quota_status(manifest: dict, labels: dict[str, dict]) -> dict[str, dict]:
+    """État d'étiquetage par source : comptes, complétude, respect du quota.
+
+    Source unique de la règle de quota, partagée avec
+    `tests/test_paywall_corpus_benchmark.py` — le collecteur en fait un
+    avertissement, le test un verdict, mais tous deux comptent pareil.
+
+    Trois cas que le comptage brut traitait à tort comme des manquements :
+
+    - **Source sans article collecté** (`lesechos`, `lepoint` : 403 anti-bot).
+      Elle est au manifeste mais hors corpus ; il n'y a rien à étiqueter, donc
+      rien à reprocher. Elle est absente du résultat.
+    - **Étiquetage en cours.** Tant qu'il reste des `label: null`, le quota
+      n'est pas « non tenu », il est *pas encore* tenu. `complete` distingue
+      les deux, et seul un étiquetage terminé peut constituer un défaut — c'est
+      alors le corpus qu'il faut élargir, pas l'étiquetage qu'il faut attendre.
+    - **Média entièrement gratuit** (`expects_paid: false` au manifeste).
+      Exiger 3 articles payants de Contrepoints ou Bon Pote reviendrait à
+      demander ce que le média ne publie pas. Le quota de gratuits, lui,
+      s'applique toujours : c'est la seule mesure des faux positifs, et ces
+      sources sont précisément le piège qui les révèle.
+    """
     min_paid = manifest.get("min_paid_per_source", 3)
     min_free = manifest.get("min_free_per_source", 3)
+
+    status: dict[str, dict] = {}
     for source in manifest["sources"]:
         slug = source["slug"]
         rows = [row for row in labels.values() if row["source"] == slug]
+        if not rows:
+            continue
+
         paid = sum(1 for row in rows if row["label"] == "paid")
         free = sum(1 for row in rows if row["label"] == "free")
         unlabeled = sum(1 for row in rows if row["label"] is None)
-        if paid < min_paid or free < min_free:
-            warnings.append(
-                f"  {slug:<16} {paid} payants / {free} gratuits "
-                f"({unlabeled} à étiqueter) — quota {min_paid}/{min_free} non tenu"
-            )
+        expects_paid = source.get("expects_paid", True)
+        status[slug] = {
+            "paid": paid,
+            "free": free,
+            "unlabeled": unlabeled,
+            "expects_paid": expects_paid,
+            "complete": unlabeled == 0,
+            "meets_quota": free >= min_free
+            and (paid >= min_paid or not expects_paid),
+        }
+    return status
+
+
+def summarize_quota(manifest: dict, labels: dict[str, dict]) -> list[str]:
+    """Signale les sources qui ne tiennent pas le quota 3 payants / 3 gratuits."""
+    min_paid = manifest.get("min_paid_per_source", 3)
+    min_free = manifest.get("min_free_per_source", 3)
+    warnings = []
+    for slug, state in quota_status(manifest, labels).items():
+        if state["meets_quota"]:
+            continue
+        attendu = f"{min_paid}/{min_free}" if state["expects_paid"] else f"–/{min_free}"
+        reste = (
+            "étiquetage terminé"
+            if state["complete"]
+            else f"{state['unlabeled']} à étiqueter"
+        )
+        warnings.append(
+            f"  {slug:<16} {state['paid']} payants / {state['free']} gratuits "
+            f"({reste}) — quota {attendu} non tenu"
+        )
     return warnings
 
 

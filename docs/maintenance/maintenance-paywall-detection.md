@@ -204,12 +204,48 @@ Mais deux mesures la vident de son intérêt :
 Conclusion : ne pas toucher aux mots-clés tant qu'aucune mesure ne montre un
 gain. Le levier est le niveau 1, pas le niveau 2.
 
+### Fait — rendre le harnais compatible avec un étiquetage progressif
+
+L'étiquetage se fait par lots, sur plusieurs sessions. Deux défauts du harnais
+rendaient ce mode de travail impossible ; les deux ont été reproduits sur un
+`labels.json` simulé à 30 labels avant correction.
+
+**1. Le quota jugeait un étiquetage en cours.** `load_corpus()` ignore les
+`label: null`, donc dès le premier label posé le corpus n'était plus vide et
+`test_corpus_has_free_articles_per_source` passait de « skip » à **échec** sur
+les 12 sources à la fois. Comme `labels.json` est versionné, la CI virait au
+rouge aussi. Le quota ne juge désormais qu'une source dont l'étiquetage est
+**terminé** — une source à moitié étiquetée n'est pas un corpus défaillant,
+c'est un travail en cours.
+
+**2. La mesure tournait sans les charges utiles — et rendait un faux vert.**
+`html/` et `rss/` sont gitignorés, `labels.json` non : en CI, chaque cas partait
+donc avec `html_head=None`, le niveau 1 était intégralement sauté. Mesuré avec
+une baseline gelée et 30 labels : `test_false_positive_rate_never_regresses`
+**passait au vert** (FP = 0, puisque sans HTML plus rien n'est détecté) pendant
+que le test de FN échouait à tort. Le vert portait sur la métrique bloquante,
+c'est-à-dire au pire endroit possible. La mesure se skippe maintenant tant
+qu'aucun cas ne porte de HTML.
+
+Deux effets de bord corrigés au passage, sur le même comptage :
+
+| Cas | Avant | Après |
+|---|---|---|
+| `lesechos`, `lepoint` — au manifeste, 0 article collecté (403) | comptés « 0 payants / 0 gratuits, quota non tenu » à perpétuité | hors quota tant qu'ils sont hors corpus |
+| `contrepoints`, `bonpote` — médias 100 % gratuits | quota de 3 payants **inatteignable par construction** | `expects_paid: false` au manifeste ; le quota de gratuits, lui, s'applique toujours |
+
+La règle vit en un seul endroit (`quota_status()`, `build_paywall_corpus.py`) :
+le collecteur en fait un avertissement, le test un verdict. Elle est couverte
+par `tests/test_paywall_corpus_quota.py`, qui ne dépend d'aucune fixture — donc
+tourne en CI, là où le reste du harnais ne peut pas.
+
 ### Reste à faire
 
 1. **Étiqueter à la main** `labels.json` (120 articles, `"paid"` / `"free"`).
    C'est le seul geste qui reste et il est délibérément humain : un label
-   déduit de l'algo ferait valider l'algo par lui-même. Le harnais refuse de
-   mesurer tant que le quota 3 payants / 3 gratuits par source n'est pas tenu.
+   déduit de l'algo ferait valider l'algo par lui-même. Le harnais mesure
+   dès qu'une source est complète ; le quota 3 payants / 3 gratuits se juge
+   source par source, une fois son étiquetage terminé.
 2. Geler la baseline (`paywall_benchmark.py --write-baseline`) et la reporter
    dans la description de PR — elle tranchera la question jamais résolue :
    a-t-on **déjà** un problème de faux positifs aujourd'hui ?

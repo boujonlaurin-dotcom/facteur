@@ -20,6 +20,22 @@
 # faux positifs, qui est le critère bloquant de cette refonte. Le collecteur
 # refuse de marquer une source `complete` tant que le quota 3/3 n'est pas tenu.
 #
+# Deux exceptions, portées par le manifeste et non par du cas particulier en
+# code (`quota_status()`, build_paywall_corpus.py) :
+#
+#   - `expects_paid: false` dispense du quota de payants. Réservé aux médias
+#     entièrement gratuits (groupe `false_positive_trap`) : leur réclamer
+#     3 articles payants demanderait ce qu'ils ne publient pas. Le quota de
+#     gratuits, lui, continue de s'appliquer — c'est là que se mesure le FP.
+#   - Une source dont aucune candidate de flux ne répond (lesechos, lepoint :
+#     403 anti-bot) n'a aucun article dans `labels.json`. Elle est hors quota
+#     tant qu'elle est hors corpus : on ne reproche pas un étiquetage vide.
+#
+# Le quota ne juge une source qu'une fois son étiquetage **terminé** (plus
+# aucun `label: null`). Tant qu'il reste des articles à étiqueter, il n'est pas
+# « non tenu », il est *pas encore* tenu — la nuance évite de faire échouer les
+# tests pendant un étiquetage en cours, qui s'étale sur plusieurs sessions.
+#
 # `seed_urls` = articles identifiés à la main (typiquement les faux négatifs
 # remontés par les utilisateurs). Le collecteur les prend tels quels, puis
 # complète avec les `max_articles` premières entrées du flux pour atteindre le
@@ -169,6 +185,7 @@ sources:
   - slug: contrepoints
     name: Contrepoints
     group: false_positive_trap
+    expects_paid: false
     feed_candidates:
       - https://www.contrepoints.org/feed
       - https://www.contrepoints.org/rss
@@ -177,6 +194,7 @@ sources:
   - slug: bonpote
     name: Bon Pote
     group: false_positive_trap
+    expects_paid: false
     feed_candidates:
       - https://bonpote.com/feed/
       - https://bonpote.com/rss
