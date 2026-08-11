@@ -527,20 +527,23 @@ Map<String, Object> _userIdentifyProperties(User user, {String? appVersion}) {
 ///
 /// Les taps sur une **ligne** restent des PendingIntent directs vers
 /// `MainActivity` — eux doivent bien ouvrir l'app.
+/// Ce callback ne fait **que déléguer**, et c'est délibéré : il tourne dans un
+/// isolate porté par le `JobIntentService` de `home_widget`, dont le
+/// `onHandleWork` poste l'appel Dart puis retourne aussitôt. Android considère
+/// le travail terminé et peut tuer le process à tout moment — un
+/// rafraîchissement réseau lancé ici était coupé en plein vol, laissant le
+/// widget figé sur « Mise à jour… ». L'enqueue WorkManager, lui, prend
+/// quelques millisecondes, et le worker qui suit maintient le process en vie
+/// jusqu'au bout. Cf. docs/bugs/bug-widget-flaner-android.md (D4-bis).
 @pragma('vm:entry-point')
 Future<void> homeWidgetBackgroundCallback(Uri? uri) async {
   debugPrint('HomeWidget callback: $uri');
   if (uri?.host != _widgetRefreshHost) return;
   try {
-    await WidgetBackgroundRefresh.run();
+    await WidgetBackgroundRefresh.requestImmediateRefresh();
   } catch (e) {
     debugPrint('HomeWidget refresh callback failed: $e');
-  } finally {
-    // Qu'on ait rafraîchi ou non, on repousse le payload courant : le natif a
-    // peint « Mise à jour… » dès le tap et n'a aucun autre moyen d'en sortir.
-    // Sans ce push, un refresh sans session (ou hors ligne) laisserait le
-    // masthead bloqué sur cet état jusqu'à la prochaine alarme système.
-    await WidgetService.repaint();
+    await WidgetService.finishRefresh();
   }
 }
 

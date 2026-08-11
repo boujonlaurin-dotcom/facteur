@@ -152,6 +152,107 @@ que localement, à la main.
 
 ---
 
+## Itération 2 — retours device (11/08/2026)
+
+Le premier lot corrigeait le contenu du widget. Le test sur Pixel 9 a remonté
+quatre défauts restants, dont deux que la revue statique ne pouvait pas voir.
+
+### D4-bis — « Mise à jour… » ne se termine jamais
+
+Le bouton 🔄 passait par `HomeWidgetBackgroundIntent`, donc par
+`HomeWidgetBackgroundService` — un **`JobIntentService`** dont le
+`onHandleWork` se contente de *poster* l'appel Dart puis **retourne
+immédiatement** :
+
+```kotlin
+override fun onHandleWork(intent: Intent) {
+    ...
+    Handler(context.mainLooper).post { channel.invokeMethod("", args) }
+}   // ← rend la main tout de suite
+```
+
+Android considère le travail terminé et devient libre de tuer le process,
+pendant que `WidgetBackgroundRefresh.run()` enchaîne Hive, Supabase, un
+éventuel refresh de session et un aller-retour réseau — plusieurs secondes.
+Le `repaint()` final n'arrivait jamais, et le masthead restait figé.
+
+> Fausse piste écartée en chemin : j'ai d'abord soupçonné l'absence de
+> `GeneratedPluginRegistrant` dans l'engine de fond. C'est faux —
+> `FlutterEngine(context)` enregistre les plugins par réflexion
+> (`automaticallyRegisterPlugins = true`). Les deux plugins font pareil ; la
+> différence est ailleurs, dans **qui attend la fin du travail**.
+
+`BackgroundWorker` de `workmanager_android` rend, lui, un `ListenableFuture`
+qui ne se résout qu'à la fin de la tâche Dart : WorkManager maintient le
+process en vie. Le refresh immédiat passe donc désormais par un
+`registerOneOffTask` (expedited via `OutOfQuotaPolicy`), enfilé depuis
+l'isolate `home_widget` — un enqueue de quelques millisecondes, qui tient
+largement dans sa fenêtre incertaine.
+
+Second garde-fou : l'état « en cours » n'est plus un drapeau mais un
+**horodatage** (`widget_refreshing_since`) avec TTL de 90 s. Un drapeau que
+rien ne remet à `false` est un widget bloqué ; un horodatage expire tout seul.
+Et `WidgetBackgroundRefresh.run()` appelle `WidgetService.finishRefresh()`
+dans un `finally`, donc sur **tous** les chemins — succès, pas de session,
+hors ligne, exception.
+
+### D2-bis — les articles les plus frais n'affichaient plus de date
+
+Le garde-fou anti-date-inventée du premier lot (`minutes < 0 -> ""`) se
+retournait contre les articles récents : un léger décalage d'horloge entre le
+serveur et le téléphone donne un delta négatif, donc chaîne vide. On perdait
+la date exactement sur les articles qu'on veut mettre en avant.
+
+Au passage, l'échelle affichée (« à l'instant », « 45min ») ne correspondait à
+**rien** dans l'app. Flâner formate via `timeago` en locale `fr_short`, dont
+les libellés vivent dans `lib/core/utils/fr_compact_messages.dart` :
+« < 1 min », « 3 min », « 2h », « 4j », « 5 mo. ». `WidgetRendering.formatTime`
+en reproduit désormais les seuils **et** les chaînes, et borne le delta négatif
+à zéro (ce que fait `timeago`, dont les préfixes sont vides ici).
+
+### D7 — le retour arrière perdait la place dans le feed
+
+Le premier lot a réglé « le retour ne doit pas sortir sur du vide », mais
+reposait l'utilisateur **en tête** de Flâner : taper le 10e article puis
+revenir faisait perdre sa position.
+
+Flâner sait déjà faire — `_revealCard(id)` / `revealKeyedItem`, utilisé au
+retour d'un deck, avec `_cardKeys` qui mappe déjà chaque id à un `GlobalKey`.
+Il manquait juste le déclencheur pour le chemin widget. `GoRouter.push()` rend
+une `Future` qui se complète **au pop** : on s'y branche pour alimenter
+`flanerRevealArticleProvider`, que `FlanerScreen` écoute. Même idiome que le
+`await context.push(...)` suivi de `_revealCard` déjà en place in-app.
+
+Restreint aux routes Flâner : un lien `digest/<id>` hérité vise la Tournée,
+qui a son propre ancrage de section.
+
+### D8-bis — mauvais logo, tracking trop lâche
+
+Le masthead affichait `ic_stat_facteur` : l'**enveloppe monochrome de la barre
+de notifications**, pas la marque du produit. Le vrai logo est
+`assets/icons/logo_officiel.svg` — 800 Ko de tracés Canva avec métadonnées
+C2PA, inexploitable en `VectorDrawable`. Il est donc rastérisé depuis
+`facteur_logo.png` (512×512, même artwork, servant déjà de repli in-app),
+détouré de son fond parchemin par remplissage depuis les bords, débarrassé du
+filigrane « étincelle » (composante de 170 px isolée en bas à droite, écartée
+en ne gardant que la plus grande composante connexe), puis exporté en cinq
+densités.
+
+La police, elle, était **la bonne** — `res/font/fraunces_bold.ttf` est bien
+`Fraunces Bold` (vérifié dans sa table `name`). Ce qui manquait était le
+tracking : `FacteurLogo` rend « Facteur » avec `letterSpacing: -0.5`, absent
+du widget. Android exprimant `letterSpacing` en em, cela donne `-0.031` à
+17sp.
+
+> Réserve honnête : l'app charge Fraunces via `google_fonts`, donc la **variable**
+> font, tandis que le widget doit embarquer une coupe statique. Les axes
+> optiques de Fraunces (`opsz`, `SOFT`, `WONK`) peuvent donner un dessin
+> légèrement différent à taille égale. Aligner au pixel près supposerait
+> d'embarquer la même instance variable — non fait, et probablement pas
+> nécessaire.
+
+---
+
 ## Correctifs
 
 ### Lot A — Le widget **est** Flâner (D1, D3)

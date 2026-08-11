@@ -8,6 +8,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// `_scrollToTop()`.
 final feedScrollTriggerProvider = StateProvider<int>((ref) => 0);
 
+/// Article que Flâner doit ramener en haut du feed à la prochaine occasion.
+///
+/// Alimenté par `DeepLinkService` **au retour** d'un article ouvert depuis le
+/// widget d'accueil : sans ça, refermer le lecteur reposait l'utilisateur en
+/// tête de Flâner, quel que soit le rang de l'article tapé — on perdait sa
+/// place. C'est le pendant, pour le widget, du `_revealCard` que Flâner fait
+/// déjà au retour d'un deck (cf. docs/bugs/bug-widget-flaner-android.md).
+///
+/// `FlanerScreen` l'écoute, appelle `_revealCard` et remet la valeur à `null`.
+final flanerRevealArticleProvider = StateProvider<String?>((ref) => null);
+
 /// Déclencheur de scroll-to-top pour l'onglet L'Essentiel (Flux Continu).
 ///
 /// Miroir de [feedScrollTriggerProvider] : incrémenté par `MainShell` au re-tap

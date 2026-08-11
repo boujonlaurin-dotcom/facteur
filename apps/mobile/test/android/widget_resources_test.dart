@@ -71,18 +71,30 @@ void main() {
         expect(wordmarkBlock, isNot(contains('android:textStyle="bold"')));
       });
 
-      test('facteur_widget_$theme : la marque Facteur remplace la pastille « F »',
+      test('facteur_widget_$theme : le vrai logo de l’app, pas l’icône de notif',
           () {
         final xml = layout('facteur_widget_$theme');
-        expect(xml, contains('@drawable/ic_facteur_mark_$theme'));
+        expect(xml, contains('@drawable/ic_facteur_logo'));
         expect(
           xml,
           isNot(contains('@drawable/widget_masthead_mark_$theme')),
           reason: 'la pastille « F » a été remplacée par le logo produit',
         );
+        // `ic_stat_facteur` est l'enveloppe monochrome de la barre de notifs :
+        // ce n'est pas le logo du produit, et c'est ce qui avait été embarqué
+        // par erreur.
+        expect(xml, isNot(contains('ic_stat_facteur')));
+        expect(xml, isNot(contains('ic_facteur_mark')));
+      });
+
+      test('facteur_widget_$theme : tracking aligné sur le wordmark in-app', () {
+        // `FacteurLogo` rend « Facteur » en GoogleFonts.fraunces(w700,
+        // letterSpacing: -0.5). Android exprime letterSpacing en em : à 17sp,
+        // -0.5px ≈ -0.031em. Sans ça le mot paraissait plus lâche que dans
+        // l'app.
         expect(
-          File('${drawableDir.path}/ic_facteur_mark_$theme.xml').existsSync(),
-          isTrue,
+          layout('facteur_widget_$theme'),
+          contains('android:letterSpacing="-0.031"'),
         );
       });
 
@@ -92,6 +104,23 @@ void main() {
         expect(xml, contains('@+id/masthead_brand'));
         expect(xml, contains('@+id/masthead_refresh'));
         expect(xml, contains('@+id/masthead_meta'));
+      });
+    }
+  });
+
+  group('Logo — bitmaps exportés pour toutes les densités', () {
+    // Le logo officiel est un SVG Canva de 800 Ko (métadonnées C2PA, tracés
+    // massifs) : inexploitable en VectorDrawable. Il est donc rastérisé,
+    // détouré de son fond parchemin et de son filigrane, et exporté par
+    // densité. Ce test garde l'export : un logo manquant sur une densité
+    // donnerait un masthead vide sur les téléphones concernés.
+    for (final density in ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+      test('drawable-$density/ic_facteur_logo.png présent et non vide', () {
+        final f = File(
+          'android/app/src/main/res/drawable-$density/ic_facteur_logo.png',
+        );
+        expect(f.existsSync(), isTrue);
+        expect(f.lengthSync(), greaterThan(200));
       });
     }
   });
@@ -167,6 +196,85 @@ void main() {
         reason: 'le refresh se fait en place, sans passer par un deep link '
             'qui ouvre l’app',
       );
+    });
+
+    test('la clé du marqueur « en cours » est la même des deux côtés', () {
+      // Si elle diverge, le natif n'entend jamais la fin du rafraîchissement
+      // et le masthead reste sur « Mise à jour… » jusqu'à expiration du TTL.
+      final ws =
+          File('lib/core/services/widget_service.dart').readAsStringSync();
+      expect(ws, contains("'widget_refreshing_since'"));
+      expect(kotlin('FacteurWidget'), contains('"widget_refreshing_since"'));
+    });
+
+    test('l’état « Mise à jour… » expire tout seul', () {
+      final kt = kotlin('FacteurWidget');
+      expect(kt, contains('REFRESHING_TTL_MS'));
+      expect(
+        kt,
+        contains('isRefreshing'),
+        reason: 'l’état doit être dérivé d’un horodatage, pas d’un drapeau '
+            'que rien ne remet à false si le refresh n’aboutit pas',
+      );
+    });
+
+    test('le refresh immédiat passe par WorkManager, pas par l’isolate '
+        'home_widget', () {
+      // `HomeWidgetBackgroundService` est un JobIntentService dont
+      // `onHandleWork` rend la main avant la fin du callback Dart : y faire du
+      // réseau, c'est se faire tuer en plein vol. WorkManager, lui, tient le
+      // process jusqu'au bout.
+      final main = File('lib/main.dart').readAsStringSync();
+      expect(main, contains('requestImmediateRefresh'));
+      expect(
+        main,
+        isNot(contains('WidgetBackgroundRefresh.run()')),
+        reason: 'le callback home_widget délègue, il n’exécute pas le refresh',
+      );
+      final bg = File('lib/core/services/widget_background_refresh.dart')
+          .readAsStringSync();
+      expect(bg, contains('registerOneOffTask'));
+      expect(bg, contains('finishRefresh'));
+    });
+  });
+
+  group('Horodatage — le widget parle comme Flâner', () {
+    // Flâner formate ses dates avec `timeago` en locale `fr_short`, dont les
+    // libellés vivent dans `fr_compact_messages.dart`. Le widget ne peut pas
+    // appeler `timeago` (c'est du Kotlin) : il en reproduit les seuils et les
+    // chaînes. Ce test garde l'alignement — si quelqu'un change un libellé
+    // côté app, le widget doit suivre, sinon un même article s'affiche
+    // différemment aux deux endroits.
+    final kt = kotlin('WidgetRendering');
+    final messages =
+        File('lib/core/utils/fr_compact_messages.dart').readAsStringSync();
+
+    test('les libellés de l’app se retrouvent tous dans le Kotlin', () {
+      for (final label in ['< 1 min', '1 min', 'min', 'h', 'j', 'mo.']) {
+        expect(
+          messages,
+          contains(label),
+          reason: 'sanity check : $label doit exister côté app',
+        );
+        expect(
+          kt,
+          contains(label),
+          reason: 'le widget doit afficher « $label » comme Flâner',
+        );
+      }
+    });
+
+    test('l’échelle maison a bien disparu', () {
+      // « à l'instant » / « 45min » n'existaient nulle part dans l'app.
+      expect(kt, isNot(contains("à l'instant")));
+      expect(kt, isNot(contains('%dmin')));
+    });
+
+    test('un article tout juste publié affiche une date, pas du vide', () {
+      // Le garde-fou `minutes < 0 -> ""` faisait disparaître la date des
+      // articles les plus frais dès que l'horloge du téléphone devançait
+      // légèrement le serveur. On borne à zéro au lieu de renvoyer vide.
+      expect(kt, contains('coerceAtLeast(0L)'));
     });
   });
 

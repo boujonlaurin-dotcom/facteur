@@ -404,7 +404,15 @@ final routerProvider = Provider<GoRouter>((ref) {
             final articleRoute = pendingAction.route;
             if (articleRoute != null) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                DeepLinkService.instance.pushArticleRoute(articleRoute);
+                DeepLinkService.instance.pushArticleRoute(
+                  articleRoute,
+                  // Au pop du lecteur, Flâner ramène cette carte en haut du
+                  // feed plutôt que de renvoyer l'utilisateur en tête.
+                  revealArticleId:
+                      articleRoute.startsWith('${RoutePaths.flaner}/')
+                          ? pendingAction.articleId
+                          : null,
+                );
               });
               return RoutePaths.flaner;
             }

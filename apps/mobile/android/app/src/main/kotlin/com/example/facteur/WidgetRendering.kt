@@ -122,29 +122,47 @@ internal object WidgetRendering {
     }
 
     /**
-     * Relative age of an article, or "" when the date is unknown.
+     * Âge relatif d'un article, **au format exact de Flâner**.
      *
-     * A **blank** [iso] is the deliberate signal Flutter sends when the server
-     * gave no `published_at`: showing nothing beats showing a date the app
-     * invented. Flutter used to substitute `DateTime.now()` there, which froze
-     * into the payload and left days-old articles reading "à l'instant" for as
-     * long as they stayed in the 80-row buffer (cf.
-     * docs/bugs/bug-widget-flaner-android.md, D2).
+     * Le widget est un miroir de Flâner : un même article doit y afficher la
+     * même chaîne. Flâner passe par `timeago` en locale `fr_short`, dont les
+     * libellés vivent dans `lib/core/utils/fr_compact_messages.dart` — on en
+     * reproduit ici les seuils **et** les chaînes (« < 1 min », « 3 min »,
+     * « 2h », « 4j »…). L'ancienne échelle maison (« à l'instant », « 45min »)
+     * ne correspondait à rien dans l'app.
      *
-     * A date in the future is treated the same way — a negative delta used to
-     * fall through `minutes < 1` and print "à l'instant" too.
+     * Un [iso] **vide** est le signal délibéré envoyé par Flutter quand le
+     * serveur n'a pas donné de `published_at` : ne rien afficher vaut mieux
+     * qu'une date inventée. Flutter y substituait `DateTime.now()`, qui se
+     * figeait dans le payload et laissait des articles vieux de plusieurs
+     * jours affichés « à l'instant » (cf. bug D2).
+     *
+     * Un delta **négatif** (léger décalage d'horloge entre le serveur et le
+     * téléphone) est ramené à zéro, donc « < 1 min » : c'est ce que fait
+     * `timeago`, dont les préfixes sont vides ici. Le garde-fou précédent
+     * renvoyait "" et faisait disparaître la date des articles les plus
+     * frais — exactement ceux qu'on veut mettre en avant.
      */
-    fun formatTime(iso: String): String {
+    fun formatTime(iso: String, now: OffsetDateTime = OffsetDateTime.now()): String {
         if (iso.isBlank()) return ""
         return try {
             val parsed = OffsetDateTime.parse(iso, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-            val minutes = Duration.between(parsed, OffsetDateTime.now()).toMinutes()
+            val seconds = Duration.between(parsed, now).seconds.coerceAtLeast(0L)
+            val minutes = seconds / 60.0
+            val hours = minutes / 60.0
+            val days = hours / 24.0
             when {
-                minutes < 0 -> ""
-                minutes < 2 -> "à l'instant"
-                minutes < 60 -> String.format(Locale.FRENCH, "%dmin", minutes)
-                minutes < 24 * 60 -> String.format(Locale.FRENCH, "%dh", minutes / 60)
-                else -> String.format(Locale.FRENCH, "%dj", minutes / (60 * 24))
+                seconds < 45 -> "< 1 min"
+                seconds < 90 -> "1 min"
+                minutes < 45 -> String.format(Locale.FRENCH, "%d min", Math.round(minutes))
+                minutes < 90 -> "1h"
+                hours < 24 -> String.format(Locale.FRENCH, "%dh", Math.round(hours))
+                hours < 48 -> "1j"
+                days < 30 -> String.format(Locale.FRENCH, "%dj", Math.round(days))
+                days < 60 -> "1 mo."
+                days < 365 -> String.format(Locale.FRENCH, "%d mo.", Math.round(days / 30.0))
+                days < 730 -> "1 an"
+                else -> String.format(Locale.FRENCH, "%d ans", Math.round(days / 365.0))
             }
         } catch (e: Exception) {
             ""

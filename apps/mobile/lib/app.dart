@@ -7,6 +7,7 @@ import 'config/theme.dart';
 import 'config/routes.dart';
 import 'core/auth/auth_state.dart';
 import 'core/providers/analytics_provider.dart';
+import 'core/providers/navigation_providers.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
@@ -269,6 +270,12 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
       // Fire-and-forget : le handler de deep link est synchrone.
       onRefreshRequested: () {
         unawaited(ref.read(feedProvider.notifier).refreshForWidget());
+      },
+      // Au retour d'un article ouvert depuis le widget : Flâner ramène cette
+      // carte en haut du feed, pour reprendre là où on en était plutôt que de
+      // repartir du haut.
+      onRevealArticle: (articleId) {
+        ref.read(flanerRevealArticleProvider.notifier).state = articleId;
       },
     );
 

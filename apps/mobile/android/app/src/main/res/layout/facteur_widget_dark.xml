@@ -31,9 +31,9 @@
 
             <ImageView
                 android:id="@+id/masthead_mark"
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:src="@drawable/ic_facteur_mark_dark"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:src="@drawable/ic_facteur_logo"
                 android:scaleType="fitCenter"
                 android:contentDescription="Facteur" />
 
@@ -46,8 +46,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="7dp"
                 android:text="Facteur"
-                android:textSize="16sp"
+                android:textSize="17sp"
                 android:fontFamily="@font/fraunces_bold"
+                android:letterSpacing="-0.031"
                 android:textColor="@color/facteur_text_primary_dark" />
         </LinearLayout>
 

@@ -80,11 +80,18 @@ class DeepLinkService {
   /// button). Wired from `app.dart` to `feedProvider.refresh()`.
   VoidCallback? _onRefreshRequested;
 
+  /// Invoqué avec l'id de l'article **quand le lecteur ouvert depuis le widget
+  /// se referme**, pour que Flâner ramène cette carte en haut du feed et que
+  /// l'utilisateur reprenne où il en était. Branché depuis `app.dart` sur
+  /// `flanerRevealArticleProvider`.
+  void Function(String articleId)? _onRevealArticle;
+
   /// Bind the service to the running router and analytics. Idempotent.
   void bind({
     required GoRouter router,
     AnalyticsService? analytics,
     VoidCallback? onRefreshRequested,
+    void Function(String articleId)? onRevealArticle,
   }) {
     _router = router;
     if (analytics != null) {
@@ -92,6 +99,9 @@ class DeepLinkService {
     }
     if (onRefreshRequested != null) {
       _onRefreshRequested = onRefreshRequested;
+    }
+    if (onRevealArticle != null) {
+      _onRevealArticle = onRevealArticle;
     }
   }
 
@@ -235,11 +245,18 @@ class DeepLinkService {
   /// par-dessus. La pile devient `/flaner` → lecteur, donc le retour arrière
   /// ramène sur Flâner au lieu de vider le Navigator (cf.
   /// docs/bugs/bug-widget-flaner-android.md, D6).
-  void pushArticleRoute(String route) {
+  void pushArticleRoute(String route, {String? revealArticleId}) {
     final router = _router;
     if (router == null) return;
     try {
-      router.push(route);
+      final pushed = router.push(route);
+      // `push` se complète **au pop** du lecteur : c'est le moment exact où il
+      // faut repositionner Flâner sur l'article lu. Même idiome que le
+      // `await context.push(...)` suivi de `_revealCard` que Flâner applique
+      // déjà au retour d'un deck.
+      if (revealArticleId != null && revealArticleId.isNotEmpty) {
+        pushed.whenComplete(() => _onRevealArticle?.call(revealArticleId));
+      }
     } catch (e) {
       debugPrint('DeepLinkService: pushArticleRoute failed: $e');
     }
@@ -282,6 +299,10 @@ class DeepLinkService {
         // `/flux-continu/content/<id>`, qui appartient à la Tournée et doit
         // s'empiler là où l'utilisateur se trouve.
         final route = action.route!;
+        // Le repositionnement n'a de sens que pour Flâner : un lien
+        // `digest/<id>` hérité vise la Tournée, qui a son propre ancrage.
+        final revealId =
+            route.startsWith('${RoutePaths.flaner}/') ? action.articleId : null;
         if (route.startsWith('${RoutePaths.flaner}/') &&
             !_isUnderFlaner(router)) {
           router.go(RoutePaths.flaner);
@@ -291,7 +312,7 @@ class DeepLinkService {
           // l'**ancienne** pile, et le retour arrière retomberait sur l'onglet
           // qu'on voulait justement quitter. On laisse la frame se terminer.
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            pushArticleRoute(route);
+            pushArticleRoute(route, revealArticleId: revealId);
           });
           return;
         }
@@ -300,7 +321,7 @@ class DeepLinkService {
         // (back returns to the previous article), matching the in-app feed-card
         // and deep-reco navigation. `go` reused the current content/:id route in
         // place, so tapping a widget article while already reading was a no-op.
-        router.push(route);
+        pushArticleRoute(route, revealArticleId: revealId);
         return;
       case WidgetDeepLinkTarget.digest:
         _analytics?.trackWidgetAppOpened(target: 'digest');

@@ -46,6 +46,21 @@ abstract class FacteurWidget : AppWidgetProvider() {
         const val PAYLOAD_KEY = "widget_articles_json"
         const val UPDATED_AT_KEY = "articles_updated_at"
 
+        /**
+         * Horodatage du tap sur 🔄. Le masthead affiche « Mise à jour… » tant
+         * que ce marqueur est frais ; Dart le remet à 0 en fin de
+         * rafraîchissement (`WidgetService.finishRefresh`).
+         *
+         * Un booléen ne suffisait pas : si le rafraîchissement n'aboutit
+         * jamais (process tué, quota WorkManager, hors ligne prolongé), rien
+         * ne le remet à false et le widget reste bloqué sur un état
+         * transitoire. Avec un horodatage, l'état **expire tout seul**.
+         */
+        const val REFRESHING_SINCE_KEY = "widget_refreshing_since"
+
+        /** Au-delà, le marqueur est considéré périmé et ignoré. */
+        private const val REFRESHING_TTL_MS = 90_000L
+
         /** Broadcast émis par le bouton 🔄 du widget, reçu par [onReceive]. */
         const val ACTION_REFRESH = "com.example.facteur.action.WIDGET_REFRESH"
 
@@ -82,11 +97,14 @@ abstract class FacteurWidget : AppWidgetProvider() {
 
     private fun onRefreshRequested(context: Context) {
         try {
+            HomeWidgetPlugin.getData(context)?.edit()
+                ?.putLong(REFRESHING_SINCE_KEY, System.currentTimeMillis())
+                ?.apply()
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, javaClass))
             for (id in ids) {
                 val views = RemoteViews(context.packageName, layoutId())
-                renderMasthead(context, views, id, refreshing = true)
+                renderMasthead(context, views, id)
                 bindArticleList(context, views, id)
                 manager.updateAppWidget(id, views)
             }
@@ -116,7 +134,7 @@ abstract class FacteurWidget : AppWidgetProvider() {
             try {
                 val views = RemoteViews(context.packageName, layoutId())
 
-                renderMasthead(context, views, appWidgetId, refreshing = false)
+                renderMasthead(context, views, appWidgetId)
                 bindArticleList(context, views, appWidgetId)
 
                 appWidgetManager.updateAppWidget(appWidgetId, views)
@@ -143,9 +161,8 @@ abstract class FacteurWidget : AppWidgetProvider() {
         context: Context,
         views: RemoteViews,
         appWidgetId: Int,
-        refreshing: Boolean,
     ) {
-        views.setTextViewText(R.id.masthead_meta, mastheadMeta(context, refreshing))
+        views.setTextViewText(R.id.masthead_meta, mastheadMeta(context))
 
         // Tap sur le masthead (marque + wordmark) → ouvre Flâner dans l'app.
         val openIntent = Intent(context, MainActivity::class.java).apply {
@@ -182,9 +199,13 @@ abstract class FacteurWidget : AppWidgetProvider() {
      * L'heure vient de `articles_updated_at`, c'est-à-dire du dernier push de
      * **données** par Flutter — pas de `LocalTime.now()`, qui avançait à chaque
      * repaint de l'alarme système sur une donnée inchangée (D5).
+     *
+     * L'état « Mise à jour… » est dérivé d'un marqueur **horodaté** et non d'un
+     * drapeau : il expire de lui-même au bout de [REFRESHING_TTL_MS], donc il
+     * ne peut pas rester collé si le rafraîchissement n'aboutit jamais.
      */
-    private fun mastheadMeta(context: Context, refreshing: Boolean): String {
-        if (refreshing) return "Mise à jour…"
+    private fun mastheadMeta(context: Context): String {
+        if (isRefreshing(context)) return "Mise à jour…"
         val prefs = HomeWidgetPlugin.getData(context)
         val count = WidgetRendering.countArticles(prefs?.getString(PAYLOAD_KEY, null))
         val updatedAt = WidgetRendering.formatUpdatedAt(readUpdatedAt(context))
@@ -199,21 +220,38 @@ abstract class FacteurWidget : AppWidgetProvider() {
     }
 
     /**
-     * `articles_updated_at` est écrit par `HomeWidget.saveWidgetData<String>`,
-     * donc stocké en `String` — mais d'anciennes versions ont pu écrire un
-     * `Long`. Un `getString` sur une clé `Long` lève `ClassCastException` et
-     * ferait sauter tout le rendu du masthead, donc on tolère les deux.
+     * `true` tant qu'un rafraîchissement demandé il y a moins de
+     * [REFRESHING_TTL_MS] n'a pas rendu la main. Dart remet le marqueur à 0 via
+     * `WidgetService.finishRefresh()` — écrit alors comme `Long` par le plugin,
+     * d'où la même tolérance de type que [readUpdatedAt].
      */
-    private fun readUpdatedAt(context: Context): Long {
+    private fun isRefreshing(context: Context): Boolean {
+        val since = readLongPref(context, REFRESHING_SINCE_KEY)
+        if (since <= 0L) return false
+        val age = System.currentTimeMillis() - since
+        return age in 0 until REFRESHING_TTL_MS
+    }
+
+    private fun readUpdatedAt(context: Context): Long =
+        readLongPref(context, UPDATED_AT_KEY)
+
+    /**
+     * Lit une clé numérique sans présumer de son type de stockage.
+     *
+     * Le typage de `HomeWidgetPreferences` n'est pas sous notre contrôle : le
+     * plugin sérialise un `int` Dart en `putInt` mais un `String` Dart en
+     * `putString`, et le Kotlin écrit lui-même des `putLong`. Une même clé peut
+     * donc changer de type selon qui l'a écrite en dernier — et un `getLong`
+     * sur un `Int` lève `ClassCastException`, ce qui ferait sauter tout le
+     * rendu du masthead. Passer par `all` coupe court : on lit la valeur telle
+     * qu'elle est et on la convertit.
+     */
+    private fun readLongPref(context: Context, key: String): Long {
         val prefs = HomeWidgetPlugin.getData(context) ?: return 0L
-        return try {
-            prefs.getString(UPDATED_AT_KEY, null)?.toLongOrNull() ?: 0L
-        } catch (_: ClassCastException) {
-            try {
-                prefs.getLong(UPDATED_AT_KEY, 0L)
-            } catch (_: Exception) {
-                0L
-            }
+        return when (val raw = prefs.all[key]) {
+            is Number -> raw.toLong()
+            is String -> raw.toLongOrNull() ?: 0L
+            else -> 0L
         }
     }
 

@@ -215,12 +215,33 @@ class WidgetService {
     }
   }
 
-  /// Re-diffuse `ACTION_APPWIDGET_UPDATE` sans toucher aux données.
+  /// Clé du marqueur « rafraîchissement en cours », écrite par le natif au tap
+  /// sur 🔄 et effacée ici. Doit rester alignée avec
+  /// `FacteurWidget.REFRESHING_SINCE_KEY`.
+  static const _refreshingSinceKey = 'widget_refreshing_since';
+
+  /// Sort le widget de l'état « Mise à jour… » et le repeint.
   ///
-  /// Sert à sortir le widget d'un état transitoire peint par le natif (« Mise
-  /// à jour… ») quand le rafraîchissement n'a rien produit — pas de session,
-  /// hors ligne, feed vide. Le natif relit alors SharedPreferences et repeint
-  /// le payload courant.
+  /// Appelée depuis le `finally` de `WidgetBackgroundRefresh.run()`, donc sur
+  /// **tous** les chemins — succès, absence de session, hors ligne, exception.
+  /// Sans ce point de sortie unique, un rafraîchissement infructueux laissait
+  /// le masthead bloqué sur son état transitoire jusqu'à la prochaine alarme
+  /// système (30 min).
+  static Future<void> finishRefresh() async {
+    try {
+      // `null` **supprime** la clé côté plugin. Écrire `0` la réécrirait en
+      // `Int` alors que le natif y met un `Long` : la clé changerait de type
+      // au fil des écritures, ce que le natif doit alors tolérer à la lecture.
+      // La retirer garde un seul écrivain, donc un seul type.
+      await HomeWidget.saveWidgetData<int>(_refreshingSinceKey, null);
+    } catch (e) {
+      debugPrint('WidgetService: clearing refresh marker failed: $e');
+    }
+    await repaint();
+  }
+
+  /// Re-diffuse `ACTION_APPWIDGET_UPDATE` sans toucher aux données — le natif
+  /// relit SharedPreferences et repeint le payload courant.
   static Future<void> repaint() async {
     try {
       await _pushUpdate();
@@ -238,6 +259,7 @@ class WidgetService {
       await HomeWidget.saveWidgetData('widget_articles_json', '[]');
       await HomeWidget.saveWidgetData('articles_updated_at', '0');
       await HomeWidget.saveWidgetData('streak', '0');
+      await HomeWidget.saveWidgetData<int>(_refreshingSinceKey, null);
       await _pushUpdate();
     } catch (e) {
       debugPrint('WidgetService: clear failed: $e');

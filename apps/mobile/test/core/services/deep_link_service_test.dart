@@ -451,5 +451,56 @@ void main() {
             returnsNormally);
       },
     );
+
+    // ──────────────────────────────────────────────────────────
+    // Reprendre où on en était : au retour du lecteur, Flâner doit
+    // repositionner le feed sur l'article lu (le 10e reste le 10e).
+    // Cf. docs/bugs/bug-widget-flaner-android.md (D7).
+    // ──────────────────────────────────────────────────────────
+
+    testWidgets(
+      'le retour du lecteur demande le repositionnement sur l’article lu',
+      (tester) async {
+        final navKey = GlobalKey<NavigatorState>();
+        final router = buildRouter(navKey);
+        await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+        final service = DeepLinkService.forTest();
+        DeepLinkService.setInstanceForTest(service);
+        final revealed = <String>[];
+        service.bind(router: router, onRevealArticle: revealed.add);
+        service.setAuthenticated(true);
+
+        service.handle(Uri.parse('io.supabase.facteur://feed/content/dixieme'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-dixieme'), findsOneWidget);
+        expect(revealed, isEmpty,
+            reason: 'rien à repositionner tant que le lecteur est ouvert');
+
+        navKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(revealed, ['dixieme']);
+      },
+    );
+
+    testWidgets(
+      'un article de la Tournée ne déclenche pas le repositionnement Flâner',
+      (tester) async {
+        final navKey = GlobalKey<NavigatorState>();
+        final router = buildRouter(navKey);
+        await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+        final service = DeepLinkService.forTest();
+        DeepLinkService.setInstanceForTest(service);
+        final revealed = <String>[];
+        service.bind(router: router, onRevealArticle: revealed.add);
+        service.setAuthenticated(true);
+
+        service.handle(Uri.parse('io.supabase.facteur://digest/aaa'));
+        await tester.pumpAndSettle();
+        navKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(revealed, isEmpty,
+            reason: '/flux-continu a son propre ancrage de section');
+      },
+    );
   });
 }
