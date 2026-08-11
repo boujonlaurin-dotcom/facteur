@@ -391,6 +391,24 @@ final routerProvider = Provider<GoRouter>((ref) {
               DeepLinkService.instance.replayRefreshIfRequested(pendingAction);
             });
           }
+          // Un article ouvert depuis le widget atterrit sur **Flâner**, puis
+          // le lecteur est empilé au premier frame.
+          //
+          // Rendre directement `/flaner/content/<id>` laissait une pile racine
+          // à un seul élément : cette sous-route est déclarée avec
+          // `parentNavigatorKey: NotificationService.navigatorKey`, donc
+          // GoRouter n'empile pas `/flaner` en dessous. Le retour arrière
+          // sortait sur un Navigator vide — l'écran gris de
+          // docs/bugs/bug-widget-flaner-android.md (D6).
+          if (pendingAction.target == WidgetDeepLinkTarget.article) {
+            final articleRoute = pendingAction.route;
+            if (articleRoute != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                DeepLinkService.instance.pushArticleRoute(articleRoute);
+              });
+              return RoutePaths.flaner;
+            }
+          }
           return DeepLinkService.navigableRouteFor(pendingAction);
         }
         return RoutePaths.fluxContinu;

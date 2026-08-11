@@ -92,6 +92,35 @@
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
 
+        <!-- Rafraîchissement « en place » du widget (bouton 🔄).
+             `FacteurWidget.onReceive` émet un HomeWidgetBackgroundIntent, qui
+             réveille un isolate Dart SANS UI (homeWidgetBackgroundCallback) —
+             au lieu d'ouvrir MainActivity, ce qui éjectait l'utilisateur de son
+             écran d'accueil. Cf. docs/bugs/bug-widget-flaner-android.md (D4).
+
+             Ces deux composants DOIVENT être déclarés ici : le manifest de
+             l'AAR `home_widget` est vide (`<manifest package=... />` et rien
+             d'autre), donc rien n'est mergé automatiquement — sans ces lignes,
+             le PendingIntent ne résout aucun receiver et le bouton est un
+             no-op silencieux. Gardé par test/android/widget_resources_test.dart.
+
+             `exported="false"` sur le receiver : le broadcast est explicite
+             (`Intent(context, HomeWidgetBackgroundReceiver::class.java)`) et
+             émis par notre propre process. Aucune raison de l'ouvrir.
+             Le service est un JobIntentService : `BIND_JOB_SERVICE` réserve le
+             bind au JobScheduler système. -->
+        <receiver
+            android:name="es.antonborri.home_widget.HomeWidgetBackgroundReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="es.antonborri.home_widget.action.BACKGROUND" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name="es.antonborri.home_widget.HomeWidgetBackgroundService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
+
         <!-- androidx.glance:glance-appwidget:1.0.0 arrive en transitif via
              home_widget ^0.7.0, dont le code runtime compile contre Glance —
              on ne peut donc PAS l'exclure de la dépendance sans casser la

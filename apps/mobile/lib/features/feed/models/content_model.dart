@@ -179,6 +179,23 @@ class Content {
   final ContentType contentType;
   final int? durationSeconds;
   final DateTime publishedAt;
+
+  /// Date de publication **réellement reçue** de l'API, sans le repli
+  /// `DateTime.now()` de [publishedAt].
+  ///
+  /// [publishedAt] retombe volontairement sur « maintenant » quand le serveur
+  /// n'envoie rien : dans le feed in-app, l'article est sous les yeux de
+  /// l'utilisateur au moment où il arrive, l'approximation ne se voit pas.
+  /// Elle devient un mensonge dès qu'on la **fige** : le widget d'accueil
+  /// sérialise cette date dans `HomeWidgetPreferences` et la relit des jours
+  /// plus tard pour calculer un « il y a X ». Un article sans `published_at`
+  /// restait ainsi affiché « à l'instant » tant qu'il n'était pas évincé du
+  /// buffer (cf. docs/bugs/bug-widget-flaner-android.md, D2).
+  ///
+  /// Tout consommateur qui **persiste** la date doit lire ce champ et accepter
+  /// de n'afficher aucune date plutôt qu'une fausse.
+  final DateTime? publishedAtRaw;
+
   final Source source;
   final ContentStatus status;
   final bool isSaved;
@@ -259,6 +276,7 @@ class Content {
     required this.contentType,
     this.durationSeconds,
     required this.publishedAt,
+    this.publishedAtRaw,
     required this.source,
     this.status = ContentStatus.unseen,
     this.isSaved = false,
@@ -340,6 +358,7 @@ class Content {
       contentType: contentType,
       durationSeconds: durationSeconds,
       publishedAt: publishedAt,
+      publishedAtRaw: publishedAtRaw,
       source: source,
       status: status,
       isSaved: isSaved,
@@ -383,6 +402,8 @@ class Content {
     try {
       final sourceJson = json['source'];
       final recJson = json['recommendation_reason'];
+      final publishedAtRaw =
+          DateTime.tryParse(json['published_at'] as String? ?? '');
 
       return Content(
         id: (json['id'] as String?) ?? '',
@@ -397,8 +418,8 @@ class Content {
           orElse: () => ContentType.article,
         ),
         durationSeconds: json['duration_seconds'] as int?,
-        publishedAt: DateTime.tryParse(json['published_at'] as String? ?? '') ??
-            DateTime.now(),
+        publishedAt: publishedAtRaw ?? DateTime.now(),
+        publishedAtRaw: publishedAtRaw,
         source: (sourceJson is Map<String, dynamic>)
             ? Source.fromJson(sourceJson)
             : Source.fallback(),
@@ -461,6 +482,7 @@ class Content {
     ContentType? contentType,
     int? durationSeconds,
     DateTime? publishedAt,
+    DateTime? publishedAtRaw,
     Source? source,
     ContentStatus? status,
     bool? isSaved,
@@ -509,6 +531,7 @@ class Content {
       contentType: contentType ?? this.contentType,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       publishedAt: publishedAt ?? this.publishedAt,
+      publishedAtRaw: publishedAtRaw ?? this.publishedAtRaw,
       source: source ?? this.source,
       status: status ?? this.status,
       isSaved: isSaved ?? this.isSaved,

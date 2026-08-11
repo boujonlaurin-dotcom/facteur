@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/api/providers.dart';
 import '../../../core/auth/auth_state.dart';
 import '../../../core/providers/analytics_provider.dart';
-import '../../../core/services/widget_service.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../onboarding/providers/onboarding_provider.dart';
 import '../models/digest_models.dart';
@@ -152,8 +151,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
         _cachedDate = _todayDateString;
         // Sync toggle with server preference
         ref.read(sereinToggleProvider.notifier).initFromApi(dual.sereinEnabled);
-        // Push to home screen widget
-        _syncWidget();
         // If either variant was served as yesterday's stale fallback while
         // fresh content is being generated in background, schedule a silent
         // auto-refetch so the user sees today's digest without pulling.
@@ -286,36 +283,15 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
     }
   }
 
-  /// Push the Essentiel (normal) digest to the home screen widget.
-  /// Always uses `_normalDigest` so the widget stays on L'Essentiel even when
-  /// the in-app Serein/"Bonnes Nouvelles" toggle is on.
-  void _syncWidget() {
-    WidgetService.updateWidget(digest: _normalDigest);
-  }
-
-  /// Re-push the Essentiel side of the widget on explicit demand — the home
-  /// screen widget's refresh button. Depuis la **mémoire seule**,
-  /// volontairement sans réseau.
-  ///
-  /// Ce chemin appelait `_loadBothDigests()` quand le cache était vide, soit
-  /// jusqu'à 5 retries × 45 s de timeout (~80 s de chaîne réseau) déclenchés
-  /// par un simple tap sur le bouton refresh du widget — et, en passant,
-  /// `sereinToggleProvider.initFromApi()` pouvait basculer le toggle Serein
-  /// sous l'utilisateur, ce que `feedProvider` et `digestProvider` watchent
-  /// (rebuild complet du feed). Cf. docs/bugs/bug-widget-fiabilite.md (C4).
-  ///
-  /// Si rien n'est en mémoire, on ne fait rien : le Flux, lui, est rafraîchi
-  /// par `FeedNotifier.refreshForWidget()`, et l'Essentiel sera re-poussé au
-  /// prochain chargement normal.
-  Future<void> syncWidgetFromRefresh() async {
-    try {
-      if (_normalDigest == null) return;
-      _syncWidget();
-    } catch (e) {
-      // ignore: avoid_print
-      print('DigestNotifier: syncWidgetFromRefresh failed: $e');
-    }
-  }
+  // Le digest ne pousse plus rien vers le widget d'accueil.
+  //
+  // Le widget est désormais un miroir de **Flâner** (`FeedNotifier`), et le
+  // seul émetteur de son payload. Tant que L'Essentiel écrivait sa propre
+  // clé, celle-ci restait figée sur son dernier snapshot dès que
+  // `DigestNotifier` cessait d'être construit — ce qui est le cas depuis la
+  // fusion de L'Essentiel dans la Tournée du jour — et ce bloc fossile
+  // occupait les 5 premières lignes du widget indéfiniment. Cf.
+  // docs/bugs/bug-widget-flaner-android.md (D1).
 
   /// Clear the in-memory cache (forces next load to call API).
   void _clearCache() {
@@ -469,9 +445,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       await _triggerHaptic(action);
       _showActionNotification(action);
 
-      // Push updated state to home screen widget
-      _syncWidget();
-
       // Check for completion
       _checkAndHandleCompletion();
     } catch (e) {
@@ -558,9 +531,6 @@ class DigestNotifier extends AsyncNotifier<DigestResponse?> {
       );
       state = AsyncData(completedDigest);
       _updateActiveCache(completedDigest);
-
-      // Push completed state to home screen widget
-      _syncWidget();
 
       if (!alreadyCompleted) {
         NotificationService.showSuccess('Briefing terminé !');

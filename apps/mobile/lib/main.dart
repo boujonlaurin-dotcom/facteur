@@ -415,10 +415,15 @@ Future<void> _initDeferredServices({required PostHogService posthog}) async {
     unawaited(
       HomeWidget.registerInteractivityCallback(homeWidgetBackgroundCallback),
     );
-    // Seed empty payload + broadcast an update so a widget the user just
-    // pinned never stays blank until the next feed push. Idempotent (no-op
-    // when a payload already exists).
-    unawaited(WidgetService.initWidgetIfNeeded());
+    // Migration : purge le bloc « Essentiel » fossile des installs
+    // antérieures, puis seed un payload vide si rien n'existe encore, pour
+    // qu'un widget fraîchement épinglé ne reste pas blanc jusqu'au premier
+    // push de feed. L'ordre compte — `initWidgetIfNeeded` s'abstient dès qu'un
+    // payload non vide existe, y compris un payload fossile.
+    unawaited(
+      WidgetService.purgeLegacyEssentielPayload()
+          .then((_) => WidgetService.initWidgetIfNeeded()),
+    );
     // Rafraîchissement app fermée (WorkManager, ~1 h). Annulé au logout.
     unawaited(WidgetBackgroundRefresh.register());
   } catch (e) {
@@ -512,12 +517,37 @@ Map<String, Object> _userIdentifyProperties(User user, {String? appVersion}) {
   return props;
 }
 
-/// Background callback for home widget interactions (required by home_widget).
+/// Callback exécuté dans un isolate **sans UI**, réveillé par un
+/// `HomeWidgetBackgroundIntent` émis depuis `FacteurWidget.kt`.
+///
+/// C'est le chemin du bouton 🔄 du widget. Il ouvrait auparavant `MainActivity`
+/// via un deep link `feed?refresh=1` : du point de vue de l'utilisateur, taper
+/// « rafraîchir » l'éjectait de son écran d'accueil, et rien ne bougeait dans
+/// le widget lui-même (cf. docs/bugs/bug-widget-flaner-android.md, D4).
+///
+/// Les taps sur une **ligne** restent des PendingIntent directs vers
+/// `MainActivity` — eux doivent bien ouvrir l'app.
 @pragma('vm:entry-point')
 Future<void> homeWidgetBackgroundCallback(Uri? uri) async {
-  // Widget taps are handled via PendingIntents in Kotlin, so this is a no-op.
   debugPrint('HomeWidget callback: $uri');
+  if (uri?.host != _widgetRefreshHost) return;
+  try {
+    await WidgetBackgroundRefresh.run();
+  } catch (e) {
+    debugPrint('HomeWidget refresh callback failed: $e');
+  } finally {
+    // Qu'on ait rafraîchi ou non, on repousse le payload courant : le natif a
+    // peint « Mise à jour… » dès le tap et n'a aucun autre moyen d'en sortir.
+    // Sans ce push, un refresh sans session (ou hors ligne) laisserait le
+    // masthead bloqué sur cet état jusqu'à la prochaine alarme système.
+    await WidgetService.repaint();
+  }
 }
+
+/// Host de l'URI émise par `FacteurWidget.ACTION_REFRESH`. Doit rester
+/// identique à `FacteurWidget.REFRESH_URI` côté Kotlin — gardé par
+/// `test/android/widget_resources_test.dart`.
+const _widgetRefreshHost = 'widget-refresh';
 
 /// Open a Hive box safely — if corrupted, delete and recreate it.
 ///

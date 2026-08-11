@@ -9,7 +9,6 @@ import 'core/auth/auth_state.dart';
 import 'core/providers/analytics_provider.dart';
 import 'core/services/deep_link_service.dart';
 import 'core/services/widget_service.dart';
-import 'features/digest/providers/digest_provider.dart';
 import 'features/feed/providers/feed_preload_provider.dart';
 import 'features/feed/providers/feed_provider.dart';
 import 'features/feed/services/read_sync_service.dart';
@@ -258,28 +257,17 @@ class _FacteurAppState extends ConsumerState<FacteurApp>
 
     // Bind the DeepLinkService once the router is built. Idempotent.
     final analytics = ref.read(analyticsServiceProvider);
-    // Capturé ici (et pas dans la closure) pour pouvoir tester l'existence
-    // d'un provider sans le construire — cf. `onRefreshRequested`.
-    final container = ProviderScope.containerOf(context, listen: false);
     DeepLinkService.instance.bind(
       router: router,
       analytics: analytics,
-      // Widget refresh button → réveille l'app et répare les DEUX côtés du
-      // widget : l'Essentiel (digest) ET le Flux (feed). Le refresh Flâner
-      // simple ne reconstruisait jamais l'Essentiel et pouvait rester un no-op
-      // silencieux (filtre actif / signature identique / erreur réseau) — d'où
-      // le bouton « sans effet ». On force donc un re-push complet des deux
-      // caches. Fire-and-forget : le handler de deep link est synchrone.
+      // Chemin de secours du refresh widget : le bouton 🔄 rafraîchit
+      // désormais **en place** via l'isolate de fond (cf.
+      // `homeWidgetBackgroundCallback`), sans ouvrir l'app. Ce callback ne
+      // sert plus qu'aux deep links `feed?refresh=1` encore en circulation
+      // (widgets non repeints depuis la mise à jour). Le widget étant un
+      // miroir de Flâner, un seul côté est à réparer.
+      // Fire-and-forget : le handler de deep link est synchrone.
       onRefreshRequested: () {
-        // `ref.read(digestProvider.notifier)` **construit** le provider s'il
-        // ne l'est pas encore, et son `build()` part sur `_loadBothDigests()`
-        // (45 s × 5 retries). Un tap sur le bouton widget ne doit jamais
-        // amorcer cette chaîne : on ne touche à l'Essentiel que s'il est déjà
-        // vivant, et `syncWidgetFromRefresh` se contente alors de re-sérialiser
-        // la mémoire. Cf. docs/bugs/bug-widget-fiabilite.md (C4).
-        if (container.exists(digestProvider)) {
-          unawaited(ref.read(digestProvider.notifier).syncWidgetFromRefresh());
-        }
         unawaited(ref.read(feedProvider.notifier).refreshForWidget());
       },
     );

@@ -1,0 +1,60 @@
+name: Mobile Tests
+
+# Pourquoi ce workflow existe.
+#
+# Jusqu'ici AUCUN test Dart ne gardait une release : `ci-tests.yml` ne lance que
+# `pytest` sur `packages/api/**`, et `build-apk.yml` / `build-aab.yml` compilent
+# sans jamais lancer `flutter test` ni `flutter analyze`. Les tests du widget
+# d'accueil écrits lors des itérations précédentes existaient donc bel et bien,
+# mais n'étaient exécutés qu'à la main — d'où un widget cassé à répétition, à
+# chaque release, sans que rien ne rougisse. Cf.
+# docs/bugs/bug-widget-flaner-android.md (D8).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/mobile-tests.yml'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  widget-guard:
+    name: Analyze + tests widget d'accueil
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # `--no-fatal-infos` : le code existant porte des infos/warnings
+      # pré-existants (inférence Dio, unused_element…). Ce job garde les
+      # **erreurs**, il n'ouvre pas un chantier de nettoyage sur chaque PR.
+      - name: Flutter analyze
+        run: flutter analyze --no-fatal-infos
+
+      # Périmètre ciblé, et assumé comme tel : la suite mobile complète porte
+      # ~27 échecs pré-existants (cf. mémoire projet). Un gate global serait
+      # rouge dès le premier jour, donc désactivé dans la semaine — un gate
+      # étroit et vert est ce qui protège réellement. Élargir ce paquet au fur
+      # et à mesure que la dette est résorbée.
+      - name: Tests du widget d'accueil
+        run: |
+          flutter test \
+            test/core/services/widget_service_test.dart \
+            test/core/services/deep_link_service_test.dart \
+            test/features/feed/feed_provider_widget_refresh_test.dart \
+            test/android/widget_resources_test.dart

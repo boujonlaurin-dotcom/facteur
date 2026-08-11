@@ -228,6 +228,23 @@ class DeepLinkService {
     _onRefreshRequested?.call();
   }
 
+  /// Empile le lecteur d'article au-dessus de la pile courante.
+  ///
+  /// Appelé par le `redirect` du routeur au premier frame d'un cold start
+  /// widget : le redirect a atterri sur `/flaner`, ce `push` pose le lecteur
+  /// par-dessus. La pile devient `/flaner` → lecteur, donc le retour arrière
+  /// ramène sur Flâner au lieu de vider le Navigator (cf.
+  /// docs/bugs/bug-widget-flaner-android.md, D6).
+  void pushArticleRoute(String route) {
+    final router = _router;
+    if (router == null) return;
+    try {
+      router.push(route);
+    } catch (e) {
+      debugPrint('DeepLinkService: pushArticleRoute failed: $e');
+    }
+  }
+
   /// Clear the pending URI. Called by the redirect once it has consumed the
   /// pending route via [pendingRoute] so [flushPendingIfReady] becomes a no-op
   /// (no double navigation on cold-open).
@@ -256,12 +273,25 @@ class DeepLinkService {
           position: action.position,
           topicId: action.topicId,
         );
+        // Un article du widget doit toujours avoir Flâner sous lui : c'est là
+        // que le retour arrière doit ramener. Si on n'y est pas déjà (app
+        // réveillée sur la Tournée, un réglage, un autre onglet), on pose
+        // Flâner d'abord.
+        //
+        // Restreint aux routes Flâner : un lien `digest/<id>` hérité vise
+        // `/flux-continu/content/<id>`, qui appartient à la Tournée et doit
+        // s'empiler là où l'utilisateur se trouve.
+        final route = action.route!;
+        if (route.startsWith('${RoutePaths.flaner}/') &&
+            !_isUnderFlaner(router)) {
+          router.go(RoutePaths.flaner);
+        }
         // push (not go) so the reader STACKS on top of what's showing — even an
         // already-open reader. Lets the user chain article reads from the widget
         // (back returns to the previous article), matching the in-app feed-card
         // and deep-reco navigation. `go` reused the current content/:id route in
         // place, so tapping a widget article while already reading was a no-op.
-        router.push(action.route!);
+        router.push(route);
         return;
       case WidgetDeepLinkTarget.digest:
         _analytics?.trackWidgetAppOpened(target: 'digest');
@@ -291,6 +321,23 @@ class DeepLinkService {
       case WidgetDeepLinkTarget.unhandled:
         debugPrint('DeepLinkService: unhandled uri=$uri');
         return;
+    }
+  }
+
+  /// `true` quand la destination courante est Flâner ou l'une de ses
+  /// sous-routes (le lecteur d'article). Lecture défensive : selon la version
+  /// de go_router, l'accès à la configuration courante peut lever si aucune
+  /// route n'est encore montée — auquel cas on répond « non », ce qui pose
+  /// simplement Flâner une fois de trop.
+  static bool _isUnderFlaner(GoRouter router) {
+    try {
+      final location =
+          router.routerDelegate.currentConfiguration.uri.path;
+      return location == RoutePaths.flaner ||
+          location.startsWith('${RoutePaths.flaner}/');
+    } catch (e) {
+      debugPrint('DeepLinkService: current location unavailable: $e');
+      return false;
     }
   }
 

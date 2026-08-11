@@ -73,6 +73,34 @@ class WidgetBackgroundRefresh {
     }
   }
 
+  /// `Supabase.initialize` est **une fois par isolate**, pas une fois par run.
+  ///
+  /// L'isolate de fond de `home_widget` réutilise son `FlutterEngine` d'un
+  /// réveil à l'autre (champ statique dans `HomeWidgetBackgroundService`) :
+  /// depuis que le bouton 🔄 passe par ce chemin, [run] peut être appelée
+  /// plusieurs fois dans la même vie d'isolate. Un second `initialize` lève —
+  /// l'exception était avalée par le `catch` général de [run], et le refresh
+  /// n'échouait qu'à partir du **deuxième** appui, ce qui donne exactement le
+  /// symptôme « le bouton marche une fois sur deux ».
+  static bool _supabaseReady = false;
+
+  static Future<void> _ensureSupabase(SupabaseHiveStorage storage) async {
+    if (_supabaseReady) return;
+    try {
+      await Supabase.initialize(
+        url: SupabaseConstants.url,
+        anonKey: SupabaseConstants.anonKey,
+        authOptions: FlutterAuthClientOptions(localStorage: storage),
+      );
+    } catch (e) {
+      // Déjà initialisé (course entre deux réveils rapprochés) : on vérifie que
+      // l'instance répond avant de considérer que c'est bénin.
+      Supabase.instance.client;
+      debugPrint('WidgetBackgroundRefresh: Supabase already initialized ($e)');
+    }
+    _supabaseReady = true;
+  }
+
   /// Le travail réel, exécuté dans l'isolate de fond.
   ///
   /// Retourne `true` même en cas d'échec « normal » (pas de session, réseau
@@ -88,11 +116,7 @@ class WidgetBackgroundRefresh {
         return true;
       }
 
-      await Supabase.initialize(
-        url: SupabaseConstants.url,
-        anonKey: SupabaseConstants.anonKey,
-        authOptions: FlutterAuthClientOptions(localStorage: storage),
-      );
+      await _ensureSupabase(storage);
 
       final session = Supabase.instance.client.auth.currentSession;
       if (session == null) {

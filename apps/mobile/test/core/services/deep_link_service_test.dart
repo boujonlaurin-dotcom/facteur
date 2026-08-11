@@ -375,5 +375,81 @@ void main() {
         expect(find.text('reader-solo'), findsOneWidget);
       },
     );
+
+    // ──────────────────────────────────────────────────────────
+    // Retour arrière : on doit toujours retomber sur Flâner.
+    // Cf. docs/bugs/bug-widget-flaner-android.md (D6).
+    // ──────────────────────────────────────────────────────────
+
+    testWidgets(
+      'depuis Flâner, le retour arrière ramène sur Flâner (pas sur du vide)',
+      (tester) async {
+        final navKey = GlobalKey<NavigatorState>();
+        final service = await boundService(tester, navKey);
+
+        service.handle(Uri.parse('io.supabase.facteur://feed/content/solo'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-solo'), findsOneWidget);
+
+        navKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(find.text('flaner-home'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'depuis un autre onglet, Flâner est posé sous le lecteur avant le push',
+      (tester) async {
+        // Sans ça, le retour arrière depuis un article ouvert alors que l'app
+        // dormait sur la Tournée ramenait sur la Tournée — ou, en cold start,
+        // sur un Navigator vide (écran gris).
+        final navKey = GlobalKey<NavigatorState>();
+        final service = await boundService(tester, navKey);
+
+        service.handle(Uri.parse('io.supabase.facteur://veille/dashboard'));
+        await tester.pumpAndSettle();
+        expect(find.text('flux-home'), findsOneWidget);
+
+        service.handle(Uri.parse('io.supabase.facteur://feed/content/depuis-tournee'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-depuis-tournee'), findsOneWidget);
+
+        navKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(
+          find.text('flaner-home'),
+          findsOneWidget,
+          reason: 'le retour arrière d’un article widget appartient à Flâner',
+        );
+      },
+    );
+
+    testWidgets(
+      'pushArticleRoute empile le lecteur sur la pile courante',
+      (tester) async {
+        // Chemin du cold start : le `redirect` atterrit sur /flaner puis
+        // délègue l’empilement du lecteur au premier frame.
+        final navKey = GlobalKey<NavigatorState>();
+        final service = await boundService(tester, navKey);
+
+        service.pushArticleRoute('/flaner/content/cold');
+        await tester.pumpAndSettle();
+        expect(find.text('reader-cold'), findsOneWidget);
+
+        navKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(find.text('flaner-home'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'pushArticleRoute sans routeur lié ne lève pas',
+      (tester) async {
+        final service = DeepLinkService.forTest();
+        DeepLinkService.setInstanceForTest(service);
+        expect(() => service.pushArticleRoute('/flaner/content/x'),
+            returnsNormally);
+      },
+    );
   });
 }

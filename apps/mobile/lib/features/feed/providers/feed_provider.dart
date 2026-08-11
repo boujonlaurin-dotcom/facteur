@@ -562,25 +562,49 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
     }
   }
 
-  /// Fusionne [incoming] dans [_widgetBuffer] : entrées fraîches en tête (dans
-  /// leur ordre), puis le reste du buffer précédent non déjà présent, capé à
+  /// Fusionne [incoming] dans [_widgetBuffer] : union dédupliquée par `id`,
+  /// **triée par date de publication décroissante**, capée à
   /// [_widgetFluxCap]. Retourne le buffer résultant.
   ///
   /// Conséquence voulue : un article lu dans l'app disparaît de `state.items`
   /// mais **reste** dans le widget jusqu'à être évincé par du contenu plus
   /// récent. Le compteur du widget ne descend plus quand on lit.
+  ///
+  /// Le tri est explicite : l'union naïve « fraîchement fetché d'abord, ancien
+  /// buffer derrière » donnait un ordre d'**arrivée réseau**, pas un ordre
+  /// chronologique — visible dès la première fusion de fond (une page de 20
+  /// posée devant un buffer de 80). Le widget doit refléter Flâner, qui est
+  /// chronologique. Le cap s'applique **après** le tri, sinon on jetait des
+  /// articles récents au profit d'anciens simplement arrivés plus tôt.
+  ///
+  /// Une entrée sans date connue ([Content.publishedAtRaw] nul) est conservée
+  /// mais reléguée en fin : le serveur a omis la date, ce n'est pas une raison
+  /// de perdre l'article ni de le hisser en tête.
   @visibleForTesting
   List<Content> mergeIntoWidgetBuffer(List<Content> incoming) {
-    final merged = <Content>[];
+    final union = <({Content item, int index})>[];
     final seen = <String>{};
-    for (final c in incoming) {
-      if (merged.length >= _widgetFluxCap) break;
-      if (seen.add(c.id)) merged.add(c);
+    for (final c in [...incoming, ..._widgetBuffer]) {
+      if (seen.add(c.id)) union.add((item: c, index: union.length));
     }
-    for (final c in _widgetBuffer) {
-      if (merged.length >= _widgetFluxCap) break;
-      if (seen.add(c.id)) merged.add(c);
-    }
+    // Le rang d'entrée départage les ex æquo — `incoming` d'abord, puis
+    // l'ancien buffer. `List.sort` n'est pas stable en Dart : sans ce
+    // départage, un lot d'articles sans date se réordonnait à chaque fusion.
+    union.sort((a, b) {
+      final da = a.item.publishedAtRaw;
+      final db = b.item.publishedAtRaw;
+      if (da != null && db != null) {
+        final byDate = db.compareTo(da);
+        if (byDate != 0) return byDate;
+      } else if (da == null && db != null) {
+        return 1;
+      } else if (da != null && db == null) {
+        return -1;
+      }
+      return a.index.compareTo(b.index);
+    });
+    final merged =
+        union.take(_widgetFluxCap).map((e) => e.item).toList(growable: false);
     _widgetBuffer
       ..clear()
       ..addAll(merged);
@@ -1036,9 +1060,10 @@ class FeedNotifier extends AsyncNotifier<FeedState> {
   ///  4. On network failure, still force-pushes the last known unfiltered feed
   ///     ([_globalItems]) so the widget is never left silently stale.
   ///
-  /// The Essentiel side is repaired separately by
-  /// `digestProvider.syncWidgetFromRefresh()`, wired in the same deep-link
-  /// handler (`app.dart`).
+  /// Il n'y a plus qu'un côté à réparer : le widget est un miroir de Flâner
+  /// (cf. docs/bugs/bug-widget-flaner-android.md). Ce chemin ne sert plus qu'au
+  /// deep link `feed?refresh=1` hérité — le bouton 🔄 du widget rafraîchit
+  /// désormais en place, via `homeWidgetBackgroundCallback`.
   Future<void> refreshForWidget() async {
     final isSerein = ref.read(sereinToggleProvider).enabled;
     List<Content> unfiltered = const <Content>[];

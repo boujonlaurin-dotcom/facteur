@@ -3,84 +3,26 @@ import 'dart:io';
 
 import 'package:facteur/config/topic_labels.dart';
 import 'package:facteur/core/services/widget_service.dart';
-import 'package:facteur/features/digest/models/digest_models.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// These tests exercise the pure article-list builder side of WidgetService.
-/// We test it via a thin local copy of the picker logic; the production code
-/// path also writes to SharedPreferences via `home_widget`, which requires the
-/// platform channel and is not exercised in unit tests.
+/// Tests du payload poussé vers le widget d'accueil.
+///
+/// Le widget est un **miroir de Flâner** : plus de bloc « Essentiel » en tête,
+/// une seule source (le buffer feed), un ordre chronologique. Ces tests gardent
+/// ce contrat — c'est lui qui a lâché en production (cf.
+/// docs/bugs/bug-widget-flaner-android.md).
+///
+/// `WidgetService.buildWidgetPayload` est pure ; le reste du service écrit dans
+/// SharedPreferences via `home_widget`, ce qui demande le platform channel et
+/// n'est pas exercé ici. La sérialisation d'un `Content` est donc reproduite
+/// par un picker de référence local ([_pickFeedList]).
 void main() {
   _namespaceGuardTests();
 
-  group('Digest → widget article shape', () {
-    test('first topic article gets is_main=true', () {
-      final digest = _digest(topics: [
-        _topic(label: 'International', articles: [_article('a1', 'Title 1')]),
-        _topic(label: 'Tech', articles: [_article('a2', 'Title 2')]),
-      ]);
-
-      final picked = _pickList(digest);
-      expect(picked.length, 2);
-      expect(picked[0]['id'], 'a1');
-      expect(picked[0]['is_main'], isTrue);
-      expect(picked[0]['rank'], 1);
-      expect(picked[0]['topic_label'], 'International');
-      expect(picked[1]['is_main'], isFalse);
-      expect(picked[1]['rank'], 2);
-    });
-
-    test('caps at 5 articles even with more topics', () {
-      final topics = List.generate(
-        7,
-        (i) => _topic(label: 'T$i', articles: [_article('id$i', 'Title $i')]),
-      );
-      final digest = _digest(topics: topics);
-      final picked = _pickList(digest);
-      expect(picked.length, 5);
-    });
-
-    test('skips topics with no articles', () {
-      final digest = _digest(topics: [
-        _topic(label: 'Empty', articles: []),
-        _topic(label: 'OK', articles: [_article('a1', 'Has article')]),
-      ]);
-      final picked = _pickList(digest);
-      expect(picked.length, 1);
-      expect(picked[0]['id'], 'a1');
-    });
-
-    test('prefers a followed-source article inside a topic', () {
-      final digest = _digest(topics: [
-        _topic(label: 'Mixed', articles: [
-          _article('first', 'First'),
-          _article('followed', 'Followed', isFollowedSource: true),
-        ]),
-      ]);
-      final picked = _pickList(digest);
-      expect(picked.length, 1);
-      expect(picked[0]['id'], 'followed');
-    });
-
-    test('encodes to valid JSON parseable on the Kotlin side', () {
-      final digest = _digest(topics: [
-        _topic(label: 'International', articles: [_article('a1', 'T')]),
-      ]);
-      final picked = _pickList(digest);
-      final encoded = jsonEncode(picked);
-      final decoded = jsonDecode(encoded) as List<dynamic>;
-      expect(decoded.length, 1);
-      expect((decoded.first as Map)['id'], 'a1');
-      expect((decoded.first as Map).containsKey('is_main'), isTrue);
-      expect((decoded.first as Map).containsKey('topic_label'), isTrue);
-      expect((decoded.first as Map).containsKey('perspective_count'), isTrue);
-    });
-  });
-
-  group('Feed → widget article shape', () {
-    test('preserves order, ranks from 1, is_main always false', () {
+  group('Feed → forme des lignes du widget', () {
+    test('rangs à partir de 1, ordre préservé par le picker', () {
       final items = [
         _content('c1', 'Première'),
         _content('c2', 'Deuxième'),
@@ -89,23 +31,16 @@ void main() {
       final picked = _pickFeedList(items);
       expect(picked.map((e) => e['id']), ['c1', 'c2', 'c3']);
       expect(picked.map((e) => e['rank']), [1, 2, 3]);
-      expect(picked.every((e) => e['is_main'] == false), isTrue);
     });
 
-    test('caps at 80 items even with longer feed', () {
+    test('cap à 80 lignes même sur un flux plus long', () {
       final items = List.generate(120, (i) => _content('c$i', 'T$i'));
       final picked = _pickFeedList(items);
       expect(picked.length, 80);
       expect(picked.last['id'], 'c79');
     });
 
-    test('thumbnail_path is always empty (Flux is image-less)', () {
-      final items = List.generate(5, (i) => _content('c$i', 'T$i'));
-      final picked = _pickFeedList(items);
-      expect(picked.every((e) => e['thumbnail_path'] == ''), isTrue);
-    });
-
-    test('maps known topic slug to French label, falls back to empty', () {
+    test('slug de thème connu → libellé français, sinon vide', () {
       final picked = _pickFeedList([
         _content('c1', 'Tech', topics: ['ai']),
         _content('c2', 'Inconnu', topics: ['totally-unknown-slug']),
@@ -116,174 +51,162 @@ void main() {
       expect(picked[2]['topic_label'], '');
     });
 
-    test('source name + published_at_iso round-trip via JSON', () {
-      final items = [
+    test('source + published_at_iso survivent au round-trip JSON', () {
+      final picked = _pickFeedList([
         _content('c1', 'Titre', sourceName: 'Le Monde'),
-      ];
-      final picked = _pickFeedList(items);
-      final encoded = jsonEncode(picked);
-      final decoded = jsonDecode(encoded) as List<dynamic>;
+      ]);
+      final decoded = jsonDecode(jsonEncode(picked)) as List<dynamic>;
       final first = decoded.first as Map<String, dynamic>;
       expect(first['source_name'], 'Le Monde');
       expect((first['published_at_iso'] as String).endsWith('Z'), isTrue);
-      expect(first['perspective_count'], 0);
+    });
+
+    test(
+      'une date absente sérialise une chaîne vide, jamais « maintenant »',
+      () {
+        // Le cœur du bug « articles vieux de plusieurs jours affichés à
+        // l'instant » : `Content.publishedAt` retombe sur `DateTime.now()`
+        // quand le serveur n'envoie rien. Cette valeur inventée était figée
+        // dans le payload et relue des jours plus tard comme si elle était
+        // vraie. Le widget doit recevoir une chaîne vide et n'afficher aucune
+        // date.
+        final undated = Content.fromJson({
+          'id': 'c1',
+          'title': 'Sans date',
+          'url': 'https://example.com/c1',
+          'content_type': 'article',
+          'source': {'id': 's1', 'name': 'Le Monde', 'type': 'article'},
+        });
+        expect(undated.publishedAtRaw, isNull);
+        expect(_pickFeedList([undated]).single['published_at_iso'], '');
+      },
+    );
+
+    test('une date présente est bien remontée dans publishedAtRaw', () {
+      final dated = Content.fromJson({
+        'id': 'c1',
+        'title': 'Daté',
+        'url': 'https://example.com/c1',
+        'content_type': 'article',
+        'published_at': '2026-08-01T09:00:00Z',
+        'source': {'id': 's1', 'name': 'Le Monde', 'type': 'article'},
+      });
+      expect(dated.publishedAtRaw, DateTime.utc(2026, 8, 1, 9));
+      expect(dated.publishedAt, dated.publishedAtRaw);
     });
   });
 
-  group('Merge — Essentiel-then-Flux unified payload', () {
-    Map<String, dynamic> entry(String id, {int rank = 1, bool isMain = false}) {
+  group('buildWidgetPayload — dédup, tri chrono, cap', () {
+    Map<String, dynamic> entry(String id, {String? publishedAt, int rank = 0}) {
       return {
         'id': id,
         'rank': rank,
         'topic_id': 't',
         'topic_label': 'Topic',
-        'is_main': isMain,
         'title': 'Title $id',
         'source_name': 'Source',
         'source_logo_path': '',
-        'thumbnail_path': '',
-        'perspective_count': 0,
-        'published_at_iso': '',
+        'published_at_iso': publishedAt ?? '',
       };
     }
 
-    test('Essentiel comes first, then Flux', () {
-      final merged = WidgetService.mergeForWidget(
-        [entry('e1'), entry('e2')],
-        [entry('f1'), entry('f2')],
-      );
-      expect(merged.map((e) => e['id']), ['e1', 'e2', 'f1', 'f2']);
+    test('trie du plus récent au plus ancien', () {
+      final payload = WidgetService.buildWidgetPayload([
+        entry('vieux', publishedAt: '2026-08-01T09:00:00.000Z'),
+        entry('recent', publishedAt: '2026-08-11T09:00:00.000Z'),
+        entry('moyen', publishedAt: '2026-08-05T09:00:00.000Z'),
+      ]);
+      expect(payload.map((e) => e['id']), ['recent', 'moyen', 'vieux']);
     });
 
-    test('every entry carries source_kind', () {
-      final merged = WidgetService.mergeForWidget(
-        [entry('e1')],
-        [entry('f1')],
-      );
-      expect(merged[0]['source_kind'], 'essentiel');
-      expect(merged[1]['source_kind'], 'flux');
+    test('réindexe les rangs après le tri', () {
+      final payload = WidgetService.buildWidgetPayload([
+        entry('a', publishedAt: '2026-08-01T09:00:00.000Z', rank: 42),
+        entry('b', publishedAt: '2026-08-11T09:00:00.000Z', rank: 7),
+      ]);
+      expect(payload.map((e) => e['id']), ['b', 'a']);
+      expect(payload.map((e) => e['rank']), [1, 2]);
     });
 
-    test('Flux entries duplicating an Essentiel id are dropped', () {
-      final merged = WidgetService.mergeForWidget(
-        [entry('shared'), entry('e2')],
-        [entry('shared'), entry('f2')],
-      );
-      // shared appears only once, tagged as essentiel, then e2, then f2.
-      expect(merged.map((e) => e['id']), ['shared', 'e2', 'f2']);
-      expect(merged.first['source_kind'], 'essentiel');
+    test(
+      'une page fraîche posée devant un vieux buffer ressort dans le bon ordre',
+      () {
+        // Reproduit `updateWidgetMergingFlux` : 2 lignes fraîches concaténées
+        // devant un cache plus ancien. Sans tri, le widget affichait l'ordre
+        // d'arrivée réseau et ne ressemblait plus à Flâner dès la première
+        // fusion de fond.
+        final fresh = [
+          entry('f1', publishedAt: '2026-08-11T08:00:00.000Z'),
+          entry('f2', publishedAt: '2026-08-09T08:00:00.000Z'),
+        ];
+        final cached = [
+          entry('c1', publishedAt: '2026-08-10T08:00:00.000Z'),
+          entry('c2', publishedAt: '2026-08-08T08:00:00.000Z'),
+        ];
+        final payload = WidgetService.buildWidgetPayload([...fresh, ...cached]);
+        expect(payload.map((e) => e['id']), ['f1', 'c1', 'f2', 'c2']);
+      },
+    );
+
+    test('les entrées sans date sont conservées mais reléguées en fin', () {
+      final payload = WidgetService.buildWidgetPayload([
+        entry('sans-date'),
+        entry('date', publishedAt: '2026-08-01T09:00:00.000Z'),
+      ]);
+      expect(payload.map((e) => e['id']), ['date', 'sans-date']);
     });
 
-    test('total cap at 80, Essentiel always wins on collision', () {
-      final essentiel =
-          List.generate(5, (i) => entry('e$i', rank: i + 1, isMain: i == 0));
-      final flux = List.generate(120, (i) => entry('f$i', rank: i + 1));
-      final merged = WidgetService.mergeForWidget(essentiel, flux);
-      expect(merged.length, 80);
-      expect(merged.first['id'], 'e0');
-      expect(merged.first['source_kind'], 'essentiel');
-      expect(merged[5]['id'], 'f0');
-      expect(merged[5]['source_kind'], 'flux');
+    test('une date illisible est traitée comme absente, sans planter', () {
+      final payload = WidgetService.buildWidgetPayload([
+        entry('cassee', publishedAt: 'pas-une-date'),
+        entry('ok', publishedAt: '2026-08-01T09:00:00.000Z'),
+      ]);
+      expect(payload.map((e) => e['id']), ['ok', 'cassee']);
     });
 
-    test('empty inputs yield empty output', () {
-      expect(WidgetService.mergeForWidget(const [], const []), isEmpty);
+    test('déduplique par id en gardant la première occurrence', () {
+      final payload = WidgetService.buildWidgetPayload([
+        entry('dup', publishedAt: '2026-08-11T09:00:00.000Z'),
+        entry('dup', publishedAt: '2026-08-01T09:00:00.000Z'),
+        entry('autre', publishedAt: '2026-08-05T09:00:00.000Z'),
+      ]);
+      expect(payload.map((e) => e['id']), ['dup', 'autre']);
     });
 
-    test('entries with empty id are skipped', () {
-      final merged = WidgetService.mergeForWidget(
-        [entry(''), entry('e1')],
-        [entry(''), entry('f1')],
-      );
-      expect(merged.map((e) => e['id']), ['e1', 'f1']);
+    test('le cap de 80 s\'applique APRÈS le tri', () {
+      // Le cap avant tri jetait des articles récents simplement arrivés plus
+      // tard dans la liste concaténée.
+      final entries = [
+        for (var i = 0; i < 100; i++)
+          entry('old$i', publishedAt: '2026-01-01T09:00:00.000Z'),
+        entry('recent', publishedAt: '2026-08-11T09:00:00.000Z'),
+      ];
+      final payload = WidgetService.buildWidgetPayload(entries);
+      expect(payload.length, 80);
+      expect(payload.first['id'], 'recent');
+    });
+
+    test('entrée sans id ignorée, liste vide en entrée → vide en sortie', () {
+      expect(WidgetService.buildWidgetPayload(const []), isEmpty);
+      final payload = WidgetService.buildWidgetPayload([entry(''), entry('a')]);
+      expect(payload.map((e) => e['id']), ['a']);
+    });
+
+    test('aucune ligne ne porte de marqueur Essentiel', () {
+      // Garde de non-régression : le bloc Essentiel figé en tête est la cause
+      // racine du « widget qui n'a pas bougé depuis 14 jours ».
+      final payload = WidgetService.buildWidgetPayload([
+        entry('a', publishedAt: '2026-08-11T09:00:00.000Z'),
+      ]);
+      expect(payload.single.containsKey('source_kind'), isFalse);
+      expect(payload.single.containsKey('is_main'), isFalse);
     });
   });
 }
 
 // ──────────────────────────────────────────────────────────────
-// Reference picker — keeps tests independent from SharedPreferences
-// ──────────────────────────────────────────────────────────────
-
-const _maxArticles = 5;
-
-List<Map<String, dynamic>> _pickList(DigestResponse digest) {
-  final result = <Map<String, dynamic>>[];
-  var rank = 1;
-  for (final topic in digest.topics) {
-    if (result.length >= _maxArticles) break;
-    if (topic.articles.isEmpty) continue;
-    final article = _pickSingleton(topic);
-    if (article.isDismissed) continue;
-    result.add({
-      'id': article.contentId,
-      'rank': rank,
-      'topic_id': topic.topicId,
-      'topic_label': topic.label,
-      'is_main': rank == 1,
-      'title': article.title,
-      'source_name': article.source?.name ?? '',
-      'source_logo_path': '',
-      'thumbnail_path': '',
-      'perspective_count': topic.perspectiveCount,
-      'published_at_iso': article.publishedAt?.toUtc().toIso8601String() ?? '',
-    });
-    rank++;
-  }
-  return result;
-}
-
-DigestItem _pickSingleton(DigestTopic topic) {
-  for (final a in topic.articles) {
-    if (a.isFollowedSource) return a;
-  }
-  return topic.articles.first;
-}
-
-// ──────────────────────────────────────────────────────────────
-// Test fixtures
-// ──────────────────────────────────────────────────────────────
-
-DigestResponse _digest({required List<DigestTopic> topics}) {
-  return DigestResponse(
-    digestId: 'test-digest',
-    userId: 'u1',
-    targetDate: DateTime.utc(2026, 4, 26),
-    generatedAt: DateTime.utc(2026, 4, 26),
-    topics: topics,
-  );
-}
-
-DigestTopic _topic({
-  required String label,
-  required List<DigestItem> articles,
-}) {
-  return DigestTopic(
-    topicId: 'topic-${label.toLowerCase()}',
-    label: label,
-    articles: articles,
-    perspectiveCount: articles.length > 1 ? articles.length - 1 : 0,
-  );
-}
-
-DigestItem _article(
-  String id,
-  String title, {
-  bool isFollowedSource = false,
-  ContentType type = ContentType.article,
-}) {
-  return DigestItem(
-    contentId: id,
-    title: title,
-    contentType: type,
-    isFollowedSource: isFollowedSource,
-    source: const SourceMini(id: 's1', name: 'Le Monde'),
-    publishedAt: DateTime.utc(2026, 4, 26, 7, 30),
-  );
-}
-
-// ──────────────────────────────────────────────────────────────
-// Feed reference picker — mirrors WidgetService._buildFeedArticleList
-// without the SharedPreferences/dio image fetch dependencies.
+// Picker de référence — reproduit WidgetService._buildFeedArticleList
+// sans les dépendances SharedPreferences / téléchargement de logo.
 // ──────────────────────────────────────────────────────────────
 
 const _maxFeedArticles = 80;
@@ -300,13 +223,10 @@ List<Map<String, dynamic>> _pickFeedList(List<Content> items) {
       'rank': i + 1,
       'topic_id': topicSlug,
       'topic_label': topicLabel,
-      'is_main': false,
       'title': item.title,
       'source_name': item.source.name,
       'source_logo_path': '',
-      'thumbnail_path': '',
-      'perspective_count': 0,
-      'published_at_iso': item.publishedAt.toUtc().toIso8601String(),
+      'published_at_iso': item.publishedAtRaw?.toUtc().toIso8601String() ?? '',
     });
   }
   return result;
@@ -317,13 +237,16 @@ Content _content(
   String title, {
   String sourceName = 'Le Monde',
   List<String> topics = const [],
+  DateTime? publishedAt,
 }) {
+  final at = publishedAt ?? DateTime.utc(2026, 5, 6, 9, 0);
   return Content(
     id: id,
     title: title,
     url: 'https://example.com/$id',
     contentType: ContentType.article,
-    publishedAt: DateTime.utc(2026, 5, 6, 9, 0),
+    publishedAt: at,
+    publishedAtRaw: at,
     source: Source(
       id: 's1',
       name: sourceName,

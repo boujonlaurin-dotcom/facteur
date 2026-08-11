@@ -360,5 +360,68 @@ void main() {
       final merged = notifier.mergeIntoWidgetBuffer(const []);
       expect(merged.map((c) => c.id), ['a', 'b']);
     });
+
+    // ──────────────────────────────────────────────────────────
+    // Le widget doit refléter Flâner, qui est chronologique.
+    // Cf. docs/bugs/bug-widget-flaner-android.md (D3).
+    // ──────────────────────────────────────────────────────────
+
+    Content dated(String id, DateTime at) => Content(
+          id: id,
+          title: 'Title $id',
+          url: 'url',
+          contentType: ContentType.article,
+          publishedAt: at,
+          publishedAtRaw: at,
+          source: mockSource,
+        );
+
+    test('trie le buffer du plus récent au plus ancien', () {
+      final merged = notifier.mergeIntoWidgetBuffer([
+        dated('vieux', DateTime.utc(2026, 8, 1)),
+        dated('recent', DateTime.utc(2026, 8, 11)),
+        dated('moyen', DateTime.utc(2026, 8, 5)),
+      ]);
+      expect(merged.map((c) => c.id), ['recent', 'moyen', 'vieux']);
+    });
+
+    test(
+      'une page de fond plus ancienne ne se hisse pas devant le buffer',
+      () {
+        // Le refresh de fond ne rapporte qu'une page ; sans tri, ses 20 lignes
+        // se plantaient en tête du buffer quelle que soit leur date, et le
+        // widget ne ressemblait plus à Flâner.
+        notifier.mergeIntoWidgetBuffer([
+          dated('frais', DateTime.utc(2026, 8, 11)),
+        ]);
+        final merged = notifier.mergeIntoWidgetBuffer([
+          dated('ancien', DateTime.utc(2026, 8, 2)),
+        ]);
+        expect(merged.map((c) => c.id), ['frais', 'ancien']);
+      },
+    );
+
+    test('le cap de 80 tombe sur les plus anciens, pas sur les derniers reçus',
+        () {
+      notifier.mergeIntoWidgetBuffer([
+        for (var i = 0; i < 80; i++)
+          dated('old$i', DateTime.utc(2026, 1, 1).add(Duration(minutes: i))),
+      ]);
+      final merged = notifier.mergeIntoWidgetBuffer([
+        dated('tres-recent', DateTime.utc(2026, 8, 11)),
+      ]);
+      expect(merged.length, 80);
+      expect(merged.first.id, 'tres-recent');
+      // Le plus ancien du lot précédent est évincé.
+      expect(merged.map((c) => c.id), isNot(contains('old0')));
+    });
+
+    test('les articles sans date restent présents, relégués en fin', () {
+      final merged = notifier.mergeIntoWidgetBuffer([
+        makeContent('sans-date'),
+        dated('date', DateTime.utc(2026, 8, 11)),
+      ]);
+      expect(merged.map((c) => c.id), ['date', 'sans-date']);
+    });
   });
 }
