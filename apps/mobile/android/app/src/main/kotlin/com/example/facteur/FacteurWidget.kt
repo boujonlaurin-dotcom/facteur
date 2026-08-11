@@ -1,5 +1,6 @@
 package com.example.facteur
 
+import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -59,7 +60,20 @@ abstract class FacteurWidget : AppWidgetProvider() {
         const val REFRESHING_SINCE_KEY = "widget_refreshing_since"
 
         /** Au-delà, le marqueur est considéré périmé et ignoré. */
-        private const val REFRESHING_TTL_MS = 90_000L
+        private const val REFRESHING_TTL_MS = 45_000L
+
+        /**
+         * Repaint de sécurité programmé au tap sur 🔄.
+         *
+         * Sans lui, sortir de « Mise à jour… » supposait qu'un repaint arrive
+         * *de quelque part* : de Dart en fin de rafraîchissement, ou de
+         * l'alarme système `updatePeriodMillis` — 30 minutes plus tard. Si la
+         * chaîne Dart ne rend jamais la main (process tué, worker jamais
+         * exécuté, quota), l'état restait affiché une demi-heure. Cette alarme
+         * garantit un repaint peu après l'expiration du TTL, quoi qu'il arrive
+         * en aval.
+         */
+        const val ACTION_SETTLE = "com.example.facteur.action.WIDGET_SETTLE"
 
         /** Broadcast émis par le bouton 🔄 du widget, reçu par [onReceive]. */
         const val ACTION_REFRESH = "com.example.facteur.action.WIDGET_REFRESH"
@@ -88,11 +102,57 @@ abstract class FacteurWidget : AppWidgetProvider() {
      *     y compris en échec, pour sortir de l'état transitoire.
      */
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == ACTION_REFRESH) {
-            onRefreshRequested(context)
-            return
+        when (intent.action) {
+            ACTION_REFRESH -> {
+                onRefreshRequested(context)
+                return
+            }
+            ACTION_SETTLE -> {
+                repaintAll(context)
+                return
+            }
         }
         super.onReceive(context, intent)
+    }
+
+    /** Repeint tous les widgets épinglés de cette variante depuis les prefs. */
+    private fun repaintAll(context: Context) {
+        try {
+            val manager = AppWidgetManager.getInstance(context)
+            val ids = manager.getAppWidgetIds(ComponentName(context, javaClass))
+            if (ids.isNotEmpty()) onUpdate(context, manager, ids)
+            Log.d(TAG, "repaintAll theme=$theme ids=${ids.size}")
+        } catch (t: Throwable) {
+            Log.e(TAG, "repaintAll failed", t)
+        }
+    }
+
+    /**
+     * Programme le repaint de sécurité peu après l'expiration du TTL.
+     *
+     * `set()` (inexact) ne demande aucune permission — contrairement à
+     * `setExact*`, soumis à `SCHEDULE_EXACT_ALARM` depuis Android 12. Une
+     * imprécision de quelques secondes est sans importance ici : on veut
+     * seulement garantir qu'*un* repaint finit par arriver.
+     */
+    private fun scheduleSettle(context: Context) {
+        try {
+            val intent = Intent(context, javaClass).apply { action = ACTION_SETTLE }
+            val pending = PendingIntent.getBroadcast(
+                context,
+                javaClass.name.hashCode(),
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val alarms = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            alarms?.set(
+                AlarmManager.RTC,
+                System.currentTimeMillis() + REFRESHING_TTL_MS + 3_000L,
+                pending,
+            )
+        } catch (t: Throwable) {
+            Log.e(TAG, "scheduleSettle failed", t)
+        }
     }
 
     private fun onRefreshRequested(context: Context) {
@@ -108,6 +168,7 @@ abstract class FacteurWidget : AppWidgetProvider() {
                 bindArticleList(context, views, id)
                 manager.updateAppWidget(id, views)
             }
+            scheduleSettle(context)
             Log.d(TAG, "refresh requested theme=$theme ids=${ids.size}")
         } catch (t: Throwable) {
             Log.e(TAG, "Refresh placeholder paint failed", t)
@@ -228,6 +289,12 @@ abstract class FacteurWidget : AppWidgetProvider() {
     private fun isRefreshing(context: Context): Boolean {
         val since = readLongPref(context, REFRESHING_SINCE_KEY)
         if (since <= 0L) return false
+        // Une donnée poussée **après** le début du rafraîchissement prouve
+        // qu'il a abouti, quel que soit le chemin qui l'a produite. C'est un
+        // signal plus fiable que l'effacement explicite du marqueur, qui
+        // suppose que Dart rende la main — précisément ce qui manquait quand
+        // « Mise à jour… » restait collé.
+        if (readLongPref(context, UPDATED_AT_KEY) >= since) return false
         val age = System.currentTimeMillis() - since
         return age in 0 until REFRESHING_TTL_MS
     }

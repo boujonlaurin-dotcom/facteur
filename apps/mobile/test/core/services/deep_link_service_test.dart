@@ -206,6 +206,33 @@ void main() {
       expect(service.pendingRoute(), isNull);
     });
 
+    // ──────────────────────────────────────────────────────────
+    // Cold start : le lien appartient au `redirect` du routeur, pas au
+    // flush automatique. Sans ça, `setAuthenticated(true)` consommait le
+    // pending avant que le redirect n'arrive au bloc 3, qui retombait alors
+    // sur son défaut `/flux-continu` — l'utilisateur atterrissait sur
+    // L'Essentiel au lieu de son article.
+    // Cf. docs/bugs/bug-widget-flaner-android.md (D9).
+    // ──────────────────────────────────────────────────────────
+
+    test('un lien de cold-start n’est PAS consommé par flushPendingIfReady',
+        () {
+      final service = DeepLinkService.forTest();
+      DeepLinkService.setInstanceForTest(service);
+
+      service.seedPending(
+        Uri.parse('io.supabase.facteur://feed/content/abc-123'),
+      );
+      // L'auth bascule : c'est ce qui déclenchait le flush concurrent.
+      service.setAuthenticated(true);
+
+      expect(
+        service.pendingRoute(),
+        '/flaner/content/abc-123',
+        reason: 'le redirect doit encore le trouver pour composer sa pile',
+      );
+    });
+
     test('seedPending ignores foreign schemes', () {
       final service = DeepLinkService.forTest();
       DeepLinkService.setInstanceForTest(service);
@@ -449,6 +476,31 @@ void main() {
         DeepLinkService.setInstanceForTest(service);
         expect(() => service.pushArticleRoute('/flaner/content/x'),
             returnsNormally);
+      },
+    );
+
+    testWidgets(
+      'un lien reçu à chaud avant l’auth est bien rejoué au flush',
+      (tester) async {
+        // Le pendant du test cold-start : réserver le pending au redirect ne
+        // doit pas geler la voie à chaud (app déjà lancée, pas encore
+        // authentifiée — l'URI attend puis doit être routée au flush).
+        final navKey = GlobalKey<NavigatorState>();
+        final router = buildRouter(navKey);
+        await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+        final service = DeepLinkService.forTest();
+        DeepLinkService.setInstanceForTest(service);
+        service.bind(router: router);
+
+        service.handle(Uri.parse('io.supabase.facteur://feed/content/hot-1'));
+        await tester.pumpAndSettle();
+        expect(find.text('reader-hot-1'), findsNothing,
+            reason: 'non authentifié : le lien attend');
+
+        service.setAuthenticated(true);
+        await tester.pumpAndSettle();
+        expect(find.text('reader-hot-1'), findsOneWidget);
+        expect(service.pendingRoute(), isNull, reason: 'consommé par le flush');
       },
     );
 

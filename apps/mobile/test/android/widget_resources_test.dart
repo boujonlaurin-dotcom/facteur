@@ -218,6 +218,41 @@ void main() {
       );
     });
 
+    test('une donnée plus fraîche annule à elle seule l’état « en cours »', () {
+      // Le marqueur ne doit pas dépendre du seul effacement par Dart : si la
+      // chaîne de fond ne rend jamais la main, le statut restait collé. Une
+      // écriture de `articles_updated_at` postérieure au début du
+      // rafraîchissement suffit à conclure qu'il a abouti.
+      expect(
+        kotlin('FacteurWidget'),
+        contains('readLongPref(context, UPDATED_AT_KEY) >= since'),
+      );
+    });
+
+    test('un repaint de sécurité est programmé au tap sur refresh', () {
+      // Sans lui, sortir de « Mise à jour… » supposait qu'un repaint arrive de
+      // quelque part — au pire l'alarme système, 30 min plus tard.
+      final kt = kotlin('FacteurWidget');
+      expect(kt, contains('ACTION_SETTLE'));
+      expect(kt, contains('scheduleSettle'));
+      expect(
+        kt,
+        contains('AlarmManager.RTC'),
+        reason: 'alarme inexacte : `setExact*` exigerait SCHEDULE_EXACT_ALARM',
+      );
+    });
+
+    test('le refresh immédiat n’est pas expedited', () {
+      // `setExpedited()` lève quand le quota ou la config ne s'y prêtent pas —
+      // et l'exception ne coûte pas de la latence, elle prive le bouton de
+      // tout rafraîchissement.
+      expect(
+        File('lib/core/services/widget_background_refresh.dart')
+            .readAsStringSync(),
+        isNot(contains('outOfQuotaPolicy:')),
+      );
+    });
+
     test('le refresh immédiat passe par WorkManager, pas par l’isolate '
         'home_widget', () {
       // `HomeWidgetBackgroundService` est un JobIntentService dont
