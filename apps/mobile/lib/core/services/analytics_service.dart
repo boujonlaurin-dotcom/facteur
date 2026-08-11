@@ -144,14 +144,22 @@ class AnalyticsService {
   /// Une décision de tri sur la carte « Ton Essentiel » (Story 33.1).
   ///
   /// Première famille d'events `essentiel_*` du produit. Ce qui la rend utile
-  /// et que `content_interaction` ne porte pas : [rank] **dans le slate figé**
-  /// + [slateSize], soit le dénominateur qui manquait à la jauge de ranking, et
+  /// et que `content_interaction` ne porte pas : [rank] **dans le slate** +
+  /// [slateSize], soit le dénominateur qui manquait à la jauge de ranking, et
   /// [latencyMs], qui distingue le tri réfléchi du tri fait en scrollant.
+  ///
+  /// ⚠️ [slateSize] garde son nom mais **change de sens en 33.4** : ce n'est
+  /// plus l'objectif de l'utilisateur (le slate était coupé à la cible), c'est
+  /// la taille du pool proposé à cet instant — une valeur **croissante** au fil
+  /// du tri. L'objectif se lit désormais dans [goal], le nombre d'articles à
+  /// garder. Toute requête sur les données antérieures au 11/08/2026 doit lire
+  /// `slate_size` comme l'ancienne cible.
   Future<void> trackEssentielTriage({
     required String decision,
     required String contentId,
     required int rank,
     required int slateSize,
+    required int goal,
     required String decidedVia,
     int? latencyMs,
   }) async {
@@ -161,14 +169,24 @@ class AnalyticsService {
       'content_id': contentId,
       'rank': rank,
       'slate_size': slateSize,
+      'goal': goal,
       'decided_via': decidedVia,
       'latency_ms': latencyMs,
     });
   }
 
   /// Fin d'un tri complet — un event par session de tri, pas par article.
+  ///
+  /// [endedBy] (`goal` | `exhausted` | `stopped`) et [goalReached] sont la
+  /// mesure qui compte en 33.4 : c'est la part de `exhausted` qui dira si la
+  /// pile sèche avant la cible, donc si l'élargissement du pool `/more` a
+  /// suffi. [autoFetches] la corrèle au coût réseau consenti pour y arriver.
   Future<void> trackEssentielTriageSession({
     required int slateSize,
+    required int goal,
+    required bool goalReached,
+    required String endedBy,
+    required int autoFetches,
     required int kept,
     required int later,
     required int passed,
@@ -177,10 +195,35 @@ class AnalyticsService {
     await _logEvent('essentiel_triage_session', {
       'session_id': _sessionId,
       'slate_size': slateSize,
+      'goal': goal,
+      'goal_reached': goalReached,
+      'ended_by': endedBy,
+      'auto_fetches': autoFetches,
       'kept': kept,
       'later': later,
       'passed': passed,
       'duration_ms': durationMs,
+    });
+  }
+
+  /// Nudge « Rien ne t'accroche ? Tu peux t'arrêter là. » (Story 33.4), proposé
+  /// après [consecutivePass] refus enchaînés.
+  ///
+  /// [action] : `shown` | `accepted` (l'utilisateur arrête son tri) |
+  /// `dismissed` (il ferme le bandeau et continue). Le ratio accepted/shown dit
+  /// si le seuil de 5 est le bon.
+  Future<void> trackEssentielTriageStopNudge({
+    required String action,
+    required int consecutivePass,
+    required int keptCount,
+    required int goal,
+  }) async {
+    await _logEvent('essentiel_triage_stop_nudge', {
+      'session_id': _sessionId,
+      'action': action,
+      'consecutive_pass': consecutivePass,
+      'kept_count': keptCount,
+      'goal': goal,
     });
   }
 

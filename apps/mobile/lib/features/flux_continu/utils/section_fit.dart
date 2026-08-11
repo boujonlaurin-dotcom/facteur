@@ -269,12 +269,47 @@ const double kTriageCardPaddingV = 12;
 /// profondeur est donc portée par l'**opacité seule**.
 const double kTriageBackCardOpacity = 0.5;
 
-/// Ligne cible/statut : « N à lire aujourd'hui · Y à trier », avec les boutons
-/// −/+ et sa respiration, rendue **sous la barre
-/// d'actions** (reprise PO 08/08). Remplace l'ancienne barre segmentée de
-/// 14px. Partagée avec la silhouette ([TriageStackSkeleton]) : deux hauteurs
+/// Ligne d'objectif : « Je veux lire [−] N [+] articles aujourd'hui », rendue
+/// **sous la barre d'actions** (reprise PO 08/08, emplacement confirmé 10/08).
+/// Partagée avec la silhouette ([TriageStackSkeleton]) : deux hauteurs
 /// divergentes feraient sauter la mise en page à l'hydratation.
-const double kTriageProgressHeight = 26;
+///
+/// 44 et non 26 (la hauteur du cercle visible) : les ronds `−`/`+` doivent
+/// porter une **cible tactile de 44px** tout en gardant un cercle discret de
+/// [kTriageTargetRoundSize]. Les 9px transparents de chaque côté font en outre
+/// office d'écart au chiffre, ce qui colle les boutons à ce qu'ils règlent au
+/// lieu de les pousser aux deux extrémités de la largeur.
+const double kTriageTargetControlHeight = 44;
+
+/// Diamètre du **cercle visible** des ronds `−`/`+` du contrôle d'objectif. La
+/// cible tactile, elle, vaut [kTriageTargetControlHeight].
+const double kTriageTargetRoundSize = 26;
+
+/// Slot de la barre de progression segmentée, rendue **entre** la barre
+/// d'actions et le contrôle d'objectif (reprise PO 10/08 : la progression
+/// visuelle revient, sans reprendre la place du contrôle).
+///
+/// 8 → **4** en 33.4 : la barre ne compte plus les articles triés mais les
+/// articles **gardés**, et il n'y a plus de segment « courant » à loger. Les
+/// segments restent centrés verticalement dans ce slot fixe.
+const double kTriageProgressBarHeight = 4;
+
+/// Épaisseur d'un segment de progression.
+///
+/// 4 → **2** en 33.4 : des traits plus fins et plus espacés
+/// ([kTriageProgressSegmentGap]) se lisent comme un repère, pas comme une jauge
+/// de jeu. Il n'y a plus de `kTriageProgressSegmentActiveHeight` : la
+/// progression n'est plus positionnelle (« où j'en suis dans la pile »), elle
+/// est cumulative (« combien j'ai gardé »), donc aucun segment n'est courant.
+const double kTriageProgressSegmentHeight = 2;
+
+/// Écart horizontal entre deux segments de progression.
+const double kTriageProgressSegmentGap = 4;
+
+/// Plafond de segments de la barre. Au-delà (« Plus d'articles ? » poussant la
+/// cible au-dessus de `kTriageGoalMax`), le remplissage est proratisé : des
+/// traits de moins de 2px de large ne seraient plus lisibles.
+const int kTriageProgressMaxSegments = 10;
 
 /// Un article gardé dans la liste qui se construit sous la pile. Plus compact
 /// qu'un medium ([kHeroMediumHeight]) : pas de hairline, titre sur 2 lignes

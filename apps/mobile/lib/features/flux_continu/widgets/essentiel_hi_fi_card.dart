@@ -20,6 +20,7 @@ import '../../settings/providers/display_mode_provider.dart';
 import '../models/flux_continu_models.dart';
 import '../models/weather_snapshot.dart';
 import '../providers/edition_read_status_provider.dart';
+import '../providers/essentiel_extra_articles_provider.dart';
 import '../providers/essentiel_triage_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
@@ -109,7 +110,7 @@ class EssentielHiFiCard extends ConsumerStatefulWidget {
 
 class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   bool _startScheduled = false;
-  bool _targetReconcileScheduled = false;
+  bool _prefetchScheduled = false;
   bool _pruneScheduled = false;
 
   // Mémo du pool adressable (slate du jour + articles du carrousel adaptés).
@@ -121,24 +122,31 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   // chemins de tri).
   List<EssentielArticle>? _memoArticles;
   FeedCarouselData? _memoCarousel;
-  List<EssentielArticle> _memoExtra = const [];
+  List<EssentielArticle> _memoFetched = const [];
   List<EssentielArticle> _memoPool = const [];
   Set<String> _memoPoolIds = const {};
 
-  void _refreshPoolMemo() {
+  /// [fetched] = articles rapatriés par « Plus d'articles ? » quand la réserve
+  /// locale était épuisée ([essentielExtraArticlesProvider]). Ils entrent dans
+  /// le pool **en queue**, après le carrousel : le préfixe (slate backend puis
+  /// carrousel) ne bouge jamais, donc rien de ce qui est déjà affiché n'est
+  /// rebattu, ni au tri ni au cold-boot.
+  void _refreshPoolMemo(List<EssentielArticle> fetched) {
     final articles = widget.articles;
     final carousel = widget.carousel;
     if (identical(_memoArticles, articles) &&
-        identical(_memoCarousel, carousel)) {
+        identical(_memoCarousel, carousel) &&
+        identical(_memoFetched, fetched)) {
       return;
     }
     _memoArticles = articles;
     _memoCarousel = carousel;
+    _memoFetched = fetched;
 
-    // Articles réinjectables (« Plus d'articles ? » / stepper) : les items du
-    // carrousel du jour non déjà dans le slate, adaptés en articles triables.
-    // Rangs au-delà du slate d'origine (le backend acceptera leur tri avec le
-    // `slate_size` **étendu** que `decide()` envoie après `setTarget`).
+    // Articles réinjectables : les items du carrousel du jour non déjà dans le
+    // slate, adaptés en articles triables. Rangs au-delà du slate d'origine (le
+    // backend accepte leur tri avec le `slate_size` **courant** que `decide()`
+    // envoie — le slate s'allonge, la borne de schéma a été relevée en 33.4).
     final seen = {for (final a in articles) a.contentId};
     final extra = <EssentielArticle>[];
     final items = carousel?.items ?? const [];
@@ -148,12 +156,16 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
         EssentielArticle.fromContent(items[i], rank: articles.length + i + 1),
       );
     }
-    _memoExtra = List.unmodifiable(extra);
+    // Articles rapatriés au réseau, dédupés contre tout ce qui précède.
+    final fetchedFresh = [
+      for (final a in fetched)
+        if (seen.add(a.contentId)) a,
+    ];
     // Pool adressable par la pile : slate du jour + articles injectables. Le
-    // gel (`startIfNeeded`) reçoit ce pool **ordonné** et coupe lui-même à la
-    // cible effective du jour ; le stepper et « Plus d'articles ? » puisent
-    // ensuite dans la même liste via `setTarget`.
-    _memoPool = List.unmodifiable([...articles, ...extra]);
+    // slate (`syncSlate`) reçoit ce pool **ordonné** et le porte en entier — il
+    // n'est plus coupé à la cible (33.4), c'est le nombre de gardés qui borne
+    // le tri.
+    _memoPool = List.unmodifiable([...articles, ...extra, ...fetchedFresh]);
     _memoPoolIds = {for (final a in _memoPool) a.contentId};
   }
 
@@ -186,39 +198,72 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     });
   }
 
-  /// Fige le slate du jour. Appelé depuis `build` **uniquement** quand toutes
-  /// les conditions sont déjà réunies, et exécuté après la frame : muter un
-  /// provider pendant le build est interdit par Riverpod.
+  /// Aligne le slate du jour sur le pool. Appelé depuis `build` **uniquement**
+  /// quand toutes les conditions sont déjà réunies, et exécuté après la frame :
+  /// muter un provider pendant le build est interdit par Riverpod.
   ///
-  /// Le gel se fait à la première frame de la pile, pas au premier geste : un
-  /// refetch glissé entre l'affichage et le premier swipe changerait sinon la
-  /// carte du dessus sous le doigt.
+  /// Le gel de l'ordre se fait à la première frame de la pile, pas au premier
+  /// geste : un refetch glissé entre l'affichage et le premier swipe changerait
+  /// sinon la carte du dessus sous le doigt. Les appels suivants ne font
+  /// qu'**allonger la queue** ([EssentielTriageNotifier.syncSlate]) — c'est ce
+  /// qui remplace la réconciliation de cible de la 33.3 (carrousel arrivant
+  /// après le héros) et ce qui fait entrer les articles prefetchés dans la pile.
   ///
-  /// Le notifier reçoit le **pool ordonné** (slate backend puis carrousel),
-  /// pas seulement les 5 : c'est lui qui coupe à la cible effective du jour
-  /// (`effectiveTriageTarget`), et le même pool sert ensuite au stepper.
-  void _scheduleStart() {
+  /// Le verrou n'est pas « une fois par montage » mais « un post par frame » :
+  /// le pool grandit en cours de tri, chaque agrandissement doit passer.
+  void _scheduleSyncSlate() {
     if (_startScheduled) return;
     _startScheduled = true;
+    final snapshot = _memoPool.map((a) => a.contentId).toList(growable: false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startScheduled = false;
       if (!mounted) return;
-      ref.read(essentielTriageProvider.notifier).startIfNeeded(
-            _memoPool.map((a) => a.contentId).toList(growable: false),
-          );
+      ref.read(essentielTriageProvider.notifier).syncSlate(snapshot);
     });
   }
 
-  /// Réapplique une cible persistée quand le carrousel arrive après le héros.
-  /// Le premier pool partiel a pu forcer `pruneUnavailable` à retirer ses ids ;
-  /// le second passage complète alors le slate sans rebattre son préfixe.
-  void _scheduleTargetReconciliation(List<String> poolIds) {
-    if (_targetReconcileScheduled) return;
-    _targetReconcileScheduled = true;
-    final snapshot = List<String>.unmodifiable(poolIds);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _targetReconcileScheduled = false;
-      if (!mounted) return;
-      ref.read(essentielTriageProvider.notifier).startIfNeeded(snapshot);
+  /// Va chercher la suite **avant** que la pile ne sèche (Story 33.4).
+  ///
+  /// C'est ce qui rend l'objectif « N articles à garder » tenable : sans lui,
+  /// `/more` n'était appelé que par le tap sur « Plus d'articles ? » et la pile
+  /// s'arrêtait sur le pool du matin, quel que soit le nombre de refus.
+  ///
+  /// Aucune UI d'attente : c'est un prefetch, il ne doit rien bloquer ni faire
+  /// clignoter. Les articles rapatriés entrent dans `_memoPool` par le chemin
+  /// déjà en place, et `syncSlate` les append au build suivant.
+  ///
+  /// Les gardes anti-boucle vivent dans le notifier ([_inFlight], cooldown
+  /// d'épuisement, plafond de prefetchs) — la carte n'a que le verrou de frame.
+  void _schedulePrefetchMore(List<String> poolIds) {
+    if (_prefetchScheduled) return;
+    if (!ref.read(essentielExtraArticlesProvider.notifier).canAutoFetch()) {
+      return;
+    }
+    _prefetchScheduled = true;
+    // Exclusions **ordonnées** (slate d'abord, puis pool) et non depuis un
+    // `Set` non ordonné : le backend borne la liste, et ce qui saute à la
+    // troncature doit être ce qui compte le moins.
+    final triage = ref.read(essentielTriageProvider);
+    final seen = <String>{};
+    final exclude = [
+      for (final id in [...triage.slate, ...triage.decisions.keys, ...poolIds])
+        if (seen.add(id)) id,
+    ];
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _prefetchScheduled = false;
+        return;
+      }
+      try {
+        await ref.read(essentielExtraArticlesProvider.notifier).fetchMore(
+              excludeIds: exclude,
+              limit: kTriagePrefetchBatch,
+            );
+      } catch (e) {
+        debugPrint('EssentielHiFiCard: prefetch failed: $e');
+      } finally {
+        if (mounted) _prefetchScheduled = false;
+      }
     });
   }
 
@@ -230,11 +275,15 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     final accent = colors.sectionEssentiel;
     final spec = ref.watch(displayModeSpecProvider);
 
-    _refreshPoolMemo();
-    final carouselArticles = _memoExtra;
+    // Articles rapatriés au réseau (Story 33.3, puis prefetch automatique en
+    // 33.4) : ils font partie du pool au même titre que le carrousel, et leur
+    // hydratation asynchrone gate l'élagage du slate (cf.
+    // `_schedulePruneUnavailable`).
+    final extraState = ref.watch(essentielExtraArticlesProvider);
+    _refreshPoolMemo(extraState.articles);
     final pool = _memoPool;
-    // Pool **ordonné** (slate puis carrousel) : le gel, le stepper et « Plus
-    // d'articles ? » raisonnent tous sur cette même liste.
+    // Pool **ordonné** (slate, carrousel, puis rapatriés) : le slate et les
+    // exclusions envoyées au backend raisonnent sur cette même liste.
     final poolIds = [for (final a in pool) a.contentId];
 
     // Un seul point de lecture des providers de session : l'état dérivé descend
@@ -275,19 +324,42 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // hors slate du jour.
     final triage = ref.watch(essentielTriageProvider);
     final canTriage = isToday && articles.isNotEmpty && triage.hydrated;
-    if (canTriage && !triage.hasStarted) _scheduleStart();
-    if (canTriage &&
-        triage.hasStarted &&
-        triage.target != null &&
-        triage.slate.length <
-            effectiveTriageTarget(triage.target, poolIds.length)) {
-      _scheduleTargetReconciliation(poolIds);
+    var pendingPoolIds = 0;
+    if (canTriage) {
+      // Le slate porte tout le pool proposé (33.4) : tout id du pool qui n'y
+      // est pas encore doit l'y rejoindre, en queue. C'est aussi ce qui fait
+      // entrer les articles prefetchés dans la pile.
+      final inSlate = triage.slate.toSet();
+      // Articles du pool pas encore entrés dans le slate. Ils sont par
+      // construction non décidés, donc ils comptent dans ce qui reste à
+      // proposer — et c'est ce qui évite un second prefetch pendant la frame
+      // où `syncSlate` n'a pas encore couru.
+      pendingPoolIds = poolIds.where((id) => !inSlate.contains(id)).length;
+      if (!triage.hasStarted || pendingPoolIds > 0) _scheduleSyncSlate();
     }
     final showTriage = canTriage && triage.isActive;
+    // **Alimentation continue de la pile** (33.4) : dès qu'il reste moins de
+    // deux articles à proposer et que la cible de gardés n'est pas atteinte, on
+    // va chercher la suite. Sans ça, l'objectif « N articles à garder » ne
+    // serait qu'une promesse : la pile s'arrêterait sur le pool du matin.
+    final remainingToTriage =
+        (triage.slate.length - triage.index) + pendingPoolIds;
+    if (showTriage &&
+        !triage.goalReached &&
+        remainingToTriage <= kTriagePrefetchLowWaterMark) {
+      _schedulePrefetchMore(poolIds);
+    }
     // Haut de pile introuvable dans le pool ⇒ le slate a survécu à l'article
     // qu'il désigne. La pile rend la silhouette (jamais un corps vide) et on
     // programme la réparation du slate.
-    if (showTriage && !_memoPoolIds.contains(triage.currentContentId)) {
+    // `extraState.hydrated` est une **condition de sûreté**, pas un détail : un
+    // article rapatrié au réseau vit dans SharedPreferences, relu en asynchrone.
+    // Élaguer avant sa relecture retirerait du slate l'article que
+    // l'utilisateur a demandé la veille — le redémarrage annulerait sa décision
+    // d'élargir sa pile.
+    if (showTriage &&
+        extraState.hydrated &&
+        !_memoPoolIds.contains(triage.currentContentId)) {
       _schedulePruneUnavailable();
     }
     final triageDone = canTriage && triage.done;
@@ -336,18 +408,6 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     } else {
       passiveArticles = articles;
     }
-    // « Plus d'articles ? » : proposé au tri terminé dès qu'il reste des items
-    // de carrousel à injecter — jamais deux fois les mêmes, puisqu'après
-    // injection ils appartiennent au slate.
-    //
-    // **Un seul point de décision** : la liste. Elle est vide (⇒ bouton absent,
-    // `_TriageDoneActions` le dérive lui-même) quand il ne reste rien à injecter,
-    // et ce seul cas. Plus de gate sur le nombre de gardés : on propose d'élargir
-    // dès qu'on a de quoi, quel que soit le nombre gardé (décision PO 10/08).
-    final injectableIds = [
-      for (final a in carouselArticles)
-        if (!triage.slate.contains(a.contentId)) a.contentId,
-    ];
     // B2 (passe PO 09/08) — **la liste des gardés est homogène** : tous les
     // articles y sont des tuiles sobres ([_MediumTile]), le premier compris. Un
     // gardé n'est pas plus important qu'un autre : c'est l'utilisateur qui les a
@@ -360,7 +420,8 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     // pas du code mort, c'est l'autre moitié de cette bascule.
     // La limite éditoriale à 5 ne vaut que pour la liste passive historique.
     // Après le tri, chaque choix positif doit rester accessible, y compris le
-    // 6e (la cible réglable peut couvrir tout le pool, jusqu'à 10).
+    // 6e (l'objectif de gardés est réglable, et « Plus d'articles ? » peut le
+    // pousser au-delà du plafond du stepper).
     final visible = (triageDone ? passiveArticles : passiveArticles.take(5))
         .toList(growable: false);
     final lead = triageDone || visible.isEmpty ? null : visible.first;
@@ -449,19 +510,15 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
                     ),
                   ),
                 ],
-                // Tri terminé : le pied de carte. « Trier à nouveau » est
-                // toujours là (upsert backend idempotent sur
-                // `(user, article, jour)`, donc re-trier écrase sans dupliquer) ;
-                // « Plus d'articles » ne s'y ajoute que si le gate produit et le
-                // pool injectable le permettent — d'où `injectableIds`, seul point
-                // de décision.
+                // Tri terminé : le pied de carte — « Plus d'articles ? » puis
+                // « Refaire ? » (upsert backend idempotent sur
+                // `(user, article, jour)`, donc re-trier écrase sans dupliquer).
+                // L'objectif n'y est **plus affiché** (33.4) : un tri qui
+                // s'arrête en deçà de la cible ne doit jamais se lire comme un
+                // échec.
                 if (triageDone) ...[
                   if (visible.isEmpty) const _NothingKeptNotice(),
-                  _TriageDoneActions(
-                    injectableIds: injectableIds,
-                    poolIds: poolIds,
-                    triage: triage,
-                  ),
+                  _TriageDoneActions(poolIds: poolIds),
                 ],
               ],
             ],
@@ -472,37 +529,105 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   }
 }
 
-/// Pied de carte du tri terminé (design 2A) : « Plus d'articles ? » quand il
-/// reste de quoi élargir, et « Trier à nouveau » toujours.
+/// Pied de carte du tri terminé (design 2A) : « Plus d'articles ? » **toujours**,
+/// et « Refaire ? » toujours.
 ///
 /// - « Plus d'articles ? » est une **zone à bord pointillé** de 64px
 ///   ([DashedRRectPainter], le peintre existant du masthead/sceau — aucun
 ///   nouveau peintre) : icône `+` accent, titre, sous-titre « Deux de plus,
-///   tirés du même Essentiel ». C'est le même levier que le contrôle sous les
-///   actions : `setTarget(cible + 2)`.
-/// - « Trier à nouveau » est une **ligne** de 34px centrée, icône + libellé
-///   discret — une sortie de secours, pas un appel.
+///   tirés du même Essentiel ».
+/// - « Refaire ? » est une **ligne** de 28px centrée, icône + libellé discret —
+///   une sortie de secours, pas un appel.
 ///
-/// Ordre stable : la zone, quand elle existe, se pose **au-dessus** ; la ligne
-/// garde donc la même place qu'elle soit là ou non.
-class _TriageDoneActions extends ConsumerWidget {
-  /// `contentId` des articles du carrousel du jour pas encore dans le slate.
-  /// Vide ⇒ « Plus d'articles ? » est **absent** : le pool injectable est épuisé
-  /// (bouton mort). C'est le seul cas — plus de gate sur le nombre de gardés.
-  final List<String> injectableIds;
-
-  /// Pool ordonné du jour (slate puis carrousel) — l'argument de `setTarget`.
+/// **La zone ne disparaît jamais** (reprise PO 10/08) et son action s'est
+/// simplifiée en 33.4 : il n'y a plus de branche « réserve locale vs réseau » à
+/// arbitrer, puisque le slate porte déjà tout le pool local. Un tap pousse
+/// simplement l'objectif de gardés ([EssentielTriageNotifier.extendGoal]) :
+///
+/// 1. le slate a de quoi tenir la nouvelle cible → la pile rouvre dans la frame ;
+/// 2. le slate est épuisé → on force un `fetchMore` (geste utilisateur : il
+///    ignore le cooldown d'épuisement du prefetch automatique) ;
+/// 3. rien d'inédit → la zone **reste** et son sous-titre le dit sobrement.
+class _TriageDoneActions extends ConsumerStatefulWidget {
+  /// Pool ordonné du jour (slate, carrousel, puis rapatriés) — base des
+  /// exclusions envoyées au backend.
   final List<String> poolIds;
-  final EssentielTriageState triage;
 
-  const _TriageDoneActions({
-    required this.injectableIds,
-    required this.poolIds,
-    required this.triage,
-  });
+  const _TriageDoneActions({required this.poolIds});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TriageDoneActions> createState() => _TriageDoneActionsState();
+}
+
+class _TriageDoneActionsState extends ConsumerState<_TriageDoneActions> {
+  /// Un appel réseau en vol : bascule l'icône `+` en indicateur et **absorbe**
+  /// les taps suivants. Le notifier porte la même garde (deux instances de la
+  /// carte ne doivent pas non plus doubler l'appel) ; celle-ci ne sert qu'à
+  /// rendre l'attente lisible.
+  bool _loading = false;
+
+  /// Le dernier appel n'a rien rapporté d'inédit. Effacé dès qu'on retente :
+  /// un nouvel article a pu tomber entre-temps.
+  bool _noneAvailable = false;
+
+  Future<void> _onTap() async {
+    if (_loading) return;
+
+    // 1. Pousser la cible suffit : `extendGoal` est synchrone et lève l'arrêt
+    //    volontaire. Si le slate porte encore des articles non triés, la pile
+    //    rouvre dans la frame et ce pied de carte disparaît.
+    ref.read(essentielTriageProvider.notifier).extendGoal(kTriageGoalExtendStep);
+    if (ref.read(essentielTriageProvider).isActive) return;
+
+    // 2. Slate épuisé : il faut de la matière. Geste utilisateur ⇒ `force`,
+    //    qui ignore le cooldown d'épuisement du prefetch automatique — il a le
+    //    droit d'insister.
+    setState(() {
+      _loading = true;
+      _noneAvailable = false;
+    });
+    try {
+      final triage = ref.read(essentielTriageProvider);
+      // Tout ce que le client porte déjà, **dans l'ordre** : le slate (affiché
+      // ou à trier), les articles décidés (un rejeté ne doit jamais revenir),
+      // puis le pool local. Le backend borne la liste ; ce qui saute à la
+      // troncature doit être ce qui compte le moins.
+      final seen = <String>{};
+      final exclude = [
+        for (final id in [
+          ...triage.slate,
+          ...triage.decisions.keys,
+          ...widget.poolIds,
+        ])
+          if (seen.add(id)) id,
+      ];
+      final fresh =
+          await ref.read(essentielExtraArticlesProvider.notifier).fetchMore(
+                excludeIds: exclude,
+                limit: kTriagePrefetchBatch,
+                force: true,
+              );
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        // Rien d'inédit : la zone **reste** et le dit sobrement. L'objectif
+        // relevé est conservé — si un article tombe plus tard, la pile rouvrira
+        // d'elle-même au prochain `syncSlate`.
+        _noneAvailable = fresh.isEmpty;
+      });
+    } catch (e) {
+      debugPrint('EssentielHiFiCard: fetchMore failed: $e');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _noneAvailable = true;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final colors = Theme.of(context).extension<FacteurColors>()!;
     return Padding(
       // La respiration au-dessus est le point : le pied ne doit plus toucher la
@@ -511,40 +636,45 @@ class _TriageDoneActions extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (injectableIds.isNotEmpty) ...[
-            Semantics(
-              button: true,
-              label: 'Plus d\'articles ?',
-              child: InkWell(
-                borderRadius: BorderRadius.circular(FacteurRadius.large),
-                // Allonge la cible de deux articles du même pool et **rouvre**
-                // la pile (sans réseau) — même levier que le stepper.
-                onTap: () {
-                  final triage = ref.read(essentielTriageProvider);
-                  ref
-                      .read(essentielTriageProvider.notifier)
-                      .setTarget(triage.slate.length + 2, poolIds);
-                },
-                child: CustomPaint(
-                  painter: DashedRRectPainter(
-                    color: colors.border,
-                    strokeWidth: 1.2,
-                    radius: FacteurRadius.large,
-                    dashLength: 5,
-                    gapLength: 4,
-                  ),
-                  child: SizedBox(
-                    height: 64,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          PhosphorIcons.plus(),
-                          size: 18,
-                          color: colors.sectionEssentiel,
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
+          Semantics(
+            button: true,
+            enabled: !_loading,
+            label: 'Plus d\'articles ?',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(FacteurRadius.large),
+              onTap: _loading ? null : _onTap,
+              child: CustomPaint(
+                painter: DashedRRectPainter(
+                  color: colors.border,
+                  strokeWidth: 1.2,
+                  radius: FacteurRadius.large,
+                  dashLength: 5,
+                  gapLength: 4,
+                ),
+                child: SizedBox(
+                  height: 64,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // L'indicateur occupe **exactement** la place de l'icône :
+                      // la zone ne change pas de taille pendant l'attente.
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: _loading
+                            ? CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: colors.sectionEssentiel,
+                              )
+                            : Icon(
+                                PhosphorIcons.plus(),
+                                size: 18,
+                                color: colors.sectionEssentiel,
+                              ),
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -558,7 +688,13 @@ class _TriageDoneActions extends ConsumerWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Deux de plus, tirés du même Essentiel',
+                              _loading
+                                  ? 'Recherche en cours...'
+                                  : _noneAvailable
+                                      ? 'Pas de nouvel article pour l\'instant.'
+                                      : 'Deux de plus, tirés du même Essentiel',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: colors.textSecondary,
@@ -566,37 +702,39 @@ class _TriageDoneActions extends ConsumerWidget {
                             ),
                           ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: kTriageActionGap),
-          ],
+          ),
+          const SizedBox(height: kTriageActionGap),
           Semantics(
             button: true,
-            label: 'Trier à nouveau',
+            // « Refaire ? » seul est trop pauvre pour un lecteur d'écran : le
+            // libellé visible est raccourci, pas la sémantique.
+            label: 'Refaire le tri',
             child: InkWell(
               borderRadius: BorderRadius.circular(FacteurRadius.pill),
               onTap: () => ref.read(essentielTriageProvider.notifier).restart(),
               child: SizedBox(
-                height: 34,
+                height: 28,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
                       PhosphorIcons.arrowCounterClockwise(),
-                      size: 14,
-                      color: colors.textSecondary,
+                      size: 12,
+                      color: colors.textTertiary,
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Trier à nouveau',
+                      'Refaire ?',
                       style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: colors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: colors.textTertiary,
                       ),
                     ),
                   ],
@@ -604,8 +742,6 @@ class _TriageDoneActions extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 4),
-          TriageTargetControl(triage: triage, poolIds: poolIds),
         ],
       ),
     );

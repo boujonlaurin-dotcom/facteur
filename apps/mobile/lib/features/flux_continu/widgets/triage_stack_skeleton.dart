@@ -144,17 +144,62 @@ class TriageStackSkeleton extends StatelessWidget {
             ),
           ),
         ),
-        // Progression **sous** les boutons, exactement comme la vraie pile
-        // (reprise PO 08/08) : deux ordres différents feraient sauter la mise
-        // en page à l'hydratation, ce que cette silhouette existe pour
-        // empêcher. La cible et la progression sont une **ligne de texte**
-        // (« N à lire aujourd'hui · Y à trier »), pas des segments : la
-        // silhouette est donc une barre de texte courte, à la même place.
+        // Barre de progression **sous** les boutons, exactement comme la vraie
+        // pile (reprise PO 10/08) : deux ordres différents feraient sauter la
+        // mise en page à l'hydratation, ce que cette silhouette existe pour
+        // empêcher. Depuis la 33.4 elle compte les **gardés** : le nombre de
+        // segments est l'objectif du jour, inconnu à ce stade (SharedPrefs pas
+        // encore relu) → 5, la valeur par défaut. La largeur totale ne dépend
+        // de toute façon pas du compte.
         SizedBox(
-          height: kTriageProgressHeight,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: bar(width: 140, height: 11),
+          height: kTriageProgressBarHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              for (var i = 0; i < 5; i++) ...[
+                if (i > 0) const SizedBox(width: kTriageProgressSegmentGap),
+                Expanded(
+                  child: bar(
+                    height: kTriageProgressSegmentHeight,
+                    radius: FacteurRadius.pill,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        // Contrôle d'objectif : « Je veux lire », deux ronds de
+        // [kTriageTargetRoundSize] centrés dans leur cible tactile de
+        // [kTriageTargetControlHeight] encadrant le chiffre, puis la fin de la
+        // phrase. Mêmes constantes que le vrai contrôle.
+        SizedBox(
+          height: kTriageTargetControlHeight,
+          child: Row(
+            children: [
+              bar(width: 74, height: 11),
+              SizedBox(
+                width: kTriageTargetControlHeight,
+                child: Center(
+                  child: bar(
+                    width: kTriageTargetRoundSize,
+                    height: kTriageTargetRoundSize,
+                    radius: FacteurRadius.pill,
+                  ),
+                ),
+              ),
+              bar(width: 10, height: 12),
+              SizedBox(
+                width: kTriageTargetControlHeight,
+                child: Center(
+                  child: bar(
+                    width: kTriageTargetRoundSize,
+                    height: kTriageTargetRoundSize,
+                    radius: FacteurRadius.pill,
+                  ),
+                ),
+              ),
+              bar(width: 112, height: 11),
+            ],
           ),
         ),
       ],

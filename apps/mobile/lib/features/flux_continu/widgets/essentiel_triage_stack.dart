@@ -9,6 +9,7 @@ import 'package:phosphor_flutter/phosphor_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 import '../../../config/theme.dart';
+import '../../../core/nudges/widgets/nudge_inline_banner.dart';
 import '../../../shared/widgets/read_state_mark.dart';
 import '../../../widgets/article_preview_modal.dart';
 import '../../../widgets/design/facteur_image.dart';
@@ -51,10 +52,16 @@ import 'triage_swipe_card.dart';
 /// reste bornée par construction (bandeau [kTriageCardImageHeight] fixe + titre
 /// borné par `maxLines`) — aucun plafond explicite n'est donc nécessaire.
 ///
-/// Ordre de la colonne (reprise PO 08/08) : **carte → actions → cible/statut →
-/// gardés**. La barre de progression est passée *sous* les boutons ; la
-/// silhouette ([TriageStackSkeleton]) porte le même ordre, sans quoi la mise en
-/// page sauterait à l'hydratation.
+/// Ordre de la colonne (reprises PO 08/08, 10/08, puis 33.4) : **carte →
+/// actions → nudge d'arrêt → barre de progression → objectif → gardés**. Tout
+/// ce qui informe est *sous* les boutons, à portée du pouce ; la silhouette
+/// ([TriageStackSkeleton]) porte le même ordre et les mêmes hauteurs, sans quoi
+/// la mise en page sauterait à l'hydratation (le nudge, lui, n'a pas de
+/// silhouette : il n'existe qu'après cinq refus, jamais au premier rendu).
+///
+/// Ce que la story 33.4 change dans cette colonne : la barre de progression
+/// compte les **gardés** et non plus les triés, et le stepper règle le nombre
+/// d'articles à garder — la pile, elle, s'alimente jusqu'à cette cible.
 class EssentielTriageStack extends ConsumerStatefulWidget {
   /// Pool des articles adressables par la pile : le slate figé du jour, suivi
   /// des articles injectables par « Voir d'autres articles ». C'est une liste ;
@@ -93,6 +100,11 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
   /// pendant que le `canTriggerNow()` asynchrone est en vol relancerait la
   /// séquence et le pulse se rejouerait en boucle sur la même carte.
   bool _nudgeAttempted = false;
+
+  /// L'event `shown` du nudge d'arrêt est-il déjà parti pour l'apparition en
+  /// cours ? Retombe à faux dès que le nudge disparaît, pour que la prochaine
+  /// série de refus soit de nouveau comptée.
+  bool _stopNudgeTracked = false;
 
   /// Les `contentId` ouverts **depuis la pile** (tap sur la carte du dessus).
   /// C'est le filtre de l'auto-keep au retour : sans lui, l'hydratation
@@ -283,6 +295,22 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
       return stateBySourceId[id] ?? InterestState.unfollowed;
     }
 
+    // Nudge d'arrêt : purement dérivé de l'état, aucun scheduler. L'event
+    // `shown` est posté après la frame et **une seule fois par apparition** —
+    // le verrou retombe dès que le nudge disparaît (un keep suffit).
+    final showStopNudge =
+        triage.consecutivePassCount >= kTriageStopNudgeThreshold &&
+            !triage.stopNudgeDismissed;
+    if (!showStopNudge) {
+      _stopNudgeTracked = false;
+    } else if (!_stopNudgeTracked) {
+      _stopNudgeTracked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(essentielTriageProvider.notifier).trackStopNudgeShown();
+      });
+    }
+
     // **Deux `AnimatedSize` frères, jamais imbriqués** (passe PO 09/08, défaut
     // A3). Chacun anime une hauteur **disjointe** : le slot de carte pour l'un,
     // la liste des gardés pour l'autre. La colonne, elle, n'est plus enveloppée.
@@ -429,12 +457,29 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
           onLater: () => _decideFromButton(TriageDecision.later),
           onKeep: () => _decideFromButton(TriageDecision.keep),
         ),
-        // Un seul repère sous les boutons : la cible réglable et le reste à
-        // trier se lisent dans la même phrase, au retour du pouce.
-        TriageTargetControl(
-          triage: triage,
-          poolIds: [for (final article in widget.articles) article.contentId],
+        // Nudge d'arrêt, **sous** la barre d'actions et au-dessus de la
+        // progression : il ne doit ni recouvrir la carte, ni s'intercaler entre
+        // le pouce et les boutons. Son propre `AnimatedSize` (frère des deux
+        // autres) le fait pousser puis se retirer sans que rien ne saute.
+        AnimatedSize(
+          duration: FacteurDurations.medium,
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: showStopNudge
+              ? _TriageStopNudge(
+                  onStop: () =>
+                      ref.read(essentielTriageProvider.notifier).stopTriage(),
+                  onDismiss: () => ref
+                      .read(essentielTriageProvider.notifier)
+                      .dismissStopNudge(),
+                )
+              : const SizedBox(width: double.infinity),
         ),
+        // Repérage visuel de l'avancée **vers la cible de gardés**, sans
+        // chiffre : le nombre se lit dans le contrôle juste dessous.
+        TriageProgressBar(triage: triage),
+        // L'objectif réglable — le nombre d'articles à garder aujourd'hui.
+        TriageGoalControl(triage: triage),
         // La liste des gardés se construit sous la pile. Volontairement en
         // lignes compactes et non en `_LeadTile`/`_MediumTile` (les tuiles
         // pleines reviennent une fois le tri terminé, quand la carte reprend
@@ -616,75 +661,128 @@ class _KeptRow extends StatelessWidget {
   }
 }
 
-/// Contrôle compact sous les boutons : « − 5 à lire aujourd'hui · 3 à trier + ».
-/// Il réunit la cible et l'avancement au lieu de faire dialoguer un stepper dans
-/// l'en-tête avec un second compteur sous le pouce.
-class TriageTargetControl extends ConsumerWidget {
+/// Barre de progression segmentée, rendue **entre** la barre d'actions et le
+/// contrôle d'objectif (reprise PO 10/08 — la progression visuelle revient, le
+/// contrôle garde sa place).
+///
+/// **Elle compte les gardés, plus les triés** (33.4) : un segment par article
+/// de la cible, rempli à mesure que l'utilisateur en garde. C'est la seule
+/// lecture qui suive l'objectif du jour — le nombre d'articles restant à trier
+/// n'est plus déterminé (le pool s'allonge), l'afficher mentirait.
+///
+/// Il n'y a donc plus de segment « courant » : la progression n'est plus
+/// positionnelle, elle est cumulative. La barre ne porte **aucun compteur**
+/// visible ; le chiffre vit dans le contrôle juste dessous, et dans la
+/// sémantique de ce nœud.
+class TriageProgressBar extends StatelessWidget {
   final EssentielTriageState triage;
-  final List<String> poolIds;
 
-  const TriageTargetControl({
-    super.key,
-    required this.triage,
-    required this.poolIds,
-  });
+  const TriageProgressBar({super.key, required this.triage});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.facteurColors;
+    if (!triage.hasStarted) {
+      return const SizedBox(height: kTriageProgressBarHeight);
+    }
+    final goal = triage.effectiveGoal;
+    final kept = triage.keptCount;
+    final segments = math.min(goal, kTriageProgressMaxSegments);
+    // Cas rare : « Plus d'articles ? » a poussé la cible au-delà du plafond de
+    // segments. On proratise plutôt que d'ajouter des traits illisibles.
+    final filled = goal <= segments ? kept : (kept * segments / goal).round();
+    final fill = colors.sectionEssentiel.withValues(alpha: 0.5);
+    return SizedBox(
+      height: kTriageProgressBarHeight,
+      child: Semantics(
+        // Un seul nœud, jamais N segments bavards. C'est lui qui porte le
+        // chiffre : l'affichage visuel continue de n'en porter aucun.
+        label: 'Articles gardés : $kept sur $goal',
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            for (var i = 0; i < segments; i++) ...[
+              if (i > 0) const SizedBox(width: kTriageProgressSegmentGap),
+              Expanded(
+                child: AnimatedContainer(
+                  key: ValueKey('triage-progress-segment-$i'),
+                  duration: FacteurDurations.medium,
+                  curve: Curves.easeOutCubic,
+                  height: kTriageProgressSegmentHeight,
+                  decoration: BoxDecoration(
+                    color: i < filled ? fill : colors.border,
+                    borderRadius: BorderRadius.circular(FacteurRadius.pill),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Contrôle compact sous les boutons :
+/// « Je veux lire [−] N [+] articles aujourd'hui ».
+///
+/// **N est le nombre d'articles à garder** (33.4), plus la taille du slate : le
+/// stepper ne touche donc plus au pool, et le fragment « · Y à trier » a
+/// disparu — le reste à trier n'est plus déterminé.
+///
+/// Hiérarchie voulue (reprise PO 10/08) : c'est un **réglage discret**, pas un
+/// titre. Les ronds encadrent immédiatement le chiffre — ils sont ce qui le
+/// règle, les pousser aux deux extrémités de la largeur cassait ce lien — et le
+/// chiffre lui-même est un `textPrimary` 14/w600 dans la police du texte
+/// courant, non plus un grand Courier gras en accent.
+class TriageGoalControl extends ConsumerWidget {
+  final EssentielTriageState triage;
+
+  const TriageGoalControl({super.key, required this.triage});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.facteurColors;
-    final current = triage.slate.length;
-    final remaining =
-        triage.slate.where((id) => !triage.decisions.containsKey(id)).length;
-    final hi = math.max(poolIds.length, current);
-    final lo = math.min(kTriageTargetMin, hi);
+    final current = triage.effectiveGoal;
 
-    void nudge(int delta) => ref
-        .read(essentielTriageProvider.notifier)
-        .setTarget(current + delta, poolIds);
+    void nudge(int delta) =>
+        ref.read(essentielTriageProvider.notifier).setGoal(current + delta);
 
+    final labelStyle = TextStyle(fontSize: 12, color: colors.textSecondary);
     return SizedBox(
-      height: kTriageProgressHeight,
+      height: kTriageTargetControlHeight,
       child: Row(
         children: [
+          Text('Je veux lire', style: labelStyle),
           _TargetRound(
             icon: PhosphorIcons.minus(),
             semanticLabel: 'Moins d\'articles',
-            enabled: current > lo,
+            enabled: current > kTriageGoalMin,
             onTap: () => nudge(-1),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$current à lire aujourd\'hui',
-                    style: GoogleFonts.courierPrime(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: colors.sectionEssentiel,
-                    ),
-                  ),
-                  TextSpan(
-                    text: ' · $remaining à trier',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+          Text(
+            '$current',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: colors.textPrimary,
             ),
           ),
-          const SizedBox(width: 8),
           _TargetRound(
             icon: PhosphorIcons.plus(),
             semanticLabel: 'Plus d\'articles',
-            enabled: current < hi,
+            enabled: current < kTriageGoalMax,
             onTap: () => nudge(1),
+          ),
+          // `Flexible` et non `Expanded` : la phrase s'élide sur une carte
+          // étroite au lieu de pousser les ronds hors du cadre.
+          Flexible(
+            child: Text(
+              'articles aujourd\'hui',
+              style: labelStyle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),
@@ -692,6 +790,46 @@ class TriageTargetControl extends ConsumerWidget {
   }
 }
 
+/// Bandeau « tu peux t'arrêter là », proposé après
+/// [kTriageStopNudgeThreshold] refus enchaînés.
+///
+/// Réutilise [NudgeInlineBanner] pour le rendu, **sans passer par
+/// `NudgeCoordinator`** : son cooldown global de 24 h et son budget de session
+/// sont faits pour des sollicitations transverses, pas pour un signal
+/// contextuel intra-session qui doit apparaître au moment exact où
+/// l'utilisateur s'entête. C'est la justification déjà écrite pour
+/// `preview_nudge_scheduler.dart`.
+///
+/// Il **disparaît de lui-même** dès qu'un article est gardé, sans code de
+/// nettoyage : `consecutivePassCount` repart de 0.
+class _TriageStopNudge extends StatelessWidget {
+  final VoidCallback onStop;
+  final VoidCallback onDismiss;
+
+  const _TriageStopNudge({required this.onStop, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: FacteurSpacing.space2),
+        child: NudgeInlineBanner(
+          // Sobre et non personnifié (contrainte de copy PO) : l'icône dit la
+          // pause proposée, elle ne fait pas parler l'app.
+          icon: PhosphorIcons.pause(),
+          body: 'Rien ne t\'accroche ? Tu peux t\'arrêter là.',
+          actionLabel: 'Arrêter le tri',
+          onAction: onStop,
+          onDismiss: onDismiss,
+        ),
+      );
+}
+
+/// Rond `−` / `+` du contrôle d'objectif : cercle **visible** de
+/// [kTriageTargetRoundSize], cible tactile de [kTriageTargetControlHeight].
+///
+/// Les 9px transparents de chaque côté du cercle sont l'écart au chiffre : le
+/// bouton reste collé à ce qu'il règle sans sacrifier l'accessibilité. Aux
+/// bornes `[kTriageGoalMin, kTriageGoalMax]`, le bouton est visiblement éteint
+/// **et** non actionnable (`onTap: null` ⇒ l'`InkWell` ne prend même pas le tap).
 class _TargetRound extends StatelessWidget {
   final IconData icon;
   final String semanticLabel;
@@ -712,18 +850,31 @@ class _TargetRound extends StatelessWidget {
       button: true,
       enabled: enabled,
       label: semanticLabel,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.35,
-        child: Material(
-          color: Colors.transparent,
-          shape: CircleBorder(side: BorderSide(color: colors.border)),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: enabled ? onTap : null,
-            child: SizedBox(
-              width: 26,
-              height: 26,
-              child: Icon(icon, size: 14, color: colors.textPrimary),
+      // L'`InkWell` porte la **boîte de 44**, pas le cercle : c'est ce qui fait
+      // la cible tactile. Le cercle de 26 n'est plus qu'un décor centré dedans
+      // — l'inverse (InkWell sur le cercle, boîte de 44 autour) rendait les 9px
+      // de marge inertes et la cible restait à 26.
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: enabled ? onTap : null,
+          child: SizedBox(
+            width: kTriageTargetControlHeight,
+            height: kTriageTargetControlHeight,
+            child: Center(
+              child: Opacity(
+                opacity: enabled ? 1 : 0.35,
+                child: Container(
+                  width: kTriageTargetRoundSize,
+                  height: kTriageTargetRoundSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: colors.border),
+                  ),
+                  child: Icon(icon, size: 14, color: colors.textPrimary),
+                ),
+              ),
             ),
           ),
         ),
@@ -732,7 +883,7 @@ class _TargetRound extends StatelessWidget {
   }
 }
 
-/// En-tête de la liste des gardés (design 2A) : « TU GARDES », un filet qui
+/// En-tête de la liste des gardés (design 2A) : « TES ARTICLES », un filet qui
 /// prend le reste de la largeur, puis le compte en accent. Rendu uniquement
 /// quand la liste est non vide, **dans** son `AnimatedSize` pour apparaître
 /// avec elle.
@@ -755,7 +906,7 @@ class _KeptListHeader extends StatelessWidget {
       padding: const EdgeInsets.only(top: 2, bottom: 4),
       child: Row(
         children: [
-          Text('TU GARDES', style: labelStyle),
+          Text('TES ARTICLES', style: labelStyle),
           const SizedBox(width: 8),
           Expanded(child: Container(height: 1, color: colors.border)),
           const SizedBox(width: 8),
@@ -1178,8 +1329,9 @@ class _TriageTagView extends StatelessWidget {
   }
 }
 
-/// Pilule bordée des balises du pied de carte (padding 3/9, rayon pill,
-/// bordure `colors.border`).
+/// Pilule des balises du pied de carte (padding 3/9, rayon pill). Aligne son
+/// vocabulaire visuel sur celui du design system ([EditorialBadge]) : un aplat
+/// gris subtil et sans bordure — sobre et élégant — plutôt qu'un contour.
 class _TagPill extends StatelessWidget {
   final Widget child;
 
@@ -1188,10 +1340,11 @@ class _TagPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.facteurColors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        border: Border.all(color: colors.border),
+        color: colors.textSecondary.withValues(alpha: isDark ? 0.14 : 0.08),
         borderRadius: BorderRadius.circular(FacteurRadius.pill),
       ),
       child: child,

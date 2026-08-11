@@ -21,6 +21,15 @@ class _MockDigestRepository extends Mock implements DigestRepository {}
 /// Fake essentiel repo : renvoie des héros par jour (clé `YYYY-MM-DD`, ou
 /// `today` pour la date courante). `null` ⇒ 202/erreur côté provider.
 class _FakeEssentielRepository implements EssentielRepository {
+  // Story 33.3 — « Plus d'articles ? » ne concerne pas ces tests ; le stub
+  // renvoie « rien d'inédit » pour rester conforme à l'interface.
+  @override
+  Future<List<Map<String, dynamic>>?> fetchMore({
+    required List<String> excludeIds,
+    int limit = 2,
+  }) async =>
+      const [];
+
   _FakeEssentielRepository(this.byDay);
   final Map<String, List<EssentielArticle>?> byDay;
 

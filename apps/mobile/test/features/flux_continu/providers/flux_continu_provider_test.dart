@@ -67,6 +67,15 @@ class _FakeAuthNotifier extends StateNotifier<app_auth.AuthState>
 }
 
 class _StubEssentielRepository implements EssentielRepository {
+  // Story 33.3 — « Plus d'articles ? » ne concerne pas ces tests ; le stub
+  // renvoie « rien d'inédit » pour rester conforme à l'interface.
+  @override
+  Future<List<Map<String, dynamic>>?> fetchMore({
+    required List<String> excludeIds,
+    int limit = 2,
+  }) async =>
+      const [];
+
   @override
   Future<EssentielFetchResult?> fetch({bool? serein, DateTime? date}) async =>
       (articles: const <EssentielArticle>[], newSinceMorning: 0, carousel: null);
@@ -1817,6 +1826,15 @@ void main() {
 /// EssentielRepository pilotable : renvoie une liste fixe, ou « pend »
 /// indéfiniment quand [hang] est vrai — pour exercer la borne de [refresh].
 class _ControllableEssentielRepository implements EssentielRepository {
+  // Story 33.3 — « Plus d'articles ? » ne concerne pas ces tests ; le stub
+  // renvoie « rien d'inédit » pour rester conforme à l'interface.
+  @override
+  Future<List<Map<String, dynamic>>?> fetchMore({
+    required List<String> excludeIds,
+    int limit = 2,
+  }) async =>
+      const [];
+
   _ControllableEssentielRepository({
     required this.articles,
     this.newSinceMorning = 0,
@@ -1850,6 +1868,15 @@ class _ControllableEssentielRepository implements EssentielRepository {
 /// remplissage pour atteindre le plancher d'affichage de la carte hi-fi
 /// (`_kEssentielMinArticles` = 3). Le primary reste en tête (rank 1).
 class _OneArticleEssentielRepository implements EssentielRepository {
+  // Story 33.3 — « Plus d'articles ? » ne concerne pas ces tests ; le stub
+  // renvoie « rien d'inédit » pour rester conforme à l'interface.
+  @override
+  Future<List<Map<String, dynamic>>?> fetchMore({
+    required List<String> excludeIds,
+    int limit = 2,
+  }) async =>
+      const [];
+
   _OneArticleEssentielRepository(this._article);
   final EssentielArticle _article;
 
@@ -1895,6 +1922,15 @@ class _OneArticleEssentielRepository implements EssentielRepository {
 
 /// Stub EssentielRepository returning a fixed list — drives the hero-fit tests.
 class _FixedEssentielRepository implements EssentielRepository {
+  // Story 33.3 — « Plus d'articles ? » ne concerne pas ces tests ; le stub
+  // renvoie « rien d'inédit » pour rester conforme à l'interface.
+  @override
+  Future<List<Map<String, dynamic>>?> fetchMore({
+    required List<String> excludeIds,
+    int limit = 2,
+  }) async =>
+      const [];
+
   _FixedEssentielRepository(this._articles);
   final List<EssentielArticle> _articles;
 

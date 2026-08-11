@@ -80,6 +80,42 @@ class EssentielRepository {
     }
   }
 
+  /// `GET /api/essentiel/more` — Story 33.3.
+  ///
+  /// Deux recommandations Essentiel **inédites**, pour honorer « Plus
+  /// d'articles ? » quand la réserve locale (carrousel du jour) est épuisée.
+  /// [excludeIds] doit porter tout ce que le client a déjà : slate ∪ articles
+  /// décidés ∪ pool local — c'est la seule garde contre un doublon.
+  ///
+  /// Renvoie le **JSON brut** des articles, pas des `EssentielArticle` : le
+  /// payload est persisté tel quel par `essentielExtraArticlesProvider` pour
+  /// survivre au cold-boot, et se re-parse à l'identique. `null` ⇒ échec
+  /// réseau (à distinguer d'une liste vide, qui veut dire « rien d'inédit »).
+  Future<List<Map<String, dynamic>>?> fetchMore({
+    required List<String> excludeIds,
+    int limit = 2,
+  }) async {
+    try {
+      final response = await _apiClient.dio.get<dynamic>(
+        'essentiel/more',
+        queryParameters: {
+          'limit': limit,
+          if (excludeIds.isNotEmpty) 'exclude': excludeIds.join(','),
+        },
+      );
+      if (response.statusCode != 200 || response.data is! Map) return null;
+      final data = response.data as Map<String, dynamic>;
+      return ((data['articles'] as List?) ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList(growable: false);
+    } on DioException catch (e) {
+      // ignore: avoid_print
+      print('EssentielRepository: fetchMore failed: ${e.message}');
+      return null;
+    }
+  }
+
   /// `POST /api/essentiel/triage` — Story 33.1.
   ///
   /// Envoie un batch de décisions de tri. **Collecte seule** côté backend :

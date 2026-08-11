@@ -213,6 +213,25 @@ async def test_rang_superieur_au_slate_size_rejete(client, db_session, slate):
 
 
 @pytest.mark.asyncio
+async def test_grand_slate_accepte(client, db_session, slate):
+    """`slate_size=60` avec `rank=57` ⇒ 200 (Story 33.4).
+
+    Le slate n'est plus borné par la cible du jour : il porte tout le pool
+    proposé et grandit à chaque prefetch. Sous l'ancien `le=20`, une session de
+    tri un peu longue tombait en 422 exactement au moment où l'utilisateur
+    s'investissait le plus.
+    """
+    payload = _payload(slate["contents"], ["keep"], slate_size=60)
+    payload["decisions"][0]["rank"] = 57
+
+    resp = await client.post("/api/essentiel/triage", json=payload)
+
+    assert resp.status_code == 200
+    rows = await _rows(db_session)
+    assert [(r.rank, r.slate_size) for r in rows] == [(57, 60)]
+
+
+@pytest.mark.asyncio
 async def test_decision_inconnue_rejetee(client, slate):
     payload = _payload(slate["contents"], ["keep"])
     payload["decisions"][0]["decision"] = "not_interested"

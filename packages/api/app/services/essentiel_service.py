@@ -76,6 +76,13 @@ ESSENTIEL_MIN_ARTICLES = 3
 # complétion — borne le SELECT, on ne garde au plus que les slots manquants.
 ESSENTIEL_SUPPLEMENT_CANDIDATE_CAP = 30
 
+# Cap dédié à ``GET /api/essentiel/more`` (Story 33.4). Le blend du digest
+# cherche 1 à 3 slots manquants et 30 candidats lui suffisent ; « Plus
+# d'articles ? » alimente une pile qui peut tourner toute la journée, avec des
+# exclusions qui grossissent à chaque tour. 80 laisse de la marge après la dédup
+# titre et le cap par source, sans faire du SELECT un scan.
+ESSENTIEL_MORE_CANDIDATE_CAP = 80
+
 # Plafond d'affichage du delta « N nouveaux depuis ce matin » sur le héros
 # mobile (au-delà, le client affiche « 9+ »). Borne aussi le comptage pour ne
 # jamais suggérer un feed infini.
@@ -84,6 +91,16 @@ _ESSENTIEL_DELTA_CAP = 9
 # Fenêtre de fraîcheur commune aux deux tiers de sélection. Les sources
 # suivies sont prioritaires, puis le pool éditorial global frais complète.
 ESSENTIEL_TOURNEE_WINDOW = timedelta(hours=24)
+
+# Paliers de fenêtre pour ``GET /api/essentiel/more`` (Story 33.4). On reste sur
+# 24 h tant que ça suffit — l'``ORDER BY published_at DESC`` garde la fraîcheur
+# en tête du lot — et on n'élargit que si le pool ne rend pas ``limit``. Un
+# article de 40 h vaut mieux qu'une pile qui sèche à mi-parcours.
+ESSENTIEL_MORE_WINDOW_STEPS: tuple[timedelta, ...] = (
+    timedelta(hours=24),
+    timedelta(hours=48),
+    timedelta(hours=72),
+)
 
 # Fenêtre de grâce après lecture : "Essentiel vivant" (story 9.8) évince
 # activement tout article lu de la réponse `GET /api/essentiel` pour laisser
@@ -822,6 +839,11 @@ async def _fetch_live_supplements(
     digest_content_ids: set[UUID],
     morning_anchor: datetime,
     now: datetime | None = None,
+    start_rank: int | None = None,
+    inherit_source_counts: bool = True,
+    exclude_ids: set[UUID] | None = None,
+    candidate_cap: int = ESSENTIEL_SUPPLEMENT_CANDIDATE_CAP,
+    window: timedelta = ESSENTIEL_TOURNEE_WINDOW,
 ) -> tuple[list[EssentielArticle], int]:
     """Pool live frais pour le blend « toujours actif » de l'Essentiel.
 
@@ -841,6 +863,33 @@ async def _fetch_live_supplements(
     Retourne `(supplements, new_since_morning)` : les articles frais retenus
     (au plus `limit`, scorés desc) et le compte de candidats frais publiés
     depuis `morning_anchor` et absents du digest (borné plus haut au cap).
+
+    `start_rank` force le rang du premier article retenu. Par défaut il suit
+    `existing` (blend du digest : les compléments prolongent les 5 slots).
+    `fetch_essentiel_more` le force à 1 : ses `existing` ne sont là que pour la
+    dédup (ils ne sont pas servis), et le rang n'y a aucune signification.
+
+    `inherit_source_counts=False` découple le cap par source d'`existing` : le
+    cap ne s'applique alors qu'**entre les articles servis**. Même raison —
+    `fetch_essentiel_more` passe en `existing` tout ce que le client détient
+    déjà (jusqu'à une dizaine d'articles) ; leur faire consommer le quota de
+    leur source ferait rendre une liste vide dès que le client tient 1 article
+    par source du pool, et « Plus d'articles ? » n'aurait plus jamais rien à
+    servir. La dédup content_id et titre, elle, reste héritée.
+
+    `exclude_ids` est poussé **dans le SQL, avant le `LIMIT`** (Story 33.4).
+    C'était la correction la plus rentable du lot : les ids déjà détenus par le
+    client étaient filtrés en Python *après* le cap de candidats, donc ils
+    consommaient des slots du top-N et la fenêtre utile rétrécissait à chaque
+    tour — au bout de deux élargissements, « Plus d'articles ? » ne trouvait
+    plus rien alors que la base en avait. `existing` reste passé séparément :
+    lui alimente la dédup titre/source, pas le `WHERE`.
+
+    `candidate_cap` et `window` sont paramétrables pour la même raison :
+    `fetch_essentiel_more` a besoin d'un pool plus large
+    (`ESSENTIEL_MORE_CANDIDATE_CAP`) et d'une fenêtre élargissable par paliers
+    (`ESSENTIEL_MORE_WINDOW_STEPS`), là où le blend du digest reste sur les
+    24 h et le top-30 qui lui suffisent.
     """
     # Sources candidates = suivies ∪ riches-sur-thème-apprécié, poussées dans le
     # JOIN pour éviter un aller-retour séparé (le blend tourne à chaque requête).
@@ -856,7 +905,7 @@ async def _fetch_live_supplements(
     if not source_predicates:
         return [], 0
 
-    cutoff = (now or datetime.now(UTC)) - ESSENTIEL_TOURNEE_WINDOW
+    cutoff = (now or datetime.now(UTC)) - window
     already_read_or_hidden = exists().where(
         UserContentStatus.content_id == Content.id,
         UserContentStatus.user_id == user_id,
@@ -876,12 +925,16 @@ async def _fetch_live_supplements(
         .where(~already_read_or_hidden)
         .where(Source.is_active.is_(True))
         .order_by(Content.published_at.desc())
-        .limit(ESSENTIEL_SUPPLEMENT_CANDIDATE_CAP)
+        .limit(candidate_cap)
     )
     if ctx.muted_source_ids:
         query = query.where(Source.id.notin_(list(ctx.muted_source_ids)))
     if is_serene:
         query = query.where(Content.is_serene.is_(True))
+    # **Avant** le `LIMIT` (cf. docstring) : un id déjà détenu par le client ne
+    # doit pas consommer un slot du pool de candidats.
+    if exclude_ids:
+        query = query.where(Content.id.notin_(list(exclude_ids)))
 
     candidates = list((await db.execute(query)).scalars().all())
     if not candidates:
@@ -910,12 +963,13 @@ async def _fetch_live_supplements(
     # source, similarité de titre — mêmes garde-fous que `_pick_transversal_articles`.
     seen_content_ids = {a.content_id for a in existing}
     source_count: dict[UUID, int] = {}
-    for article in existing:
-        source_count[article.source.id] = source_count.get(article.source.id, 0) + 1
+    if inherit_source_counts:
+        for article in existing:
+            source_count[article.source.id] = source_count.get(article.source.id, 0) + 1
     picked_title_tokens = [normalize_title(a.title) for a in existing if a.title]
 
     supplements: list[EssentielArticle] = []
-    rank = len(existing) + 1
+    rank = start_rank if start_rank is not None else len(existing) + 1
 
     def _fill(cap: int) -> None:
         nonlocal rank
@@ -956,6 +1010,91 @@ async def _fetch_live_supplements(
         _fill(_MAX_PER_SOURCE_FALLBACK)
 
     return supplements, new_since_morning
+
+
+async def fetch_essentiel_more(
+    db: AsyncSession,
+    user_id: UUID,
+    ctx: EssentielUserContext,
+    *,
+    is_serene: bool,
+    exclude_ids: set[UUID],
+    limit: int,
+    now: datetime | None = None,
+) -> list[EssentielArticle]:
+    """`limit` recommandations Essentiel **inédites** — Story 33.3, élargie 33.4.
+
+    Sert « Plus d'articles ? » **et** le prefetch automatique de la pile de tri :
+    depuis la 33.4, l'objectif de l'utilisateur est un nombre d'articles à
+    *garder*, donc la pile doit pouvoir continuer à proposer tant que la cible
+    n'est pas atteinte. C'est cette fonction qui la nourrit.
+
+    Aucun nouveau moteur : c'est exactement le pool live du blend « Essentiel
+    vivant » ([_fetch_live_supplements]) — sources suivies ∪ sources riches sur
+    un thème apprécié, exclusion des lus / masqués / mutés, cap par source,
+    dédup de titre. Trois réglages seulement le distinguent du blend digest :
+
+    - les exclusions partent **dans le SQL**, avant le `LIMIT` ;
+    - un cap de candidats dédié (`ESSENTIEL_MORE_CANDIDATE_CAP`) ;
+    - une fenêtre en paliers (`ESSENTIEL_MORE_WINDOW_STEPS`), qui s'arrête dès
+      que `limit` articles sont tenus.
+
+    `exclude_ids` = tout ce que le client porte déjà (slate ∪ décidés ∪ pool
+    local). Les contenus correspondants sont aussi hydratés en `EssentielArticle`
+    pour alimenter la dédup **titre et source** du moteur : sans ça, on
+    renverrait le même papier vu d'une autre rédaction juste après que
+    l'utilisateur l'a écarté.
+
+    Liste vide = pas d'inédit (pool épuisé, ou utilisateur sans source suivie ni
+    thème apprécié) : c'est un état normal, jamais une erreur. Read-only.
+    """
+    if limit <= 0:
+        return []
+
+    already: list[EssentielArticle] = []
+    if exclude_ids:
+        rows = await db.execute(
+            select(Content)
+            .options(selectinload(Content.source))
+            .where(Content.id.in_(list(exclude_ids)))
+        )
+        already = [
+            # Le rang n'a aucun sens ici (ces articles ne sont pas servis) :
+            # `_fetch_live_supplements` ne lit que `content_id`, `source.id` et
+            # `title` de cette liste.
+            _content_to_essentiel_article(content, 1, ctx)
+            for content in rows.scalars().all()
+        ]
+
+    morning_anchor = _morning_anchor(now)
+    supplements: list[EssentielArticle] = []
+    for window in ESSENTIEL_MORE_WINDOW_STEPS:
+        supplements, _ = await _fetch_live_supplements(
+            db,
+            user_id,
+            ctx,
+            is_serene=is_serene,
+            existing=already,
+            limit=limit,
+            digest_content_ids=set(exclude_ids),
+            morning_anchor=morning_anchor,
+            now=now,
+            # Les articles servis sont rangés 1..limit pour eux-mêmes : le rang
+            # d'`already` n'est pas une position réelle.
+            start_rank=1,
+            # `already` sert à la dédup, pas au quota : cf. la note du paramètre.
+            inherit_source_counts=False,
+            exclude_ids=exclude_ids,
+            candidate_cap=ESSENTIEL_MORE_CANDIDATE_CAP,
+            window=window,
+        )
+        # Chaque palier **réinclut** le précédent (la fenêtre s'élargit, elle ne
+        # glisse pas) : le lot obtenu est complet, on ne cumule pas.
+        if len(supplements) >= limit:
+            break
+    # Filet : un `exclude_id` que la DB ne connaît plus (contenu purgé) n'est pas
+    # dans `already`, donc pas dans la dédup content_id du moteur.
+    return [a for a in supplements if a.content_id not in exclude_ids]
 
 
 def _is_within_read_grace(article: EssentielArticle, now: datetime | None) -> bool:

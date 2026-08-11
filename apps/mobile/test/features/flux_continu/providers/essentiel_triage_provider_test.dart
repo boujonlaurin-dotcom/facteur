@@ -43,15 +43,26 @@ void main() {
           contentId: any(named: 'contentId'),
           rank: any(named: 'rank'),
           slateSize: any(named: 'slateSize'),
+          goal: any(named: 'goal'),
           decidedVia: any(named: 'decidedVia'),
           latencyMs: any(named: 'latencyMs'),
         )).thenAnswer((_) async {});
     when(() => analytics.trackEssentielTriageSession(
           slateSize: any(named: 'slateSize'),
+          goal: any(named: 'goal'),
+          goalReached: any(named: 'goalReached'),
+          endedBy: any(named: 'endedBy'),
+          autoFetches: any(named: 'autoFetches'),
           kept: any(named: 'kept'),
           later: any(named: 'later'),
           passed: any(named: 'passed'),
           durationMs: any(named: 'durationMs'),
+        )).thenAnswer((_) async {});
+    when(() => analytics.trackEssentielTriageStopNudge(
+          action: any(named: 'action'),
+          consecutivePass: any(named: 'consecutivePass'),
+          keptCount: any(named: 'keptCount'),
+          goal: any(named: 'goal'),
         )).thenAnswer((_) async {});
   });
 
@@ -74,27 +85,76 @@ void main() {
   }
 
   group('slate figé', () {
-    test('le gel prend la cible par défaut : min(5, pool)', () async {
+    test('le gel prend TOUT le pool, jamais une coupe à la cible', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
 
-      notifier.startIfNeeded([for (var i = 0; i < 8; i++) 'p$i']);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
 
+      final state = c.read(essentielTriageProvider);
       expect(
-        c.read(essentielTriageProvider).slate,
-        ['p0', 'p1', 'p2', 'p3', 'p4'],
-        reason: 'cible par défaut $kTriageTargetDefault, ordre du pool',
+        state.slate,
+        [for (var i = 0; i < 8; i++) 'p$i'],
+        reason: 'la cible borne les gardés, plus la taille du slate',
       );
+      expect(state.effectiveGoal, kTriageGoalDefault);
     });
 
-    test('startIfNeeded fige l\'ordre au premier appel', () async {
+    test('syncSlate fige l\'ordre au premier appel', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
 
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       expect(c.read(essentielTriageProvider).slate, _slate);
       expect(c.read(essentielTriageProvider).isActive, isTrue);
+    });
+
+    test('syncSlate append en queue sans réordonner le préfixe', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate(_slate);
+
+      notifier.syncSlate(const ['c', 'a', 'x', 'b', 'y']);
+
+      expect(c.read(essentielTriageProvider).slate, [..._slate, 'x', 'y']);
+    });
+
+    test('syncSlate est rejouable sans doublon', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate(_slate);
+      notifier.syncSlate(const [..._slate, 'x']);
+      final before = c.read(essentielTriageProvider);
+
+      notifier.syncSlate(const [..._slate, 'x']);
+
+      expect(identical(c.read(essentielTriageProvider), before), isTrue);
+    });
+
+    test('syncSlate dédupe un pool qui porte deux fois le même id', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+
+      notifier.syncSlate(const ['a', 'b', 'a', 'c']);
+
+      expect(c.read(essentielTriageProvider).slate, _slate);
+    });
+
+    test('un slate épuisé rouvre quand le pool s\'allonge', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate(_slate);
+      for (var i = 0; i < _slate.length; i++) {
+        notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
+      }
+      expect(c.read(essentielTriageProvider).done, isTrue);
+
+      notifier.syncSlate(const [..._slate, 'x']);
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.done, isFalse);
+      expect(state.currentContentId, 'x');
     });
 
     test(
@@ -105,9 +165,9 @@ void main() {
         // progression mentirait.
         final c = makeContainer();
         final notifier = await hydrated(c);
-        notifier.startIfNeeded(_slate);
+        notifier.syncSlate(_slate);
 
-        notifier.startIfNeeded(const ['c', 'b', 'a']);
+        notifier.syncSlate(const ['c', 'b', 'a']);
 
         expect(c.read(essentielTriageProvider).slate, _slate);
       },
@@ -117,7 +177,7 @@ void main() {
       final c = makeContainer();
       final notifier = await hydrated(c);
 
-      notifier.startIfNeeded(const []);
+      notifier.syncSlate(const []);
 
       expect(c.read(essentielTriageProvider).hasStarted, isFalse);
       expect(c.read(essentielTriageProvider).isActive, isFalse);
@@ -128,7 +188,7 @@ void main() {
     test('avance dans la pile et enregistre le rang du slate', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
 
@@ -141,7 +201,7 @@ void main() {
     test('later compte comme gardé, pass non', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       notifier.decide(TriageDecision.later, via: TriageVia.button);
       notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
@@ -156,7 +216,7 @@ void main() {
     test('le tri fini quitte l\'état actif', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       for (var i = 0; i < _slate.length; i++) {
         notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
@@ -170,7 +230,7 @@ void main() {
     test('décider au-delà du slate est un no-op', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       for (var i = 0; i < _slate.length; i++) {
         notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
       }
@@ -183,7 +243,7 @@ void main() {
     test('les gardés restent dans l\'ordre du slate', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       notifier.decide(TriageDecision.pass, via: TriageVia.swipe); // a
       notifier.decide(TriageDecision.keep, via: TriageVia.swipe); // b
@@ -191,13 +251,178 @@ void main() {
 
       expect(c.read(essentielTriageProvider).keptContentIds, ['b', 'c']);
     });
+
+    test('le tri se termine au $kTriageGoalDefault e gardé, pas avant',
+        () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+
+      for (var i = 0; i < kTriageGoalDefault - 1; i++) {
+        notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
+        expect(c.read(essentielTriageProvider).done, isFalse,
+            reason: 'seulement ${i + 1} gardés');
+      }
+      notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.goalReached, isTrue);
+      expect(state.done, isTrue);
+      expect(state.poolExhausted, isFalse,
+          reason: 'il restait 3 articles : c\'est bien la cible qui a fini');
+    });
+
+    test('un refus ne rapproche pas de la cible', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+
+      for (var i = 0; i < 6; i++) {
+        notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
+      }
+
+      expect(c.read(essentielTriageProvider).done, isFalse);
+      expect(c.read(essentielTriageProvider).keptCount, 0);
+    });
+
+    test('« Plus tard » fait avancer la cible comme « Je garde »', () async {
+      // Non-régression de la décision PO : mettre de côté est un choix
+      // positif, il compte donc dans l'objectif du jour.
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+      notifier.setGoal(3);
+
+      notifier.decide(TriageDecision.later, via: TriageVia.button);
+      notifier.decide(TriageDecision.later, via: TriageVia.button);
+      expect(c.read(essentielTriageProvider).done, isFalse);
+      notifier.decide(TriageDecision.later, via: TriageVia.button);
+
+      expect(c.read(essentielTriageProvider).goalReached, isTrue);
+      expect(c.read(essentielTriageProvider).done, isTrue);
+    });
+
+    test('l\'auto-keep lecture compte comme un gardé ordinaire', () async {
+      // Non-régression 33.2 : `decide(keep, via: read)` doit faire avancer la
+      // cible exactement comme un keep au swipe.
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+      notifier.setGoal(3);
+
+      notifier.decide(TriageDecision.keep, via: TriageVia.read);
+      notifier.decide(TriageDecision.keep, via: TriageVia.read);
+      notifier.decide(TriageDecision.keep, via: TriageVia.read);
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.keptCount, 3);
+      expect(state.done, isTrue);
+    });
+  });
+
+  group('nudge d\'arrêt (consecutivePassCount)', () {
+    test('$kTriageStopNudgeThreshold refus enchaînés déclenchent le seuil',
+        () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+
+      for (var i = 0; i < kTriageStopNudgeThreshold; i++) {
+        notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
+      }
+
+      expect(c.read(essentielTriageProvider).consecutivePassCount,
+          kTriageStopNudgeThreshold);
+    });
+
+    test('un gardé intercalé remet le compteur à zéro', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+      for (var i = 0; i < 4; i++) {
+        notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
+      }
+
+      notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
+
+      expect(c.read(essentielTriageProvider).consecutivePassCount, 0);
+    });
+
+    test('le compteur survit à l\'hydratation (aucun champ persisté)',
+        () async {
+      final c1 = makeContainer();
+      final n1 = await hydrated(c1);
+      n1.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+      for (var i = 0; i < kTriageStopNudgeThreshold; i++) {
+        n1.decide(TriageDecision.pass, via: TriageVia.swipe);
+      }
+      await Future<void>.delayed(Duration.zero);
+
+      final c2 = makeContainer();
+      await hydrated(c2);
+
+      expect(c2.read(essentielTriageProvider).consecutivePassCount,
+          kTriageStopNudgeThreshold);
+    });
+
+    test('stopTriage termine le tri sur les gardés obtenus', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 8; i++) 'p$i']);
+      notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
+
+      notifier.stopTriage();
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.stopped, isTrue);
+      expect(state.done, isTrue);
+      expect(state.keptCount, 1);
+      expect(state.goalReached, isFalse,
+          reason: 'arrêter n\'est pas atteindre la cible — et ce n\'est pas '
+              'un échec non plus : la fin de tri n\'affiche plus l\'objectif');
+      verify(() => analytics.trackEssentielTriageStopNudge(
+            action: 'accepted',
+            consecutivePass: any(named: 'consecutivePass'),
+            keptCount: 1,
+            goal: kTriageGoalDefault,
+          )).called(1);
+    });
+
+    test('dismissStopNudge est persisté (pas de réapparition au remontage)',
+        () async {
+      final c1 = makeContainer();
+      final n1 = await hydrated(c1);
+      n1.syncSlate(_slate);
+      n1.dismissStopNudge();
+      await Future<void>.delayed(Duration.zero);
+
+      final c2 = makeContainer();
+      await hydrated(c2);
+
+      expect(c2.read(essentielTriageProvider).stopNudgeDismissed, isTrue);
+    });
+
+    test('restart lève l\'arrêt et rouvre le nudge', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate(_slate);
+      notifier.dismissStopNudge();
+      notifier.stopTriage();
+
+      notifier.restart();
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.stopped, isFalse);
+      expect(state.stopNudgeDismissed, isFalse);
+      expect(state.isActive, isTrue);
+    });
   });
 
   group('persistance du jour', () {
     test('le tri partiel survit à un cold-boot', () async {
       final c1 = makeContainer();
       final n1 = await hydrated(c1);
-      n1.startIfNeeded(_slate);
+      n1.syncSlate(_slate);
       n1.decide(TriageDecision.keep, via: TriageVia.swipe);
       // Laisse la persistance asynchrone se poser.
       await Future<void>.delayed(Duration.zero);
@@ -232,7 +457,7 @@ void main() {
     test('la clé du jour porte le dayKey courant', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       await Future<void>.delayed(Duration.zero);
 
       final prefs = await SharedPreferences.getInstance();
@@ -253,11 +478,11 @@ void main() {
     });
   });
 
-  group('« Trier à nouveau »', () {
+  group('« Refaire ? »', () {
     test('remet les décisions à zéro sans rebattre le slate', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
       notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
 
@@ -281,109 +506,173 @@ void main() {
     });
   });
 
-  group('cible du jour (setTarget)', () {
+  group('objectif de gardés (setGoal / extendGoal)', () {
     /// Pool du jour : le slate de 3 suivi de deux articles de carrousel.
     const pool = [..._slate, 'x', 'y'];
 
-    test('en hausse : append des ids du pool absents du slate, la pile rouvre',
-        () async {
+    test('la cible par défaut vaut $kTriageGoalDefault', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
-      for (var i = 0; i < _slate.length; i++) {
-        notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
-      }
-      expect(c.read(essentielTriageProvider).done, isTrue);
+      notifier.syncSlate(pool);
 
-      notifier.setTarget(5, pool);
-
-      final state = c.read(essentielTriageProvider);
-      expect(state.slate, pool);
-      expect(state.target, 5);
-      expect(state.done, isFalse, reason: 'la pile rouvre');
-      expect(state.isActive, isTrue);
-      expect(state.currentContentId, 'x');
+      expect(c.read(essentielTriageProvider).goal, isNull);
+      expect(c.read(essentielTriageProvider).effectiveGoal,
+          kTriageGoalDefault);
     });
 
-    test('en baisse : ne retire que des non décidés, en fin de slate',
-        () async {
+    test('setGoal ne retire JAMAIS un id du slate', () async {
+      // Tout l'intérêt de la 33.4 : baisser la cible ne détruit plus rien,
+      // donc la contrainte « ne jamais perdre une décision » devient
+      // structurellement impossible à violer.
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(pool); // slate = a, b, c, x, y (cible défaut 5)
-      notifier.decide(TriageDecision.keep, via: TriageVia.swipe); // a
-      notifier.decide(TriageDecision.pass, via: TriageVia.swipe); // b
+      notifier.syncSlate(pool);
 
-      notifier.setTarget(3, pool);
+      notifier.setGoal(kTriageGoalMin);
 
-      final state = c.read(essentielTriageProvider);
-      expect(state.slate, _slate, reason: 'y puis x retirés, jamais a ni b');
-      expect(state.target, 3);
-      expect(state.decisions.keys, containsAll(<String>['a', 'b']));
-      expect(state.currentContentId, 'c');
-    });
-
-    test('en baisse : s\'arrête sur un décidé — jamais de décision perdue',
-        () async {
-      final c = makeContainer();
-      final notifier = await hydrated(c);
-      notifier.startIfNeeded(pool);
-      for (var i = 0; i < pool.length; i++) {
-        notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
-      }
-
-      notifier.setTarget(3, pool);
-
-      final state = c.read(essentielTriageProvider);
-      expect(state.slate, pool, reason: 'tout est décidé : rien n\'est retiré');
-      expect(state.target, 5,
-          reason: 'la cible publiée est la taille réelle, pas le n demandé');
-      expect(state.decisions.length, 5);
-    });
-
-    test('bornes : plancher $kTriageTargetMin, plafond = pool', () async {
-      final c = makeContainer();
-      final notifier = await hydrated(c);
-      notifier.startIfNeeded(pool);
-
-      notifier.setTarget(1, pool);
-      expect(c.read(essentielTriageProvider).slate.length, kTriageTargetMin);
-
-      notifier.setTarget(99, pool);
       expect(c.read(essentielTriageProvider).slate, pool);
     });
 
-    test('n\'ajoute pas un id déjà présent dans le slate', () async {
+    test('setGoal en deçà des gardés termine le tri dans la frame', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(pool);
+      for (var i = 0; i < 4; i++) {
+        notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
+      }
+      expect(c.read(essentielTriageProvider).done, isFalse);
 
-      notifier.setTarget(4, const ['a', 'x', 'b', 'c']);
+      notifier.setGoal(3); // « finalement 3 me suffisent »
 
-      expect(c.read(essentielTriageProvider).slate, [..._slate, 'x']);
+      expect(c.read(essentielTriageProvider).done, isTrue);
+      expect(c.read(essentielTriageProvider).keptCount, 4);
     });
 
-    test('sans tri commencé est un no-op', () async {
+    test('bornes du stepper : [$kTriageGoalMin, $kTriageGoalMax]', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate(pool);
+
+      notifier.setGoal(1);
+      expect(c.read(essentielTriageProvider).effectiveGoal, kTriageGoalMin);
+
+      notifier.setGoal(99);
+      expect(c.read(essentielTriageProvider).effectiveGoal, kTriageGoalMax);
+    });
+
+    test('setGoal marche même sans tri commencé', () async {
+      // Le réglage ne dépend plus du pool : le clamper sur l'existence d'un
+      // slate n'aurait plus de sens.
       final c = makeContainer();
       final notifier = await hydrated(c);
 
-      notifier.setTarget(5, pool);
+      notifier.setGoal(7);
 
-      expect(c.read(essentielTriageProvider).hasStarted, isFalse);
+      expect(c.read(essentielTriageProvider).effectiveGoal, 7);
     });
 
-    test('la cible et les ajouts survivent à un cold-boot', () async {
+    test('extendGoal dépasse le plafond du stepper et rouvre la pile',
+        () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate([for (var i = 0; i < 12; i++) 'p$i']);
+      notifier.setGoal(kTriageGoalMax);
+      for (var i = 0; i < kTriageGoalMax; i++) {
+        notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
+      }
+      expect(c.read(essentielTriageProvider).done, isTrue);
+
+      notifier.extendGoal(kTriageGoalExtendStep);
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.effectiveGoal, kTriageGoalMax + kTriageGoalExtendStep);
+      expect(state.done, isFalse, reason: 'la pile rouvre');
+      expect(state.isActive, isTrue);
+      expect(state.currentContentId, 'p10');
+    });
+
+    test('extendGoal lève un arrêt volontaire', () async {
+      final c = makeContainer();
+      final notifier = await hydrated(c);
+      notifier.syncSlate(pool);
+      notifier.stopTriage();
+      expect(c.read(essentielTriageProvider).done, isTrue);
+
+      notifier.extendGoal(kTriageGoalExtendStep);
+
+      expect(c.read(essentielTriageProvider).stopped, isFalse);
+      expect(c.read(essentielTriageProvider).isActive, isTrue);
+    });
+
+    test('la cible survit à un cold-boot', () async {
       final c1 = makeContainer();
       final n1 = await hydrated(c1);
-      n1.startIfNeeded(_slate);
-      n1.setTarget(5, pool);
+      n1.syncSlate(_slate);
+      n1.setGoal(8);
+      await Future<void>.delayed(Duration.zero);
+
+      final c2 = makeContainer();
+      await hydrated(c2);
+
+      expect(c2.read(essentielTriageProvider).goal, 8);
+      expect(c2.read(essentielTriageProvider).slate, _slate,
+          reason: 'la cible ne touche pas au slate');
+    });
+  });
+
+  group('migration du blob jour (v1 → v2)', () {
+    test('un blob v1 est ignoré, pas réinterprété comme un objectif', () async {
+      // `target` v1 = **taille de slate**. Le relire tel quel donnerait
+      // « garde 7 articles » à qui avait demandé une pile de 7.
+      SharedPreferences.setMockInitialValues({
+        '$kTriageLegacyPrefsKeyPrefix${todayKey()}': jsonEncode({
+          'day_key': todayKey(),
+          'slate': _slate,
+          'decisions': const <Map<String, dynamic>>[],
+          'target': 7,
+        }),
+      });
+
+      final c = makeContainer();
+      await hydrated(c);
+
+      final state = c.read(essentielTriageProvider);
+      expect(state.hasStarted, isFalse);
+      expect(state.goal, isNull);
+      expect(state.effectiveGoal, kTriageGoalDefault);
+    });
+
+    test('les clés v1 sont purgées, y compris celle du jour', () async {
+      SharedPreferences.setMockInitialValues({
+        '$kTriageLegacyPrefsKeyPrefix${todayKey()}': '{}',
+        '${kTriageLegacyPrefsKeyPrefix}2020-01-01': '{}',
+      });
+
+      final c = makeContainer();
+      await hydrated(c);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getKeys().where((k) => k.startsWith(kTriageLegacyPrefsKeyPrefix)),
+        isEmpty,
+      );
+    });
+
+    test('un blob v2 est relu à l\'identique', () async {
+      final c1 = makeContainer();
+      final n1 = await hydrated(c1);
+      n1.syncSlate(_slate);
+      n1.setGoal(4);
+      n1.decide(TriageDecision.keep, via: TriageVia.swipe);
       await Future<void>.delayed(Duration.zero);
 
       final c2 = makeContainer();
       await hydrated(c2);
 
       final state = c2.read(essentielTriageProvider);
-      expect(state.slate, pool);
-      expect(state.target, 5);
+      expect(state.slate, _slate);
+      expect(state.goal, 4);
+      expect(state.keptContentIds, ['a']);
     });
   });
 
@@ -392,7 +681,7 @@ void main() {
         () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       notifier.decide(TriageDecision.keep, via: TriageVia.read);
 
@@ -422,8 +711,7 @@ void main() {
     test('retire les ids non décidés absents du pool', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
-      notifier.setTarget(4, const [..._slate, 'x']);
+      notifier.syncSlate(const [..._slate, 'x']);
       expect(c.read(essentielTriageProvider).slate, [..._slate, 'x']);
 
       notifier.pruneUnavailable(_slate.toSet());
@@ -436,7 +724,7 @@ void main() {
     test('garde les ids déjà décidés, même absents du pool', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       notifier.decide(TriageDecision.keep, via: TriageVia.swipe); // 'a'
 
       notifier.pruneUnavailable(const {'b', 'c'});
@@ -450,7 +738,7 @@ void main() {
     test('un pool complet est un no-op', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       final before = c.read(essentielTriageProvider);
 
       notifier.pruneUnavailable({..._slate, 'z'});
@@ -462,7 +750,7 @@ void main() {
         () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       notifier.pruneUnavailable(const {});
 
@@ -481,21 +769,20 @@ void main() {
     test('un slate entièrement introuvable se vide et se re-gèle', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(const ['vieux-1', 'vieux-2']);
+      notifier.syncSlate(const ['vieux-1', 'vieux-2']);
 
       notifier.pruneUnavailable(_slate.toSet());
       expect(c.read(essentielTriageProvider).hasStarted, isFalse);
 
       // La carte re-gèle alors sur les articles du jour, sans intervention.
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       expect(c.read(essentielTriageProvider).slate, _slate);
     });
 
     test('la réparation survit à un cold-boot', () async {
       final c1 = makeContainer();
       final n1 = await hydrated(c1);
-      n1.startIfNeeded(_slate);
-      n1.setTarget(4, const [..._slate, 'x']);
+      n1.syncSlate(const [..._slate, 'x']);
       n1.pruneUnavailable(_slate.toSet());
       await Future<void>.delayed(Duration.zero);
 
@@ -505,34 +792,28 @@ void main() {
       expect(c2.read(essentielTriageProvider).slate, _slate);
     });
 
-    test(
-        'une cible étendue est restaurée quand le carrousel revient après le '
-        'prune du cold-boot', () async {
+    test('prune puis syncSlate ne se contredisent pas : le pool revient par '
+        'émissions partielles', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
       const fullPool = ['a', 'b', 'c', 'x', 'y', 'z'];
 
-      notifier.startIfNeeded(_slate);
-      notifier.setTarget(6, fullPool);
-      expect(c.read(essentielTriageProvider).target, 6);
+      notifier.syncSlate(fullPool);
+      expect(c.read(essentielTriageProvider).slate, fullPool);
 
       // Premier rendu du cold-boot : seul le héros est disponible.
       notifier.pruneUnavailable(_slate.toSet());
       expect(c.read(essentielTriageProvider).slate, _slate);
-      expect(c.read(essentielTriageProvider).target, 6,
-          reason: 'la préférence ne doit pas être écrasée par un pool partiel');
 
-      // Le carrousel peut revenir en plusieurs émissions partielles : aucune
-      // ne doit rabattre silencieusement la préférence de 6 à sa propre taille.
-      notifier.startIfNeeded(const ['a', 'b', 'c', 'x']);
+      // Le carrousel revient en plusieurs émissions : chacune n'allonge que la
+      // queue, jamais ne rebat le préfixe. `pruneUnavailable` ne retire que des
+      // ids **absents** du pool et `syncSlate` n'append que des ids
+      // **présents** : les deux ne peuvent pas boucler l'un contre l'autre.
+      notifier.syncSlate(const ['a', 'b', 'c', 'x']);
       expect(c.read(essentielTriageProvider).slate, ['a', 'b', 'c', 'x']);
-      expect(c.read(essentielTriageProvider).target, 6);
 
-      // Le pool complet arrive ensuite. `startIfNeeded` ne rebat pas le
-      // préfixe, mais complète le slate jusqu'à la cible persistée.
-      notifier.startIfNeeded(fullPool);
+      notifier.syncSlate(fullPool);
       expect(c.read(essentielTriageProvider).slate, fullPool);
-      expect(c.read(essentielTriageProvider).target, 6);
     });
   });
 
@@ -540,7 +821,7 @@ void main() {
     test('la fin du tri flushe toutes les décisions en un batch', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       for (var i = 0; i < _slate.length; i++) {
         notifier.decide(TriageDecision.pass, via: TriageVia.swipe);
@@ -568,7 +849,7 @@ void main() {
 
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
 
       await notifier.flush();
@@ -580,7 +861,7 @@ void main() {
     test('un envoi réussi vide la file d\'attente', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
       notifier.decide(TriageDecision.keep, via: TriageVia.swipe);
 
       await notifier.flush();
@@ -591,7 +872,7 @@ void main() {
     test('flush sans rien en attente n\'appelle pas le réseau', () async {
       final c = makeContainer();
       final notifier = await hydrated(c);
-      notifier.startIfNeeded(_slate);
+      notifier.syncSlate(_slate);
 
       await notifier.flush();
 

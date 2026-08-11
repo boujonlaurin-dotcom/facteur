@@ -87,14 +87,14 @@ void main() {
     });
 
     testWidgets(
-        'porte le même ordre que la vraie pile : progression SOUS la barre '
-        'd\'actions', (tester) async {
+        'porte le même ordre que la vraie pile : barre de progression puis '
+        'contrôle d\'objectif, SOUS la barre d\'actions', (tester) async {
       await pump(tester);
 
-      // Segments d'action (44 px) puis silhouette de progression (barre de
-      // texte courte de 11 px, design 2A) : si la silhouette gardait l'ancien
-      // ordre, la mise en page sauterait à l'hydratation — c'est précisément
-      // ce qu'elle existe pour empêcher.
+      // Ronds d'action (44 px) → segments de progression (4 px) → contrôle
+      // d'objectif (ronds de 26 + phrase de 150×11) : si la silhouette gardait
+      // un autre ordre, la mise en page sauterait à l'hydratation — c'est
+      // précisément ce qu'elle existe pour empêcher.
       final boxes = tester
           .widgetList<Container>(find.descendant(
             of: find.byType(TriageStackSkeleton),
@@ -107,12 +107,18 @@ void main() {
           .map((r) => r.bottom)
           .reduce((a, b) => a > b ? a : b);
       final progressTop = boxes
-          // 140×11 : la silhouette de progression — la barre de méta de la
-          // carte fait aussi 11 de haut, mais 96 de large.
-          .where((r) => r.height == 11 && r.width == 140)
+          .where((r) => r.height == kTriageProgressSegmentHeight)
+          .map((r) => r.top)
+          .reduce((a, b) => a < b ? a : b);
+      final controlTop = boxes
+          // Les deux moitiés de la phrase du contrôle (« Je veux lire » puis
+          // « articles aujourd'hui ») — la barre de méta de la carte fait aussi
+          // 11 de haut, mais 96 de large.
+          .where((r) => r.height == 11 && r.width != 96)
           .map((r) => r.top)
           .reduce((a, b) => a < b ? a : b);
       expect(progressTop, greaterThan(actionBottom));
+      expect(controlTop, greaterThan(progressTop));
     });
 
     testWidgets('réserve la borne haute de hauteur de carte', (tester) async {
@@ -121,7 +127,10 @@ void main() {
       expect(stack, greaterThan(kTriageCardHeight));
       expect(
         stack,
-        kTriageProgressHeight + kTriageCardHeight + kTriageActionBarHeight,
+        kTriageCardHeight +
+            kTriageActionBarHeight +
+            kTriageProgressBarHeight +
+            kTriageTargetControlHeight,
       );
     });
 
@@ -148,10 +157,14 @@ void main() {
       // La pilule prend tout le reste de la largeur.
       expect(actionBarBoxes.where((s) => s.width > 44).length, 1);
 
-      // Plus de barre de compteur : la colonne s'arrête à la barre d'actions.
+      // La colonne réserve exactement carte + actions + barre de progression +
+      // contrôle d'objectif : aucun pixel de plus, aucun de moins.
       expect(
         tester.getSize(find.byType(TriageStackSkeleton)).height,
-        kTriageProgressHeight + kTriageCardHeight + kTriageActionBarHeight,
+        kTriageCardHeight +
+            kTriageActionBarHeight +
+            kTriageProgressBarHeight +
+            kTriageTargetControlHeight,
       );
     });
   });

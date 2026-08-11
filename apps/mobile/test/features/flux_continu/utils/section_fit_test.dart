@@ -307,13 +307,34 @@ void main() {
       expect(kTriageBackCardOpacity, lessThan(1.0));
     });
 
-    test('le slot de progression tient une ligne de texte 12px + respiration',
-        () {
-      // Design 2A : la progression est une **ligne** (« N sur M triés · X
-      // gardés »), plus des segments. 12px de texte à height ~1.3 ≈ 16, plus
-      // la respiration de part et d'autre — le slot de 14 des segments la
-      // rognait.
-      expect(kTriageProgressHeight, 26);
+    test('le contrôle d\'objectif réserve la cible tactile, pas le cercle', () {
+      // Reprise PO 10/08 : cercle **visible** de 26, cible tactile de 44. Le
+      // slot doit réserver la seconde, sinon les ronds débordent de la ligne
+      // ou perdent leur zone de préhension.
+      expect(kTriageTargetRoundSize, 26);
+      expect(kTriageTargetControlHeight, 44);
+      expect(
+        kTriageTargetControlHeight,
+        greaterThanOrEqualTo(kTriageTargetRoundSize),
+      );
+    });
+
+    test('la barre de progression est un repère, pas une jauge de jeu', () {
+      // 33.4 : elle compte les **gardés**, il n'y a plus de segment courant à
+      // loger — des traits plus fins et plus espacés se lisent comme un repère.
+      expect(kTriageProgressSegmentHeight, 2);
+      expect(
+        kTriageProgressSegmentGap,
+        greaterThan(kTriageProgressSegmentHeight),
+        reason: 'plus d\'écart que d\'épaisseur : ça se lit comme un repère',
+      );
+      expect(
+        kTriageProgressBarHeight,
+        greaterThanOrEqualTo(kTriageProgressSegmentHeight),
+      );
+      expect(kTriageProgressMaxSegments, 10,
+          reason: 'au-delà, les traits deviendraient illisibles et le '
+              'remplissage est proratisé');
     });
   });
 }
