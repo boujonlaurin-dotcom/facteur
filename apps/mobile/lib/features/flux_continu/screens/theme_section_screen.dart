@@ -8,6 +8,7 @@ import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../detail/deck/models/article_deck.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
 import '../../feed/widgets/explore_section.dart';
@@ -136,10 +137,27 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
     return widget.initialSection;
   }
 
-  Future<void> _openArticle(BuildContext context, Content article) async {
+  /// [deckArticles] — liste dont l'article fait partie : l'article s'ouvre alors
+  /// dans un deck navigable au swipe (Story 34.1). Chaque bloc de la page passe
+  /// **sa** liste (feed de la section, carrousel, bloc Explorer) pour que le
+  /// glissement reste dans le contexte de lecture d'où vient le tap.
+  Future<void> _openArticle(
+    BuildContext context,
+    Content article, {
+    List<Content>? deckArticles,
+    String? deckLabel,
+  }) async {
+    final deck = deckArticles == null
+        ? null
+        : articleDeckFromContents(
+            deckArticles,
+            article.id,
+            sectionKey: widget.sectionKeyValue,
+            sectionLabel: deckLabel ?? '',
+          );
     await context.push(
       '${RoutePaths.fluxContinu}/content/${article.id}',
-      extra: article,
+      extra: deck ?? article,
     );
     if (mounted) setState(() {});
   }
@@ -308,7 +326,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
               final item = section.items[index];
               return FluxContinuArticleCard(
                 article: item,
-                onTap: () => _openArticle(context, item),
+                onTap: () => _openArticle(
+                  context,
+                  item,
+                  deckArticles: section.items,
+                  deckLabel: section.label,
+                ),
               );
             }, childCount: section.items.length),
           ),
@@ -343,7 +366,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
           VeilleHeaderRow(:final label) => VeilleGroupHeader(label: label),
           VeilleArticleRow(:final content) => FluxContinuArticleCard(
               article: content,
-              onTap: () => _openArticle(context, content),
+              onTap: () => _openArticle(
+                context,
+                content,
+                deckArticles: section.items,
+                deckLabel: section.label,
+              ),
             ),
         };
       }, childCount: rows.length),
@@ -373,7 +401,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
             padding: const EdgeInsets.only(bottom: 16),
             child: FeedCarousel(
               data: filtered[index],
-              onArticleTap: (c) => _openArticle(context, c),
+              onArticleTap: (c) => _openArticle(
+                context,
+                c,
+                deckArticles: filtered[index].items,
+                deckLabel: filtered[index].title,
+              ),
               onLongPressStart: (c, _) =>
                   ArticlePreviewOverlay.show(context, c),
               onLongPressMoveUpdate: (details) =>
@@ -411,7 +444,12 @@ class _ThemeSectionScreenState extends ConsumerState<ThemeSectionScreen> {
                 final article = discovery[index];
                 return FluxContinuArticleCard(
                   article: article,
-                  onTap: () => _openArticle(context, article),
+                  onTap: () => _openArticle(
+                    context,
+                    article,
+                    deckArticles: discovery,
+                    deckLabel: 'Explorer de nouvelles sources',
+                  ),
                 );
               }, childCount: discovery.length),
             ),

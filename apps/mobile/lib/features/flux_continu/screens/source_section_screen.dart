@@ -8,6 +8,7 @@ import '../../../config/theme.dart';
 import '../../../core/providers/navigation_providers.dart';
 import '../../../core/ui/notification_service.dart';
 import '../../../widgets/article_preview_modal.dart';
+import '../../detail/deck/models/article_deck.dart';
 import '../../digest/providers/serein_toggle_provider.dart';
 import '../../feed/models/content_model.dart';
 import '../../feed/providers/feed_provider.dart';
@@ -169,10 +170,25 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
     return widget.initialSection;
   }
 
-  Future<void> _openArticle(BuildContext context, Content article) async {
+  /// [deckArticles] — liste dont l'article fait partie : il s'ouvre alors dans
+  /// un deck navigable au swipe (Story 34.1).
+  Future<void> _openArticle(
+    BuildContext context,
+    Content article, {
+    List<Content>? deckArticles,
+    String? deckLabel,
+  }) async {
+    final deck = deckArticles == null
+        ? null
+        : articleDeckFromContents(
+            deckArticles,
+            article.id,
+            sectionKey: widget.sectionKeyValue,
+            sectionLabel: deckLabel ?? '',
+          );
     await context.push(
       '${RoutePaths.fluxContinu}/content/${article.id}',
-      extra: article,
+      extra: deck ?? article,
     );
     if (mounted) setState(() {});
   }
@@ -319,7 +335,12 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
             final item = _items[index];
             return FluxContinuArticleCard(
               article: item,
-              onTap: () => _openArticle(context, item),
+              onTap: () => _openArticle(
+                context,
+                item,
+                deckArticles: _items,
+                deckLabel: section.label,
+              ),
             );
           }, childCount: _items.length),
         ),
@@ -360,7 +381,12 @@ class _SourceSectionScreenState extends ConsumerState<SourceSectionScreen> {
             padding: const EdgeInsets.only(bottom: 16),
             child: FeedCarousel(
               data: filtered[index],
-              onArticleTap: (c) => _openArticle(context, c),
+              onArticleTap: (c) => _openArticle(
+                context,
+                c,
+                deckArticles: filtered[index].items,
+                deckLabel: filtered[index].title,
+              ),
               onLongPressStart: (c, _) =>
                   ArticlePreviewOverlay.show(context, c),
               onLongPressMoveUpdate: (details) =>

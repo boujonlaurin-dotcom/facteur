@@ -21,6 +21,8 @@ import '../features/flux_continu/screens/source_section_screen.dart';
 import '../features/flux_continu/screens/theme_section_screen.dart';
 import '../features/flux_continu/models/flux_continu_models.dart';
 import '../features/auth/screens/email_confirmation_screen.dart';
+import '../features/detail/deck/models/article_deck.dart';
+import '../features/detail/deck/screens/article_deck_screen.dart';
 import '../features/detail/screens/content_detail_screen.dart';
 
 import '../features/sources/screens/sources_screen.dart';
@@ -520,11 +522,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: NotificationService.navigatorKey,
                     pageBuilder: (context, state) {
                       final contentId = state.pathParameters['id']!;
-                      final content = extraAs<Content>(state);
+                      final deck = extraAs<ArticleDeckPayload>(state);
+                      final content =
+                          deck?.initialArticle ?? extraAs<Content>(state);
                       return FullSwipeCupertinoPage(
-                        child: ContentDetailScreen(
+                        // Deck navigable : la page possède son propre geste
+                        // horizontal, le retour se replie sur la bande de bord.
+                        backGestureWidthFraction: deck?.isNavigable ?? false
+                            ? edgeBackGestureWidthFraction
+                            : wideBackGestureWidthFraction,
+                        child: ArticleDeckScreen(
                           contentId: contentId,
                           content: content,
+                          deck: deck,
                         ),
                       );
                     },
@@ -613,15 +623,21 @@ final routerProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: NotificationService.navigatorKey,
                     pageBuilder: (context, state) {
                       final contentId = state.pathParameters['id']!;
-                      final content = extraAs<Content>(state);
+                      final deck = extraAs<ArticleDeckPayload>(state);
+                      final content =
+                          deck?.initialArticle ?? extraAs<Content>(state);
                       // `from=pdr` → article ouvert depuis un CTA « Pas de
                       // recul » : header contextuel (lavis bleu + médaillon 🔭).
                       final fromDeepReco =
                           state.uri.queryParameters['from'] == 'pdr';
                       return FullSwipeCupertinoPage(
-                        child: ContentDetailScreen(
+                        backGestureWidthFraction: deck?.isNavigable ?? false
+                            ? edgeBackGestureWidthFraction
+                            : wideBackGestureWidthFraction,
+                        child: ArticleDeckScreen(
                           contentId: contentId,
                           content: content,
+                          deck: deck,
                           fromDeepReco: fromDeepReco,
                         ),
                       );
