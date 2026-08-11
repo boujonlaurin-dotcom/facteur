@@ -31,9 +31,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version **épinglée**, alignée sur `build-apk.yml` — la toolchain qui
+      # produit réellement l'app. Un `channel: stable` nu a tiré un Flutter plus
+      # récent où `IconData` est `final` : `phosphor_flutter` 2.1.0 ne compile
+      # plus, et TOUT fichier de test qui touche à l'arbre de widgets échoue à
+      # la compilation. Deux des trois échecs du premier run venaient de là —
+      # pas du code testé. Un gate sur une toolchain différente de celle qui
+      # build teste autre chose que ce qu'on livre.
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.38.6'
           channel: stable
           cache: true
 

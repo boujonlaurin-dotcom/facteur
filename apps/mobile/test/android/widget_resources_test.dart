@@ -23,8 +23,30 @@ void main() {
 
   String layout(String name) =>
       File('${layoutDir.path}/$name.xml').readAsStringSync();
-  String kotlin(String name) =>
-      File('${kotlinDir.path}/$name.kt').readAsStringSync();
+
+  /// Source Kotlin **sans les lignes de commentaire**.
+  ///
+  /// Ces assertions portent sur ce que le code *fait*, pas sur ce que les
+  /// commentaires racontent — et les commentaires de ce widget décrivent
+  /// abondamment l'ancien comportement (« il ouvrait auparavant MainActivity
+  /// via `feed?refresh=1` »). Un `isNot(contains(...))` sur le fichier brut
+  /// matchait donc l'explication du bug au lieu du bug.
+  ///
+  /// On ne retire que les lignes **entièrement** commentaires (`//`, `/*`,
+  /// `*`) : un stripper naïf de `//` couperait aussi les URLs de deep link
+  /// (`io.supabase.facteur://…`), que d'autres assertions vérifient.
+  String kotlin(String name) {
+    final raw = File('${kotlinDir.path}/$name.kt').readAsStringSync();
+    return raw
+        .split('\n')
+        .where((line) {
+          final t = line.trimLeft();
+          return !t.startsWith('//') &&
+              !t.startsWith('*') &&
+              !t.startsWith('/*');
+        })
+        .join('\n');
+  }
 
   group('Masthead — logo + wordmark Fraunces', () {
     test('la police Fraunces Bold est embarquée dans les ressources', () {

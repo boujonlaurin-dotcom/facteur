@@ -259,6 +259,38 @@ avant de `push`.
   scriptée — `adb` logcat filtré, `dumpsys appwidget`, déclenchement forcé du
   job WorkManager, tap simulé sur une ligne, vérification du back stack.
 
+#### Ce que les trois premiers runs de ce workflow ont appris
+
+Le job a été rouge trois fois avant d'être vert. Aucun des échecs ne venait du
+widget ; tous méritent d'être notés, parce qu'ils décrivent comment on écrit un
+gate mobile dans ce repo.
+
+1. **`--no-fatal-infos` ne suffit pas.** Les *warnings* restent fatals par
+   défaut, et le repo en porte des centaines de pré-existants (inférence sur
+   les box Hive, imports inutilisés dans les tests). 535 issues, **zéro
+   erreur**, exit 1 — sur du code que la PR ne touche pas. Il faut
+   `--no-fatal-warnings` pour gater sur ce qui casse réellement un build. Un
+   gate qui crie sur du bruit pré-existant finit désactivé dans la semaine.
+2. **Épingler la version de Flutter n'est pas optionnel.** `channel: stable`
+   nu a tiré un Flutter plus récent où `IconData` est `final` :
+   `phosphor_flutter` 2.1.0 ne compile plus, et **tout** fichier de test qui
+   touche à l'arbre de widgets échoue à la **compilation** — ce qui se lit
+   « 2 tests failed » alors que rien n'a été exécuté. Tous les autres
+   workflows épinglent ; celui-ci s'aligne sur `build-apk.yml` (3.38.6), la
+   toolchain qui produit réellement l'app. Gater sur une autre toolchain
+   revient à tester autre chose que ce qu'on livre.
+3. **Un test qui grep du source doit ignorer les commentaires.**
+   `isNot(contains('feed?refresh=1'))` matchait le commentaire qui *explique*
+   l'ancien comportement. Le helper `kotlin()` de
+   `widget_resources_test.dart` retire désormais les lignes entièrement
+   commentaires — et seulement celles-là : un stripper naïf de `//` couperait
+   aussi les URLs `io.supabase.facteur://…` que d'autres assertions
+   vérifient.
+
+L'étape de tests porte `if: !cancelled()` : une analyse rouge ne doit plus
+masquer le résultat des tests, sinon on corrige à l'aveugle (c'est ce qui est
+arrivé au premier run).
+
 ---
 
 ## Vérification
