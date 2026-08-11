@@ -946,7 +946,13 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     }
   }
 
-  String _nativeAuthCallbackUrl() => 'io.supabase.facteur://login-callback';
+  // Reset natif : on redirige vers une page-pont HTTPS (même pattern que la
+  // confirmation d'email) plutôt que vers le custom scheme brut. Le scheme brut
+  // est un lien mort dès que le mail est ouvert sur un appareil sans l'app
+  // (desktop, téléphone sans l'app). La page-pont auto-relaie vers le scheme si
+  // l'app est installée, sinon propose de réinitialiser dans le navigateur.
+  String _nativePasswordResetRedirectUrl() =>
+      'https://boujonlaurin-dotcom.github.io/facteur/reset-password.html';
 
   String _webAuthCallbackUrl() => Uri(
         scheme: Uri.base.scheme,
@@ -959,7 +965,8 @@ class AuthStateNotifier extends StateNotifier<AuthState>
     try {
       await _supabase.auth.resetPasswordForEmail(
         email,
-        redirectTo: kIsWeb ? _webAuthCallbackUrl() : _nativeAuthCallbackUrl(),
+        redirectTo:
+            kIsWeb ? _webAuthCallbackUrl() : _nativePasswordResetRedirectUrl(),
       );
       state = state.copyWith(isLoading: false);
     } on AuthException catch (e) {
