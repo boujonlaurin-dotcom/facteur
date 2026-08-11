@@ -111,8 +111,8 @@ void main() {
           .map((r) => r.top)
           .reduce((a, b) => a < b ? a : b);
       final controlTop = boxes
-          // Les deux moitiés de la phrase du contrôle (« Je veux lire » puis
-          // « articles aujourd'hui ») — la barre de méta de la carte fait aussi
+          // Les deux moitiés de la phrase du contrôle (« Garder » puis
+          // « articles ») — la barre de méta de la carte fait aussi
           // 11 de haut, mais 96 de large.
           .where((r) => r.height == 11 && r.width != 96)
           .map((r) => r.top)

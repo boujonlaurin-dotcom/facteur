@@ -115,17 +115,26 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
   Timer? _hintTimer;
 
   /// Avancée du geste en cours (0..1), remontée par [TriageSwipeCard]. Pilote la
-  /// **promotion continue** de la carte du dessous : elle atteint son échelle et
-  /// son opacité pleines *pendant* la sortie de la carte du dessus, au lieu de
-  /// claquer de 0.96/0.5 à 1.0/1.0 quand elle devient carte du dessus.
+  /// **promotion continue** de la carte du dessous : son opacité (seul attribut
+  /// de profondeur, cf. [kTriageBackCardOpacity]) atteint 1.0 *pendant* la
+  /// sortie de la carte du dessus, au lieu de claquer de 0.5 à 1.0 quand elle
+  /// devient carte du dessus.
   ///
   /// Un `ValueNotifier` plutôt qu'un `setState` : seule la carte du dessous doit
   /// se rebuilder à chaque frame de geste, pas la pile entière.
   final ValueNotifier<double> _promotion = ValueNotifier(0);
 
+  /// Les `contentId` des lignes gardées déjà rendues au moins une fois. Une
+  /// ligne absente de ce set est une **nouvelle** gardée : elle joue son entrée
+  /// (fade + léger scale) une seule fois. Initialisé avec les gardés du montage
+  /// pour qu'un cold-boot en plein tri ne rejoue pas l'entrée de toute la liste
+  /// — l'entrée est un événement, pas un état.
+  late final Set<String> _renderedKeptIds;
+
   @override
   void initState() {
     super.initState();
+    _renderedKeptIds = {...widget.triage.keptContentIds};
     // Point de départ de la mesure de latence du premier article.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ref.read(essentielTriageProvider.notifier).markShown();
@@ -338,118 +347,139 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
           duration: FacteurDurations.medium,
           curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
-          child: Stack(
-            // Clés fixes sur les trois slots : l'appariement d'un build à
-            // l'autre se fait alors **par clé**, jamais par position. Sans
-            // elles, le nombre d'enfants changeait (3 → 2 sur la dernière
-            // carte) et un élément glissait d'un slot à l'autre le temps
-            // d'une frame — d'où le tampon apparemment déjà posé sur la
-            // carte fraîche. Le slot arrière est toujours rendu, vide s'il
-            // n'y a plus d'article dessous.
-            //
-            // **La carte du dessus est le seul enfant non positionné** :
-            // c'est elle qui dimensionne le `Stack`, donc la pile entière.
-            // Le slot arrière est ancré en haut **sans hauteur imposée** :
-            // en `Positioned.fill` il héritait d'une contrainte serrée à la
-            // hauteur de la carte du dessus et débordait dès qu'il était le
-            // plus grand des deux (carte image sous une carte texte courte).
-            // Ancré, il prend sa hauteur réelle et le `Stack` rogne ce qui
-            // dépasse — de toute façon caché derrière la carte du dessus.
-            children: [
-              Positioned(
-                key: const ValueKey('triage-back'),
-                top: 0,
-                left: 0,
-                right: 0,
-                child: next == null
-                    ? const SizedBox.shrink()
-                    // **Carte du dessous à fleur du cadre, jamais mise à
-                    // l'échelle** (reprise PO 10/08, défaut « la carte
-                    // suivante est décalée du côté du swipe »). Une carte
-                    // réduite est plus étroite que le cadre : dès que la carte
-                    // du dessus glisse et pivote, on découvrait sur son bord
-                    // de fuite un liseré de fond + le coin arrondi de la carte
-                    // du dessous *à l'intérieur* du cadre — lu comme un
-                    // décalage latéral. En pleine largeur, la carte révélée
-                    // épouse exactement le cadre : plus aucun jour d'un côté,
-                    // et la promotion carte-du-dessous → carte-du-dessus
-                    // devient continue (aucun « pop » d'échelle). La
-                    // profondeur reste portée par l'**opacité seule**, qui
-                    // monte de [kTriageBackCardOpacity] vers 1.0 au fil du
-                    // geste. Le `top: 0` du `Positioned` suffit à aligner deux
-                    // cartes de hauteurs différentes (image / texte).
-                    : ValueListenableBuilder<double>(
-                        valueListenable: _promotion,
-                        // `RepaintBoundary` **sous** l'`Opacity` : avec un
-                        // enfant déjà composité, `RenderOpacity` pousse un
-                        // calque au compositeur au lieu de passer par
-                        // `saveLayer` (un tampon hors écran réalloué à chaque
-                        // peinture, donc à chaque frame de swipe).
-                        builder: (context, p, child) => Opacity(
-                          opacity: lerpDouble(kTriageBackCardOpacity, 1.0, p)!,
-                          child: child,
-                        ),
-                        child: IgnorePointer(
-                          child: RepaintBoundary(
-                            child: _TriageArticleCard(
-                              article: next,
-                              sourceState: sourceStateOf(next),
+          // Le `ClipRect` est **la** correction du drift : la carte du dessus
+          // est l'enfant non positionné du `Stack`, et son
+          // `Transform.translate` peint hors des bornes de layout — un `Stack`
+          // ne rogne que ses enfants positionnés, jamais celui-là. Pendant tout
+          // le drag et la sortie, la carte débordait donc du cadre de la pile
+          // (tranche de carte visible à droite de « Ton Essentiel », lue comme
+          // un décalage des articles suivants). Rognée ici, la carte glisse
+          // *hors du cadre* et y disparaît proprement, comme tirée d'un paquet.
+          child: ClipRect(
+            child: Stack(
+              // Clés fixes sur les trois slots : l'appariement d'un build à
+              // l'autre se fait alors **par clé**, jamais par position. Sans
+              // elles, le nombre d'enfants changeait (3 → 2 sur la dernière
+              // carte) et un élément glissait d'un slot à l'autre le temps
+              // d'une frame — d'où le tampon apparemment déjà posé sur la
+              // carte fraîche. Le slot arrière est toujours rendu, vide s'il
+              // n'y a plus d'article dessous.
+              //
+              // **La carte du dessus est le seul enfant non positionné** :
+              // c'est elle qui dimensionne le `Stack`, donc la pile entière.
+              // Le slot arrière est en `Positioned.fill` — donc exactement au
+              // gabarit de la carte du dessus — mais son contenu garde sa
+              // hauteur réelle grâce à l'`OverflowBox` (une contrainte serrée
+              // ferait déborder une carte image sous une carte texte courte).
+              // Ce qui dépasse est rogné par le `ClipRRect`, **au même rayon
+              // que la carte du dessus** : c'est la correction du défaut « des
+              // arrondis colorés apparaissent autour de la première carte » —
+              // le `Stack` rognait au rectangle droit, si bien que l'image de
+              // la carte du dessous se voyait dans les deux encoches laissées
+              // par les coins arrondis de la carte du dessus.
+              children: [
+                Positioned.fill(
+                  key: const ValueKey('triage-back'),
+                  child: next == null
+                      ? const SizedBox.shrink()
+                      // **Carte du dessous à fleur du cadre, jamais mise à
+                      // l'échelle** (reprise PO 10/08, défaut « la carte
+                      // suivante est décalée du côté du swipe »). Une carte
+                      // réduite est plus étroite que le cadre : dès que la carte
+                      // du dessus glisse et pivote, on découvrait sur son bord
+                      // de fuite un liseré de fond + le coin arrondi de la carte
+                      // du dessous *à l'intérieur* du cadre — lu comme un
+                      // décalage latéral. En pleine largeur, la carte révélée
+                      // épouse exactement le cadre : plus aucun jour d'un côté,
+                      // et la promotion carte-du-dessous → carte-du-dessus
+                      // devient continue (aucun « pop » d'échelle). La
+                      // profondeur reste portée par l'**opacité seule**, qui
+                      // monte de [kTriageBackCardOpacity] vers 1.0 au fil du
+                      // geste. L'ancrage haut de l'`OverflowBox` suffit à
+                      // aligner deux cartes de hauteurs différentes.
+                      : ValueListenableBuilder<double>(
+                          valueListenable: _promotion,
+                          // `RepaintBoundary` **sous** l'`Opacity` : avec un
+                          // enfant déjà composité, `RenderOpacity` pousse un
+                          // calque au compositeur au lieu de passer par
+                          // `saveLayer` (un tampon hors écran réalloué à chaque
+                          // peinture, donc à chaque frame de swipe).
+                          builder: (context, p, child) => Opacity(
+                            opacity:
+                                lerpDouble(kTriageBackCardOpacity, 1.0, p)!,
+                            child: child,
+                          ),
+                          child: IgnorePointer(
+                            child: ClipRRect(
+                              borderRadius:
+                                  BorderRadius.circular(FacteurRadius.large),
+                              child: OverflowBox(
+                                alignment: Alignment.topCenter,
+                                minHeight: 0,
+                                maxHeight: double.infinity,
+                                child: RepaintBoundary(
+                                  child: _TriageArticleCard(
+                                    article: next,
+                                    sourceState: sourceStateOf(next),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
+                ),
+                AutoGrowPulse(
+                  key: const ValueKey('triage-top'),
+                  playToken: _pulseToken,
+                  child: TriageSwipeCard(
+                    key: _cardKey,
+                    // Jeton de « carte fraîche » : quand l'article du dessus
+                    // change, le State réutilisé (GlobalKey) repart d'un
+                    // geste propre au lieu de fuir le drag/anim du précédent.
+                    articleId: currentId,
+                    onGestureProgress: (p) => _promotion.value = p,
+                    // Un tap ouvre l'article, sans décider. La décision
+                    // (`keep` via `read`) tombe au retour, si l'article a
+                    // vraiment été lu — cf. l'auto-keep en tête de build.
+                    onTap: () {
+                      _openedForRead.add(currentId);
+                      widget.onTapArticle(current);
+                    },
+                    onKeep: () => _decide(TriageDecision.keep, TriageVia.swipe),
+                    onPass: () => _decide(TriageDecision.pass, TriageVia.swipe),
+                    // L'aperçu est monté **dans** la carte qui swipe, pas
+                    // autour : l'arène de gestes départage alors un drag
+                    // horizontal (qui gagne dès le slop franchi) d'un appui
+                    // maintenu, au lieu de voir le parent capter les deux.
+                    child: ArticlePreviewGesture(
+                      contentBuilder: () => current.toPreviewContent(),
+                      onLongPressStart: _markPreviewDiscovered,
+                      child: _TriageArticleCard(
+                        article: current,
+                        sourceState: sourceStateOf(current),
+                        readState: readStateFor(current),
                       ),
-              ),
-              AutoGrowPulse(
-                key: const ValueKey('triage-top'),
-                playToken: _pulseToken,
-                child: TriageSwipeCard(
-                  key: _cardKey,
-                  // Jeton de « carte fraîche » : quand l'article du dessus
-                  // change, le State réutilisé (GlobalKey) repart d'un
-                  // geste propre au lieu de fuir le drag/anim du précédent.
-                  articleId: currentId,
-                  onGestureProgress: (p) => _promotion.value = p,
-                  // Un tap ouvre l'article, sans décider. La décision
-                  // (`keep` via `read`) tombe au retour, si l'article a
-                  // vraiment été lu — cf. l'auto-keep en tête de build.
-                  onTap: () {
-                    _openedForRead.add(currentId);
-                    widget.onTapArticle(current);
-                  },
-                  onKeep: () => _decide(TriageDecision.keep, TriageVia.swipe),
-                  onPass: () => _decide(TriageDecision.pass, TriageVia.swipe),
-                  // L'aperçu est monté **dans** la carte qui swipe, pas
-                  // autour : l'arène de gestes départage alors un drag
-                  // horizontal (qui gagne dès le slop franchi) d'un appui
-                  // maintenu, au lieu de voir le parent capter les deux.
-                  child: ArticlePreviewGesture(
-                    contentBuilder: () => current.toPreviewContent(),
-                    onLongPressStart: _markPreviewDiscovered,
-                    child: _TriageArticleCard(
-                      article: current,
-                      sourceState: sourceStateOf(current),
-                      readState: readStateFor(current),
                     ),
                   ),
                 ),
-              ),
-              // Le libellé du nudge flotte au bas de la carte : le rendre
-              // dans la colonne coûterait une ligne de hauteur permanente
-              // pour un message qui vit 2,4 s.
-              Positioned(
-                key: const ValueKey('triage-hint'),
-                left: 0,
-                right: 0,
-                bottom: 10,
-                child: IgnorePointer(
-                  child: AnimatedOpacity(
-                    opacity: _showPreviewHint ? 1 : 0,
-                    duration: FacteurDurations.medium,
-                    child: const Center(child: _PreviewHint()),
+                // Le libellé du nudge flotte au bas de la carte : le rendre
+                // dans la colonne coûterait une ligne de hauteur permanente
+                // pour un message qui vit 2,4 s.
+                Positioned(
+                  key: const ValueKey('triage-hint'),
+                  left: 0,
+                  right: 0,
+                  bottom: 10,
+                  child: IgnorePointer(
+                    child: AnimatedOpacity(
+                      opacity: _showPreviewHint ? 1 : 0,
+                      duration: FacteurDurations.medium,
+                      child: const Center(child: _PreviewHint()),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         _ActionBar(
@@ -522,6 +552,11 @@ class _EssentielTriageStackState extends ConsumerState<EssentielTriageStack> {
                       article: byId[id]!,
                       sourceState: sourceStateOf(byId[id]!),
                       readState: readStateFor(byId[id]!),
+                      // Jouée à la **première** apparition seulement : la clé
+                      // stable fait persister l'élément, donc l'entrée ne se
+                      // rejoue pas aux rebuilds suivants même si ce booléen
+                      // retombe à faux.
+                      animateEntry: _renderedKeptIds.add(id),
                       onTap: () => widget.onTapArticle(byId[id]!),
                       onPreviewStart: _markPreviewDiscovered,
                     ),
@@ -568,7 +603,7 @@ class _PreviewHint extends StatelessWidget {
 /// [ReadStateMark], l'idiome de `_LeadTile`/`_MediumTile`) : c'est ici que le
 /// signal « lu depuis la pile » vit vraiment, la carte lue quittant la pile
 /// aussitôt gardée.
-class _KeptRow extends StatelessWidget {
+class _KeptRow extends StatefulWidget {
   final EssentielArticle article;
 
   /// État d'intérêt de la source, pour la coche/étoile posée à droite du nom.
@@ -579,6 +614,12 @@ class _KeptRow extends StatelessWidget {
   /// un seul point de lecture des providers.
   final ReadState readState;
 
+  /// `true` pour une ligne qui vient d'être gardée : elle joue une entrée
+  /// sobre (fade + scale 0.98 → 1.0), une seule fois. Les lignes déjà
+  /// présentes au montage de la pile restent statiques — l'entrée est un
+  /// événement, pas un état.
+  final bool animateEntry;
+
   final VoidCallback onTap;
   final VoidCallback onPreviewStart;
 
@@ -587,13 +628,59 @@ class _KeptRow extends StatelessWidget {
     required this.article,
     required this.sourceState,
     required this.readState,
+    required this.animateEntry,
     required this.onTap,
     required this.onPreviewStart,
   });
 
   @override
+  State<_KeptRow> createState() => _KeptRowState();
+}
+
+class _KeptRowState extends State<_KeptRow> {
+  /// Capturé au montage : un rebuild pendant les 250ms d'entrée (provider de
+  /// lecture, décision suivante) redescend `animateEntry` à faux — sans cette
+  /// capture, l'enveloppe d'animation disparaîtrait de l'arbre en plein vol et
+  /// la ligne claquerait à son état final.
+  late final bool _playEntry = widget.animateEntry;
+
+  @override
   Widget build(BuildContext context) {
+    final article = widget.article;
     final colors = context.facteurColors;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final animate = _playEntry && !reduceMotion;
+    final row = _buildRow(context, colors, article, popCheck: animate);
+    if (!animate) return row;
+    // Glissée depuis la gauche + fondu : la ligne « se range » visiblement dans
+    // la liste. Un simple fade + scale 0.98 (première itération) était
+    // imperceptible — l'AnimatedSize pousse la liste au même moment et un scale
+    // de 2 % sur 64px fait bouger ~1px.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: FacteurDurations.slow,
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(-16 * (1 - t), 0),
+          child: child,
+        ),
+      ),
+      child: row,
+    );
+  }
+
+  Widget _buildRow(
+    BuildContext context,
+    FacteurColors colors,
+    EssentielArticle article, {
+    required bool popCheck,
+  }) {
+    final sourceState = widget.sourceState;
+    final readState = widget.readState;
+    final onTap = widget.onTap;
+    final onPreviewStart = widget.onPreviewStart;
     return ArticlePreviewGesture(
       contentBuilder: () => article.toPreviewContent(),
       onLongPressStart: onPreviewStart,
@@ -609,11 +696,29 @@ class _KeptRow extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Icon(
-                    PhosphorIcons.check(),
-                    size: 14,
-                    color: colors.sectionEssentiel,
-                  ),
+                  // La coche « pope » (0 → léger dépassement → 1,
+                  // easeOutBack) à l'entrée d'une nouvelle gardée : c'est le
+                  // point de satisfaction du « Je garde », sans haptique
+                  // supplémentaire. Statique sur les lignes déjà en place.
+                  if (popCheck)
+                    TweenAnimationBuilder<double>(
+                      tween: Tween(begin: 0.0, end: 1.0),
+                      duration: FacteurDurations.slow,
+                      curve: Curves.easeOutBack,
+                      builder: (context, t, child) =>
+                          Transform.scale(scale: t, child: child),
+                      child: Icon(
+                        PhosphorIcons.check(),
+                        size: 14,
+                        color: colors.sectionEssentiel,
+                      ),
+                    )
+                  else
+                    Icon(
+                      PhosphorIcons.check(),
+                      size: 14,
+                      color: colors.sectionEssentiel,
+                    ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Column(
@@ -691,7 +796,12 @@ class TriageProgressBar extends StatelessWidget {
     // Cas rare : « Plus d'articles ? » a poussé la cible au-delà du plafond de
     // segments. On proratise plutôt que d'ajouter des traits illisibles.
     final filled = goal <= segments ? kept : (kept * segments / goal).round();
-    final fill = colors.sectionEssentiel.withValues(alpha: 0.5);
+    // La barre reste un repère périphérique, jamais une jauge — mais l'écart
+    // entre acquis et restant doit se lire d'un coup d'œil (reprise PO 11/08) :
+    // le segment rempli remonte de 0.35 à 0.45, le segment vide descend à 0.45
+    // du filet, plus proche du fond de carte.
+    final fill = colors.sectionEssentiel.withValues(alpha: 0.45);
+    final empty = colors.border.withValues(alpha: 0.45);
     return SizedBox(
       height: kTriageProgressBarHeight,
       child: Semantics(
@@ -710,7 +820,7 @@ class TriageProgressBar extends StatelessWidget {
                   curve: Curves.easeOutCubic,
                   height: kTriageProgressSegmentHeight,
                   decoration: BoxDecoration(
-                    color: i < filled ? fill : colors.border,
+                    color: i < filled ? fill : empty,
                     borderRadius: BorderRadius.circular(FacteurRadius.pill),
                   ),
                 ),
@@ -723,18 +833,21 @@ class TriageProgressBar extends StatelessWidget {
   }
 }
 
-/// Contrôle compact sous les boutons :
-/// « Je veux lire [−] N [+] articles aujourd'hui ».
+/// Contrôle compact sous les boutons : « Garder [−] N [+] articles ».
 ///
 /// **N est le nombre d'articles à garder** (33.4), plus la taille du slate : le
 /// stepper ne touche donc plus au pool, et le fragment « · Y à trier » a
 /// disparu — le reste à trier n'est plus déterminé.
 ///
-/// Hiérarchie voulue (reprise PO 10/08) : c'est un **réglage discret**, pas un
-/// titre. Les ronds encadrent immédiatement le chiffre — ils sont ce qui le
-/// règle, les pousser aux deux extrémités de la largeur cassait ce lien — et le
-/// chiffre lui-même est un `textPrimary` 14/w600 dans la police du texte
-/// courant, non plus un grand Courier gras en accent.
+/// Hiérarchie voulue (reprises PO 10/08 puis 11/08) : c'est un **réglage
+/// discret**, pas un titre — et il doit s'effacer davantage encore. La phrase
+/// s'est raccourcie (« Je veux lire … articles aujourd'hui » → « Garder …
+/// articles ») : moins de mots, donc moins de masse au centre de la carte, et
+/// une formulation qui nomme l'action du tri plutôt que d'énoncer une intention.
+/// Les ronds encadrent immédiatement le chiffre — ils sont ce qui le règle, les
+/// pousser aux deux extrémités de la largeur cassait ce lien — et le chiffre
+/// lui-même est passé en `textSecondary` 13/w600 : il reste le repère à lire de
+/// la ligne, sans rivaliser avec le titre de la carte.
 class TriageGoalControl extends ConsumerWidget {
   final EssentielTriageState triage;
 
@@ -748,12 +861,15 @@ class TriageGoalControl extends ConsumerWidget {
     void nudge(int delta) =>
         ref.read(essentielTriageProvider.notifier).setGoal(current + delta);
 
-    final labelStyle = TextStyle(fontSize: 12, color: colors.textSecondary);
+    // `textTertiary` en 11.5 (était 12) : la phrase est un habillage du
+    // réglage, seul le chiffre N — en `textSecondary` 13/w600 — est le repère
+    // à lire.
+    final labelStyle = TextStyle(fontSize: 11.5, color: colors.textTertiary);
     return SizedBox(
       height: kTriageTargetControlHeight,
       child: Row(
         children: [
-          Text('Je veux lire', style: labelStyle),
+          Text('Garder', style: labelStyle),
           _TargetRound(
             icon: PhosphorIcons.minus(),
             semanticLabel: 'Moins d\'articles',
@@ -763,9 +879,9 @@ class TriageGoalControl extends ConsumerWidget {
           Text(
             '$current',
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: colors.textPrimary,
+              color: colors.textSecondary,
             ),
           ),
           _TargetRound(
@@ -778,7 +894,7 @@ class TriageGoalControl extends ConsumerWidget {
           // étroite au lieu de pousser les ronds hors du cadre.
           Flexible(
             child: Text(
-              'articles aujourd\'hui',
+              'articles',
               style: labelStyle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,

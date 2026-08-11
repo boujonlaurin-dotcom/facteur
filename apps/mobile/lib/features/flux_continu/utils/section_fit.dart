@@ -269,7 +269,7 @@ const double kTriageCardPaddingV = 12;
 /// profondeur est donc portée par l'**opacité seule**.
 const double kTriageBackCardOpacity = 0.5;
 
-/// Ligne d'objectif : « Je veux lire [−] N [+] articles aujourd'hui », rendue
+/// Ligne d'objectif : « Garder [−] N [+] articles », rendue
 /// **sous la barre d'actions** (reprise PO 08/08, emplacement confirmé 10/08).
 /// Partagée avec la silhouette ([TriageStackSkeleton]) : deux hauteurs
 /// divergentes feraient sauter la mise en page à l'hydratation.

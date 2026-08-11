@@ -113,6 +113,13 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
   bool _prefetchScheduled = false;
   bool _pruneScheduled = false;
 
+  /// La pile de tri a-t-elle été rendue pendant ce montage ? C'est le
+  /// déclencheur de la révélation de fin de tri ([_TriageDoneReveal]) : elle ne
+  /// se joue que sur la transition vécue pile → tri terminé. Un cold-boot dont
+  /// le tri est déjà terminé rend la liste des gardés d'emblée, sans animation
+  /// — la fin de tri est un événement, pas un état.
+  bool _sawTriageActive = false;
+
   // Mémo du pool adressable (slate du jour + articles du carrousel adaptés).
   // Les deux entrées sont des champs du widget, qui ne dépendent d'aucun
   // provider watché ici — alors que la carte, elle, se reconstruit à **chaque**
@@ -338,6 +345,7 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
       if (!triage.hasStarted || pendingPoolIds > 0) _scheduleSyncSlate();
     }
     final showTriage = canTriage && triage.isActive;
+    if (showTriage) _sawTriageActive = true;
     // **Alimentation continue de la pile** (33.4) : dès qu'il reste moins de
     // deux articles à proposer et que la cible de gardés n'est pas atteinte, on
     // va chercher la suite. Sans ça, l'objectif « N articles à garder » ne
@@ -427,6 +435,68 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     final lead = triageDone || visible.isEmpty ? null : visible.first;
     final mediums = lead == null ? visible : visible.sublist(1);
 
+    // Corps passif de la carte (hors pile de tri) : lead éventuel, mediums,
+    // puis le pied de tri terminé. Rassemblé dans une fonction pour pouvoir
+    // être rendu soit tel quel (lettre passée), soit enveloppé d'une seule
+    // révélation de fin de tri ([_TriageDoneReveal]) — la bascule pile → liste
+    // des gardés était sèche (un if/else de Column, aucune transition). Appelée
+    // seulement dans les deux branches qui la rendent : pendant le tri et à
+    // l'hydratation, ces tuiles seraient construites pour être jetées.
+    List<Widget> buildPassiveChildren() => <Widget>[
+          // Fin de tri : la liste des gardés s'ouvre sur un vrai sous-titre de
+          // carte, sans quoi elle commençait par une tuile nue — rien ne marquait
+          // que le tri était terminé ni ce qu'on regardait désormais.
+          if (triageDone && visible.isNotEmpty) ...[
+            const _KeptSectionTitle(),
+            const SizedBox(height: 8),
+          ],
+          if (lead != null)
+            widget._tracked(
+              article: lead,
+              position: 0,
+              child: _LeadTile(
+                article: lead,
+                accent: accent,
+                spec: spec,
+                readState: readStateFor(lead),
+                onTap: () => onTapArticle(lead),
+              ),
+            ),
+          for (var i = 0; i < mediums.length; i++) ...[
+            // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
+            // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
+            // Pas de filet **avant la première** tuile quand il n'y a pas de
+            // lead au-dessus (liste des gardés) : il pendrait sous l'en-tête.
+            if (i > 0 || lead != null) ...[
+              const SizedBox(height: 6),
+              const _Hairline(),
+            ],
+            const SizedBox(height: 6),
+            widget._tracked(
+              article: mediums[i],
+              // Décalé de 1 quand un lead occupe le rang 0.
+              position: lead == null ? i : i + 1,
+              child: _MediumTile(
+                article: mediums[i],
+                spec: spec,
+                readState: readStateFor(mediums[i]),
+                onTap: () => onTapArticle(mediums[i]),
+              ),
+            ),
+          ],
+          // Tri terminé : le pied de carte — « Plus d'articles ? » puis
+          // « Refaire ? » (upsert backend idempotent sur
+          // `(user, article, jour)`, donc re-trier écrase sans dupliquer).
+          // L'objectif n'y est **plus affiché** (33.4) : un tri qui
+          // s'arrête en deçà de la cible ne doit jamais se lire comme un
+          // échec.
+          if (triageDone) ...[
+            if (visible.isEmpty) const _NothingKeptNotice(),
+            _TriageDoneActions(poolIds: poolIds),
+          ],
+        ];
+    final passiveChildren = buildPassiveChildren();
+
     return KeyedSubtree(
       // Ancre du tour guidé (étape 1 — hero « L'Essentiel du jour »).
       key: tourEssentielHeroKey,
@@ -475,56 +545,61 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
                 )
               else if (contentPending)
                 const TriageStackSkeleton(standalone: true)
-              else ...[
-                if (lead != null)
-                  widget._tracked(
-                    article: lead,
-                    position: 0,
-                    child: _LeadTile(
-                      article: lead,
-                      accent: accent,
-                      spec: spec,
-                      readState: readStateFor(lead),
-                      onTap: () => onTapArticle(lead),
-                    ),
+              else if (triageDone)
+                // Fin de tri : la liste des gardés + le pied se révèlent d'un
+                // seul mouvement (fade + léger scale-in), au lieu de claquer.
+                _TriageDoneReveal(
+                  animate: _sawTriageActive,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: passiveChildren,
                   ),
-                for (var i = 0; i < mediums.length; i++) ...[
-                  // Séparateur de tuiles medium 8→6 de part et d'autre du hairline
-                  // (poste le plus rentable : ×4, hairline 0.6px conserve le « moat »).
-                  // Pas de filet **avant la première** tuile quand il n'y a pas de
-                  // lead au-dessus (liste des gardés) : il pendrait sous l'en-tête.
-                  if (i > 0 || lead != null) ...[
-                    const SizedBox(height: 6),
-                    const _Hairline(),
-                  ],
-                  const SizedBox(height: 6),
-                  widget._tracked(
-                    article: mediums[i],
-                    // Décalé de 1 quand un lead occupe le rang 0.
-                    position: lead == null ? i : i + 1,
-                    child: _MediumTile(
-                      article: mediums[i],
-                      spec: spec,
-                      readState: readStateFor(mediums[i]),
-                      onTap: () => onTapArticle(mediums[i]),
-                    ),
-                  ),
-                ],
-                // Tri terminé : le pied de carte — « Plus d'articles ? » puis
-                // « Refaire ? » (upsert backend idempotent sur
-                // `(user, article, jour)`, donc re-trier écrase sans dupliquer).
-                // L'objectif n'y est **plus affiché** (33.4) : un tri qui
-                // s'arrête en deçà de la cible ne doit jamais se lire comme un
-                // échec.
-                if (triageDone) ...[
-                  if (visible.isEmpty) const _NothingKeptNotice(),
-                  _TriageDoneActions(poolIds: poolIds),
-                ],
-              ],
+                )
+              else
+                ...passiveChildren,
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Révélation **one-shot** de la fin de tri : fondu + remontée de 16px
+/// (easeOutCubic, [FacteurDurations.slow], l'idiome de sobriété
+/// d'`AnimatedFeedCard` — un événement, une transition lisible, ni confetti ni
+/// haptique). Un fade + scale 0.98 (première itération) était invisible : la
+/// bascule pile → liste réagence toute la carte au même moment, seul un
+/// déplacement franc se lit.
+///
+/// [animate] est `false` quand le tri était déjà terminé au montage de la
+/// carte (cold-boot) : l'état se rend alors d'emblée. Le reduce-motion
+/// (`MediaQuery.maybeDisableAnimationsOf`) court-circuite de la même façon.
+class _TriageDoneReveal extends StatelessWidget {
+  final bool animate;
+  final Widget child;
+
+  const _TriageDoneReveal({required this.animate, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (!animate || reduceMotion) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: FacteurDurations.slow,
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        // La liste remonte à sa place depuis 16px plus bas : elle « se pose »
+        // là où vivait la pile.
+        child: Transform.translate(
+          offset: Offset(0, 16 * (1 - t)),
+          child: child,
+        ),
+      ),
+      child: child,
     );
   }
 }
@@ -576,7 +651,9 @@ class _TriageDoneActionsState extends ConsumerState<_TriageDoneActions> {
     // 1. Pousser la cible suffit : `extendGoal` est synchrone et lève l'arrêt
     //    volontaire. Si le slate porte encore des articles non triés, la pile
     //    rouvre dans la frame et ce pied de carte disparaît.
-    ref.read(essentielTriageProvider.notifier).extendGoal(kTriageGoalExtendStep);
+    ref
+        .read(essentielTriageProvider.notifier)
+        .extendGoal(kTriageGoalExtendStep);
     if (ref.read(essentielTriageProvider).isActive) return;
 
     // 2. Slate épuisé : il faut de la matière. Geste utilisateur ⇒ `force`,
@@ -763,6 +840,48 @@ class _NothingKeptNotice extends StatelessWidget {
         'Rien gardé aujourd\'hui.',
         style: FacteurTypography.bodySmall(colors.textSecondary),
       ),
+    );
+  }
+}
+
+/// Sous-titre de la liste des gardés, rendu **une fois le tri terminé** :
+/// « Tes articles » suivi d'un filet qui court jusqu'au bord de la carte. C'est
+/// le repère de fin de tri — la pile a disparu, cette ligne dit ce qui la
+/// remplace.
+///
+/// Volontairement distinct de l'en-tête inline affiché *pendant* le tri
+/// ([_KeptListHeader] dans `essentiel_triage_stack.dart` : « TES ARTICLES » en
+/// Courier capitales, un simple repère de progression sous la pile). Ici c'est
+/// un titre de section de la carte, il porte donc la police de titre — le
+/// Fraunces d'[_headerTitleStyle], d'un cran plus bas que l'en-tête « Ton
+/// Essentiel » pour rester un **sous**-titre.
+class _KeptSectionTitle extends StatelessWidget {
+  const _KeptSectionTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<FacteurColors>()!;
+    return Row(
+      children: [
+        Text(
+          'Tes articles',
+          style: GoogleFonts.fraunces(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            height: 1.2,
+            color: colors.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 10),
+        // Le filet prolonge le titre au lieu de le souligner : le titre est
+        // incrusté *dans* le séparateur, comme un cartouche de section.
+        Expanded(
+          child: Container(
+            height: 1,
+            color: colors.border.withValues(alpha: 0.6),
+          ),
+        ),
+      ],
     );
   }
 }

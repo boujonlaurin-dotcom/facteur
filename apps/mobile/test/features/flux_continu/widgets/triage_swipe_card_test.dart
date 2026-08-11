@@ -281,6 +281,161 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  // ── Filet « geste sans fin détectée » (Listener passif) ───────────────────
+  //
+  // Le `HorizontalDragGestureRecognizer` peut ne jamais délivrer de
+  // `onEnd`/`onCancel` terminal (2ᵉ doigt qui atterrit en cours de swipe,
+  // perte de route d'arène) : la carte restait alors figée translatée, pour
+  // toujours (aucune décision ⇒ l'index n'avance pas ⇒ jamais de reset).
+  // L'invariant testé ici : **quelle que soit la séquence de pointeurs, un
+  // drag suivant décide toujours** — et le filet ne se déclenche jamais sur
+  // un geste proprement terminé (compteur à zéro).
+
+  testWidgets(
+      'multi-touch, lever entrelacé : la carte ne se fige jamais, un drag '
+      'suivant décide toujours (invariant du filet)', (tester) async {
+    final decisions = await pumpHarness(tester);
+    final center = tester.getCenter(find.byType(TriageSwipeCard));
+
+    // 1ᵉʳ doigt : drag en cours (150 px, sous le seuil de 200).
+    final g1 = await tester.startGesture(center, pointer: 1);
+    await g1.moveBy(const Offset(150, 0));
+    await tester.pump();
+    // 2ᵉ doigt qui atterrit en plein swipe, puis lever entrelacé.
+    final g2 = await tester.startGesture(center.translate(30, 20), pointer: 2);
+    await tester.pump();
+    await g1.up();
+    await tester.pump();
+    await g2.up();
+    await tester.pumpAndSettle();
+
+    // Sous le seuil et sans vélocité : aucune décision ne doit être tombée.
+    expect(decisions, isEmpty);
+    expect(find.text('card-a'), findsOneWidget);
+    expect(stamps(), findsNothing, reason: 'extent revenu à zéro');
+
+    // L'invariant : la carte décide toujours au geste suivant, pas de gel.
+    await tester.drag(find.byType(TriageSwipeCard), swipeRight);
+    await tester.pumpAndSettle();
+    expect(decisions, ['keep-a']);
+    expect(find.text('card-b'), findsOneWidget);
+  });
+
+  testWidgets(
+      'drag abandonné + changement d\'article : état nettoyé, aucun timer ni '
+      'microtask ne fuit sur la carte suivante', (tester) async {
+    String id = 'a';
+    late StateSetter setId;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(extensions: [FacteurPalettes.light]),
+        home: Scaffold(
+          body: Center(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                setId = setState;
+                return TriageSwipeCard(
+                  articleId: id,
+                  onKeep: () {},
+                  onPass: () {},
+                  child: SizedBox(height: 300, child: Text('card-$id')),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Geste vif, jamais terminé (pas de `.up()` avant le changement de carte).
+    final g = await tester
+        .startGesture(tester.getCenter(find.byType(TriageSwipeCard)));
+    await g.moveBy(const Offset(150, 0));
+    await tester.pump();
+    expect(find.text('JE GARDE'), findsOneWidget);
+
+    // La carte change d'article sous le geste (teardown didUpdateWidget).
+    setId(() => id = 'b');
+    await tester.pump();
+
+    // Carte fraîche : extent nettoyé, aucun tampon hérité.
+    expect(find.text('card-b'), findsOneWidget);
+    expect(stamps(), findsNothing);
+
+    // Le doigt se lève après coup : le filet ne doit PAS réconcilier un geste
+    // qui appartenait à la carte précédente.
+    await g.up();
+    await tester.pumpAndSettle();
+    final state =
+        tester.state<TriageSwipeCardState>(find.byType(TriageSwipeCard));
+    expect(state.lostGestureResolutions, 0);
+    expect(stamps(), findsNothing);
+  });
+
+  testWidgets(
+      'PointerCancel au binding : spring-back, aucune décision, la carte '
+      'reste re-swipeable', (tester) async {
+    final decisions = await pumpHarness(tester);
+
+    final g = await tester
+        .startGesture(tester.getCenter(find.byType(TriageSwipeCard)));
+    await g.moveBy(const Offset(150, 0));
+    await tester.pump();
+    await g.cancel();
+    await tester.pumpAndSettle();
+
+    expect(decisions, isEmpty);
+    expect(find.text('card-a'), findsOneWidget);
+    expect(stamps(), findsNothing);
+
+    await tester.drag(find.byType(TriageSwipeCard), swipeRight);
+    await tester.pumpAndSettle();
+    expect(decisions, ['keep-a']);
+    expect(find.text('card-b'), findsOneWidget);
+  });
+
+  testWidgets(
+      'filet passif : compteur à zéro sur tous les drags propres '
+      '(down + move + up bruts au binding)', (tester) async {
+    final decisions = await pumpHarness(tester);
+    final center = tester.getCenter(find.byType(TriageSwipeCard));
+    final state =
+        tester.state<TriageSwipeCardState>(find.byType(TriageSwipeCard));
+
+    // Séquence brute au binding — le chemin que le Listener observe. Les
+    // déplacements sont fractionnés : le delta accumulé avant l'acceptation
+    // d'arène est ignoré (`DragStartBehavior.start`), un unique gros move ne
+    // ferait donc jamais franchir le seuil à `_dragExtent`.
+    tester.binding.handlePointerEvent(
+      PointerDownEvent(pointer: 7, position: center),
+    );
+    for (var i = 1; i <= 5; i++) {
+      tester.binding.handlePointerEvent(
+        PointerMoveEvent(
+          pointer: 7,
+          position: center + Offset(60.0 * i, 0),
+          delta: const Offset(60, 0),
+        ),
+      );
+      await tester.pump();
+    }
+    tester.binding.handlePointerEvent(
+      PointerUpEvent(pointer: 7, position: center + const Offset(300, 0)),
+    );
+    await tester.pumpAndSettle();
+
+    // Le recognizer a terminé proprement : la décision est tombée par le
+    // chemin normal et le filet n'a rien eu à réconcilier.
+    expect(decisions, ['keep-a']);
+    expect(state.lostGestureResolutions, 0);
+
+    // Les drags synthétiques propres non plus ne le déclenchent jamais.
+    await tester.drag(find.byType(TriageSwipeCard), swipeLeft);
+    await tester.pumpAndSettle();
+    expect(decisions, ['keep-a', 'pass-b']);
+    expect(state.lostGestureResolutions, 0);
+  });
+
   // ── Progression du geste (promotion de la carte du dessous) ────────────────
 
   testWidgets(
