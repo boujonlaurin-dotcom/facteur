@@ -95,7 +95,6 @@ class _FinalizeQuestionState extends ConsumerState<FinalizeQuestion> {
     final themesCount = answers.themes?.length ?? 0;
     final sourcesCount = answers.preferredSources?.length ?? 0;
     final articleCount = answers.dailyArticleCount ?? 5;
-    final isSerein = (answers.digestMode ?? 'pour_vous') == 'serein';
 
     return SingleChildScrollView(
       padding: EdgeInsets.only(
@@ -152,11 +151,6 @@ class _FinalizeQuestionState extends ConsumerState<FinalizeQuestion> {
                   emoji: '📋',
                   label: OnboardingStrings.finalizeArticleCountSummary(
                       articleCount),
-                ),
-                const SizedBox(height: FacteurSpacing.space3),
-                _SummaryRow(
-                  emoji: isSerein ? '🌿' : '☀️',
-                  label: 'Mode : ${isSerein ? "Serein" : "Tout voir"}',
                 ),
               ],
             ),

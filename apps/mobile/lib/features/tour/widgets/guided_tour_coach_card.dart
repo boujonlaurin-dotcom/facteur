@@ -25,7 +25,7 @@ class GuidedTourCoachCard extends StatelessWidget {
   static const Color _spotlight = Color(0xFFE8943F);
 
   bool get _isDone => step == TourStep.done;
-  bool get _isLast => step == TourStep.courrier;
+  bool get _isLast => step == TourStep.serein;
 
   @override
   Widget build(BuildContext context) {

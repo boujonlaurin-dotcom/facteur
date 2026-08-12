@@ -20,55 +20,58 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Ordre des enums — garde-fou contre la réindexation (v7) qui casserait la
+  // Ordre des enums — garde-fou contre la réindexation (v8) qui casserait la
   // reprise Hive et le routage des questions.
   // ──────────────────────────────────────────────────────────────────────
-  group('Enum order (v7)', () {
+  group('Enum order (v8)', () {
     test('Section2Question = {approach, independence}', () {
       expect(Section2Question.values, hasLength(2));
       expect(Section2Question.approach.index, 0);
       expect(Section2Question.independence.index, 1);
     });
 
-    test('Section3Question : sourcesIntent retiré, swipe après subtopics, '
-        'digestMode avant finalize', () {
-      expect(Section3Question.values, hasLength(6));
+    test('Section3Question : digestMode retiré (v8), finalize à l\'index 4', () {
+      expect(Section3Question.values, hasLength(5));
       expect(Section3Question.themes.index, 0);
       expect(Section3Question.subtopics.index, 1);
       expect(Section3Question.swipe.index, 2);
       expect(Section3Question.sources.index, 3);
-      expect(Section3Question.digestMode.index, 4);
-      expect(Section3Question.finalize.index, 5);
+      expect(Section3Question.finalize.index, 4);
     });
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Séquence Section 3 : digestMode conditionnel (anxiety). Le swipe est
-  // désormais inconditionnel (v7) → toujours présent.
+  // Séquence Section 3 : plus aucune branche conditionnelle (v8, mode serein
+  // déplacé vers le tour guidé). Toujours 5 questions, quels que soient les
+  // objectifs (y compris « anxiety »).
   // ──────────────────────────────────────────────────────────────────────
-  group('Section 3 sequence (gating anxiety)', () {
+  group('Section 3 sequence (constante v8)', () {
     OnboardingState stateWith(List<String> objectives) => OnboardingState(
       currentSection: OnboardingSection.sourcePreferences,
       answers: OnboardingAnswers(objectives: objectives),
     );
 
-    test('sans anxiety : digestMode retiré, swipe présent (5)', () {
+    test('séquence complète, swipe présent, sans digestMode (5)', () {
       final s = stateWith(['noise']);
-      expect(s.hasAnxietyObjective, isFalse);
-      expect(s.section3Sequence, isNot(contains(Section3Question.digestMode)));
-      expect(s.section3Sequence, contains(Section3Question.swipe));
+      expect(
+        s.section3Sequence,
+        equals(const [
+          Section3Question.themes,
+          Section3Question.subtopics,
+          Section3Question.swipe,
+          Section3Question.sources,
+          Section3Question.finalize,
+        ]),
+      );
       expect(s.section3QuestionCount, 5);
       // total = section1(5) + section2(2) + section3(5)
       expect(s.totalSteps, 12);
     });
 
-    test('avec anxiety : digestMode + swipe inclus (6)', () {
+    test('objectif anxiety : séquence identique (pas de digestMode)', () {
       final s = stateWith(['anxiety']);
-      expect(s.hasAnxietyObjective, isTrue);
-      expect(s.section3Sequence, contains(Section3Question.digestMode));
-      expect(s.section3Sequence, contains(Section3Question.swipe));
-      expect(s.section3QuestionCount, 6);
-      expect(s.totalSteps, 13);
+      expect(s.section3QuestionCount, 5);
+      expect(s.totalSteps, 12);
     });
   });
 
@@ -116,7 +119,7 @@ void main() {
     });
 
     test(
-      'Section 3: themes/subtopics/swipe/sources/digest/finalize non skippables',
+      'Section 3: themes/subtopics/swipe/sources/finalize non skippables',
       () {
         OnboardingState s3(Section3Question q) => OnboardingState(
           currentSection: OnboardingSection.sourcePreferences,
@@ -127,7 +130,6 @@ void main() {
         expect(s3(Section3Question.themes).isSkippable, isFalse);
         expect(s3(Section3Question.subtopics).isSkippable, isFalse);
         expect(s3(Section3Question.swipe).isSkippable, isFalse);
-        expect(s3(Section3Question.digestMode).isSkippable, isFalse);
         expect(s3(Section3Question.sources).isSkippable, isFalse);
         expect(s3(Section3Question.finalize).isSkippable, isFalse);
       },
@@ -203,29 +205,6 @@ void main() {
       expect(s.answers.themes, isEmpty);
     });
 
-    test('digestMode → finalize avec défaut pour_vous', () async {
-      final c = ProviderContainer();
-      addTearDown(c.dispose);
-      await _settle();
-      final n = c.read(onboardingProvider.notifier);
-
-      n.selectObjectives(['anxiety']);
-      n.continueAfterReaction();
-      n.skipCurrentQuestion(); // → independence
-      n.skipCurrentQuestion(); // → Section 3 themes (anxiety préservé)
-      n.selectSources(['s1']); // anxiety → digestMode
-      await _settle();
-      expect(
-        c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.digestMode.index,
-      );
-
-      n.skipCurrentQuestion(); // digestMode → finalize
-
-      final s = c.read(onboardingProvider);
-      expect(s.currentQuestionIndex, Section3Question.finalize.index);
-      expect(s.answers.digestMode, 'pour_vous');
-    });
   });
 
   // ──────────────────────────────────────────────────────────────────────
@@ -289,10 +268,11 @@ void main() {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // selectSources : routage de fin de parcours selon l'objectif anxiety.
+  // selectSources : route toujours vers le final avec le défaut neutre
+  // `pour_vous` (v8, mode serein retiré de l'onboarding).
   // ──────────────────────────────────────────────────────────────────────
-  group('selectSources (gating anxiety)', () {
-    test('sans anxiety : pose pour_vous et saute au final', () async {
+  group('selectSources (constant v8)', () {
+    test('pose pour_vous et saute au final, sans anxiety', () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await _settle();
@@ -314,7 +294,8 @@ void main() {
       );
     });
 
-    test('avec anxiety : route vers digestMode, sans défaut imposé', () async {
+    test('objectif anxiety : même routage vers le final (pas de digestMode)',
+        () async {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       await _settle();
@@ -326,13 +307,12 @@ void main() {
       n.skipCurrentQuestion(); // → Section 3 themes
       n.selectSources(['s1']);
 
-      // digestMode pas forcé : laissé au choix de l'utilisateur
-      expect(c.read(onboardingProvider).answers.digestMode, isNull);
+      expect(c.read(onboardingProvider).answers.digestMode, 'pour_vous');
 
       await _settle();
       expect(
         c.read(onboardingProvider).currentQuestionIndex,
-        Section3Question.digestMode.index,
+        Section3Question.finalize.index,
       );
     });
   });

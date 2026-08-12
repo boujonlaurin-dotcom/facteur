@@ -53,7 +53,7 @@ class SereinToggleNotifier extends StateNotifier<SereinToggleState> {
   static String _key(String userId) => 'serein_enabled:$userId';
 
   /// Synchronous boot state, restored from the per-user Hive mirror written on
-  /// [toggle] / [initFromApi] / [commitFromOnboarding]. No user or an
+  /// [toggle] / [initFromApi]. No user or an
   /// unopened box (unit tests) → legacy `enabled:false, isLoading:true`.
   static SereinToggleState _initialState(String? userId) {
     if (userId == null || !Hive.isBoxOpen(_boxName)) {
@@ -97,18 +97,6 @@ class SereinToggleNotifier extends StateNotifier<SereinToggleState> {
   /// preference.
   void setEnabledLocal(bool enabled) {
     state = state.copyWith(enabled: enabled);
-  }
-
-  /// Persist the onboarding "serein" choice locally so it survives the very
-  /// first cold start (before /digest/both is ever hit). This is an explicit
-  /// user choice, so it also freezes any later server reconciliation (like
-  /// [toggle]): the first /digest/both after onboarding must never overwrite it
-  /// with a preference the server may not have committed yet (the
-  /// save_onboarding purge→reinsert window, or a delayed read).
-  void commitFromOnboarding(bool enabled) {
-    state = state.copyWith(enabled: enabled, isLoading: false);
-    _serverReconciled = true;
-    _persistLocal(enabled);
   }
 
   /// Instant toggle — UI flips immediately, preference saved in background.

@@ -54,6 +54,8 @@ void main() {
     expect(c.read(guidedTourControllerProvider), TourStep.reglages);
     notifier.next();
     expect(c.read(guidedTourControllerProvider), TourStep.courrier);
+    notifier.next();
+    expect(c.read(guidedTourControllerProvider), TourStep.serein);
     // Dernière étape → conclusion + onComplete.
     notifier.next();
     expect(c.read(guidedTourControllerProvider), TourStep.done);
@@ -67,7 +69,8 @@ void main() {
     expect(TourStep.flaner.displayIndex, 3);
     expect(TourStep.reglages.displayIndex, 4);
     expect(TourStep.courrier.displayIndex, 5);
-    expect(TourStepDisplay.totalSteps, 5);
+    expect(TourStep.serein.displayIndex, 6);
+    expect(TourStepDisplay.totalSteps, 6);
   });
 
   test('finish() → done, flag persisté, onComplete une seule fois', () async {

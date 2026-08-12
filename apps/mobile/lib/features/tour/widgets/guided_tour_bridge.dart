@@ -33,6 +33,7 @@ class _GuidedTourBridgeState extends ConsumerState<GuidedTourBridge> {
   List<GlobalKey> _targets = const [];
   bool _centerCard = false;
   bool _favSheetOpen = false;
+  bool _settingsOpen = false;
   Timer? _doneTimer;
 
   @override
@@ -98,8 +99,20 @@ class _GuidedTourBridgeState extends ConsumerState<GuidedTourBridge> {
         if (mounted) context.go(RoutePaths.fluxContinu);
       case TourStep.courrier:
         _targets = [tourProfileAvatarKey];
+      case TourStep.serein:
+        // Dernière étape : ouvre la modale réglages et cerne la tuile « Mode
+        // Serein ». On repart de l'Essentiel (comme reglages) pour un fond
+        // stable sous la modale.
+        _targets = [tourSereinTileKey];
+        if (mounted) {
+          context.go(RoutePaths.fluxContinu);
+          _openSettingsSheet();
+        }
       case TourStep.done:
         _targets = const [];
+        // Referme la modale réglages (si l'étape serein l'a ouverte) pour que
+        // la carte « C'est parti » s'affiche par-dessus le shell.
+        _closeSettingsSheetIfOpen();
         _doneTimer?.cancel();
         _doneTimer = Timer(const Duration(milliseconds: 1800), () {
           ref.read(guidedTourControllerProvider.notifier).dismiss();
@@ -137,6 +150,28 @@ class _GuidedTourBridgeState extends ConsumerState<GuidedTourBridge> {
     if (branchCtx != null) {
       Navigator.of(branchCtx).maybePop();
     }
+  }
+
+  /// Ouvre la modale réglages (page go_router `ModalBottomSheetPage`) qui passe
+  /// **sous** l'overlay racine du tour. Si l'utilisateur la referme au doigt
+  /// alors qu'on est encore à l'étape serein, on auto-avance vers `done`
+  /// (watchdog : jamais bloqué derrière un voile orphelin), comme pour la
+  /// feuille favoris.
+  void _openSettingsSheet() {
+    _settingsOpen = true;
+    context.push(RoutePaths.settings).whenComplete(() {
+      _settingsOpen = false;
+      if (!mounted) return;
+      if (ref.read(guidedTourControllerProvider) == TourStep.serein) {
+        ref.read(guidedTourControllerProvider.notifier).next();
+      }
+    });
+  }
+
+  void _closeSettingsSheetIfOpen() {
+    if (!_settingsOpen) return;
+    _settingsOpen = false;
+    if (mounted) context.pop();
   }
 
   @override

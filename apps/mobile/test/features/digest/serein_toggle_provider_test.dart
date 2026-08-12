@@ -204,30 +204,6 @@ void main() {
     });
   });
 
-  group('SereinToggleNotifier.commitFromOnboarding', () {
-    test('persiste le miroir local et lève loading', () {
-      final container = _container(_FakeAuthNotifier('userA'));
-      container.read(sereinToggleProvider.notifier).commitFromOnboarding(true);
-
-      expect(container.read(sereinToggleProvider).enabled, isTrue);
-      expect(container.read(sereinToggleProvider).isLoading, isFalse);
-      expect(Hive.box<dynamic>('settings').get(_key('userA')), isTrue);
-    });
-
-    test('gèle la réconciliation → un /digest/both tardif ne l\'écrase pas', () {
-      // Régression issue 2 : le 1er /digest/both après l'onboarding peut lire
-      // une préférence pas encore commitée durablement (fenêtre purge→réinsert
-      // de save_onboarding). Le choix onboarding, explicite, doit tenir.
-      final container = _container(_FakeAuthNotifier('userA'));
-      final notifier = container.read(sereinToggleProvider.notifier);
-
-      notifier.commitFromOnboarding(true);
-      notifier.initFromApi(false); // sync tardive lisant une valeur périmée
-
-      expect(container.read(sereinToggleProvider).enabled, isTrue);
-    });
-  });
-
   group('SereinToggleNotifier auth lifecycle', () {
     test('resets to a fresh loading state when the user changes', () {
       final auth = _FakeAuthNotifier('userA');
