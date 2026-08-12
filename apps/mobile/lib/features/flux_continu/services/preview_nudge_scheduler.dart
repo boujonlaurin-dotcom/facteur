@@ -38,17 +38,33 @@ const int kTriagePreviewNudgeCardIndex = 1;
 /// alignée sur le hint de réorganisation des onglets (`flux_continu_screen`).
 const Duration kTriagePreviewHintDuration = Duration(milliseconds: 2400);
 
-/// Coordinateur des nudges « découvre l'aperçu au long-press ».
+/// Clés du rappel « glisse pour l'article suivant » du deck (Story 34.2).
+const String kArticleSwipeCountPrefixPrefsKey = 'article_swipe_nudge_shown_';
+const String kArticleSwipeLastTriggerPrefsKey =
+    'article_swipe_nudge_last_trigger_ms';
+const String kArticleSwipeDiscoveredPrefsKey = 'article_swipe_nudge_discovered';
+
+/// Espacement des rappels **après** que l'utilisateur a swipé au moins une fois.
+const Duration kArticleSwipePostDiscoverySpacing = Duration(days: 7);
+
+/// Nombre total de rappels joués après la découverte — « une fois par semaine
+/// en début d'expérience », puis plus rien.
+const int kArticleSwipePostDiscoveryBudget = 4;
+
+/// Coordinateur des nudges d'apprentissage d'un **geste** (aperçu au
+/// long-press, swipe d'article).
 ///
 /// Volontairement **hors** de `NudgeRegistry`/`NudgeCoordinator` : aucune
 /// fréquence existante ne correspond à « plusieurs fois par jour, espacées », et
 /// ces nudges doivent échapper au cooldown global ~24 h du coordinator, calibré
 /// pour des sollicitations d'écran et non pour un indice joué pendant un geste.
 ///
-/// Une seule mécanique, deux réglages (cf. les deux providers plus bas) :
+/// Une seule mécanique, trois réglages (cf. les providers plus bas) :
 /// - **auto-grow** dans le flux : 3 pulses/jour calendaire, espacés de 90 min ;
 /// - **pile de tri** : 1 fois par jour de Tournée (bascule 07h30 Paris, pour
-///   suivre la même journée que le tri qu'il commente), sans espacement.
+///   suivre la même journée que le tri qu'il commente), sans espacement ;
+/// - **swipe d'article** : 2 rappels/jour espacés de 2 h **puis**, une fois le
+///   geste fait, un rappel hebdomadaire borné (étage post-découverte).
 ///
 /// Persistance `SharedPreferences`, `clock`/`prefs` injectables pour les tests
 /// (même pattern que `WellInformedPromptController`).
@@ -62,6 +78,8 @@ class PreviewNudgeScheduler {
     String Function(DateTime)? dayKey,
     int dailyBudget = kAutoGrowDailyBudget,
     Duration minSpacing = kAutoGrowMinSpacing,
+    Duration? postDiscoverySpacing,
+    int postDiscoveryBudget = 0,
   })  : _countKeyPrefix = countKeyPrefix,
         _lastTriggerKey = lastTriggerKey,
         _discoveredKey = discoveredKey,
@@ -69,7 +87,9 @@ class PreviewNudgeScheduler {
         _prefsFactory = prefs ?? SharedPreferences.getInstance,
         _dayKey = dayKey ?? _calendarDayKey,
         _dailyBudget = dailyBudget,
-        _minSpacing = minSpacing;
+        _minSpacing = minSpacing,
+        _postDiscoverySpacing = postDiscoverySpacing,
+        _postDiscoveryBudget = postDiscoveryBudget;
 
   final String _countKeyPrefix;
   final String _lastTriggerKey;
@@ -80,6 +100,13 @@ class PreviewNudgeScheduler {
   final int _dailyBudget;
   final Duration _minSpacing;
 
+  /// Espacement des rappels joués **après** la découverte du geste. `null` (par
+  /// défaut) = la découverte éteint le nudge définitivement.
+  final Duration? _postDiscoverySpacing;
+
+  /// Nombre total de rappels autorisés après la découverte.
+  final int _postDiscoveryBudget;
+
   /// Latch mémoire de [markDiscovered] : le flag ne peut aller que de `false` à
   /// `true` une seule fois, mais le long-press qui le pose est câblé sur chaque
   /// carte. Sans ce verrou, chaque appui maintenu rejouerait un aller-retour de
@@ -88,13 +115,18 @@ class PreviewNudgeScheduler {
   bool _discovered = false;
 
   /// Vrai si un pulse peut être déclenché maintenant :
-  ///   - l'utilisateur n'a PAS déjà découvert l'aperçu, ET
+  ///   - l'utilisateur n'a PAS déjà découvert le geste, ET
   ///   - le budget du jour n'est pas épuisé, ET
   ///   - l'espacement minimum depuis le dernier pulse est écoulé.
+  ///
+  /// Une fois le geste découvert, le nudge s'éteint — sauf si un étage
+  /// post-découverte est configuré ([_postDiscoverySpacing]), auquel cas les
+  /// rappels continuent, espacés et en nombre borné.
   Future<bool> canTriggerNow() async {
-    if (_discovered) return false;
     final prefs = await _prefsFactory();
-    if (prefs.getBool(_discoveredKey) ?? false) return false;
+    if (_discovered || (prefs.getBool(_discoveredKey) ?? false)) {
+      return _canTriggerAfterDiscovery(prefs);
+    }
 
     final now = _clock();
     if ((prefs.getInt(_countKey(now)) ?? 0) >= _dailyBudget) return false;
@@ -109,16 +141,41 @@ class PreviewNudgeScheduler {
     return true;
   }
 
+  /// Rappels d'après-découverte : espacés de [_postDiscoverySpacing] et bornés
+  /// à [_postDiscoveryBudget] au total. Sans étage configuré, la découverte
+  /// éteint le nudge pour de bon (comportement des nudges d'aperçu).
+  Future<bool> _canTriggerAfterDiscovery(SharedPreferences prefs) async {
+    final spacing = _postDiscoverySpacing;
+    if (spacing == null) return false;
+    if ((prefs.getInt(_postDiscoveryCountKey) ?? 0) >= _postDiscoveryBudget) {
+      return false;
+    }
+    final lastMs = prefs.getInt(_lastTriggerKey);
+    if (lastMs != null) {
+      final last = DateTime.fromMillisecondsSinceEpoch(lastMs);
+      if (_clock().difference(last) < spacing) return false;
+    }
+    return true;
+  }
+
   /// Enregistre un pulse déclenché : incrémente le compteur du jour, pose le
   /// timestamp du dernier trigger, et jette les compteurs des jours précédents
   /// — sans quoi ils s'accumuleraient indéfiniment (même motif que
   /// `TourneeProgressService.purgeOldPrefsKeys`).
+  ///
+  /// Après découverte, c'est le compteur **total** de rappels qui avance : le
+  /// budget d'après-découverte se compte sur toute la vie de l'utilisateur, pas
+  /// par jour.
   Future<void> recordTriggered() async {
     final prefs = await _prefsFactory();
     final now = _clock();
     final key = _countKey(now);
     await prefs.setInt(key, (prefs.getInt(key) ?? 0) + 1);
     await prefs.setInt(_lastTriggerKey, now.millisecondsSinceEpoch);
+    if (_discovered || (prefs.getBool(_discoveredKey) ?? false)) {
+      final count = prefs.getInt(_postDiscoveryCountKey) ?? 0;
+      await prefs.setInt(_postDiscoveryCountKey, count + 1);
+    }
     await TourneeProgressService.purgeDatedPrefsKeys(
       prefs,
       prefix: _countKeyPrefix,
@@ -126,16 +183,28 @@ class PreviewNudgeScheduler {
     );
   }
 
-  /// Marque l'aperçu comme découvert (vrai long-press utilisateur) → arrête
-  /// définitivement le nudge.
+  /// Marque le geste comme découvert (vrai long-press, vrai swipe d'article) →
+  /// arrête le nudge, définitivement ou jusqu'au prochain rappel espacé selon
+  /// l'étage post-découverte.
   Future<void> markDiscovered() async {
     if (_discovered) return;
     _discovered = true;
     final prefs = await _prefsFactory();
     await prefs.setBool(_discoveredKey, true);
+    // La découverte compte comme le dernier « signal reçu » : le premier rappel
+    // d'après-découverte se compte à partir d'elle, pas du dernier rebond joué
+    // (qui peut n'avoir jamais eu lieu si le geste a été trouvé tout seul).
+    if (_postDiscoverySpacing != null) {
+      await prefs.setInt(_lastTriggerKey, _clock().millisecondsSinceEpoch);
+    }
   }
 
   String _countKey(DateTime now) => '$_countKeyPrefix${_dayKey(now)}';
+
+  /// Dérivée du flag de découverte, **pas** du préfixe daté : les clés qui
+  /// commencent par `_countKeyPrefix` sont purgées à chaque nouveau jour
+  /// (cf. [recordTriggered]), ce qui remettrait le budget total à zéro.
+  String get _postDiscoveryCountKey => '${_discoveredKey}_reminders';
 
   static String _calendarDayKey(DateTime now) {
     final m = now.month.toString().padLeft(2, '0');
@@ -150,6 +219,23 @@ final autoGrowNudgeSchedulerProvider = Provider<PreviewNudgeScheduler>(
     countKeyPrefix: kAutoGrowCountPrefixPrefsKey,
     lastTriggerKey: kAutoGrowLastTriggerPrefsKey,
     discoveredKey: kAutoGrowDiscoveredPrefsKey,
+  ),
+);
+
+/// Rappel « glisse pour l'article suivant » du deck (Story 34.2).
+///
+/// Tant que l'utilisateur n'a jamais swipé : 2 rebonds par jour calendaire,
+/// espacés de 2 h — le tout premier article ouvert rebondit donc. Une fois le
+/// geste fait : un rappel hebdomadaire, 4 fois en tout, puis plus jamais.
+final articleSwipeNudgeSchedulerProvider = Provider<PreviewNudgeScheduler>(
+  (ref) => PreviewNudgeScheduler(
+    countKeyPrefix: kArticleSwipeCountPrefixPrefsKey,
+    lastTriggerKey: kArticleSwipeLastTriggerPrefsKey,
+    discoveredKey: kArticleSwipeDiscoveredPrefsKey,
+    dailyBudget: 2,
+    minSpacing: const Duration(hours: 2),
+    postDiscoverySpacing: kArticleSwipePostDiscoverySpacing,
+    postDiscoveryBudget: kArticleSwipePostDiscoveryBudget,
   ),
 );
 

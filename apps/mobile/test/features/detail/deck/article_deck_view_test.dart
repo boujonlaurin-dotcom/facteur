@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/detail/deck/models/article_deck.dart';
 import 'package:facteur/features/detail/deck/widgets/article_deck_view.dart';
+import 'package:facteur/features/detail/deck/widgets/next_section_button.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 
@@ -20,6 +21,7 @@ ArticleDeckPayload _deck({
   int count = 3,
   int initialIndex = 0,
   void Function(Content article)? onArticleSettled,
+  ArticleDeckPayload? Function()? nextSectionDeck,
 }) {
   return ArticleDeckPayload(
     articles: List.generate(count, (i) => _content('c$i')),
@@ -27,8 +29,17 @@ ArticleDeckPayload _deck({
     sectionKey: 'theme:tech',
     sectionLabel: 'Tech',
     onArticleSettled: onArticleSettled,
+    nextSectionDeck: nextSectionDeck,
   );
 }
+
+/// Deck de la section suivante, tel que le rendrait `tourneeArticleDeck`.
+ArticleDeckPayload _nextSection() => ArticleDeckPayload(
+      articles: [_content('e0'), _content('e1')],
+      initialIndex: 0,
+      sectionKey: 'theme:eco',
+      sectionLabel: 'Économie',
+    );
 
 void main() {
   const viewport = Size(390, 844);
@@ -45,6 +56,9 @@ void main() {
   Future<void> pumpDeck(
     WidgetTester tester, {
     ArticleDeckPayload? deck,
+    Future<bool> Function()? shouldPlaySwipeHint,
+    VoidCallback? onSwipeHintPlayed,
+    void Function(ArticleDeckPayload next)? onAdvanceToSection,
   }) async {
     await tester.binding.setSurfaceSize(viewport);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -62,6 +76,9 @@ void main() {
                     builder: (_) => ArticleDeckView(
                       deck: payload,
                       onArticleChanged: (from, to) => changes.add((from, to)),
+                      shouldPlaySwipeHint: shouldPlaySwipeHint,
+                      onSwipeHintPlayed: onSwipeHintPlayed,
+                      onAdvanceToSection: onAdvanceToSection,
                       pageBuilder: (context, slot) {
                         activeByIndex[slot.index] = slot.isActive;
                         return ColoredBox(
@@ -350,6 +367,167 @@ void main() {
       );
       expect(find.text('article-c0'), findsOneWidget);
       expect(changes, isEmpty);
+    });
+  });
+
+  group('rappel du geste (Story 34.2)', () {
+    /// Position du `PageView` du deck.
+    ScrollPosition deckPosition(WidgetTester tester) =>
+        tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+
+    testWidgets('la pile part vers la gauche puis revient au repos', (
+      tester,
+    ) async {
+      var played = 0;
+      await pumpDeck(
+        tester,
+        shouldPlaySwipeHint: () async => true,
+        onSwipeHintPlayed: () => played++,
+      );
+      final position = deckPosition(tester);
+      final rest = position.pixels;
+
+      // Délai d’armement, puis résolution du planificateur.
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump();
+      // Aller du rebond, à mi-course.
+      await tester.pump(const Duration(milliseconds: 120));
+
+      expect(
+        position.pixels,
+        greaterThan(rest),
+        reason: 'la tranche de l’article suivant doit se découvrir',
+      );
+      expect(played, 1);
+
+      await tester.pumpAndSettle();
+
+      // …et rien n’a changé : le rappel montre le geste, il ne le fait pas.
+      expect(position.pixels, moreOrLessEquals(rest));
+      expect(find.text('article-c0'), findsOneWidget);
+      expect(changes, isEmpty);
+    });
+
+    testWidgets('aucun rappel sur le dernier article — rien à découvrir', (
+      tester,
+    ) async {
+      var asked = 0;
+      await pumpDeck(
+        tester,
+        deck: _deck(initialIndex: 2),
+        shouldPlaySwipeHint: () async {
+          asked++;
+          return true;
+        },
+      );
+      final position = deckPosition(tester);
+      final rest = position.pixels;
+
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+
+      expect(asked, 0);
+      expect(position.pixels, moreOrLessEquals(rest));
+    });
+
+    testWidgets('un tap pendant le rebond ne laisse pas la pile décalée', (
+      tester,
+    ) async {
+      // Un tap n'a pas de physique pour ramener la pile : si le rappel
+      // s'abandonnait au premier contact, le deck resterait décalé de 34 px.
+      await pumpDeck(tester, shouldPlaySwipeHint: () async => true);
+      final position = deckPosition(tester);
+      final rest = position.pixels;
+
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(position.pixels, greaterThan(rest));
+
+      final tap = await tester.startGesture(const Offset(195, 400));
+      await tester.pump(const Duration(milliseconds: 30));
+      await tap.up();
+      await tester.pumpAndSettle();
+
+      expect(position.pixels, moreOrLessEquals(rest));
+      expect(find.text('article-c0'), findsOneWidget);
+    });
+
+    testWidgets('le planificateur peut refuser le rappel', (tester) async {
+      var played = 0;
+      await pumpDeck(
+        tester,
+        shouldPlaySwipeHint: () async => false,
+        onSwipeHintPlayed: () => played++,
+      );
+      final position = deckPosition(tester);
+      final rest = position.pixels;
+
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+
+      expect(played, 0);
+      expect(position.pixels, moreOrLessEquals(rest));
+    });
+  });
+
+  group('section suivante (Story 34.2)', () {
+    /// Opacité effective du bouton — il est monté dès l’ouverture (pour se
+    /// lever en fondu au bon moment), c’est elle qui dit s’il est offert.
+    double buttonOpacity(WidgetTester tester) => tester
+        .widget<AnimatedOpacity>(
+          find.ancestor(
+            of: find.byKey(NextSectionButton.buttonKey),
+            matching: find.byType(AnimatedOpacity),
+          ),
+        )
+        .opacity;
+
+    testWidgets('le bouton n’apparaît qu’au bout de la section', (
+      tester,
+    ) async {
+      await pumpDeck(
+        tester,
+        deck: _deck(nextSectionDeck: _nextSection),
+        onAdvanceToSection: (_) {},
+      );
+
+      // 1ᵉʳ article : rien ne dépasse, la section n’est pas finie.
+      expect(buttonOpacity(tester), 0);
+
+      await dragBy(tester, -300);
+      await dragBy(tester, -300);
+
+      expect(find.text('article-c2'), findsOneWidget);
+      expect(buttonOpacity(tester), 1);
+      expect(find.text('Section suivante'), findsOneWidget);
+      expect(find.text('Économie'), findsOneWidget);
+    });
+
+    testWidgets('le tap remet le deck de la section suivante à l’hôte', (
+      tester,
+    ) async {
+      final advanced = <ArticleDeckPayload>[];
+      await pumpDeck(
+        tester,
+        deck: _deck(initialIndex: 2, nextSectionDeck: _nextSection),
+        onAdvanceToSection: advanced.add,
+      );
+
+      await tester.tap(find.byKey(NextSectionButton.buttonKey));
+      await tester.pumpAndSettle();
+
+      expect(advanced, hasLength(1));
+      expect(advanced.single.sectionLabel, 'Économie');
+      expect(advanced.single.initialArticle.id, 'e0');
+    });
+
+    testWidgets('sans section suivante, aucun bouton', (tester) async {
+      await pumpDeck(tester, deck: _deck(initialIndex: 2));
+
+      expect(find.byKey(NextSectionButton.buttonKey), findsNothing);
     });
   });
 }

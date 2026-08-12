@@ -1233,6 +1233,11 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   /// section (Story 34.1) : glisser mène à l'article suivant **de la liste
   /// complète**, y compris ceux que la Tournée n'affiche pas (`coreVisibleCount`)
   /// et qu'il fallait aller chercher derrière « Tout lire ».
+  ///
+  /// Le deck est en plus **chaîné aux sections suivantes** (Story 34.2) dans
+  /// l'ordre exact affiché à l'écran : arrivé au bout de sa section, le lecteur
+  /// se voit proposer la suivante, et ainsi de suite jusqu'au bout de la
+  /// tournée.
   Future<void> _openArticle(
     BuildContext context,
     Object article, {
@@ -1246,8 +1251,13 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     };
     if (id.isEmpty) return;
 
-    final deck =
-        section == null ? null : articleDeckFromSection(section, id);
+    // Sans snapshot de sections, `tourneeArticleDeck` retombe de lui-même sur
+    // le deck de section simple : il n'y a alors pas d'ordre où chercher une
+    // suite.
+    final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+    final deck = section == null
+        ? null
+        : tourneeArticleDeck(sections ?? const [], section, id);
     await context.push(
       '${RoutePaths.fluxContinu}/content/$id',
       extra: deck ?? extra,

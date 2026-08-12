@@ -91,16 +91,15 @@ void main() {
       expect(deck, isNull);
     });
 
-    test('le repère de position est désactivable (feed ouvert)', () {
+    test('aucune suite de section hors tournée (feed ouvert)', () {
       final deck = articleDeckFromContents(
         [_content('a'), _content('b')],
         'a',
         sectionKey: 'flaner',
         sectionLabel: 'Flâner',
-        showPositionIndicator: false,
       );
 
-      expect(deck!.showPositionIndicator, isFalse);
+      expect(deck!.nextSectionDeck, isNull);
     });
   });
 
@@ -198,6 +197,95 @@ void main() {
     test('AlertsSection — aucun article, donc aucun deck', () {
       final section = AlertsSection(items: const []);
       expect(articleDeckFromSection(section, 'x'), isNull);
+    });
+  });
+
+  group('tourneeArticleDeck — enchaînement des sections', () {
+    FeedThemeSection theme(String slug, String label, List<String> ids) {
+      return FeedThemeSection(
+        kind: SectionKind.theme,
+        label: label,
+        accent: const Color(0xFF2C3E50),
+        coreVisibleCount: 2,
+        themeSlug: slug,
+        items: ids.map(_content).toList(),
+      );
+    }
+
+    test('le dernier article mène au premier de la section suivante', () {
+      final tech = theme('tech', 'Tech', ['a', 'b']);
+      final eco = theme('eco', 'Économie', ['c', 'd', 'e']);
+      final deck = tourneeArticleDeck([tech, eco], tech, 'a');
+
+      expect(deck!.sectionKey, 'theme:tech');
+      final next = deck.nextSectionDeck!();
+      expect(next!.sectionLabel, 'Économie');
+      expect(next.initialIndex, 0);
+      expect(next.initialArticle.id, 'c');
+    });
+
+    test('la chaîne se poursuit de section en section', () {
+      final s1 = theme('a', 'A', ['a1', 'a2']);
+      final s2 = theme('b', 'B', ['b1', 'b2']);
+      final s3 = theme('c', 'C', ['c1', 'c2']);
+      final deck = tourneeArticleDeck([s1, s2, s3], s1, 'a1');
+
+      final second = deck!.nextSectionDeck!();
+      expect(second!.sectionLabel, 'B');
+      final third = second.nextSectionDeck!();
+      expect(third!.sectionLabel, 'C');
+      // Fin de tournée : plus de suite, le deck s’arrête là.
+      expect(third.nextSectionDeck, isNull);
+    });
+
+    test('saute les sections qui ne rendent aucun article', () {
+      final tech = theme('tech', 'Tech', ['a', 'b']);
+      final alerts = AlertsSection(items: const []);
+      final eco = theme('eco', 'Économie', ['c', 'd']);
+      final deck = tourneeArticleDeck([tech, alerts, eco], tech, 'a');
+
+      expect(deck!.nextSectionDeck!()!.sectionLabel, 'Économie');
+    });
+
+    test('une section d’un seul article reste une étape de lecture', () {
+      // Sans suite, un article seul ne fait pas un deck ; avec une suite, si :
+      // c’est elle qui porte la navigation.
+      final tech = theme('tech', 'Tech', ['a', 'b']);
+      final solo = theme('solo', 'Solo', ['x']);
+      final eco = theme('eco', 'Économie', ['c', 'd']);
+      final deck = tourneeArticleDeck([tech, solo, eco], tech, 'a');
+
+      final next = deck!.nextSectionDeck!();
+      expect(next!.articles.map((a) => a.id), ['x']);
+      expect(next.isNavigable, isTrue);
+      expect(next.nextSectionDeck!()!.sectionLabel, 'Économie');
+    });
+
+    test('dernière section de la tournée — pas de suite', () {
+      final tech = theme('tech', 'Tech', ['a', 'b']);
+      final eco = theme('eco', 'Économie', ['c', 'd']);
+      final deck = tourneeArticleDeck([tech, eco], eco, 'c');
+
+      expect(deck!.nextSectionDeck, isNull);
+    });
+
+    test('section hors tournée — deck simple, sans chaînage', () {
+      // Vue lettre / agrégat hebdo : la section n’est pas dans le snapshot
+      // ordonné, il n’y a pas d’ordre où chercher une suite.
+      final tech = theme('tech', 'Tech', ['a', 'b']);
+      final horsTournee = theme('hebdo', 'Hebdo', ['h1', 'h2']);
+      final deck = tourneeArticleDeck([tech], horsTournee, 'h1');
+
+      expect(deck!.sectionLabel, 'Hebdo');
+      expect(deck.nextSectionDeck, isNull);
+    });
+
+    test('porte la section entière, comme le deck simple', () {
+      final section = _themeSection(items: 8, coreVisibleCount: 2);
+      final deck = tourneeArticleDeck([section], section, 'c1');
+
+      expect(deck!.articles, hasLength(8));
+      expect(deck.initialIndex, 1);
     });
   });
 }
