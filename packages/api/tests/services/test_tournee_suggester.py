@@ -289,3 +289,190 @@ async def test_soft_expansion_curated_on_followed_theme(db_session):
     soft = [s for s in suggestions if s.kind == "source" and s.is_soft]
     assert soft, "la source curée on-thème devrait être suggérée en doux"
     assert any("thème que tu suis" in c.label for c in soft[0].breakdown)
+
+
+# ── Story 22.7 — démotion des sections-source ────────────────────────────────
+
+
+def _by_key(suggestions: list) -> dict[str, object]:
+    return {s.key: s for s in suggestions}
+
+
+async def _follow_source(
+    db,
+    uid,
+    name: str,
+    theme: str,
+    *,
+    is_custom: bool = False,
+    has_subscription: bool = False,
+) -> Source:
+    """Source suivie (non curée → jamais candidate à l'élargissement doux)."""
+    src = _source(name, theme, curated=False)
+    db.add(src)
+    await db.flush()
+    for i in range(ScoringWeights.TOURNEE_SUGGEST_CONTENT_FLOOR + 2):
+        db.add(_content(src.id, theme, days_ago=i % 5))
+    db.add(
+        UserSource(
+            user_id=uid,
+            source_id=src.id,
+            is_custom=is_custom,
+            has_subscription=has_subscription,
+            state=InterestState.FOLLOWED,
+        )
+    )
+    await db.flush()
+    return src
+
+
+@pytest.mark.asyncio
+async def test_followed_source_ranks_below_comparable_theme(db_session, monkeypatch):
+    """Plainte PO : une source simplement suivie passe **sous** un thème suivi.
+
+    Ordre vérifié sans bruit (température 0) : c'est la démotion qui classe, pas
+    la variation quotidienne.
+    """
+    monkeypatch.setattr(ScoringWeights, "TOURNEE_SUGGEST_TEMPERATURE", 0.0)
+    user = await _make_user(db_session)
+    uid = user.user_id
+    # Thème suivi, alimenté par une source **non curée** (pas d'élargissement doux).
+    src_theme = _source("src-tech", "tech", curated=False)
+    db_session.add(src_theme)
+    await db_session.flush()
+    for i in range(ScoringWeights.TOURNEE_SUGGEST_CONTENT_FLOOR + 2):
+        db_session.add(_content(src_theme.id, "tech", days_ago=i % 5))
+    db_session.add(
+        UserInterest(
+            user_id=uid, interest_slug="tech", weight=1.0, state=InterestState.FOLLOWED
+        )
+    )
+    followed = await _follow_source(db_session, uid, "Média suivi", "society")
+
+    suggestions = await TourneeSuggester(db_session).arrange(uid, set(), sub_cap=4)
+    keys = [s.key for s in suggestions]
+    assert keys.index("theme:tech") < keys.index(f"source:{followed.id}")
+    by_key = _by_key(suggestions)
+    assert by_key["theme:tech"].relevance == 1.0  # thème : jamais démoté
+    assert (
+        by_key[f"source:{followed.id}"].relevance
+        == ScoringWeights.TOURNEE_SUGGEST_SOURCE_FOLLOWED_BASELINE
+    )
+
+
+@pytest.mark.asyncio
+async def test_custom_and_subscribed_sources_are_not_demoted(db_session, monkeypatch):
+    """Décision PO #3 : custom / abonnement déclaré > simplement suivie."""
+    monkeypatch.setattr(ScoringWeights, "TOURNEE_SUGGEST_TEMPERATURE", 0.0)
+    user = await _make_user(db_session)
+    uid = user.user_id
+    custom = await _follow_source(db_session, uid, "Ma source", "tech", is_custom=True)
+    subscribed = await _follow_source(
+        db_session, uid, "Mon abonnement", "society", has_subscription=True
+    )
+    plain = await _follow_source(db_session, uid, "Média suivi", "science")
+
+    suggestions = await TourneeSuggester(db_session).arrange(uid, set(), sub_cap=5)
+    by_key = _by_key(suggestions)
+    plain_c = by_key[f"source:{plain.id}"]
+    for strong in (custom, subscribed):
+        c = by_key[f"source:{strong.id}"]
+        assert c.relevance == 1.0
+        assert c.daily_score > plain_c.daily_score
+    keys = [s.key for s in suggestions]
+    assert keys.index(f"source:{plain.id}") == len(keys) - 1
+
+
+@pytest.mark.asyncio
+async def test_high_affinity_source_outranks_plain_followed(db_session, monkeypatch):
+    """Une source beaucoup consultée (affinité apprise) est moins démotée."""
+    monkeypatch.setattr(ScoringWeights, "TOURNEE_SUGGEST_TEMPERATURE", 0.0)
+    user = await _make_user(db_session)
+    uid = user.user_id
+    read_a_lot = await _follow_source(db_session, uid, "Média lu", "tech")
+    plain = await _follow_source(db_session, uid, "Média suivi", "science")
+
+    async def _affinity(self, _uid):
+        return {read_a_lot.id: 0.9}
+
+    monkeypatch.setattr(TourneeSuggester, "_source_affinity", _affinity)
+
+    suggestions = await TourneeSuggester(db_session).arrange(uid, set(), sub_cap=4)
+    keys = [s.key for s in suggestions]
+    assert keys.index(f"source:{read_a_lot.id}") < keys.index(f"source:{plain.id}")
+    by_key = _by_key(suggestions)
+    assert by_key[f"source:{read_a_lot.id}"].relevance == pytest.approx(0.9)
+
+
+@pytest.mark.asyncio
+async def test_soft_expansion_sinks_to_bottom_but_is_never_hidden(
+    db_session, monkeypatch
+):
+    """Décision PO #2 : l'élargissement doux atterrit tout en bas, jamais masqué."""
+    monkeypatch.setattr(ScoringWeights, "TOURNEE_SUGGEST_TEMPERATURE", 0.0)
+    user = await _make_user(db_session)
+    uid = user.user_id
+    # Thème suivi + une source curée on-thème non suivie (candidate douce).
+    soft_src = await _seed_theme_content(
+        db_session, "tech", ScoringWeights.TOURNEE_SUGGEST_CONTENT_FLOOR + 2
+    )
+    db_session.add(
+        UserInterest(
+            user_id=uid, interest_slug="tech", weight=1.0, state=InterestState.FOLLOWED
+        )
+    )
+    followed = await _follow_source(db_session, uid, "Média suivi", "society")
+    await db_session.flush()
+
+    suggestions = await TourneeSuggester(db_session).arrange(uid, set(), sub_cap=5)
+    keys = [s.key for s in suggestions]
+    soft_key = f"source:{soft_src.id}"
+    assert soft_key in keys, "l'élargissement doux ne doit jamais être masqué"
+    assert keys[-1] == soft_key
+    assert keys.index("theme:tech") < keys.index(f"source:{followed.id}")
+    assert _by_key(suggestions)[soft_key].relevance == 0.0
+
+
+@pytest.mark.asyncio
+async def test_daily_variation_does_not_resurrect_a_demoted_source(db_session):
+    """La variation quotidienne ne doit pas annuler la démotion.
+
+    Garde-fou d'échelle : `randomized_sort` est calibré pour des scores en
+    points 0–100 (cf. `_NOISE_SCALE`). Nourri avec le blend brut 0–1, le bruit
+    de Gumbel écrase le score et l'ordre du jour devient un tirage au sort — une
+    source de pertinence nulle repasserait devant les thèmes ~1 jour sur 2.
+    On vérifie sur plusieurs seeds (un user_id différent = un seed différent).
+    """
+    theme_first = 0
+    users = 10
+    for i in range(users):
+        user = await _make_user(db_session)
+        uid = user.user_id
+        src_theme = _source(f"src-tech-{i}", f"tech{i}", curated=False)
+        db_session.add(src_theme)
+        await db_session.flush()
+        for j in range(ScoringWeights.TOURNEE_SUGGEST_CONTENT_FLOOR + 2):
+            db_session.add(_content(src_theme.id, f"tech{i}", days_ago=j % 5))
+        db_session.add(
+            UserInterest(
+                user_id=uid,
+                interest_slug=f"tech{i}",
+                weight=1.0,
+                state=InterestState.FOLLOWED,
+            )
+        )
+        # Source curée on-thème non suivie → pertinence 0, démotion maximale.
+        soft = _source(f"soft-{i}", f"tech{i}")
+        db_session.add(soft)
+        await db_session.flush()
+        for j in range(ScoringWeights.TOURNEE_SUGGEST_CONTENT_FLOOR + 2):
+            db_session.add(_content(soft.id, f"tech{i}", days_ago=j % 5))
+        await db_session.flush()
+
+        suggestions = await TourneeSuggester(db_session).arrange(uid, set(), sub_cap=4)
+        if suggestions and suggestions[0].kind == "theme":
+            theme_first += 1
+    assert theme_first >= users - 2, (
+        f"le thème n'ouvre la Tournée que {theme_first}/{users} fois : "
+        "la démotion est noyée par la variation quotidienne"
+    )

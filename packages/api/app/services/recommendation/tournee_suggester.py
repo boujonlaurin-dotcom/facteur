@@ -13,6 +13,10 @@ Invariants produit (PO) :
   résolues en amont par `get_top_themes` et ne sont jamais masquées.
 - Chaque suggérée porte une **raison vraie** (breakdown non vide construit à
   partir des seules composantes réellement > 0) : anti-boîte-noire testé.
+- Story 22.7 : les sections **source** passent par défaut **sous** les thèmes
+  déclarés, via une démotion proportionnelle à `(1 − pertinence)` — pas une
+  cloison rigide : une source custom / abonnée / beaucoup consultée n'est
+  quasiment pas pénalisée et peut rester en tête.
 
 Réutilise le pattern de variation déterministe de `topic_selector.py` / digest
 (`compute_seed` + `randomized_sort`, basse température) pour un ordre stable dans
@@ -50,6 +54,17 @@ _RELIABILITY_QUALITY: dict[ReliabilityScore, float] = {
 }
 _DEFAULT_QUALITY = 0.4
 
+# Échelle de score attendue par `randomized_sort`. La fonction calcule sa clé
+# bruitée `score / (temperature * 100) + gumbel` : elle est calibrée pour les
+# scores **en points 0–100** du scoring article (« 0.10 = shuffle léger, à ±5
+# pts »). Notre blend vit sur 0–1 : passé tel quel, `score / 10` ∈ [0, 0.1] est
+# écrasé par le bruit de Gumbel (écart-type ≈ 1.28) et l'ordre du jour devient
+# un **shuffle uniforme** — mesuré : une source 0.50 sous un thème tenait quand
+# même la tête 51 % des jours (vs 50 % pour un tirage au sort). On projette donc
+# sur 0–100 avant le tri : le shuffle redevient « léger » (les candidats à score
+# proche permutent encore d'un jour à l'autre) et la démotion 22.7 se voit.
+_NOISE_SCALE = 100.0
+
 
 @dataclass
 class TourneeSuggestion:
@@ -62,6 +77,11 @@ class TourneeSuggestion:
     label_name: str  # nom d'affichage (libellé thème ou nom de source)
     recent_count: int
     is_soft: bool  # issu de l'élargissement doux (source on-thème non suivie)
+
+    # Pertinence 0–1 d'une **source** (cf. `_source_relevance`) : gouverne la
+    # démotion appliquée au `daily_score`. 1.0 = neutre → les thèmes, jamais
+    # démotés, gardent la valeur par défaut.
+    relevance: float = 1.0
 
     # Composantes normalisées 0–1 du blend `daily_score`.
     explicit: float = 0.0
@@ -111,11 +131,25 @@ class TourneeSuggester:
                 + ScoringWeights.TOURNEE_SUGGEST_W_QUANTITY * c.quantity
                 + ScoringWeights.TOURNEE_SUGGEST_W_QUALITY * c.quality
             )
+            # Story 22.7 — démotion des sections-source, **proportionnelle à
+            # `(1 − pertinence)`** : les thèmes déclarés passent devant les
+            # médias sans lien réel, mais une source à fort signal (custom,
+            # abonnement, forte affinité) n'est presque pas pénalisée et peut
+            # rester en tête. Appliquée avant la variation quotidienne, et hors
+            # de `_build_reason` : c'est une priorisation, pas une raison
+            # affichable (les libellés du breakdown restent vrais).
+            if c.kind == "source":
+                c.daily_score = max(
+                    0.0,
+                    c.daily_score
+                    - ScoringWeights.TOURNEE_SUGGEST_SOURCE_DEMOTION
+                    * (1.0 - c.relevance),
+                )
             self._build_reason(c)
 
         # Variation quotidienne : seed daily (stable le jour, varié le lendemain).
         seed = compute_seed(str(user_id), granularity="daily")
-        wrapped = [(c, c.daily_score) for c in candidates]
+        wrapped = [(c, c.daily_score * _NOISE_SCALE) for c in candidates]
         randomized = randomized_sort(
             wrapped,
             temperature=ScoringWeights.TOURNEE_SUGGEST_TEMPERATURE,
@@ -167,19 +201,27 @@ class TourneeSuggester:
         declared_theme_slugs = validated_theme_slugs | set(followed_themes)
 
         # Sources suivies (state followed) : candidates directes (les favorites
-        # sont déjà rendues comme sections dédiées côté mobile).
-        followed_source_ids = set(
-            (
-                await self.db.execute(
-                    select(UserSource.source_id).where(
-                        UserSource.user_id == user_id,
-                        UserSource.state == InterestState.FOLLOWED,
-                    )
+        # sont déjà rendues comme sections dédiées côté mobile). On lit aussi
+        # `is_custom` / `has_subscription` — les deux signaux forts de la
+        # pertinence 22.7 (une source ajoutée à la main ou à laquelle on est
+        # abonné n'est jamais démotée).
+        followed_source_rows = (
+            await self.db.execute(
+                select(
+                    UserSource.source_id,
+                    UserSource.is_custom,
+                    UserSource.has_subscription,
+                ).where(
+                    UserSource.user_id == user_id,
+                    UserSource.state == InterestState.FOLLOWED,
                 )
             )
-            .scalars()
-            .all()
-        )
+        ).all()
+        followed_sources: dict[UUID, tuple[bool, bool]] = {
+            row.source_id: (bool(row.is_custom), bool(row.has_subscription))
+            for row in followed_source_rows
+        }
+        followed_source_ids = set(followed_sources)
 
         # Catalogue sources actives (1 requête) : qualité par thème + résolution.
         source_rows = (
@@ -225,8 +267,15 @@ class TourneeSuggester:
             row = source_by_id.get(sid)
             if row is None:
                 continue
+            is_custom, has_subscription = followed_sources[sid]
             source_candidates.append(
-                self._source_candidate(row, affinity, is_soft=False)
+                self._source_candidate(
+                    row,
+                    affinity,
+                    is_soft=False,
+                    is_custom=is_custom,
+                    has_subscription=has_subscription,
+                )
             )
 
         # Élargissement doux : si le pool est sous le cap, on complète avec des
@@ -275,9 +324,16 @@ class TourneeSuggester:
         return set(perso.muted_themes or []), set(perso.muted_sources or [])
 
     def _source_candidate(
-        self, row, affinity: dict[UUID, float], *, is_soft: bool
+        self,
+        row,
+        affinity: dict[UUID, float],
+        *,
+        is_soft: bool,
+        is_custom: bool = False,
+        has_subscription: bool = False,
     ) -> TourneeSuggestion:
         quality = _RELIABILITY_QUALITY.get(row.reliability_score, _DEFAULT_QUALITY)
+        source_affinity = affinity.get(row.id, 0.0)
         return TourneeSuggestion(
             key=f"source:{row.id}",
             kind="source",
@@ -286,8 +342,14 @@ class TourneeSuggester:
             label_name=row.name,
             recent_count=0,
             is_soft=is_soft,
+            relevance=_source_relevance(
+                is_custom=is_custom,
+                has_subscription=has_subscription,
+                affinity=source_affinity,
+                is_soft=is_soft,
+            ),
             explicit=ScoringWeights.TOURNEE_SUGGEST_SOFT_EXPLICIT if is_soft else 1.0,
-            measured=affinity.get(row.id, 0.0),
+            measured=source_affinity,
             quality=quality,
         )
 
@@ -446,6 +508,27 @@ class TourneeSuggester:
 
         c.breakdown = breakdown
         c.reason_label = breakdown[0].label
+
+
+def _source_relevance(
+    *,
+    is_custom: bool,
+    has_subscription: bool,
+    affinity: float,
+    is_soft: bool,
+) -> float:
+    """Pertinence 0–1 d'une source candidate (Story 22.7).
+
+    Ordre PO : source custom / abonnement déclaré (1.0, jamais démotée) ≥ source
+    beaucoup consultée (affinité apprise) ≥ source simplement suivie (plancher)
+    ≥ élargissement doux (0.0, tout en bas — jamais masquée pour autant).
+    """
+    if is_custom or has_subscription:
+        return 1.0
+    baseline = (
+        0.0 if is_soft else ScoringWeights.TOURNEE_SUGGEST_SOURCE_FOLLOWED_BASELINE
+    )
+    return _clamp01(max(affinity, baseline))
 
 
 def _clamp01(value: float) -> float:
