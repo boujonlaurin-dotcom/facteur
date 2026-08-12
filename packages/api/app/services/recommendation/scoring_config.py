@@ -549,6 +549,25 @@ class ScoringWeights:
     # jour, varié le lendemain, sans réordonner brutalement).
     TOURNEE_SUGGEST_TEMPERATURE = 0.10
 
+    # --- Démotion des sections-source suggérées (Story 22.7) ---
+    # Plainte PO (post-onboarding) : des médias à peine consultés trônaient
+    # au-dessus des thèmes que l'utilisateur venait de choisir. On ne pose PAS
+    # de cloison rigide thèmes > sources : la démotion est **proportionnelle à
+    # `(1 − pertinence)`**, donc une source à fort signal (custom, abonnement,
+    # beaucoup consultée) reste haut, tandis qu'une source sans lien réel coule.
+
+    # Pénalité max retranchée au `daily_score` d'une source de pertinence nulle
+    # (élargissement doux : média curé jamais suivi ni consulté). Sur l'échelle
+    # 0–1 du blend, 0.30 suffit à passer sous un thème suivi typique (~0.7-0.8)
+    # sans qu'une source à pertinence 1.0 (démotion 0) soit touchée.
+    TOURNEE_SUGGEST_SOURCE_DEMOTION = 0.30
+
+    # Plancher de pertinence d'une source **simplement suivie** (ni custom, ni
+    # abonnée, ni consultée). Garantit l'ordre PO custom/abonnement > affinité >
+    # suivie > élargissement doux : la source suivie reste au-dessus du doux
+    # (pertinence 0) tout en restant sous les thèmes.
+    TOURNEE_SUGGEST_SOURCE_FOLLOWED_BASELINE = 0.30
+
     # Cible de sections thématiques de la Tournée (favoris validés + suggestions
     # « Choisie pour vous » confondus). Seul knob du nombre moyen : les
     # suggestions **complètent** les favoris jusqu'à cette cible (additif), au

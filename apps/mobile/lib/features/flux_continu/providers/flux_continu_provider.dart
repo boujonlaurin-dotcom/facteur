@@ -1799,13 +1799,27 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
   /// d'affichage, donc l'ordre manuel/par défaut départage à score égal (le tri
   /// est stable). Les sections non scorées ne sont pas dans la map : elles
   /// garderont leur place à l'application (cf. [applyScoreOrder]).
+  ///
+  /// Story 22.7 — les sections-source **suggérées** sont retirées de l'ordre
+  /// gelé : leur position doit suivre le seul `daily_rank` backend, qui porte
+  /// déjà la démotion « thèmes d'abord, sources ensuite » atténuée par la
+  /// pertinence. Sans ce filtre, un média jamais consulté avec un article
+  /// « chaud » remonterait au-dessus des thèmes que l'utilisateur vient de
+  /// choisir. Le filtre porte sur l'**ordre**, jamais sur la **mesure** :
+  /// `scores` (donc `block_score` sur `article_impression`) reste intact.
   void _freezeScoreOrder(Map<String, double> scores) {
     if (!kTourneeScoreSortEnabled) return;
     final today = TourneeProgressService.dayKey(DateTime.now());
     if (_scoreOrderDayKey == today) return;
     if (scores.isEmpty) return; // rien de scoré ce cycle → ordre par défaut.
 
-    final frozen = rankKeysByBlockScore(scores);
+    final pinned = _suggestedSourceKeys;
+    final frozen = [
+      for (final k in rankKeysByBlockScore(scores))
+        if (!pinned.contains(k)) k,
+    ];
+    // Que des sections-source suggérées → rien à trier.
+    if (frozen.isEmpty) return;
     _scoreOrderDayKey = today;
     _scoreOrderKeys = frozen;
     unawaited(
@@ -2589,6 +2603,15 @@ class FluxContinuNotifier extends AsyncNotifier<FluxContinuState> {
         .read(tourneeOrderPrefsProvider.notifier)
         .setOrder([...order, key]);
   }
+
+  /// Story 22.7 — clés des sections dédiées à un **média** arrivées par la voie
+  /// « Choisie pour vous ». Seules ces clés sont soustraites au tri par score
+  /// (cf. [_freezeScoreOrder]) : les sources **favorites** (`_sources`, choix
+  /// explicite de l'utilisateur) et les thèmes restent classés normalement.
+  Set<String> get _suggestedSourceKeys => {
+        for (final section in _suggested)
+          if (section.kind == SectionKind.source) sectionKey(section),
+      };
 
   Map<String, FluxSection> _tourneeSectionByKey() {
     // Story Essentiel UX — modèle exclusif thèmes : un thème dont la clé

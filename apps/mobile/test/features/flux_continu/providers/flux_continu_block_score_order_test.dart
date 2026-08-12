@@ -133,9 +133,13 @@ void main() {
 
   /// [counts] fixe le nombre d'articles par thème ; [scores] leur `score_total`
   /// (thème absent ⇒ articles non scorés ⇒ section hors du classement).
+  /// [sourceCounts] / [sourceScores] font de même pour les sections **source**
+  /// (`getFeed(sourceId: …)`).
   void stubThemes(
     Map<String, int> counts, {
     Map<String, double> scores = const {},
+    Map<String, int> sourceCounts = const {},
+    Map<String, double> sourceScores = const {},
   }) {
     when(() => feedRepo.getFeed(
           page: any(named: 'page'),
@@ -146,6 +150,14 @@ void main() {
           serein: any(named: 'serein'),
           personalized: any(named: 'personalized'),
         )).thenAnswer((invocation) async {
+      final sourceId = invocation.namedArguments[#sourceId] as String?;
+      if (sourceId != null) {
+        final n = sourceCounts[sourceId] ?? 0;
+        return _feed(
+          [for (var i = 0; i < n; i++) '$sourceId$i'],
+          score: sourceScores[sourceId],
+        );
+      }
       final theme = invocation.namedArguments[#theme] as String?;
       if (theme == null) return _feed(const []);
       final n = counts[theme] ?? 0;
@@ -159,6 +171,8 @@ void main() {
   Future<ProviderContainer> buildContainer({
     required List<String> themeSlugs,
     List<TopTheme> topThemes = const [],
+    List<Source> catalog = const [],
+    List<Source> favoriteSources = const [],
   }) async {
     when(() => fluxRepo.getTopThemes()).thenAnswer((_) async => topThemes);
     final container = ProviderContainer(
@@ -183,16 +197,28 @@ void main() {
         ),
         userSourcesStateProvider.overrideWith(
           () => _StubUserSourcesStateNotifier(
-            const UserSourcesState(
-              sources: [],
-              favorites: [],
-              favoriteCount: 0,
+            UserSourcesState(
+              sources: [
+                for (final s in favoriteSources)
+                  SourceInterest(
+                    sourceId: s.id,
+                    state: InterestState.favorite,
+                    priorityMultiplier: 1.0,
+                  ),
+              ],
+              favorites: [
+                for (var i = 0; i < favoriteSources.length; i++)
+                  SourceFavoriteRef(
+                    sourceId: favoriteSources[i].id,
+                    position: i,
+                  ),
+              ],
+              favoriteCount: favoriteSources.length,
               favoriteCap: 7,
             ),
           ),
         ),
-        userSourcesProvider
-            .overrideWith(() => _StubUserSourcesNotifier(const [])),
+        userSourcesProvider.overrideWith(() => _StubUserSourcesNotifier(catalog)),
         sereinToggleProvider
             .overrideWith((ref) => SereinToggleNotifier(ref, null)),
         displayModeSpecProvider.overrideWithValue(DisplayModeSpec.normal),
@@ -207,6 +233,13 @@ void main() {
   List<String> themeOrder(FluxContinuState state) => state.sections
       .whereType<FeedThemeSection>()
       .map((s) => s.themeSlug ?? '')
+      .toList();
+
+  /// Comme [themeOrder], mais identifie aussi les sections **source**
+  /// (`source:<id>`) — nécessaire dès qu'un média entre dans le classement.
+  List<String> sectionOrder(FluxContinuState state) => state.sections
+      .whereType<FeedThemeSection>()
+      .map((s) => s.themeSlug ?? 'source:${s.sourceId}')
       .toList();
 
   /// Ordres successifs observés, doublons consécutifs écrasés — donc un élément
@@ -439,6 +472,94 @@ void main() {
       final state = await settle(container);
 
       expect(state.blockScores, isEmpty);
+    });
+  });
+
+  group('Story 22.7 — les sections-source suggérées hors du tri par score', () {
+    final media = Source(id: 'media-1', name: 'Média', type: SourceType.article);
+    const suggestedMedia = TopTheme(
+      interestSlug: 'society',
+      weight: 1,
+      articleCount: 3,
+      kind: 'source',
+      sourceId: 'media-1',
+      origin: 'suggested',
+      dailyRank: 1,
+    );
+
+    test(
+        'un média suggéré au score élevé ne remonte pas au-dessus d\'un thème '
+        'pauvre : il garde son rang daily_rank', () async {
+      // Sans le filtre, 300 (média) > 50 (thème) inverserait l'ordre — c'est
+      // exactement la plainte PO : un média à peine consulté trône en tête.
+      stubThemes(
+        {'tech': 1},
+        scores: const {'tech': 50},
+        sourceCounts: const {'media-1': 3},
+        sourceScores: const {'media-1': 100},
+      );
+      final container = await buildContainer(
+        themeSlugs: ['tech'],
+        topThemes: const [suggestedMedia],
+        catalog: [media],
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(sectionOrder(state), ['tech', 'source:media-1']);
+      // La **mesure** reste intacte : `block_score` continue d'alimenter
+      // `article_impression` pour cette section (cf. PR-1).
+      expect(state.blockScores['source:media-1'], 300);
+    });
+
+    test('les thèmes restent triés entre eux malgré le média suggéré épinglé',
+        () async {
+      stubThemes(
+        {'tech': 1, 'cinema': 3},
+        scores: const {'tech': 100, 'cinema': 100},
+        sourceCounts: const {'media-1': 3},
+        sourceScores: const {'media-1': 100},
+      );
+      final container = await buildContainer(
+        themeSlugs: ['tech', 'cinema'],
+        topThemes: const [suggestedMedia],
+        catalog: [media],
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      // 'cinema' (300) passe devant 'tech' (100) ; le média garde sa 3ᵉ place.
+      expect(sectionOrder(state), ['cinema', 'tech', 'source:media-1']);
+    });
+
+    test('une source **favorite** reste, elle, classée par son score',
+        () async {
+      // Le filtre ne vise que la voie « Choisie pour vous » : une source que
+      // l'utilisateur a explicitement mise en favori garde son tri au score.
+      // (Story 10.2 — une source favorite n'est rendue dans la Tournée que si
+      // sa clé est en mode « Essentiel », donc présente dans `tournee_order_v1`
+      // ; l'ordre y place le thème en tête, c'est bien le score qui l'inverse.)
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'tournee_order_v1': ['theme:tech', 'source:media-1'],
+      });
+      stubThemes(
+        {'tech': 1},
+        scores: const {'tech': 50},
+        sourceCounts: const {'media-1': 3},
+        sourceScores: const {'media-1': 100},
+      );
+      final container = await buildContainer(
+        themeSlugs: ['tech'],
+        favoriteSources: [media],
+        catalog: [media],
+      );
+      addTearDown(container.dispose);
+
+      final state = await settle(container);
+
+      expect(sectionOrder(state), ['source:media-1', 'tech']);
     });
   });
 }
