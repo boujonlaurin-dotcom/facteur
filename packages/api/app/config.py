@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     # Base publique de la landing (liens web du parcours soutien).
     public_web_base_url: str = "https://facteur.app"
 
+    # Livraison des liens de soutien. L'API pilote Resend directement afin de
+    # distinguer une requête acceptée d'un message effectivement remis.
+    resend_api_key: str = ""
+    resend_from_email: str = "Facteur <laurin@facteur.app>"
+    resend_webhook_secret: str = ""
+
     # RSS Sync
     rss_sync_interval_minutes: int = 30
     rss_sync_enabled: bool = True
@@ -280,6 +286,16 @@ class Settings(BaseSettings):
         sinon retombe sur l'ancien pont RevenueCat Web Billing.
         """
         return bool(self.stripe_secret_key and self.checkout_link_secret)
+
+    @property
+    def support_link_delivery_enabled(self) -> bool:
+        """Le parcours app -> email -> Stripe est complètement configuré."""
+        return bool(
+            self.support_stripe_enabled
+            and self.resend_api_key
+            and self.resend_from_email
+            and self.resend_webhook_secret
+        )
 
 
 @lru_cache

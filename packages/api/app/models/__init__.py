@@ -35,7 +35,12 @@ from app.models.push_notification import PushDelivery, PushDevice
 from app.models.serene_report import SereneReport
 from app.models.source import Source, UserSource
 from app.models.source_search_log import SourceSearchLog
-from app.models.subscription import UserSubscription
+from app.models.subscription import (
+    ResendWebhookEvent,
+    SupportLinkDelivery,
+    SupportLinkDeliveryAttempt,
+    UserSubscription,
+)
 from app.models.user import UserInterest, UserPreference, UserProfile, UserStreak
 from app.models.user_favorites import UserFavoriteInterest, UserFavoriteSource
 from app.models.user_feedback import DigestSentiment, FeedbackInvite
@@ -82,6 +87,9 @@ __all__ = [
     "ApiUsageEvent",
     # Subscription
     "UserSubscription",
+    "SupportLinkDelivery",
+    "SupportLinkDeliveryAttempt",
+    "ResendWebhookEvent",
     # Progress (Epic 8)
     "UserTopicProgress",
     "TopicQuiz",

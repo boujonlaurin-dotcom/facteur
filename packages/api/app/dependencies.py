@@ -1,6 +1,7 @@
 """Dépendances FastAPI (injection)."""
 
 import asyncio
+from dataclasses import dataclass
 
 import httpx
 import sentry_sdk
@@ -15,6 +16,20 @@ logger = structlog.get_logger()
 
 settings = get_settings()
 security = HTTPBearer()
+
+
+@dataclass(frozen=True)
+class CurrentUserIdentity:
+    """Identité vérifiée extraite du JWT Supabase courant.
+
+    L'email ne doit pas être relu via l'Admin API pour les parcours qui
+    l'utilisent immédiatement : le JWT vient tout juste d'être validé contre
+    les JWKS Supabase par ``get_current_user_id``.
+    """
+
+    user_id: str
+    email: str
+
 
 # Cache pour les clés JWKS
 _jwks_cache = None
@@ -185,14 +200,13 @@ async def fetch_jwks():
         )
 
 
-async def get_current_user_id(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> str:
-    """
-    Extrait et vérifie le user_id depuis le JWT Supabase.
-    """
-    token = credentials.credentials
+async def _authenticate_token(token: str) -> dict:
+    """Vérifie le JWT Supabase et retourne son payload signé.
 
+    Point de décodage unique : les appelants qui ont besoin d'un claim (email…)
+    lisent le payload *vérifié* renvoyé ici plutôt que de re-décoder le token en
+    mode non vérifié.
+    """
     try:
         # 1. Obtenir le header uniquement pour vérifier l'algorithme annoncé.
         header = jwt.get_unverified_header(token)
@@ -253,7 +267,7 @@ async def get_current_user_id(
 
                 if is_confirmed is True:
                     logger.info("auth_user_confirmed_in_db", user_id=user_id)
-                    return user_id
+                    return payload
                 elif is_confirmed is None:
                     # DB unreachable — fail-open: user has a valid JWT, allow access
                     # rather than blocking confirmed users due to infrastructure issues
@@ -266,7 +280,7 @@ async def get_current_user_id(
                         level="info",
                         data={"user_id": user_id, "jwt_alg": alg},
                     )
-                    return user_id
+                    return payload
                 else:
                     logger.warning("auth_user_blocked_unconfirmed", user_id=user_id)
                     # Sentry event : permet de mesurer la fréquence des 403
@@ -293,7 +307,7 @@ async def get_current_user_id(
                         detail="Email not confirmed",
                     )
 
-        return user_id
+        return payload
 
     except JWTError as e:
         # En cas d'échec ES256 (clé expirée ?), on vide le cache pour la prochaine fois
@@ -303,6 +317,30 @@ async def get_current_user_id(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}",
         )
+
+
+async def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    """Extrait et vérifie le user_id depuis le JWT Supabase."""
+    payload = await _authenticate_token(credentials.credentials)
+    return payload["sub"]
+
+
+async def get_current_user_identity(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> CurrentUserIdentity:
+    """Retourne l'id et l'email du JWT après sa validation complète."""
+    payload = await _authenticate_token(credentials.credentials)
+    # Claims lus depuis le payload *vérifié* (signature validée ci-dessus), pas
+    # via un décodage non vérifié.
+    email = payload.get("email")
+    if not isinstance(email, str) or not email:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Authenticated account has no email address",
+        )
+    return CurrentUserIdentity(user_id=payload["sub"], email=email)
 
 
 async def get_optional_user_id(

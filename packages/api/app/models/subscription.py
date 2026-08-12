@@ -1,9 +1,9 @@
 """Modèle abonnement."""
 
-from datetime import datetime
-from uuid import UUID
+from datetime import datetime, timedelta
+from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -108,5 +108,88 @@ class SupporterMessage(Base):
         Boolean, nullable=False, server_default="false", default=False
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# Source unique du vocabulaire de statut d'une livraison de lien de soutien.
+# Consommé par la route (`_delivery_response`), le job de relance et le service
+# pour éviter que les classifications « terminal » / « à réessayer » ne dérivent
+# entre les fichiers.
+SUPPORT_LINK_TERMINAL_STATUSES = frozenset(
+    {"delivered", "bounced", "suppressed", "failed"}
+)
+SUPPORT_LINK_RETRYABLE_STATUSES = frozenset({"queued", "delayed"})
+# Délai unique de la relance différée : le backoff d'envoi (service) et le
+# webhook `email.delivery_delayed` doivent programmer exactement le même délai.
+SUPPORT_LINK_RETRY_DELAY = timedelta(minutes=10)
+
+
+class SupportLinkDelivery(Base):
+    """Demande d'enveloppe de soutien suivie jusqu'à la remise fournisseur."""
+
+    __tablename__ = "support_link_deliveries"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), nullable=False, index=True
+    )
+    # Nécessaire à la relance différée; aucun token signé ni payload webhook
+    # n'est persisté.
+    recipient_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    auto_retry_used: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    last_provider_event_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class SupportLinkDeliveryAttempt(Base):
+    """Un message Resend par tentative, pour accepter les events tardifs."""
+
+    __tablename__ = "support_link_delivery_attempts"
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid4
+    )
+    delivery_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("support_link_deliveries.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_message_id: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ResendWebhookEvent(Base):
+    """Déduplication durable des livraisons at-least-once de Resend."""
+
+    __tablename__ = "resend_webhook_events"
+
+    svix_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

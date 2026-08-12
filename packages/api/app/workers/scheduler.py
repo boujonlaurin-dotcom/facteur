@@ -20,6 +20,7 @@ from app.jobs.recompute_source_coverage_themes import (
 )
 from app.jobs.recompute_source_language import recompute_source_language
 from app.jobs.rescue_failed_sources_job import run_rescue_failed_sources
+from app.jobs.retry_support_link_deliveries import retry_due_support_link_deliveries
 from app.services.observability.cost_budget import log_budget_projection
 from app.services.onboarding_reengagement_dispatcher import (
     dispatch_onboarding_reengagement_pushes,
@@ -770,6 +771,19 @@ def start_scheduler() -> None:
         trigger=IntervalTrigger(minutes=5),
         id="onboarding_reengagement_push_dispatch",
         name="Onboarding re-engagement push dispatcher",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+
+    # Une relance unique, ~10 min après une anomalie de livraison Resend. Un
+    # tick de 5 min suffit (la relance n'est due qu'après 10 min) et évite une
+    # requête à vide chaque minute.
+    scheduler.add_job(
+        retry_due_support_link_deliveries,
+        trigger=IntervalTrigger(minutes=5),
+        id="support_link_delivery_retry",
+        name="Support link email delivery retry",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
