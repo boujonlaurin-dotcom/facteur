@@ -6,7 +6,11 @@ name: Build Android APK (beta)
 # Les vrais users passent par weekly-release.yml (flavor beta, UPDATE_CHANNEL=stable).
 on:
   push:
-    branches: [ main ]
+    # `main` = canal beta des testeurs. La 2ᵉ branche est un **build de review**
+    # d'une branche en cours : il ne produit QUE l'artefact (la publication de
+    # release est verrouillée sur `main`, cf. l'étape « Create Beta Release »),
+    # donc aucun testeur ne reçoit un APK d'une branche non mergée.
+    branches: [ main, claude/article-section-navigation-d0y3yk ]
   workflow_dispatch:
     inputs:
       api_base_url:
@@ -99,7 +103,9 @@ jobs:
              apps/mobile/build/app/outputs/flutter-apk/Facteur-${{ steps.version.outputs.version }}.apk
 
       - name: Create Beta Release
-        if: github.event.inputs.create_release != 'false'
+        # Jamais depuis une branche de review : le canal beta ne sert que ce qui
+        # est passé par `main`.
+        if: github.event.inputs.create_release != 'false' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
