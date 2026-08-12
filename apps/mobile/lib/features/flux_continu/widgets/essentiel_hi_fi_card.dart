@@ -25,6 +25,7 @@ import '../providers/essentiel_triage_provider.dart';
 import '../providers/selected_edition_date_provider.dart';
 import '../providers/weather_provider.dart';
 import '../services/tournee_progress_service.dart';
+import '../utils/essentiel_deck.dart';
 import '../utils/section_fit.dart';
 import '../utils/theme_color_mapping.dart';
 import 'article_impression_tracker.dart';
@@ -150,29 +151,18 @@ class _EssentielHiFiCardState extends ConsumerState<EssentielHiFiCard> {
     _memoCarousel = carousel;
     _memoFetched = fetched;
 
-    // Articles réinjectables : les items du carrousel du jour non déjà dans le
-    // slate, adaptés en articles triables. Rangs au-delà du slate d'origine (le
-    // backend accepte leur tri avec le `slate_size` **courant** que `decide()`
-    // envoie — le slate s'allonge, la borne de schéma a été relevée en 33.4).
-    final seen = {for (final a in articles) a.contentId};
-    final extra = <EssentielArticle>[];
-    final items = carousel?.items ?? const [];
-    for (var i = 0; i < items.length; i++) {
-      if (!seen.add(items[i].id)) continue; // déjà dans le slate
-      extra.add(
-        EssentielArticle.fromContent(items[i], rank: articles.length + i + 1),
-      );
-    }
-    // Articles rapatriés au réseau, dédupés contre tout ce qui précède.
-    final fetchedFresh = [
-      for (final a in fetched)
-        if (seen.add(a.contentId)) a,
-    ];
-    // Pool adressable par la pile : slate du jour + articles injectables. Le
-    // slate (`syncSlate`) reçoit ce pool **ordonné** et le porte en entier — il
-    // n'est plus coupé à la cible (33.4), c'est le nombre de gardés qui borne
-    // le tri.
-    _memoPool = List.unmodifiable([...articles, ...extra, ...fetchedFresh]);
+    // Pool adressable par la pile : slate du jour + articles injectables
+    // (carrousel puis rapatriés). Composition portée par [essentielTriagePool],
+    // partagée avec le deck de lecture (`essentielArticleDeck`) : les deux
+    // doivent résoudre les mêmes ids, sinon un gardé venu du carrousel
+    // manquerait à la séquence de lecture. Le slate (`syncSlate`) reçoit ce pool
+    // **ordonné** et le porte en entier — il n'est plus coupé à la cible (33.4),
+    // c'est le nombre de gardés qui borne le tri.
+    _memoPool = essentielTriagePool(
+      articles: articles,
+      carousel: carousel,
+      fetched: fetched,
+    );
     _memoPoolIds = {for (final a in _memoPool) a.contentId};
   }
 
