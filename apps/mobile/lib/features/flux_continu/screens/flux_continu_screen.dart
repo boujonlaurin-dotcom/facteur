@@ -1185,10 +1185,14 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     });
   }
 
-  /// Tente de résoudre + scroller vers la section en attente. Re-tente ~30×
+  /// Tente de résoudre + scroller vers la section en attente. Re-tente ~60×
   /// toutes les 40 ms tant que les sections ne sont pas mesurées (mécanique du
   /// `scrollToFocus` de la maquette), puis abandonne en remettant le provider à
   /// `null` (une clé introuvable / un layout absent ne doit jamais boucler).
+  ///
+  /// Le budget couvre le pire cas de [_resolveAndScrollToSectionKey] : une
+  /// section très basse se gagne un viewport par essai, il en faut donc
+  /// plusieurs dizaines pour une longue Tournée.
   void _tryConsumePendingSection(int attempt) {
     if (!mounted) {
       _pendingSectionConsumeScheduled = false;
@@ -1199,7 +1203,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
       _pendingSectionConsumeScheduled = false;
       return;
     }
-    if (_resolveAndScrollToSectionKey(key) || attempt >= 30) {
+    if (_resolveAndScrollToSectionKey(key) || attempt >= 60) {
       ref.read(pendingFeedSectionKeyProvider.notifier).state = null;
       _pendingSectionConsumeScheduled = false;
       return;
@@ -1221,9 +1225,36 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     if (sectionIndex < 0 || sectionIndex >= _sectionKeys.length) return false;
     final stickyIndex = _stickyEntryKeys.indexOf(_sectionKeys[sectionIndex]);
     if (stickyIndex < 0) return false;
-    if (_stickyEntryKeys[stickyIndex].currentContext == null) return false;
+    if (_stickyEntryKeys[stickyIndex].currentContext == null) {
+      // La liste est paresseuse : une section restée loin sous le pli n'est pas
+      // *construite*, sa clé n'a donc pas de contexte et `_scrollToSection` ne
+      // ferait rien. Attendre ne suffit pas — rien ne la construira tant qu'on
+      // n'aura pas descendu. On avance d'un viewport et on laisse le retry
+      // reprendre : de proche en proche, la section finit par naître, puis le
+      // cadrage précis se fait normalement.
+      //
+      // Sans ça, revenir d'un deck déroulé jusqu'à la 5ᵉ section retombait sur
+      // le haut de la Tournée : la cible était hors de portée du 1ᵉʳ essai et
+      // les 30 retries échouaient tous au même endroit.
+      _scrollTowardsUnbuiltSection();
+      return false;
+    }
     unawaited(_scrollToSection(stickyIndex));
     return true;
+  }
+
+  /// Descend d'un viewport pour faire construire la suite de la liste. Sans
+  /// animation : le saut sert à *construire*, pas à montrer — le cadrage animé
+  /// vient ensuite, une fois la section atteignable.
+  void _scrollTowardsUnbuiltSection() {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    final next = math.min(
+      position.pixels + position.viewportDimension * 0.8,
+      position.maxScrollExtent,
+    );
+    if (next <= position.pixels) return;
+    _scroll.jumpTo(next);
   }
 
   /// Opens an article. ReadSyncService propagates the read state after the
