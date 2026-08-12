@@ -24,6 +24,7 @@ class ArticleDeckPayload {
     required this.sectionLabel,
     this.nextSectionDeck,
     this.onArticleSettled,
+    this.onSectionAdvanced,
   });
 
   /// Articles de la section, dans l'ordre de lecture, dédupliqués par id.
@@ -60,6 +61,15 @@ class ArticleDeckPayload {
   /// `null` quand l'appelant n'a rien à repositionner. Non transporté par un
   /// deep link : l'`extra` perdu, le deck l'est aussi.
   final void Function(Content article)? onArticleSettled;
+
+  /// Notifie la surface d'origine du passage à la section suivante.
+  ///
+  /// Même rôle que [onArticleSettled], d'un cran au-dessus : quitter le deck
+  /// après avoir déroulé cinq sections doit ramener sur la Tournée **à la
+  /// cinquième**, pas à celle d'où l'on était parti. La chaîne entière porte la
+  /// même fonction (cf. `tourneeArticleDeck`), donc l'appelant reçoit chaque
+  /// étape, quelle que soit sa profondeur.
+  final void Function(ArticleDeckPayload next)? onSectionAdvanced;
 
   /// Un deck d'un seul article **sans suite** ne se navigue pas : la route rend
   /// alors le reader nu, sans `PageView` (zéro changement pour les appelants
@@ -169,8 +179,9 @@ ArticleDeckPayload? articleDeckFromContents(
 ArticleDeckPayload? tourneeArticleDeck(
   List<FluxSection> sections,
   FluxSection section,
-  String tappedContentId,
-) {
+  String tappedContentId, {
+  void Function(ArticleDeckPayload next)? onSectionAdvanced,
+}) {
   if (tappedContentId.isEmpty) return null;
   var index = sections.indexWhere((s) => identical(s, section));
   if (index == -1) {
@@ -178,7 +189,12 @@ ArticleDeckPayload? tourneeArticleDeck(
     index = sections.indexWhere((s) => sectionKey(s) == key);
   }
   if (index == -1) return articleDeckFromSection(section, tappedContentId);
-  return _tourneeDeckAt(sections, index, tappedContentId);
+  return _tourneeDeckAt(
+    sections,
+    index,
+    tappedContentId,
+    onSectionAdvanced: onSectionAdvanced,
+  );
 }
 
 /// Deck de la section d'index [index], positionné sur [tappedContentId] (vide =
@@ -186,8 +202,9 @@ ArticleDeckPayload? tourneeArticleDeck(
 ArticleDeckPayload? _tourneeDeckAt(
   List<FluxSection> sections,
   int index,
-  String tappedContentId,
-) {
+  String tappedContentId, {
+  void Function(ArticleDeckPayload next)? onSectionAdvanced,
+}) {
   final section = sections[index];
   final articles = _dedupById(sectionArticles(section));
   if (articles.isEmpty) return null;
@@ -208,7 +225,15 @@ ArticleDeckPayload? _tourneeDeckAt(
     sectionLabel: section.label,
     nextSectionDeck: nextIndex == null
         ? null
-        : () => _tourneeDeckAt(sections, nextIndex, ''),
+        // La chaîne transporte la même notification d'étape jusqu'au bout : la
+        // Tournée sait donc toujours à quelle section la lecture s'est arrêtée.
+        : () => _tourneeDeckAt(
+              sections,
+              nextIndex,
+              '',
+              onSectionAdvanced: onSectionAdvanced,
+            ),
+    onSectionAdvanced: onSectionAdvanced,
   );
 }
 

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:facteur/config/theme.dart';
 import 'package:facteur/features/detail/deck/models/article_deck.dart';
 import 'package:facteur/features/detail/deck/widgets/article_deck_view.dart';
-import 'package:facteur/features/detail/deck/widgets/next_section_button.dart';
+import 'package:facteur/features/detail/deck/widgets/next_section_hint.dart';
 import 'package:facteur/features/feed/models/content_model.dart';
 import 'package:facteur/features/sources/models/source_model.dart';
 
@@ -474,18 +474,18 @@ void main() {
   });
 
   group('section suivante (Story 34.2)', () {
-    /// Opacité effective du bouton — il est monté dès l’ouverture (pour se
-    /// lever en fondu au bon moment), c’est elle qui dit s’il est offert.
-    double buttonOpacity(WidgetTester tester) => tester
+    /// Opacité effective de la bulle — elle est montée dès l’ouverture (pour se
+    /// lever en fondu au bon moment), c’est elle qui dit si elle est soufflée.
+    double hintOpacity(WidgetTester tester) => tester
         .widget<AnimatedOpacity>(
           find.ancestor(
-            of: find.byKey(NextSectionButton.buttonKey),
+            of: find.byKey(NextSectionHint.hintKey),
             matching: find.byType(AnimatedOpacity),
           ),
         )
         .opacity;
 
-    testWidgets('le bouton n’apparaît qu’au bout de la section', (
+    testWidgets('la bulle est soufflée au bout de la section, puis s’efface', (
       tester,
     ) async {
       await pumpDeck(
@@ -495,20 +495,49 @@ void main() {
       );
 
       // 1ᵉʳ article : rien ne dépasse, la section n’est pas finie.
-      expect(buttonOpacity(tester), 0);
+      expect(hintOpacity(tester), 0);
 
       await dragBy(tester, -300);
       await dragBy(tester, -300);
+      await tester.pumpAndSettle();
 
       expect(find.text('article-c2'), findsOneWidget);
-      expect(buttonOpacity(tester), 1);
-      expect(find.text('Section suivante'), findsOneWidget);
-      expect(find.text('Économie'), findsOneWidget);
+      expect(hintOpacity(tester), 1);
+      expect(find.text('Glisse pour Économie'), findsOneWidget);
+
+      // …et elle s’efface d’elle-même : rien à fermer.
+      await tester.pump(const Duration(milliseconds: 3600));
+      await tester.pumpAndSettle();
+      expect(hintOpacity(tester), 0);
     });
 
-    testWidgets('le tap remet le deck de la section suivante à l’hôte', (
-      tester,
-    ) async {
+    testWidgets('la bulle ne prend jamais le geste', (tester) async {
+      await pumpDeck(
+        tester,
+        deck: _deck(initialIndex: 2, nextSectionDeck: _nextSection),
+        onAdvanceToSection: (_) {},
+      );
+      await tester.pumpAndSettle();
+
+      // Elle est posée par-dessus l’article : si elle absorbait les pointeurs,
+      // le texte en dessous deviendrait intouchable.
+      expect(
+        tester
+            .widget<IgnorePointer>(
+              find
+                  .ancestor(
+                    of: find.byKey(NextSectionHint.hintKey),
+                    matching: find.byType(IgnorePointer),
+                  )
+                  .first,
+            )
+            .ignoring,
+        isTrue,
+      );
+    });
+
+    testWidgets('tirer franchement au-delà du dernier article passe à la suite',
+        (tester) async {
       final advanced = <ArticleDeckPayload>[];
       await pumpDeck(
         tester,
@@ -516,18 +545,32 @@ void main() {
         onAdvanceToSection: advanced.add,
       );
 
-      await tester.tap(find.byKey(NextSectionButton.buttonKey));
-      await tester.pumpAndSettle();
+      // Tirage franc vers la gauche : le mur de fin a laissé place à une porte.
+      await dragBy(tester, -300);
 
       expect(advanced, hasLength(1));
       expect(advanced.single.sectionLabel, 'Économie');
       expect(advanced.single.initialArticle.id, 'e0');
     });
 
-    testWidgets('sans section suivante, aucun bouton', (tester) async {
+    testWidgets('un tirage court ne change pas de section', (tester) async {
+      final advanced = <ArticleDeckPayload>[];
+      await pumpDeck(
+        tester,
+        deck: _deck(initialIndex: 2, nextSectionDeck: _nextSection),
+        onAdvanceToSection: advanced.add,
+      );
+
+      await dragBy(tester, -20);
+
+      expect(advanced, isEmpty);
+      expect(find.text('article-c2'), findsOneWidget);
+    });
+
+    testWidgets('sans section suivante, ni bulle ni passage', (tester) async {
       await pumpDeck(tester, deck: _deck(initialIndex: 2));
 
-      expect(find.byKey(NextSectionButton.buttonKey), findsNothing);
+      expect(find.byKey(NextSectionHint.hintKey), findsNothing);
     });
   });
 }

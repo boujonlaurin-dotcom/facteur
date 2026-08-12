@@ -75,6 +75,9 @@ class _ArticleDeckScreenState extends ConsumerState<ArticleDeckScreen> {
   void _advanceToSection(ArticleDeckPayload next) {
     final from = _deck;
     if (from != null) {
+      // La Tournée suit la progression de section pour se rouvrir là où la
+      // lecture s'est arrêtée (cf. `ArticleDeckPayload.onSectionAdvanced`).
+      from.onSectionAdvanced?.call(next);
       unawaited(
         ref.read(analyticsServiceProvider).trackDeckSectionAdvance(
               fromSectionKey: from.sectionKey,

@@ -280,6 +280,28 @@ void main() {
       expect(deck.nextSectionDeck, isNull);
     });
 
+    test('chaque étape est notifiée, à toute profondeur de chaîne', () {
+      // C’est ce fil qui permet à la Tournée de se rouvrir sur la section où la
+      // lecture s’est arrêtée, et pas sur celle d’où l’on était parti.
+      final s1 = theme('a', 'A', ['a1', 'a2']);
+      final s2 = theme('b', 'B', ['b1', 'b2']);
+      final s3 = theme('c', 'C', ['c1', 'c2']);
+      final steps = <String>[];
+      final deck = tourneeArticleDeck(
+        [s1, s2, s3],
+        s1,
+        'a1',
+        onSectionAdvanced: (next) => steps.add(next.sectionKey),
+      );
+
+      final second = deck!.nextSectionDeck!()!;
+      second.onSectionAdvanced!(second);
+      final third = second.nextSectionDeck!()!;
+      third.onSectionAdvanced!(third);
+
+      expect(steps, ['theme:b', 'theme:c']);
+    });
+
     test('porte la section entière, comme le deck simple', () {
       final section = _themeSection(items: 8, coreVisibleCount: 2);
       final deck = tourneeArticleDeck([section], section, 'c1');

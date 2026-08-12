@@ -64,8 +64,7 @@ import '../providers/tournee_order_prefs_provider.dart'
 import '../providers/tournee_reorder_persistence.dart'
     show persistTourneeEssentielReorder, reorderTourneeTabKeys;
 import '../services/preview_nudge_scheduler.dart';
-import '../services/tournee_progress_service.dart'
-    show TourneeProgressService;
+import '../services/tournee_progress_service.dart' show TourneeProgressService;
 import '../utils/morning_ritual_format.dart' show formatFrenchLongDate;
 import '../utils/section_fit.dart' show kMinPlausibleUsableHeight;
 import '../utils/section_snap.dart';
@@ -718,7 +717,8 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
   ///   ([_snapHapticFiredThisGesture]).
   void _onSnapCommit(double committedTarget) {
     if (_snapHapticFiredThisGesture || !_stickyVisible.value) return;
-    final targetIndex = frameIndexOfTarget(_snapAnchors.values, committedTarget);
+    final targetIndex =
+        frameIndexOfTarget(_snapAnchors.values, committedTarget);
     if (targetIndex < 0 || targetIndex == _activeIndex.value) return;
     _snapHapticFiredThisGesture = true;
     unawaited(_triggerSectionChangeHaptic());
@@ -1009,15 +1009,15 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // garde-fou) : seuls comptent la durée et la complétion de clôture.
     unawaited(
       _analytics.trackDigestSession(
-            digestDate: DateTime.now().toIso8601String().split('T').first,
-            articlesRead: 0,
-            articlesSaved: 0,
-            articlesDismissed: 0,
-            articlesPassed: 0,
-            totalTimeSeconds: payload.totalTimeSeconds,
-            closureAchieved: payload.closureAchieved,
-            streak: _lastKnownStreak,
-          ),
+        digestDate: DateTime.now().toIso8601String().split('T').first,
+        articlesRead: 0,
+        articlesSaved: 0,
+        articlesDismissed: 0,
+        articlesPassed: 0,
+        totalTimeSeconds: payload.totalTimeSeconds,
+        closureAchieved: payload.closureAchieved,
+        streak: _lastKnownStreak,
+      ),
     );
   }
 
@@ -1255,13 +1255,30 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // le deck de section simple : il n'y a alors pas d'ordre où chercher une
     // suite.
     final sections = ref.read(fluxContinuProvider).valueOrNull?.sections;
+    // Section où la lecture s'arrête : celle d'où l'on part, puis chaque
+    // section atteinte par enchaînement.
+    String? landingSectionKey;
     final deck = section == null
         ? null
-        : tourneeArticleDeck(sections ?? const [], section, id);
+        : tourneeArticleDeck(
+            sections ?? const [],
+            section,
+            id,
+            onSectionAdvanced: (next) => landingSectionKey = next.sectionKey,
+          );
     await context.push(
       '${RoutePaths.fluxContinu}/content/$id',
       extra: deck ?? extra,
     );
+
+    // Retour de lecture après un enchaînement de sections : la Tournée se
+    // rouvre **là où on l'a quittée**. Sans ça, dérouler cinq blocs au fil du
+    // deck ramenait en haut, sur le bloc de départ — la position de lecture
+    // était perdue au moment précis où elle valait le plus.
+    final landing = landingSectionKey;
+    if (landing != null && mounted) {
+      ref.read(pendingFeedSectionKeyProvider.notifier).state = landing;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1965,11 +1982,10 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
     // sections de CONTENU avant la fin, comme avant l'ajout du carrousel.
     final anchorSectionCount =
         state.sections.isNotEmpty && state.sections.last is CarouselSection
-        ? state.sections.length - 1
-        : state.sections.length;
-    final inviteTargetIndex = anchorSectionCount < 2
-        ? -1
-        : math.max(1, anchorSectionCount - 3);
+            ? state.sections.length - 1
+            : state.sections.length;
+    final inviteTargetIndex =
+        anchorSectionCount < 2 ? -1 : math.max(1, anchorSectionCount - 3);
 
     // Un seul indicateur d'attente pour toute la Tournée : la **première**
     // coquille de section encore non résolue porte le libellé « Ta tournée se
@@ -2276,8 +2292,7 @@ class _FluxContinuScreenState extends ConsumerState<FluxContinuScreen>
         SliverToBoxAdapter(
           child: SectionBlock(
             section: heroSection,
-            onTapArticle: (a) =>
-                _openArticle(context, a, section: heroSection),
+            onTapArticle: (a) => _openArticle(context, a, section: heroSection),
           ),
         ),
       );
